@@ -5,7 +5,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.app.narration.NarrationState
@@ -56,24 +55,5 @@ class NarrationBarTest {
             )
         }
         composeRule.onNodeWithContentDescription("Play").assertIsDisplayed()
-    }
-
-    @Test
-    fun theTitleOpensTheArticleWhereThereIsOne() {
-        var opened = 0
-        composeRule.setContent {
-            NarrationBar(
-                NarrationState("a", "Narrated article", 0, playing = true),
-                1f,
-                {},
-                {},
-                {},
-                {},
-                {},
-                onOpen = { opened++ },
-            )
-        }
-        composeRule.onNodeWithText("Narrated article").performClick()
-        assertEquals(1, opened)
     }
 }

@@ -232,13 +232,6 @@ private fun NarrationSettings(
         Choices(NARRATION_SPEEDS, settings.narrationSpeed, ::speedLabel, graph::setNarrationSpeed)
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Continue to the next article", modifier = Modifier.weight(1f))
-        Switch(
-            checked = settings.narrationContinue,
-            onCheckedChange = { value -> update { it.copy(narrationContinue = value) } },
-        )
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Keep the paragraph being read on screen", modifier = Modifier.weight(1f))
         Switch(
             checked = settings.narrationAutoScroll,

@@ -85,7 +85,6 @@ fun HomeScreen(
     /** Whether to highlight the open article: only beside it, where both are on screen. */
     showSelection: Boolean = false,
     onSettings: () -> Unit,
-    bottomBar: @Composable () -> Unit = {},
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val coroutines = rememberCoroutineScope()
@@ -144,7 +143,6 @@ fun HomeScreen(
         },
     ) {
         Scaffold(
-            bottomBar = bottomBar,
             topBar = {
                 val text = search
                 if (text != null) {
@@ -187,7 +185,7 @@ fun HomeScreen(
                         },
                     )
                 }
-            },
+            }
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = status == SyncStatus.Syncing,

@@ -41,7 +41,6 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
-import com.lionreader.app.ui.CurrentNarrationBar
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.HomeViewModel
@@ -162,12 +161,15 @@ class MainActivity : ComponentActivity() {
         val twoPane =
             calculatePaneScaffoldDirective(currentWindowAdaptiveInfo()).maxHorizontalPartitions > 1
         val articleOpen = backStack.any { it is EntryKey }
-        val besideArticle = twoPane && articleOpen
-        LaunchedEffect(articleOpen) { if (!articleOpen) home.shownClosed() }
-        fun open(key: EntryKey) {
-            // One page per article: the same id twice would share a saved state key.
-            backStack.removeAll { it is EntryKey && it.id == key.id }
-            backStack.add(key)
+        // Narration is of the article on screen: closing the article view ends it
+        // (only closing it, not opening the app without one).
+        var hadArticle by remember { mutableStateOf(articleOpen) }
+        LaunchedEffect(articleOpen) {
+            if (!articleOpen) home.shownClosed()
+            if (hadArticle && !articleOpen && graph.narrator.state.value != null) {
+                graph.narrator.stop()
+            }
+            hadArticle = articleOpen
         }
         NavDisplay(
             backStack = backStack,
@@ -192,17 +194,9 @@ class MainActivity : ComponentActivity() {
                             onOpen = { id ->
                                 // Replacing the one beside the list, when it's shown.
                                 backStack.removeAll { it is EntryKey }
-                                open(EntryKey.openedFrom(id, home.shownIds()))
+                                backStack.add(EntryKey.openedFrom(id, home.shownIds()))
                             },
                             onSettings = { backStack.add(SettingsKey) },
-                            bottomBar = {
-                                // The mini player: tapping the title opens the article.
-                                // Not beside an article, which has its own.
-                                if (!besideArticle)
-                                    CurrentNarrationBar(graph) { state ->
-                                        open(EntryKey.openedFrom(state.entryId, state.queue))
-                                    }
-                            },
                         )
                     }
                     // Keyed by id alone: the default key is the whole key's
@@ -219,9 +213,6 @@ class MainActivity : ComponentActivity() {
                             onShown = home::opened,
                             onBack = { backStack.removeLastOrNull() },
                             besideList = twoPane,
-                            onOpenElsewhere = { state ->
-                                open(EntryKey.openedFrom(state.entryId, state.queue))
-                            },
                         )
                     }
                     entry<SettingsKey> {

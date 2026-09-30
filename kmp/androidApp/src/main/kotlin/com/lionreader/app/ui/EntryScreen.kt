@@ -48,7 +48,10 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
@@ -64,6 +67,7 @@ import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,7 +88,6 @@ fun EntryScreen(
     onBack: () -> Unit,
     /** Beside the list, where going back closes the article rather than leaving it. */
     besideList: Boolean,
-    onOpenElsewhere: (NarrationState) -> Unit,
 ) {
     val context = LocalContext.current
     val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
@@ -100,19 +103,19 @@ fun EntryScreen(
     LaunchedEffect(Unit) {
         graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    // When narration moves on to the next article, turn the page with it, if
-    // the reader was on the article it just finished.
-    var narratedBefore by remember { mutableStateOf(narration?.entryId) }
-    LaunchedEffect(narration?.entryId) {
-        val now = narration?.entryId
-        val before = narratedBefore
-        // First: the animation throws if a drag interrupts it.
-        narratedBefore = now
-        val shown = pages[pager.settledPage]
-        if (now != null && before == shown && now != shown) {
-            pages.indexOf(now).takeIf { it >= 0 }?.let { pager.animateScrollToPage(it) }
-        }
-    }
+    NarrationFollowsPage(
+        narration,
+        entryId,
+        spoken[entryId],
+        entries[entryId],
+        started =
+            LocalLifecycleOwner.current.lifecycle
+                .currentStateAsState()
+                .value
+                .isAtLeast(Lifecycle.State.STARTED),
+        narrate = graph.narrator::narrate,
+        stop = graph.narrator::stop,
+    )
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
     val coroutines = rememberCoroutineScope()
@@ -168,7 +171,6 @@ fun EntryScreen(
                                         current.title ?: "Untitled",
                                         current.source,
                                         paragraphs,
-                                        queue = pages,
                                     )
                                 )
                             }
@@ -282,22 +284,17 @@ fun EntryScreen(
             )
         },
         bottomBar = {
-            // Another article's narration opens it; this one's is already here.
-            CurrentNarrationBar(
-                graph,
-                // Nothing to open when it's the article on screen.
-                onOpen =
-                    if (narration?.entryId == entryId) null
-                    else
-                        { state ->
-                            pages
-                                .indexOf(state.entryId)
-                                .takeIf { it >= 0 }
-                                ?.let { page ->
-                                    coroutines.launch { pager.animateScrollToPage(page) }
-                                } ?: onOpenElsewhere(state)
-                        },
-            )
+            narration?.let {
+                NarrationBar(
+                    state = it,
+                    speed = settings.narrationSpeed,
+                    onPrevious = { graph.narrator.skipParagraphs(-1) },
+                    onToggle = graph.narrator::togglePlaying,
+                    onNext = { graph.narrator.skipParagraphs(1) },
+                    onSpeed = graph::setNarrationSpeed,
+                    onStop = graph.narrator::stop,
+                )
+            }
         },
     ) { padding ->
         HorizontalPager(
@@ -333,6 +330,37 @@ fun EntryScreen(
                     ),
             )
         }
+    }
+}
+
+/**
+ * Narration is of the article on screen: when the pager settles on another while one plays, and
+ * stays there for [settle] (so swiping past articles doesn't start, and with cloud voices pay for,
+ * each), narration switches to it once its [paragraphs] are in. A paused narration ends instead.
+ * Only while the app is on screen: a switch empties the player, and media3 can't bring its
+ * foreground service back from the background.
+ */
+@Composable
+internal fun NarrationFollowsPage(
+    narration: NarrationState?,
+    entryId: String,
+    paragraphs: List<String>?,
+    entry: EntryDetail?,
+    started: Boolean,
+    narrate: (NarratedArticle) -> Unit,
+    stop: () -> Unit,
+    settle: Long = 1_000,
+) {
+    val current by rememberUpdatedState(entry)
+    val other = narration?.takeIf { it.entryId != entryId }
+    LaunchedEffect(entryId, other?.entryId, other?.playing, paragraphs, entry == null, started) {
+        if (other == null) return@LaunchedEffect
+        if (!other.playing) return@LaunchedEffect stop()
+        if (paragraphs == null || !started) return@LaunchedEffect
+        delay(settle)
+        val shown = current ?: return@LaunchedEffect
+        if (paragraphs.isEmpty()) stop()
+        else narrate(NarratedArticle(entryId, shown.title ?: "Untitled", shown.source, paragraphs))
     }
 }
 
