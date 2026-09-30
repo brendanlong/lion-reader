@@ -101,6 +101,12 @@ const SHAPES = [
   // a one-cell layout table, linked, with `alt=""`.
   '<p><a href="https://example.com/a">w0</a><a href="https://example.com/b"> </a>w1</p>',
   '<table><tr><td></td><td><a href="https://example.com/i"><img alt=""></a></td><td></td></tr></table><p>w0</p>',
+  // Email layout tables, walked like a `<div>` (issue #1666).
+  "<table><tr><td><h1>w0</h1><p>w1</p></td><td>w2</td></tr></table>",
+  "<table><tr><td>w0<table><tr><td><p>w1</p><p>w2</p></td></tr></table>w3</td></tr></table>",
+  '<table><tr><td><img alt="w0">w1</td></tr><tr><td><h2>w2</h2><figure><img alt="w3"></figure></td></tr></table>',
+  "<table><tr><td><table><tr><th>w0</th></tr><tr><td>w1</td></tr></table></td></tr></table>",
+  "<p>w0 <math><mtable><mtr><td>w1</td></mtr></mtable></math> w2</p>",
 ];
 
 /** Every `w<n>` token in a string, in order. */

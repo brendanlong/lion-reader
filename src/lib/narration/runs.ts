@@ -93,6 +93,14 @@ const TEXT_NODE = 3;
  */
 const MAX_DEPTH = 64;
 
+/** A table's own structure, which a layout table is walked through. */
+const TABLE_STRUCTURE = new Set(["thead", "tbody", "tfoot", "tr", "td", "th"]);
+
+function isTableTag(el: Element | null): boolean {
+  const tagName = el?.tagName.toLowerCase() ?? "";
+  return tagName === "table" || TABLE_STRUCTURE.has(tagName);
+}
+
 /** What every level of the walk shares. */
 interface WalkContext {
   voice: NarrationVoice;
@@ -200,14 +208,14 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
     flush();
 
     // Blocks that narrate their whole subtree, so the walk stops here: their
-    // text is a formatted whole (a table's rows, a code listing) that can't be
+    // text is a formatted whole (a data table's rows, a code listing) that can't be
     // assembled from the paragraphs inside it.
     if (tagName === "pre") {
       const code = flatText(el, voice, consumed).trim();
       if (voice.speakCodeBlocks && code) push(el, `Code block: ${code} End code block.`);
       return;
     }
-    if (tagName === "table") {
+    if (tagName === "table" && !isLayoutTable(el)) {
       push(el, tableText(el, ctx, depth));
       return;
     }
@@ -319,6 +327,18 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       visitBlock(el, tagName, depth);
       return;
     }
+    // Only reached inside a layout table (a data table reads its own cells) —
+    // a `<td>` elsewhere, as in `<math>`, is phrasing. Its structure costs no
+    // depth, or an email's nesting would spend the budget four levels per table.
+    if (TABLE_STRUCTURE.has(tagName) && isTableTag(el.parentElement)) {
+      const cell = tagName === "td" || tagName === "th";
+      // A cell is a column of the page, so it ends the run before it. It owns
+      // nothing, since cells aren't numbered — its text stays with the table.
+      if (cell) flush();
+      el.childNodes.forEach((child) => visit(child, depth));
+      if (cell) flush();
+      return;
+    }
     visitInline(el, tagName, depth);
   };
 
@@ -336,6 +356,48 @@ function inNestedList(el: Element, li: Element): boolean {
   return false;
 }
 
+/**
+ * Whether a table is page layout rather than data, and so is walked like a
+ * `<div>` instead of read as one paragraph of rows.
+ *
+ * Email newsletters (Substack's among them) lay the whole message out in nested
+ * tables; read as data, an article became a single paragraph wrapped in
+ * "Table: Table: …" (issue #1666). A data cell holds a value — at most one
+ * paragraph of it, as Markdown and word processors wrap cells — while a layout
+ * cell holds a document: headings or several paragraphs, directly or in the
+ * tables nested inside it. A header
+ * cell or a caption is something only data has, so either one keeps a table
+ * read as data whatever its cells hold.
+ */
+function isLayoutTable(table: Element): boolean {
+  let holdsDocument = false;
+  const paragraphs = new Map<Element, number>();
+  /** Each element with the cell it sits in, and whether that's a nested table's. */
+  const stack: { el: Element; cell: Element | null; nested: boolean }[] = [];
+  const pushChildren = (el: Element, cell: Element | null, nested: boolean) => {
+    for (const child of Array.from(el.children)) stack.push({ el: child, cell, nested });
+  };
+  pushChildren(table, null, false);
+
+  while (stack.length > 0) {
+    const { el, cell, nested } = stack.pop() as (typeof stack)[number];
+    const tagName = el.tagName.toLowerCase();
+    if (isNonProseTag(tagName)) continue;
+    // A nested table's header cells are its own; the document it holds is the
+    // outer table's too, since a wrapper around an email's article is layout.
+    if ((tagName === "th" || tagName === "caption") && !nested) return false;
+    if (/^h[1-6]$/.test(tagName)) holdsDocument = true;
+    if (tagName === "p" && cell) {
+      const count = (paragraphs.get(cell) ?? 0) + 1;
+      paragraphs.set(cell, count);
+      if (count > 1) holdsDocument = true;
+    }
+    if (tagName === "table") pushChildren(el, null, true);
+    else pushChildren(el, tagName === "td" || tagName === "th" ? el : cell, nested);
+  }
+  return holdsDocument;
+}
+
 /** The text of a subtree, as one string — the walk's output, joined. */
 function subtreeText(el: Element, ctx: WalkContext, depth: number): string {
   return collectRuns(el, ctx, depth + 1)
@@ -350,9 +412,14 @@ function subtreeText(el: Element, ctx: WalkContext, depth: number): string {
  */
 function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): string {
   const parts: string[] = [];
-  const stack: Node[] = [el];
+  /** Nodes to read, and the spaces that close a block once its children are. */
+  const stack: (Node | string)[] = [el];
   while (stack.length > 0) {
-    const node = stack.pop() as Node;
+    const node = stack.pop() as Node | string;
+    if (typeof node === "string") {
+      parts.push(node);
+      continue;
+    }
     if (consumed.has(node)) continue;
     if (node.nodeType === TEXT_NODE) {
       parts.push(node.textContent ?? "");
@@ -374,6 +441,11 @@ function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): stri
       parts.push(" ");
       continue;
     }
+    // Nor may two blocks' words run together.
+    if (isBlockTag(tagName) || TABLE_STRUCTURE.has(tagName)) {
+      parts.push(" ");
+      stack.push(" ");
+    }
     const children = child.childNodes;
     for (let i = children.length - 1; i >= 0; i--) {
       stack.push(children[i]);
@@ -383,8 +455,8 @@ function flatText(el: Element, voice: NarrationVoice, consumed: Set<Node>): stri
 }
 
 /**
- * A table reads as one paragraph: its caption, then its rows with the cells
- * joined by commas. A table with at most one thing to say is layout, not data —
+ * A data table reads as one paragraph: its caption, then its rows with the cells
+ * joined by commas. A table with at most one thing to say is a wrapper, not data —
  * email newsletters wrap every image in one (Substack's `image-wrapper`) — so it
  * reads without the "Table:" markers.
  *
@@ -467,7 +539,7 @@ function figureImage(el: Element, tagName: string, consumed: Set<Node>): Element
 
 /**
  * Blocks a figure cannot speak through, because they narrate their own subtree:
- * a table reads its cells, a code block its listing, a nested figure its own
+ * a data table reads its cells (and a layout one isn't worth reaching into), a code block its listing, a nested figure its own
  * image, and a `<figcaption>` is a caption in its own right. Reaching past one
  * would say its contents twice.
  */

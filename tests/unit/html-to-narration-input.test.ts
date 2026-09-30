@@ -610,6 +610,67 @@ describe("htmlToNarrationInput", () => {
       expect(narrated(result)).toEqual(["Table: A, B. C End table."]);
     });
 
+    it("walks an email's layout tables like divs (issue #1666)", () => {
+      // How newsletter emails lay out a post: nested tables whose cells hold
+      // the article's headings and paragraphs.
+      const html =
+        "<table><tr><td><table><tr><td>" +
+        '<img src="/avatar.png"> Author Name' +
+        "</td></tr></table>" +
+        "<h1>Title</h1><p>First paragraph.</p><p>Second paragraph.</p>" +
+        '<table><tr><td><img alt="A chart"></td></tr></table>' +
+        "</td><td>Sidebar</td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual([
+        "Image: image Author Name",
+        "Title",
+        "First paragraph.",
+        "Second paragraph.",
+        "Image: A chart",
+        "Sidebar",
+      ]);
+    });
+
+    it("reads a table as data when each cell holds at most one paragraph", () => {
+      // How Google Docs and Word export a table.
+      const html =
+        "<table><tr><td><p>Name</p></td><td><p>Age</p></td></tr>" +
+        "<tr><td><p>Bob</p></td><td><table><tr><td>3</td></tr></table></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Table: Name, Age. Bob, 3 End table."]);
+    });
+
+    it("spends one level of the depth budget per layout table", () => {
+      const nest = (levels: number) => {
+        let html = "<h1>T</h1><p>one</p><p>two</p>";
+        for (let i = 0; i < levels; i++) html = `<table><tr><td>${html}</td></tr></table>`;
+        return narrated(htmlToNarrationInput(html));
+      };
+
+      expect(nest(30)).toEqual(["T", "one", "two"]);
+      // Past the budget it is one paragraph, but the blocks' words stay apart.
+      expect(nest(70)).toEqual(["T one two"]);
+    });
+
+    // Skipped: data tables recurse without a depth guard (issue #1670).
+    it.skip("narrates data tables nested past the depth budget without overflowing", () => {
+      let html = "w";
+      for (let i = 0; i < 3000; i++) html = `<table><tr><th>h</th><td>${html}</td></tr></table>`;
+
+      expect(() => htmlToNarrationInput(html)).not.toThrow();
+    });
+
+    it("reads a table as data when it has header cells, whatever they hold", () => {
+      const html =
+        "<table><tr><th>Name</th><th>Notes</th></tr>" +
+        "<tr><td>A</td><td><p>One.</p><p>Two.</p></td></tr></table>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["Table: Name, Notes. A, One. Two. End table."]);
+    });
+
     it("keeps the space inside a cell's inline markup", () => {
       const html = "<table><tr><td><b>Name:</b><span> John</span></td></tr></table>";
       const result = htmlToNarrationInput(html);

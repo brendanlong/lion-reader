@@ -21,8 +21,9 @@
  * MathML tag, or a media element.
  *
  * A table's own structure (`tr`, `td`, `caption`, …) is absent on purpose: a
- * table narrates its whole subtree in one paragraph, so the walk never
- * descends into those and they can neither break a run nor own one.
+ * data table narrates its whole subtree in one paragraph, so they never own a
+ * run. (A layout table's cells do break runs — `./runs` handles that — but
+ * still own none, so the numbering doesn't depend on which kind a table is.)
  */
 const BLOCK_TAGS = new Set([
   "p",
