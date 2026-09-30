@@ -46,6 +46,7 @@ import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
+import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -80,12 +81,7 @@ fun EntryScreen(
     var hiddenSummaries by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var summarizing by remember { mutableStateOf(emptySet<String>()) }
 
-    LaunchedEffect(entryId) {
-        onShown(entryId)
-        account.reader.markOpened(entryId)
-        val shown = account.reader.entry(entryId).first() ?: return@LaunchedEffect
-        if (!shown.read) account.reader.setRead(listOf(entryId), true)
-    }
+    MarkReadOnArrival(account.reader, entryId, onShown)
 
     Scaffold(
         topBar = {
@@ -212,6 +208,24 @@ fun EntryScreen(
                 showSummary = pages[page] !in hiddenSummaries,
             )
         }
+    }
+}
+
+/**
+ * Marks the entry the pager settles on read, once per arrival. A restored screen (rotation, process
+ * death) is still on the same arrival, so an entry the user marked unread stays unread; swiping
+ * away and back is a new one.
+ */
+@Composable
+internal fun MarkReadOnArrival(reader: Reader, entryId: String, onShown: (String) -> Unit) {
+    var marked by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(entryId) {
+        onShown(entryId)
+        if (marked == entryId) return@LaunchedEffect
+        marked = entryId
+        reader.markOpened(entryId)
+        val shown = reader.entry(entryId).first() ?: return@LaunchedEffect
+        if (!shown.read) reader.setRead(listOf(entryId), true)
     }
 }
 

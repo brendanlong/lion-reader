@@ -44,6 +44,7 @@ class NavKeysTest {
 
         assertEquals(list.subList(500 - PAGE_REACH, 500 + PAGE_REACH + 1), key.listIds)
         assertEquals(list.take(PAGE_REACH + 1), EntryKey.openedFrom("id-0", list).listIds)
+        assertEquals(list.takeLast(PAGE_REACH + 1), EntryKey.openedFrom("id-999", list).listIds)
         assertEquals(listOf("gone"), EntryKey.openedFrom("gone", list).listIds)
     }
 }

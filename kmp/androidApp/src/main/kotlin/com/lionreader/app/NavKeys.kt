@@ -27,4 +27,4 @@ internal data class EntryKey(val id: String, val listIds: List<String>) : NavKey
 
 @Serializable internal data object SettingsKey : NavKey
 
-internal const val PAGE_REACH = 200
+internal const val PAGE_REACH = 100
