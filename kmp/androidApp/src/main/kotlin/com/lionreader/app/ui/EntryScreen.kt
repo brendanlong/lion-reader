@@ -20,8 +20,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -46,6 +48,8 @@ import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
+import com.lionreader.shared.data.EntryDetail
+import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -71,8 +75,11 @@ fun EntryScreen(
     val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
     val pager = rememberPagerState(initialPage = pages.indexOf(startId)) { pages.size }
     val entryId = pages[pager.settledPage]
-    val entry by
-        remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
+    // Each page reports its entry, so the top bar can follow the page a swipe
+    // is heading to (not the one it settles on) with that page's state
+    // already loaded.
+    val entries = remember { mutableStateMapOf<String, EntryDetail>() }
+    val entry = entries[pages[pager.targetPage]]
     val coroutines = rememberCoroutineScope()
     val tokens = remember { AppearanceTokens.load(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
@@ -80,12 +87,7 @@ fun EntryScreen(
     var hiddenSummaries by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var summarizing by remember { mutableStateOf(emptySet<String>()) }
 
-    LaunchedEffect(entryId) {
-        onShown(entryId)
-        account.reader.markOpened(entryId)
-        val shown = account.reader.entry(entryId).first() ?: return@LaunchedEffect
-        if (!shown.read) account.reader.setRead(listOf(entryId), true)
-    }
+    MarkReadOnArrival(account.reader, entryId, onShown)
 
     Scaffold(
         topBar = {
@@ -148,6 +150,10 @@ fun EntryScreen(
                                 else R.drawable.ic_circle
                             ),
                             contentDescription = if (current.read) "Mark unread" else "Mark read",
+                            tint = actionTint(active = !current.read),
+                            // The list's size: a full-size filled dot outweighs
+                            // the outline icons beside it.
+                            modifier = Modifier.size(16.dp),
                         )
                     }
                     IconButton(
@@ -163,9 +169,7 @@ fun EntryScreen(
                                 else R.drawable.ic_star_border
                             ),
                             contentDescription = if (current.starred) "Unstar" else "Star",
-                            tint =
-                                if (current.starred) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = actionTint(active = current.starred),
                         )
                     }
                     current.url?.let { url ->
@@ -210,8 +214,29 @@ fun EntryScreen(
                 pages[page],
                 tokens,
                 showSummary = pages[page] !in hiddenSummaries,
+                onEntry = { id, loaded ->
+                    if (loaded == null) entries.remove(id) else entries[id] = loaded
+                },
             )
         }
+    }
+}
+
+/**
+ * Marks the entry the pager settles on read, once per arrival. A restored screen (rotation, process
+ * death) is still on the same arrival, so an entry the user marked unread stays unread; swiping
+ * away and back is a new one.
+ */
+@Composable
+internal fun MarkReadOnArrival(reader: Reader, entryId: String, onShown: (String) -> Unit) {
+    var marked by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(entryId) {
+        onShown(entryId)
+        if (marked == entryId) return@LaunchedEffect
+        marked = entryId
+        reader.markOpened(entryId)
+        val shown = reader.entry(entryId).first() ?: return@LaunchedEffect
+        if (!shown.read) reader.setRead(listOf(entryId), true)
     }
 }
 
@@ -222,10 +247,15 @@ private fun EntryPage(
     entryId: String,
     tokens: AppearanceTokens,
     showSummary: Boolean,
+    onEntry: (String, EntryDetail?) -> Unit,
 ) {
     val context = LocalContext.current
     val entry by
         remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
+    // Null once it's gone (e.g. deleted), and when the page leaves: the top
+    // bar shows only what's on a page now.
+    LaunchedEffect(entry) { onEntry(entryId, entry) }
+    DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     var loadFailed by remember(entryId) { mutableStateOf(false) }
 
@@ -328,9 +358,7 @@ private fun SummaryButton(
                         shown -> "Hide summary"
                         else -> "Show summary"
                     },
-                tint =
-                    if (hasSummary && shown) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = actionTint(active = hasSummary && shown),
             )
         }
     }

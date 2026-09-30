@@ -4,6 +4,7 @@ plugins {
     // AGP 9 compiles Kotlin itself (built-in Kotlin), so no kotlin-android plugin.
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin { jvmToolchain(libs.versions.jdk.get().toInt()) }
