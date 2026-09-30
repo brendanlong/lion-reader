@@ -40,11 +40,13 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.AppGraph
 import com.lionreader.app.AppSettings
+import com.lionreader.app.NarrationEngine
 import com.lionreader.app.R
 import com.lionreader.app.ReaderFont
 import com.lionreader.app.TextSize
 import com.lionreader.app.ThemeChoice
 import com.lionreader.app.narration.VoiceOption
+import com.lionreader.shared.api.VoiceModels
 import kotlinx.coroutines.launch
 
 private val RETENTION_CHOICES = listOf(7, 14, 30, 90)
@@ -141,42 +143,86 @@ private fun NarrationSettings(
     settings: AppSettings,
     update: ((AppSettings) -> AppSettings) -> Unit,
 ) {
-    val voices by
+    val deviceVoices by
         produceState<List<VoiceOption>?>(null) {
-            value = runCatching { graph.narrator.voices() }.getOrDefault(emptyList())
+            value = runCatching { graph.systemTts.voices() }.getOrDefault(emptyList())
         }
-    var picking by remember { mutableStateOf(false) }
-    Section("Narration voice") {
-        val current = voices?.firstOrNull { it.name == settings.narrationVoice }
-        Box {
-            OutlinedButton(onClick = { picking = true }, enabled = !voices.isNullOrEmpty()) {
-                Text(
-                    when {
-                        voices == null -> "Loading voices…"
-                        voices.isNullOrEmpty() -> "No text-to-speech voices installed"
-                        else -> current?.label ?: "Device default"
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+    // Null while loading; empty when this account has none (no OpenRouter key)
+    // or the server can't be reached.
+    val account by graph.account.collectAsStateWithLifecycle()
+    val cloud by
+        produceState<VoiceModels?>(null, account) {
+            value =
+                runCatching { account?.connection?.api?.voiceModels() }.getOrNull()
+                    ?: VoiceModels(emptyList(), "")
+        }
+    Section("Narration voices") {
+        val engines =
+            if (
+                cloud?.models.isNullOrEmpty() && settings.narrationEngine != NarrationEngine.CLOUD
+            ) {
+                listOf(NarrationEngine.DEVICE)
+            } else {
+                NarrationEngine.entries
             }
-            DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
-                DropdownMenuItem(
-                    text = { Text("Device default") },
-                    onClick = {
-                        picking = false
-                        update { it.copy(narrationVoice = null) }
+        if (engines.size > 1) {
+            Choices(engines, settings.narrationEngine, { it.label }) { engine ->
+                update { it.copy(narrationEngine = engine) }
+            }
+        }
+        when (settings.narrationEngine) {
+            NarrationEngine.DEVICE -> {
+                val voices = deviceVoices
+                Picker(
+                    label =
+                        when {
+                            voices == null -> "Loading voices…"
+                            voices.isEmpty() -> "No text-to-speech voices installed"
+                            else ->
+                                voices.firstOrNull { it.name == settings.narrationVoice }?.label
+                                    ?: "Device default"
+                        },
+                    options = listOf(null) + voices.orEmpty(),
+                    optionLabel = { voice ->
+                        when {
+                            voice == null -> "Device default"
+                            voice.online -> "${voice.label} (online)"
+                            else -> voice.label
+                        }
                     },
-                )
-                voices.orEmpty().forEach { voice ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(if (voice.online) "${voice.label} (online)" else voice.label)
-                        },
-                        onClick = {
-                            picking = false
-                            update { it.copy(narrationVoice = voice.name) }
-                        },
+                ) { voice ->
+                    update { it.copy(narrationVoice = voice?.name) }
+                }
+            }
+            NarrationEngine.CLOUD -> {
+                val models = cloud?.models.orEmpty()
+                val model =
+                    models.firstOrNull { it.id == settings.cloudVoiceModel }
+                        ?: models.firstOrNull { it.id == cloud?.defaultModelId }
+                        ?: models.firstOrNull()
+                if (model == null) {
+                    Text(
+                        if (cloud == null) "Loading cloud voices…"
+                        else
+                            "Cloud voices need an OpenRouter key (set on the web) and a connection.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    if (models.size > 1) {
+                        Picker(model.displayName, models, { it.displayName }) { choice ->
+                            update { it.copy(cloudVoiceModel = choice.id, cloudVoice = null) }
+                        }
+                    }
+                    val voice =
+                        settings.cloudVoice?.takeIf { it in model.voices } ?: model.defaultVoice
+                    Picker(voice, model.voices, { it }) { choice ->
+                        update { it.copy(cloudVoiceModel = model.id, cloudVoice = choice) }
+                    }
+                    Text(
+                        "Cloud voices send the text being read to ${model.displayName} through OpenRouter.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -191,6 +237,40 @@ private fun NarrationSettings(
             checked = settings.narrationAutoScroll,
             onCheckedChange = { value -> update { it.copy(narrationAutoScroll = value) } },
         )
+    }
+}
+
+private val NarrationEngine.label: String
+    get() =
+        when (this) {
+            NarrationEngine.DEVICE -> "Device"
+            NarrationEngine.CLOUD -> "Cloud"
+        }
+
+/** A button showing [label] that opens a menu of [options]. */
+@Composable
+private fun <T> Picker(
+    label: String,
+    options: List<T>,
+    optionLabel: (T) -> String,
+    onPick: (T) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }, enabled = options.isNotEmpty()) {
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(optionLabel(option)) },
+                    onClick = {
+                        open = false
+                        onPick(option)
+                    },
+                )
+            }
+        }
     }
 }
 

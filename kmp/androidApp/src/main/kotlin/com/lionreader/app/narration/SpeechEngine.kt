@@ -1,0 +1,36 @@
+package com.lionreader.app.narration
+
+import java.io.File
+
+/**
+ * A source of narration audio. The narrator chunks the article to the engine's size, keeps about
+ * [lookaheadChars] of it synthesized ahead of playback with up to [parallelism] syntheses at once,
+ * and plays the files in order; playback, highlighting and seeking don't depend on the engine.
+ */
+interface SpeechEngine {
+    val maxChunkChars: Int
+    /** Speech runs about 15 characters a second, so 900 is about a minute ahead. */
+    val lookaheadChars: Int
+    val parallelism: Int
+
+    /**
+     * The audio for [text], as a file the player can play: written into [dir] (the narrator deletes
+     * it once played) or from the engine's own cache (which it leaves alone). Throws
+     * [SpeechUnavailable] when narration can't go on with this engine; any other failure skips just
+     * this chunk.
+     */
+    suspend fun synthesize(text: String, dir: File, name: String): File
+}
+
+/** The engine can't narrate right now (offline, signed out, no key): stop, and say why. */
+class SpeechUnavailable(message: String) : Exception(message)
+
+/** The device's text-to-speech engine, with the voice named [voice] (null: the default). */
+class DeviceVoices(private val tts: SystemTts, private val voice: String?) : SpeechEngine {
+    override val maxChunkChars = 400
+    override val lookaheadChars = 1200
+    override val parallelism = 1
+
+    override suspend fun synthesize(text: String, dir: File, name: String): File =
+        File(dir, "$name.wav").also { tts.synthesize(text, voice, it) }
+}

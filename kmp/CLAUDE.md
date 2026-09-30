@@ -72,12 +72,14 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **Narration** runs the web's own code in the reader: `narration.js` is
   bundled from `src/lib/narration/app-reader.ts` (`pnpm app:narration`; a unit
   test fails when stale), so the app numbers, speaks and highlights an article
-  exactly as the web does, offline included. `Narrator` synthesizes it a few
-  chunks ahead with the device's text-to-speech engine into files and plays
-  them through one ExoPlayer, which `NarrationService` puts in a media session
-  (notification, lock screen, headset buttons, background playback). Engines
-  are sources of audio files; playback, highlighting and seeking don't change
-  per engine.
+  exactly as the web does, offline included. `Narrator` has a `SpeechEngine`
+  (the device's text-to-speech, or cloud voices through the server) synthesize
+  it a little ahead into files and plays them through one ExoPlayer, which
+  `NarrationService` puts in a media session (notification, lock screen,
+  headset buttons, background playback). Engines are only sources of audio
+  files, each with its chunk size, lookahead and parallelism; playback,
+  highlighting and seeking don't change per engine. Cloud audio is cached on
+  disk by model, voice and text, so listening again is free.
 - **Share target** (`share/`): a shared link is saved by a WorkManager job
   (`SaveWorker`), not the dialog, so it survives the dialog closing and waits
   for a network however long the device is offline; it gives up only when the
