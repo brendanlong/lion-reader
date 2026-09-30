@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -257,21 +258,10 @@ private fun EntryPage(
     LaunchedEffect(entry) { onEntry(entryId, entry) }
     DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    var loadFailed by remember(entryId) { mutableStateOf(false) }
-
-    LaunchedEffect(entryId, entry?.content == null) {
-        loadFailed = false
-        if (entry != null && entry?.content == null) {
-            loadFailed =
-                try {
-                    !withContext(Dispatchers.IO) { account.sync.ensureContent(entryId) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    true
-                }
+    val loadFailed =
+        rememberBodyDownload(entryId, entry) {
+            withContext(Dispatchers.IO) { account.sync.ensureContent(entryId) }
         }
-    }
 
     val current = entry ?: return
     val byline =
@@ -362,6 +352,36 @@ private fun SummaryButton(
             )
         }
     }
+}
+
+/**
+ * Downloads the entry's body once it's loaded without one; whether that failed. Keyed on "loaded
+ * and missing", not just "missing": the entry is null until its query answers, and an effect keyed
+ * only on a missing body wouldn't run again when it arrives, so an entry whose query was slow (say,
+ * behind a sync) never got its body.
+ */
+@Composable
+internal fun rememberBodyDownload(
+    entryId: String,
+    entry: EntryDetail?,
+    download: suspend () -> Boolean,
+): Boolean {
+    val missing = entry != null && entry.content == null
+    var failed by remember(entryId) { mutableStateOf(false) }
+    val currentDownload by rememberUpdatedState(download)
+    LaunchedEffect(entryId, missing) {
+        failed = false
+        if (!missing) return@LaunchedEffect
+        failed =
+            try {
+                !currentDownload()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                true
+            }
+    }
+    return failed
 }
 
 private fun Color.css(): String = "#%06X".format(toArgb() and 0xFFFFFF)
