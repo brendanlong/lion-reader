@@ -26,10 +26,12 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   `AppGraph` and so one `AppAuth` — a new one is made only when a signed-out
   user picks another server) and the new pair is committed before use. Only
   400/401 from the token endpoint sign the user out.
-- **The local store belongs to one sign-in.** Completing a sign-in and signing
-  out both clear it, unsent changes included: a new sign-in may be another
-  account or server, and the app has no account id to tell. (An involuntary
-  sign-out — a dead refresh token — leaves the data until the next sign-in.)
+- **One database per account.** `AppGraph` holds the server connection (auth,
+  API) and the signed-in account's `AccountSession` (database, reader, sync),
+  whose file is named for the server and the user id from `GET /auth/me`.
+  Signing in to the same account keeps its data and unsent changes (an
+  involuntary sign-out doesn't touch them); another account gets a fresh file
+  and the previous one is deleted; signing out deletes it.
 - **Local state vs. unsent changes.** `entry.read`/`starred` hold the last
   server state; the user's changes live in `outbox_state` (one row per entry
   and field, device timestamp) and win on display through `entry_view`. Unread
@@ -39,22 +41,28 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   overwrite counts without double-counting. A flush deletes an outbox row only if it
   hasn't changed since it was sent. Mark-all-read is its own outbox row whose
   `before` is a server `fetchedAt` the device had seen.
-- **Sync.** The first download takes cursors, then saves subscriptions,
-  counts and the entry lists (newest first) page by page, so the UI fills in
-  while older entries arrive; its start cursors are kept until it finishes, so
-  an interrupted one resumes. After that, `sync.changes` deltas: each page's
-  data and next cursors commit in one transaction, and anything a page needs
-  fetched (starred entries not on the device, a resubscribed feed's older
-  entries) is fetched before that commit so a failure retries the page.
-  `deletions` drop entries; `resyncRequired` re-bootstraps, keeping the
-  outbox. Read/starred state comes only from deltas and flush responses. A
-  flush is followed by a pull, since mark-all-read's response carries no
-  counts.
-- **Article bodies** download after the lists, newest first, outside the sync
-  lock (a separate lock serializes them), so pull-to-refresh and flushes
-  never wait for them; they only fill in bodies of entries already on the
-  device. Pull-to-refresh syncs the lists and leaves bodies to a background
-  job.
+- **Sync: fetch, then commit.** `SyncEngine` does the network work and hands
+  complete results to `SyncWriter`, whose methods are one transaction each,
+  don't suspend and can't reach the API, so a cursor can't be committed ahead
+  of data a later request was meant to bring. The first download saves
+  subscriptions, counts and the entry lists (newest first) page by page, and
+  resumes from its start cursors if interrupted; then `sync.changes` deltas,
+  each page committing with its next cursors. Entries an event mentions but the
+  device lacks are fetched whole — and, past the first page of a catch-up, so
+  are ones it has — because the server classifies changes against each page's
+  own cursor and can report a new entry as updated or drop an edit (#1663).
+  `deletions` adjust the unread counts they leave behind and are applied before
+  the page's events (whose absolute counts already include them).
+  `resyncRequired` re-bootstraps, keeping the outbox. Read/starred state comes
+  only from deltas, fetched entries and flush responses. A flush is followed by
+  a pull, since mark-all-read's response carries no counts.
+- **Article bodies** live in `entry_body`, written only by `storeBodies`, and
+  download after the lists, newest first, outside the sync lock (a separate
+  lock serializes them), so refreshes and flushes never wait for them. A body
+  is stored only if its entry still exists at the `body_version` it had when
+  the download started (an edit bumps it), so a download racing a deletion or
+  an edit can't leave a missing or stale body. Pull-to-refresh syncs the lists
+  and leaves bodies to a background job.
 - **Retention** (`RetentionPolicy`): entries outside the window go, at most N
   read entries stay, bodies are capped by size (oldest read first); starred,
   saved and entries with unsent changes are always kept.
@@ -106,7 +114,13 @@ Run from `kmp/`:
   host), `:androidApp` Robolectric tests, Android lint.
 - `./gradlew assembleDebug` — debug APK (`androidApp/build/outputs/apk/debug/`).
 - `./gradlew spotlessApply` — format.
-- `./gradlew :shared:jvmTest` — the fast loop for shared logic.
+- `./gradlew :shared:jvmTest` — the fast loop for shared logic. It includes
+  `SyncModelTest`: random histories (local and remote changes, flaky and lost
+  requests, overlapping syncs, restarts) against `ModelServer`, a model of the
+  server's sync semantics, checked for convergence, no lost changes, correct
+  counts and current bodies. `SYNC_MODEL_SEEDS=20000` runs more;
+  `SYNC_MODEL_SEED=N` replays one failure and prints its requests. When the
+  server's sync behavior changes, change `ModelServer` to match.
 - Real-server test: with a server running on the same database,
   `LION_READER_TEST_FIXTURE="$(NEXT_PUBLIC_APP_URL=<server url> pnpm -s app:test-fixture)" ./gradlew :shared:jvmTest`
   (repo root for the fixture; CI's `app-real-server-tests` job does exactly
@@ -159,6 +173,8 @@ adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -
   `lint.xml` holds the global suppressions (the "newer version available"
   checks, which would fail an unchanged tree whenever upstream ships); an
   in-code `@SuppressLint` needs a comment saying why.
+- The database schema has no migrations yet (nothing has shipped). Once a
+  build is released, schema changes need SQLDelight migrations (`.sqm`).
 - SQL targets SQLite 3.18 (minSdk 26's), SQLDelight's default dialect: no
   UPSERT (`ON CONFLICT DO UPDATE`) — use insert-or-ignore + update, not
   `INSERT OR REPLACE`, which deletes the row (and its downloaded body).
