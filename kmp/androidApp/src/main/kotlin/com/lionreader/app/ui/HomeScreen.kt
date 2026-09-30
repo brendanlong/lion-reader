@@ -491,9 +491,7 @@ private fun EntryRow(
                         if (item.starred) R.drawable.ic_star else R.drawable.ic_star_border
                     ),
                     contentDescription = if (item.starred) "Unstar" else "Star",
-                    tint =
-                        if (item.starred) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = actionTint(active = item.starred),
                 )
             }
             IconButton(onClick = onToggleRead, modifier = Modifier.size(44.dp)) {
@@ -502,9 +500,7 @@ private fun EntryRow(
                         if (item.read) R.drawable.ic_circle_outline else R.drawable.ic_circle
                     ),
                     contentDescription = if (item.read) "Mark unread" else "Mark read",
-                    tint =
-                        if (item.read) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.primary,
+                    tint = actionTint(active = !item.read),
                     modifier = Modifier.size(16.dp),
                 )
             }
