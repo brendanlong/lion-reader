@@ -28,6 +28,7 @@ import {
   getMaxWords,
   hashPrompt,
   DEFAULT_SUMMARIZATION_PROMPT,
+  sanitizeSummaryHtml,
 } from "@/server/services/summarization";
 import {
   getAvailableProviders,
@@ -38,7 +39,6 @@ import { SUGGESTED_SUMMARIZATION_MODELS } from "@/lib/summarization/constants";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getUserApiKeys } from "@/server/auth/session";
 import { logger } from "@/lib/logger";
-import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
 // ============================================================================
@@ -174,7 +174,7 @@ export const summarizationRouter = createTRPCRouter({
         // stored summary on the next read, with no version column or
         // migration — unlike large entry bodies, summaries are small enough
         // that re-sanitizing on each read is cheaper than tracking staleness.
-        summary: sanitizeEntryHtml(record.summaryText) ?? "",
+        summary: record.summaryText ? sanitizeSummaryHtml(record.summaryText) : "",
         cached: true,
         modelId: record.modelId || "unknown",
         generatedAt: record.generatedAt,
