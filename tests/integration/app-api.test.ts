@@ -9,7 +9,7 @@
  * saving shared links, cloud voices).
  */
 
-import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll, vi } from "vitest";
 import Redis from "ioredis";
 import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
@@ -27,8 +27,12 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
-import { createSession } from "../../src/server/auth/session";
-import { createTokens, recordConsent } from "../../src/server/oauth/service";
+import { createSession, revokeSession } from "../../src/server/auth/session";
+import {
+  createTokens,
+  recordConsent,
+  revokeUserClientTokens,
+} from "../../src/server/oauth/service";
 import {
   APP_CLIENT_ID,
   getAppRedirectUri,
@@ -180,6 +184,79 @@ describe("app token authentication", () => {
     });
     const res = await rest(accessToken, "GET", "/entries");
     expect(res.status).toBe(401);
+  });
+});
+
+describe("SSE credential re-check", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Resolves once the stream ends; rejects if it's still open after a few
+  // heartbeats' worth of fake time.
+  async function streamEndsAfterHeartbeats(
+    body: ReadableStream<Uint8Array>,
+    stillOpen: () => Promise<void>
+  ): Promise<boolean> {
+    const reader = body.getReader();
+    // The initial heartbeat.
+    expect((await reader.read()).done).toBe(false);
+    await stillOpen();
+    for (let i = 0; i < 3; i++) {
+      await vi.advanceTimersByTimeAsync(30_000);
+    }
+    for (;;) {
+      const read = await Promise.race([
+        reader.read(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_000)),
+      ]);
+      if (read === null) {
+        await reader.cancel();
+        return false;
+      }
+      if (read.done) return true;
+    }
+  }
+
+  it("closes a session's stream once the session is revoked", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const userId = await createUser();
+    const { sessionId, token } = await createSession(db, { userId });
+    const res = await eventsGet(
+      new Request(`${API}/events`, { headers: { cookie: `session=${token}` } })
+    );
+    expect(res.status).toBe(200);
+    const ended = await streamEndsAfterHeartbeats(res.body!, async () => {
+      await revokeSession(sessionId);
+    });
+    expect(ended).toBe(true);
+  });
+
+  it("closes an app token's stream once the token is revoked", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const userId = await createUser();
+    const res = await eventsGet(
+      new Request(`${API}/events`, {
+        headers: { authorization: `Bearer ${await appToken(userId)}` },
+      })
+    );
+    expect(res.status).toBe(200);
+    const ended = await streamEndsAfterHeartbeats(res.body!, () =>
+      revokeUserClientTokens(userId, APP_CLIENT_ID)
+    );
+    expect(ended).toBe(true);
+  });
+
+  it("keeps the stream open while the credential is valid", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const userId = await createUser();
+    const { token } = await createSession(db, { userId });
+    const res = await eventsGet(
+      new Request(`${API}/events`, { headers: { cookie: `session=${token}` } })
+    );
+    expect(res.status).toBe(200);
+    const ended = await streamEndsAfterHeartbeats(res.body!, async () => {});
+    expect(ended).toBe(false);
   });
 });
 
