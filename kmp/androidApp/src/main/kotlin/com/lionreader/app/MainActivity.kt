@@ -16,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
@@ -39,13 +39,6 @@ import com.lionreader.app.ui.isDark
 import com.lionreader.shared.auth.AuthException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private data object HomeKey
-
-/** An article opened from a list, and that list's order at the time (for paging). */
-private data class EntryKey(val id: String, val listIds: List<String>)
-
-private data object SettingsKey
 
 class MainActivity : ComponentActivity() {
     private var signInError by mutableStateOf<String?>(null)
@@ -137,7 +130,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun AccountApp(account: AccountSession) {
-        val backStack = remember { mutableStateListOf<Any>(HomeKey) }
+        val backStack = rememberNavBackStack(HomeKey)
         val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
         val transitions = remember(settings.theme) { ScreenTransitions(settings.theme) }
@@ -154,7 +147,7 @@ class MainActivity : ComponentActivity() {
                             model = home,
                             onOpen = { id ->
                                 val listIds = home.items.value.orEmpty().map { it.id }
-                                backStack.add(EntryKey(id, listIds))
+                                backStack.add(EntryKey.openedFrom(id, listIds))
                             },
                             onSettings = { backStack.add(SettingsKey) },
                         )
