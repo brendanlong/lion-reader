@@ -33,17 +33,22 @@ onlyBuiltDependencies:
 overrides:
   trpc-to-openapi>h3: ^1.15.9
   serialize-javascript: ^7.0.5
-  "@modelcontextprotocol/sdk>hono": ^4.12.21
-  express-rate-limit>ip-address: ^10.3.1
+  "@modelcontextprotocol/sdk>hono": ^4.13.5
+  "@modelcontextprotocol/sdk>@hono/node-server": ^1.19.15
+  express-rate-limit>ip-address: ^10.7.1
   "@discordjs/ws>ws": ^8.20.1
-  qs: ^6.15.2
+  qs: ^6.16.0
+  express>body-parser: ^2.3.0
   postcss: ^8.5.10
   fast-xml-parser: ^5.8.0
   js-yaml: ^4.3.1
-  fast-uri: ^3.1.5
+  fast-uri: ^3.1.8
+  browserslist: ^4.28.7
+  "@babel/core": ^7.29.6
+  "@humanfs/node": ^0.16.8
   # brace-expansion is pulled in at three majors at once, and the advisory
   # patches each separately, so it needs one floor per major rather than a
   # single range that would drag 1.x/2.x consumers onto 5.x.
-  brace-expansion@1: ^1.1.18
+  brace-expansion@1: ^1.1.21
   brace-expansion@2: ^2.1.4
   brace-expansion@5: ^5.0.9
