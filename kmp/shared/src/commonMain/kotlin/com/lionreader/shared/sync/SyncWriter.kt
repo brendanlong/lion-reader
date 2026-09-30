@@ -33,9 +33,9 @@ internal class PulledPage(
  * suspends: whatever a commit needs is fetched before it by [SyncEngine], so a cursor can never be
  * committed ahead of data a later request was supposed to bring.
  *
- * Table ownership: `entry` state and metadata, subscriptions, tags, counts and cursors are written
- * here under the sync lock; bodies only by [storeBodies]; the outbox by `Reader` (and cleared here
- * once sent).
+ * Table ownership: `entry` state and metadata, subscriptions, tags and cursors are written here
+ * under the sync lock; bodies only by [storeBodies]; the outbox by `Reader` (and cleared here once
+ * sent).
  */
 internal class SyncWriter(private val db: LionReaderDatabase) {
     private val store = LocalStore(db)
@@ -59,12 +59,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         items.forEach(store::upsertSubscription)
     }
 
-    fun saveTagsAndCounts(tags: TagList, all: Int, starred: Int, saved: Int) = db.transaction {
-        tags.items.forEach(store::upsertTag)
-        store.setListCount("all", all)
-        store.setListCount("starred", starred)
-        store.setListCount("saved", saved)
-    }
+    fun saveTags(tags: TagList) = db.transaction { tags.items.forEach(store::upsertTag) }
 
     fun saveEntries(items: List<EntryListItem>) = db.transaction {
         items.forEach(store::upsertEntry)
@@ -81,10 +76,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     // ---- Pull ------------------------------------------------------------
 
     fun commitPage(page: PulledPage, now: Long) = db.transaction {
-        // Deletions first: their count adjustments are then overwritten by the
-        // events' absolute counts (which already reflect them) wherever those
-        // cover a list, and kept where they don't.
-        page.deletedIds.forEach(store::removeEntry)
+        page.deletedIds.forEach(store::deleteEntry)
         page.events.forEach(::apply)
         for (entry in page.fetchedEntries) {
             store.upsertEntry(
@@ -138,7 +130,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         it.starred ?: false,
                     )
                 }
-                event.counts?.let(store::applyCounts)
             }
             is SyncEvent.EntryUpdated ->
                 with(event.metadata) {
@@ -184,7 +175,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                             event.starred,
                         )
                 }
-                store.applyCounts(event.counts)
             }
             is SyncEvent.SubscriptionCreated ->
                 with(event) {
@@ -195,11 +185,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         subscription.customTitle ?: feed.title,
                         feed.url,
                         feed.siteUrl,
-                        subscription.unreadCount,
                         false,
                         subscription.tags,
                     )
-                    counts?.let(store::applyCounts)
                 }
             is SyncEvent.SubscriptionUpdated -> {
                 db.subscriptionQueries.updateSubscriptionTitle(
@@ -210,7 +198,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             }
             is SyncEvent.SubscriptionDeleted -> {
                 store.deleteSubscription(event.subscriptionId)
-                event.counts?.let(store::applyCounts)
             }
             is SyncEvent.TagCreated -> store.upsertTag(event.tag)
             is SyncEvent.TagUpdated -> store.upsertTag(event.tag)
@@ -219,8 +206,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     }
 
     // ---- Outbox ----------------------------------------------------------
-
-    fun removeMarkAll(id: Long) = db.outboxQueries.deleteMarkAll(id)
 
     /**
      * Records a sent batch: the server's answer becomes the local server state, and each change is
@@ -235,7 +220,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 if (state == null) {
                     // No longer visible to the user (deleted, or unsubscribed
                     // and unstarred): drop the local copy with the change.
-                    store.removeEntry(op.entry_id)
+                    store.deleteEntry(op.entry_id)
                 } else {
                     db.entryQueries.updateServerState(
                         if (state.read) 1 else 0,
@@ -244,7 +229,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                     )
                 }
             }
-            response.counts?.let(store::applyCounts)
         }
         batch.forEach {
             db.outboxQueries.deleteStateIfUnchanged(it.entry_id, it.field_, it.changed_at)

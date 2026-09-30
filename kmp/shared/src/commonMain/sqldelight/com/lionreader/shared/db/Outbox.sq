@@ -9,19 +9,6 @@ CREATE TABLE outbox_state (
   PRIMARY KEY (entry_id, field)
 );
 
--- Unsent "mark all read" requests. `before` is the newest server fetchedAt the
--- device had seen (server time), so the request can't catch entries that
--- arrived after the tap.
-CREATE TABLE outbox_mark_all (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  subscription_id TEXT,
-  tag_id TEXT,
-  starred_only INTEGER NOT NULL,
-  saved_only INTEGER NOT NULL,
-  before INTEGER NOT NULL,
-  changed_at INTEGER NOT NULL
-);
-
 putState:
 INSERT OR REPLACE INTO outbox_state(entry_id, field, value, changed_at) VALUES (?, ?, ?, ?);
 
@@ -38,28 +25,6 @@ DELETE FROM outbox_state WHERE entry_id = ?;
 countStates:
 SELECT count(*) FROM outbox_state;
 
-addMarkAll:
-INSERT INTO outbox_mark_all(subscription_id, tag_id, starred_only, saved_only, before, changed_at)
-VALUES (?, ?, ?, ?, ?, ?);
-
-selectMarkAll:
-SELECT * FROM outbox_mark_all ORDER BY id;
-
-deleteMarkAll:
-DELETE FROM outbox_mark_all WHERE id = ?;
-
-countMarkAll:
-SELECT count(*) FROM outbox_mark_all;
-
--- Server vs. effective state of every entry with an unsent change, from which
--- the unread-count corrections are computed (see Reader.navigation).
-pendingEntryStates:
-SELECT subscription_id, type, read, starred, effective_read, effective_starred
-FROM entry_view
-WHERE id IN (SELECT entry_id FROM outbox_state);
-
 deleteAllStates:
 DELETE FROM outbox_state;
 
-deleteAllMarkAll:
-DELETE FROM outbox_mark_all;

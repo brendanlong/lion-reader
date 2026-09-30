@@ -11,9 +11,7 @@ import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
-import com.lionreader.shared.api.IdUnreadCount
 import com.lionreader.shared.api.LionReaderApi
-import com.lionreader.shared.api.MarkAllReadRequest
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
@@ -23,8 +21,6 @@ import com.lionreader.shared.api.SyncChanges
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagList
-import com.lionreader.shared.api.UnreadCount
-import com.lionreader.shared.api.UnreadCounts
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
@@ -46,12 +42,12 @@ import kotlinx.serialization.json.jsonObject
  * An in-memory model of the server's sync-relevant behavior, faithful where the app depends on it
  * (see src/server/services/entries.ts and src/server/trpc/routers/sync.ts):
  * - read/star writes are last-write-wins on a per-field change time, rebased by the client's clock
- *   offset and capped at now, and respond with the final state of every entry still visible (counts
- *   only when a value flips);
- * - mark-all-read flips unread entries fetched at or before `before` whose read change time isn't
- *   newer, and answers without counts;
- * - `sync.changes` pages entries changed after a cursor in change order (new/updated/state events
- *   with absolute counts) and reports deletions separately.
+ *   offset and capped at now, and respond with the final state of every entry still visible;
+ * - `sync.changes` pages entries changed after a cursor in change order (new/updated/state events),
+ *   classifying each against the page's own cursor like the real endpoint (#1663), and reports
+ *   deletions separately.
+ *
+ * Counts aren't modeled on the wire: the app counts its own entries.
  *
  * Cursors are opaque to the app, so they're plain change sequence numbers. Faults: a request can
  * fail before it's applied, or (for writes) be applied and then fail — a lost response.
@@ -169,14 +165,22 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         return true
     }
 
+    /** Unread counts over every visible entry, for the tests' invariant check. */
+    data class Counts(
+        val all: Int,
+        val starred: Int,
+        val saved: Int,
+        val bySubscription: Map<String, Int>,
+    )
+
     fun counts() =
-        UnreadCounts(
-            all = UnreadCount(visible.count { !it.read }),
-            starred = UnreadCount(visible.count { !it.read && it.starred }),
-            saved = UnreadCount(visible.count { !it.read && it.type == FeedType.SAVED }),
-            subscriptions =
-                subscriptions.map { sub ->
-                    IdUnreadCount(sub, visible.count { !it.read && it.subscriptionId == sub })
+        Counts(
+            all = visible.count { !it.read },
+            starred = visible.count { !it.read && it.starred },
+            saved = visible.count { !it.read && it.type == FeedType.SAVED },
+            bySubscription =
+                subscriptions.associateWith { sub ->
+                    visible.count { !it.read && it.subscriptionId == sub }
                 },
         )
 
@@ -204,21 +208,11 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                     sub,
                                     FeedType.WEB,
                                     title = sub,
-                                    unreadCount =
-                                        visible.count { !it.read && it.subscriptionId == sub },
                                 )
                             }
                         ),
                     )
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))
-                "/entries/count" -> {
-                    val unread =
-                        visible
-                            .filter { !it.read }
-                            .filter { params["starredOnly"] != "true" || it.starred }
-                            .filter { params["type"] != "saved" || it.type == FeedType.SAVED }
-                    encode(UnreadCount.serializer(), UnreadCount(unread.size))
-                }
                 "/entries" ->
                     list(
                         params["starredOnly"] == "true",
@@ -244,7 +238,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                     val body = body(request, SetStarredRequest.serializer())
                     stateWrite("starred", body.entries, body.starred, body.clientSentAt)
                 }
-                "/entries/mark-all-read" -> markAll(body(request, MarkAllReadRequest.serializer()))
                 else -> error("unexpected request $path")
             }
         // A write that was applied but whose answer never arrives.
@@ -275,7 +268,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                             "feed",
                             e.type,
                             e.eventEntry(),
-                            counts(),
                         )
                     )
                 } else {
@@ -293,7 +285,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.id,
                                 e.read,
                                 e.starred,
-                                counts(),
                                 e.subscriptionId,
                                 "feed",
                                 e.type,
@@ -352,13 +343,12 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     ): String {
         val now = clock()
         val offset = now - Instant.parse(clientSentAt).toEpochMilliseconds()
-        var flipped = false
         for (change in changes) {
             val entry = visible.find { it.id == change.id } ?: continue
             val stamped = change.changedAt?.let { Instant.parse(it).toEpochMilliseconds() } ?: now
             val changedAt = minOf(stamped + offset, now)
             clientWrites += ClientWrite(entry.id, field, value, changedAt)
-            flipped = write(entry, field, value, changedAt) || flipped
+            write(entry, field, value, changedAt)
         }
         val states =
             changes
@@ -366,34 +356,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .map { EntryState(it.id, it.subscriptionId, it.read, it.starred) }
         return encode(
             BulkStateResponse.serializer(),
-            BulkStateResponse(states, if (flipped) counts() else null),
+            BulkStateResponse(states),
         )
-    }
-
-    private fun markAll(request: MarkAllReadRequest): String {
-        val now = clock()
-        val offset = now - Instant.parse(request.clientSentAt).toEpochMilliseconds()
-        val changedAt = minOf(Instant.parse(request.changedAt).toEpochMilliseconds() + offset, now)
-        val before =
-            request.before?.let { Instant.parse(it).toEpochMilliseconds() } ?: Long.MAX_VALUE
-        var count = 0
-        for (entry in visible) {
-            val inScope =
-                (request.subscriptionId == null ||
-                    entry.subscriptionId == request.subscriptionId) &&
-                    (request.starredOnly != true || entry.starred) &&
-                    (request.type != FeedType.SAVED || entry.type == FeedType.SAVED)
-            // `before` compares fetch time, which is publish time here.
-            if (
-                inScope &&
-                    !entry.read &&
-                    entry.published <= before &&
-                    write(entry, "read", true, changedAt)
-            ) {
-                count++
-            }
-        }
-        return """{"count":$count}"""
     }
 
     private fun Entry.time(millis: Long) = Instant.fromEpochMilliseconds(millis).toString()
@@ -443,6 +407,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     private val json = headersOf(HttpHeaders.ContentType, "application/json")
 
     private companion object {
-        val WRITES = setOf("/entries/mark-read", "/entries/starred", "/entries/mark-all-read")
+        val WRITES = setOf("/entries/mark-read", "/entries/starred")
     }
 }

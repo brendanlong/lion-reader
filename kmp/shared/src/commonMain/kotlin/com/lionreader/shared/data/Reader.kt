@@ -2,6 +2,7 @@ package com.lionreader.shared.data
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlin.coroutines.CoroutineContext
@@ -137,58 +138,39 @@ class Reader(
         }
 
     /** Unread counts are the server's, corrected for changes not yet sent. */
+    /**
+     * Lists and their unread counts. Counted over the entries on the device, unsent changes
+     * included: the app shows what it has synced, and unread entries outside the offline window
+     * (which the server would count) are never shown, so counting them would be confusing.
+     */
     fun navigation(): Flow<Navigation> {
         val subs = db.subscriptionQueries
+        val entries = db.entryQueries
         return combine(
             subs.selectSubscriptions().asFlow().mapToList(context),
             subs.selectTags().asFlow().mapToList(context),
             subs.selectSubscriptionTags().asFlow().mapToList(context),
-            subs.selectListCounts().asFlow().mapToList(context),
-            db.outboxQueries.pendingEntryStates().asFlow().mapToList(context),
-        ) { subscriptions, tags, links, listCounts, pending ->
+            entries.unreadTotals().asFlow().mapToOne(context),
+            combine(
+                entries.unreadBySubscription().asFlow().mapToList(context),
+                entries.unreadByTag().asFlow().mapToList(context),
+                ::Pair,
+            ),
+        ) { subscriptions, tags, links, totals, (bySubscription, byTag) ->
             val tagsBySub = links.groupBy({ it.subscription_id }, { it.tag_id })
-            val lists = listCounts.associate { it.list to it.unread.toInt() }.toMutableMap()
-            val subDelta = mutableMapOf<String, Int>()
-            val tagDelta = mutableMapOf<String, Int>()
-            // Each unsent change moves an entry's contribution from its
-            // server state (which the server's counts reflect) to its
-            // effective state.
-            for (entry in pending) {
-                val unreadBefore = entry.read == 0L
-                val unreadAfter = entry.effective_read == 0L
-                val delta = unreadAfter.toInt() - unreadBefore.toInt()
-                val starredDelta =
-                    (entry.effective_starred == 1L && unreadAfter).toInt() -
-                        (entry.starred == 1L && unreadBefore).toInt()
-                if (starredDelta != 0) lists.merge("starred", starredDelta, Int::plus)
-                if (delta == 0) continue
-                lists.merge("all", delta, Int::plus)
-                if (entry.type == "saved") lists.merge("saved", delta, Int::plus)
-                entry.subscription_id?.let { sub ->
-                    subDelta.merge(sub, delta, Int::plus)
-                    tagsBySub[sub].orEmpty().forEach { tagDelta.merge(it, delta, Int::plus) }
-                }
-            }
+            val subUnread = bySubscription.associate { it.subscription_id to it.unread.toInt() }
+            val tagUnread = byTag.associate { it.tag_id to it.unread.toInt() }
             Navigation(
-                allUnread = lists["all"].nonNegative(),
-                starredUnread = lists["starred"].nonNegative(),
-                savedUnread = lists["saved"].nonNegative(),
-                tags =
-                    tags.map {
-                        NavTag(
-                            it.id,
-                            it.name,
-                            it.color,
-                            (it.unread_count.toInt() + (tagDelta[it.id] ?: 0)).coerceAtLeast(0),
-                        )
-                    },
+                allUnread = totals.all_unread.toInt(),
+                starredUnread = totals.starred_unread.toInt(),
+                savedUnread = totals.saved_unread.toInt(),
+                tags = tags.map { NavTag(it.id, it.name, it.color, tagUnread[it.id] ?: 0) },
                 subscriptions =
                     subscriptions.map {
                         NavSubscription(
                             id = it.id,
                             title = it.title ?: it.url ?: "Untitled",
-                            unread =
-                                (it.unread_count.toInt() + (subDelta[it.id] ?: 0)).coerceAtLeast(0),
+                            unread = subUnread[it.id] ?: 0,
                             tagIds = tagsBySub[it.id].orEmpty(),
                         )
                     },
@@ -214,40 +196,27 @@ class Reader(
     suspend fun markOpened(id: String) =
         withContext(context) { db.entryQueries.markOpened(now(), id) }
 
+    /** How many unread entries [scope] has on the device (what mark-all-read would mark). */
+    suspend fun unreadCount(scope: ListScope): Int = withContext(context) { unreadIds(scope).size }
+
     /**
-     * Marks everything in [scope] read: locally for the entries on the device, and on the server
-     * (when sent) for everything up to the newest entry the device had seen, so nothing that
-     * arrives later is swept up.
+     * Marks every unread entry in [scope] that's on the device read, and returns how many.
+     * Deliberately not a server-side "mark all": that would also mark unread entries outside the
+     * offline window, which the app never showed.
      */
-    suspend fun markAllRead(scope: ListScope) {
-        withContext(context) {
-            val time = now()
-            db.transaction {
-                val before =
-                    db.entryQueries.newestFetchedAt().executeAsOneOrNull()?.MAX
-                        ?: return@transaction
-                val subscriptionId = (scope as? ListScope.Subscription)?.id
-                val tagId = (scope as? ListScope.Tag)?.id
-                val starredOnly = if (scope == ListScope.Starred) 1L else 0L
-                val savedOnly = if (scope == ListScope.Saved) 1L else 0L
-                db.entryQueries
-                    .unreadIdsInScope(subscriptionId, tagId, starredOnly, savedOnly, before)
-                    .executeAsList()
-                    .forEach { db.outboxQueries.putState(it, "read", 1L, time) }
-                db.outboxQueries.addMarkAll(
-                    subscriptionId,
-                    tagId,
-                    starredOnly,
-                    savedOnly,
-                    before,
-                    time,
-                )
-            }
-        }
-        onLocalChange()
+    suspend fun markAllRead(scope: ListScope): Int {
+        val ids = withContext(context) { unreadIds(scope) }
+        if (ids.isNotEmpty()) setRead(ids, true)
+        return ids.size
     }
+
+    private fun unreadIds(scope: ListScope): List<String> =
+        db.entryQueries
+            .unreadIdsInScope(
+                subscriptionId = (scope as? ListScope.Subscription)?.id,
+                tagId = (scope as? ListScope.Tag)?.id,
+                starredOnly = if (scope == ListScope.Starred) 1L else 0L,
+                savedOnly = if (scope == ListScope.Saved) 1L else 0L,
+            )
+            .executeAsList()
 }
-
-private fun Boolean.toInt(): Int = if (this) 1 else 0
-
-private fun Int?.nonNegative(): Int = (this ?: 0).coerceAtLeast(0)

@@ -120,11 +120,29 @@ WHERE effective_read = 0
   AND (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
   AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1)
-  AND (:savedOnly = 0 OR type = 'saved')
-  AND fetched_at <= :before;
+  AND (:savedOnly = 0 OR type = 'saved');
 
-newestFetchedAt:
-SELECT MAX(fetched_at) FROM entry;
+-- Unread counts are counted here, over what's on the device (unsent changes
+-- included): the app shows what it has synced, so the server's counts —
+-- which include unread entries outside the offline window — don't apply.
+unreadTotals:
+SELECT
+  (SELECT count(*) FROM entry_view WHERE effective_read = 0) AS all_unread,
+  (SELECT count(*) FROM entry_view WHERE effective_read = 0 AND effective_starred = 1) AS starred_unread,
+  (SELECT count(*) FROM entry_view WHERE effective_read = 0 AND type = 'saved') AS saved_unread;
+
+unreadBySubscription:
+SELECT subscription_id, count(*) AS unread
+FROM entry_view
+WHERE effective_read = 0 AND subscription_id IS NOT NULL
+GROUP BY subscription_id;
+
+unreadByTag:
+SELECT st.tag_id, count(*) AS unread
+FROM entry_view v
+JOIN subscription_tag st ON st.subscription_id = v.subscription_id
+WHERE v.effective_read = 0
+GROUP BY st.tag_id;
 
 -- Retention: drop entries outside the window unless starred, saved, or with an
 -- unsent change.

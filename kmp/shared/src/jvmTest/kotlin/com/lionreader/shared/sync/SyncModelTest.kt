@@ -102,7 +102,7 @@ class SyncModelTest {
                             if (random.nextBoolean()) ListScope.All
                             else ListScope.Subscription("sub-1")
                         reader.markAllRead(scope)
-                        // Mark-all records a read change per affected local entry.
+                        // Mark-all records a read change per unread local entry.
                         db.outboxQueries
                             .selectStates()
                             .executeAsList()
@@ -195,9 +195,7 @@ class SyncModelTest {
             }
         }
 
-        val pending =
-            db.outboxQueries.countStates().executeAsOne() +
-                db.outboxQueries.countMarkAll().executeAsOne()
+        val pending = db.outboxQueries.countStates().executeAsOne()
         if (pending != 0L) return "$pending changes still unsent"
 
         for ((key, change) in lastLocal) {
@@ -214,19 +212,21 @@ class SyncModelTest {
             if (!received) return "the change $field $id=$value at $time never reached the server"
         }
 
+        // With everything synced (the test keeps all entries), the device's own
+        // counts must equal the server's.
         val nav = reader.navigation().first()
         val counts = server.counts()
-        if (nav.allUnread != counts.all.unread)
-            return "all unread: device ${nav.allUnread}, server ${counts.all.unread}"
-        if (nav.starredUnread != counts.starred.unread) {
-            return "starred unread: device ${nav.starredUnread}, server ${counts.starred.unread}"
+        if (nav.allUnread != counts.all)
+            return "all unread: device ${nav.allUnread}, server ${counts.all}"
+        if (nav.starredUnread != counts.starred) {
+            return "starred unread: device ${nav.starredUnread}, server ${counts.starred}"
         }
-        if (nav.savedUnread != counts.saved?.unread) {
-            return "saved unread: device ${nav.savedUnread}, server ${counts.saved?.unread}"
+        if (nav.savedUnread != counts.saved) {
+            return "saved unread: device ${nav.savedUnread}, server ${counts.saved}"
         }
-        for (sub in counts.subscriptions) {
-            val mine = nav.subscriptions.find { it.id == sub.id }?.unread
-            if (mine != sub.unread) return "${sub.id} unread: device $mine, server ${sub.unread}"
+        for ((sub, unread) in counts.bySubscription) {
+            val mine = nav.subscriptions.find { it.id == sub }?.unread
+            if (mine != unread) return "$sub unread: device $mine, server $unread"
         }
 
         for ((id, entry) in remote) {

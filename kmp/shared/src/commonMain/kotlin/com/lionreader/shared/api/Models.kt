@@ -96,35 +96,7 @@ data class EntryState(
     val starred: Boolean,
 )
 
-@Serializable
-data class BulkStateResponse(val entries: List<EntryState>, val counts: UnreadCounts? = null)
-
-@Serializable
-data class MarkAllReadRequest(
-    val subscriptionId: String? = null,
-    val tagId: String? = null,
-    val starredOnly: Boolean? = null,
-    val type: FeedType? = null,
-    val before: String? = null,
-    val changedAt: String,
-    val clientSentAt: String,
-)
-
-@Serializable data class MarkAllReadResponse(val count: Int)
-
-@Serializable data class UnreadCount(val unread: Int)
-
-@Serializable data class IdUnreadCount(val id: String, val unread: Int)
-
-@Serializable
-data class UnreadCounts(
-    val all: UnreadCount,
-    val starred: UnreadCount,
-    val saved: UnreadCount? = null,
-    val subscriptions: List<IdUnreadCount> = emptyList(),
-    val tags: List<IdUnreadCount> = emptyList(),
-    val uncategorized: UnreadCount? = null,
-)
+@Serializable data class BulkStateResponse(val entries: List<EntryState>)
 
 @Serializable data class TagRef(val id: String, val name: String, val color: String? = null)
 
@@ -135,7 +107,6 @@ data class Subscription(
     val url: String? = null,
     val title: String? = null,
     val siteUrl: String? = null,
-    val unreadCount: Int,
     val tags: List<TagRef> = emptyList(),
     val fetchFullContent: Boolean = false,
 )
@@ -143,8 +114,7 @@ data class Subscription(
 @Serializable
 data class SubscriptionPage(val items: List<Subscription>, val nextCursor: String? = null)
 
-@Serializable
-data class Tag(val id: String, val name: String, val color: String? = null, val unreadCount: Int)
+@Serializable data class Tag(val id: String, val name: String, val color: String? = null)
 
 @Serializable data class TagList(val items: List<Tag>)
 
@@ -197,7 +167,6 @@ data class EventSubscription(
     val id: String,
     val feedId: String,
     val customTitle: String? = null,
-    val unreadCount: Int,
     val tags: List<TagRef> = emptyList(),
 )
 
@@ -222,7 +191,6 @@ sealed interface SyncEvent {
         val feedId: String? = null,
         val feedType: FeedType,
         val entry: EventEntry? = null,
-        val counts: UnreadCounts? = null,
     ) : SyncEvent
 
     @Serializable
@@ -235,7 +203,6 @@ sealed interface SyncEvent {
         val entryId: String,
         val read: Boolean,
         val starred: Boolean,
-        val counts: UnreadCounts,
         val subscriptionId: String? = null,
         val feedId: String? = null,
         val feedType: FeedType? = null,
@@ -247,7 +214,6 @@ sealed interface SyncEvent {
     data class SubscriptionCreated(
         val subscription: EventSubscription,
         val feed: EventFeed,
-        val counts: UnreadCounts? = null,
     ) : SyncEvent
 
     @Serializable
@@ -260,8 +226,7 @@ sealed interface SyncEvent {
 
     @Serializable
     @SerialName("subscription_deleted")
-    data class SubscriptionDeleted(val subscriptionId: String, val counts: UnreadCounts? = null) :
-        SyncEvent
+    data class SubscriptionDeleted(val subscriptionId: String) : SyncEvent
 
     @Serializable @SerialName("tag_created") data class TagCreated(val tag: TagRef) : SyncEvent
 
