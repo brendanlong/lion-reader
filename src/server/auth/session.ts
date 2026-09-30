@@ -558,10 +558,11 @@ export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
 
 /**
  * Whether a session is still usable — the same "not revoked, not expired" rule
- * `validateSession` applies, for a caller that captured the session **id** and
- * has no token to re-validate (the OAuth link callback, `oauth/config.ts`
- * `OAuthLinkTarget`). Scoped sessions can't reach it: only browser sessions
- * start a link flow.
+ * `validateSession` applies, by id and without bumping `last_active_at`: for a
+ * caller that captured the session **id** and has no token to re-validate (the
+ * OAuth link callback, `oauth/config.ts` `OAuthLinkTarget`), or one re-checking
+ * a session it already validated (the SSE stream). It doesn't check scopes, so
+ * only pass it the id of a session that already passed `validateSession`.
  */
 export async function isSessionActive(sessionId: string): Promise<boolean> {
   const rows = await db

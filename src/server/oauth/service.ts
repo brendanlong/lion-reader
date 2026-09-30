@@ -453,6 +453,27 @@ export async function lockUserAgainstCredentialChange(
 }
 
 /**
+ * Whether an access token is still usable — the same "not revoked, not
+ * expired" rule `validateAccessToken` applies, by id and without bumping
+ * `last_used_at`, for a caller re-checking a token it already validated.
+ */
+export async function isAccessTokenActive(tokenId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: oauthAccessTokens.id })
+    .from(oauthAccessTokens)
+    .where(
+      and(
+        eq(oauthAccessTokens.id, tokenId),
+        isNull(oauthAccessTokens.revokedAt),
+        gt(oauthAccessTokens.expiresAt, new Date())
+      )
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
+/**
  * Validates an access token and returns the token data.
  */
 export async function validateAccessToken(token: string): Promise<OAuthTokenData | null> {

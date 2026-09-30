@@ -19,13 +19,17 @@
  * - import_completed: OPML import completed
  * - announcement_changed: Global announcement banner changed (broadcast to all)
  *
- * Heartbeat: Sent every 30 seconds as a comment (: heartbeat)
+ * Heartbeat: Sent every 30 seconds as a comment (: heartbeat). Each heartbeat
+ * also re-checks the session or app token the stream was opened with, and
+ * closes the stream once it's revoked or expired — otherwise a stream would
+ * keep delivering the user's events after a sign-out elsewhere (#1701).
  */
 
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
-import { validateSession } from "@/server/auth/session";
+import { isSessionActive, validateSession } from "@/server/auth/session";
 import { validateAppAccessToken } from "@/server/auth/app-token";
+import { isAccessTokenActive } from "@/server/oauth/service";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
@@ -177,6 +181,14 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const userId: string = authenticatedUserId;
+  const sessionId = sessionData?.session.id;
+  const appTokenId = appToken?.tokenId;
+  const isCredentialActive = (): Promise<boolean> =>
+    sessionId
+      ? isSessionActive(sessionId)
+      : appTokenId
+        ? isAccessTokenActive(appTokenId)
+        : Promise.resolve(false);
 
   // Check Redis health before establishing SSE connection
   const redisHealthy = await checkRedisHealth();
@@ -346,6 +358,29 @@ export async function GET(req: Request): Promise<Response> {
           // Controller may already be closed
         }
       });
+
+      let credentialCheckInFlight = false;
+      async function closeIfCredentialInactive(): Promise<void> {
+        if (credentialCheckInFlight || isCleanedUp) return;
+        credentialCheckInFlight = true;
+        let active: boolean;
+        try {
+          active = await isCredentialActive();
+        } catch (err) {
+          // Fail closed: the client reconnects, re-authenticating from scratch.
+          console.error("Failed to re-check SSE credential:", err);
+          active = false;
+        } finally {
+          credentialCheckInFlight = false;
+        }
+        if (active) return;
+        cleanup();
+        try {
+          controller.close();
+        } catch {
+          // Controller may already be closed
+        }
+      }
 
       /**
        * Serializes event delivery so clients receive events in Redis-delivery
@@ -530,6 +565,7 @@ export async function GET(req: Request): Promise<Response> {
         heartbeatInterval = setInterval(() => {
           send(formatSSEHeartbeat());
           trackSSEEventSent("heartbeat");
+          void closeIfCredentialInactive();
         }, HEARTBEAT_INTERVAL_MS);
 
         // Send an initial heartbeat to confirm the connection. (The client
