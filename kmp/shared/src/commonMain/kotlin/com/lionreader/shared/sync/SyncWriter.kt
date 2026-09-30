@@ -299,7 +299,8 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         db.summaryQueries.pruneOrphans()
         var size = db.bodyQueries.totalSize().executeAsOne()
         if (size > policy.contentBudgetBytes) {
-            for (candidate in db.bodyQueries.evictionCandidates().executeAsList()) {
+            val openedSince = now - RECENTLY_OPENED_MILLIS
+            for (candidate in db.bodyQueries.evictionCandidates(openedSince).executeAsList()) {
                 if (size <= policy.contentBudgetBytes) break
                 db.bodyQueries.deleteForEntry(candidate.entry_id)
                 size -= candidate.size
@@ -313,3 +314,5 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     fun storeSummary(entryId: String, html: String, bodyVersion: Long) =
         db.summaryQueries.putIfCurrent(entryId, html, bodyVersion)
 }
+
+private const val RECENTLY_OPENED_MILLIS = 24L * 60 * 60 * 1000

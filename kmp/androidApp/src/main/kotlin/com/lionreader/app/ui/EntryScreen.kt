@@ -18,11 +18,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -258,7 +260,7 @@ private fun EntryPage(
     LaunchedEffect(entry) { onEntry(entryId, entry) }
     DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    val loadFailed =
+    val download =
         rememberBodyDownload(entryId, entry) {
             withContext(Dispatchers.IO) { account.sync.ensureContent(entryId) }
         }
@@ -315,11 +317,12 @@ private fun EntryPage(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
-        if (loadFailed) {
+        if (download.failed) {
             Text(
                 "This article hasn't been downloaded yet. Connect to the internet to read it.",
-                modifier = Modifier.padding(vertical = 16.dp),
+                modifier = Modifier.padding(top = 16.dp),
             )
+            TextButton(onClick = download.retry) { Text("Retry") }
         } else {
             CircularProgressIndicator(modifier = Modifier.padding(vertical = 32.dp))
         }
@@ -354,22 +357,26 @@ private fun SummaryButton(
     }
 }
 
+/** Whether the page's body download failed, and a way to try it again. */
+internal class BodyDownload(val failed: Boolean, val retry: () -> Unit)
+
 /**
- * Downloads the entry's body once it's loaded without one; whether that failed. Keyed on "loaded
- * and missing", not just "missing": the entry is null until its query answers, and an effect keyed
- * only on a missing body wouldn't run again when it arrives, so an entry whose query was slow (say,
- * behind a sync) never got its body.
+ * Downloads the entry's body when it's loaded without one. Keyed on "loaded and missing", because
+ * the entry is null until its query answers: keyed on a missing body alone, the effect would run
+ * against the null entry and not again when it loads. Nothing else fetches it, either: opening an
+ * entry marks it read, and the background download skips read entries.
  */
 @Composable
 internal fun rememberBodyDownload(
     entryId: String,
     entry: EntryDetail?,
     download: suspend () -> Boolean,
-): Boolean {
+): BodyDownload {
     val missing = entry != null && entry.content == null
     var failed by remember(entryId) { mutableStateOf(false) }
+    var attempt by remember(entryId) { mutableIntStateOf(0) }
     val currentDownload by rememberUpdatedState(download)
-    LaunchedEffect(entryId, missing) {
+    LaunchedEffect(entryId, missing, attempt) {
         failed = false
         if (!missing) return@LaunchedEffect
         failed =
@@ -381,7 +388,7 @@ internal fun rememberBodyDownload(
                 true
             }
     }
-    return failed
+    return BodyDownload(failed) { attempt++ }
 }
 
 private fun Color.css(): String = "#%06X".format(toArgb() and 0xFFFFFF)

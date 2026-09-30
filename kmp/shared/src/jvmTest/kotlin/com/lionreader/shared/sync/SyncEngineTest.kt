@@ -500,4 +500,20 @@ class SyncEngineTest {
         assertFailsWith<ApiException> { engine.summarize("a") }
         assertNull(reader.entry("a").first()?.summary)
     }
+
+    @Test
+    fun theBudgetKeepsARecentlyOpenedBody() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("old", ageDays = 3), entry("new", ageDays = 1))
+        engine.sync()
+        reader.setRead(listOf("old", "new"), true)
+        // Oldest read goes first, unless it was just opened (it may be on screen).
+        reader.markOpened("old")
+
+        policy = RetentionPolicy(contentBudgetBytes = "<p>Body old</p>".length.toLong())
+        engine.sync()
+
+        assertEquals("<p>Body old</p>", reader.entry("old").first()?.content)
+        assertNull(reader.entry("new").first()?.content)
+    }
 }

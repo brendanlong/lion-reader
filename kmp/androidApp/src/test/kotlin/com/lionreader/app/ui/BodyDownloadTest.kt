@@ -54,12 +54,34 @@ class BodyDownloadTest {
     }
 
     @Test
-    fun aFailedDownloadIsReported() {
-        var failed = false
+    fun aFailedDownloadIsReportedAndCanBeRetried() {
+        var online = false
+        var downloads = 0
+        lateinit var state: BodyDownload
         composeRule.setContent {
-            failed = rememberBodyDownload("a", entry(content = null)) { error("offline") }
+            state =
+                rememberBodyDownload("a", entry(content = null)) {
+                    downloads++
+                    if (!online) error("offline")
+                    true
+                }
         }
-        composeRule.waitUntil { failed }
-        assertTrue(failed)
+        composeRule.waitUntil { state.failed }
+
+        online = true
+        composeRule.runOnIdle { state.retry() }
+        composeRule.waitForIdle()
+        composeRule.waitUntil { !state.failed }
+        assertEquals(2, downloads)
+    }
+
+    @Test
+    fun aDownloadThatStoresNothingCountsAsFailed() {
+        lateinit var state: BodyDownload
+        composeRule.setContent {
+            state = rememberBodyDownload("a", entry(content = null)) { false }
+        }
+        composeRule.waitUntil { state.failed }
+        assertTrue(state.failed)
     }
 }
