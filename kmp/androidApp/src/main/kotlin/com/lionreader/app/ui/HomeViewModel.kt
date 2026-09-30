@@ -139,7 +139,19 @@ class HomeViewModel(
         limit.value += PAGE
     }
 
-    fun opened(id: String) = keep(id)
+    private val _shown = MutableStateFlow<String?>(null)
+
+    /** The article open (beside the list, on a wide screen), to show it as selected. */
+    val shown: StateFlow<String?> = _shown.asStateFlow()
+
+    fun opened(id: String) {
+        _shown.value = id
+        keep(id)
+    }
+
+    fun shownClosed() {
+        _shown.value = null
+    }
 
     /** Bounded: the ids are bound into one query (SQLite allows 999 variables). */
     private fun keep(id: String) {

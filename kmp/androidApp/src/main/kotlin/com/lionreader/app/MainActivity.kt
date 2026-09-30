@@ -12,6 +12,11 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
+import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
@@ -132,6 +138,7 @@ class MainActivity : ComponentActivity() {
         key(account.dbName) { AccountApp(account) }
     }
 
+    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
     @Composable
     private fun AccountApp(account: AccountSession) {
         val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -142,32 +149,51 @@ class MainActivity : ComponentActivity() {
         val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
         val transitions = remember(settings.theme) { ScreenTransitions(settings.theme) }
+        // Side by side where there's room (tablets, foldables, landscape).
+        val listDetail = rememberListDetailSceneStrategy<NavKey>()
+        val articleOpen = backStack.any { it is EntryKey }
+        LaunchedEffect(articleOpen) { if (!articleOpen) home.shownClosed() }
         NavDisplay(
             backStack = backStack,
+            sceneStrategies = listOf(listDetail),
             onBack = { backStack.removeLastOrNull() },
             transitionSpec = { transitions.forward },
             popTransitionSpec = { transitions.back },
             predictivePopTransitionSpec = { transitions.back },
             entryProvider =
                 entryProvider {
-                    entry<HomeKey> {
+                    entry<HomeKey>(
+                        metadata =
+                            ListDetailSceneStrategy.listPane(
+                                detailPlaceholder = { NoArticlePlaceholder() }
+                            )
+                    ) {
                         HomeScreen(
                             model = home,
                             onOpen = { id ->
+                                // Replacing the one beside the list, when it's shown.
+                                backStack.removeAll { it is EntryKey }
                                 backStack.add(EntryKey.openedFrom(id, home.shownIds()))
                             },
                             onSettings = { backStack.add(SettingsKey) },
                             bottomBar = {
                                 // The mini player: tapping the title opens the article.
-                                CurrentNarrationBar(graph) { state ->
-                                    backStack.add(EntryKey.openedFrom(state.entryId, state.queue))
-                                }
+                                // Not beside an article, which has its own.
+                                if (!articleOpen)
+                                    CurrentNarrationBar(graph) { state ->
+                                        backStack.add(
+                                            EntryKey.openedFrom(state.entryId, state.queue)
+                                        )
+                                    }
                             },
                         )
                     }
                     // Keyed by id alone: the default key is the whole key's
                     // string, list included, and ends up in saved state.
-                    entry<EntryKey>({ key: EntryKey -> key.id }) { key ->
+                    entry<EntryKey>(
+                        { key: EntryKey -> key.id },
+                        metadata = ListDetailSceneStrategy.detailPane(),
+                    ) { key ->
                         EntryScreen(
                             graph,
                             account,
@@ -188,6 +214,17 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 },
+        )
+    }
+}
+
+@Composable
+private fun NoArticlePlaceholder() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            "Choose an article",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

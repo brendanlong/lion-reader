@@ -59,6 +59,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +92,7 @@ fun HomeScreen(
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
     val search by model.search.collectAsStateWithLifecycle()
     val searchResults by model.searchResults.collectAsStateWithLifecycle()
+    val shown by model.shown.collectAsStateWithLifecycle()
     // The entries the confirmation counted; exactly these are marked, so
     // anything a sync adds while the dialog is open isn't marked unseen.
     var markAllIds by remember { mutableStateOf<List<String>?>(null) }
@@ -201,6 +203,7 @@ fun HomeScreen(
                     EntryList(
                         items = if (text != null) searchResults else items,
                         listState = if (text != null) searchList else timelineList,
+                        selectedId = shown,
                         emptyText =
                             when {
                                 text == null && unreadOnly -> "No unread articles"
@@ -491,6 +494,7 @@ private fun DrawerRow(
 private fun EntryList(
     items: List<TimelineItem>?,
     listState: LazyListState,
+    selectedId: String?,
     emptyText: String,
     onOpen: (String) -> Unit,
     onToggleRead: (TimelineItem) -> Unit,
@@ -526,6 +530,7 @@ private fun EntryList(
             SwipeToDismissBox(state = swipe, backgroundContent = {}) {
                 EntryRow(
                     item,
+                    selected = item.id == selectedId,
                     onOpen = { onOpen(item.id) },
                     onToggleRead = { onToggleRead(item) },
                     onToggleStar = { onToggleStar(item) },
@@ -539,6 +544,7 @@ private fun EntryList(
 @Composable
 private fun EntryRow(
     item: TimelineItem,
+    selected: Boolean,
     onOpen: () -> Unit,
     onToggleRead: () -> Unit,
     onToggleStar: () -> Unit,
@@ -547,9 +553,15 @@ private fun EntryRow(
         modifier =
             Modifier.fillMaxWidth()
                 .clickable(onClick = onOpen)
-                .background(MaterialTheme.colorScheme.surface)
+                .background(
+                    if (selected) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surface
+                )
                 .padding(start = 16.dp, top = 12.dp, bottom = 12.dp)
-                .semantics { stateDescription = if (item.read) "Read" else "Unread" },
+                .semantics {
+                    stateDescription = if (item.read) "Read" else "Unread"
+                    this.selected = selected
+                },
         verticalAlignment = Alignment.Top,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

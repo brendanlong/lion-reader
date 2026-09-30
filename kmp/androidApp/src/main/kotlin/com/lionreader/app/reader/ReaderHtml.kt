@@ -100,7 +100,8 @@ fun readerDocument(
         $fontFaces
         html { background: ${colors.background}; }
         body {
-          margin: 0 16px 48px; color: ${colors.text};
+          /* A readable line on wide screens, as on the web (max-w-3xl). */
+          max-width: 48rem; margin: 0 auto 48px; padding: 0 16px; color: ${colors.text};
           font-family: ${font.cssFamily}; font-size: ${size}rem;
           line-height: ${tokens.lineHeight(font)};
           text-align: ${if (settings.justify) "justify" else "left"};

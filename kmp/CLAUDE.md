@@ -99,6 +99,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **Database work never runs on the main thread**: `Reader`'s writes are
   `suspend` and run on its context (IO in the app); `SyncEngine` doesn't switch
   threads, so the UI calls it on IO.
+- **Wide screens** show the list and the article side by side (Navigation 3's
+  `ListDetailSceneStrategy`: home is the list pane, an entry the detail). So
+  opening from the list replaces the entry on the back stack rather than
+  stacking another, and the list highlights the article shown.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's
   sanitized HTML, inserted verbatim. Its one script reports where wide tables
   and code blocks are, so a sideways drag on one scrolls it instead of paging
