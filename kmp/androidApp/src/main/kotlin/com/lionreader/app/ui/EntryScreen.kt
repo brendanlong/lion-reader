@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -180,7 +182,10 @@ private fun EntryPage(
     val byline =
         listOfNotNull(
                 current.source,
-                current.author,
+                // Like the web, the author is left out when it's the feed's name.
+                current.author?.takeUnless {
+                    it.trim().equals(current.source?.trim(), ignoreCase = true)
+                },
                 DateUtils.formatDateTime(
                     context,
                     current.sortAtMillis,
@@ -208,12 +213,15 @@ private fun EntryPage(
                         codeBackground = colors.surfaceContainer.css(),
                     ),
             )
-        // Fills the page and scrolls itself: sizing a WebView to its content
-        // inside a scrolling column leaves it blank until it has measured.
         ReaderWebView(document, modifier = Modifier.fillMaxSize())
         return
     }
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(
+        modifier =
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
         Text(title, style = MaterialTheme.typography.headlineSmall)
         Text(
             byline,

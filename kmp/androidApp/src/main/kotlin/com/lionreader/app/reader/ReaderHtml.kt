@@ -120,7 +120,8 @@ fun readerDocument(
         hr { border: 0; border-top: 1px solid ${colors.border}; }
         details { border: 1px solid ${colors.border}; border-radius: 6px; padding: 0.5em 0.75em; }
         math { font-size: 1.1em; }
-        .lr-header { margin: 16px 0 1.5em; text-align: left; }
+        .lr-header { margin: 16px 0 1.5em; padding-bottom: 1em; text-align: left;
+          border-bottom: 1px solid ${colors.border}; }
         .lr-header h1 { font-size: 1.5em; margin: 0 0 0.3em; }
         .lr-byline { margin: 0; color: ${colors.muted}; font-family: sans-serif;
           font-size: 0.875rem; line-height: 1.4; }

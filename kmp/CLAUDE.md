@@ -8,8 +8,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 
 - **Offline-first.** The UI reads only the local SQLDelight database
   (`shared/.../data/Reader.kt`); `SyncEngine` keeps it in step with the server.
-  Native UI per platform over shared presenters-to-be; only the article body is
-  a WebView (entry HTML can hold MathML, SVG, tables, embeds).
+  Native UI per platform over shared presenters-to-be; only the article (its
+  header and body) is a WebView (entry HTML can hold MathML, SVG, tables,
+  embeds). It fills the page and scrolls itself: sized to its content inside a
+  scrolling layout, a WebView stays blank until it has measured.
 - **API.** `/api/v1` REST, whose contract is `docs/api/openapi.json` (CI fails
   on breaking changes). Wire models (`api/Models.kt`) list only the fields the
   app uses and ignore unknown ones; sync events are parsed one by one so an

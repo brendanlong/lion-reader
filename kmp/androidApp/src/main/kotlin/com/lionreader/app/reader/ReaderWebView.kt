@@ -22,9 +22,9 @@ import kotlin.math.abs
 import org.json.JSONArray
 
 /**
- * The article body: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
- * SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
- * than file:// access.
+ * * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
+ *   SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
+ *   than file:// access.
  */
 @Composable
 fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
