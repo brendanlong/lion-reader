@@ -11,6 +11,7 @@ import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.data.TimelineItem
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val PAGE = 200L
 private const val MAX_KEPT = 200
@@ -51,7 +53,7 @@ class HomeViewModel(
         {
             // The lists are what the spinner waits for; bodies follow in the
             // background.
-            account.sync.sync(downloadContent = false)
+            withContext(Dispatchers.IO) { account.sync.sync(downloadContent = false) }
             graph.syncInBackground()
         },
     )
