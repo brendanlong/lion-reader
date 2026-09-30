@@ -1103,6 +1103,75 @@ describe("sync.events", () => {
       expect(updated?.type === "entry_updated" && updated.metadata.title).toBe("Edited");
     });
 
+    it("reports a state change before a later page's cursor", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-state.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, {
+        fetchedAt: new Date("2025-01-01T00:00:00.000Z"),
+        updatedAt: t3,
+      });
+      await createUserEntry(userId, entryId, { read: true, updatedAt: t1 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({
+        cursors: { entries: t2.toISOString(), entriesSince: t0.toISOString() },
+      });
+
+      expect(entryEventTypes(result.events as SyncEvent[], entryId)).toEqual([
+        "entry_state_changed",
+        "entry_updated",
+      ]);
+    });
+
+    it("breaks ties at the start's timestamp with entriesSinceAfterId", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-tied.xml" });
+      await createTestSubscription(userId, feedId);
+      const ids: string[] = [];
+      for (let i = 0; i < 2; i++) {
+        const id = await createTestEntry(feedId, { fetchedAt: t0 });
+        await createUserEntry(userId, id, { updatedAt: t3 });
+        ids.push(id);
+      }
+      ids.sort();
+      const [before, after] = ids;
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({
+        cursors: {
+          entries: t2.toISOString(),
+          entriesSince: t0.toISOString(),
+          entriesSinceAfterId: before,
+        },
+      });
+
+      const events = result.events as SyncEvent[];
+      expect(entryEventTypes(events, before)).toEqual(["entry_state_changed"]);
+      expect(entryEventTypes(events, after)).toEqual(["entry_state_changed", "new_entry"]);
+    });
+
+    it("applies the start in sync.changes and never echoes it back", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-rest.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
+      await createUserEntry(userId, entryId, { updatedAt: t3 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.changes({
+        entries: t2.toISOString(),
+        entriesSince: t0.toISOString(),
+      });
+
+      expect(entryEventTypes(result.events as SyncEvent[], entryId)).toEqual([
+        "entry_state_changed",
+        "new_entry",
+      ]);
+      expect(result.cursors).not.toHaveProperty("entriesSince");
+      expect(result.cursors.entriesAfterId).toBe(entryId);
+    });
+
     it("classifies against the page cursor when no start is given", async () => {
       const userId = await createTestUser();
       const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-legacy.xml" });

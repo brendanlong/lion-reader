@@ -383,8 +383,8 @@ async function collectSyncEvents(
   // tiebreaker (same pattern as listEntries) lets the client page within a
   // tied-timestamp group. See #1080.
   //
-  // The metadata/state/new booleans are computed in SQL against the same
-  // (ts, id) keyset the selection uses — not with JavaScript Date math —
+  // The metadata/state/new booleans are computed in SQL against (ts, id)
+  // keysets — not with JavaScript Date math —
   // because new Date() truncates Postgres µs to ms, which could select a row
   // by µs precision yet then emit no event (leaving the cursor stuck). #1080
   // ========================================================================
@@ -566,7 +566,7 @@ async function collectSyncEvents(
     // Collect entries with state changes for batch count computation
     const stateChangedEntries = changedEntryResults.filter((row) => row.stateChanged);
 
-    // Entries created after the cursor emit new_entry events. Compute one
+    // Entries created after the catch-up's start emit new_entry events. Compute one
     // absolute-count snapshot covering all of them so each new_entry event
     // carries server-authoritative counts (the client sets them directly
     // rather than applying a +1 delta, making the events idempotent across
@@ -605,7 +605,7 @@ async function collectSyncEvents(
 
       if (entryMetadataChanged) {
         if (row.isNew) {
-          // New entry created after cursor - emit new_entry for count and
+          // Entry created after the catch-up's start - emit new_entry for count and
           // list updates. The entry payload mirrors the live SSE path so a
           // catch-up sync inserts missed entries into cached lists too.
           // Unlike the live path, the entry may already have been read or
@@ -903,7 +903,9 @@ export const syncRouter = createTRPCRouter({
    * Called with no cursors, it returns no changes and the cursors to start
    * from — take them before downloading the initial window so nothing that
    * changes during the download is missed (replaying an overlap is harmless).
-   * Page until `hasMore` is false.
+   * Page until `hasMore` is false, sending the first page's `entries` /
+   * `entriesAfterId` as `entriesSince` / `entriesSinceAfterId` on every page
+   * so changes an entry had before a later page's cursor are still reported.
    */
   changes: appProcedure
     .meta({

@@ -53,9 +53,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   each page committing with its next cursors. Entries an event mentions but the
   device lacks are fetched whole. So are ones it has when the event calls them
   new: a bootstrap listed them, and they may have been edited since (#1680).
-  Past the first page of a catch-up, every one it has is fetched too, because
-  the server classifies changes against each page's own cursor and can report
-  a new entry as updated or drop an edit (#1663).
+  Past the first page of a catch-up, every one it has is fetched too: the app
+  doesn't send `entriesSince`, so the server classifies changes against each
+  page's own cursor and can report a new entry as updated or drop an edit
+  (#1663).
   `deletions` drop entries.
   `resyncRequired` re-bootstraps, keeping the outbox. Read/starred state comes
   only from deltas, fetched entries and flush responses. A flush is followed by
