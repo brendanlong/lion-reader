@@ -399,7 +399,6 @@ export const narrationRouter = createTRPCRouter({
    * server) is configured, which is also how the client tells whether cloud
    * voices are available.
    */
-  // The native app's cloud voices read these two (`reader:full-access`).
   listVoiceModels: scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
       openapi: {
