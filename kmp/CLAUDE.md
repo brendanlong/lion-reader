@@ -59,8 +59,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   only from deltas, fetched entries and flush responses. A flush is followed by
   a pull.
 - **Article bodies** live in `entry_body`, written only by `storeBodies`, and
-  download after the lists, newest first, outside the sync lock (a separate
-  lock serializes them), so refreshes and flushes never wait for them. A body
+  download after the lists, newest first, outside the sync lock, so refreshes and flushes never wait for them. Background
+  downloads take turns under their own lock; opening an entry fetches its body
+  straight away, alongside them. A body
   is stored only if its entry still exists at the `body_version` it had when
   the download started (an edit bumps it), so a download racing a deletion or
   an edit can't leave a missing or stale body. Pull-to-refresh syncs the lists
@@ -69,7 +70,8 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   read entries stay, bodies are capped by size (oldest read first); starred,
   saved and entries with unsent changes are always kept.
 - **Database work never runs on the main thread**: `Reader`'s writes are
-  `suspend` and run on its context (IO in the app).
+  `suspend` and run on its context (IO in the app); `SyncEngine` doesn't switch
+  threads, so the UI calls it on IO.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's
   sanitized HTML, inserted verbatim. Its one script reports where wide tables
   and code blocks are, so a sideways drag on one scrolls it instead of paging

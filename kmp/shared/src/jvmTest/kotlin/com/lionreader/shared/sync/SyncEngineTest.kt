@@ -19,9 +19,13 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 private val NOW = Instant.parse("2026-09-29T12:00:00Z").toEpochMilliseconds()
 private const val DAY = 24L * 60 * 60 * 1000
@@ -391,5 +395,31 @@ class SyncEngineTest {
 
         assertEquals(listOf("untagged"), timeline(ListScope.Uncategorized))
         assertEquals(listOf("untagged"), reader.unreadIds(ListScope.Uncategorized))
+    }
+
+    @Test
+    fun openingAnEntryDoesNotWaitForTheBackgroundDownload() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("a"), entry("b"))
+        engine.sync(downloadContent = false)
+
+        // The background download stalls on a slow batch.
+        val stalled = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        server.duringBatch = { ids ->
+            if (ids.size > 1) {
+                stalled.complete(Unit)
+                release.await()
+            }
+        }
+        val background = launch { engine.sync() }
+        stalled.await()
+
+        // Real time: the fake server answers on its own threads.
+        withContext(Dispatchers.Default) { withTimeout(5_000) { engine.ensureContent("b") } }
+        assertEquals("<p>Body b</p>", reader.entry("b").first()?.content)
+
+        release.complete(Unit)
+        background.join()
     }
 }

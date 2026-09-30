@@ -40,8 +40,11 @@ import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Articles of the list they were opened from, one per page: swiping left or right moves to the next
@@ -173,8 +176,16 @@ private fun EntryPage(
     var loadFailed by remember(entryId) { mutableStateOf(false) }
 
     LaunchedEffect(entryId, entry?.content == null) {
+        loadFailed = false
         if (entry != null && entry?.content == null) {
-            loadFailed = runCatching { account.sync.ensureContent(entryId) }.isFailure
+            loadFailed =
+                try {
+                    !withContext(Dispatchers.IO) { account.sync.ensureContent(entryId) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    true
+                }
         }
     }
 
