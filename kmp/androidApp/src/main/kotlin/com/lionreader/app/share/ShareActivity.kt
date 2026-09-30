@@ -30,19 +30,25 @@ import kotlinx.coroutines.flow.map
 class ShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A CharSequence per the docs; some apps send styled text.
         val link =
             intent
                 .takeIf { it.action == Intent.ACTION_SEND }
-                ?.getStringExtra(Intent.EXTRA_TEXT)
+                ?.getCharSequenceExtra(Intent.EXTRA_TEXT)
+                ?.toString()
                 .let(::sharedLink)
+        val tooLong = link != null && link.length > MAX_LINK_LENGTH
         val signedIn = graph.connection.value.auth.signedIn.value
         // Only once: a recreated dialog (rotation) follows the same work.
-        if (savedInstanceState == null && link != null && signedIn) SaveWorker.enqueue(this, link)
+        if (savedInstanceState == null && link != null && !tooLong && signedIn) {
+            SaveWorker.enqueue(this, link)
+        }
         setContent {
             val settings by graph.currentSettings.collectAsStateWithLifecycle()
             LionReaderTheme(settings.theme) {
                 when {
                     link == null -> Message("There's no link to save in what was shared.")
+                    tooLong -> Message("That link is too long to save.")
                     !signedIn ->
                         Message(
                             "Sign in to Lion Reader to save links.",
@@ -110,6 +116,6 @@ class ShareActivity : ComponentActivity() {
         val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         return connectivity
             .getNetworkCapabilities(connectivity.activeNetwork)
-            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
 }

@@ -79,6 +79,12 @@ Entry bodies, saved articles, and AI summaries are rendered with
   and every navigation leaves for the browser. The article header's feed text
   (title, byline) enters the document only through `escapeHtml`. Loosening any
   of that needs a security review.
+- **The native app's share target** (`ShareActivity`) is exported, so any app
+  can hand it a link to save, with no confirmation beyond the dialog. That's
+  the usual share-target trade-off and stays bounded because only http(s)
+  links are taken, the server fetches them through the SSRF guard and
+  sanitizes what it stores, and nothing goes back to the caller. It must never
+  forward the incoming intent or its extras.
 
 - **Analytics reports a closed vocabulary, never a URL**
   (`src/lib/analytics/`): we load **no third-party analytics script**, and every

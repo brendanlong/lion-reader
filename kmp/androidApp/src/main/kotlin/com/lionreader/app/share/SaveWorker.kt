@@ -23,14 +23,15 @@ import kotlinx.coroutines.CancellationException
 class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val url = inputData.getString(URL) ?: return Result.failure()
-        val account = applicationContext.graph.account.value
-        if (!applicationContext.graph.connection.value.auth.signedIn.value) {
+        val connection = applicationContext.graph.connection.value
+        if (!connection.auth.signedIn.value) {
             return failure("Sign in to Lion Reader to save links.")
         }
-        // Signed in, but which account isn't settled yet.
-        account ?: return Result.retry()
+        if (runAttemptCount >= MAX_ATTEMPTS) {
+            return failure("Lion Reader couldn't save this link. Try sharing it again later.")
+        }
         return try {
-            val saved = account.connection.api.saveArticle(url)
+            val saved = connection.api.saveArticle(url)
             // Bring the new article onto the device.
             SyncScheduler.syncNow(applicationContext)
             Result.success(workDataOf(TITLE to saved.title))
@@ -39,7 +40,10 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         } catch (e: ApiException) {
             when {
                 e.status == 0 -> failure("Sign in to Lion Reader to save links.")
-                e.isPermanent -> failure(e.serverMessage ?: "Lion Reader couldn't save this link.")
+                // Any other 4xx but 429 is the server's answer: a 401 here came
+                // back after a token refresh, so it isn't about the token.
+                e.isPermanent || (e.status in 400..499 && e.status != 429) ->
+                    failure(e.serverMessage ?: "Lion Reader couldn't save this link.")
                 else -> Result.retry()
             }
         } catch (e: Exception) {
@@ -54,8 +58,13 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         const val TITLE = "title"
         const val ERROR = "error"
         private const val URL = "url"
+        // About two hours of backoff, then it's the user's call.
+        private const val MAX_ATTEMPTS = 8
 
-        /** The unique work name for saving [url]; sharing it again while pending is a no-op. */
+        /**
+         * The unique work name for saving [url]. Sharing it again replaces a pending save (so it
+         * runs now rather than after its backoff); saving is idempotent per URL.
+         */
         fun workName(url: String) = "save:$url"
 
         fun enqueue(context: Context, url: String) {
@@ -68,7 +77,7 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     .setInputData(workDataOf(URL to url))
                     .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(workName(url), ExistingWorkPolicy.KEEP, request)
+                .enqueueUniqueWork(workName(url), ExistingWorkPolicy.REPLACE, request)
         }
     }
 }

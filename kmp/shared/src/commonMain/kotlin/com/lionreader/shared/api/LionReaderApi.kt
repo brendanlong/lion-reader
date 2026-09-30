@@ -32,9 +32,16 @@ class ApiException(
     val serverMessage: String? = null,
     val appErrorCode: String? = null,
 ) : Exception(message) {
-    /** The server rejected the request itself; retrying it unchanged won't help. */
+    /**
+     * The server rejected the request itself; retrying it unchanged won't help. A coded 4xx is such
+     * an answer (e.g. `NEEDS_GOOGLE_SIGNIN`), except 429, which is "try again later".
+     */
     val isPermanent: Boolean
-        get() = status == 400 || status == 404 || status == 422 || appErrorCode != null
+        get() =
+            status == 400 ||
+                status == 404 ||
+                status == 422 ||
+                (appErrorCode != null && status in 400..499 && status != 429)
 }
 
 enum class ListFilter {
