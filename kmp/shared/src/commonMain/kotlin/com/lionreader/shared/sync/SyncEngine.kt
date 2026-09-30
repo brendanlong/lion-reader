@@ -1,10 +1,8 @@
 package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.ApiException
-import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.ListFilter
-import com.lionreader.shared.api.MarkAllReadRequest
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
@@ -68,8 +66,8 @@ class SyncEngine(
     }
 
     /**
-     * Sends unsent changes (quick, after the user acts), then pulls: a mark-all-read answers
-     * without counts, so the pull is what brings the unread counts back in step.
+     * Sends unsent changes (quick, after the user acts), then pulls what changed elsewhere
+     * meanwhile.
      */
     suspend fun flushOutbox() = mutex.withLock {
         flush()
@@ -89,23 +87,6 @@ class SyncEngine(
     // ---- Outbox ----------------------------------------------------------
 
     private suspend fun flush() {
-        for (op in outboxQueries.selectMarkAll().executeAsList()) {
-            val request =
-                MarkAllReadRequest(
-                    subscriptionId = op.subscription_id,
-                    tagId = op.tag_id,
-                    starredOnly = op.starred_only == 1L,
-                    type = if (op.saved_only == 1L) FeedType.SAVED else null,
-                    // `before` is inclusive at microsecond precision; round up
-                    // so the newest seen entry is included.
-                    before = formatMillis(op.before + 1),
-                    changedAt = formatMillis(op.changed_at),
-                    clientSentAt = formatMillis(now()),
-                )
-            sendOrReject { api.markAllRead(request) }
-            writer.removeMarkAll(op.id)
-        }
-
         val ops = outboxQueries.selectStates().executeAsList()
         for ((key, group) in ops.groupBy { it.field_ to (it.value_ == 1L) }) {
             val (field, value) = key
@@ -156,12 +137,7 @@ class SyncEngine(
             writer.saveSubscriptions(page.items)
             subscriptionCursor = page.nextCursor
         } while (subscriptionCursor != null)
-        writer.saveTagsAndCounts(
-            api.listTags(),
-            all = api.unreadCount(ListFilter.ALL),
-            starred = api.unreadCount(ListFilter.STARRED),
-            saved = api.unreadCount(ListFilter.SAVED),
-        )
+        writer.saveTags(api.listTags())
 
         for (filter in ListFilter.entries) {
             var cursor: String? = null

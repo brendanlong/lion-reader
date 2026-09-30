@@ -32,6 +32,7 @@ import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.HomeViewModel
 import com.lionreader.app.ui.LionReaderTheme
+import com.lionreader.app.ui.ScreenTransitions
 import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
 import com.lionreader.app.ui.isDark
@@ -41,7 +42,8 @@ import kotlinx.coroutines.launch
 
 private data object HomeKey
 
-private data class EntryKey(val id: String)
+/** An article opened from a list, and that list's order at the time (for paging). */
+private data class EntryKey(val id: String, val listIds: List<String>)
 
 private data object SettingsKey
 
@@ -137,23 +139,35 @@ class MainActivity : ComponentActivity() {
     private fun AccountApp(account: AccountSession) {
         val backStack = remember { mutableStateListOf<Any>(HomeKey) }
         val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
+        val settings by graph.currentSettings.collectAsStateWithLifecycle()
+        val transitions = remember(settings.theme) { ScreenTransitions(settings.theme) }
         NavDisplay(
             backStack = backStack,
             onBack = { backStack.removeLastOrNull() },
+            transitionSpec = { transitions.forward },
+            popTransitionSpec = { transitions.back },
+            predictivePopTransitionSpec = { transitions.back },
             entryProvider =
                 entryProvider {
                     entry<HomeKey> {
                         HomeScreen(
                             model = home,
-                            onOpen = { backStack.add(EntryKey(it)) },
+                            onOpen = { id ->
+                                val listIds = home.items.value.orEmpty().map { it.id }
+                                backStack.add(EntryKey(id, listIds))
+                            },
                             onSettings = { backStack.add(SettingsKey) },
                         )
                     }
-                    entry<EntryKey> { key ->
+                    // Keyed by id alone: the default key is the whole key's
+                    // string, list included, and ends up in saved state.
+                    entry<EntryKey>({ key: EntryKey -> key.id }) { key ->
                         EntryScreen(
                             graph,
                             account,
-                            key.id,
+                            ids = key.listIds,
+                            startId = key.id,
+                            onShown = home::opened,
                             onBack = { backStack.removeLastOrNull() },
                         )
                     }

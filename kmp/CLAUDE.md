@@ -34,28 +34,28 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   and the previous one is deleted; signing out deletes it.
 - **Local state vs. unsent changes.** `entry.read`/`starred` hold the last
   server state; the user's changes live in `outbox_state` (one row per entry
-  and field, device timestamp) and win on display through `entry_view`. Unread
-  counts are the server's absolute counts plus corrections computed from the
-  outbox at query time (each pending entry moves its contribution from server
-  to effective state, `pendingEntryStates`), so a server response can
-  overwrite counts without double-counting. A flush deletes an outbox row only if it
-  hasn't changed since it was sent. Mark-all-read is its own outbox row whose
-  `before` is a server `fetchedAt` the device had seen.
+  and field, device timestamp) and win on display through `entry_view`. A
+  flush deletes an outbox row only if it hasn't changed since it was sent.
+- **The device shows what it has synced.** Unread counts are counted over the
+  local entries (unsent changes included), never taken from the server, whose
+  counts include unread entries outside the offline window that the app never
+  shows. Mark-all-read likewise marks the unread entries of the list that are
+  on the device (after a confirmation showing that count), not everything the
+  server has.
 - **Sync: fetch, then commit.** `SyncEngine` does the network work and hands
   complete results to `SyncWriter`, whose methods are one transaction each,
   don't suspend and can't reach the API, so a cursor can't be committed ahead
   of data a later request was meant to bring. The first download saves
-  subscriptions, counts and the entry lists (newest first) page by page, and
+  subscriptions, tags and the entry lists (newest first) page by page, and
   resumes from its start cursors if interrupted; then `sync.changes` deltas,
   each page committing with its next cursors. Entries an event mentions but the
   device lacks are fetched whole — and, past the first page of a catch-up, so
   are ones it has — because the server classifies changes against each page's
   own cursor and can report a new entry as updated or drop an edit (#1663).
-  `deletions` adjust the unread counts they leave behind and are applied before
-  the page's events (whose absolute counts already include them).
+  `deletions` drop entries.
   `resyncRequired` re-bootstraps, keeping the outbox. Read/starred state comes
   only from deltas, fetched entries and flush responses. A flush is followed by
-  a pull, since mark-all-read's response carries no counts.
+  a pull.
 - **Article bodies** live in `entry_body`, written only by `storeBodies`, and
   download after the lists, newest first, outside the sync lock (a separate
   lock serializes them), so refreshes and flushes never wait for them. A body
@@ -68,9 +68,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   saved and entries with unsent changes are always kept.
 - **Database work never runs on the main thread**: `Reader`'s writes are
   `suspend` and run on its context (IO in the app).
-- **Reader view.** JavaScript off, no file/content access, no JS bridge, every
-  link opens outside the app, bundled fonts served by `WebViewAssetLoader`.
-  The body is the server's sanitized HTML, inserted verbatim.
+- **Reader view.** Hardened per SECURITY.md §1; the body is the server's
+  sanitized HTML, inserted verbatim. Its one script reports where wide tables
+  and code blocks are, so a sideways drag on one scrolls it instead of paging
+  (`ReaderView`).
 - **Appearance tokens** (`androidApp/src/main/assets/reader/appearance.json`)
   are generated from the web's `src/lib/appearance/config.ts` by
   `pnpm app:appearance` (a unit test fails when stale). Fonts are OFL Google
@@ -173,8 +174,10 @@ adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -
   `lint.xml` holds the global suppressions (the "newer version available"
   checks, which would fail an unchanged tree whenever upstream ships); an
   in-code `@SuppressLint` needs a comment saying why.
-- The database schema has no migrations yet (nothing has shipped). Once a
-  build is released, schema changes need SQLDelight migrations (`.sqm`).
+- Until a build is released, a schema change bumps the generation in the
+  database file name (`DB_PREFIX` in `AppGraph.kt`) instead of shipping a
+  migration: older files are deleted and the account resyncs. After release,
+  schema changes need SQLDelight migrations (`.sqm`).
 - SQL targets SQLite 3.18 (minSdk 26's), SQLDelight's default dialect: no
   UPSERT (`ON CONFLICT DO UPDATE`) — use insert-or-ignore + update, not
   `INSERT OR REPLACE`, which deletes the row (and its downloaded body).

@@ -10,7 +10,6 @@ import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
 import com.lionreader.shared.api.LionReaderApi
-import com.lionreader.shared.api.MarkAllReadRequest
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.Subscription
@@ -19,7 +18,6 @@ import com.lionreader.shared.api.SyncChanges
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagList
-import com.lionreader.shared.api.UnreadCount
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
@@ -48,7 +46,6 @@ class FakeServer {
     val requests = mutableListOf<HttpRequestData>()
     val markReadRequests = mutableListOf<MarkReadRequest>()
     val starRequests = mutableListOf<SetStarredRequest>()
-    val markAllRequests = mutableListOf<MarkAllReadRequest>()
 
     /** Status to answer state writes with instead of applying them. */
     var stateWriteFailure: HttpStatusCode? = null
@@ -132,8 +129,6 @@ class FakeServer {
                 val next = (offset + limit).takeIf { it < matching.size }?.toString()
                 json(EntryListPage.serializer(), EntryListPage(page.map { it.listItem() }, next))
             }
-            path == "/entries/count" ->
-                json(UnreadCount.serializer(), UnreadCount(entries.values.count { !it.read }))
             path == "/entries/batch" && batchFailure != null -> {
                 val status = batchFailure!!
                 batchFailure = null
@@ -152,10 +147,6 @@ class FakeServer {
                 val body = body(request, SetStarredRequest.serializer())
                 starRequests += body
                 stateWrite(body.entries.map { it.id }) { it.copy(starred = body.starred) }
-            }
-            path == "/entries/mark-all-read" -> {
-                markAllRequests += body(request, MarkAllReadRequest.serializer())
-                respond("""{"count":0}""", headers = jsonHeaders)
             }
             path == "/subscriptions" ->
                 json(SubscriptionPage.serializer(), SubscriptionPage(subscriptions.toList()))

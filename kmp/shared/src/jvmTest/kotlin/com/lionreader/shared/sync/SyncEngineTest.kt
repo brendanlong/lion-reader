@@ -7,8 +7,6 @@ import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncEvent
-import com.lionreader.shared.api.UnreadCount
-import com.lionreader.shared.api.UnreadCounts
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
@@ -71,7 +69,7 @@ class SyncEngineTest {
 
     @Test
     fun bootstrapDownloadsTheWindowAndBodies() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB, title = "Feed", unreadCount = 2)
+        server.subscriptions += Subscription("sub-1", FeedType.WEB, title = "Feed")
         serve(
             entry("a", ageDays = 1),
             entry("b", ageDays = 2, read = true),
@@ -118,7 +116,7 @@ class SyncEngineTest {
     fun localChangesShowImmediatelyAndAreSentWithTheirTime() = runTest {
         serve(entry("a"), entry("b"))
         engine.sync()
-        server.subscriptions += Subscription("sub-1", FeedType.WEB, unreadCount = 2)
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
 
         clock = NOW + 5_000
         reader.setRead(listOf("a"), true)
@@ -141,8 +139,8 @@ class SyncEngineTest {
     }
 
     @Test
-    fun unreadCountsIncludeUnsentChanges() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB, unreadCount = 2)
+    fun unreadCountsAreTheDevicesOwnIncludingUnsentChanges() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
         serve(entry("a"), entry("b"))
         engine.sync()
 
@@ -151,6 +149,16 @@ class SyncEngineTest {
         val nav = reader.navigation().first()
         assertEquals(1, nav.allUnread)
         assertEquals(1, nav.subscriptions.single().unread)
+    }
+
+    @Test
+    fun unreadEntriesOutsideTheWindowAreNotCounted() = runTest {
+        policy = RetentionPolicy(windowDays = 3)
+        serve(entry("recent"), entry("old", ageDays = 10))
+
+        engine.sync()
+
+        assertEquals(1, reader.navigation().first().allUnread)
     }
 
     @Test
@@ -175,7 +183,7 @@ class SyncEngineTest {
     fun starredCountFollowsUnsentStarAndReadChanges() = runTest {
         serve(entry("a"), entry("b", starred = true))
         engine.sync()
-        db.subscriptionQueries.setListCount("starred", 1)
+        assertEquals(1, reader.navigation().first().starredUnread)
 
         reader.setStarred("a", true)
         assertEquals(2, reader.navigation().first().starredUnread)
@@ -185,28 +193,11 @@ class SyncEngineTest {
     }
 
     @Test
-    fun flushingPullsSoCountsCatchUpAfterMarkAllRead() = runTest {
-        serve(entry("a"))
-        engine.sync()
-        reader.markAllRead(ListScope.All)
-        val before = server.requests.count { it.url.encodedPath.endsWith("/sync/changes") }
-
-        engine.flushOutbox()
-
-        val after = server.requests.count { it.url.encodedPath.endsWith("/sync/changes") }
-        assertTrue(after > before)
-    }
-
-    @Test
     fun aFailedFollowUpFetchRetriesTheWholePage() = runTest {
         engine.sync()
         server.entries["s"] = entry("s", starred = true)
-        val counts = UnreadCounts(all = UnreadCount(0), starred = UnreadCount(0))
         server.queueChanges(
-            events =
-                listOf(
-                    SyncEvent.EntryStateChanged("s", read = true, starred = true, counts = counts)
-                ),
+            events = listOf(SyncEvent.EntryStateChanged("s", read = true, starred = true)),
             times = 2,
         )
         server.batchFailure = HttpStatusCode.ServiceUnavailable
@@ -274,8 +265,6 @@ class SyncEngineTest {
     fun pullAppliesEventsAndDeletions() = runTest {
         serve(entry("a"), entry("b"))
         engine.sync()
-        val counts =
-            UnreadCounts(all = UnreadCount(7), starred = UnreadCount(1), saved = UnreadCount(0))
         server.queueChanges(
             events =
                 listOf(
@@ -290,7 +279,6 @@ class SyncEngineTest {
                         entryId = "a",
                         read = true,
                         starred = true,
-                        counts = counts,
                     ),
                 ),
             deletions = listOf("b"),
@@ -300,7 +288,7 @@ class SyncEngineTest {
 
         assertEquals(listOf("c", "a"), timeline())
         assertEquals(listOf("a"), timeline(ListScope.Starred))
-        assertEquals(7, reader.navigation().first().allUnread)
+        assertEquals(1, reader.navigation().first().allUnread)
     }
 
     @Test
@@ -365,16 +353,26 @@ class SyncEngineTest {
     }
 
     @Test
-    fun markAllReadMarksLocalEntriesAndSendsTheBoundary() = runTest {
-        serve(entry("a", ageDays = 1), entry("b", ageDays = 2))
+    fun markAllReadMarksTheEntriesOnTheDeviceAndSendsThem() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += Subscription("sub-2", FeedType.WEB)
+        serve(
+            entry("a", ageDays = 1),
+            entry("b", ageDays = 2),
+            entry("c", subscriptionId = "sub-2"),
+        )
         engine.sync()
 
-        reader.markAllRead(ListScope.Subscription("sub-1"))
+        assertEquals(2, reader.navigation().first().subscriptions.first { it.id == "sub-1" }.unread)
+        val ids = reader.unreadIds(ListScope.Subscription("sub-1"))
+        assertEquals(setOf("a", "b"), ids.toSet())
+        reader.setRead(ids, true)
 
-        assertEquals(emptyList(), timeline(unreadOnly = true))
+        assertEquals(listOf("c"), timeline(unreadOnly = true))
         engine.flushOutbox()
-        val request = server.markAllRequests.single()
-        assertEquals("sub-1", request.subscriptionId)
-        assertEquals("2026-09-28T12:00:00.001Z", request.before)
+        assertEquals(
+            setOf("a", "b"),
+            server.markReadRequests.single().entries.map { it.id }.toSet(),
+        )
     }
 }

@@ -120,9 +120,12 @@ class HomeViewModel(
         viewModelScope.launch { reader.setStarred(item.id, !item.starred) }
     }
 
-    fun markAllRead() {
+    /** The entries mark-all-read would mark, taken when the user is asked to confirm. */
+    suspend fun unreadInList(): List<String> = reader.unreadIds(_scope.value)
+
+    fun markRead(ids: List<String>) {
         keepIds.value = emptySet()
-        viewModelScope.launch { reader.markAllRead(_scope.value) }
+        viewModelScope.launch { reader.setRead(ids, true) }
     }
 
     fun refresh() {

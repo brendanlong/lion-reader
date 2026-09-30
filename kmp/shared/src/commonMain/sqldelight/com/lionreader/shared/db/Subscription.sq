@@ -5,15 +5,13 @@ CREATE TABLE subscription (
   title TEXT,
   url TEXT,
   site_url TEXT,
-  unread_count INTEGER NOT NULL,
   fetch_full_content INTEGER NOT NULL
 );
 
 CREATE TABLE tag (
   id TEXT NOT NULL PRIMARY KEY,
   name TEXT NOT NULL,
-  color TEXT,
-  unread_count INTEGER NOT NULL
+  color TEXT
 );
 
 CREATE TABLE subscription_tag (
@@ -22,22 +20,12 @@ CREATE TABLE subscription_tag (
   PRIMARY KEY (subscription_id, tag_id)
 );
 
--- Server-reported absolute unread counts for the top-level lists
--- ('all', 'starred', 'saved', 'uncategorized').
-CREATE TABLE list_count (
-  list TEXT NOT NULL PRIMARY KEY,
-  unread INTEGER NOT NULL
-);
-
 upsertSubscription:
-INSERT OR REPLACE INTO subscription(id, feed_id, type, title, url, site_url, unread_count, fetch_full_content)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO subscription(id, feed_id, type, title, url, site_url, fetch_full_content)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 updateSubscriptionTitle:
 UPDATE subscription SET title = COALESCE(?, title) WHERE id = ?;
-
-setSubscriptionUnread:
-UPDATE subscription SET unread_count = ? WHERE id = ?;
 
 deleteSubscription:
 DELETE FROM subscription WHERE id = ?;
@@ -52,13 +40,10 @@ selectSubscription:
 SELECT * FROM subscription WHERE id = ?;
 
 insertTagIgnore:
-INSERT OR IGNORE INTO tag(id, name, color, unread_count) VALUES (?, ?, ?, 0);
+INSERT OR IGNORE INTO tag(id, name, color) VALUES (?, ?, ?);
 
 updateTag:
 UPDATE tag SET name = ?, color = ? WHERE id = ?;
-
-setTagUnread:
-UPDATE tag SET unread_count = ? WHERE id = ?;
 
 deleteTag:
 DELETE FROM tag WHERE id = ?;
@@ -86,24 +71,3 @@ INSERT OR IGNORE INTO subscription_tag(subscription_id, tag_id) VALUES (?, ?);
 
 selectSubscriptionTags:
 SELECT * FROM subscription_tag;
-
-setListCount:
-INSERT OR REPLACE INTO list_count(list, unread) VALUES (?, ?);
-
-selectListCounts:
-SELECT * FROM list_count;
-
-deleteAllListCounts:
-DELETE FROM list_count;
-
--- Relative adjustments for an entry removed without new counts from the
--- server (deletions carry none); never below zero.
-addListCount:
-UPDATE list_count SET unread = MAX(0, unread + :delta) WHERE list = :list;
-
-addSubscriptionUnread:
-UPDATE subscription SET unread_count = MAX(0, unread_count + :delta) WHERE id = :id;
-
-addTagUnreadForSubscription:
-UPDATE tag SET unread_count = MAX(0, unread_count + :delta)
-WHERE id IN (SELECT tag_id FROM subscription_tag WHERE subscription_id = :subscriptionId);

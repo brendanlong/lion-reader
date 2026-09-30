@@ -51,17 +51,6 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             cursor?.let { parameter("cursor", it) }
         }
 
-    suspend fun unreadCount(filter: ListFilter): Int =
-        get(UnreadCount.serializer(), "/entries/count") {
-                parameter("unreadOnly", true)
-                when (filter) {
-                    ListFilter.ALL -> {}
-                    ListFilter.STARRED -> parameter("starredOnly", true)
-                    ListFilter.SAVED -> parameter("type", "saved")
-                }
-            }
-            .unread
-
     suspend fun getEntries(ids: List<String>): List<FullEntry> =
         post(
                 GetManyResponse.serializer(),
@@ -85,14 +74,6 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             "/entries/starred",
             request,
             SetStarredRequest.serializer(),
-        )
-
-    suspend fun markAllRead(request: MarkAllReadRequest): MarkAllReadResponse =
-        post(
-            MarkAllReadResponse.serializer(),
-            "/entries/mark-all-read",
-            request,
-            MarkAllReadRequest.serializer(),
         )
 
     suspend fun listSubscriptions(cursor: String?): SubscriptionPage =

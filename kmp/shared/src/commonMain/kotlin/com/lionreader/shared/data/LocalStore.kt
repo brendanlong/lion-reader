@@ -7,7 +7,6 @@ import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.Tag
 import com.lionreader.shared.api.TagRef
-import com.lionreader.shared.api.UnreadCounts
 import com.lionreader.shared.db.LionReaderDatabase
 
 private const val CURSORS_KEY = "sync_cursors"
@@ -122,25 +121,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
 
     fun entryExists(id: String): Boolean = entries.exists(id).executeAsOne() > 0
 
-    /**
-     * Removes an entry the server says is gone and takes it out of the unread counts, which the
-     * removal doesn't otherwise update (deletions carry no counts). Uses the entry's server state:
-     * the counts are the server's.
-     */
-    fun removeEntry(id: String) {
-        val row = entries.selectById(id).executeAsOneOrNull()
-        if (row != null && row.read == 0L) {
-            subs.addListCount(-1, "all")
-            if (row.starred == 1L) subs.addListCount(-1, "starred")
-            if (row.type == "saved") subs.addListCount(-1, "saved")
-            row.subscription_id?.let {
-                subs.addSubscriptionUnread(-1, it)
-                subs.addTagUnreadForSubscription(-1, it)
-            }
-        }
-        deleteEntry(id)
-    }
-
     fun deleteEntry(id: String) {
         entries.deleteById(id)
         db.bodyQueries.deleteForEntry(id)
@@ -154,7 +134,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
         title: String?,
         url: String?,
         siteUrl: String?,
-        unread: Int,
         fetchFullContent: Boolean,
         tags: List<TagRef>,
     ) {
@@ -165,7 +144,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
             title,
             url,
             siteUrl,
-            unread.toLong(),
             fetchFullContent.toLong(),
         )
         setSubscriptionTags(id, tags)
@@ -179,7 +157,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
             subscription.title,
             subscription.url,
             subscription.siteUrl,
-            subscription.unreadCount,
             subscription.fetchFullContent,
             subscription.tags,
         )
@@ -204,26 +181,12 @@ internal class LocalStore(val db: LionReaderDatabase) {
         subs.updateTag(tag.name, tag.color, tag.id)
     }
 
-    fun upsertTag(tag: Tag) {
-        upsertTag(TagRef(tag.id, tag.name, tag.color))
-        subs.setTagUnread(tag.unreadCount.toLong(), tag.id)
-    }
+    fun upsertTag(tag: Tag) = upsertTag(TagRef(tag.id, tag.name, tag.color))
 
     fun deleteTag(id: String) {
         subs.deleteTag(id)
         subs.deleteTagLinks(id)
     }
-
-    fun applyCounts(counts: UnreadCounts) {
-        subs.setListCount("all", counts.all.unread.toLong())
-        subs.setListCount("starred", counts.starred.unread.toLong())
-        counts.saved?.let { subs.setListCount("saved", it.unread.toLong()) }
-        counts.uncategorized?.let { subs.setListCount("uncategorized", it.unread.toLong()) }
-        counts.subscriptions.forEach { subs.setSubscriptionUnread(it.unread.toLong(), it.id) }
-        counts.tags.forEach { subs.setTagUnread(it.unread.toLong(), it.id) }
-    }
-
-    fun setListCount(list: String, unread: Int) = subs.setListCount(list, unread.toLong())
 
     /** Forgets everything synced, keeping unsent changes (a resync). */
     fun clearSynced() {
@@ -232,7 +195,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
         subs.deleteAllSubscriptions()
         subs.deleteAllTags()
         subs.deleteAllSubscriptionTags()
-        subs.deleteAllListCounts()
         meta.deleteAll()
     }
 
@@ -240,7 +202,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
     fun clearAll() {
         clearSynced()
         db.outboxQueries.deleteAllStates()
-        db.outboxQueries.deleteAllMarkAll()
     }
 }
 
