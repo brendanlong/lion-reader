@@ -22,6 +22,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
+import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -72,8 +74,11 @@ fun EntryScreen(
     val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
     val pager = rememberPagerState(initialPage = pages.indexOf(startId)) { pages.size }
     val entryId = pages[pager.settledPage]
-    val entry by
-        remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
+    // Each page reports its entry, so the top bar can follow the page a swipe
+    // is heading to (not the one it settles on) with that page's state
+    // already loaded.
+    val entries = remember { mutableStateMapOf<String, EntryDetail>() }
+    val entry = entries[pages[pager.targetPage]]
     val coroutines = rememberCoroutineScope()
     val tokens = remember { AppearanceTokens.load(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
@@ -144,6 +149,10 @@ fun EntryScreen(
                                 else R.drawable.ic_circle
                             ),
                             contentDescription = if (current.read) "Mark unread" else "Mark read",
+                            tint = actionTint(active = !current.read),
+                            // The list's size: a full-size filled dot outweighs
+                            // the outline icons beside it.
+                            modifier = Modifier.size(16.dp),
                         )
                     }
                     IconButton(
@@ -159,9 +168,7 @@ fun EntryScreen(
                                 else R.drawable.ic_star_border
                             ),
                             contentDescription = if (current.starred) "Unstar" else "Star",
-                            tint =
-                                if (current.starred) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = actionTint(active = current.starred),
                         )
                     }
                     current.url?.let { url ->
@@ -206,6 +213,7 @@ fun EntryScreen(
                 pages[page],
                 tokens,
                 showSummary = pages[page] !in hiddenSummaries,
+                onEntry = { entries[it.id] = it },
             )
         }
     }
@@ -236,10 +244,12 @@ private fun EntryPage(
     entryId: String,
     tokens: AppearanceTokens,
     showSummary: Boolean,
+    onEntry: (EntryDetail) -> Unit,
 ) {
     val context = LocalContext.current
     val entry by
         remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
+    LaunchedEffect(entry) { entry?.let(onEntry) }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     var loadFailed by remember(entryId) { mutableStateOf(false) }
 
@@ -342,12 +352,15 @@ private fun SummaryButton(
                         shown -> "Hide summary"
                         else -> "Show summary"
                     },
-                tint =
-                    if (hasSummary && shown) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = actionTint(active = hasSummary && shown),
             )
         }
     }
 }
+
+/** Top-bar icons: amber for an active state (unread, starred, summary shown), like the list. */
+@Composable
+private fun actionTint(active: Boolean): Color =
+    if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
 
 private fun Color.css(): String = "#%06X".format(toArgb() and 0xFFFFFF)
