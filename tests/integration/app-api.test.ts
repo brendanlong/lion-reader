@@ -197,7 +197,27 @@ describe("GET /auth/me", () => {
     const me = await rest(token, "GET", "/auth/me");
     expect(me.status).toBe(200);
     expect((await me.json()).user.tosAgreedAt).toBeNull();
-    expect((await rest(token, "GET", "/entries")).status).toBe(403);
+    const entries = await rest(token, "GET", "/entries");
+    expect(entries.status).toBe(403);
+    expect((await entries.json()).message).toBe(
+      "You must complete signup before accessing this resource"
+    );
+  });
+
+  it("still serves browser sessions, confirmed or not", async () => {
+    for (const confirmed of [true, false]) {
+      const userId = await createTestUser({
+        emailPrefix: "app-api-session",
+        ...(confirmed
+          ? {}
+          : { tosAgreedAt: null, privacyPolicyAgreedAt: null, notEuAgreedAt: null }),
+      });
+      createdUserIds.push(userId);
+      const { token } = await createSession(db, { userId });
+      const res = await rest(token, "GET", "/auth/me");
+      expect(res.status).toBe(200);
+      expect((await res.json()).user.id).toBe(userId);
+    }
   });
 
   it("stays closed to MCP API tokens", async () => {

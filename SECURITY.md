@@ -160,6 +160,9 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - **Authorization is fail-closed.** `protectedProcedure` is **session-only**; token
   access is explicit opt-in via `scopedProtectedProcedure(scope)`. New endpoints
   are token-inaccessible until they opt in — keep it that way.
+- `scopedUnconfirmedProcedure` also opts in but skips the signup-confirmation
+  gate; **use it only for the caller's own account/confirmation state (today
+  `auth.me`), never for user content**, or tokens would bypass the ToS/EU gate.
 - **Every resource read/mutation must be scoped to the authenticated user**
   (`WHERE user_id = …` or the `visible_entries` / `user_feeds` views). No fetching
   a resource by an id from input without a user predicate (IDOR).

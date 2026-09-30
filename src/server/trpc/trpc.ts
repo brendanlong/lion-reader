@@ -192,7 +192,7 @@ const sessionOnlyMiddleware = t.middleware(({ ctx, next }) => {
  * Protected procedure - requires a browser session (not an API token).
  * The session is guaranteed to be non-null in the handler.
  * Does NOT require signup confirmation — use for auth management endpoints
- * (auth.me, auth.confirmSignup, auth.logout, etc.)
+ * (auth.confirmSignup, auth.logout, etc.)
  */
 export const protectedProcedure = t.procedure
   .use(timingMiddleware)
@@ -296,6 +296,10 @@ export function scopedProtectedProcedure(scopes: OAuthScope | OAuthScope[]) {
  * Like {@link scopedProtectedProcedure} but without the signup-confirmation
  * requirement, for the few endpoints an unconfirmed user must reach (e.g.
  * `auth.me`, which the confirmation flow itself reads).
+ *
+ * **Only for the caller's own account/confirmation state — never for reading or
+ * changing user content.** Using it on a data endpoint would let tokens bypass
+ * the ToS/EU signup gate.
  *
  * @param scopes - The required scope(s) for token access (any-of)
  */

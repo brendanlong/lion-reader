@@ -775,7 +775,8 @@ export const authRouter = createTRPCRouter({
   /**
    * Get the current authenticated user.
    *
-   * Returns the user profile for the currently authenticated session.
+   * Returns the profile of the signed-in user: a browser session's, or the
+   * native app token's owner.
    */
   // The native app reads this to learn which account its token belongs to.
   me: scopedUnconfirmedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
