@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/fixup-standalone.mjs"],
+      "entry": ["scripts/fixup-standalone.mjs", "src/lib/narration/app-reader.ts"],
       "ignore": ["extension/**", "kmp/**", "src/lib/stubs/**", "worker/index.ts"],
       "ignoreDependencies": ["mammoth"]
     },

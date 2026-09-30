@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -45,6 +46,11 @@ data class AppSettings(
     val retentionDays: Int = 30,
     /** Drawer tags shown with their feeds; the rest are collapsed. */
     val expandedTags: Set<String> = emptySet(),
+    /** The text-to-speech voice's name; null for the engine's default. */
+    val narrationVoice: String? = null,
+    val narrationSpeed: Float = 1f,
+    /** Keep the paragraph being read on screen. */
+    val narrationAutoScroll: Boolean = true,
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
@@ -61,6 +67,9 @@ class SettingsRepository(private val context: Context) {
         val unreadOnly = booleanPreferencesKey("unread_only")
         val retentionDays = intPreferencesKey("retention_days")
         val expandedTags = stringSetPreferencesKey("expanded_tags")
+        val narrationVoice = stringPreferencesKey("narration_voice")
+        val narrationSpeed = floatPreferencesKey("narration_speed")
+        val narrationAutoScroll = booleanPreferencesKey("narration_auto_scroll")
     }
 
     val settings: Flow<AppSettings> = context.settingsStore.data.map { it.toSettings() }
@@ -75,6 +84,10 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.unreadOnly] = next.unreadOnly
             prefs[Keys.retentionDays] = next.retentionDays
             prefs[Keys.expandedTags] = next.expandedTags
+            next.narrationVoice?.let { prefs[Keys.narrationVoice] = it }
+                ?: prefs.remove(Keys.narrationVoice)
+            prefs[Keys.narrationSpeed] = next.narrationSpeed
+            prefs[Keys.narrationAutoScroll] = next.narrationAutoScroll
         }
     }
 
@@ -88,6 +101,9 @@ class SettingsRepository(private val context: Context) {
             unreadOnly = this[Keys.unreadOnly] ?: defaults.unreadOnly,
             retentionDays = this[Keys.retentionDays] ?: defaults.retentionDays,
             expandedTags = this[Keys.expandedTags] ?: defaults.expandedTags,
+            narrationVoice = this[Keys.narrationVoice],
+            narrationSpeed = this[Keys.narrationSpeed] ?: defaults.narrationSpeed,
+            narrationAutoScroll = this[Keys.narrationAutoScroll] ?: defaults.narrationAutoScroll,
         )
     }
 }

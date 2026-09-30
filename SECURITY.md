@@ -71,12 +71,14 @@ Entry bodies, saved articles, and AI summaries are rendered with
 
 - **The native app's reader view** (`kmp/androidApp/.../reader/`) renders the
   same sanitized HTML (article bodies and AI summaries) in a WebView next to
-  the app's tokens. **Invariant: the only script in the reader document is our
-  bundled `scroll-detect.js`** — its CSP (`ReaderHtml.kt`) allows that one
-  file, no fetch/XHR/WebSocket, no `base` or form targets. Allow-listed embeds run their own scripts in their
+  the app's tokens. **Invariant: the only scripts in the reader document are our
+  bundled `scroll-detect.js` and `narration.js`** — its CSP (`ReaderHtml.kt`)
+  allows those files, no fetch/XHR/WebSocket, no `base` or form targets. Allow-listed embeds run their own scripts in their
   sandboxed cross-origin frames, as on the web. No file or content access, no
-  bridge beyond one message channel limited to the asset origin's main frame,
-  and every navigation leaves for the browser. The article header's feed text
+  bridge beyond one message channel limited to the asset origin's main frame
+  (the app reads only layout, narration text and taps from it, and calls back
+  only `lionNarration.highlight` with a number), and every navigation leaves
+  for the browser. The article header's feed text
   (title, byline) enters the document only through `escapeHtml`. Loosening any
   of that needs a security review.
 - **The native app's share target** (`ShareActivity`) is exported, so any app
