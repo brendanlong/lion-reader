@@ -159,7 +159,7 @@ can't be an App Link, so the sign-in ends on the server's "opened in your
 browser" page; hand the redirect to the app yourself:
 
 ```bash
-adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -a android.intent.action.VIEW \
+adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -a com.lionreader.app.DEBUG_SIGN_IN_CALLBACK \
   -d "'http://localhost:<port>/oauth/app-callback?code=...&state=...'"
 ```
 
