@@ -36,7 +36,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -49,11 +48,15 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.narration.NarratedArticle
+import com.lionreader.app.narration.NarrationState
 import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
@@ -64,7 +67,7 @@ import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -100,19 +103,19 @@ fun EntryScreen(
     LaunchedEffect(Unit) {
         graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    // Narration follows the article on screen: swiping to another switches to
-    // it once it's loaded (or ends a paused narration, rather than start one).
-    LaunchedEffect(entryId) {
-        val current = graph.narrator.state.value ?: return@LaunchedEffect
-        if (current.entryId == entryId) return@LaunchedEffect
-        if (!current.playing) return@LaunchedEffect graph.narrator.stop()
-        val paragraphs = snapshotFlow { spoken[entryId] }.filterNotNull().first()
-        val shown = snapshotFlow { entries[entryId] }.filterNotNull().first()
-        if (paragraphs.isEmpty()) return@LaunchedEffect graph.narrator.stop()
-        graph.narrator.narrate(
-            NarratedArticle(entryId, shown.title ?: "Untitled", shown.source, paragraphs)
-        )
-    }
+    NarrationFollowsPage(
+        narration,
+        entryId,
+        spoken[entryId],
+        entries[entryId],
+        started =
+            LocalLifecycleOwner.current.lifecycle
+                .currentStateAsState()
+                .value
+                .isAtLeast(Lifecycle.State.STARTED),
+        narrate = graph.narrator::narrate,
+        stop = graph.narrator::stop,
+    )
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
     val coroutines = rememberCoroutineScope()
@@ -327,6 +330,37 @@ fun EntryScreen(
                     ),
             )
         }
+    }
+}
+
+/**
+ * Narration is of the article on screen: when the pager settles on another while one plays, and
+ * stays there for [settle] (so swiping past articles doesn't start, and with cloud voices pay for,
+ * each), narration switches to it once its [paragraphs] are in. A paused narration ends instead.
+ * Only while the app is on screen: a switch empties the player, and media3 can't bring its
+ * foreground service back from the background.
+ */
+@Composable
+internal fun NarrationFollowsPage(
+    narration: NarrationState?,
+    entryId: String,
+    paragraphs: List<String>?,
+    entry: EntryDetail?,
+    started: Boolean,
+    narrate: (NarratedArticle) -> Unit,
+    stop: () -> Unit,
+    settle: Long = 1_000,
+) {
+    val current by rememberUpdatedState(entry)
+    val other = narration?.takeIf { it.entryId != entryId }
+    LaunchedEffect(entryId, other?.entryId, other?.playing, paragraphs, entry == null, started) {
+        if (other == null) return@LaunchedEffect
+        if (!other.playing) return@LaunchedEffect stop()
+        if (paragraphs == null || !started) return@LaunchedEffect
+        delay(settle)
+        val shown = current ?: return@LaunchedEffect
+        if (paragraphs.isEmpty()) stop()
+        else narrate(NarratedArticle(entryId, shown.title ?: "Untitled", shown.source, paragraphs))
     }
 }
 

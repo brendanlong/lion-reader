@@ -166,7 +166,9 @@ class MainActivity : ComponentActivity() {
         var hadArticle by remember { mutableStateOf(articleOpen) }
         LaunchedEffect(articleOpen) {
             if (!articleOpen) home.shownClosed()
-            if (hadArticle && !articleOpen) graph.narrator.stop()
+            if (hadArticle && !articleOpen && graph.narrator.state.value != null) {
+                graph.narrator.stop()
+            }
             hadArticle = articleOpen
         }
         NavDisplay(
