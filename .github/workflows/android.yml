@@ -23,6 +23,8 @@ jobs:
   check:
     name: Check and Build
     runs-on: ubuntu-latest
+    outputs:
+      apk-url: ${{ steps.upload.outputs.artifact-url }}
     defaults:
       run:
         working-directory: kmp
@@ -72,6 +74,7 @@ jobs:
           ./gradlew assembleDebug
 
       - name: Upload debug APK
+        id: upload
         if: steps.debug.outputs.signed == 'true'
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -86,3 +89,36 @@ jobs:
         with:
           name: android-reports
           path: kmp/*/build/reports/
+
+  # Its own job, so only this one (not the build, which runs the tests) can
+  # write to the pull request.
+  debug-apk-link:
+    name: Link the debug APK
+    needs: check
+    if: needs.check.outputs.apk-url != ''
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      # One comment per pull request, updated on each push.
+      - name: Comment and summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          URL: ${{ needs.check.outputs.apk-url }}
+        run: |
+          MARKER="<!-- android-debug-apk -->"
+          BODY="$MARKER
+          📱 **Debug APK** for ${SHA:0:7}: [download]($URL) (a zip with the APK in it; kept 30 days). Signed with the shared dev key, so it installs over any other debug build and can sign in to production."
+          BODY=$(printf '%s\n' "$BODY" | sed 's/^ *//')
+          echo "$BODY" >> "$GITHUB_STEP_SUMMARY"
+          [ -n "$PR" ] || exit 0
+          ID=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            -q ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | head -1)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$ID" -f body="$BODY" > /dev/null
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -f body="$BODY" > /dev/null
+          fi
