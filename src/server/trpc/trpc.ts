@@ -440,23 +440,28 @@ export function expensiveScopedProtectedProcedure(scopes: OAuthScope | OAuthScop
 const MIN_SPEECH_CHARGE = 200;
 
 /**
- * Confirmed protected procedure on the speech-synthesis rate limit, which is
- * counted in characters: each call is charged its validated `text` length
- * (at least {@link MIN_SPEECH_CHARGE}), so the input schema is part of the
- * builder.
+ * {@link scopedProtectedProcedure} on the speech-synthesis rate limit, which is
+ * counted in characters: each call is charged its validated `text` length (at
+ * least {@link MIN_SPEECH_CHARGE}), so the input schema is part of the builder.
+ * The limit is per user, shared by sessions and tokens.
+ *
+ * @param scopes - The required scope(s) for token access (any-of)
  */
-export function speechConfirmedProtectedProcedure<TInput extends { text: string }>(
+export function speechScopedProtectedProcedure<TInput extends { text: string }>(
+  scopes: OAuthScope | OAuthScope[],
   input: ZodType<TInput, TInput>
 ) {
-  return confirmedProtectedProcedure.input(input).use(async ({ ctx, input, next }) => {
-    const rateLimitHeaders = await performRateLimitCheck(
-      ctx.session.user.id,
-      ctx.headers,
-      "speech",
-      Math.max(input.text.length, MIN_SPEECH_CHARGE)
-    );
-    return next({ ctx: { ...ctx, rateLimitHeaders } });
-  });
+  return scopedProtectedProcedure(scopes)
+    .input(input)
+    .use(async ({ ctx, input, next }) => {
+      const rateLimitHeaders = await performRateLimitCheck(
+        ctx.session.user.id,
+        ctx.headers,
+        "speech",
+        Math.max(input.text.length, MIN_SPEECH_CHARGE)
+      );
+      return next({ ctx: { ...ctx, rateLimitHeaders } });
+    });
 }
 
 // ============================================================================

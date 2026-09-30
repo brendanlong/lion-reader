@@ -6,7 +6,7 @@
  * is accepted, and only on endpoints that opted in), the authorize endpoint's
  * audience binding, and the app-only endpoints (`sync.changes`,
  * `entries.getMany`, `entries.setStarredMany`, clock-skew rebasing, summaries,
- * saving shared links).
+ * saving shared links, cloud voices).
  */
 
 import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
@@ -567,5 +567,49 @@ describe("POST /saved", () => {
     // How the app tells this 401 from an expired token (it refreshes only for
     // one without a code).
     expect(body.data.appErrorCode).toBe("NEEDS_GOOGLE_SIGNIN");
+  });
+});
+
+describe("cloud voices", () => {
+  // With no AI provider key there are no cloud voices; that's enough to show
+  // the app gets past the token gate (no network either way).
+  const savedKeys = new Map<string, string | undefined>();
+  beforeAll(() => {
+    for (const name of Object.values(AI_PROVIDER_ENV_KEYS)) {
+      savedKeys.set(name, process.env[name]);
+      delete process.env[name];
+    }
+  });
+  afterAll(() => {
+    for (const [name, value] of savedKeys) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it("lets the app list voice models and ask for speech", async () => {
+    const token = await appToken(await createUser());
+
+    const models = await rest(token, "GET", "/narration/voice-models");
+    expect(models.status).toBe(200);
+    expect((await models.json()).models).toEqual([]);
+
+    const speech = await rest(token, "POST", "/narration/synthesize", {
+      model: null,
+      voice: null,
+      text: "Hello.",
+    });
+    // Past the gate: rejected for the missing key, not the token.
+    expect(speech.status).toBe(400);
+    expect((await speech.json()).message).toContain("OpenRouter API key");
+  });
+
+  it("rejects an mcp API token", async () => {
+    const { token } = await createApiToken(await createUser(), ["mcp"]);
+    expect((await rest(token, "GET", "/narration/voice-models")).status).toBe(403);
+    expect(
+      (await rest(token, "POST", "/narration/synthesize", { model: null, voice: null, text: "Hi" }))
+        .status
+    ).toBe(403);
   });
 });

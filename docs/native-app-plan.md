@@ -35,9 +35,9 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 How narration works in the app is in `kmp/CLAUDE.md`; what's left:
 
-- **Cloud voices** (Kokoro via `narration.synthesize`): token access for
-  `synthesize` and `listVoiceModels`, and a binary response (bytes, not base64
-  JSON). The app prefetches by listening time as the web does and caches MP3
+- **Cloud voices** (Kokoro via `narration.synthesize`, which the app's token
+  can call; its response stays base64 JSON, a third bigger than raw bytes but
+  without a second authenticated route to keep in step). The app prefetches by listening time as the web does and caches MP3
   chunks on disk keyed by `(model, voice, textHash)` with a small LRU cap (no
   offline guarantee), and strips each chunk's Xing frame before playing them
   back to back.
