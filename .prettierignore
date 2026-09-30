@@ -20,3 +20,6 @@ yarn.lock
 
 # Generated OpenAPI snapshot (compared byte-for-byte by tests)
 docs/api/openapi.json
+
+# Kotlin Multiplatform app (Gradle; its build dirs hold generated HTML/JSON)
+kmp/

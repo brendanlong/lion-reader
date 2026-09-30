@@ -1,0 +1,40 @@
+-- Downloaded article bodies (sanitized HTML), apart from entry so that the body
+-- downloader, which runs outside the sync lock, can never touch read/starred
+-- state. An empty body means "downloaded, nothing to show" (or no longer
+-- visible), so it isn't asked for again.
+CREATE TABLE entry_body (
+  entry_id TEXT NOT NULL PRIMARY KEY,
+  content TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  downloaded_at INTEGER NOT NULL
+);
+
+-- Stores a body fetched at the entry's :bodyVersion, only while the entry is
+-- still on the device at that version: a download racing a deletion or an edit
+-- can't leave a missing or stale body behind (pruneOrphans catches the rest).
+putIfCurrent:
+INSERT OR REPLACE INTO entry_body(entry_id, content, size, downloaded_at)
+SELECT :entryId, :content, :size, :downloadedAt
+WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVersion);
+
+deleteForEntry:
+DELETE FROM entry_body WHERE entry_id = ?;
+
+-- Bodies whose entry is gone (retention, deletions, unsubscribes).
+pruneOrphans:
+DELETE FROM entry_body WHERE entry_id NOT IN (SELECT id FROM entry);
+
+deleteAll:
+DELETE FROM entry_body;
+
+totalSize:
+SELECT COALESCE(SUM(size), 0) FROM entry_body;
+
+-- Budget eviction order: read before unread, oldest first; starred and saved
+-- bodies are kept.
+evictionCandidates:
+SELECT b.entry_id, b.size
+FROM entry_body b
+JOIN entry_view v ON v.id = b.entry_id
+WHERE v.type != 'saved' AND v.effective_starred = 0
+ORDER BY v.effective_read DESC, v.sort_at ASC;

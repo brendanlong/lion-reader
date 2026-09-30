@@ -11,7 +11,7 @@ Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automa
 - `docs/DEPLOYMENT.md` - Fly.io deployment/provisioning guide.
 - `terraform/` - Everything about the deployment that `fly.toml` does not own, as code, with its own README. **If it is third-party infrastructure, it changes there and not in a dashboard.**
 - `docs/fly-postgres-ops.md` - Fly Postgres Flex operations, recovery & backups (quorum, split-brain, zombie nodes, WAL/PITR restore & drill). **Read before any DB region move, failover, destroying a PG machine, or a restore.**
-- Per-directory guides: `src/server/CLAUDE.md` (data model, services, compat-API ids), `src/server/html/CLAUDE.md` (sanitization), `src/server/feed/CLAUDE.md` (fetching/WebSub), `src/server/auth/CLAUDE.md` (sessions/scopes), `src/server/oauth/CLAUDE.md` (OAuth server/MCP auth), `src/server/http/CLAUDE.md` (SSRF-safe fetching), `src/CLAUDE.md` + `src/components/CLAUDE.md` (frontend), `tests/CLAUDE.md` (testing).
+- Per-directory guides: `src/server/CLAUDE.md` (data model, services, compat-API ids), `src/server/html/CLAUDE.md` (sanitization), `src/server/feed/CLAUDE.md` (fetching/WebSub), `src/server/auth/CLAUDE.md` (sessions/scopes), `src/server/oauth/CLAUDE.md` (OAuth server/MCP auth), `src/server/http/CLAUDE.md` (SSRF-safe fetching), `src/CLAUDE.md` + `src/components/CLAUDE.md` (frontend), `tests/CLAUDE.md` (testing), `kmp/CLAUDE.md` (Kotlin Multiplatform / Android app build).
 
 ALWAYS read the relevant documentation before working.
 

@@ -1,0 +1,87 @@
+package com.lionreader.app.ui
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.lionreader.shared.data.Reader
+import com.lionreader.shared.db.LionReaderDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+
+@RunWith(AndroidJUnit4::class)
+// The real Application schedules WorkManager, which these tests don\'t need.
+@Config(application = android.app.Application::class)
+class HomeScreenTest {
+    @get:Rule val composeRule = createComposeRule()
+
+    private val db =
+        LionReaderDatabase(
+            AndroidSqliteDriver(
+                LionReaderDatabase.Schema,
+                ApplicationProvider.getApplicationContext(),
+                null,
+            )
+        )
+    private val reader = Reader(db, { 1_000L }, Dispatchers.Unconfined) {}
+    private val unreadOnly = MutableStateFlow(true)
+
+    private fun seed(id: String, title: String, read: Boolean) {
+        db.entryQueries.insertIgnore(id, "feed", "web", 0, 0, if (read) 1 else 0, 0)
+        db.entryQueries.updateAll(
+            null,
+            "feed",
+            "web",
+            null,
+            title,
+            null,
+            null,
+            null,
+            "Example Feed",
+            null,
+            0,
+            0,
+            if (read) 1 else 0,
+            0,
+            id,
+        )
+    }
+
+    private fun show() {
+        val model = HomeViewModel(reader, unreadOnly, { unreadOnly.value = it }) {}
+        composeRule.setContent { HomeScreen(model, onOpen = {}, onSettings = {}) }
+    }
+
+    @Test
+    fun unreadOnlyHidesReadArticlesUntilToggled() {
+        seed("a", "Unread article", read = false)
+        seed("b", "Read article", read = true)
+        show()
+
+        composeRule.onNodeWithText("Unread article").assertIsDisplayed()
+        composeRule.onNodeWithText("Read article").assertDoesNotExist()
+
+        composeRule.onNodeWithContentDescription("Showing unread").performClick()
+        composeRule.waitUntil { unreadOnly.value.not() }
+        composeRule.onNodeWithText("Read article").assertIsDisplayed()
+    }
+
+    @Test
+    fun starringRecordsAnUnsentChange() {
+        seed("a", "An article", read = false)
+        show()
+
+        composeRule.onNodeWithContentDescription("Star").performClick()
+
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        composeRule.onNodeWithContentDescription("Unstar").assertIsDisplayed()
+    }
+}

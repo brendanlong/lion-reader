@@ -12,7 +12,7 @@
         "src/server/mcp/bin.ts!"
       ],
       "project": ["src/**/*.{ts,tsx}!"],
-      "ignore": ["src/lib/stubs/**"]
+      "ignore": ["kmp/**", "src/lib/stubs/**"]
     }
   }
 }

@@ -1,0 +1,52 @@
+name: Android
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "kmp/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "kmp/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check and Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kmp
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Matches gradle/gradle-daemon-jvm.properties and the toolchain version in
+      # the catalog, so Gradle finds it instead of provisioning another JDK.
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Also validates the wrapper jar. Writes the cache only on master.
+      - uses: gradle/actions/setup-gradle@v6.4.0
+
+      # The runner image's Android SDK has its licenses accepted, so AGP
+      # installs the compile SDK / build tools it needs on first use.
+      - name: Check and assemble
+        run: ./gradlew check assembleDebug
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: android-reports
+          path: kmp/*/build/reports/

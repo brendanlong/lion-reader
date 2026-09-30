@@ -1,0 +1,147 @@
+-- Entries in the offline window: metadata and the last read/starred state the
+-- server reported. The user's unsent changes live in outbox_state and win on
+-- display (see entry_view); article bodies live in entry_body.
+CREATE TABLE entry (
+  id TEXT NOT NULL PRIMARY KEY,
+  subscription_id TEXT,
+  feed_id TEXT,
+  type TEXT NOT NULL,
+  url TEXT,
+  title TEXT,
+  author TEXT,
+  summary TEXT,
+  site_name TEXT,
+  feed_title TEXT,
+  published_at INTEGER,
+  fetched_at INTEGER NOT NULL,
+  -- COALESCE(published_at, fetched_at), the server's timeline order.
+  sort_at INTEGER NOT NULL,
+  read INTEGER NOT NULL,
+  starred INTEGER NOT NULL,
+  last_opened_at INTEGER,
+  -- Bumped when the server reports the entry edited, so a body downloaded
+  -- before the edit can't be stored after it (see Body.sq).
+  body_version INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX entry_timeline ON entry(sort_at DESC, id DESC);
+CREATE INDEX entry_subscription ON entry(subscription_id, sort_at DESC);
+
+CREATE VIEW entry_view AS
+SELECT
+  e.*,
+  COALESCE(r.value, e.read) AS effective_read,
+  COALESCE(s.value, e.starred) AS effective_starred
+FROM entry e
+LEFT JOIN outbox_state r ON r.entry_id = e.id AND r.field = 'read'
+LEFT JOIN outbox_state s ON s.entry_id = e.id AND s.field = 'starred';
+
+-- Upsert as insert-or-ignore + update: minSdk 26 ships SQLite 3.18, which
+-- predates ON CONFLICT DO UPDATE (and INSERT OR REPLACE would drop the body).
+insertIgnore:
+INSERT OR IGNORE INTO entry(id, feed_id, type, fetched_at, sort_at, read, starred)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateAll:
+UPDATE entry SET
+  subscription_id = ?, feed_id = COALESCE(?, feed_id), type = ?, url = ?, title = ?, author = ?,
+  summary = ?, site_name = ?, feed_title = ?, published_at = ?, fetched_at = ?, sort_at = ?,
+  read = ?, starred = ?
+WHERE id = ?;
+
+updateMetadata:
+UPDATE entry SET title = ?, author = ?, summary = ?, url = ?, published_at = ?,
+  sort_at = COALESCE(?, fetched_at)
+WHERE id = ?;
+
+updateServerState:
+UPDATE entry SET read = ?, starred = ? WHERE id = ?;
+
+updateServerRead:
+UPDATE entry SET read = ? WHERE id = ?;
+
+updateServerStarred:
+UPDATE entry SET starred = ? WHERE id = ?;
+
+markOpened:
+UPDATE entry SET last_opened_at = ? WHERE id = ?;
+
+exists:
+SELECT count(*) FROM entry WHERE id = ?;
+
+deleteById:
+DELETE FROM entry WHERE id = ?;
+
+deleteAll:
+DELETE FROM entry;
+
+-- Visibility after an unsubscribe: the web keeps starred entries visible.
+deleteUnstarredForSubscription:
+DELETE FROM entry
+WHERE subscription_id = ?
+  AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1);
+
+selectById:
+SELECT v.*, b.content
+FROM entry_view v
+LEFT JOIN entry_body b ON b.entry_id = v.id
+WHERE v.id = ?;
+
+-- Timeline for one list. Each filter argument is ignored when null.
+selectTimeline:
+SELECT id, subscription_id, type, url, title, author, summary, site_name, feed_title,
+  sort_at, effective_read, effective_starred
+FROM entry_view
+WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
+  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
+  AND (:starredOnly = 0 OR effective_starred = 1)
+  AND (:savedOnly = 0 OR type = 'saved')
+  AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
+ORDER BY sort_at DESC, id DESC
+LIMIT :limit;
+
+bumpBodyVersion:
+UPDATE entry SET body_version = body_version + 1 WHERE id = ?;
+
+bodyVersion:
+SELECT body_version FROM entry WHERE id = ?;
+
+-- Entries without a body worth keeping offline, newest first.
+selectMissingContent:
+SELECT id, body_version FROM entry_view
+WHERE id NOT IN (SELECT entry_id FROM entry_body)
+  AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved')
+ORDER BY sort_at DESC, id DESC
+LIMIT ?;
+
+unreadIdsInScope:
+SELECT id FROM entry_view
+WHERE effective_read = 0
+  AND (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
+  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
+  AND (:starredOnly = 0 OR effective_starred = 1)
+  AND (:savedOnly = 0 OR type = 'saved')
+  AND fetched_at <= :before;
+
+newestFetchedAt:
+SELECT MAX(fetched_at) FROM entry;
+
+-- Retention: drop entries outside the window unless starred, saved, or with an
+-- unsent change.
+evictOutsideWindow:
+DELETE FROM entry
+WHERE sort_at < ?
+  AND type != 'saved'
+  AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1)
+  AND id NOT IN (SELECT entry_id FROM outbox_state);
+
+-- Retention: keep at most N read entries, newest first (same exemptions).
+evictBeyondCount:
+DELETE FROM entry
+WHERE id IN (
+  SELECT id FROM entry_view
+  WHERE type != 'saved' AND effective_starred = 0 AND effective_read = 1
+    AND id NOT IN (SELECT entry_id FROM outbox_state)
+  ORDER BY sort_at DESC
+  LIMIT -1 OFFSET ?
+);
