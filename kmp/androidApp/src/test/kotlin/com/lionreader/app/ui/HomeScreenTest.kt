@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.AppSettings
+import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlinx.coroutines.Dispatchers
@@ -57,8 +58,10 @@ class HomeScreenTest {
         )
     }
 
+    private lateinit var model: HomeViewModel
+
     private fun show() {
-        val model = HomeViewModel(reader, settings, { settings.value = it(settings.value) }) {}
+        model = HomeViewModel(reader, settings, { settings.value = it(settings.value) }) {}
         composeRule.setContent { HomeScreen(model, onOpen = {}, onSettings = {}) }
     }
 
@@ -90,15 +93,19 @@ class HomeScreenTest {
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("sub", "tag")
+        db.subscriptionQueries.insertTagIgnore("empty", "Empty Tag", null)
         show()
 
         composeRule.onNodeWithContentDescription("Lists").performClick()
         composeRule.onNodeWithText("News").assertIsDisplayed()
         composeRule.onNodeWithText("Nested Feed").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Expand Empty Tag").assertDoesNotExist()
 
         composeRule.onNodeWithContentDescription("Expand News").performClick()
         composeRule.waitUntil { "tag" in settings.value.expandedTags }
         composeRule.onNodeWithText("Nested Feed").assertIsDisplayed()
+        // Expanding doesn't also open the tag's list.
+        assertEquals(ListScope.All, model.scope.value)
 
         composeRule.onNodeWithContentDescription("Collapse News").performClick()
         composeRule.waitUntil { settings.value.expandedTags.isEmpty() }

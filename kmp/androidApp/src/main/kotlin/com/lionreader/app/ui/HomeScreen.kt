@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,7 +47,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -271,7 +271,11 @@ private fun Drawer(
             }
             for (tag in nav.tags) {
                 val subscriptions = nav.subscriptionsIn(tag.id)
-                val expanded = tag.id in expandedTags
+                // The open feed's tag shows its feeds, so the open list stays visible.
+                val expanded =
+                    tag.id in expandedTags ||
+                        (selected is ListScope.Subscription &&
+                            subscriptions.any { it.id == selected.id })
                 item(key = "tag-${tag.id}") {
                     DrawerRow(
                         tag.name,
@@ -280,6 +284,9 @@ private fun Drawer(
                         icon = {
                             if (subscriptions.isNotEmpty()) {
                                 ExpandButton(tag.name, expanded) { onToggleTag(tag.id) }
+                            } else {
+                                // Keeps the name in line with the other tags'.
+                                Spacer(Modifier.size(48.dp))
                             }
                         },
                     ) {
@@ -320,9 +327,10 @@ private fun Drawer(
 private fun ExpandButton(name: String, expanded: Boolean, onClick: () -> Unit) {
     IconButton(onClick = onClick) {
         Icon(
-            painterResource(R.drawable.ic_chevron_right),
+            painterResource(
+                if (expanded) R.drawable.ic_expand_more else R.drawable.ic_chevron_right
+            ),
             contentDescription = if (expanded) "Collapse $name" else "Expand $name",
-            modifier = Modifier.rotate(if (expanded) 90f else 0f),
         )
     }
 }
