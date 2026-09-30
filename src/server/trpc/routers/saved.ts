@@ -172,9 +172,10 @@ export const savedRouter = createTRPCRouter({
         excerpt: input.excerpt,
         refetch: input.refetch,
         force: input.force,
-        // The web UI can walk the user through Google sign-in / consent, so it
-        // wants the machine-readable NEEDS_* codes it matches to drive prompts.
-        googleDocsAuth: "interactive",
+        // The web UI and the extension walk the user through Google sign-in /
+        // consent, so they want the machine-readable NEEDS_* codes they match to
+        // drive prompts; the app can't, so it gets the readable messages.
+        googleDocsAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
 
       return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };

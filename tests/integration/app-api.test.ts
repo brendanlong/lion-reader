@@ -553,4 +553,19 @@ describe("POST /saved", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).article.title).toBe("Shared Article");
   });
+
+  it("explains a private Google Doc in words, not the web UI's NEEDS_* codes", async () => {
+    const userId = await createUser();
+    // Not public, and no Google account linked: stops at the auth gate, no network.
+    const res = await rest(await appToken(userId), "POST", "/saved", {
+      url: "https://docs.google.com/document/d/1PrIvAtEdOcIdAbCdEfGhIjKlMnOpQr/edit",
+    });
+    const body = await res.json();
+    expect(res.status).toBe(401);
+    expect(body.message).not.toBe("NEEDS_GOOGLE_SIGNIN");
+    expect(body.message.toLowerCase()).toContain("web app");
+    // How the app tells this 401 from an expired token (it refreshes only for
+    // one without a code).
+    expect(body.data.appErrorCode).toBe("NEEDS_GOOGLE_SIGNIN");
+  });
 });
