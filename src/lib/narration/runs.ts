@@ -95,10 +95,19 @@ const MAX_DEPTH = 64;
 
 /** A table's own structure, which a layout table is walked through. */
 const TABLE_STRUCTURE = new Set(["thead", "tbody", "tfoot", "tr", "td", "th"]);
+const ROW_GROUPS = new Set(["thead", "tbody", "tfoot"]);
 
 function isTableTag(el: Element | null): boolean {
   const tagName = el?.tagName.toLowerCase() ?? "";
   return tagName === "table" || TABLE_STRUCTURE.has(tagName);
+}
+
+/** Whether a table structure element sits where the spec parser would put it. */
+function inExpectedParent(el: Element, tagName: string): boolean {
+  const parent = el.parentElement?.tagName.toLowerCase() ?? "";
+  if (tagName === "td" || tagName === "th") return parent === "tr";
+  if (tagName === "tr") return parent === "table" || ROW_GROUPS.has(parent);
+  return parent === "table";
 }
 
 /** What every level of the walk shares. */
@@ -209,19 +218,19 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
 
     // Blocks that narrate their whole subtree, so the walk stops here: their
     // text is a formatted whole (a data table's rows, a code listing) that can't be
-    // assembled from the paragraphs inside it.
+    // assembled from the paragraphs inside it. Reading a table's cells recurses,
+    // so only a code listing, which reads flat text, comes before the depth cap.
     if (tagName === "pre") {
       const code = flatText(el, voice, consumed).trim();
       if (voice.speakCodeBlocks && code) push(el, `Code block: ${code} End code block.`);
       return;
     }
-    if (tagName === "table" && !isLayoutTable(el)) {
-      push(el, tableText(el, ctx, depth));
-      return;
-    }
-
     if (depth >= MAX_DEPTH) {
       push(el, flatText(el, voice, consumed));
+      return;
+    }
+    if (tagName === "table" && !isLayoutTable(el)) {
+      push(el, tableText(el, ctx, depth));
       return;
     }
 
@@ -287,6 +296,14 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
     // An inert GFM task-list checkbox (issue #1439). It contributes no text of
     // its own; its item speaks the state, which is the only cue it carries.
     if (tagName === "input") return;
+    if (tagName === "a") {
+      visitLink(el, depth);
+      return;
+    }
+    if (depth >= MAX_DEPTH) {
+      appendWords(flatText(el, voice, consumed));
+      return;
+    }
     if (tagName === "code" && voice.structuralMarkers) {
       // Wrapped after the fact rather than read from `textContent`, so whatever
       // is inside (an image's alt text) is still spoken.
@@ -297,14 +314,6 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       if (code.trim() && !code.includes("`") && runs.length === runsBefore) {
         text = `${text.slice(0, before)}\`${code.trim()}\``;
       }
-      return;
-    }
-    if (tagName === "a") {
-      visitLink(el, depth);
-      return;
-    }
-    if (depth >= MAX_DEPTH) {
-      appendWords(flatText(el, voice, consumed));
       return;
     }
     // Everything else is phrasing content (strong, em, span, math, …) and
@@ -330,12 +339,15 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
     // Only reached inside a layout table (a data table reads its own cells) —
     // a `<td>` elsewhere, as in `<math>`, is phrasing. Its structure costs no
     // depth, or an email's nesting would spend the budget four levels per table.
-    if (TABLE_STRUCTURE.has(tagName) && isTableTag(el.parentElement)) {
+    // Structure nested inside structure (`<tr><tbody>`, which linkedom's parse
+    // builds and the spec parser never does) does cost depth, so it stays bounded.
+    if (TABLE_STRUCTURE.has(tagName) && isTableTag(el.parentElement) && depth < MAX_DEPTH) {
       const cell = tagName === "td" || tagName === "th";
       // A cell is a column of the page, so it ends the run before it. It owns
       // nothing, since cells aren't numbered — its text stays with the table.
       if (cell) flush();
-      el.childNodes.forEach((child) => visit(child, depth));
+      const cost = inExpectedParent(el, tagName) ? 0 : 1;
+      el.childNodes.forEach((child) => visit(child, depth + cost));
       if (cell) flush();
       return;
     }
