@@ -115,8 +115,6 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = search != null) { model.setSearch(null) }
-    // The drawer doesn't close itself on back.
-    BackHandler(enabled = drawer.isOpen) { coroutines.launch { drawer.close() } }
     // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
     val timelineList = rememberLazyListState()
     val searchList = remember(search == null) { LazyListState() }
@@ -126,7 +124,8 @@ fun HomeScreen(
         // Not while searching: the edge swipe would open it from the search box.
         gesturesEnabled = search == null || drawer.isOpen,
         drawerContent = {
-            ModalDrawerSheet {
+            // Given the state, it closes on back (with the predictive animation).
+            ModalDrawerSheet(drawerState = drawer) {
                 Drawer(
                     navigation = navigation,
                     selected = scope,

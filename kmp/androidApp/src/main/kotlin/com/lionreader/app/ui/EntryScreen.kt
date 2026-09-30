@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -130,9 +131,12 @@ fun EntryScreen(
                 title = {
                     Box(
                         Modifier.fillMaxWidth().height(1.dp).semantics {
+                            // Once it's loaded, so a slow page isn't announced twice.
+                            val shown = entries[entryId] ?: return@semantics
                             liveRegion = LiveRegionMode.Polite
+                            heading()
                             contentDescription =
-                                "${entries[entryId]?.title ?: "Article"}, " +
+                                "${shown.title ?: "Untitled"}, " +
                                     "${pager.settledPage + 1} of ${pages.size}"
                         }
                     )

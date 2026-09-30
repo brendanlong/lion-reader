@@ -1,12 +1,14 @@
 package com.lionreader.app.ui
 
 import android.os.Looper
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
@@ -18,6 +20,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -183,6 +187,22 @@ class HomeScreenTest {
     }
 
     @Test
+    fun theStarButtonStillWorksByTouch() {
+        seed("a", "An article", read = false)
+        show()
+
+        // The star is the top of the two buttons at the row's end.
+        composeRule.onNodeWithText("An article", substring = true).performTouchInput {
+            click(Offset(right - 22.dp.toPx(), top + 22.dp.toPx()))
+        }
+
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Unread, Starred"))
+    }
+
+    @Test
     fun backClosesTheDrawer() {
         show()
         composeRule.onNodeWithContentDescription("Lists").performClick()
@@ -239,6 +259,12 @@ class HomeScreenTest {
             .onNodeWithText("An article", substring = true)
             .assert(hasStateDescription("Unread, Starred"))
             .performCustomAccessibilityActionWithLabel("Unstar")
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Unread"))
+        // The row is the one stop: its buttons aren't separate ones.
+        composeRule.onNodeWithContentDescription("Star").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Mark read").assertDoesNotExist()
     }
 
     @Test
@@ -269,6 +295,9 @@ class HomeScreenTest {
             .performCustomAccessibilityActionWithLabel("Mark read")
 
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Read"))
         // Still listed: entries touched in this list stay until it's reloaded.
         composeRule.onNodeWithText("An article").assertIsDisplayed()
     }
