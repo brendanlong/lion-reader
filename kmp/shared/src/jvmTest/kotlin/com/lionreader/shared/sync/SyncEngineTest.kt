@@ -7,6 +7,7 @@ import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncEvent
+import com.lionreader.shared.api.TagRef
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
@@ -374,5 +375,21 @@ class SyncEngineTest {
             setOf("a", "b"),
             server.markReadRequests.single().entries.map { it.id }.toSet(),
         )
+    }
+
+    @Test
+    fun uncategorizedHoldsFeedsWithoutATag() = runTest {
+        server.subscriptions +=
+            Subscription("sub-1", FeedType.WEB, tags = listOf(TagRef("tag-1", "News")))
+        server.subscriptions += Subscription("sub-2", FeedType.WEB)
+        serve(
+            entry("tagged"),
+            entry("untagged", subscriptionId = "sub-2"),
+            entry("saved", subscriptionId = null, type = FeedType.SAVED),
+        )
+        engine.sync()
+
+        assertEquals(listOf("untagged"), timeline(ListScope.Uncategorized))
+        assertEquals(listOf("untagged"), reader.unreadIds(ListScope.Uncategorized))
     }
 }

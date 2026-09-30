@@ -152,4 +152,39 @@ class HomeScreenTest {
         // Still listed: entries touched in this list stay until it's reloaded.
         composeRule.onNodeWithText("An article").assertIsDisplayed()
     }
+
+    @Test
+    fun feedsWithoutATagGroupUnderUncategorized() {
+        db.subscriptionQueries.upsertSubscription(
+            "tagged",
+            "feed-1",
+            "web",
+            "Tagged Feed",
+            "https://example.com/1",
+            null,
+            0,
+        )
+        db.subscriptionQueries.upsertSubscription(
+            "loose",
+            "feed-2",
+            "web",
+            "Loose Feed",
+            "https://example.com/2",
+            null,
+            0,
+        )
+        db.subscriptionQueries.insertTagIgnore("tag", "News", null)
+        db.subscriptionQueries.addSubscriptionTag("tagged", "tag")
+        show()
+
+        composeRule.onNodeWithContentDescription("Lists").performClick()
+        composeRule.onNodeWithText("Loose Feed").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Expand Uncategorized").performClick()
+        composeRule.waitUntil { "uncategorized" in settings.value.expandedTags }
+        composeRule.onNodeWithText("Loose Feed").assertIsDisplayed()
+        composeRule.onNodeWithText("Tagged Feed").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Uncategorized").performClick()
+        assertEquals(ListScope.Uncategorized, model.scope.value)
+    }
 }

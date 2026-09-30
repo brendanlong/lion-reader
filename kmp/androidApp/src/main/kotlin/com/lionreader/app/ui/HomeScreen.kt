@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.R
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.NavSubscription
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.TimelineItem
 import kotlinx.coroutines.launch
@@ -223,11 +224,15 @@ private fun MarkAllReadDialog(
     )
 }
 
+/** Uncategorized's key among the expanded tag ids, as on the web. */
+private const val UNCATEGORIZED_KEY = "uncategorized"
+
 private fun title(scope: ListScope, navigation: Navigation?): String =
     when (scope) {
         ListScope.All -> "All"
         ListScope.Starred -> "Starred"
         ListScope.Saved -> "Saved"
+        ListScope.Uncategorized -> "Uncategorized"
         is ListScope.Tag -> navigation?.tags?.firstOrNull { it.id == scope.id }?.name ?: "Tag"
         is ListScope.Subscription ->
             navigation?.subscriptions?.firstOrNull { it.id == scope.id }?.title ?: "Feed"
@@ -269,32 +274,37 @@ private fun Drawer(
             if (nav.tags.isNotEmpty() || nav.subscriptions.isNotEmpty()) {
                 item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             }
-            for (tag in nav.tags) {
-                val subscriptions = nav.subscriptionsIn(tag.id)
-                // The open feed's tag shows its feeds, so the open list stays visible.
+            fun group(
+                key: String,
+                name: String,
+                unread: Int,
+                scope: ListScope,
+                subscriptions: List<NavSubscription>,
+            ) {
+                // The open feed's group shows its feeds, so the open list stays visible.
                 val expanded =
-                    tag.id in expandedTags ||
+                    key in expandedTags ||
                         (selected is ListScope.Subscription &&
                             subscriptions.any { it.id == selected.id })
-                item(key = "tag-${tag.id}") {
+                item(key = "group-$key") {
                     DrawerRow(
-                        tag.name,
-                        tag.unread,
-                        selected == ListScope.Tag(tag.id),
+                        name,
+                        unread,
+                        selected == scope,
                         icon = {
                             if (subscriptions.isNotEmpty()) {
-                                ExpandButton(tag.name, expanded) { onToggleTag(tag.id) }
+                                ExpandButton(name, expanded) { onToggleTag(key) }
                             } else {
-                                // Keeps the name in line with the other tags'.
+                                // Keeps the name in line with the other groups'.
                                 Spacer(Modifier.size(48.dp))
                             }
                         },
                     ) {
-                        onSelect(ListScope.Tag(tag.id))
+                        onSelect(scope)
                     }
                 }
-                if (!expanded) continue
-                items(subscriptions, key = { "tag-${tag.id}-${it.id}" }) { sub ->
+                if (!expanded) return
+                items(subscriptions, key = { "group-$key-${it.id}" }) { sub ->
                     DrawerRow(
                         sub.title,
                         sub.unread,
@@ -305,10 +315,31 @@ private fun Drawer(
                     }
                 }
             }
-            items(nav.uncategorized, key = { "sub-${it.id}" }) { sub ->
-                DrawerRow(sub.title, sub.unread, selected == ListScope.Subscription(sub.id)) {
-                    onSelect(ListScope.Subscription(sub.id))
+            for (tag in nav.tags) {
+                group(
+                    tag.id,
+                    tag.name,
+                    tag.unread,
+                    ListScope.Tag(tag.id),
+                    nav.subscriptionsIn(tag.id),
+                )
+            }
+            val uncategorized = nav.uncategorized
+            if (nav.tags.isEmpty()) {
+                // Without tags there's nothing to group feeds apart from.
+                items(uncategorized, key = { "sub-${it.id}" }) { sub ->
+                    DrawerRow(sub.title, sub.unread, selected == ListScope.Subscription(sub.id)) {
+                        onSelect(ListScope.Subscription(sub.id))
+                    }
                 }
+            } else if (uncategorized.isNotEmpty()) {
+                group(
+                    UNCATEGORIZED_KEY,
+                    "Uncategorized",
+                    uncategorized.sumOf { it.unread },
+                    ListScope.Uncategorized,
+                    uncategorized,
+                )
             }
         }
         item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }

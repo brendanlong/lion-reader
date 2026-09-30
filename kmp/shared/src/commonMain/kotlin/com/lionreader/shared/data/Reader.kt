@@ -22,6 +22,9 @@ sealed interface ListScope {
     data class Subscription(val id: String) : ListScope
 
     data class Tag(val id: String) : ListScope
+
+    /** Feeds without a tag. */
+    data object Uncategorized : ListScope
 }
 
 data class TimelineItem(
@@ -101,6 +104,7 @@ class Reader(
                 tagId = (scope as? ListScope.Tag)?.id,
                 starredOnly = if (scope == ListScope.Starred) 1L else 0L,
                 savedOnly = if (scope == ListScope.Saved) 1L else 0L,
+                uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L,
                 unreadOnly = if (unreadOnly) 1L else 0L,
                 keepIds = keepIds,
                 limit = limit,
@@ -205,6 +209,7 @@ class Reader(
                 tagId = (scope as? ListScope.Tag)?.id,
                 starredOnly = if (scope == ListScope.Starred) 1L else 0L,
                 savedOnly = if (scope == ListScope.Saved) 1L else 0L,
+                uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L,
             )
             .executeAsList()
 }
