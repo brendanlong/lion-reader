@@ -215,13 +215,13 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       if (voice.speakCodeBlocks && code) push(el, `Code block: ${code} End code block.`);
       return;
     }
-    if (tagName === "table" && !isLayoutTable(el)) {
-      push(el, tableText(el, ctx, depth));
-      return;
-    }
-
+    // Before the table: reading a data table's cells recurses too (#1670).
     if (depth >= MAX_DEPTH) {
       push(el, flatText(el, voice, consumed));
+      return;
+    }
+    if (tagName === "table" && !isLayoutTable(el)) {
+      push(el, tableText(el, ctx, depth));
       return;
     }
 

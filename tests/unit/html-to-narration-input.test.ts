@@ -229,6 +229,18 @@ describe("htmlToNarrationInput", () => {
       expect(result.paragraphs[0].text).toContain("the text");
     });
 
+    it("narrates absurdly nested data tables instead of overflowing the stack", () => {
+      // A header cell makes each table data, which reads its own cells rather
+      // than taking the walk's path — it still has to stop at the cap.
+      const depth = 3000;
+      const html =
+        "<table><tr><th>h</th><td>".repeat(depth) + "the text" + "</td></tr></table>".repeat(depth);
+      const result = htmlToNarrationInput(html);
+
+      expect(result.paragraphs).toHaveLength(1);
+      expect(result.paragraphs[0].text).toContain("the text");
+    });
+
     it("narrates nesting too deep for the spec parser to serialize", () => {
       // parse5's serializer recurses per element, so past a few thousand levels
       // the normalizing parse in `parse-html` throws where linkedom's own parse
