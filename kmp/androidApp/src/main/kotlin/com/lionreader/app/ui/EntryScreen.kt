@@ -31,6 +31,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.reader.AppearanceTokens
@@ -41,22 +42,23 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EntryScreen(graph: AppGraph, entryId: String, onBack: () -> Unit) {
+fun EntryScreen(graph: AppGraph, account: AccountSession, entryId: String, onBack: () -> Unit) {
     val context = LocalContext.current
-    val entry by remember(entryId) { graph.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
+    val entry by
+        remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val tokens = remember { AppearanceTokens.load(context) }
     var loadFailed by remember(entryId) { mutableStateOf(false) }
     val coroutines = rememberCoroutineScope()
 
     LaunchedEffect(entryId) {
-        graph.reader.markOpened(entryId)
+        account.reader.markOpened(entryId)
     }
     LaunchedEffect(entry?.id) {
         val current = entry ?: return@LaunchedEffect
-        if (!current.read) graph.reader.setRead(listOf(current.id), true)
+        if (!current.read) account.reader.setRead(listOf(current.id), true)
         if (current.content == null) {
-            loadFailed = runCatching { graph.session.sync.ensureContent(current.id) }.isFailure
+            loadFailed = runCatching { account.sync.ensureContent(current.id) }.isFailure
         }
     }
 
@@ -74,7 +76,7 @@ fun EntryScreen(graph: AppGraph, entryId: String, onBack: () -> Unit) {
                     IconButton(
                         onClick = {
                             coroutines.launch {
-                                graph.reader.setRead(listOf(current.id), !current.read)
+                                account.reader.setRead(listOf(current.id), !current.read)
                             }
                         }
                     ) {
@@ -89,7 +91,7 @@ fun EntryScreen(graph: AppGraph, entryId: String, onBack: () -> Unit) {
                     IconButton(
                         onClick = {
                             coroutines.launch {
-                                graph.reader.setStarred(current.id, !current.starred)
+                                account.reader.setStarred(current.id, !current.starred)
                             }
                         }
                     ) {

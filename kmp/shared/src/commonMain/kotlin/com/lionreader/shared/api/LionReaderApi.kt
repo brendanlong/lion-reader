@@ -103,6 +103,9 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     suspend fun listTags(): TagList = get(TagList.serializer(), "/tags") {}
 
+    /** The account this token belongs to. */
+    suspend fun me(): AccountUser = get(Me.serializer(), "/auth/me") {}.user
+
     suspend fun syncChanges(cursors: SyncCursors?): SyncChanges =
         get(SyncChanges.serializer(), "/sync/changes") {
             cursors?.let {

@@ -66,13 +66,14 @@ object SyncScheduler {
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val session = applicationContext.graph.session
-        if (!session.auth.signedIn.value) return Result.success()
+        val graph = applicationContext.graph
+        val account = graph.account.value ?: return Result.success()
+        if (!account.connection.auth.signedIn.value) return Result.success()
         return try {
             if (inputData.getBoolean(SyncScheduler.FULL_SYNC, true)) {
-                session.sync.sync()
+                account.sync.sync()
             } else {
-                session.sync.flushOutbox()
+                account.sync.flushOutbox()
             }
             Result.success()
         } catch (e: kotlinx.coroutines.CancellationException) {

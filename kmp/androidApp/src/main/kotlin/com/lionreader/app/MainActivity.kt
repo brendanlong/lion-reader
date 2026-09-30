@@ -9,13 +9,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -30,6 +36,7 @@ import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
 import com.lionreader.app.ui.isDark
 import com.lionreader.shared.auth.AuthException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data object HomeKey
@@ -73,10 +80,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             signInError =
                 try {
-                    graph.session.auth.completeAuthorization(data.toString(), pending)
-                    // The local store belongs to whoever was signed in before
-                    // (possibly another account or server); start clean.
-                    graph.session.sync.reset()
+                    graph.connection.value.auth.completeAuthorization(data.toString(), pending)
+                    // Opens this account's own database (another account's
+                    // data is deleted, the same account's kept).
+                    graph.signedIn()
                     SyncScheduler.syncNow(this@MainActivity)
                     null
                 } catch (e: AuthException) {
@@ -93,7 +100,7 @@ class MainActivity : ComponentActivity() {
     private fun startSignIn(serverUrl: String) {
         if (serverUrl != graph.serverUrl) graph.setServerUrl(serverUrl)
         lifecycleScope.launch {
-            val request = graph.session.auth.authorizationRequest()
+            val request = graph.connection.value.auth.authorizationRequest()
             graph.pendingAuthorization = request
             CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, request.url.toUri())
         }
@@ -101,14 +108,35 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun App() {
-        val session by graph.sessions.collectAsStateWithLifecycle()
-        val signedIn by session.auth.signedIn.collectAsStateWithLifecycle()
+        val connection by graph.connection.collectAsStateWithLifecycle()
+        val signedIn by connection.auth.signedIn.collectAsStateWithLifecycle()
+        val current by graph.account.collectAsStateWithLifecycle()
+        val account = current
         if (!signedIn) {
             SignInScreen(graph.serverUrl, signInError, ::startSignIn)
             return
         }
+        if (account == null || account.connection !== connection) {
+            // Signed in, but which account isn't settled yet (e.g. the
+            // /auth/me call failed offline); keep trying.
+            LaunchedEffect(connection) {
+                while (graph.account.value?.connection !== connection) {
+                    runCatching { graph.signedIn() }
+                    delay(5_000)
+                }
+            }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return
+        }
+        key(account.dbName) { AccountApp(account) }
+    }
+
+    @Composable
+    private fun AccountApp(account: AccountSession) {
         val backStack = remember { mutableStateListOf<Any>(HomeKey) }
-        val home = viewModel { HomeViewModel(graph) }
+        val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
         NavDisplay(
             backStack = backStack,
             onBack = { backStack.removeLastOrNull() },
@@ -122,7 +150,12 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     entry<EntryKey> { key ->
-                        EntryScreen(graph, key.id, onBack = { backStack.removeLastOrNull() })
+                        EntryScreen(
+                            graph,
+                            account,
+                            key.id,
+                            onBack = { backStack.removeLastOrNull() },
+                        )
                     }
                     entry<SettingsKey> {
                         SettingsScreen(

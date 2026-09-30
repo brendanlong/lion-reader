@@ -2,6 +2,7 @@ package com.lionreader.app.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.data.ListScope
@@ -40,15 +41,16 @@ class HomeViewModel(
     private val sync: suspend () -> Unit,
 ) : ViewModel() {
     constructor(
-        graph: AppGraph
+        graph: AppGraph,
+        account: AccountSession,
     ) : this(
-        graph.reader,
+        account.reader,
         graph.settings.settings.map { it.unreadOnly },
         { value -> graph.settings.update { it.copy(unreadOnly = value) } },
         {
             // The lists are what the spinner waits for; bodies follow in the
             // background.
-            graph.session.sync.sync(downloadContent = false)
+            account.sync.sync(downloadContent = false)
             graph.syncInBackground()
         },
     )

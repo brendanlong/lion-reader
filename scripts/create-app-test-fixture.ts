@@ -1,7 +1,7 @@
 /**
  * Seeds a user with a feed and a few unread entries, mints a first-party app
- * OAuth token for them, and prints `{ serverUrl, accessToken, refreshToken,
- * entryIds }` as JSON. Used by the native app's real-server tests
+ * OAuth token for them, and prints `{ serverUrl, userId, accessToken,
+ * refreshToken, entryIds }` as JSON. Used by the native app's real-server tests
  * (kmp/shared/src/jvmTest/.../RealServerTest.kt) against a running server on
  * the same database.
  */
@@ -64,6 +64,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     JSON.stringify({
       serverUrl: getIssuer(),
+      userId,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       entryIds,

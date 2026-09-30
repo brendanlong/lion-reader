@@ -270,6 +270,10 @@ sealed interface SyncEvent {
     @Serializable @SerialName("tag_deleted") data class TagDeleted(val tagId: String) : SyncEvent
 }
 
+@Serializable data class AccountUser(val id: String, val email: String)
+
+@Serializable data class Me(val user: AccountUser)
+
 @Serializable
 data class TokenResponse(
     @SerialName("access_token") val accessToken: String,

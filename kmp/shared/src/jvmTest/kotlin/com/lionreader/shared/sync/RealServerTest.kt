@@ -26,6 +26,7 @@ import org.junit.Assume.assumeTrue
 @Serializable
 private data class Fixture(
     val serverUrl: String,
+    val userId: String,
     val accessToken: String,
     val refreshToken: String,
     val entryIds: List<String>,
@@ -76,6 +77,9 @@ class RealServerTest {
                     .filterNot { it.read }
                     .map { it.id }
                     .toSet()
+
+            // The token says whose data this is (the app keys its database on it).
+            assertEquals(fixture.userId, api.me().id)
 
             // First sync downloads the window, bodies included.
             engine.sync()

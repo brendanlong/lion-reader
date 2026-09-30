@@ -16,6 +16,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,12 +26,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 const val DEFAULT_SERVER_URL = "https://lionreader.com"
 
 /**
  * The app's singletons. Everything in one process shares them — the UI, the sync worker, and the
  * sign-in callback — which is what makes the token refresh single-flight (see AppAuth).
+ *
+ * Two layers: the [connection] to the chosen server (auth and API), and the signed-in [account] —
+ * its own database file, reader and sync engine. Data of different accounts or servers never shares
+ * a database, and signing out deletes the account's file.
  */
 class AppGraph(private val context: Context) {
     private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
@@ -49,41 +56,77 @@ class AppGraph(private val context: Context) {
             }
         }
 
-    val database =
-        LionReaderDatabase(AndroidSqliteDriver(LionReaderDatabase.Schema, context, "lionreader.db"))
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val currentSettings: StateFlow<AppSettings> =
         settings.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
 
-    private val _sessions = MutableStateFlow(newSession())
+    private val _connection =
+        MutableStateFlow(ServerConnection(serverUrl, http, PrefsTokenStore(prefs)))
 
-    /** Server-bound pieces; replaced when the (signed-out) user picks another server. */
-    val sessions: StateFlow<ServerSession> = _sessions.asStateFlow()
+    /** Replaced when the (signed-out) user picks another server. */
+    val connection: StateFlow<ServerConnection> = _connection.asStateFlow()
 
-    val session: ServerSession
-        get() = _sessions.value
+    private val _account = MutableStateFlow(restoreAccount())
 
-    private fun newSession() =
-        ServerSession(serverUrl, http, PrefsTokenStore(prefs), database) {
-            currentSettings.value.retention
-        }
+    /**
+     * The account whose data is on the device. It outlives an involuntary sign-out (a dead refresh
+     * token), so signing back in to the same account keeps its data and unsent changes.
+     */
+    val account: StateFlow<AccountSession?> = _account.asStateFlow()
 
-    val reader =
-        Reader(database, System::currentTimeMillis, Dispatchers.IO) {
+    /** Serializes account switches. */
+    private val accountMutex = Mutex()
+
+    init {
+        // Before accounts had their own files, everything lived here.
+        context.deleteDatabase("lionreader.db")
+    }
+
+    private fun restoreAccount(): AccountSession? {
+        val dbName = prefs.getString(ACCOUNT_DB, null) ?: return null
+        return openAccount(dbName)
+    }
+
+    private fun openAccount(dbName: String) =
+        AccountSession(context, dbName, _connection.value, { currentSettings.value.retention }) {
             SyncScheduler.flushSoon(context)
         }
 
     /**
-     * Revokes and forgets the session, then clears the local store. Runs in the app's scope so
-     * leaving the screen can't cancel the revocation.
+     * After a sign-in: asks the server who this is and switches to that account's database,
+     * deleting the previous account's if it's another one.
+     */
+    suspend fun signedIn() = accountMutex.withLock {
+        val server = _connection.value
+        val user = server.api.me()
+        val dbName = accountDbName(server.auth.serverUrl, user.id)
+        val current = _account.value
+        if (current?.dbName == dbName && current.connection === server) return@withLock
+        current?.close()
+        // Another account's data goes; the same account's is reopened on
+        // the current connection, unsent changes and all.
+        if (current != null && current.dbName != dbName) context.deleteDatabase(current.dbName)
+        prefs.edit(commit = true) { putString(ACCOUNT_DB, dbName) }
+        _account.value = openAccount(dbName)
+    }
+
+    /**
+     * Revokes the session and deletes the account's data. Runs in the app's scope so leaving the
+     * screen can't cancel the revocation.
      */
     fun signOut() {
         scope.launch {
             SyncScheduler.cancelAll(context)
-            session.auth.signOut()
-            session.sync.reset()
+            _connection.value.auth.signOut()
+            accountMutex.withLock {
+                _account.value?.let {
+                    it.close()
+                    context.deleteDatabase(it.dbName)
+                }
+                _account.value = null
+                prefs.edit(commit = true) { remove(ACCOUNT_DB) }
+            }
             SyncScheduler.schedulePeriodic(context)
         }
     }
@@ -93,8 +136,9 @@ class AppGraph(private val context: Context) {
 
     /** Only while signed out: the server is part of the sign-in identity. */
     fun setServerUrl(url: String) {
+        if (url.trimEnd('/') == serverUrl) return
         prefs.edit(commit = true) { putString(SERVER_URL, url.trimEnd('/')) }
-        _sessions.value = newSession()
+        _connection.value = ServerConnection(serverUrl, http, PrefsTokenStore(prefs))
     }
 
     var pendingAuthorization: AuthorizationRequest?
@@ -114,21 +158,37 @@ class AppGraph(private val context: Context) {
 
     private companion object {
         const val SERVER_URL = "server_url"
+        const val ACCOUNT_DB = "account_db"
         const val PENDING_STATE = "pending_state"
         const val PENDING_VERIFIER = "pending_verifier"
     }
 }
 
-class ServerSession(
-    serverUrl: String,
-    http: HttpClient,
-    tokens: TokenStore,
-    database: LionReaderDatabase,
-    retention: () -> RetentionPolicy,
-) {
+/** One database file per (server, account); the name doesn't reveal either. */
+private fun accountDbName(serverUrl: String, userId: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest("$serverUrl\n$userId".toByteArray())
+    return "account-" + digest.take(12).joinToString("") { "%02x".format(it) } + ".db"
+}
+
+class ServerConnection(serverUrl: String, http: HttpClient, tokens: TokenStore) {
     val auth = AppAuth(serverUrl, http, tokens, System::currentTimeMillis)
     val api = LionReaderApi(http, auth)
-    val sync = SyncEngine(api, database, System::currentTimeMillis, retention)
+}
+
+/** A signed-in account's local data and the sync that maintains it. */
+class AccountSession(
+    context: Context,
+    val dbName: String,
+    val connection: ServerConnection,
+    retention: () -> RetentionPolicy,
+    onLocalChange: () -> Unit,
+) {
+    private val driver = AndroidSqliteDriver(LionReaderDatabase.Schema, context, dbName)
+    private val database = LionReaderDatabase(driver)
+    val reader = Reader(database, System::currentTimeMillis, Dispatchers.IO, onLocalChange)
+    val sync = SyncEngine(connection.api, database, System::currentTimeMillis, retention)
+
+    fun close() = driver.close()
 }
 
 /**
