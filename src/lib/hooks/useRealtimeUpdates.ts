@@ -131,6 +131,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const syncRetryDelayRef = useRef<number>(INITIAL_SYNC_RETRY_DELAY_MS);
   // Initialize with server-provided cursors (granular tracking per entity type)
   const cursorsRef = useRef<SyncCursors>(initialCursors);
+  // Where the current multi-page catch-up started; sent unchanged with each of
+  // its pages so the server reports changes an entry had before a later page's
+  // cursor (#1663). Null between catch-ups.
+  const catchUpStartRef = useRef<SyncCursors | null>(null);
 
   // Whether the catch-up sync after the current connection opened has fully
   // succeeded. While this is false (freshly (re)connected, or a catch-up sync is
@@ -212,11 +216,15 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const runSyncOnce = useCallback(async (): Promise<{ ok: boolean; hasMore: boolean }> => {
     try {
       const currentCursors = cursorsRef.current;
+      const start = catchUpStartRef.current ?? currentCursors;
+      catchUpStartRef.current = start;
 
       const result = await utils.client.sync.events.query({
         cursors: {
           entries: currentCursors.entries ?? undefined,
           entriesAfterId: currentCursors.entriesAfterId ?? undefined,
+          entriesSince: start.entries ?? undefined,
+          entriesSinceAfterId: start.entriesAfterId ?? undefined,
           subscriptions: currentCursors.subscriptions ?? undefined,
           tags: currentCursors.tags ?? undefined,
         },
@@ -228,6 +236,9 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
       for (const event of result.events) {
         cursorsRef.current = advanceCursors(cursorsRef.current, event);
         handleSyncEvent(utils, queryClient, event);
+      }
+      if (!result.hasMore) {
+        catchUpStartRef.current = null;
       }
 
       return { ok: true, hasMore: result.hasMore };

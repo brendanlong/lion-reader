@@ -304,6 +304,15 @@ interface SyncCursorsInput {
    * server falls back to a strict timestamp comparison.
    */
   entriesAfterId?: string;
+  /**
+   * The entries keyset the catch-up started from, held constant across its
+   * pages (defaults to the page cursor). Pages are ordered by an entry's
+   * latest change, so an entry whose earlier change (creation, content edit)
+   * falls before a later page's cursor still has to be classified against the
+   * catch-up's start, or that change is never reported (#1663).
+   */
+  entriesSince?: string;
+  entriesSinceAfterId?: string;
   subscriptions?: string;
   tags?: string;
 }
@@ -311,6 +320,8 @@ interface SyncCursorsInput {
 const syncCursorsInputSchema = z.object({
   entries: z.string().datetime().optional(),
   entriesAfterId: z.string().uuid().optional(),
+  entriesSince: z.string().datetime().optional(),
+  entriesSinceAfterId: z.string().uuid().optional(),
   subscriptions: z.string().datetime().optional(),
   tags: z.string().datetime().optional(),
 });
@@ -340,7 +351,12 @@ async function collectSyncEvents(
 
   // If no cursors provided, return empty events (initial cursor establishment
   // is handled by sync.cursors endpoint)
-  const next: SyncCursorsInput = { ...cursors };
+  const next: SyncCursorsInput = {
+    entries: cursors.entries,
+    entriesAfterId: cursors.entriesAfterId,
+    subscriptions: cursors.subscriptions,
+    tags: cursors.tags,
+  };
   if (!entriesCursor && !subscriptionsCursor && !tagsCursor) {
     return { events: [], hasMore: false, next };
   }
@@ -378,10 +394,18 @@ async function collectSyncEvents(
     // `col` is "after" the keyset cursor when it is past the timestamp, or at
     // the timestamp with a larger entry id. Without an id tiebreaker (legacy
     // clients / first sync) fall back to a strict timestamp comparison.
-    const afterCursor = (col: SQLWrapper): SQL =>
-      entriesAfterId
-        ? sql`(${col} > ${entriesCursor}::timestamptz OR (${col} = ${entriesCursor}::timestamptz AND ${entries.id} > ${entriesAfterId}::uuid))`
-        : sql`${col} > ${entriesCursor}::timestamptz`;
+    const afterKeyset = (col: SQLWrapper, ts: string, afterId: string | null): SQL =>
+      afterId
+        ? sql`(${col} > ${ts}::timestamptz OR (${col} = ${ts}::timestamptz AND ${entries.id} > ${afterId}::uuid))`
+        : sql`${col} > ${ts}::timestamptz`;
+    const afterCursor = (col: SQLWrapper): SQL => afterKeyset(col, entriesCursor, entriesAfterId);
+    // Selection pages on the cursor; categorization is against the catch-up's
+    // start (see SyncCursorsInput.entriesSince). OR-ing in the cursor keeps
+    // every selected row eventful even if a client sends a start past it.
+    const afterSince = (col: SQLWrapper): SQL =>
+      cursors.entriesSince
+        ? sql`(${afterCursor(col)} OR ${afterKeyset(col, cursors.entriesSince, cursors.entriesSinceAfterId ?? null)})`
+        : afterCursor(col);
 
     const greatest = sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`;
 
@@ -490,11 +514,11 @@ async function collectSyncEvents(
         feedId: entries.feedId,
         feedType: feeds.type,
         feedTitle: feeds.title,
-        // Categorization booleans, computed in SQL at µs precision against
-        // the keyset cursor so selection and categorization never disagree.
-        metadataChanged: sql<boolean>`${afterCursor(entries.updatedAt)}`,
-        stateChanged: sql<boolean>`${afterCursor(userEntries.updatedAt)}`,
-        isNew: sql<boolean>`${afterCursor(entries.createdAt)}`,
+        // Categorization booleans, computed in SQL at µs precision so a row
+        // selected past the cursor always gets at least one event.
+        metadataChanged: sql<boolean>`${afterSince(entries.updatedAt)}`,
+        stateChanged: sql<boolean>`${afterSince(userEntries.updatedAt)}`,
+        isNew: sql<boolean>`${afterSince(entries.createdAt)}`,
         // Full-precision Temporal.Instant for cursor/timestamp output (both
         // updatedAt columns are NOT NULL, so GREATEST is never null here).
         maxUpdatedAt: sql`${greatest}`.mapWith(parseTimestamptz),
