@@ -76,8 +76,9 @@ Entry bodies, saved articles, and AI summaries are rendered with
   `base` or form targets. Allow-listed embeds run their own scripts in their
   sandboxed cross-origin frames, as on the web. No file or content access, no
   bridge beyond one message channel limited to the asset origin's main frame,
-  and every navigation leaves for the browser. Loosening any of that needs a
-  security review.
+  and every navigation leaves for the browser. The article header's feed text
+  (title, byline) enters the document only through `escapeHtml`. Loosening any
+  of that needs a security review.
 
 - **Analytics reports a closed vocabulary, never a URL**
   (`src/lib/analytics/`): we load **no third-party analytics script**, and every

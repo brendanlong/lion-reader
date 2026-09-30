@@ -22,9 +22,9 @@ import kotlin.math.abs
 import org.json.JSONArray
 
 /**
- * The article body: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
- * SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
- * than file:// access.
+ * * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
+ *   SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
+ *   than file:// access.
  */
 @Composable
 fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
@@ -92,9 +92,9 @@ private class ReaderView(context: Context) : WebView(context) {
                 downX = event.x
                 downY = event.y
                 val density = resources.displayMetrics.density
-                touched = sideScrollers.find {
-                    it.bounds.contains(event.x / density, event.y / density)
-                }
+                val pageX = (event.x + scrollX) / density
+                val pageY = (event.y + scrollY) / density
+                touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
             }
             MotionEvent.ACTION_MOVE ->
                 touched?.let { block ->

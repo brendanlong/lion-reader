@@ -4,6 +4,7 @@ import com.lionreader.app.AppSettings
 import com.lionreader.app.ReaderFont
 import com.lionreader.app.TextSize
 import org.json.JSONObject
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,18 +27,38 @@ class ReaderHtmlTest {
             )
         )
     private val colors = ReaderColors("#000", "#666", "#b45309", "#fff", "#ccc", "#eee")
+    private val header = ReaderHeader("Title", "Feed · Sep 29, 2026")
+
+    @Test
+    fun headerTextIsEscaped() {
+        val html =
+            readerDocument(
+                ReaderHeader(
+                    title = "<img src=x onerror=alert(1)> & \"quotes\"",
+                    byline = "<script>alert(1)</script> · O'Brien",
+                ),
+                "",
+                AppSettings(),
+                tokens,
+                colors,
+            )
+        assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt; &amp; &quot;quotes&quot;"))
+        assertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt; · O&#39;Brien"))
+        assertFalse(html.contains("<img"))
+        assertFalse(html.contains("<script>alert"))
+    }
 
     @Test
     fun bodyIsInsertedVerbatim() {
         val body = "<pre>\n        indented code\n</pre>"
-        val html = readerDocument(body, AppSettings(), tokens, colors)
+        val html = readerDocument(header, body, AppSettings(), tokens, colors)
         assertTrue(html.contains(body))
     }
 
     @Test
     fun sizeCombinesTextSizeAndFontAdjustment() {
         val settings = AppSettings(font = ReaderFont.MERRIWEATHER, textSize = TextSize.LARGE)
-        val html = readerDocument("", settings, tokens, colors)
+        val html = readerDocument(header, "", settings, tokens, colors)
         assertTrue(html.contains("font-size: ${1.125 * 0.929}rem"))
         assertTrue(html.contains("line-height: 1.8"))
     }

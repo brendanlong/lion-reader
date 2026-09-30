@@ -4,7 +4,6 @@ import android.content.Intent
 import android.text.format.DateUtils
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -38,6 +37,7 @@ import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
+import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
 import kotlinx.coroutines.flow.first
@@ -178,55 +178,64 @@ private fun EntryPage(
         }
     }
 
-    run {
-        val current = entry
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            if (current == null) return@Column
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(current.title ?: "Untitled", style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    listOfNotNull(
-                            current.source,
-                            current.author,
-                            DateUtils.formatDateTime(
-                                context,
-                                current.sortAtMillis,
-                                DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR,
-                            ),
-                        )
-                        .joinToString(" · "),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            when {
-                current.content != null -> {
-                    val colors = MaterialTheme.colorScheme
-                    val document =
-                        readerDocument(
-                            body = current.content.orEmpty(),
-                            settings = settings,
-                            tokens = tokens,
-                            colors =
-                                ReaderColors(
-                                    text = colors.onSurface.css(),
-                                    muted = colors.onSurfaceVariant.css(),
-                                    link = colors.primary.css(),
-                                    background = colors.surface.css(),
-                                    border = colors.outlineVariant.css(),
-                                    codeBackground = colors.surfaceContainer.css(),
-                                ),
-                        )
-                    ReaderWebView(document, modifier = Modifier.fillMaxWidth())
-                }
-                loadFailed ->
-                    Text(
-                        "This article hasn't been downloaded yet. Connect to the internet to read it.",
-                        modifier = Modifier.padding(16.dp),
-                    )
-                else -> CircularProgressIndicator(modifier = Modifier.padding(32.dp))
-            }
+    val current = entry ?: return
+    val byline =
+        listOfNotNull(
+                current.source,
+                // Like the web, the author is left out when it's the feed's name.
+                current.author?.takeUnless {
+                    it.trim().equals(current.source?.trim(), ignoreCase = true)
+                },
+                DateUtils.formatDateTime(
+                    context,
+                    current.sortAtMillis,
+                    DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR,
+                ),
+            )
+            .joinToString(" · ")
+    val title = current.title ?: "Untitled"
+    val content = current.content
+    if (content != null) {
+        val colors = MaterialTheme.colorScheme
+        val document =
+            readerDocument(
+                header = ReaderHeader(title, byline),
+                body = content,
+                settings = settings,
+                tokens = tokens,
+                colors =
+                    ReaderColors(
+                        text = colors.onSurface.css(),
+                        muted = colors.onSurfaceVariant.css(),
+                        link = colors.primary.css(),
+                        background = colors.surface.css(),
+                        border = colors.outlineVariant.css(),
+                        codeBackground = colors.surfaceContainer.css(),
+                    ),
+            )
+        ReaderWebView(document, modifier = Modifier.fillMaxSize())
+        return
+    }
+    Column(
+        modifier =
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            byline,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (loadFailed) {
+            Text(
+                "This article hasn't been downloaded yet. Connect to the internet to read it.",
+                modifier = Modifier.padding(vertical = 16.dp),
+            )
+        } else {
+            CircularProgressIndicator(modifier = Modifier.padding(vertical = 32.dp))
         }
     }
 }

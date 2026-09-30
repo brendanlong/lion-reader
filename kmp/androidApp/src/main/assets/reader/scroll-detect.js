@@ -30,8 +30,16 @@
   }
 
   report();
-  // Layout settles as images and fonts load; blocks reach their edges as they scroll.
+  // Layout settles as images and fonts load; blocks reach their edges as they
+  // scroll.
   new ResizeObserver(report).observe(document.body);
   document.fonts.ready.then(report);
-  document.addEventListener("scroll", report, { capture: true, passive: true });
+  document.addEventListener(
+    "scroll",
+    function (event) {
+      // The page scrolling doesn't move blocks within it.
+      if (event.target !== document) report();
+    },
+    { capture: true, passive: true },
+  );
 })();

@@ -67,12 +67,17 @@ private val fontFaces: String =
             .trimIndent()
     }
 
+/** The article's title and byline, shown above the body. Plain text from the feed. */
+data class ReaderHeader(val title: String, val byline: String)
+
 /**
- * A complete document for the article body. The body is the server's sanitized HTML (sanitized on
- * every read); it is inserted verbatim and never re-sanitized here. Everything of ours goes in the
- * head, ahead of it, so no unclosed element in the body can swallow it.
+ * A complete document for the article: the [header], escaped, and the body. The body is the
+ * server's sanitized HTML (sanitized on every read); it is inserted verbatim and never re-sanitized
+ * here. Our script goes in the head, ahead of it, so no unclosed element in the body can swallow
+ * it.
  */
 fun readerDocument(
+    header: ReaderHeader,
     body: String,
     settings: AppSettings,
     tokens: AppearanceTokens,
@@ -115,9 +120,34 @@ fun readerDocument(
         hr { border: 0; border-top: 1px solid ${colors.border}; }
         details { border: 1px solid ${colors.border}; border-radius: 6px; padding: 0.5em 0.75em; }
         math { font-size: 1.1em; }
+        .lr-header { margin: 16px 0 1.5em; padding-bottom: 1em; text-align: left;
+          border-bottom: 1px solid ${colors.border}; }
+        .lr-header h1 { font-size: 1.5em; margin: 0 0 0.3em; }
+        .lr-byline { margin: 0; color: ${colors.muted}; font-family: sans-serif;
+          font-size: 0.875rem; line-height: 1.4; }
         .katex-mathml + .katex-html { display: none; }
         </style></head>
         <body>
         """
-        .trimIndent() + body + "</body></html>"
+        .trimIndent() +
+        // After trimIndent, so feed text can't change the template's indentation.
+        "<header class=\"lr-header\"><h1>${escapeHtml(header.title)}</h1>" +
+        "<p class=\"lr-byline\">${escapeHtml(header.byline)}</p></header>" +
+        body +
+        "</body></html>"
 }
+
+/** Feed text goes into the document only through here. */
+internal fun escapeHtml(text: String): String =
+    buildString(text.length) {
+        for (c in text) {
+            when (c) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                '\'' -> append("&#39;")
+                else -> append(c)
+            }
+        }
+    }
