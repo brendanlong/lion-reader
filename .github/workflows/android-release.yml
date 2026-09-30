@@ -1,12 +1,19 @@
 name: Android Release
 
-# Tag a commit android-vX.Y.Z to release the app: this builds the signed app
-# bundle (for Play, kept as an artifact) and APK (attached to a GitHub release).
-# Setup, secrets and the Play steps: "Android app releases" in docs/DEPLOYMENT.md.
+# Tag a commit android-vX.Y.Z to release the app, or run this workflow by hand
+# with the version (it builds the branch it's run on and tags it): this builds
+# the signed app bundle (for Play, kept as an artifact) and APK (attached to a
+# GitHub release). Setup, secrets and the Play steps: "Android app releases" in
+# docs/DEPLOYMENT.md.
 
 on:
   push:
     tags: ["android-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, X.Y.Z (tagged android-vX.Y.Z)"
+        required: true
 
 permissions:
   contents: write
@@ -38,17 +45,30 @@ jobs:
       # versionCode must only ever go up; X.Y.Z → X*1000000 + Y*1000 + Z. No
       # leading zeros (bash would read 010 as octal), and X stays below 2100
       # (Play's limit is 2100000000).
-      - name: Version from the tag
+      - name: Version
         id: version
+        env:
+          # Through the environment, never pasted into the script.
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#android-v}"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${GITHUB_REF_NAME#android-v}"
+          fi
           if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]{0,2}|1[0-9]{3}|20[0-9]{2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$ ]]; then
-            echo "::error::Tag must be android-vX.Y.Z (no leading zeros; X below 2100, Y and Z below 1000), not $GITHUB_REF_NAME"
+            echo "::error::The version must be X.Y.Z (no leading zeros; X below 2100, Y and Z below 1000), not $VERSION"
+            exit 1
+          fi
+          TAG="android-v$VERSION"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
+            echo "::error::$TAG already exists; pick a higher version"
             exit 1
           fi
           CODE=$(( BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3] ))
           echo "name=$VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Release key
         env:
@@ -108,22 +128,25 @@ jobs:
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          # The android-v tag this one's history reaches (a hotfix on an older
-          # line gets its own line's), if any.
-          PREVIOUS=$(git describe --tags --abbrev=0 --match 'android-v*' "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          # The android-v tag this commit's history reaches (a hotfix on an
+          # older line gets its own line's), if any.
+          PREVIOUS=$(git describe --tags --abbrev=0 --match 'android-v*' --exclude "$TAG" HEAD 2>/dev/null || true)
           {
             echo "Lion Reader for Android ${{ steps.version.outputs.name }}. Download the APK below to install it directly."
             echo
             if [ -n "$PREVIOUS" ]; then
               echo "## App changes since $PREVIOUS"
-              git log --no-merges --pretty='- %s' "$PREVIOUS..$GITHUB_REF_NAME" -- .
+              git log --no-merges --pretty='- %s' "$PREVIOUS..HEAD" -- .
             fi
           } > "$RUNNER_TEMP/notes.md"
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${{ steps.outputs.outputs.apk }}" --clobber
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.outputs.outputs.apk }}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "${{ steps.outputs.outputs.apk }}" \
+            # Creates the tag too, on a manual run.
+            gh release create "$TAG" "${{ steps.outputs.outputs.apk }}" \
+              --target "$GITHUB_SHA" \
               --title "Android ${{ steps.version.outputs.name }}" \
               --notes-file "$RUNNER_TEMP/notes.md" \
               --latest=false
