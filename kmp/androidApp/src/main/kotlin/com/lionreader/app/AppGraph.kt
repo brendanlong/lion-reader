@@ -80,6 +80,9 @@ class AppGraph(private val context: Context) {
     /** Text-to-speech narration; one article at a time, app-wide. */
     val narrator: Narrator by narratorInstance
 
+    /** Cloud narration audio: the account's articles, so it goes with the account. */
+    private val cloudVoiceCache = File(context.cacheDir, "cloud-voices")
+
     private suspend fun speechEngine(settings: AppSettings): SpeechEngine =
         when (settings.narrationEngine) {
             NarrationEngine.DEVICE -> DeviceVoices(systemTts, settings.narrationVoice)
@@ -88,12 +91,7 @@ class AppGraph(private val context: Context) {
                     account.value?.connection?.api
                         ?: throw SpeechUnavailable("Sign in to use cloud voices.")
                 val choice = cloudVoice(api, settings)
-                CloudVoices(
-                    api,
-                    choice.first,
-                    choice.second,
-                    File(context.cacheDir, "cloud-voices"),
-                )
+                CloudVoices(api, choice.first, choice.second, cloudVoiceCache, scope)
             }
         }
 
@@ -175,7 +173,10 @@ class AppGraph(private val context: Context) {
         current?.close()
         // Another account's data goes; the same account's is reopened on
         // the current connection, unsent changes and all.
-        if (current != null && current.dbName != dbName) context.deleteDatabase(current.dbName)
+        if (current != null && current.dbName != dbName) {
+            context.deleteDatabase(current.dbName)
+            cloudVoiceCache.deleteRecursively()
+        }
         prefs.edit(commit = true) { putString(ACCOUNT_DB, dbName) }
         _account.value = openAccount(dbName)
     }
@@ -194,6 +195,7 @@ class AppGraph(private val context: Context) {
                     it.close()
                     context.deleteDatabase(it.dbName)
                 }
+                cloudVoiceCache.deleteRecursively()
                 _account.value = null
                 prefs.edit(commit = true) { remove(ACCOUNT_DB) }
             }

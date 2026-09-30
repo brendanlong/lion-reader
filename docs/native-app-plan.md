@@ -9,8 +9,11 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 1. **Share target, files**: saving shared files from other apps (links are
    done).
-2. **Narration**: Piper voices, AI-normalized text, and playing on into the
-   next article (device and cloud voices are done).
+2. **Narration**: AI-normalized text and playing on into the next article
+   (device and cloud voices are done). Piper voices wait on sherpa-onnx 2.0,
+   which drops espeak-ng (GPL-3.0, compiled into today's library), and on
+   licensing: of the web's four voices only `en_GB-alba-medium` (CC BY 4.0) is
+   clear for any use. The runtime also adds about 24 MB per ABI.
 3. **Release**: Play Console closed testing (new personal developer accounts
    need a closed test with testers for 14 days before production) and signed
    APKs on GitHub Releases. Set `ANDROID_APP_CERT_SHA256` on the server to the
@@ -35,10 +38,11 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 How narration works in the app is in `kmp/CLAUDE.md`; what's left:
 
-- **Piper voices**: sherpa-onnx with its converted Piper models, which bundle
-  espeak-ng data; about 60 MB per voice, downloaded on demand. Keep the web's
-  voice ids so settings mean the same thing everywhere, though sherpa-onnx's
-  builds aren't the web's model files.
+- **Piper voices**: a `SpeechEngine` over sherpa-onnx (its static-link AAR,
+  from JitPack) and its converted Piper models from the `tts-models` release
+  (int8, about 21 MB a voice, plus espeak-ng data shared by all), downloaded on
+  demand. Keep the web's voice ids so settings mean the same thing everywhere,
+  though sherpa-onnx's builds aren't the web's model files.
 - **AI-normalized text** (`narration.generate`): token access, fetched on
   demand; offline it falls back to the reader's own paragraphs. Its paragraph
   map indexes the same elements, so highlighting is unchanged.

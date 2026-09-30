@@ -149,10 +149,11 @@ private fun NarrationSettings(
         }
     // Null while loading; empty when this account has none (no OpenRouter key)
     // or the server can't be reached.
+    val account by graph.account.collectAsStateWithLifecycle()
     val cloud by
-        produceState<VoiceModels?>(null) {
+        produceState<VoiceModels?>(null, account) {
             value =
-                runCatching { graph.account.value?.connection?.api?.voiceModels() }.getOrNull()
+                runCatching { account?.connection?.api?.voiceModels() }.getOrNull()
                     ?: VoiceModels(emptyList(), "")
         }
     Section("Narration voices") {

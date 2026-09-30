@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /** What to narrate: an article's paragraphs, as the reader's narration script extracted them. */
@@ -108,17 +109,20 @@ class Narrator(
     private var session: ListenableFuture<MediaController>? = null
 
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
-        stop()
+        reset()
         this.article = article
         speed = settings().narrationSpeed
         // Binding a controller starts the service, which puts the player in a
-        // media session and keeps playback going in the background.
-        session =
-            MediaController.Builder(
-                    context,
-                    SessionToken(context, ComponentName(context, NarrationService::class.java)),
-                )
-                .buildAsync()
+        // media session and keeps playback going in the background. Kept from
+        // one article to the next, so the notification doesn't flicker.
+        if (session == null) {
+            session =
+                MediaController.Builder(
+                        context,
+                        SessionToken(context, ComponentName(context, NarrationService::class.java)),
+                    )
+                    .buildAsync()
+        }
         _state.value = NarrationState(article.entryId, article.title, fromParagraph, playing = true)
         preparing = scope.launch {
             val engine =
@@ -132,11 +136,17 @@ class Narrator(
             if (chunks.isEmpty()) return@launch stop()
             offsets =
                 chunks.runningFold(0) { total, chunk -> total + chunk.text.length }.toIntArray()
-            startAt(firstChunkOf(fromParagraph), play = true)
+            // A tap or pause while the engine was getting ready still counts.
+            val wanted = _state.value ?: return@launch
+            startAt(firstChunkOf(wanted.paragraph), play = wanted.playing)
         }
     }
 
     fun togglePlaying() {
+        if (engine == null) {
+            _state.value = _state.value?.let { it.copy(playing = !it.playing) }
+            return
+        }
         if (player.playWhenReady) player.pause() else player.play()
     }
 
@@ -147,7 +157,11 @@ class Narrator(
     }
 
     fun seekToParagraph(paragraph: Int) {
-        if (chunks.isEmpty()) return
+        if (chunks.isEmpty()) {
+            // Still getting the engine ready: start there instead.
+            _state.value = _state.value?.copy(paragraph = paragraph)
+            return
+        }
         val chunk = firstChunkOf(paragraph)
         val item = itemOf(chunk)
         if (item != null) player.seekTo(item, 0) else startAt(chunk, play = player.playWhenReady)
@@ -159,6 +173,14 @@ class Narrator(
     }
 
     fun stop() {
+        reset()
+        _state.value = null
+        session?.let(MediaController::releaseFuture)
+        session = null
+    }
+
+    /** Stops what's playing and forgets the article, keeping the media session. */
+    private fun reset() {
         preparing?.cancel()
         preparing = null
         feeding?.cancel()
@@ -169,9 +191,6 @@ class Narrator(
         article = null
         engine = null
         chunks = emptyList()
-        _state.value = null
-        session?.let(MediaController::releaseFuture)
-        session = null
     }
 
     private fun fail(message: String?) {
@@ -205,15 +224,22 @@ class Narrator(
             try {
                 feed(chunk, engine)
             } catch (e: SpeechUnavailable) {
-                fail(e.message)
+                // Not if a seek or another article replaced this feed meanwhile.
+                if (isActive) fail(e.message)
             }
         }
     }
 
-    /** Whether [chunk] is close enough to what's playing to synthesize now. */
+    /**
+     * Whether [chunk] is close enough to what's playing to synthesize now. Always, when nothing is
+     * queued past what's playing (skipped chunks can leave a gap wider than the lookahead, and the
+     * player would sit at the end of the queue waiting).
+     */
     private fun wanted(chunk: Int, engine: SpeechEngine): Boolean {
         val next = playingChunk.value + 1
-        return chunk <= next || offsets[chunk] - offsets[next] <= engine.lookaheadChars
+        return chunk <= next ||
+            (lastAdded ?: -1) <= playingChunk.value ||
+            offsets[chunk] - offsets[next] <= engine.lookaheadChars
     }
 
     private suspend fun feed(from: Int, engine: SpeechEngine) = coroutineScope {
