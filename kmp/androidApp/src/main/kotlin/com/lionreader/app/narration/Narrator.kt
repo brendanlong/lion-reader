@@ -330,11 +330,15 @@ class Narrator(
             )
     }
 
-    /** No audio to play yet: nothing queued, still buffering, or caught up with the synthesis. */
+    /**
+     * No audio to play yet: nothing queued, still buffering, idle after an error until the feed
+     * brings the next chunk, or caught up with the synthesis.
+     */
     private fun waiting(): Boolean =
         engine == null ||
             player.mediaItemCount == 0 ||
             player.playbackState == Player.STATE_BUFFERING ||
+            player.playbackState == Player.STATE_IDLE ||
             (player.playbackState == Player.STATE_ENDED && !fed)
 
     private fun updateWaiting() {

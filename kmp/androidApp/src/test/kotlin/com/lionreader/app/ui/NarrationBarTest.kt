@@ -2,6 +2,7 @@ package com.lionreader.app.ui
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -27,11 +28,16 @@ class NarrationBarTest {
             NarrationBar(state.value, 1f, {}, { toggles++ }, {}, {}, {})
         }
 
-        composeRule.onNodeWithContentDescription("Loading narration. Pause").performClick()
+        // A moment of waiting (any seek) doesn't show it.
+        composeRule.onNode(hasStateDescription("Loading")).assertDoesNotExist()
+        composeRule.mainClock.advanceTimeBy(400)
+        composeRule.onNode(hasStateDescription("Loading")).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Pause").performClick()
         assertEquals(1, toggles)
 
         state.value = state.value.copy(waiting = false)
         composeRule.waitForIdle()
+        composeRule.onNode(hasStateDescription("Loading")).assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Pause").assertIsDisplayed()
     }
 
