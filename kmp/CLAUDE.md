@@ -80,7 +80,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   headset buttons, background playback). Engines are only sources of audio
   files, each with its chunk size, lookahead and parallelism; playback,
   highlighting and seeking don't change per engine. Cloud audio is cached on
-  disk by model, voice and text, so listening again is free.
+  disk by model, voice and text, so listening again is free. Narration carries
+  on down the list it was started from (`AppGraph.nextToNarrate`); an article
+  that isn't on screen gets its paragraphs from the same script in an
+  off-screen WebView (`NarrationExtractor`), set up like the reader's.
 - **Share target** (`share/`): a shared link is saved by a WorkManager job
   (`SaveWorker`), not the dialog, so it survives the dialog closing and waits
   for a network however long the device is offline; it gives up only when the

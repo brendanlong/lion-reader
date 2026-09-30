@@ -63,7 +63,12 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () -> Unit) {
+fun HomeScreen(
+    model: HomeViewModel,
+    onOpen: (String) -> Unit,
+    onSettings: () -> Unit,
+    bottomBar: @Composable () -> Unit = {},
+) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val coroutines = rememberCoroutineScope()
     val scope by model.scope.collectAsStateWithLifecycle()
@@ -110,6 +115,7 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
         },
     ) {
         Scaffold(
+            bottomBar = bottomBar,
             topBar = {
                 TopAppBar(
                     title = {
@@ -134,7 +140,7 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
                         )
                     },
                 )
-            }
+            },
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = status == SyncStatus.Syncing,

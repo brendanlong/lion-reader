@@ -40,6 +40,8 @@ data class NarratedArticle(
     val title: String,
     val source: String?,
     val paragraphs: List<String>,
+    /** The list it was started from, in order; playback can carry on down it. */
+    val queue: List<String> = listOf(entryId),
 )
 
 /**
@@ -53,6 +55,8 @@ data class NarrationState(
     val paragraph: Int,
     val playing: Boolean,
     val waiting: Boolean = false,
+    /** [NarratedArticle.queue], for opening the article where the list left off. */
+    val queue: List<String> = listOf(entryId),
 )
 
 /**
@@ -69,6 +73,8 @@ class Narrator(
     private val context: Context,
     private val settings: () -> AppSettings,
     private val engineFor: suspend (AppSettings) -> SpeechEngine,
+    /** What to narrate once an article ends, if anything (continuous playback). */
+    private val next: suspend (NarratedArticle) -> NarratedArticle?,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val dir = File(context.cacheDir, "narration")
@@ -135,6 +141,7 @@ class Narrator(
                 fromParagraph,
                 playing = true,
                 waiting = true,
+                queue = article.queue,
             )
         preparing = scope.launch {
             val engine =
@@ -302,7 +309,27 @@ class Narrator(
     /** Stops once the last chunk there'll ever be has played. */
     private fun stopIfFinished() {
         val current = player.currentMediaItem?.mediaId?.toIntOrNull()
-        if (fed && player.playbackState == Player.STATE_ENDED && current == lastAdded) stop()
+        if (fed && player.playbackState == Player.STATE_ENDED && current == lastAdded) finished()
+    }
+
+    /** The article ended: go on to the next one, if there is one, or stop. */
+    private fun finished() {
+        val done = article ?: return
+        feeding = null
+        _state.value = _state.value?.copy(waiting = true)
+        preparing = scope.launch {
+            val following =
+                try {
+                    next(done)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+            // Unless the user started or stopped something meanwhile.
+            if (article !== done) return@launch
+            if (following == null) stop() else narrate(following)
+        }
     }
 
     private fun item(article: NarratedArticle, chunk: Int, file: File) =
@@ -327,6 +354,7 @@ class Narrator(
                 chunks[chunk].paragraph,
                 player.playWhenReady,
                 waiting(),
+                article.queue,
             )
     }
 

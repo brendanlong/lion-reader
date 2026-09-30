@@ -9,8 +9,8 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 1. **Share target, files**: saving shared files from other apps (links are
    done).
-2. **Narration**: AI-normalized text and playing on into the next article
-   (device and cloud voices are done). Piper voices wait on sherpa-onnx 2.0,
+2. **Narration**: AI-normalized text (device and cloud voices, and playing on
+   into the next article, are done). Piper voices wait on sherpa-onnx 2.0,
    which drops espeak-ng (GPL-3.0, compiled into today's library), and on
    licensing: of the web's four voices only `en_GB-alba-medium` (CC BY 4.0) is
    clear for any use. The runtime also adds about 24 MB per ABI.

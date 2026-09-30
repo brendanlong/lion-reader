@@ -5,10 +5,12 @@ import androidx.core.content.edit
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.narration.CloudVoices
 import com.lionreader.app.narration.DeviceVoices
+import com.lionreader.app.narration.NarratedArticle
 import com.lionreader.app.narration.Narrator
 import com.lionreader.app.narration.SpeechEngine
 import com.lionreader.app.narration.SpeechUnavailable
 import com.lionreader.app.narration.SystemTts
+import com.lionreader.app.reader.NarrationExtractor
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.AuthorizationRequest
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -74,7 +77,45 @@ class AppGraph(private val context: Context) {
     val systemTts: SystemTts by lazy { SystemTts(context) }
 
     private val narratorInstance = lazy {
-        Narrator(context, { currentSettings.value }, ::speechEngine)
+        Narrator(context, { currentSettings.value }, ::speechEngine, ::nextToNarrate)
+    }
+
+    private val narrationExtractor by lazy { NarrationExtractor(context) }
+
+    /**
+     * Continuous playback: the next article in the list [done] was started from that has anything
+     * to say, downloading its body if need be. Starting it counts as opening it (marked read), as
+     * swiping to it would.
+     */
+    private suspend fun nextToNarrate(done: NarratedArticle): NarratedArticle? {
+        if (!currentSettings.value.narrationContinue) return null
+        val account = account.value ?: return null
+        val after = done.queue.indexOf(done.entryId)
+        if (after < 0) return null
+        for (id in done.queue.drop(after + 1)) {
+            var entry = account.reader.entry(id).first() ?: continue
+            if (entry.content == null) {
+                val fetched =
+                    try {
+                        withContext(Dispatchers.IO) { account.sync.ensureContent(id) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        false
+                    }
+                if (!fetched) continue
+                entry = account.reader.entry(id).first() ?: continue
+            }
+            val title = entry.title ?: "Untitled"
+            val paragraphs =
+                narrationExtractor.paragraphs(title, entry.content.orEmpty())?.takeIf {
+                    it.isNotEmpty()
+                } ?: continue
+            account.reader.markOpened(id)
+            if (!entry.read) account.reader.setRead(listOf(id), true)
+            return NarratedArticle(id, title, entry.source, paragraphs, done.queue)
+        }
+        return null
     }
 
     /** Text-to-speech narration; one article at a time, app-wide. */

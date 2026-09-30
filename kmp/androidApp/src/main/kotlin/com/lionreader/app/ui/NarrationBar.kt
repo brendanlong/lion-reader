@@ -1,5 +1,6 @@
 package com.lionreader.app.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +28,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.narration.NarrationState
 import kotlinx.coroutines.delay
@@ -34,6 +37,27 @@ import kotlinx.coroutines.delay
 val NARRATION_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 fun speedLabel(speed: Float): String = "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}×"
+
+/**
+ * The bar for whatever's being narrated, if anything; [onOpen] (tapping its title) opens that
+ * article.
+ */
+@Composable
+fun CurrentNarrationBar(graph: AppGraph, onOpen: ((NarrationState) -> Unit)? = null) {
+    val narration by graph.narrator.state.collectAsStateWithLifecycle()
+    val settings by graph.currentSettings.collectAsStateWithLifecycle()
+    val state = narration ?: return
+    NarrationBar(
+        state = state,
+        speed = settings.narrationSpeed,
+        onPrevious = { graph.narrator.skipParagraphs(-1) },
+        onToggle = graph.narrator::togglePlaying,
+        onNext = { graph.narrator.skipParagraphs(1) },
+        onSpeed = graph::setNarrationSpeed,
+        onStop = graph.narrator::stop,
+        onOpen = onOpen?.let { open -> { open(state) } },
+    )
+}
 
 /** Narration controls: the article, previous/next paragraph, play/pause, speed, stop. */
 @Composable
@@ -45,6 +69,7 @@ fun NarrationBar(
     onNext: () -> Unit,
     onSpeed: (Float) -> Unit,
     onStop: () -> Unit,
+    onOpen: (() -> Unit)? = null,
 ) {
     Surface(tonalElevation = 3.dp) {
         Row(
@@ -57,7 +82,13 @@ fun NarrationBar(
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
+                modifier =
+                    Modifier.weight(1f)
+                        .then(
+                            if (onOpen == null) Modifier
+                            else Modifier.clickable(onClickLabel = "Open article", onClick = onOpen)
+                        )
+                        .padding(start = 8.dp, top = 14.dp, bottom = 14.dp),
             )
             IconButton(onClick = onPrevious) {
                 Icon(painterResource(R.drawable.ic_skip_previous), "Previous paragraph")

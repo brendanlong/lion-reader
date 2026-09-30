@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import com.lionreader.app.ui.CurrentNarrationBar
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.HomeViewModel
@@ -150,6 +151,12 @@ class MainActivity : ComponentActivity() {
                                 backStack.add(EntryKey.openedFrom(id, listIds))
                             },
                             onSettings = { backStack.add(SettingsKey) },
+                            bottomBar = {
+                                // The mini player: tapping the title opens the article.
+                                CurrentNarrationBar(graph) { state ->
+                                    backStack.add(EntryKey.openedFrom(state.entryId, state.queue))
+                                }
+                            },
                         )
                     }
                     // Keyed by id alone: the default key is the whole key's
@@ -162,6 +169,9 @@ class MainActivity : ComponentActivity() {
                             startId = key.id,
                             onShown = home::opened,
                             onBack = { backStack.removeLastOrNull() },
+                            onOpenElsewhere = { state ->
+                                backStack.add(EntryKey.openedFrom(state.entryId, state.queue))
+                            },
                         )
                     }
                     entry<SettingsKey> {
