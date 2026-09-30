@@ -304,6 +304,15 @@ interface SyncCursorsInput {
    * server falls back to a strict timestamp comparison.
    */
   entriesAfterId?: string;
+  /**
+   * The entries keyset the catch-up started from, held constant across its
+   * pages (defaults to the page cursor). Pages are ordered by an entry's
+   * latest change, so an entry whose earlier change (creation, content edit)
+   * falls before a later page's cursor still has to be classified against the
+   * catch-up's start, or that change is never reported (#1663).
+   */
+  entriesSince?: string;
+  entriesSinceAfterId?: string;
   subscriptions?: string;
   tags?: string;
 }
@@ -311,6 +320,8 @@ interface SyncCursorsInput {
 const syncCursorsInputSchema = z.object({
   entries: z.string().datetime().optional(),
   entriesAfterId: z.string().uuid().optional(),
+  entriesSince: z.string().datetime().optional(),
+  entriesSinceAfterId: z.string().uuid().optional(),
   subscriptions: z.string().datetime().optional(),
   tags: z.string().datetime().optional(),
 });
@@ -340,7 +351,12 @@ async function collectSyncEvents(
 
   // If no cursors provided, return empty events (initial cursor establishment
   // is handled by sync.cursors endpoint)
-  const next: SyncCursorsInput = { ...cursors };
+  const next: SyncCursorsInput = {
+    entries: cursors.entries,
+    entriesAfterId: cursors.entriesAfterId,
+    subscriptions: cursors.subscriptions,
+    tags: cursors.tags,
+  };
   if (!entriesCursor && !subscriptionsCursor && !tagsCursor) {
     return { events: [], hasMore: false, next };
   }
@@ -367,8 +383,8 @@ async function collectSyncEvents(
   // tiebreaker (same pattern as listEntries) lets the client page within a
   // tied-timestamp group. See #1080.
   //
-  // The metadata/state/new booleans are computed in SQL against the same
-  // (ts, id) keyset the selection uses — not with JavaScript Date math —
+  // The metadata/state/new booleans are computed in SQL against (ts, id)
+  // keysets — not with JavaScript Date math —
   // because new Date() truncates Postgres µs to ms, which could select a row
   // by µs precision yet then emit no event (leaving the cursor stuck). #1080
   // ========================================================================
@@ -378,10 +394,18 @@ async function collectSyncEvents(
     // `col` is "after" the keyset cursor when it is past the timestamp, or at
     // the timestamp with a larger entry id. Without an id tiebreaker (legacy
     // clients / first sync) fall back to a strict timestamp comparison.
-    const afterCursor = (col: SQLWrapper): SQL =>
-      entriesAfterId
-        ? sql`(${col} > ${entriesCursor}::timestamptz OR (${col} = ${entriesCursor}::timestamptz AND ${entries.id} > ${entriesAfterId}::uuid))`
-        : sql`${col} > ${entriesCursor}::timestamptz`;
+    const afterKeyset = (col: SQLWrapper, ts: string, afterId: string | null): SQL =>
+      afterId
+        ? sql`(${col} > ${ts}::timestamptz OR (${col} = ${ts}::timestamptz AND ${entries.id} > ${afterId}::uuid))`
+        : sql`${col} > ${ts}::timestamptz`;
+    const afterCursor = (col: SQLWrapper): SQL => afterKeyset(col, entriesCursor, entriesAfterId);
+    // Selection pages on the cursor; categorization is against the catch-up's
+    // start (see SyncCursorsInput.entriesSince). OR-ing in the cursor keeps
+    // every selected row eventful even if a client sends a start past it.
+    const afterSince = (col: SQLWrapper): SQL =>
+      cursors.entriesSince
+        ? sql`(${afterCursor(col)} OR ${afterKeyset(col, cursors.entriesSince, cursors.entriesSinceAfterId ?? null)})`
+        : afterCursor(col);
 
     const greatest = sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`;
 
@@ -490,11 +514,11 @@ async function collectSyncEvents(
         feedId: entries.feedId,
         feedType: feeds.type,
         feedTitle: feeds.title,
-        // Categorization booleans, computed in SQL at µs precision against
-        // the keyset cursor so selection and categorization never disagree.
-        metadataChanged: sql<boolean>`${afterCursor(entries.updatedAt)}`,
-        stateChanged: sql<boolean>`${afterCursor(userEntries.updatedAt)}`,
-        isNew: sql<boolean>`${afterCursor(entries.createdAt)}`,
+        // Categorization booleans, computed in SQL at µs precision so a row
+        // selected past the cursor always gets at least one event.
+        metadataChanged: sql<boolean>`${afterSince(entries.updatedAt)}`,
+        stateChanged: sql<boolean>`${afterSince(userEntries.updatedAt)}`,
+        isNew: sql<boolean>`${afterSince(entries.createdAt)}`,
         // Full-precision Temporal.Instant for cursor/timestamp output (both
         // updatedAt columns are NOT NULL, so GREATEST is never null here).
         maxUpdatedAt: sql`${greatest}`.mapWith(parseTimestamptz),
@@ -542,7 +566,7 @@ async function collectSyncEvents(
     // Collect entries with state changes for batch count computation
     const stateChangedEntries = changedEntryResults.filter((row) => row.stateChanged);
 
-    // Entries created after the cursor emit new_entry events. Compute one
+    // Entries created after the catch-up's start emit new_entry events. Compute one
     // absolute-count snapshot covering all of them so each new_entry event
     // carries server-authoritative counts (the client sets them directly
     // rather than applying a +1 delta, making the events idempotent across
@@ -581,7 +605,7 @@ async function collectSyncEvents(
 
       if (entryMetadataChanged) {
         if (row.isNew) {
-          // New entry created after cursor - emit new_entry for count and
+          // Entry created after the catch-up's start - emit new_entry for count and
           // list updates. The entry payload mirrors the live SSE path so a
           // catch-up sync inserts missed entries into cached lists too.
           // Unlike the live path, the entry may already have been read or
@@ -879,7 +903,9 @@ export const syncRouter = createTRPCRouter({
    * Called with no cursors, it returns no changes and the cursors to start
    * from — take them before downloading the initial window so nothing that
    * changes during the download is missed (replaying an overlap is harmless).
-   * Page until `hasMore` is false.
+   * Page until `hasMore` is false, sending the first page's `entries` /
+   * `entriesAfterId` as `entriesSince` / `entriesSinceAfterId` on every page
+   * so changes an entry had before a later page's cursor are still reported.
    */
   changes: appProcedure
     .meta({

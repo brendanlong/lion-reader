@@ -67,8 +67,9 @@ const ENTRY_EVENT_TYPES = new Set(["new_entry", "entry_updated", "entry_state_ch
 
 /**
  * Drives sync.events like the real client does: repeatedly polls, advancing the
- * keyset cursors through the actual `advanceCursors` bookkeeping, until the
- * server reports no more pages. Returns every event collected across pages.
+ * keyset cursors through the actual `advanceCursors` bookkeeping and holding the
+ * catch-up's start constant, until the server reports no more pages. Returns
+ * every event collected across pages.
  */
 async function drainEntrySync(userId: string, start: SyncCursors): Promise<SyncEvent[]> {
   let cursors = start;
@@ -78,6 +79,8 @@ async function drainEntrySync(userId: string, start: SyncCursors): Promise<SyncE
       cursors: {
         entries: cursors.entries ?? undefined,
         entriesAfterId: cursors.entriesAfterId ?? undefined,
+        entriesSince: start.entries ?? undefined,
+        entriesSinceAfterId: start.entriesAfterId ?? undefined,
         subscriptions: cursors.subscriptions ?? undefined,
         tags: cursors.tags ?? undefined,
       },
@@ -1039,6 +1042,211 @@ describe("sync.events", () => {
       });
       expect(sentinelCatchUp.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
     });
+  });
+
+  // ==========================================================================
+  // Multi-page catch-ups classify against the catch-up's start (#1663)
+  // ==========================================================================
+
+  describe("catch-up start (#1663)", () => {
+    const t0 = new Date("2025-03-01T00:00:00.000Z");
+    const t1 = new Date("2025-03-01T00:01:00.000Z");
+    const t2 = new Date("2025-03-01T00:02:00.000Z");
+    const t3 = new Date("2025-03-01T00:03:00.000Z");
+
+    function entryEventTypes(events: SyncEvent[], entryId: string): string[] {
+      return events
+        .filter((e) => ENTRY_EVENT_TYPES.has(e.type) && "entryId" in e && e.entryId === entryId)
+        .map((e) => e.type)
+        .sort();
+    }
+
+    // A later page's cursor (t2) lies past the entry's earlier change (t1) but
+    // before its latest (t3), which is what put it on that page.
+    it("reports creation before a later page's cursor as new_entry", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-new.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
+      await createUserEntry(userId, entryId, { updatedAt: t3 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({
+        cursors: { entries: t2.toISOString(), entriesSince: t0.toISOString() },
+      });
+
+      const events = result.events as SyncEvent[];
+      expect(entryEventTypes(events, entryId)).toEqual(["entry_state_changed", "new_entry"]);
+      const newEntry = events.find((e) => e.type === "new_entry");
+      expect(newEntry?.type === "new_entry" && newEntry.entry).toBeTruthy();
+    });
+
+    it("reports a content edit before a later page's cursor as entry_updated", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-edit.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, {
+        fetchedAt: new Date("2025-01-01T00:00:00.000Z"),
+        updatedAt: t1,
+        title: "Edited",
+      });
+      await createUserEntry(userId, entryId, { updatedAt: t3 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({
+        cursors: { entries: t2.toISOString(), entriesSince: t0.toISOString() },
+      });
+
+      const events = result.events as SyncEvent[];
+      expect(entryEventTypes(events, entryId)).toEqual(["entry_state_changed", "entry_updated"]);
+      const updated = events.find((e) => e.type === "entry_updated");
+      expect(updated?.type === "entry_updated" && updated.metadata.title).toBe("Edited");
+    });
+
+    it("reports a state change before a later page's cursor", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-state.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, {
+        fetchedAt: new Date("2025-01-01T00:00:00.000Z"),
+        updatedAt: t3,
+      });
+      await createUserEntry(userId, entryId, { read: true, updatedAt: t1 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({
+        cursors: { entries: t2.toISOString(), entriesSince: t0.toISOString() },
+      });
+
+      expect(entryEventTypes(result.events as SyncEvent[], entryId)).toEqual([
+        "entry_state_changed",
+        "entry_updated",
+      ]);
+    });
+
+    it("breaks ties at the start's timestamp with entriesSinceAfterId", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-tied.xml" });
+      await createTestSubscription(userId, feedId);
+      const ids: string[] = [];
+      for (let i = 0; i < 2; i++) {
+        const id = await createTestEntry(feedId, { fetchedAt: t0 });
+        await createUserEntry(userId, id, { updatedAt: t3 });
+        ids.push(id);
+      }
+      ids.sort();
+      const [before, after] = ids;
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({
+        cursors: {
+          entries: t2.toISOString(),
+          entriesSince: t0.toISOString(),
+          entriesSinceAfterId: before,
+        },
+      });
+
+      const events = result.events as SyncEvent[];
+      expect(entryEventTypes(events, before)).toEqual(["entry_state_changed"]);
+      expect(entryEventTypes(events, after)).toEqual(["entry_state_changed", "new_entry"]);
+    });
+
+    it("applies the start in sync.changes and never echoes it back", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-rest.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
+      await createUserEntry(userId, entryId, { updatedAt: t3 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.changes({
+        entries: t2.toISOString(),
+        entriesSince: t0.toISOString(),
+      });
+
+      expect(entryEventTypes(result.events as SyncEvent[], entryId)).toEqual([
+        "entry_state_changed",
+        "new_entry",
+      ]);
+      expect(result.cursors).not.toHaveProperty("entriesSince");
+      expect(result.cursors.entriesAfterId).toBe(entryId);
+    });
+
+    it("classifies against the page cursor when no start is given", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-legacy.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
+      await createUserEntry(userId, entryId, { updatedAt: t3 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({ cursors: { entries: t2.toISOString() } });
+
+      expect(entryEventTypes(result.events as SyncEvent[], entryId)).toEqual([
+        "entry_state_changed",
+      ]);
+    });
+
+    it("still reports a row selected past the cursor when the start is after it", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-bad.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
+      await createUserEntry(userId, entryId, { updatedAt: t3 });
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.events({
+        cursors: { entries: t2.toISOString(), entriesSince: t3.toISOString() },
+      });
+
+      expect(entryEventTypes(result.events as SyncEvent[], entryId)).toEqual([
+        "entry_state_changed",
+      ]);
+    });
+
+    it("delivers new_entry for an entry split onto a later page by a full drain", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-drain.xml" });
+      await createTestSubscription(userId, feedId);
+
+      // The straddler is created at t1 but read at t3, so it sorts after a
+      // full first page of fillers changed at t2, whose cursor passes t1.
+      const straddlerId = await createTestEntry(feedId, { fetchedAt: t1 });
+      await createUserEntry(userId, straddlerId, { read: true, updatedAt: t3 });
+      const entryValues = [];
+      const userEntryValues = [];
+      for (let i = 0; i < 500; i++) {
+        const entryId = generateUuidv7();
+        entryValues.push({
+          id: entryId,
+          feedId,
+          type: "web" as const,
+          guid: `guid-straddle-${i}`,
+          title: `Filler ${i}`,
+          contentHash: `hash-straddle-${i}`,
+          fetchedAt: t2,
+          publishedAt: t2,
+          lastSeenAt: t2,
+          createdAt: t2,
+          updatedAt: t2,
+        });
+        userEntryValues.push({ userId, entryId, read: false, starred: false, updatedAt: t2 });
+      }
+      const batchSize = 100;
+      for (let i = 0; i < entryValues.length; i += batchSize) {
+        await db.insert(entries).values(entryValues.slice(i, i + batchSize));
+        await db.insert(userEntries).values(userEntryValues.slice(i, i + batchSize));
+      }
+
+      const events = await drainEntrySync(userId, {
+        entries: t0.toISOString(),
+        entriesAfterId: null,
+        subscriptions: null,
+        tags: null,
+      });
+
+      expect(entryEventTypes(events, straddlerId)).toEqual(["entry_state_changed", "new_entry"]);
+    }, 30000);
   });
 
   // ==========================================================================

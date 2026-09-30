@@ -45,8 +45,8 @@ import kotlinx.serialization.json.jsonObject
  * - read/star writes are last-write-wins on a per-field change time, rebased by the client's clock
  *   offset and capped at now, and respond with the final state of every entry still visible;
  * - `sync.changes` pages entries changed after a cursor in change order (new/updated/state events),
- *   classifying each against the page's own cursor like the real endpoint (#1663), and reports
- *   deletions separately.
+ *   classifying each against the page's own cursor like the real endpoint without `entriesSince`
+ *   (#1663), and reports deletions separately.
  *
  * Counts aren't modeled on the wire: the app counts its own entries.
  *
