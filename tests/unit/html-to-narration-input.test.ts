@@ -5,11 +5,13 @@
  * for LLM narration generation.
  */
 
+import { parseHTML } from "linkedom";
 import { describe, it, expect } from "vitest";
 import {
   htmlToNarrationInput,
   type HtmlToNarrationInputResult,
 } from "../../src/lib/narration/html-to-narration-input";
+import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
 
 /**
  * What the narration says, in order. Most of these tests are about the words;
@@ -223,18 +225,6 @@ describe("htmlToNarrationInput", () => {
       // fine, 5000 throws), so removing the cap fails this test.
       const depth = 5000;
       const html = `${"<blockquote>".repeat(depth)}<p>the text</p>${"</blockquote>".repeat(depth)}`;
-      const result = htmlToNarrationInput(html);
-
-      expect(result.paragraphs).toHaveLength(1);
-      expect(result.paragraphs[0].text).toContain("the text");
-    });
-
-    it("narrates absurdly nested data tables instead of overflowing the stack", () => {
-      // A header cell makes each table data, which reads its own cells rather
-      // than taking the walk's path — it still has to stop at the cap.
-      const depth = 3000;
-      const html =
-        "<table><tr><th>h</th><td>".repeat(depth) + "the text" + "</td></tr></table>".repeat(depth);
       const result = htmlToNarrationInput(html);
 
       expect(result.paragraphs).toHaveLength(1);
@@ -666,8 +656,7 @@ describe("htmlToNarrationInput", () => {
       expect(nest(70)).toEqual(["T one two"]);
     });
 
-    // Skipped: data tables recurse without a depth guard (issue #1670).
-    it.skip("narrates data tables nested past the depth budget without overflowing", () => {
+    it("narrates data tables nested past the depth budget without overflowing", () => {
       let html = "w";
       for (let i = 0; i < 3000; i++) html = `<table><tr><th>h</th><td>${html}</td></tr></table>`;
 
@@ -867,6 +856,29 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["bottom text Image: deep alt"]);
+    });
+
+    it("stops descending into inline code", () => {
+      const depth = 5000;
+      const html = `<p>${"<code>".repeat(depth)}x${"</code>".repeat(depth)}</p>`;
+
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["`x`"]);
+    });
+
+    it("stops descending into table structure nested inside itself", () => {
+      // Only a non-spec parse builds this (linkedom's, which narration falls
+      // back to when the spec parser gives out), so the tree is built directly.
+      const { document } = parseHTML("<!DOCTYPE html><html><body></body></html>");
+      let inner: Element = document.createElement("table");
+      document.body.appendChild(inner);
+      for (let i = 0; i < 20000; i++) {
+        const tag = i % 2 === 0 ? "tbody" : "tr";
+        inner = inner.appendChild(document.createElement(tag));
+      }
+      inner.textContent = "x";
+
+      const runs = narrationRuns(document.body, LLM_INPUT_VOICE);
+      expect(runs.map((run) => run.text)).toEqual(["x"]);
     });
   });
 
