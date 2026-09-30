@@ -42,12 +42,17 @@ data class NarratedArticle(
     val paragraphs: List<String>,
 )
 
-/** The article being narrated, the paragraph being spoken, and whether it's playing. */
+/**
+ * The article being narrated, the paragraph being spoken, and whether it's playing. [waiting]: it
+ * should be playing but has no audio yet (the engine is getting ready, or the next chunk is still
+ * being synthesized).
+ */
 data class NarrationState(
     val entryId: String,
     val title: String,
     val paragraph: Int,
     val playing: Boolean,
+    val waiting: Boolean = false,
 )
 
 /**
@@ -123,7 +128,14 @@ class Narrator(
                     )
                     .buildAsync()
         }
-        _state.value = NarrationState(article.entryId, article.title, fromParagraph, playing = true)
+        _state.value =
+            NarrationState(
+                article.entryId,
+                article.title,
+                fromParagraph,
+                playing = true,
+                waiting = true,
+            )
         preparing = scope.launch {
             val engine =
                 try {
@@ -267,6 +279,7 @@ class Narrator(
                 Player.STATE_ENDED -> player.seekTo(player.mediaItemCount - 1, 0)
                 else -> {}
             }
+            updateWaiting()
         }
         fed = true
         if (lastAdded == null)
@@ -313,7 +326,19 @@ class Narrator(
                 article.title,
                 chunks[chunk].paragraph,
                 player.playWhenReady,
+                waiting(),
             )
+    }
+
+    /** No audio to play yet: nothing queued, still buffering, or caught up with the synthesis. */
+    private fun waiting(): Boolean =
+        engine == null ||
+            player.mediaItemCount == 0 ||
+            player.playbackState == Player.STATE_BUFFERING ||
+            (player.playbackState == Player.STATE_ENDED && !fed)
+
+    private fun updateWaiting() {
+        _state.value = _state.value?.copy(waiting = waiting())
     }
 
     private val listener =
@@ -332,10 +357,13 @@ class Narrator(
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                _state.value = _state.value?.copy(playing = playWhenReady)
+                _state.value = _state.value?.copy(playing = playWhenReady, waiting = waiting())
             }
 
-            override fun onPlaybackStateChanged(playbackState: Int) = stopIfFinished()
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                updateWaiting()
+                stopIfFinished()
+            }
 
             // A file the player can't play (an odd one from some engine): move
             // past it rather than sit on it.

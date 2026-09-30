@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lionreader.app.R
@@ -52,10 +56,23 @@ fun NarrationBar(
                 Icon(painterResource(R.drawable.ic_skip_previous), "Previous paragraph")
             }
             IconButton(onClick = onToggle) {
-                Icon(
-                    painterResource(if (state.playing) R.drawable.ic_pause else R.drawable.ic_play),
-                    if (state.playing) "Pause" else "Play",
-                )
+                if (state.playing && state.waiting) {
+                    // Tapping still pauses; the spinner says audio is on its way.
+                    CircularProgressIndicator(
+                        modifier =
+                            Modifier.size(24.dp).semantics {
+                                contentDescription = "Loading narration. Pause"
+                            },
+                        strokeWidth = 2.5.dp,
+                    )
+                } else {
+                    Icon(
+                        painterResource(
+                            if (state.playing) R.drawable.ic_pause else R.drawable.ic_play
+                        ),
+                        if (state.playing) "Pause" else "Play",
+                    )
+                }
             }
             IconButton(onClick = onNext) {
                 Icon(painterResource(R.drawable.ic_skip_next), "Next paragraph")
