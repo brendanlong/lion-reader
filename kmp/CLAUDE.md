@@ -86,6 +86,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   `pnpm app:appearance` (a unit test fails when stale). Fonts are OFL Google
   Fonts subset to Latin woff2 by `scripts/subset-fonts.py` (its header says how
   to run it).
+- **Launcher icon** layers (`res/mipmap-*`) are generated from
+  `assets/logo-original.svg` by `scripts/app-icon.py` (its header says how);
+  debug builds get their own background color so they're easy to tell apart.
 - **Background sync** runs through WorkManager (`SyncScheduler`): a periodic
   full sync and a flush after each user change, both waiting for a network.
 
