@@ -19,7 +19,9 @@ import {
   protectedProcedure,
   expensivePublicProcedure,
   expensiveProtectedProcedure,
+  scopedUnconfirmedProcedure,
 } from "../trpc";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "../errors";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
@@ -775,7 +777,8 @@ export const authRouter = createTRPCRouter({
    *
    * Returns the user profile for the currently authenticated session.
    */
-  me: protectedProcedure
+  // The native app reads this to learn which account its token belongs to.
+  me: scopedUnconfirmedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
       openapi: {
         method: "GET",

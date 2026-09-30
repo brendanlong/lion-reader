@@ -292,6 +292,21 @@ export function scopedProtectedProcedure(scopes: OAuthScope | OAuthScope[]) {
     .use(createScopeMiddleware(requiredScopes));
 }
 
+/**
+ * Like {@link scopedProtectedProcedure} but without the signup-confirmation
+ * requirement, for the few endpoints an unconfirmed user must reach (e.g.
+ * `auth.me`, which the confirmation flow itself reads).
+ *
+ * @param scopes - The required scope(s) for token access (any-of)
+ */
+export function scopedUnconfirmedProcedure(scopes: OAuthScope | OAuthScope[]) {
+  const requiredScopes = Array.isArray(scopes) ? scopes : [scopes];
+  return t.procedure
+    .use(timingMiddleware)
+    .use(authMiddleware)
+    .use(createScopeMiddleware(requiredScopes));
+}
+
 // ============================================================================
 // Rate Limiting Middleware
 // ============================================================================
