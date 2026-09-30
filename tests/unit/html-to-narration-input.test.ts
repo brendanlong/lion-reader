@@ -359,6 +359,11 @@ describe("htmlToNarrationInput", () => {
       expect(narrated(htmlToNarrationInput(html))).toEqual(["Newt Scamander"]);
     });
 
+    it("speaks a linked undescribed image as the image, not the link", () => {
+      const html = '<p>See <a href="https://x.com/i"><img src="/a.png"></a> here</p>';
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["See Image: image here"]);
+    });
+
     it("does not announce an anchor that has no href", () => {
       // `<a id="fn1">` is a link target, not a link — it goes nowhere.
       const html = '<p><a id="fn1"></a>Footnote text</p>';
@@ -549,6 +554,12 @@ describe("htmlToNarrationInput", () => {
       expect(
         narrated(htmlToNarrationInput("<table><tr><td>A</td><td>B</td></tr></table>"))
       ).toEqual(["Table: A, B End table."]);
+      // A caption is something to say too, so a captioned cell is data.
+      expect(
+        narrated(
+          htmlToNarrationInput("<table><caption>Scores</caption><tr><td>A</td></tr></table>")
+        )
+      ).toEqual(["Table: Scores. A End table."]);
     });
 
     it("marks tables with 'Table:' prefix", () => {
@@ -846,9 +857,8 @@ describe("htmlToNarrationInput", () => {
 
   describe("links", () => {
     it("does not announce a link whose image a figure speaks", () => {
-      // What WordPress emits for an image linking to its full-size version. The
-      // image is narrated by the figure, so the link has content — announcing
-      // its target here would add a paragraph of pure boilerplate.
+      // What WordPress emits for an image linking to its full-size version: the
+      // figure speaks the image, and the link adds nothing.
       const html =
         '<figure class="wp-block-image"><a href="https://example.com/cat-full.jpg">' +
         '<img src="/cat.jpg" alt="A tabby cat"></a><figcaption>Fig 1.</figcaption></figure>';

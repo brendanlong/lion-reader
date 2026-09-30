@@ -538,7 +538,7 @@ function imageText(img: Element, voice: NarrationVoice): string {
   return alt.trim() ? `Image: ${alt.trim()}` : "";
 }
 
-/** How a link with no words of its own announces where it goes. */
+/** What a link whose text is its own URL says instead. */
 function linkTarget(href: string): string {
   try {
     return `[link to ${new URL(href).hostname}]`;

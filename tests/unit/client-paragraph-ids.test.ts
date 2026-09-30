@@ -454,6 +454,13 @@ describe("htmlToClientNarration", () => {
   });
 
   describe("image handling", () => {
+    it("says nothing for a linked image nobody described, or a blank link", () => {
+      const html =
+        '<p>See <a href="https://x.com/i"><img src="/a.png"></a> here</p>' +
+        '<p>Newt<a href="https://x.com/b"> </a>Scamander</p>';
+      expect(htmlToClientNarration(html).narrationText).toBe("See here\n\nNewt Scamander");
+    });
+
     it("includes image with alt text in narration", () => {
       const html = '<p>Before</p><img src="test.jpg" alt="A photo of a cat"><p>After</p>';
       const result = htmlToClientNarration(html);

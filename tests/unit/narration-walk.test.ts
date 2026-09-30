@@ -90,8 +90,8 @@ const SHAPES = [
   '<figure><p><img alt="w0"></p><figcaption>w1</figcaption></figure>',
   '<div><figure><img alt="w0"><figcaption>w1</figcaption></figure></div>',
   '<table><tr><td><figure><img alt="w0"><figcaption>w1</figcaption></figure></td></tr></table>',
-  // A link around a figure's image: the image is spoken by the figure, so the
-  // link has content even though nothing was said where the link is.
+  // A link around a figure's image: the figure speaks the image, and the link
+  // must not add an announcement of its own.
   '<figure><a href="https://example.com/full.jpg"><img alt="w0"></a><figcaption>w1</figcaption></figure>',
   '<figure><div><a href="https://example.com/full.jpg"><img alt="w0"></a></div></figure>',
   '<blockquote><figure><a href="https://example.com/f"><img alt="w0"></a></figure></blockquote>',
