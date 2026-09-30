@@ -325,6 +325,27 @@ class SyncEngineTest {
     }
 
     @Test
+    fun aDownloadStartedBeforeAResyncIsNotStored() = runTest {
+        serve(entry("a"))
+        engine.sync(downloadContent = false)
+
+        // While the body is downloading, the entry is edited and a resync
+        // deletes and re-adds it. The download's answer predates the edit.
+        var batches = 0
+        server.duringBatch = {
+            serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+            if (++batches == 1) {
+                server.queueChanges(resyncRequired = true)
+                engine.sync(downloadContent = false)
+                serve(entry("a"))
+            }
+        }
+        engine.ensureContent("a")
+
+        assertEquals("<p>Edited</p>", reader.entry("a").first()?.content)
+    }
+
+    @Test
     fun unknownEventTypesAreSkipped() = runTest {
         engine.sync()
         server.changes.addLast(

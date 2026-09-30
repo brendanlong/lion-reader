@@ -173,7 +173,7 @@ class AppGraph(private val context: Context) {
 }
 
 /** Database file schema generation; bump it on a pre-release schema change (kmp/CLAUDE.md). */
-private const val DB_PREFIX = "account-v3-"
+private const val DB_PREFIX = "account-v4-"
 
 /** One database file per (server, account); the name doesn't reveal either. */
 private fun accountDbName(serverUrl: String, userId: String): String {
