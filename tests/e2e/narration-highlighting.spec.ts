@@ -24,7 +24,10 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
  * The shapes at issue: a bare wrapper, a definition list, a wrapped image, and
  * a `<div>` the browser foster-parents out of a table (issue #1453) — the one
  * shape where the numbering depends on the two sides building the same tree,
- * which only a real browser can hold the server to.
+ * which only a real browser can hold the server to. Then what Substack emails
+ * are full of: a whitespace-only link, and a linked `alt=""` image in a layout
+ * table — numbered but silent, so the paragraph after it must still highlight
+ * its own element.
  */
 const CONTENT = [
   "<h2>Narration shapes</h2>",
@@ -34,7 +37,11 @@ const CONTENT = [
   '<figure><div class="wp-block-image"><img src="/icon.png" alt="A cat"></div>',
   "<figcaption>My cat</figcaption></figure>",
   "<div>Loose text<p>and a paragraph beside it.</p></div>",
-  "<table><div>Hoisted out of the table.</div><tr><td>A cell.</td></tr></table>",
+  "<table><div>Hoisted out of the table.</div><tr><td>A cell.</td><td>B cell.</td></tr></table>",
+  '<p><a href="https://example.com/a">Newt</a><a href="https://example.com/b"> </a>Scamander</p>',
+  '<table><tr><td></td><td><a href="https://example.com/i"><img src="/icon.png" alt=""></a></td>',
+  "<td></td></tr></table>",
+  "<p>After the image.</p>",
 ].join("");
 
 test.afterAll(async () => {
@@ -116,7 +123,9 @@ test("narrates and highlights the shapes that used to be skipped", async ({ page
     "Loose text",
     "and a paragraph beside it.",
     "Hoisted out of the table.",
-    "Table: A cell. End table.",
+    "Table: A cell., B cell. End table.",
+    "Newt Scamander",
+    "After the image.",
   ]);
   expect(highlighted).toEqual([
     "h2",
@@ -130,5 +139,7 @@ test("narrates and highlights the shapes that used to be skipped", async ({ page
     "p",
     "div",
     "table",
+    "p",
+    "p",
   ]);
 });

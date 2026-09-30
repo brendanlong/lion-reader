@@ -90,13 +90,17 @@ const SHAPES = [
   '<figure><p><img alt="w0"></p><figcaption>w1</figcaption></figure>',
   '<div><figure><img alt="w0"><figcaption>w1</figcaption></figure></div>',
   '<table><tr><td><figure><img alt="w0"><figcaption>w1</figcaption></figure></td></tr></table>',
-  // A link around a figure's image: the image is spoken by the figure, so the
-  // link has content even though nothing was said where the link is.
+  // A link around a figure's image: the figure speaks the image, and the link
+  // must not add an announcement of its own.
   '<figure><a href="https://example.com/full.jpg"><img alt="w0"></a><figcaption>w1</figcaption></figure>',
   '<figure><div><a href="https://example.com/full.jpg"><img alt="w0"></a></div></figure>',
   '<blockquote><figure><a href="https://example.com/f"><img alt="w0"></a></figure></blockquote>',
   "<table><script>var unspoken = 1;</script><tr><td>w0</td></tr></table>",
   "<p><code>w0<br><br>w1</code></p>",
+  // Substack: a whitespace-only link between linked words, and every image in
+  // a one-cell layout table, linked, with `alt=""`.
+  '<p><a href="https://example.com/a">w0</a><a href="https://example.com/b"> </a>w1</p>',
+  '<table><tr><td></td><td><a href="https://example.com/i"><img alt=""></a></td><td></td></tr></table><p>w0</p>',
 ];
 
 /** Every `w<n>` token in a string, in order. */
@@ -119,17 +123,17 @@ function expectedWords(html: string): string[] {
 }
 
 /**
- * How many links in a shape have nothing speakable in them — no word, no alt
- * text — and so are announced by their target instead ("[link to example.com]").
+ * How many links in a shape have their URL as their text, the one kind that is
+ * announced by its target instead ("[link to example.com]").
  *
  * Narration adding boilerplate is invisible to the word count: it introduces no
  * word the document contains, which is how a `<figure><a><img></a></figure>`
  * announcing its href on top of speaking the image went unnoticed. Counting the
  * announcements against the links that should produce one closes that.
  */
-function emptyLinks(html: string): number {
-  return [...html.matchAll(/<a\b[^>]*\bhref[^>]*>(.*?)<\/a>/gs)].filter(
-    (match) => words(match[1]).length === 0
+function urlLinks(html: string): number {
+  return [...html.matchAll(/<a\b[^>]*\bhref="([^"]*)"[^>]*>(.*?)<\/a>/gs)].filter(
+    (match) => match[2].trim() === match[1]
   ).length;
 }
 
@@ -150,7 +154,7 @@ describe("narration walk invariants", () => {
       // And nothing invented: no word the document doesn't contain, and no link
       // announced except the ones with nothing to say.
       expect([...spoken.keys()].sort()).toEqual([...new Set(expectedWords(html))].sort());
-      expect(announcedLinks(texts), `link boilerplate in ${html}`).toBe(emptyLinks(html));
+      expect(announcedLinks(texts), `link boilerplate in ${html}`).toBe(urlLinks(html));
     });
 
     it.each(SHAPES)("client: %s", (html) => {
@@ -161,7 +165,7 @@ describe("narration walk invariants", () => {
         expect(spoken.get(word), `${word} narrated ${spoken.get(word) ?? 0}× in ${html}`).toBe(1);
       }
       expect([...spoken.keys()].sort()).toEqual([...new Set(expectedWords(html))].sort());
-      expect(announcedLinks(texts), `link boilerplate in ${html}`).toBe(emptyLinks(html));
+      expect(announcedLinks(texts), `link boilerplate in ${html}`).toBe(urlLinks(html));
     });
   });
 

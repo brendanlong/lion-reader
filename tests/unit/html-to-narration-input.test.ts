@@ -213,7 +213,7 @@ describe("htmlToNarrationInput", () => {
         "<figcaption>Data</figcaption></figure></blockquote>";
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["Quote: Table: Cell A End table.", "Data End quote."]);
+      expect(narrated(result)).toEqual(["Quote: Cell A", "Data End quote."]);
     });
 
     it("narrates absurdly nested quotes instead of overflowing the stack", () => {
@@ -250,6 +250,18 @@ describe("htmlToNarrationInput", () => {
   });
 
   describe("image handling", () => {
+    it("says nothing for a decorative image (empty alt), only for an undescribed one", () => {
+      expect(narrated(htmlToNarrationInput('<p>a</p><img alt=""><p>b</p>'))).toEqual(["a", "b"]);
+      expect(narrated(htmlToNarrationInput('<figure><img alt=" "></figure><p>b</p>'))).toEqual([
+        "b",
+      ]);
+      expect(narrated(htmlToNarrationInput("<p>a</p><img><p>b</p>"))).toEqual([
+        "a",
+        "Image: image",
+        "b",
+      ]);
+    });
+
     it("marks figures containing images", () => {
       const html = '<figure><img src="photo.jpg" alt="A beautiful sunset"></figure>';
       const result = htmlToNarrationInput(html);
@@ -285,7 +297,7 @@ describe("htmlToNarrationInput", () => {
         "<figure><table><tr><td>Cell</td></tr></table><figcaption>Data</figcaption></figure>";
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["Table: Cell End table.", "Data"]);
+      expect(narrated(result)).toEqual(["Cell", "Data"]);
     });
 
     it("handles inline images within paragraphs", () => {
@@ -336,11 +348,20 @@ describe("htmlToNarrationInput", () => {
       expect(narrated(result)).toEqual(["Visit [link to example.com]."]);
     });
 
-    it("converts empty link text to domain mention", () => {
-      const html = '<p>Visit <a href="https://example.com"></a> for more.</p>';
-      const result = htmlToNarrationInput(html);
+    it("says nothing for a link with no visible text", () => {
+      expect(
+        narrated(htmlToNarrationInput('<p>Visit <a href="https://example.com"></a> for more.</p>'))
+      ).toEqual(["Visit for more."]);
+      // Substack puts a whitespace-only link between linked words.
+      const html =
+        '<p><a href="https://x.com/a">Newt</a><a href="https://x.com/b"> </a>' +
+        '<a href="https://x.com/c">Scamander</a></p>';
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["Newt Scamander"]);
+    });
 
-      expect(narrated(result)).toEqual(["Visit [link to example.com] for more."]);
+    it("speaks a linked undescribed image as the image, not the link", () => {
+      const html = '<p>See <a href="https://x.com/i"><img src="/a.png"></a> here</p>';
+      expect(narrated(htmlToNarrationInput(html))).toEqual(["See Image: image here"]);
     });
 
     it("does not announce an anchor that has no href", () => {
@@ -468,7 +489,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<ul><li><figure><table><tr><td>x</td></tr></table></figure></li></ul>";
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["- Table: x End table."]);
+      expect(narrated(result)).toEqual(["- x"]);
     });
 
     it("narrates thousands of blocks under a wrapper in reasonable time", () => {
@@ -517,6 +538,30 @@ describe("htmlToNarrationInput", () => {
   });
 
   describe("table handling", () => {
+    it("reads a table with one thing to say as layout, without table markers", () => {
+      // How Substack emails wrap every image: a linked image with an empty alt
+      // in the middle cell of a one-row table.
+      const substack =
+        '<table class="image-wrapper"><tbody><tr><td></td><td class="content">' +
+        '<a href="https://substack.com/r/1"><img alt="" src="/a.png"></a>' +
+        "</td><td></td></tr></tbody></table><p>After</p>";
+      expect(narrated(htmlToNarrationInput(substack))).toEqual(["After"]);
+      expect(
+        narrated(
+          htmlToNarrationInput('<table><tr><td><img alt="A cat"></td><td></td></tr></table>')
+        )
+      ).toEqual(["Image: A cat"]);
+      expect(
+        narrated(htmlToNarrationInput("<table><tr><td>A</td><td>B</td></tr></table>"))
+      ).toEqual(["Table: A, B End table."]);
+      // A caption is something to say too, so a captioned cell is data.
+      expect(
+        narrated(
+          htmlToNarrationInput("<table><caption>Scores</caption><tr><td>A</td></tr></table>")
+        )
+      ).toEqual(["Table: Scores. A End table."]);
+    });
+
     it("marks tables with 'Table:' prefix", () => {
       const html = "<table><tr><td>Cell 1</td><td>Cell 2</td></tr></table>";
       const result = htmlToNarrationInput(html);
@@ -562,14 +607,14 @@ describe("htmlToNarrationInput", () => {
         "</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["Table: Table: A, B. C End table. End table."]);
+      expect(narrated(result)).toEqual(["Table: A, B. C End table."]);
     });
 
     it("keeps the space inside a cell's inline markup", () => {
       const html = "<table><tr><td><b>Name:</b><span> John</span></td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["Table: Name: John End table."]);
+      expect(narrated(result)).toEqual(["Name: John"]);
     });
   });
 
@@ -769,7 +814,7 @@ describe("htmlToNarrationInput", () => {
       const html = "<table><script>alert(1)</script><tr><td>Cell</td></tr></table>";
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["Table: Cell End table."]);
+      expect(narrated(result)).toEqual(["Cell"]);
     });
 
     it("numbers nothing inside it either", () => {
@@ -806,15 +851,14 @@ describe("htmlToNarrationInput", () => {
         "<figcaption>Data</figcaption></figure>";
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["Table: Image: A cat End table.", "Data"]);
+      expect(narrated(result)).toEqual(["Image: A cat", "Data"]);
     });
   });
 
   describe("links", () => {
     it("does not announce a link whose image a figure speaks", () => {
-      // What WordPress emits for an image linking to its full-size version. The
-      // image is narrated by the figure, so the link has content — announcing
-      // its target here would add a paragraph of pure boilerplate.
+      // What WordPress emits for an image linking to its full-size version: the
+      // figure speaks the image, and the link adds nothing.
       const html =
         '<figure class="wp-block-image"><a href="https://example.com/cat-full.jpg">' +
         '<img src="/cat.jpg" alt="A tabby cat"></a><figcaption>Fig 1.</figcaption></figure>';
@@ -827,7 +871,6 @@ describe("htmlToNarrationInput", () => {
       for (const html of [
         '<p><a href="https://x.com/p">https://x.com/p</a></p>',
         '<a href="https://x.com/p"><p>https://x.com/p</p></a>',
-        '<p><a href="https://x.com/p"></a></p>',
       ]) {
         expect(narrated(htmlToNarrationInput(html))).toEqual(["[link to x.com]"]);
       }
