@@ -422,6 +422,16 @@ export const expensiveConfirmedProtectedProcedure = t.procedure
   .use(createAuthenticatedRateLimitMiddleware("expensive"));
 
 /**
+ * {@link scopedProtectedProcedure} with the `expensive` rate limit, for
+ * token-accessible endpoints that do costly work (e.g. an LLM call).
+ *
+ * @param scopes - The required scope(s) for token access (any-of)
+ */
+export function expensiveScopedProtectedProcedure(scopes: OAuthScope | OAuthScope[]) {
+  return scopedProtectedProcedure(scopes).use(createAuthenticatedRateLimitMiddleware("expensive"));
+}
+
+/**
  * The least a speech request is charged, so the character-counted limit still
  * bounds request volume (each call is a DB lookup and an outbound request,
  * often on the server's shared OpenRouter key). A run of one-line paragraphs
