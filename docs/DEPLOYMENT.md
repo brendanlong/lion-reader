@@ -288,6 +288,11 @@ must be higher than the last.
 git tag android-v0.2.0 && git push origin android-v0.2.0
 ```
 
+or run the **Android Release** workflow by hand on master (Actions → Android
+Release → Run workflow) with the version, e.g. `0.2.0`: it tags master's head
+with the release, after checking the version is higher than the last one
+(Play refuses anything else).
+
 For Play, upload the `.aab` from the run's artifact (a new personal developer
 account needs a closed test with testers for 14 days before production).
 
