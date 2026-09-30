@@ -32,11 +32,13 @@ class CloudVoicesTest {
     private val cache = Files.createTempDirectory("cloud").toFile()
     private val dir = Files.createTempDirectory("narration").toFile()
 
-    private val ok =
+    private fun response(audio: ByteArray) =
         HttpStatusCode.OK to
             """{"audio":"${Base64.getEncoder().encodeToString(audio)}","mimeType":"audio/mpeg"}"""
 
-    private fun TestScope.engine(): CloudVoices {
+    private val ok = response(audio)
+
+    private fun TestScope.engine(cacheBytes: Long = 5): CloudVoices {
         val http =
             HttpClient(
                 MockEngine {
@@ -63,8 +65,23 @@ class CloudVoicesTest {
             ),
             // Retries wait on the test's clock.
             io = StandardTestDispatcher(testScheduler),
-            cacheBytes = 5,
+            cacheBytes = cacheBytes,
         )
+    }
+
+    @Test
+    fun realSpeechIsStoredAndServedWithoutItsSeekHeader() = runTest {
+        val speech = javaClass.getResourceAsStream("/two-sentences.mp3")!!.use { it.readBytes() }
+        responses += response(speech)
+        val engine = engine(cacheBytes = 1_000_000)
+
+        val stored = engine.synthesize("Two sentences.", dir, "0")
+        assertArrayEquals(withoutSeekHeader(speech), stored.readBytes())
+
+        // One cached before the fix is fixed when it's next used.
+        stored.writeBytes(speech)
+        assertEquals(stored, engine.synthesize("Two sentences.", dir, "1"))
+        assertArrayEquals(withoutSeekHeader(speech), stored.readBytes())
     }
 
     @Test

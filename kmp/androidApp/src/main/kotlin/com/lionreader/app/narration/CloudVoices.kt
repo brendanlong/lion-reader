@@ -14,6 +14,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * Cloud voices (Kokoro and friends through the server's `narration.synthesize`, on the user's or
@@ -44,7 +45,11 @@ class CloudVoices(
         val key = key(text)
         val cached = File(cacheDir, "$key.mp3")
         if (cached.exists()) {
-            cached.setLastModified(System.currentTimeMillis())
+            withContext(io) {
+                cached.setLastModified(System.currentTimeMillis())
+                // Cached before seek headers were blanked (see withoutSeekHeader).
+                blankSeekHeader(cached)
+            }
             return cached
         }
         return inFlight
@@ -63,7 +68,7 @@ class CloudVoices(
     private fun store(audio: ByteArray, cached: File): File {
         cacheDir.mkdirs()
         val partial = File.createTempFile(cached.nameWithoutExtension, ".part", cacheDir)
-        partial.writeBytes(audio)
+        partial.writeBytes(withoutSeekHeader(audio))
         if (!partial.renameTo(cached)) {
             partial.delete()
             throw IOException("Couldn't cache speech")
