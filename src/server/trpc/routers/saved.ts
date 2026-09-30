@@ -26,6 +26,7 @@ import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -128,7 +129,8 @@ export const savedRouter = createTRPCRouter({
    * @param title - Optional title hint (from bookmarklet's document.title)
    * @returns The saved article
    */
-  save: scopedProtectedProcedure(SAVE_ARTICLE_SCOPES)
+  // Also the native app's share target (`reader:full-access`).
+  save: scopedProtectedProcedure([...SAVE_ARTICLE_SCOPES, OAUTH_SCOPES.READER_FULL_ACCESS])
     .meta({
       openapi: {
         method: "POST",
@@ -170,9 +172,10 @@ export const savedRouter = createTRPCRouter({
         excerpt: input.excerpt,
         refetch: input.refetch,
         force: input.force,
-        // The web UI can walk the user through Google sign-in / consent, so it
-        // wants the machine-readable NEEDS_* codes it matches to drive prompts.
-        googleDocsAuth: "interactive",
+        // The web UI and the extension walk the user through Google sign-in /
+        // consent, so they want the machine-readable NEEDS_* codes they match to
+        // drive prompts; the app can't, so it gets the readable messages.
+        googleDocsAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
 
       return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
