@@ -80,7 +80,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   headset buttons, background playback). Engines are only sources of audio
   files, each with its chunk size, lookahead and parallelism; playback,
   highlighting and seeking don't change per engine. Cloud audio is cached on
-  disk by model, voice and text, so listening again is free.
+  disk by model, voice and text, so listening again is free. Narration carries
+  on down the list it was started from (`AppGraph.nextToNarrate`); an article
+  that isn't on screen gets its paragraphs from the same script in an
+  off-screen WebView (`NarrationExtractor`), set up like the reader's.
 - **Share target** (`share/`): a shared link is saved by a WorkManager job
   (`SaveWorker`), not the dialog, so it survives the dialog closing and waits
   for a network however long the device is offline; it gives up only when the
@@ -96,6 +99,16 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **Database work never runs on the main thread**: `Reader`'s writes are
   `suspend` and run on its context (IO in the app); `SyncEngine` doesn't switch
   threads, so the UI calls it on IO.
+- **Wide screens** show the list and the article side by side (Navigation 3's
+  `ListDetailSceneStrategy`: home is the list pane, an entry the detail). So
+  opening from the list replaces the entry on the back stack rather than
+  stacking another, back closes the article beside the list (`PopLatest`),
+  and the list highlights the article shown.
+- **Accessibility:** a list row is one TalkBack/Switch Access stop, with
+  its buttons (and the swipe) as custom actions and the buttons themselves
+  hidden from accessibility services. A new row control needs a matching
+  action. Where something changes without focus moving (the reader's pager),
+  a polite live region says what changed.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's
   sanitized HTML, inserted verbatim. Its one script reports where wide tables
   and code blocks are, so a sideways drag on one scrolls it instead of paging
@@ -111,6 +124,11 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   except with themed icons on, which use only the monochrome layer.
 - **Background sync** runs through WorkManager (`SyncScheduler`): a periodic
   full sync and a flush after each user change, both waiting for a network.
+- **Live updates:** while the app is on screen it listens to the server's
+  events stream (`/api/v1/events`, `followLiveUpdates`) and pulls when it says
+  the account's data changed. The events only trigger the pull: everything
+  still comes through the one sync. In the background it's the periodic sync
+  alone.
 
 ## Setup
 
@@ -239,7 +257,12 @@ adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -
   schema changes need SQLDelight migrations (`.sqm`).
 - SQL targets SQLite 3.18 (minSdk 26's), SQLDelight's default dialect: no
   UPSERT (`ON CONFLICT DO UPDATE`) — use insert-or-ignore + update, not
-  `INSERT OR REPLACE`, which deletes the row (and its downloaded body).
+  `INSERT OR REPLACE`, which deletes the row (and its downloaded body, and
+  gives it a new rowid, which the search index is keyed on).
+- Open databases with `AppSchema` (`SearchIndex.kt`), never the generated
+  `LionReaderDatabase.Schema`: it adds the search index's triggers. Its docs
+  say what a migration touching `entry` owes the index. Search covers
+  everything on the device, read or not, and nothing else.
 - Shared logic goes in `commonMain` with tests in `commonTest`; `jvmTest` is for
   what needs a JVM-only driver (e.g. SQLDelight's in-memory `JdbcSqliteDriver`).
 - Android UI tests run on Robolectric in `androidApp/src/test`, not on a device.

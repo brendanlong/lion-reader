@@ -8,10 +8,19 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirective
+import androidx.compose.material3.adaptive.navigation.BackNavigationBehavior
+import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
+import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,12 +31,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import com.lionreader.app.ui.CurrentNarrationBar
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.HomeViewModel
@@ -128,33 +142,75 @@ class MainActivity : ComponentActivity() {
         key(account.dbName) { AccountApp(account) }
     }
 
+    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
     @Composable
     private fun AccountApp(account: AccountSession) {
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        LaunchedEffect(account) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { account.followServer() }
+        }
         val backStack = rememberNavBackStack(HomeKey)
         val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
         val transitions = remember(settings.theme) { ScreenTransitions(settings.theme) }
+        // Side by side where there's room (tablets, foldables, landscape).
+        // Back closes the article beside the list, as it does full screen.
+        val listDetail =
+            rememberListDetailSceneStrategy<NavKey>(
+                backNavigationBehavior = BackNavigationBehavior.PopLatest
+            )
+        val twoPane =
+            calculatePaneScaffoldDirective(currentWindowAdaptiveInfo()).maxHorizontalPartitions > 1
+        val articleOpen = backStack.any { it is EntryKey }
+        val besideArticle = twoPane && articleOpen
+        LaunchedEffect(articleOpen) { if (!articleOpen) home.shownClosed() }
+        fun open(key: EntryKey) {
+            // One page per article: the same id twice would share a saved state key.
+            backStack.removeAll { it is EntryKey && it.id == key.id }
+            backStack.add(key)
+        }
         NavDisplay(
             backStack = backStack,
+            // Behind the panes (and the gap between them), which don't all paint their own.
+            modifier = Modifier.background(MaterialTheme.colorScheme.background),
+            sceneStrategies = listOf(listDetail),
             onBack = { backStack.removeLastOrNull() },
             transitionSpec = { transitions.forward },
             popTransitionSpec = { transitions.back },
             predictivePopTransitionSpec = { transitions.back },
             entryProvider =
                 entryProvider {
-                    entry<HomeKey> {
+                    entry<HomeKey>(
+                        metadata =
+                            ListDetailSceneStrategy.listPane(
+                                detailPlaceholder = { NoArticlePlaceholder() }
+                            )
+                    ) {
                         HomeScreen(
                             model = home,
+                            showSelection = twoPane,
                             onOpen = { id ->
-                                val listIds = home.items.value.orEmpty().map { it.id }
-                                backStack.add(EntryKey.openedFrom(id, listIds))
+                                // Replacing the one beside the list, when it's shown.
+                                backStack.removeAll { it is EntryKey }
+                                open(EntryKey.openedFrom(id, home.shownIds()))
                             },
                             onSettings = { backStack.add(SettingsKey) },
+                            bottomBar = {
+                                // The mini player: tapping the title opens the article.
+                                // Not beside an article, which has its own.
+                                if (!besideArticle)
+                                    CurrentNarrationBar(graph) { state ->
+                                        open(EntryKey.openedFrom(state.entryId, state.queue))
+                                    }
+                            },
                         )
                     }
                     // Keyed by id alone: the default key is the whole key's
                     // string, list included, and ends up in saved state.
-                    entry<EntryKey>({ key: EntryKey -> key.id }) { key ->
+                    entry<EntryKey>(
+                        { key: EntryKey -> key.id },
+                        metadata = ListDetailSceneStrategy.detailPane(),
+                    ) { key ->
                         EntryScreen(
                             graph,
                             account,
@@ -162,6 +218,10 @@ class MainActivity : ComponentActivity() {
                             startId = key.id,
                             onShown = home::opened,
                             onBack = { backStack.removeLastOrNull() },
+                            besideList = twoPane,
+                            onOpenElsewhere = { state ->
+                                open(EntryKey.openedFrom(state.entryId, state.queue))
+                            },
                         )
                     }
                     entry<SettingsKey> {
@@ -172,6 +232,17 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 },
+        )
+    }
+}
+
+@Composable
+private fun NoArticlePlaceholder() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            "Choose an article",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

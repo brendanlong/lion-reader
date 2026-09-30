@@ -1,6 +1,7 @@
 package com.lionreader.app.ui
 
 import android.text.format.DateUtils
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,8 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerValue
@@ -33,6 +37,8 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDrawerState
@@ -44,13 +50,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,7 +79,14 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () -> Unit) {
+fun HomeScreen(
+    model: HomeViewModel,
+    onOpen: (String) -> Unit,
+    /** Whether to highlight the open article: only beside it, where both are on screen. */
+    showSelection: Boolean = false,
+    onSettings: () -> Unit,
+    bottomBar: @Composable () -> Unit = {},
+) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val coroutines = rememberCoroutineScope()
     val scope by model.scope.collectAsStateWithLifecycle()
@@ -72,6 +95,9 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
+    val search by model.search.collectAsStateWithLifecycle()
+    val searchResults by model.searchResults.collectAsStateWithLifecycle()
+    val shown by model.shown.collectAsStateWithLifecycle()
     // The entries the confirmation counted; exactly these are marked, so
     // anything a sync adds while the dialog is open isn't marked unseen.
     var markAllIds by remember { mutableStateOf<List<String>?>(null) }
@@ -88,10 +114,18 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
         )
     }
 
+    BackHandler(enabled = search != null) { model.setSearch(null) }
+    // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
+    val timelineList = rememberLazyListState()
+    val searchList = remember(search == null) { LazyListState() }
+
     ModalNavigationDrawer(
         drawerState = drawer,
+        // Not while searching: the edge swipe would open it from the search box.
+        gesturesEnabled = search == null || drawer.isOpen,
         drawerContent = {
-            ModalDrawerSheet {
+            // Given the state, it closes on back (with the predictive animation).
+            ModalDrawerSheet(drawerState = drawer) {
                 Drawer(
                     navigation = navigation,
                     selected = scope,
@@ -110,31 +144,50 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
         },
     ) {
         Scaffold(
+            bottomBar = bottomBar,
             topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            title(scope, navigation),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { coroutines.launch { drawer.open() } }) {
-                            Icon(painterResource(R.drawable.ic_menu), contentDescription = "Lists")
-                        }
-                    },
-                    actions = {
-                        ListMenu(
-                            showRead = !unreadOnly,
-                            onShowReadChange = { model.setUnreadOnly(!it) },
-                            onMarkAllRead = {
-                                coroutines.launch { markAllIds = model.unreadInList() }
-                            },
-                        )
-                    },
-                )
-            }
+                val text = search
+                if (text != null) {
+                    SearchBar(
+                        text,
+                        onChange = model::setSearch,
+                        onClose = { model.setSearch(null) },
+                    )
+                } else {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                title(scope, navigation),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { coroutines.launch { drawer.open() } }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_menu),
+                                    contentDescription = "Lists",
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { model.setSearch("") }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_search),
+                                    contentDescription = "Search",
+                                )
+                            }
+                            ListMenu(
+                                showRead = !unreadOnly,
+                                onShowReadChange = { model.setUnreadOnly(!it) },
+                                onMarkAllRead = {
+                                    coroutines.launch { markAllIds = model.unreadInList() }
+                                },
+                            )
+                        },
+                    )
+                }
+            },
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = status == SyncStatus.Syncing,
@@ -152,21 +205,76 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
                         )
                         HorizontalDivider()
                     }
+                    val text = search
                     EntryList(
-                        items = items,
-                        unreadOnly = unreadOnly,
+                        items = if (text != null) searchResults else items,
+                        listState = if (text != null) searchList else timelineList,
+                        selectedId = shown.takeIf { showSelection },
+                        emptyText =
+                            when {
+                                text == null && unreadOnly -> "No unread articles"
+                                text == null -> "No articles"
+                                text.isBlank() -> "Search the articles on this device"
+                                else -> "No matching articles on this device"
+                            },
                         onOpen = {
                             model.opened(it)
                             onOpen(it)
                         },
                         onToggleRead = model::toggleRead,
                         onToggleStar = model::toggleStar,
-                        onLoadMore = model::loadMore,
+                        onLoadMore = { if (text == null) model.loadMore() },
                     )
                 }
             }
         }
     }
+}
+
+/** The top bar while searching: the search box, with back and clear. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchBar(text: String, onChange: (String) -> Unit, onClose: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Once: not again on coming back from an article.
+    var focused by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!focused) focus.requestFocus()
+        focused = true
+    }
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onClose) {
+                Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Close search")
+            }
+        },
+        title = {
+            TextField(
+                value = text,
+                onValueChange = onChange,
+                placeholder = { Text("Search articles") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                colors =
+                    TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+        },
+        actions = {
+            if (text.isNotEmpty()) {
+                IconButton(onClick = { onChange("") }) {
+                    Icon(painterResource(R.drawable.ic_close), contentDescription = "Clear search")
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -391,7 +499,9 @@ private fun DrawerRow(
 @Composable
 private fun EntryList(
     items: List<TimelineItem>?,
-    unreadOnly: Boolean,
+    listState: LazyListState,
+    selectedId: String?,
+    emptyText: String,
     onOpen: (String) -> Unit,
     onToggleRead: (TimelineItem) -> Unit,
     onToggleStar: (TimelineItem) -> Unit,
@@ -400,21 +510,21 @@ private fun EntryList(
     if (items == null) return
     if (items.isEmpty()) {
         Text(
-            if (unreadOnly) "No unread articles" else "No articles",
+            emptyText,
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.fillMaxWidth().padding(32.dp),
         )
         return
     }
-    val list = rememberLazyListState()
-    val nearEnd by remember {
-        derivedStateOf {
-            list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ==
-                list.layoutInfo.totalItemsCount - 1
+    val nearEnd by
+        remember(listState) {
+            derivedStateOf {
+                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ==
+                    listState.layoutInfo.totalItemsCount - 1
+            }
         }
-    }
     LaunchedEffect(nearEnd) { if (nearEnd) onLoadMore() }
-    LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.id }) { item ->
             val swipe =
                 rememberSwipeToDismissBoxState(
@@ -426,6 +536,7 @@ private fun EntryList(
             SwipeToDismissBox(state = swipe, backgroundContent = {}) {
                 EntryRow(
                     item,
+                    selected = item.id == selectedId,
                     onOpen = { onOpen(item.id) },
                     onToggleRead = { onToggleRead(item) },
                     onToggleStar = { onToggleStar(item) },
@@ -439,6 +550,7 @@ private fun EntryList(
 @Composable
 private fun EntryRow(
     item: TimelineItem,
+    selected: Boolean,
     onOpen: () -> Unit,
     onToggleRead: () -> Unit,
     onToggleStar: () -> Unit,
@@ -446,10 +558,36 @@ private fun EntryRow(
     Row(
         modifier =
             Modifier.fillMaxWidth()
-                .clickable(onClick = onOpen)
-                .background(MaterialTheme.colorScheme.surface)
+                .clickable(onClickLabel = "Open", onClick = onOpen)
+                .background(
+                    if (selected) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surface
+                )
                 .padding(start = 16.dp, top = 12.dp, bottom = 12.dp)
-                .semantics { stateDescription = if (item.read) "Read" else "Unread" },
+                // One stop for TalkBack and Switch Access, with the buttons (and
+                // the swipe) as actions rather than more stops.
+                .semantics {
+                    stateDescription =
+                        listOfNotNull(
+                                if (item.read) "Read" else "Unread",
+                                "Starred".takeIf { item.starred },
+                            )
+                            .joinToString(", ")
+                    this.selected = selected
+                    customActions =
+                        listOf(
+                            CustomAccessibilityAction(if (item.starred) "Unstar" else "Star") {
+                                onToggleStar()
+                                true
+                            },
+                            CustomAccessibilityAction(
+                                if (item.read) "Mark unread" else "Mark read"
+                            ) {
+                                onToggleRead()
+                                true
+                            },
+                        )
+                },
         verticalAlignment = Alignment.Top,
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -482,7 +620,7 @@ private fun EntryRow(
                     )
                 }
         }
-        Column {
+        Column(Modifier.clearAndSetSemantics {}) {
             // 44dp (the design system's touch target) keeps a two-button column
             // from stretching short rows.
             IconButton(onClick = onToggleStar, modifier = Modifier.size(44.dp)) {

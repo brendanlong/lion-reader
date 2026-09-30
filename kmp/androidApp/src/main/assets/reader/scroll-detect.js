@@ -33,6 +33,8 @@
   // Layout settles as images and fonts load; blocks reach their edges as they
   // scroll.
   new ResizeObserver(report).observe(document.body);
+  // A wide view's body keeps its (capped) size but moves.
+  window.addEventListener("resize", report);
   document.fonts.ready.then(report);
   document.addEventListener(
     "scroll",

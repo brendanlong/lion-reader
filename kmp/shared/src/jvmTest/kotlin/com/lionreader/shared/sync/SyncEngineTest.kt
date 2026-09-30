@@ -10,6 +10,7 @@ import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagRef
+import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
@@ -34,7 +35,7 @@ private const val DAY = 24L * 60 * 60 * 1000
 
 class SyncEngineTest {
     private val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-    private val db = LionReaderDatabase(driver).also { LionReaderDatabase.Schema.create(driver) }
+    private val db = LionReaderDatabase(driver).also { AppSchema.create(driver) }
     private val server = FakeServer()
     private var clock = NOW
     private var policy = RetentionPolicy()
@@ -557,7 +558,9 @@ class SyncEngineTest {
         // Oldest read goes first, unless it was just opened (it may be on screen).
         reader.markOpened("old")
 
-        policy = RetentionPolicy(contentBudgetBytes = "<p>Body old</p>".length.toLong())
+        // Room for one body: its HTML and its text in the search index.
+        policy =
+            RetentionPolicy(contentBudgetBytes = ("<p>Body old</p>" + "Body old").length.toLong())
         engine.sync()
 
         assertEquals("<p>Body old</p>", reader.entry("old").first()?.content)

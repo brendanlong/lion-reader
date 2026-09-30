@@ -1,25 +1,47 @@
 package com.lionreader.app.ui
 
+import android.os.Looper
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasStateDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.AppSettings
+import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
+import java.time.Duration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
+@OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 // The real Application schedules WorkManager, which these tests don\'t need.
 @Config(application = android.app.Application::class)
@@ -29,16 +51,17 @@ class HomeScreenTest {
     private val db =
         LionReaderDatabase(
             AndroidSqliteDriver(
-                LionReaderDatabase.Schema,
+                AppSchema,
                 ApplicationProvider.getApplicationContext(),
                 null,
             )
         )
     private val reader = Reader(db, { 1_000L }, Dispatchers.Unconfined) {}
     private val settings = MutableStateFlow(AppSettings())
+    private val narrated = MutableStateFlow<String?>(null)
 
-    private fun seed(id: String, title: String, read: Boolean) {
-        db.entryQueries.insertIgnore(id, "feed", "web", 0, 0, if (read) 1 else 0, 0)
+    private fun seed(id: String, title: String, read: Boolean, sortAt: Long = 0) {
+        db.entryQueries.insertIgnore(id, "feed", "web", 0, sortAt, if (read) 1 else 0, 0)
         db.entryQueries.updateAll(
             null,
             "feed",
@@ -51,7 +74,7 @@ class HomeScreenTest {
             "Example Feed",
             null,
             0,
-            0,
+            sortAt,
             if (read) 1 else 0,
             0,
             id,
@@ -60,9 +83,18 @@ class HomeScreenTest {
 
     private lateinit var model: HomeViewModel
 
-    private fun show() {
-        model = HomeViewModel(reader, settings, { settings.value = it(settings.value) }) {}
-        composeRule.setContent { HomeScreen(model, onOpen = {}, onSettings = {}) }
+    private fun show(showSelection: Boolean = false) {
+        model =
+            HomeViewModel(
+                reader,
+                settings,
+                { settings.value = it(settings.value) },
+                sync = {},
+                narrated = narrated,
+            )
+        composeRule.setContent {
+            HomeScreen(model, onOpen = {}, onSettings = {}, showSelection = showSelection)
+        }
     }
 
     @Test
@@ -78,6 +110,107 @@ class HomeScreenTest {
         composeRule.onNodeWithText("Show read articles").performClick()
         composeRule.waitUntil { !settings.value.unreadOnly }
         composeRule.onNodeWithText("Read article").assertIsDisplayed()
+    }
+
+    @Test
+    fun theNarratedArticleStaysOnceRead() {
+        seed("a", "Narrated article", read = false)
+        show()
+        composeRule.onNodeWithText("Narrated article").assertIsDisplayed()
+
+        // Continuous playback moves on to it, which marks it read.
+        narrated.value = "a"
+        composeRule.waitForIdle()
+        db.entryQueries.updateServerState(1, 0, "a")
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Narrated article").assertIsDisplayed()
+    }
+
+    @Test
+    fun searchFindsArticlesReadOrNotAndBackLeavesIt() {
+        seed("a", "Borrow checker tips", read = true)
+        seed("b", "Gardening", read = false)
+        show()
+
+        composeRule.onNodeWithContentDescription("Search").performClick()
+        composeRule.onNodeWithText("Search articles").performTextInput("borr")
+        // Past the typing debounce.
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Borrow checker tips").assertIsDisplayed()
+        composeRule.onNodeWithText("Gardening").assertDoesNotExist()
+        assertEquals(listOf("a"), model.shownIds())
+
+        Espresso.closeSoftKeyboard()
+        Espresso.pressBack()
+        composeRule.onNodeWithText("Gardening").assertIsDisplayed()
+        composeRule.onNodeWithText("Borrow checker tips").assertDoesNotExist()
+    }
+
+    @Test
+    fun searchingKeepsTheTimelinesPlace() {
+        // Seeded oldest first, so "Article 0" tops the newest-first list.
+        (59 downTo 0).forEach { seed("e$it", "Article $it", read = false, sortAt = 60L - it) }
+        show()
+        // The (closed) drawer's list scrolls too.
+        val timeline =
+            SemanticsMatcher("the timeline") {
+                it.config
+                    .getOrElseNullable(SemanticsProperties.CollectionInfo) { null }
+                    ?.rowCount == 60
+            }
+        composeRule.onNode(hasScrollToIndexAction() and timeline).performScrollToIndex(40)
+        composeRule.onNodeWithText("Article 40").assertIsDisplayed()
+
+        composeRule.onNodeWithContentDescription("Search").performClick()
+        composeRule.onNodeWithContentDescription("Close search").performClick()
+
+        composeRule.onNodeWithText("Article 40").assertIsDisplayed()
+        composeRule.onNodeWithText("Article 0").assertDoesNotExist()
+    }
+
+    @Test
+    fun theArticleBesideTheListIsSelectedUntilClosed() {
+        seed("a", "First", read = false)
+        seed("b", "Second", read = false)
+        show(showSelection = true)
+
+        model.opened("b")
+        composeRule.onNode(hasText("Second", substring = true) and isSelected()).assertExists()
+        composeRule.onNode(hasText("First", substring = true) and isSelected()).assertDoesNotExist()
+
+        model.shownClosed()
+        composeRule
+            .onNode(hasText("Second", substring = true) and isSelected())
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun theStarButtonStillWorksByTouch() {
+        seed("a", "An article", read = false)
+        show()
+
+        // The star is the top of the two buttons at the row's end.
+        composeRule.onNodeWithText("An article", substring = true).performTouchInput {
+            click(Offset(right - 22.dp.toPx(), top + 22.dp.toPx()))
+        }
+
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Unread, Starred"))
+    }
+
+    @Test
+    fun backClosesTheDrawer() {
+        show()
+        composeRule.onNodeWithContentDescription("Lists").performClick()
+        composeRule.onNodeWithText("Settings").assertIsDisplayed()
+
+        Espresso.pressBack()
+
+        composeRule.onNodeWithText("Settings").assertIsNotDisplayed()
     }
 
     @Test
@@ -117,10 +250,21 @@ class HomeScreenTest {
         seed("a", "An article", read = false)
         show()
 
-        composeRule.onNodeWithContentDescription("Star").performClick()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .performCustomAccessibilityActionWithLabel("Star")
 
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
-        composeRule.onNodeWithContentDescription("Unstar").assertIsDisplayed()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Unread, Starred"))
+            .performCustomAccessibilityActionWithLabel("Unstar")
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Unread"))
+        // The row is the one stop: its buttons aren't separate ones.
+        composeRule.onNodeWithContentDescription("Star").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Mark read").assertDoesNotExist()
     }
 
     @Test
@@ -146,9 +290,14 @@ class HomeScreenTest {
         seed("a", "An article", read = false)
         show()
 
-        composeRule.onNodeWithContentDescription("Mark read").performClick()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .performCustomAccessibilityActionWithLabel("Mark read")
 
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Read"))
         // Still listed: entries touched in this list stay until it's reloaded.
         composeRule.onNodeWithText("An article").assertIsDisplayed()
     }

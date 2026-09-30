@@ -10,6 +10,7 @@ import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
+import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
@@ -65,7 +66,7 @@ class RealServerTest {
             LionReaderApi(http, AppAuth(fixture.serverUrl, http, tokens, System::currentTimeMillis))
         var deviceClock = System.currentTimeMillis()
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
-            LionReaderDatabase.Schema.create(driver)
+            AppSchema.create(driver)
             val db = LionReaderDatabase(driver)
             val engine = SyncEngine(api, db, { deviceClock }, { RetentionPolicy() })
             val reader = Reader(db, { deviceClock }, Dispatchers.Unconfined) {}

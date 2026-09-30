@@ -40,32 +40,8 @@ fun ReaderWebView(
         modifier = modifier,
         factory = { context ->
             ReaderView(context).apply {
-                // For our scripts; the CSP keeps anything else from running.
-                @SuppressLint("SetJavaScriptEnabled")
-                settings.javaScriptEnabled = true
-                settings.allowFileAccess = false
-                settings.allowContentAccess = false
-                settings.domStorageEnabled = false
+                setUpReader { message -> onPageMessage(message, current) }
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-                    WebViewCompat.addWebMessageListener(this, "lionReader", setOf(ASSET_ORIGIN)) {
-                        _,
-                        message,
-                        _,
-                        isMainFrame,
-                        _ ->
-                        if (isMainFrame) onPageMessage(message.data ?: "", current)
-                    }
-                }
-                webViewClient =
-                    ReaderWebViewClient(
-                        WebViewAssetLoader.Builder()
-                            .addPathHandler(
-                                "/assets/",
-                                WebViewAssetLoader.AssetsPathHandler(context),
-                            )
-                            .build()
-                    )
             }
         },
         update = { view ->
@@ -78,6 +54,34 @@ fun ReaderWebView(
             view.highlight(narration.paragraph, narration.autoScroll)
         },
     )
+}
+
+/**
+ * Hardens a WebView for reader documents (SECURITY.md §1) and hands it the page's messages. Our
+ * scripts run; the documents' CSP keeps anything else from running.
+ */
+internal fun WebView.setUpReader(onMessage: (String) -> Unit) {
+    @SuppressLint("SetJavaScriptEnabled")
+    settings.javaScriptEnabled = true
+    settings.allowFileAccess = false
+    settings.allowContentAccess = false
+    settings.domStorageEnabled = false
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+        WebViewCompat.addWebMessageListener(this, "lionReader", setOf(ASSET_ORIGIN)) {
+            _,
+            message,
+            _,
+            isMainFrame,
+            _ ->
+            if (isMainFrame) onMessage(message.data ?: "")
+        }
+    }
+    webViewClient =
+        ReaderWebViewClient(
+            WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+                .build()
+        )
 }
 
 /**

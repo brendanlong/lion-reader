@@ -29,6 +29,7 @@ import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.request.HttpRequestData
@@ -36,6 +37,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.jsonObject
 
@@ -78,13 +82,28 @@ class FakeServer {
     /** Runs while a body fetch for these ids is in flight (before the server answers). */
     var duringBatch: (suspend (List<String>) -> Unit)? = null
 
+    /**
+     * What each connection to `/events` gets, in order: a stream (which ends when its channel
+     * does), or null for a 503. Once they run out, connections stay open with nothing to say.
+     */
+    val eventStreams = ArrayDeque<ByteReadChannel?>()
+
     /** Runs while a state write is in flight (before the server answers). */
     var duringStateWrite: (suspend () -> Unit)? = null
 
     val cursors = SyncCursors(entries = "2026-01-01T00:00:00Z", deletions = "2026-01-01T00:00:00Z")
 
-    fun api(): LionReaderApi {
-        val http = HttpClient(MockEngine { request -> handle(request) })
+    /** [dispatcher]: where it answers; a test's own, to answer in its virtual time. */
+    fun api(dispatcher: CoroutineDispatcher? = null): LionReaderApi {
+        val http =
+            HttpClient(
+                MockEngine(
+                    MockEngineConfig().apply {
+                        addHandler { request -> handle(request) }
+                        dispatcher?.let { this.dispatcher = it }
+                    }
+                )
+            )
         val store =
             object : TokenStore {
                 var tokens: StoredTokens? = StoredTokens("access", "refresh", Long.MAX_VALUE)
@@ -123,6 +142,16 @@ class FakeServer {
         requests += request
         val path = request.url.encodedPath.removePrefix("/api/v1")
         when {
+            path == "/events" ->
+                if (eventStreams.isEmpty()) awaitCancellation()
+                else
+                    eventStreams.removeFirst()?.let {
+                        respond(
+                            it,
+                            HttpStatusCode.OK,
+                            headersOf("Content-Type", "text/event-stream"),
+                        )
+                    } ?: respond("{}", HttpStatusCode.ServiceUnavailable, jsonHeaders)
             path == "/sync/changes" ->
                 json(
                     SyncChanges.serializer(),
@@ -235,10 +264,12 @@ fun FullEntry.listItem() =
         type = type,
         url = url,
         title = title,
+        author = author,
         summary = summary,
         publishedAt = publishedAt,
         fetchedAt = fetchedAt,
         read = read,
         starred = starred,
         feedTitle = feedTitle,
+        siteName = siteName,
     )

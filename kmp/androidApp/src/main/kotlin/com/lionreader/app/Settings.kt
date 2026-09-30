@@ -57,6 +57,8 @@ data class AppSettings(
     val narrationSpeed: Float = 1f,
     /** Keep the paragraph being read on screen. */
     val narrationAutoScroll: Boolean = true,
+    /** When an article ends, go on to the next one in the list it was started from. */
+    val narrationContinue: Boolean = true,
     val narrationEngine: NarrationEngine = NarrationEngine.DEVICE,
     /** The cloud voice model (`provider:model`) and voice; null for the server's defaults. */
     val cloudVoiceModel: String? = null,
@@ -80,6 +82,7 @@ class SettingsRepository(private val context: Context) {
         val narrationVoice = stringPreferencesKey("narration_voice")
         val narrationSpeed = floatPreferencesKey("narration_speed")
         val narrationAutoScroll = booleanPreferencesKey("narration_auto_scroll")
+        val narrationContinue = booleanPreferencesKey("narration_continue")
         val narrationEngine = stringPreferencesKey("narration_engine")
         val cloudVoiceModel = stringPreferencesKey("cloud_voice_model")
         val cloudVoice = stringPreferencesKey("cloud_voice")
@@ -101,6 +104,7 @@ class SettingsRepository(private val context: Context) {
                 ?: prefs.remove(Keys.narrationVoice)
             prefs[Keys.narrationSpeed] = next.narrationSpeed
             prefs[Keys.narrationAutoScroll] = next.narrationAutoScroll
+            prefs[Keys.narrationContinue] = next.narrationContinue
             prefs[Keys.narrationEngine] = next.narrationEngine.name
             next.cloudVoiceModel?.let { prefs[Keys.cloudVoiceModel] = it }
                 ?: prefs.remove(Keys.cloudVoiceModel)
@@ -121,6 +125,7 @@ class SettingsRepository(private val context: Context) {
             narrationVoice = this[Keys.narrationVoice],
             narrationSpeed = this[Keys.narrationSpeed] ?: defaults.narrationSpeed,
             narrationAutoScroll = this[Keys.narrationAutoScroll] ?: defaults.narrationAutoScroll,
+            narrationContinue = this[Keys.narrationContinue] ?: defaults.narrationContinue,
             narrationEngine = enumOr(this[Keys.narrationEngine], defaults.narrationEngine),
             cloudVoiceModel = this[Keys.cloudVoiceModel],
             cloudVoice = this[Keys.cloudVoice],

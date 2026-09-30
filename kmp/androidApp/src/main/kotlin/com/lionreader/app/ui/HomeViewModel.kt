@@ -13,19 +13,26 @@ import com.lionreader.shared.data.TimelineItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val PAGE = 200L
+private const val SEARCH_LIMIT = 200L
 private const val MAX_KEPT = 200
 
 sealed interface SyncStatus {
@@ -36,12 +43,14 @@ sealed interface SyncStatus {
     data class Failed(val message: String) : SyncStatus
 }
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class HomeViewModel(
     private val reader: Reader,
     settings: Flow<AppSettings>,
     private val updateSettings: suspend ((AppSettings) -> AppSettings) -> Unit,
     private val sync: suspend () -> Unit,
+    /** The article being narrated, which (like one opened) stays in an unread-only list. */
+    narrated: Flow<String?> = emptyFlow(),
 ) : ViewModel() {
     constructor(
         graph: AppGraph,
@@ -56,6 +65,7 @@ class HomeViewModel(
             withContext(Dispatchers.IO) { account.sync.sync(downloadContent = false) }
             graph.syncInBackground()
         },
+        graph.narrator.state.map { it?.entryId },
     )
 
     private val _scope = MutableStateFlow<ListScope>(ListScope.All)
@@ -84,6 +94,29 @@ class HomeViewModel(
             .flatMapLatest { reader.timeline(it.scope, it.unreadOnly, it.keepIds, it.limit) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    private val _search = MutableStateFlow<String?>(null)
+
+    /** What's typed in the search box; null when not searching. */
+    val search: StateFlow<String?> = _search.asStateFlow()
+
+    /** Articles on the device matching [search], newest first; null when not searching. */
+    val searchResults: StateFlow<List<TimelineItem>?> =
+        _search
+            // Not a query per keystroke while typing fast.
+            .debounce { if (it.isNullOrEmpty()) 0L else 150L }
+            .flatMapLatest { text ->
+                if (text == null) flowOf(null) else reader.search(text, SEARCH_LIMIT)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun setSearch(text: String?) {
+        _search.value = text
+    }
+
+    /** The ids of the list on screen (search results while searching), for paging through. */
+    fun shownIds(): List<String> =
+        (if (_search.value != null) searchResults.value else items.value).orEmpty().map { it.id }
+
     private data class Query(
         val scope: ListScope,
         val unreadOnly: Boolean,
@@ -93,6 +126,7 @@ class HomeViewModel(
 
     init {
         refresh()
+        viewModelScope.launch { narrated.distinctUntilChanged().filterNotNull().collect(::keep) }
     }
 
     fun select(scope: ListScope) {
@@ -105,7 +139,19 @@ class HomeViewModel(
         limit.value += PAGE
     }
 
-    fun opened(id: String) = keep(id)
+    private val _shown = MutableStateFlow<String?>(null)
+
+    /** The article open (beside the list, on a wide screen), to show it as selected. */
+    val shown: StateFlow<String?> = _shown.asStateFlow()
+
+    fun opened(id: String) {
+        _shown.value = id
+        keep(id)
+    }
+
+    fun shownClosed() {
+        _shown.value = null
+    }
 
     /** Bounded: the ids are bound into one query (SQLite allows 999 variables). */
     private fun keep(id: String) {

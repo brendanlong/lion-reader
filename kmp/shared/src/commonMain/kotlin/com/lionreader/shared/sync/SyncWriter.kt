@@ -9,6 +9,7 @@ import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagList
 import com.lionreader.shared.data.LocalStore
 import com.lionreader.shared.data.parseMillis
+import com.lionreader.shared.data.searchText
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.db.Outbox_state
 
@@ -76,7 +77,12 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     // ---- Pull ------------------------------------------------------------
 
-    fun commitPage(page: PulledPage, now: Long) = db.transaction {
+    fun commitPage(page: PulledPage, now: Long) {
+        val texts = searchTexts(page.fetchedEntries)
+        db.transaction { commitPageInTransaction(page, texts, now) }
+    }
+
+    private fun commitPageInTransaction(page: PulledPage, texts: Map<String, String>, now: Long) {
         page.deletedIds.forEach(store::deleteEntry)
         page.events.forEach(::apply)
         for (entry in page.fetchedEntries) {
@@ -106,7 +112,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             db.entryQueries.bumpBodyVersion(entry.id)
         }
         val versions = page.fetchedEntries.associate { it.id to (bodyVersion(it.id) ?: 0L) }
-        storeBodiesInTransaction(page.fetchedEntries, emptyList(), versions, now)
+        storeBodiesInTransaction(page.fetchedEntries, texts, emptyList(), versions, now)
         page.resubscribedEntries.forEach(store::upsertEntry)
         store.cursors = page.cursors
         store.catchUpInProgress = page.hasMore
@@ -256,10 +262,21 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         missing: List<String>,
         versions: Map<String, Long>,
         now: Long,
-    ): Long = db.transactionWithResult { storeBodiesInTransaction(fetched, missing, versions, now) }
+    ): Long {
+        val texts = searchTexts(fetched)
+        return db.transactionWithResult {
+            storeBodiesInTransaction(fetched, texts, missing, versions, now)
+        }
+    }
+
+    /** Each body's [searchText], worked out before the write transaction to keep it short. */
+    private fun searchTexts(entries: List<FullEntry>): Map<String, String> = entries.associate {
+        it.id to searchText(it.displayContent ?: "")
+    }
 
     private fun storeBodiesInTransaction(
         fetched: List<FullEntry>,
+        texts: Map<String, String>,
         missing: List<String>,
         versions: Map<String, Long>,
         now: Long,
@@ -268,11 +285,14 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         for (entry in fetched) {
             val version = versions[entry.id] ?: continue
             val content = entry.displayContent ?: ""
-            db.bodyQueries.putIfCurrent(entry.id, content, content.length.toLong(), now, version)
-            stored += content.length
+            val text = texts.getValue(entry.id)
+            // The search index's copy of the text counts against the budget too.
+            val size = (content.length + text.length).toLong()
+            db.bodyQueries.putIfCurrent(entry.id, content, size, now, text, version)
+            stored += size
         }
         missing.forEach { id ->
-            versions[id]?.let { db.bodyQueries.putIfCurrent(id, "", 0, now, it) }
+            versions[id]?.let { db.bodyQueries.putIfCurrent(id, "", 0, now, "", it) }
         }
         return stored
     }

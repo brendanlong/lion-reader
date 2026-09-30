@@ -3,8 +3,11 @@ package com.lionreader.app.ui
 import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
@@ -38,7 +41,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -47,6 +53,7 @@ import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.narration.NarratedArticle
+import com.lionreader.app.narration.NarrationState
 import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
@@ -75,6 +82,9 @@ fun EntryScreen(
     startId: String,
     onShown: (String) -> Unit,
     onBack: () -> Unit,
+    /** Beside the list, where going back closes the article rather than leaving it. */
+    besideList: Boolean,
+    onOpenElsewhere: (NarrationState) -> Unit,
 ) {
     val context = LocalContext.current
     val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
@@ -90,6 +100,19 @@ fun EntryScreen(
     LaunchedEffect(Unit) {
         graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
+    // When narration moves on to the next article, turn the page with it, if
+    // the reader was on the article it just finished.
+    var narratedBefore by remember { mutableStateOf(narration?.entryId) }
+    LaunchedEffect(narration?.entryId) {
+        val now = narration?.entryId
+        val before = narratedBefore
+        // First: the animation throws if a drag interrupts it.
+        narratedBefore = now
+        val shown = pages[pager.settledPage]
+        if (now != null && before == shown && now != shown) {
+            pages.indexOf(now).takeIf { it >= 0 }?.let { pager.animateScrollToPage(it) }
+        }
+    }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
     val coroutines = rememberCoroutineScope()
@@ -104,10 +127,33 @@ fun EntryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {},
+                // Empty to the eye; says which article a swipe arrived at.
+                title = {
+                    Box(
+                        Modifier.fillMaxWidth().height(1.dp).semantics {
+                            // Once it's loaded, so a slow page isn't announced twice.
+                            val shown = entries[entryId] ?: return@semantics
+                            liveRegion = LiveRegionMode.Polite
+                            heading()
+                            contentDescription =
+                                "${shown.title ?: "Untitled"}, " +
+                                    "${pager.settledPage + 1} of ${pages.size}"
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "Back")
+                        if (besideList) {
+                            Icon(
+                                painterResource(R.drawable.ic_close),
+                                contentDescription = "Close article",
+                            )
+                        } else {
+                            Icon(
+                                painterResource(R.drawable.ic_arrow_back),
+                                contentDescription = "Back",
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -122,6 +168,7 @@ fun EntryScreen(
                                         current.title ?: "Untitled",
                                         current.source,
                                         paragraphs,
+                                        queue = pages,
                                     )
                                 )
                             }
@@ -235,17 +282,22 @@ fun EntryScreen(
             )
         },
         bottomBar = {
-            narration?.let {
-                NarrationBar(
-                    state = it,
-                    speed = settings.narrationSpeed,
-                    onPrevious = { graph.narrator.skipParagraphs(-1) },
-                    onToggle = graph.narrator::togglePlaying,
-                    onNext = { graph.narrator.skipParagraphs(1) },
-                    onSpeed = graph::setNarrationSpeed,
-                    onStop = graph.narrator::stop,
-                )
-            }
+            // Another article's narration opens it; this one's is already here.
+            CurrentNarrationBar(
+                graph,
+                // Nothing to open when it's the article on screen.
+                onOpen =
+                    if (narration?.entryId == entryId) null
+                    else
+                        { state ->
+                            pages
+                                .indexOf(state.entryId)
+                                .takeIf { it >= 0 }
+                                ?.let { page ->
+                                    coroutines.launch { pager.animateScrollToPage(page) }
+                                } ?: onOpenElsewhere(state)
+                        },
+            )
         },
     ) { padding ->
         HorizontalPager(

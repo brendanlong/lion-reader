@@ -8,6 +8,7 @@ import com.lionreader.shared.db.LionReaderDatabase
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
@@ -143,6 +144,40 @@ class Reader(
                 )
             }
         }
+
+    /**
+     * Articles on the device matching what the user typed (see [searchQuery]), newest first:
+     * titles, authors, feeds, summaries and downloaded bodies.
+     */
+    fun search(text: String, limit: Long): Flow<List<TimelineItem>> {
+        val query = searchQuery(text) ?: return flowOf(emptyList())
+        return db.searchQueries
+            .search(query, limit) {
+                id,
+                url,
+                title,
+                author,
+                summary,
+                siteName,
+                feedTitle,
+                sortAt,
+                read,
+                starred ->
+                TimelineItem(
+                    id = id,
+                    title = title,
+                    summary = summary,
+                    source = feedTitle ?: siteName,
+                    author = author,
+                    url = url,
+                    sortAtMillis = sortAt,
+                    read = read == 1L,
+                    starred = starred == 1L,
+                )
+            }
+            .asFlow()
+            .mapToList(context)
+    }
 
     /** Lists and their unread counts, counted on the device (see kmp/CLAUDE.md). */
     fun navigation(): Flow<Navigation> {
