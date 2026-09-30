@@ -149,11 +149,13 @@ Replace with your custom domain if you have one.
 
 ### Complete Secrets Reference
 
-| Secret                | Required | Description                     | How to Get                                 |
-| --------------------- | -------- | ------------------------------- | ------------------------------------------ |
-| `DATABASE_URL`        | Yes      | Postgres connection string      | Set by `fly postgres attach`               |
-| `REDIS_URL`           | Yes      | Redis/Upstash connection string | From Upstash console or `fly redis create` |
-| `NEXT_PUBLIC_APP_URL` | No       | Public URL for the app          | Your Fly.io URL or custom domain           |
+| Secret                          | Required | Description                                                                 | How to Get                                                                            |
+| ------------------------------- | -------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | Yes      | Postgres connection string                                                  | Set by `fly postgres attach`                                                          |
+| `REDIS_URL`                     | Yes      | Redis/Upstash connection string                                             | From Upstash console or `fly redis create`                                            |
+| `NEXT_PUBLIC_APP_URL`           | No       | Public URL for the app                                                      | Your Fly.io URL or custom domain                                                      |
+| `ANDROID_APP_CERT_SHA256`       | No       | Android app signing-key SHA-256 fingerprints (comma-separated), for sign-in | `keytool -list -v -keystore <release keystore>`; add Play App Signing's key once used |
+| `ANDROID_DEBUG_APP_CERT_SHA256` | No       | Same, for the debug app (`com.lionreader.app.debug`)                        | The private dev keystore (see `kmp/CLAUDE.md`)                                        |
 
 ---
 

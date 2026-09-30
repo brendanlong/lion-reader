@@ -225,19 +225,37 @@ export const githubConfig = {
   apiToken: process.env.GITHUB_API_TOKEN,
 };
 
+function parseFingerprints(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 /**
- * Native Android app. Its signing-certificate fingerprints (comma-separated
- * SHA-256, `AA:BB:...`) are published in `/.well-known/assetlinks.json`, which
- * verifies the app's claim on the OAuth redirect URL (an Android App Link).
- * Unset, Android won't route the redirect to the app and sign-in can't finish.
+ * Native Android app builds, keyed by package: the release app and a separate
+ * debug app that installs alongside it. Each package's signing-certificate
+ * fingerprints (comma-separated SHA-256, `AA:BB:...`) are published in
+ * `/.well-known/assetlinks.json`, which verifies the app's claim on the OAuth
+ * redirect URL (an Android App Link); a package with none isn't published, and
+ * its sign-in can't finish.
+ *
+ * Every listed key can receive sign-in redirects — it can act as the app — so
+ * list only keys you control: for the debug app a private dev keystore, never
+ * Android's default debug key (its password is public).
  */
 export const androidAppConfig = {
-  packageName: "com.lionreader.app",
-  get certSha256Fingerprints(): string[] {
-    return (process.env.ANDROID_APP_CERT_SHA256 ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+  get packages(): Array<{ packageName: string; certSha256Fingerprints: string[] }> {
+    return [
+      {
+        packageName: "com.lionreader.app",
+        certSha256Fingerprints: parseFingerprints(process.env.ANDROID_APP_CERT_SHA256),
+      },
+      {
+        packageName: "com.lionreader.app.debug",
+        certSha256Fingerprints: parseFingerprints(process.env.ANDROID_DEBUG_APP_CERT_SHA256),
+      },
+    ].filter((app) => app.certSha256Fingerprints.length > 0);
   },
 };
 

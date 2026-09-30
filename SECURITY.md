@@ -179,6 +179,11 @@ Entry bodies, saved articles, and AI summaries are rendered with
   client alone (`src/server/oauth/app-client.ts`, `src/server/auth/app-token.ts`).
   **Only that pinned client may be minted the `/api/v1` audience** — dynamic
   registration lets any client request any scope, so the audience is the gate.
+- The signing keys published in `/.well-known/assetlinks.json`
+  (`androidAppConfig`, from `ANDROID_APP_CERT_SHA256` /
+  `ANDROID_DEBUG_APP_CERT_SHA256`) decide which installed apps receive that
+  client's authorization codes. **List only keys we control** — never
+  Android's default debug key, whose password is public.
 
 ## 7. Cross-user data isolation (shared content)
 
