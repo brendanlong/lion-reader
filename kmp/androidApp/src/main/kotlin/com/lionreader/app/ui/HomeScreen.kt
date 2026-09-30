@@ -46,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -69,6 +70,7 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
     val items by model.items.collectAsStateWithLifecycle()
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
+    val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
     // The entries the confirmation counted; exactly these are marked, so
     // anything a sync adds while the dialog is open isn't marked unseen.
     var markAllIds by remember { mutableStateOf<List<String>?>(null) }
@@ -92,6 +94,8 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
                 Drawer(
                     navigation = navigation,
                     selected = scope,
+                    expandedTags = expandedTags,
+                    onToggleTag = model::toggleTag,
                     onSelect = {
                         model.select(it)
                         coroutines.launch { drawer.close() }
@@ -233,6 +237,8 @@ private fun title(scope: ListScope, navigation: Navigation?): String =
 private fun Drawer(
     navigation: Navigation?,
     selected: ListScope,
+    expandedTags: Set<String>,
+    onToggleTag: (String) -> Unit,
     onSelect: (ListScope) -> Unit,
     onSettings: () -> Unit,
 ) {
@@ -264,12 +270,24 @@ private fun Drawer(
                 item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             }
             for (tag in nav.tags) {
+                val subscriptions = nav.subscriptionsIn(tag.id)
+                val expanded = tag.id in expandedTags
                 item(key = "tag-${tag.id}") {
-                    DrawerRow(tag.name, tag.unread, selected == ListScope.Tag(tag.id)) {
+                    DrawerRow(
+                        tag.name,
+                        tag.unread,
+                        selected == ListScope.Tag(tag.id),
+                        icon = {
+                            if (subscriptions.isNotEmpty()) {
+                                ExpandButton(tag.name, expanded) { onToggleTag(tag.id) }
+                            }
+                        },
+                    ) {
                         onSelect(ListScope.Tag(tag.id))
                     }
                 }
-                items(nav.subscriptionsIn(tag.id), key = { "tag-${tag.id}-${it.id}" }) { sub ->
+                if (!expanded) continue
+                items(subscriptions, key = { "tag-${tag.id}-${it.id}" }) { sub ->
                     DrawerRow(
                         sub.title,
                         sub.unread,
@@ -299,19 +317,34 @@ private fun Drawer(
 }
 
 @Composable
+private fun ExpandButton(name: String, expanded: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            painterResource(R.drawable.ic_chevron_right),
+            contentDescription = if (expanded) "Collapse $name" else "Expand $name",
+            modifier = Modifier.rotate(if (expanded) 90f else 0f),
+        )
+    }
+}
+
+@Composable
 private fun DrawerRow(
     label: String,
     unread: Int?,
     selected: Boolean,
     indent: Boolean = false,
+    icon: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     NavigationDrawerItem(
         label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        icon = icon,
         badge = { if (unread != null && unread > 0) Text(unread.toString()) },
         selected = selected,
         onClick = onClick,
-        modifier = if (indent) Modifier.padding(start = 16.dp) else Modifier,
+        // Lines a tag's feeds up with its name, past the expand button and
+        // the item's icon spacing.
+        modifier = if (indent) Modifier.padding(start = 60.dp) else Modifier,
     )
 }
 

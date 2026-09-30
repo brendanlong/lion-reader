@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.lionreader.shared.sync.RetentionPolicy
 import kotlinx.coroutines.flow.Flow
@@ -42,6 +43,8 @@ data class AppSettings(
     val justify: Boolean = false,
     val unreadOnly: Boolean = true,
     val retentionDays: Int = 30,
+    /** Drawer tags shown with their feeds; the rest are collapsed. */
+    val expandedTags: Set<String> = emptySet(),
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
@@ -57,6 +60,7 @@ class SettingsRepository(private val context: Context) {
         val justify = booleanPreferencesKey("justify")
         val unreadOnly = booleanPreferencesKey("unread_only")
         val retentionDays = intPreferencesKey("retention_days")
+        val expandedTags = stringSetPreferencesKey("expanded_tags")
     }
 
     val settings: Flow<AppSettings> = context.settingsStore.data.map { it.toSettings() }
@@ -70,6 +74,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.justify] = next.justify
             prefs[Keys.unreadOnly] = next.unreadOnly
             prefs[Keys.retentionDays] = next.retentionDays
+            prefs[Keys.expandedTags] = next.expandedTags
         }
     }
 
@@ -82,6 +87,7 @@ class SettingsRepository(private val context: Context) {
             justify = this[Keys.justify] ?: defaults.justify,
             unreadOnly = this[Keys.unreadOnly] ?: defaults.unreadOnly,
             retentionDays = this[Keys.retentionDays] ?: defaults.retentionDays,
+            expandedTags = this[Keys.expandedTags] ?: defaults.expandedTags,
         )
     }
 }
