@@ -9,7 +9,8 @@
         "scripts/discord-bot.ts!",
         "scripts/migrate.ts!",
         "worker/index.ts!",
-        "src/server/mcp/bin.ts!"
+        "src/server/mcp/bin.ts!",
+        "src/lib/narration/app-reader.ts!"
       ],
       "project": ["src/**/*.{ts,tsx}!"],
       "ignore": ["kmp/**", "src/lib/stubs/**"]

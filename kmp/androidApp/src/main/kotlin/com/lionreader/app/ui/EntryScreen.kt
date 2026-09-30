@@ -46,9 +46,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
+import com.lionreader.app.narration.NarratedArticle
 import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
+import com.lionreader.app.reader.ReaderNarration
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.readerDocument
 import com.lionreader.shared.data.EntryDetail
@@ -82,6 +84,13 @@ fun EntryScreen(
     // is heading to (not the one it settles on) with that page's state
     // already loaded.
     val entries = remember { mutableStateMapOf<String, EntryDetail>() }
+    // What each page's reader extracted to narrate.
+    val spoken = remember { mutableStateMapOf<String, List<String>>() }
+    val narration by graph.narrator.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
+    val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
     val coroutines = rememberCoroutineScope()
     val tokens = remember { AppearanceTokens.load(context) }
@@ -103,6 +112,26 @@ fun EntryScreen(
                 },
                 actions = {
                     val current = entry ?: return@TopAppBar
+                    val paragraphs = spoken[current.id]
+                    if (!paragraphs.isNullOrEmpty() && narration?.entryId != current.id) {
+                        IconButton(
+                            onClick = {
+                                graph.narrator.narrate(
+                                    NarratedArticle(
+                                        current.id,
+                                        current.title ?: "Untitled",
+                                        current.source,
+                                        paragraphs,
+                                    )
+                                )
+                            }
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_headphones),
+                                contentDescription = "Listen",
+                            )
+                        }
+                    }
                     // It shows in the article, so not before the article is on the device.
                     if (
                         current.content != null &&
@@ -204,7 +233,20 @@ fun EntryScreen(
                     }
                 },
             )
-        }
+        },
+        bottomBar = {
+            narration?.let {
+                NarrationBar(
+                    state = it,
+                    speed = settings.narrationSpeed,
+                    onPrevious = { graph.narrator.skipParagraphs(-1) },
+                    onToggle = graph.narrator::togglePlaying,
+                    onNext = { graph.narrator.skipParagraphs(1) },
+                    onSpeed = graph::setNarrationSpeed,
+                    onStop = graph.narrator::stop,
+                )
+            }
+        },
     ) { padding ->
         HorizontalPager(
             state = pager,
@@ -218,8 +260,25 @@ fun EntryScreen(
                 tokens,
                 showSummary = pages[page] !in hiddenSummaries,
                 onEntry = { id, loaded ->
-                    if (loaded == null) entries.remove(id) else entries[id] = loaded
+                    if (loaded == null) {
+                        entries.remove(id)
+                        spoken.remove(id)
+                    } else {
+                        entries[id] = loaded
+                    }
                 },
+                narration =
+                    ReaderNarration(
+                        paragraph = narration?.takeIf { it.entryId == pages[page] }?.paragraph,
+                        autoScroll = settings.narrationAutoScroll,
+                        onParagraphs = { spoken[pages[page]] = it },
+                        // Only while this article is the one being narrated.
+                        onSeek = { paragraph ->
+                            if (graph.narrator.state.value?.entryId == pages[page]) {
+                                graph.narrator.seekToParagraph(paragraph)
+                            }
+                        },
+                    ),
             )
         }
     }
@@ -251,6 +310,7 @@ private fun EntryPage(
     tokens: AppearanceTokens,
     showSummary: Boolean,
     onEntry: (String, EntryDetail?) -> Unit,
+    narration: ReaderNarration,
 ) {
     val context = LocalContext.current
     val entry by
@@ -301,7 +361,7 @@ private fun EntryPage(
                         codeBackground = colors.surfaceContainer.css(),
                     ),
             )
-        ReaderWebView(document, modifier = Modifier.fillMaxSize())
+        ReaderWebView(document, Modifier.fillMaxSize(), narration)
         return
     }
     Column(

@@ -43,7 +43,8 @@ const val ASSET_ORIGIN = "https://appassets.androidplatform.net"
 /** The reader view's invariant is in SECURITY.md §1. */
 private const val CONTENT_SECURITY_POLICY =
     "default-src 'none'; " +
-        "script-src $ASSET_ORIGIN/assets/reader/scroll-detect.js; " +
+        "script-src $ASSET_ORIGIN/assets/reader/scroll-detect.js " +
+        "$ASSET_ORIGIN/assets/reader/narration.js; " +
         "base-uri 'none'; form-action 'none'; " +
         "style-src 'unsafe-inline'; font-src $ASSET_ORIGIN; " +
         "img-src * data:; media-src *; frame-src https:"
@@ -94,6 +95,7 @@ fun readerDocument(
         <meta name="referrer" content="no-referrer">
         <meta http-equiv="Content-Security-Policy" content="$CONTENT_SECURITY_POLICY">
         <script defer src="$ASSET_ORIGIN/assets/reader/scroll-detect.js"></script>
+        <script defer src="$ASSET_ORIGIN/assets/reader/narration.js"></script>
         <style>
         $fontFaces
         html { background: ${colors.background}; }
@@ -129,6 +131,8 @@ fun readerDocument(
         .lr-summary { margin: 0 0 1.5em; padding: 0.75em 1em; border-radius: 8px;
           border: 1px solid ${colors.border}; background: ${colors.codeBackground}; }
         .lr-summary > :last-child { margin-bottom: 0; }
+        .lr-narrating { background: color-mix(in srgb, ${colors.link} 18%, transparent);
+          border-radius: 4px; box-shadow: 0 0 0 4px color-mix(in srgb, ${colors.link} 18%, transparent); }
         .lr-summary-label { margin: 0 0 0.5em; color: ${colors.muted}; font-family: sans-serif;
           font-size: 0.875rem; font-weight: 600; }
         .katex-mathml + .katex-html { display: none; }

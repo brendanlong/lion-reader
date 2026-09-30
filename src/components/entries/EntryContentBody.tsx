@@ -26,9 +26,7 @@ import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
-
-/** Content whose clicks already do something, so they never seek narration */
-const NON_SEEK_TARGETS = "a, button, input, select, textarea, summary, label, video, audio, iframe";
+import { seekTargetElement } from "@/lib/narration/seek-target";
 
 /**
  * Props for the EntryContentBody component.
@@ -250,15 +248,8 @@ export function EntryContentBody({
   const handleContentClick = useCallback(
     (event: React.MouseEvent) => {
       if (!showNarration || !isNarrationActive) return;
-      if (!(event.target instanceof Element)) return;
-      if (event.target.closest(NON_SEEK_TARGETS)) return;
-      // Selecting (multi-click, drag) or dismissing a selection isn't a seek.
-      if (event.detail > 1 || hadSelectionAtPointerDownRef.current) return;
-      if (window.getSelection()?.isCollapsed === false) return;
-
-      const paraId = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
-      const elementIndex = paraId ? Number(paraId.replace("para-", "")) : NaN;
-      if (Number.isInteger(elementIndex)) playFromElement(elementIndex);
+      const elementIndex = seekTargetElement(event, hadSelectionAtPointerDownRef.current);
+      if (elementIndex !== null) playFromElement(elementIndex);
     },
     [showNarration, isNarrationActive, playFromElement]
   );

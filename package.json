@@ -39,6 +39,7 @@
     "db:seed": "dotenv -- tsx scripts/seed.ts",
     "openapi:generate": "dotenv -o -e .env.test -- tsx scripts/generate-openapi.ts",
     "app:appearance": "tsx scripts/export-app-appearance.ts",
+    "app:narration": "tsx scripts/export-app-narration.ts",
     "app:test-fixture": "tsx scripts/create-app-test-fixture.ts",
     "db:migrate:test": "dotenv -o -e .env.test -- tsx scripts/migrate.ts",
     "db:schema:test": "dotenv -o -e .env.test -- tsx scripts/dump-schema.ts",

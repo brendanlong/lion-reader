@@ -3,6 +3,7 @@ package com.lionreader.app
 import android.content.Context
 import androidx.core.content.edit
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.lionreader.app.narration.Narrator
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.AuthorizationRequest
@@ -62,6 +63,16 @@ class AppGraph(private val context: Context) {
 
     val currentSettings: StateFlow<AppSettings> =
         settings.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
+
+    private val narratorInstance = lazy { Narrator(context) { currentSettings.value } }
+
+    /** Text-to-speech narration; one article at a time, app-wide. */
+    val narrator: Narrator by narratorInstance
+
+    fun setNarrationSpeed(speed: Float) {
+        scope.launch { settings.update { it.copy(narrationSpeed = speed) } }
+        if (narratorInstance.isInitialized()) narrator.setSpeed(speed)
+    }
 
     private val _connection =
         MutableStateFlow(ServerConnection(serverUrl, http, PrefsTokenStore(prefs)))
@@ -124,6 +135,7 @@ class AppGraph(private val context: Context) {
      * screen can't cancel the revocation.
      */
     fun signOut() {
+        if (narratorInstance.isInitialized()) narrator.stop()
         scope.launch {
             SyncScheduler.cancelAll(context)
             _connection.value.auth.signOut()

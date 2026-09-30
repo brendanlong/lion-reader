@@ -13,6 +13,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
@@ -20,6 +22,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import kotlin.math.abs
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
@@ -27,12 +30,17 @@ import org.json.JSONArray
  *   than file:// access.
  */
 @Composable
-fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
+fun ReaderWebView(
+    document: String,
+    modifier: Modifier = Modifier,
+    narration: ReaderNarration = ReaderNarration(),
+) {
+    val current by rememberUpdatedState(narration)
     AndroidView(
         modifier = modifier,
         factory = { context ->
             ReaderView(context).apply {
-                // For scroll-detect.js; the CSP keeps anything else from running.
+                // For our scripts; the CSP keeps anything else from running.
                 @SuppressLint("SetJavaScriptEnabled")
                 settings.javaScriptEnabled = true
                 settings.allowFileAccess = false
@@ -46,7 +54,7 @@ fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
                         _,
                         isMainFrame,
                         _ ->
-                        if (isMainFrame) sideScrollers = parseRects(message.data)
+                        if (isMainFrame) onPageMessage(message.data ?: "", current)
                     }
                 }
                 webViewClient =
@@ -64,11 +72,25 @@ fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
             if (view.tag != document) {
                 view.tag = document
                 view.sideScrollers = emptyList()
+                view.pageReady = false
                 view.loadDataWithBaseURL("$ASSET_ORIGIN/", document, "text/html", "utf-8", null)
             }
+            view.highlight(narration.paragraph, narration.autoScroll)
         },
     )
 }
+
+/**
+ * The article's narration in the page (the reader's narration.js): [paragraph] is the one to
+ * highlight, if any. [onParagraphs] gets the text to speak once the page has extracted it, and
+ * [onSeek] the paragraph the user tapped.
+ */
+data class ReaderNarration(
+    val paragraph: Int? = null,
+    val autoScroll: Boolean = true,
+    val onParagraphs: (List<String>) -> Unit = {},
+    val onSeek: (Int) -> Unit = {},
+)
 
 /**
  * Keeps a sideways drag that starts on a wide table or code block (reported by scroll-detect.js)
@@ -79,6 +101,41 @@ fun ReaderWebView(document: String, modifier: Modifier = Modifier) {
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
     var sideScrollers: List<SideScroller> = emptyList()
+
+    /** Whether the page's narration script has run (it reports the paragraphs when it does). */
+    var pageReady = false
+    private var wanted: Int? = null
+    private var shown: Int? = null
+    private var scroll = true
+
+    fun onPageMessage(data: String, narration: ReaderNarration) {
+        if (data.startsWith("[")) {
+            sideScrollers = parseRects(data)
+            return
+        }
+        val message = runCatching { JSONObject(data) }.getOrNull() ?: return
+        when (message.optString("type")) {
+            "narration" -> {
+                val paragraphs = message.optJSONArray("paragraphs") ?: return
+                narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
+                pageReady = true
+                shown = null
+                highlight(wanted, scroll)
+            }
+            "seek" -> narration.onSeek(message.optInt("paragraph"))
+        }
+    }
+
+    fun highlight(paragraph: Int?, autoScroll: Boolean) {
+        wanted = paragraph
+        scroll = autoScroll
+        if (!pageReady || shown == paragraph) return
+        shown = paragraph
+        evaluateJavascript(
+            "window.lionNarration && lionNarration.highlight(${paragraph ?: "null"}, $autoScroll)",
+            null,
+        )
+    }
 
     private val decideAfter = ViewConfiguration.get(context).scaledTouchSlop / 2f
     private var downX = 0f
