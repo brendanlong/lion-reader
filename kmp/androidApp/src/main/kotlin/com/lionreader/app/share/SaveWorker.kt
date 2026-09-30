@@ -17,8 +17,10 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 
 /**
- * Saves a shared link in the background, so it survives the share dialog closing and waits for a
- * network when offline. The dialog follows its progress by the unique work name.
+ * * Saves a shared link in the background, so it survives the share dialog closing and waits for a
+ *   network when offline, however long that takes. It only gives up when the server rejects the
+ *   link (or the user signs out); anything else retries, backing off to every few hours. The dialog
+ *   follows its progress by the unique work name.
  */
 class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
@@ -26,9 +28,6 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val connection = applicationContext.graph.connection.value
         if (!connection.auth.signedIn.value) {
             return failure("Sign in to Lion Reader to save links.")
-        }
-        if (runAttemptCount >= MAX_ATTEMPTS) {
-            return failure("Lion Reader couldn't save this link. Try sharing it again later.")
         }
         return try {
             val saved = connection.api.saveArticle(url)
@@ -47,7 +46,8 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 else -> Result.retry()
             }
         } catch (e: Exception) {
-            // Network, token endpoint, unexpected responses: try again later.
+            // Network, token endpoint, unexpected responses: try again later
+            // (saving a URL twice just updates the article).
             Result.retry()
         }
     }
@@ -58,8 +58,6 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         const val TITLE = "title"
         const val ERROR = "error"
         private const val URL = "url"
-        // About two hours of backoff, then it's the user's call.
-        private const val MAX_ATTEMPTS = 8
 
         /**
          * The unique work name for saving [url]. Sharing it again replaces a pending save (so it
