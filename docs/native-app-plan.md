@@ -14,10 +14,9 @@ Each phase below adds the server pieces it needs alongside its client code.
    which drops espeak-ng (GPL-3.0, compiled into today's library), and on
    licensing: of the web's four voices only `en_GB-alba-medium` (CC BY 4.0) is
    clear for any use. The runtime also adds about 24 MB per ABI.
-3. **Release**: Play Console closed testing (new personal developer accounts
-   need a closed test with testers for 14 days before production) and signed
-   APKs on GitHub Releases. Set `ANDROID_APP_CERT_SHA256` on the server to the
-   release key's fingerprint so the sign-in App Link verifies.
+3. **Release**: the Play Console listing and its 14-day closed test (new
+   personal developer accounts need one before production); signed builds on
+   `android-v*` tags are set up (see `docs/DEPLOYMENT.md`).
 4. **Later**: iOS (SwiftUI over the shared core, a Share Extension,
    AVAudioSession; macOS CI runners + TestFlight with existing iOS users as
    testers), then maybe desktop.

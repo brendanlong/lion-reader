@@ -181,6 +181,18 @@ key and can sign in only to dev servers. With both apps installed, Android
 may ask which one opens the sign-in redirect; picking the other one just fails
 that sign-in (PKCE), so retry.
 
+## Releases
+
+Release builds are signed with the upload key from CI secrets, versioned from
+their `android-vX.Y.Z` tag, and shrunk with R8 (setup and steps: "Android app
+releases" in `docs/DEPLOYMENT.md`). Libraries bring their own keep rules;
+`androidApp/proguard-rules.pro` covers what our code reaches by name, such as
+the `NavKey`s the saved back stack restores. Anything new that's looked up by
+name (reflection, serializers found at runtime) needs a rule there. CI builds
+the release variant on every pull request, so R8 errors show up early, but
+missing keep rules only fail at run time: after adding something like that,
+run a release build with the dev signing config on a device.
+
 ## Running against a dev server
 
 Start the app with an issuer the phone can reach over USB, e.g.

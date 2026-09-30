@@ -251,6 +251,45 @@ failing component reports `status: "unhealthy"` with an `error` message.
 
 ---
 
+## Android app releases
+
+The app releases on its own tags, `android-vX.Y.Z`, through
+`.github/workflows/android-release.yml`. That builds the signed app bundle and
+APK (shrunk with R8), attaches the APK to a GitHub release (not marked
+latest, which stays the weekly server release), and keeps the bundle, the R8
+mapping and the signing certificate as a workflow artifact. The version name is
+the tag's, and the version code is `X*1000000 + Y*1000 + Z`, so every release
+must be higher than the last.
+
+### One-time setup
+
+1. Create the upload key, and keep the keystore and its passwords somewhere
+   safe (Play can reset a lost upload key, but GitHub APK installs couldn't update
+   in place):
+
+   ```bash
+   keytool -genkeypair -v -keystore lionreader-upload.jks -alias upload \
+     -keyalg RSA -keysize 4096 -validity 10000
+   keytool -list -v -keystore lionreader-upload.jks -alias upload   # SHA256 line
+   ```
+
+2. Add GitHub secrets: `ANDROID_RELEASE_KEYSTORE_BASE64`
+   (`base64 -w0 lionreader-upload.jks`), `ANDROID_RELEASE_KEYSTORE_PASSWORD`,
+   `ANDROID_RELEASE_KEY_ALIAS` (`upload`), `ANDROID_RELEASE_KEY_PASSWORD`.
+3. Set `ANDROID_APP_CERT_SHA256` on the server to the key's SHA-256
+   fingerprint, so sign-in works for the GitHub APK. With Play App Signing,
+   Play re-signs its installs with Google's key: add that fingerprint too
+   (Play Console → Test and release → App integrity), comma-separated.
+
+### Each release
+
+```bash
+git tag android-v0.2.0 && git push origin android-v0.2.0
+```
+
+For Play, upload the `.aab` from the run's artifact (a new personal developer
+account needs a closed test with testers for 14 days before production).
+
 ## Ongoing Operations
 
 ### Scaling
