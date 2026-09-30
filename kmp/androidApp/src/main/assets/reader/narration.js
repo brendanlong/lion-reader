@@ -465,6 +465,18 @@
     return null;
   }
 
+  // src/lib/narration/seek-target.ts
+  var NON_SEEK_TARGETS = "a, button, input, select, textarea, summary, label, video, audio, iframe";
+  function seekTargetElement(event, hadSelectionAtPointerDown2) {
+    if (!(event.target instanceof Element)) return null;
+    if (event.target.closest(NON_SEEK_TARGETS)) return null;
+    if (event.detail > 1 || hadSelectionAtPointerDown2) return null;
+    if (window.getSelection()?.isCollapsed === false) return null;
+    const paraId = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
+    const elementIndex = paraId ? Number(paraId.replace("para-", "")) : NaN;
+    return Number.isInteger(elementIndex) ? elementIndex : null;
+  }
+
   // src/lib/narration/app-reader.ts
   var HIGHLIGHT_CLASS = "lr-narrating";
   function prepare() {
@@ -506,12 +518,17 @@
       }
     }
   };
+  var hadSelectionAtPointerDown = false;
+  document.addEventListener(
+    "pointerdown",
+    () => {
+      hadSelectionAtPointerDown = window.getSelection()?.isCollapsed === false;
+    },
+    true
+  );
   document.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element) || event.target.closest("a")) return;
-    if (window.getSelection()?.toString()) return;
-    const id = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
-    if (!id) return;
-    const paragraph = narrationParagraphForElement(paragraphMap, Number(id.slice("para-".length)));
+    const element = seekTargetElement(event, hadSelectionAtPointerDown);
+    const paragraph = element === null ? null : narrationParagraphForElement(paragraphMap, element);
     if (paragraph !== null) {
       window.lionReader?.postMessage(JSON.stringify({ type: "seek", paragraph }));
     }

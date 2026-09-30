@@ -20,6 +20,7 @@ import {
   type ParagraphMapEntry,
 } from "./paragraph-map";
 import { DIRECT_TTS_VOICE, narrationRuns } from "./runs";
+import { seekTargetElement } from "./seek-target";
 
 interface AppChannel {
   postMessage(message: string): void;
@@ -37,7 +38,9 @@ const HIGHLIGHT_CLASS = "lr-narrating";
 /**
  * Numbers the article's elements and builds its narration. The app's header and
  * summary come first in `<body>`; set aside while this runs, what's left parses
- * exactly like the web's `<body>${html}</body>`, so the numbering matches.
+ * exactly like the web's `<body>${html}</body>`, so the numbering matches. (The
+ * summary is a balanced fragment — the server closes its tags — so the article
+ * can't end up inside it.)
  */
 function prepare(): ParagraphMapEntry[] {
   const chrome = Array.from(
@@ -84,13 +87,18 @@ window.lionNarration = {
 };
 
 // Tapping a paragraph starts narration there (the app ignores it unless this
-// article is being narrated). Not for links, or a tap that ends a selection.
+// article is being narrated), with the web's rules for what's a seek.
+let hadSelectionAtPointerDown = false;
+document.addEventListener(
+  "pointerdown",
+  () => {
+    hadSelectionAtPointerDown = window.getSelection()?.isCollapsed === false;
+  },
+  true
+);
 document.addEventListener("click", (event) => {
-  if (!(event.target instanceof Element) || event.target.closest("a")) return;
-  if (window.getSelection()?.toString()) return;
-  const id = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
-  if (!id) return;
-  const paragraph = narrationParagraphForElement(paragraphMap, Number(id.slice("para-".length)));
+  const element = seekTargetElement(event, hadSelectionAtPointerDown);
+  const paragraph = element === null ? null : narrationParagraphForElement(paragraphMap, element);
   if (paragraph !== null) {
     window.lionReader?.postMessage(JSON.stringify({ type: "seek", paragraph }));
   }

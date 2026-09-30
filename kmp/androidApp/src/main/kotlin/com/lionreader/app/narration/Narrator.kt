@@ -7,6 +7,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
@@ -19,8 +20,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -45,7 +50,8 @@ data class NarrationState(
  * Narrates one article at a time: synthesizes it chunk by chunk a little ahead of the player and
  * plays the chunks through one ExoPlayer, which [NarrationService] exposes as a media session
  * (notification, lock screen, headset buttons, background playback). Played chunks are dropped, so
- * the files on disk stay a handful however long the article.
+ * the files on disk stay a handful however long the article. A chunk the engine can't say is
+ * skipped, so the playlist can have gaps: items are found by their chunk index (the media id).
  *
  * Main thread only (ExoPlayer's rule).
  */
@@ -56,6 +62,15 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
 
     private val _state = MutableStateFlow<NarrationState?>(null)
     val state: StateFlow<NarrationState?> = _state.asStateFlow()
+
+    private val _errors =
+        MutableSharedFlow<String>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+
+    /** Why narration stopped on its own, for the user. */
+    val errors: SharedFlow<String> = _errors.asSharedFlow()
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
@@ -73,16 +88,19 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
 
     private var article: NarratedArticle? = null
     private var chunks: List<SpeechChunk> = emptyList()
-    /** The chunk the player's first item is. */
-    private var base = 0
+    private var speed = 1f
     private val playingChunk = MutableStateFlow(0)
     private var feeding: Job? = null
+    /** Whether the feed has synthesized everything it's going to, and the last chunk it added. */
+    private var fed = false
+    private var lastAdded: Int? = null
     private var session: ListenableFuture<MediaController>? = null
 
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
         this.article = article
         chunks = speechChunks(article.paragraphs)
         if (chunks.isEmpty()) return stop()
+        speed = settings().narrationSpeed
         // Binding a controller starts the service, which puts the player in a
         // media session and keeps playback going in the background.
         if (session == null) {
@@ -106,13 +124,16 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
     }
 
     fun seekToParagraph(paragraph: Int) {
+        if (chunks.isEmpty()) return
         val chunk = firstChunkOf(paragraph)
-        val item = chunk - base
-        if (item in 0 until player.mediaItemCount) player.seekTo(item, 0)
-        else startAt(chunk, play = player.playWhenReady)
+        val item = itemOf(chunk)
+        if (item != null) player.seekTo(item, 0) else startAt(chunk, play = player.playWhenReady)
     }
 
-    fun setSpeed(speed: Float) = player.setPlaybackSpeed(speed)
+    fun setSpeed(speed: Float) {
+        this.speed = speed
+        player.setPlaybackSpeed(speed)
+    }
 
     suspend fun voices(): List<VoiceOption> = tts.voices()
 
@@ -132,15 +153,22 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
     private fun firstChunkOf(paragraph: Int): Int =
         chunks.indexOfFirst { it.paragraph >= paragraph }.takeIf { it >= 0 } ?: 0
 
+    /** The playlist index of [chunk], if it's there. */
+    private fun itemOf(chunk: Int): Int? =
+        (0 until player.mediaItemCount).firstOrNull {
+            player.getMediaItemAt(it).mediaId == "$chunk"
+        }
+
     private fun startAt(chunk: Int, play: Boolean) {
         feeding?.cancel()
         player.stop()
         player.clearMediaItems()
         dir.deleteRecursively()
         dir.mkdirs()
-        base = chunk
         playingChunk.value = chunk
-        player.setPlaybackSpeed(settings().narrationSpeed)
+        fed = false
+        lastAdded = null
+        player.setPlaybackSpeed(speed)
         player.playWhenReady = play
         publish(chunk)
         feeding = scope.launch { feed(chunk) }
@@ -161,6 +189,7 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
                 continue
             }
             player.addMediaItem(item(article, index, file))
+            lastAdded = index
             when (player.playbackState) {
                 Player.STATE_IDLE -> player.prepare()
                 // It caught up with the synthesis; carry on with the new chunk.
@@ -168,6 +197,19 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
                 else -> {}
             }
         }
+        fed = true
+        if (lastAdded == null) {
+            stop()
+            _errors.tryEmit("Couldn't read this article aloud. Check the voice in Settings.")
+        } else {
+            stopIfFinished()
+        }
+    }
+
+    /** Stops once the last chunk there'll ever be has played. */
+    private fun stopIfFinished() {
+        val current = player.currentMediaItem?.mediaId?.toIntOrNull()
+        if (fed && player.playbackState == Player.STATE_ENDED && current == lastAdded) stop()
     }
 
     private fun item(article: NarratedArticle, chunk: Int, file: File) =
@@ -206,7 +248,6 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
                         File(it).delete()
                     }
                     player.removeMediaItem(0)
-                    base++
                 }
             }
 
@@ -214,9 +255,18 @@ class Narrator(private val context: Context, private val settings: () -> AppSett
                 _state.value = _state.value?.copy(playing = playWhenReady)
             }
 
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                val last = player.currentMediaItem?.mediaId?.toIntOrNull()
-                if (playbackState == Player.STATE_ENDED && last == chunks.lastIndex) stop()
+            override fun onPlaybackStateChanged(playbackState: Int) = stopIfFinished()
+
+            // A file the player can't play (an odd one from some engine): move
+            // past it rather than sit on it.
+            override fun onPlayerError(error: PlaybackException) {
+                if (player.hasNextMediaItem()) {
+                    player.seekToNextMediaItem()
+                    player.prepare()
+                } else if (fed) {
+                    stop()
+                    _errors.tryEmit("Couldn't play this article's narration.")
+                }
             }
         }
 

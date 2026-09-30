@@ -4,9 +4,9 @@ import android.content.Context
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import java.io.File
 import java.io.IOException
-import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
@@ -49,6 +49,13 @@ class SystemTts(context: Context) {
         )
     }
 
+    // Looking a voice up asks the engine for all of them (hundreds, over binder).
+    private var voicesByName: Map<String, Voice>? = null
+
+    private fun voiceNamed(name: String): Voice? =
+        (voicesByName
+            ?: engine.voices.orEmpty().associateBy { it.name }.also { voicesByName = it })[name]
+
     private fun failed(utteranceId: String) {
         pending.remove(utteranceId)?.resumeWithException(IOException("Speech synthesis failed"))
     }
@@ -71,13 +78,17 @@ class SystemTts(context: Context) {
     /** Speaks [text] into [file] (WAV) with the voice named [voice], or the engine's default. */
     suspend fun synthesize(text: String, voice: String?, file: File) {
         val tts = ready.await()
-        val wanted = voice?.let { name -> tts.voices?.firstOrNull { it.name == name } }
+        // A voice that's gone (uninstalled) falls back to the default too.
+        val wanted = voice?.let(::voiceNamed) ?: tts.defaultVoice
         if (wanted != null && tts.voice?.name != wanted.name) tts.voice = wanted
-        if (wanted == null && voice != null) tts.language = Locale.getDefault()
         suspendCancellableCoroutine { continuation ->
             val id = UUID.randomUUID().toString()
             pending[id] = continuation
-            continuation.invokeOnCancellation { pending.remove(id) }
+            continuation.invokeOnCancellation {
+                // Only one synthesis runs at a time; don't make the next wait for it.
+                pending.remove(id)
+                tts.stop()
+            }
             if (tts.synthesizeToFile(text, Bundle(), file, id) != TextToSpeech.SUCCESS) {
                 pending.remove(id)
                 continuation.resumeWithException(IOException("Speech synthesis failed"))

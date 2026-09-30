@@ -52,6 +52,18 @@ describe("the app reader's narration", () => {
     expect(document.querySelectorAll(".lr-narrating")).toHaveLength(0);
   });
 
+  it("doesn't seek from a tap on a control, or a double tap", () => {
+    const before = messages.length;
+    const button = document.createElement("button");
+    document.querySelectorAll("li")[0].append(button);
+    button.click();
+    document
+      .querySelectorAll("li")[0]
+      .dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+    expect(messages).toHaveLength(before);
+    button.remove();
+  });
+
   it("reports the paragraph a tap lands on", () => {
     const item = document.querySelectorAll("li")[1];
     item.click();

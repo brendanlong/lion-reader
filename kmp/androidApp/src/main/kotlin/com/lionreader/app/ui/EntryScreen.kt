@@ -87,6 +87,9 @@ fun EntryScreen(
     // What each page's reader extracted to narrate.
     val spoken = remember { mutableStateMapOf<String, List<String>>() }
     val narration by graph.narrator.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
     val coroutines = rememberCoroutineScope()

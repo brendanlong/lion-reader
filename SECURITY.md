@@ -77,7 +77,7 @@ Entry bodies, saved articles, and AI summaries are rendered with
   sandboxed cross-origin frames, as on the web. No file or content access, no
   bridge beyond one message channel limited to the asset origin's main frame
   (the app reads only layout, narration text and taps from it, and calls back
-  only `lionNarration.highlight` with a number), and every navigation leaves
+  only `lionNarration.highlight` with a number or null and a boolean), and every navigation leaves
   for the browser. The article header's feed text
   (title, byline) enters the document only through `escapeHtml`. Loosening any
   of that needs a security review.
