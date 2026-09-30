@@ -654,6 +654,14 @@ describe("htmlToNarrationInput", () => {
       expect(nest(70)).toEqual(["T one two"]);
     });
 
+    // Skipped: data tables recurse without a depth guard (issue #1670).
+    it.skip("narrates data tables nested past the depth budget without overflowing", () => {
+      let html = "w";
+      for (let i = 0; i < 3000; i++) html = `<table><tr><th>h</th><td>${html}</td></tr></table>`;
+
+      expect(() => htmlToNarrationInput(html)).not.toThrow();
+    });
+
     it("reads a table as data when it has header cells, whatever they hold", () => {
       const html =
         "<table><tr><th>Name</th><th>Notes</th></tr>" +
