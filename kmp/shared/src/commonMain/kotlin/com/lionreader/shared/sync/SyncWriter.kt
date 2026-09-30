@@ -144,8 +144,10 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         event.entryId,
                     )
                     // The body may have changed too; download it again, and
-                    // reject any download that started before now.
+                    // reject any download that started before now. A summary
+                    // of the old text goes with it.
                     db.bodyQueries.deleteForEntry(event.entryId)
+                    db.summaryQueries.deleteForEntry(event.entryId)
                     db.entryQueries.bumpBodyVersion(event.entryId)
                 }
             is SyncEvent.EntryStateChanged -> {
@@ -288,6 +290,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         db.entryQueries.evictOutsideWindow(now - policy.windowMillis)
         db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
         db.bodyQueries.pruneOrphans()
+        db.summaryQueries.pruneOrphans()
         var size = db.bodyQueries.totalSize().executeAsOne()
         if (size > policy.contentBudgetBytes) {
             for (candidate in db.bodyQueries.evictionCandidates().executeAsList()) {
@@ -299,4 +302,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     }
 
     fun clearAll() = db.transaction { store.clearAll() }
+
+    /** Keeps a summary the user asked for, if its entry is still on the device. */
+    fun storeSummary(entryId: String, html: String) = db.summaryQueries.put(entryId, html)
 }

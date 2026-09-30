@@ -192,6 +192,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
     fun clearSynced() {
         entries.deleteAll()
         db.bodyQueries.deleteAll()
+        db.summaryQueries.deleteAll()
         subs.deleteAllSubscriptions()
         subs.deleteAllTags()
         subs.deleteAllSubscriptionTags()

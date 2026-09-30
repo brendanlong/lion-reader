@@ -2,9 +2,11 @@ package com.lionreader.app.ui
 
 import android.content.Intent
 import android.text.format.DateUtils
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -29,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +74,20 @@ fun EntryScreen(
         remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
     val coroutines = rememberCoroutineScope()
     val tokens = remember { AppearanceTokens.load(context) }
+    // Null while unknown (e.g. offline): only summaries already on the device show then.
+    val summariesAvailable by
+        produceState<Boolean?>(null) {
+            value =
+                try {
+                    withContext(Dispatchers.IO) { account.sync.summariesAvailable() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+        }
+    var hiddenSummaries by remember { mutableStateOf(emptySet<String>()) }
+    var summarizing by remember { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(entryId) {
         onShown(entryId)
@@ -88,6 +107,38 @@ fun EntryScreen(
                 },
                 actions = {
                     val current = entry ?: return@TopAppBar
+                    if (summariesAvailable == true || current.summary != null) {
+                        SummaryButton(
+                            summarizing = current.id in summarizing,
+                            hasSummary = current.summary != null,
+                            shown = current.id !in hiddenSummaries,
+                        ) {
+                            val id = current.id
+                            if (current.summary != null) {
+                                hiddenSummaries =
+                                    if (id in hiddenSummaries) hiddenSummaries - id
+                                    else hiddenSummaries + id
+                            } else if (id !in summarizing) {
+                                summarizing += id
+                                coroutines.launch {
+                                    try {
+                                        withContext(Dispatchers.IO) { account.sync.summarize(id) }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) {
+                                        Toast.makeText(
+                                                context,
+                                                "Couldn't summarize this article",
+                                                Toast.LENGTH_SHORT,
+                                            )
+                                            .show()
+                                    } finally {
+                                        summarizing -= id
+                                    }
+                                }
+                            }
+                        }
+                    }
                     IconButton(
                         onClick = {
                             coroutines.launch {
@@ -157,7 +208,13 @@ fun EntryScreen(
             key = { pages[it] },
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) { page ->
-            EntryPage(graph, account, pages[page], tokens)
+            EntryPage(
+                graph,
+                account,
+                pages[page],
+                tokens,
+                showSummary = pages[page] !in hiddenSummaries,
+            )
         }
     }
 }
@@ -168,6 +225,7 @@ private fun EntryPage(
     account: AccountSession,
     entryId: String,
     tokens: AppearanceTokens,
+    showSummary: Boolean,
 ) {
     val context = LocalContext.current
     val entry by
@@ -211,6 +269,7 @@ private fun EntryPage(
         val document =
             readerDocument(
                 header = ReaderHeader(title, byline),
+                summary = current.summary?.takeIf { showSummary },
                 body = content,
                 settings = settings,
                 tokens = tokens,
@@ -247,6 +306,36 @@ private fun EntryPage(
             )
         } else {
             CircularProgressIndicator(modifier = Modifier.padding(vertical = 32.dp))
+        }
+    }
+}
+
+@Composable
+private fun SummaryButton(
+    summarizing: Boolean,
+    hasSummary: Boolean,
+    shown: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = !summarizing) {
+        if (summarizing) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp).semantics { contentDescription = "Summarizing" },
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                painterResource(R.drawable.ic_sparkles),
+                contentDescription =
+                    when {
+                        !hasSummary -> "Summarize"
+                        shown -> "Hide summary"
+                        else -> "Show summary"
+                    },
+                tint =
+                    if (hasSummary && shown) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

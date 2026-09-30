@@ -90,6 +90,17 @@ class SyncEngine(
         return writer.hasBody(entryId)
     }
 
+    /** Whether the server can summarize for this user (it has an AI provider to use). */
+    suspend fun summariesAvailable(): Boolean = api.summarizationAvailable()
+
+    /**
+     * Gets the entry's AI summary from the server (which caches it) and keeps it on the device.
+     * Throws on network/server failure.
+     */
+    suspend fun summarize(entryId: String) {
+        writer.storeSummary(entryId, api.summarize(entryId))
+    }
+
     /** Forgets all synced data and unsent changes. */
     suspend fun reset() = mutex.withLock { writer.clearAll() }
 

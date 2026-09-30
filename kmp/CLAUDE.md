@@ -66,6 +66,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   the download started (an edit bumps it), so a download racing a deletion or
   an edit can't leave a missing or stale body. Pull-to-refresh syncs the lists
   and leaves bodies to a background job.
+- **AI summaries** are fetched only when the user asks (the server generates
+  and caches them with the user's web settings) and then kept in
+  `entry_summary` for offline reading while their entry is on the device. An
+  edit to the entry drops its summary.
 - **Retention** (`RetentionPolicy`): entries outside the window go, at most N
   read entries stay, bodies are capped by size (oldest read first); starred,
   saved and entries with unsent changes are always kept.

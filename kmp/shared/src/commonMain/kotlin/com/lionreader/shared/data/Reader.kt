@@ -50,6 +50,8 @@ data class EntryDetail(
     val starred: Boolean,
     /** Sanitized HTML (the server sanitizes on every read); null until downloaded. */
     val content: String?,
+    /** The AI summary, sanitized HTML; null until the user asks for one. */
+    val summary: String?,
 )
 
 data class NavSubscription(
@@ -137,6 +139,7 @@ class Reader(
                     read = it.effective_read == 1L,
                     starred = it.effective_starred == 1L,
                     content = it.content,
+                    summary = it.ai_summary,
                 )
             }
         }

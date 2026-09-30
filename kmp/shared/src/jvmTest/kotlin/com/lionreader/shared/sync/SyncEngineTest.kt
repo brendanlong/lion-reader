@@ -1,6 +1,7 @@
 package com.lionreader.shared.sync
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.EntryMetadata
 import com.lionreader.shared.api.EventEntry
 import com.lionreader.shared.api.FeedType
@@ -421,5 +422,34 @@ class SyncEngineTest {
 
         release.complete(Unit)
         background.join()
+    }
+
+    @Test
+    fun summariesAreKeptUntilTheArticleChanges() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("a"))
+        server.summaries["a"] = "<p>Short version</p>"
+        engine.sync()
+
+        assertTrue(engine.summariesAvailable())
+        engine.summarize("a")
+        assertEquals("<p>Short version</p>", reader.entry("a").first()?.summary)
+
+        // An edit makes the summary stale.
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "New title")))
+        )
+        engine.sync()
+        assertNull(reader.entry("a").first()?.summary)
+    }
+
+    @Test
+    fun aFailedSummaryStoresNothing() = runTest {
+        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        serve(entry("a"))
+        engine.sync()
+
+        assertFailsWith<ApiException> { engine.summarize("a") }
+        assertNull(reader.entry("a").first()?.summary)
     }
 }

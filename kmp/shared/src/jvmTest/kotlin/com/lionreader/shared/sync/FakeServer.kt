@@ -7,6 +7,8 @@ import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.EntryListPage
 import com.lionreader.shared.api.EntryState
 import com.lionreader.shared.api.FullEntry
+import com.lionreader.shared.api.GenerateSummaryRequest
+import com.lionreader.shared.api.GeneratedSummary
 import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
 import com.lionreader.shared.api.LionReaderApi
@@ -14,6 +16,7 @@ import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SubscriptionPage
+import com.lionreader.shared.api.SummarizationAvailability
 import com.lionreader.shared.api.SyncChanges
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
@@ -40,6 +43,9 @@ import kotlinx.serialization.json.jsonObject
 class FakeServer {
     val entries = linkedMapOf<String, FullEntry>()
     val subscriptions = mutableListOf<Subscription>()
+
+    /** Summaries the server would generate, by entry id; others fail (500). */
+    val summaries = mutableMapOf<String, String>()
 
     /** Queued `sync.changes` responses; empty means "no changes". */
     val changes = ArrayDeque<SyncChanges>()
@@ -141,6 +147,17 @@ class FakeServer {
                 val ids = body(request, GetManyRequest.serializer()).ids
                 duringBatch?.invoke(ids)
                 json(GetManyResponse.serializer(), GetManyResponse(ids.mapNotNull { entries[it] }))
+            }
+            path == "/summarization/available" ->
+                json(
+                    SummarizationAvailability.serializer(),
+                    SummarizationAvailability(summaries.isNotEmpty()),
+                )
+            path == "/summarization/generate" -> {
+                val entryId = body(request, GenerateSummaryRequest.serializer()).entryId
+                val summary = summaries[entryId]
+                if (summary == null) respond("{}", HttpStatusCode.InternalServerError, jsonHeaders)
+                else json(GeneratedSummary.serializer(), GeneratedSummary(summary))
             }
             path == "/entries/mark-read" -> {
                 val body = body(request, MarkReadRequest.serializer())

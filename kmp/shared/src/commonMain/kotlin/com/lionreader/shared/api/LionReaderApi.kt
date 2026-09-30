@@ -87,6 +87,19 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
     /** The account this token belongs to. */
     suspend fun me(): AccountUser = get(Me.serializer(), "/auth/me") {}.user
 
+    suspend fun summarizationAvailable(): Boolean =
+        get(SummarizationAvailability.serializer(), "/summarization/available") {}.available
+
+    /** The entry's summary as sanitized HTML, generated with the user's summary settings. */
+    suspend fun summarize(entryId: String): String =
+        post(
+                GeneratedSummary.serializer(),
+                "/summarization/generate",
+                GenerateSummaryRequest(entryId),
+                GenerateSummaryRequest.serializer(),
+            )
+            .summary
+
     suspend fun syncChanges(cursors: SyncCursors?): SyncChanges =
         get(SyncChanges.serializer(), "/sync/changes") {
             cursors?.let {

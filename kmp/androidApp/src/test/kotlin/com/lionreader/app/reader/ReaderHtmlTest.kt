@@ -37,6 +37,7 @@ class ReaderHtmlTest {
                     title = "<img src=x onerror=alert(1)> & \"quotes\"",
                     byline = "<script>alert(1)</script> · O'Brien",
                 ),
+                null,
                 "",
                 AppSettings(),
                 tokens,
@@ -51,14 +52,24 @@ class ReaderHtmlTest {
     @Test
     fun bodyIsInsertedVerbatim() {
         val body = "<pre>\n        indented code\n</pre>"
-        val html = readerDocument(header, body, AppSettings(), tokens, colors)
+        val html = readerDocument(header, null, body, AppSettings(), tokens, colors)
         assertTrue(html.contains(body))
+    }
+
+    @Test
+    fun summaryGoesVerbatimBetweenTheHeaderAndTheBody() {
+        val summary = "<ul><li>Point one</li></ul>"
+        val html = readerDocument(header, summary, "<p>Body</p>", AppSettings(), tokens, colors)
+        val headerEnd = html.indexOf("</header>")
+        val summaryAt = html.indexOf(summary)
+        assertTrue(headerEnd in 0 until summaryAt)
+        assertTrue(summaryAt < html.indexOf("<p>Body</p>"))
     }
 
     @Test
     fun sizeCombinesTextSizeAndFontAdjustment() {
         val settings = AppSettings(font = ReaderFont.MERRIWEATHER, textSize = TextSize.LARGE)
-        val html = readerDocument(header, "", settings, tokens, colors)
+        val html = readerDocument(header, null, "", settings, tokens, colors)
         assertTrue(html.contains("font-size: ${1.125 * 0.929}rem"))
         assertTrue(html.contains("line-height: 1.8"))
     }

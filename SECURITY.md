@@ -70,7 +70,8 @@ Entry bodies, saved articles, and AI summaries are rendered with
   Directive rationale lives in `csp.ts`.
 
 - **The native app's reader view** (`kmp/androidApp/.../reader/`) renders the
-  same sanitized HTML in a WebView next to the app's tokens. **Invariant: the
+  same sanitized HTML (article bodies and AI summaries) in a WebView next to
+  the app's tokens. **Invariant: the
   only script in the reader document is our bundled `scroll-detect.js`** — its
   CSP (`ReaderHtml.kt`) allows that one file, no fetch/XHR/WebSocket, no
   `base` or form targets. Allow-listed embeds run their own scripts in their
