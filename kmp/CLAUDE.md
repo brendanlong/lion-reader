@@ -203,10 +203,11 @@ that sign-in (PKCE), so retry.
 CI (`.github/workflows/android.yml`) signs its debug build with the same key,
 from the `ANDROID_DEV_KEYSTORE_BASE64`, `ANDROID_DEV_KEYSTORE_PASSWORD`,
 `ANDROID_DEV_KEY_ALIAS` and `ANDROID_DEV_KEY_PASSWORD` secrets, and attaches the
-APK to the run (linked from a comment on the pull request), so the Android build of a PR (from this repository, not a
-fork) or of master is installable over any other debug build. Anyone who can push a branch to the repository can read those
-secrets (a workflow change can print them), which is why the key only covers
-the debug app.
+APK to the run (linked from a comment on the pull request), so the Android build
+of a PR (from this repository, not a fork) or of master is installable over any
+other debug build. Anyone who can push a branch to the repository can read those
+secrets (a workflow change can print them), which is why the key only covers the
+debug app.
 
 ## Releases
 
