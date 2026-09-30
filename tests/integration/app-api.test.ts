@@ -5,7 +5,8 @@
  * Covers the token gate (only the first-party client's `/api/v1`-audience token
  * is accepted, and only on endpoints that opted in), the authorize endpoint's
  * audience binding, and the app-only endpoints (`sync.changes`,
- * `entries.getMany`, `entries.setStarredMany`, clock-skew rebasing, summaries).
+ * `entries.getMany`, `entries.setStarredMany`, clock-skew rebasing, summaries,
+ * saving shared links).
  */
 
 import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
@@ -537,5 +538,19 @@ describe("summaries", () => {
     const { token } = await createApiToken(userId, ["mcp"]);
     expect((await rest(token, "GET", "/summarization/available")).status).toBe(403);
     expect((await rest(token, "POST", "/summarization/generate", { entryId })).status).toBe(403);
+  });
+});
+
+describe("POST /saved", () => {
+  it("lets the app save a shared link", async () => {
+    const userId = await createUser();
+    const paragraph = "<p>Shared from another app, with enough text to read as an article.</p>";
+    const res = await rest(await appToken(userId), "POST", "/saved", {
+      url: "https://example.com/shared-article",
+      // Supplied, so the server doesn't fetch the page.
+      html: `<html><head><title>Shared Article</title></head><body><article>${paragraph.repeat(8)}</article></body></html>`,
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).article.title).toBe("Shared Article");
   });
 });
