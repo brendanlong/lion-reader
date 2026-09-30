@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.R
 import com.lionreader.shared.data.ListScope
+import com.lionreader.shared.data.NavSubscription
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.TimelineItem
 import kotlinx.coroutines.launch
@@ -69,6 +71,7 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
     val items by model.items.collectAsStateWithLifecycle()
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
+    val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
     // The entries the confirmation counted; exactly these are marked, so
     // anything a sync adds while the dialog is open isn't marked unseen.
     var markAllIds by remember { mutableStateOf<List<String>?>(null) }
@@ -92,6 +95,8 @@ fun HomeScreen(model: HomeViewModel, onOpen: (String) -> Unit, onSettings: () ->
                 Drawer(
                     navigation = navigation,
                     selected = scope,
+                    expandedTags = expandedTags,
+                    onToggleTag = model::toggleTag,
                     onSelect = {
                         model.select(it)
                         coroutines.launch { drawer.close() }
@@ -219,11 +224,15 @@ private fun MarkAllReadDialog(
     )
 }
 
+/** Uncategorized's key among the expanded tag ids, as on the web. */
+private const val UNCATEGORIZED_KEY = "uncategorized"
+
 private fun title(scope: ListScope, navigation: Navigation?): String =
     when (scope) {
         ListScope.All -> "All"
         ListScope.Starred -> "Starred"
         ListScope.Saved -> "Saved"
+        ListScope.Uncategorized -> "Uncategorized"
         is ListScope.Tag -> navigation?.tags?.firstOrNull { it.id == scope.id }?.name ?: "Tag"
         is ListScope.Subscription ->
             navigation?.subscriptions?.firstOrNull { it.id == scope.id }?.title ?: "Feed"
@@ -233,6 +242,8 @@ private fun title(scope: ListScope, navigation: Navigation?): String =
 private fun Drawer(
     navigation: Navigation?,
     selected: ListScope,
+    expandedTags: Set<String>,
+    onToggleTag: (String) -> Unit,
     onSelect: (ListScope) -> Unit,
     onSettings: () -> Unit,
 ) {
@@ -263,13 +274,37 @@ private fun Drawer(
             if (nav.tags.isNotEmpty() || nav.subscriptions.isNotEmpty()) {
                 item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             }
-            for (tag in nav.tags) {
-                item(key = "tag-${tag.id}") {
-                    DrawerRow(tag.name, tag.unread, selected == ListScope.Tag(tag.id)) {
-                        onSelect(ListScope.Tag(tag.id))
+            fun group(
+                key: String,
+                name: String,
+                unread: Int,
+                scope: ListScope,
+                subscriptions: List<NavSubscription>,
+            ) {
+                // The open feed's group shows its feeds, so the open list stays visible.
+                val expanded =
+                    key in expandedTags ||
+                        (selected is ListScope.Subscription &&
+                            subscriptions.any { it.id == selected.id })
+                item(key = "group-$key") {
+                    DrawerRow(
+                        name,
+                        unread,
+                        selected == scope,
+                        icon = {
+                            if (subscriptions.isNotEmpty()) {
+                                ExpandButton(name, expanded) { onToggleTag(key) }
+                            } else {
+                                // Keeps the name in line with the other groups'.
+                                Spacer(Modifier.size(48.dp))
+                            }
+                        },
+                    ) {
+                        onSelect(scope)
                     }
                 }
-                items(nav.subscriptionsIn(tag.id), key = { "tag-${tag.id}-${it.id}" }) { sub ->
+                if (!expanded) return
+                items(subscriptions, key = { "group-$key-${it.id}" }) { sub ->
                     DrawerRow(
                         sub.title,
                         sub.unread,
@@ -280,10 +315,31 @@ private fun Drawer(
                     }
                 }
             }
-            items(nav.uncategorized, key = { "sub-${it.id}" }) { sub ->
-                DrawerRow(sub.title, sub.unread, selected == ListScope.Subscription(sub.id)) {
-                    onSelect(ListScope.Subscription(sub.id))
+            for (tag in nav.tags) {
+                group(
+                    tag.id,
+                    tag.name,
+                    tag.unread,
+                    ListScope.Tag(tag.id),
+                    nav.subscriptionsIn(tag.id),
+                )
+            }
+            val uncategorized = nav.uncategorized
+            if (nav.tags.isEmpty()) {
+                // Without tags there's nothing to group feeds apart from.
+                items(uncategorized, key = { "sub-${it.id}" }) { sub ->
+                    DrawerRow(sub.title, sub.unread, selected == ListScope.Subscription(sub.id)) {
+                        onSelect(ListScope.Subscription(sub.id))
+                    }
                 }
+            } else if (uncategorized.isNotEmpty()) {
+                group(
+                    UNCATEGORIZED_KEY,
+                    "Uncategorized",
+                    uncategorized.sumOf { it.unread },
+                    ListScope.Uncategorized,
+                    uncategorized,
+                )
             }
         }
         item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
@@ -299,19 +355,35 @@ private fun Drawer(
 }
 
 @Composable
+private fun ExpandButton(name: String, expanded: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            painterResource(
+                if (expanded) R.drawable.ic_expand_more else R.drawable.ic_chevron_right
+            ),
+            contentDescription = if (expanded) "Collapse $name" else "Expand $name",
+        )
+    }
+}
+
+@Composable
 private fun DrawerRow(
     label: String,
     unread: Int?,
     selected: Boolean,
     indent: Boolean = false,
+    icon: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     NavigationDrawerItem(
         label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        icon = icon,
         badge = { if (unread != null && unread > 0) Text(unread.toString()) },
         selected = selected,
         onClick = onClick,
-        modifier = if (indent) Modifier.padding(start = 16.dp) else Modifier,
+        // Lines a tag's feeds up with its name, past the expand button and
+        // the item's icon spacing.
+        modifier = if (indent) Modifier.padding(start = 60.dp) else Modifier,
     )
 }
 

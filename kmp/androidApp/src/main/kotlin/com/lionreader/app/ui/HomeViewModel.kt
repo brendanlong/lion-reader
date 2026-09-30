@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
+import com.lionreader.app.AppSettings
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Navigation
@@ -36,8 +37,8 @@ sealed interface SyncStatus {
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(
     private val reader: Reader,
-    unreadOnlySetting: Flow<Boolean>,
-    private val saveUnreadOnly: suspend (Boolean) -> Unit,
+    settings: Flow<AppSettings>,
+    private val updateSettings: suspend ((AppSettings) -> AppSettings) -> Unit,
     private val sync: suspend () -> Unit,
 ) : ViewModel() {
     constructor(
@@ -45,8 +46,8 @@ class HomeViewModel(
         account: AccountSession,
     ) : this(
         account.reader,
-        graph.settings.settings.map { it.unreadOnly },
-        { value -> graph.settings.update { it.copy(unreadOnly = value) } },
+        graph.settings.settings,
+        graph.settings::update,
         {
             // The lists are what the spinner waits for; bodies follow in the
             // background.
@@ -66,7 +67,10 @@ class HomeViewModel(
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
 
     val unreadOnly: StateFlow<Boolean> =
-        unreadOnlySetting.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+        settings.map { it.unreadOnly }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val expandedTags: StateFlow<Set<String>> =
+        settings.map { it.expandedTags }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     val navigation: StateFlow<Navigation?> =
         reader.navigation().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -108,7 +112,18 @@ class HomeViewModel(
 
     fun setUnreadOnly(value: Boolean) {
         keepIds.value = emptySet()
-        viewModelScope.launch { saveUnreadOnly(value) }
+        viewModelScope.launch { updateSettings { it.copy(unreadOnly = value) } }
+    }
+
+    fun toggleTag(tagId: String) {
+        viewModelScope.launch {
+            updateSettings {
+                val expanded = it.expandedTags
+                it.copy(
+                    expandedTags = if (tagId in expanded) expanded - tagId else expanded + tagId
+                )
+            }
+        }
     }
 
     fun toggleRead(item: TimelineItem) {
