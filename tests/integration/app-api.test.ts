@@ -37,6 +37,7 @@ import {
 import {
   APP_CLIENT_ID,
   getAppRedirectUri,
+  getDebugAppRedirectUri,
   getAppResourceIdentifier,
 } from "../../src/server/oauth/app-client";
 import { getResourceIdentifier } from "../../src/server/oauth/config";
@@ -330,6 +331,11 @@ describe("GET /auth/me", () => {
 
 describe("/oauth/authorize audience binding", () => {
   async function authorize(userId: string, params: Record<string, string>): Promise<URL> {
+    const res = await authorizeResponse(userId, params);
+    return new URL(res.headers.get("location") ?? "");
+  }
+
+  async function authorizeResponse(userId: string, params: Record<string, string>) {
     const { token } = await createSession(db, { userId });
     const url = new URL("http://localhost:3000/oauth/authorize");
     for (const [key, value] of Object.entries({
@@ -340,10 +346,7 @@ describe("/oauth/authorize audience binding", () => {
     })) {
       url.searchParams.set(key, value);
     }
-    const res = await authorizeGet(
-      new NextRequest(url, { headers: { cookie: `session=${token}` } })
-    );
-    return new URL(res.headers.get("location") ?? "");
+    return authorizeGet(new NextRequest(url, { headers: { cookie: `session=${token}` } }));
   }
 
   it("binds the app client's codes to the /api/v1 audience", async () => {
@@ -368,6 +371,29 @@ describe("/oauth/authorize audience binding", () => {
         )
       );
     expect(code.resource).toBe(getAppResourceIdentifier());
+  });
+
+  it("sends the debug app's codes to its own path, once it has a key", async () => {
+    const userId = await createUser();
+    await recordConsent(userId, APP_CLIENT_ID, [OAUTH_SCOPES.READER_FULL_ACCESS]);
+    const request = {
+      client_id: APP_CLIENT_ID,
+      redirect_uri: getDebugAppRedirectUri(),
+      scope: OAUTH_SCOPES.READER_FULL_ACCESS,
+    };
+
+    // No app can claim the path, so nothing may be sent there.
+    const refused = await authorizeResponse(userId, request);
+    expect(refused.headers.get("location")).toBeNull();
+
+    process.env.ANDROID_DEBUG_APP_CERT_SHA256 = Array(32).fill("CC").join(":");
+    try {
+      const location = await authorize(userId, request);
+      expect(location.origin + location.pathname).toBe(getDebugAppRedirectUri());
+      expect(location.searchParams.get("code")).toBeTruthy();
+    } finally {
+      delete process.env.ANDROID_DEBUG_APP_CERT_SHA256;
+    }
   });
 
   it("refuses the /api/v1 audience to any other client", async () => {

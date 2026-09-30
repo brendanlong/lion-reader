@@ -12,9 +12,13 @@
  * The redirect is an https URL on our own origin, claimed by the app as a
  * verified Android App Link (`/.well-known/assetlinks.json`), not a custom
  * scheme: any app can register a custom scheme and complete its own
- * authorization-code + PKCE flow under our client_id.
+ * authorization-code + PKCE flow under our client_id. The debug app, which
+ * installs alongside the release app, has its own path, so each redirect has
+ * exactly one app to go to (Android would otherwise ask which, and the wrong
+ * one fails the sign-in).
  */
 
+import { androidAppConfig, DEBUG_APP_PACKAGE } from "@/server/config/env";
 import { getAcceptedResourceIdentifiers, getIssuer, getResourceIdentifier } from "./config";
 import { OAUTH_SCOPES } from "./utils";
 
@@ -22,6 +26,16 @@ export const APP_CLIENT_ID = "lion-reader-app";
 
 export function getAppRedirectUri(): string {
   return `${getIssuer()}/oauth/app-callback`;
+}
+
+export function getDebugAppRedirectUri(): string {
+  return `${getAppRedirectUri()}/debug`;
+}
+
+/** Only while the debug app has a key: nothing else can claim its path. */
+function getAppRedirectUris(): string[] {
+  const debugApp = androidAppConfig.packages.some((app) => app.packageName === DEBUG_APP_PACKAGE);
+  return debugApp ? [getAppRedirectUri(), getDebugAppRedirectUri()] : [getAppRedirectUri()];
 }
 
 /** The RFC 8707 audience of tokens accepted by the main tRPC/REST API. */
@@ -33,7 +47,7 @@ export function getAppClient() {
   return {
     clientId: APP_CLIENT_ID,
     name: "Lion Reader app",
-    redirectUris: [getAppRedirectUri()],
+    redirectUris: getAppRedirectUris(),
     grantTypes: ["authorization_code", "refresh_token"],
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     isPublic: true,

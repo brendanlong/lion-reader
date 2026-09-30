@@ -244,6 +244,8 @@ function parseFingerprints(raw: string | undefined): string[] {
  * list only keys you control: for the debug app a private dev keystore, never
  * Android's default debug key (its password is public).
  */
+export const DEBUG_APP_PACKAGE = "com.lionreader.app.debug";
+
 export const androidAppConfig = {
   get packages(): Array<{ packageName: string; certSha256Fingerprints: string[] }> {
     return [
@@ -252,7 +254,7 @@ export const androidAppConfig = {
         certSha256Fingerprints: parseFingerprints(process.env.ANDROID_APP_CERT_SHA256),
       },
       {
-        packageName: "com.lionreader.app.debug",
+        packageName: DEBUG_APP_PACKAGE,
         certSha256Fingerprints: parseFingerprints(process.env.ANDROID_DEBUG_APP_CERT_SHA256),
       },
     ].filter((app) => app.certSha256Fingerprints.length > 0);
