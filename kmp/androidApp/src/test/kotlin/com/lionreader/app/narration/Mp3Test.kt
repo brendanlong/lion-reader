@@ -15,6 +15,7 @@ import androidx.media3.extractor.SeekMap
 import androidx.media3.extractor.TrackOutput
 import androidx.media3.extractor.mp3.Mp3Extractor
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -43,6 +44,29 @@ class Mp3Test {
     @Test
     fun withoutTheHeaderThePlayerReadsItAll() {
         assertEquals(3.0, playedSeconds(withoutSeekHeader(twoSentences())), 0.2)
+    }
+
+    @Test
+    fun theHeaderIsFoundPastPaddingAndMoreId3Tags() {
+        val audio = twoSentences()
+        val id3Size = 10 + (6..9).fold(0) { total, i -> (total shl 7) or audio[i].toInt() }
+        val id3 = audio.copyOf(id3Size)
+        val padded = id3 + ByteArray(64) + audio.copyOfRange(id3Size, audio.size)
+        val twoTags = id3 + audio
+
+        assertEquals(3.0, playedSeconds(withoutSeekHeader(padded)), 0.2)
+        assertEquals(3.0, playedSeconds(withoutSeekHeader(twoTags)), 0.2)
+    }
+
+    @Test
+    fun aFileIsFixedInPlace() {
+        val file = File.createTempFile("speech", ".mp3").apply { writeBytes(twoSentences()) }
+
+        blankSeekHeader(file)
+
+        assertEquals(twoSentences().size.toLong(), file.length())
+        assertEquals(3.0, playedSeconds(file.readBytes()), 0.2)
+        file.delete()
     }
 
     @Test

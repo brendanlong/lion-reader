@@ -48,9 +48,7 @@ class CloudVoices(
             withContext(io) {
                 cached.setLastModified(System.currentTimeMillis())
                 // Cached before seek headers were blanked (see withoutSeekHeader).
-                val audio = cached.readBytes()
-                val fixed = withoutSeekHeader(audio)
-                if (fixed !== audio) cached.writeBytes(fixed)
+                blankSeekHeader(cached)
             }
             return cached
         }
