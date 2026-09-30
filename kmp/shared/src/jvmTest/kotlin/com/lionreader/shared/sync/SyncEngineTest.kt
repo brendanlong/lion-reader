@@ -299,6 +299,53 @@ class SyncEngineTest {
     }
 
     @Test
+    fun aNewEntryEventForAnEntryOnTheDeviceReplacesItsBody() = runTest {
+        // Created after the bootstrap's start cursor, so the device lists it
+        // (and downloads its body) before the pull reports it as new — by
+        // which time it may have been edited (#1680).
+        serve(entry("a"))
+        engine.sync()
+        serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.NewEntry(
+                        entryId = "a",
+                        subscriptionId = "sub-1",
+                        feedId = "feed-1",
+                        feedType = FeedType.WEB,
+                        entry = EventEntry(title = "Title a", fetchedAt = "2026-09-28T12:00:00Z"),
+                    )
+                )
+        )
+
+        engine.sync()
+
+        assertEquals("<p>Edited</p>", reader.entry("a").first()?.content)
+    }
+
+    @Test
+    fun aDownloadStartedBeforeAResyncIsNotStored() = runTest {
+        serve(entry("a"))
+        engine.sync(downloadContent = false)
+
+        // While the body is downloading, the entry is edited and a resync
+        // deletes and re-adds it. The download's answer predates the edit.
+        var batches = 0
+        server.duringBatch = {
+            serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+            if (++batches == 1) {
+                server.queueChanges(resyncRequired = true)
+                engine.sync(downloadContent = false)
+                serve(entry("a"))
+            }
+        }
+        engine.ensureContent("a")
+
+        assertEquals("<p>Edited</p>", reader.entry("a").first()?.content)
+    }
+
+    @Test
     fun unknownEventTypesAreSkipped() = runTest {
         engine.sync()
         server.changes.addLast(

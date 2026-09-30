@@ -4,13 +4,16 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
+import kotlin.coroutines.ContinuationInterceptor
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.fail
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -56,7 +59,8 @@ class SyncModelTest {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         LionReaderDatabase.Schema.create(driver)
         val db = LionReaderDatabase(driver)
-        val api = server.api()
+        val api =
+            server.api(currentCoroutineContext()[ContinuationInterceptor] as CoroutineDispatcher)
         val policy = RetentionPolicy(windowDays = 3650, maxReadEntries = 100_000)
         fun newEngine() = SyncEngine(api, db, { clock }, { policy })
         fun newReader() = Reader(db, { clock }, Dispatchers.Unconfined) {}

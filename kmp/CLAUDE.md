@@ -51,9 +51,11 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   subscriptions, tags and the entry lists (newest first) page by page, and
   resumes from its start cursors if interrupted; then `sync.changes` deltas,
   each page committing with its next cursors. Entries an event mentions but the
-  device lacks are fetched whole — and, past the first page of a catch-up, so
-  are ones it has — because the server classifies changes against each page's
-  own cursor and can report a new entry as updated or drop an edit (#1663).
+  device lacks are fetched whole. So are ones it has when the event calls them
+  new: a bootstrap listed them, and they may have been edited since (#1680).
+  Past the first page of a catch-up, every one it has is fetched too, because
+  the server classifies changes against each page's own cursor and can report
+  a new entry as updated or drop an edit (#1663).
   `deletions` drop entries.
   `resyncRequired` re-bootstraps, keeping the outbox. Read/starred state comes
   only from deltas, fetched entries and flush responses. A flush is followed by
@@ -63,7 +65,8 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   downloads take turns under their own lock; opening an entry fetches its body
   straight away, alongside them. A body
   is stored only if its entry still exists at the `body_version` it had when
-  the download started (an edit bumps it), so a download racing a deletion or
+  the download started (an edit bumps it, and versions never repeat, even
+  when an entry is deleted and added again), so a download racing a deletion or
   an edit can't leave a missing or stale body. Pull-to-refresh syncs the lists
   and leaves bodies to a background job.
 - **Share target** (`share/`): a shared link is saved by a WorkManager job

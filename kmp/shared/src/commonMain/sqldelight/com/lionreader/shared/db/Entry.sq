@@ -19,10 +19,19 @@ CREATE TABLE entry (
   read INTEGER NOT NULL,
   starred INTEGER NOT NULL,
   last_opened_at INTEGER,
-  -- Bumped when the server reports the entry edited, so a body downloaded
-  -- before the edit can't be stored after it (see Body.sq).
-  body_version INTEGER NOT NULL DEFAULT 0
+  -- From body_version_seq: new on insert and whenever the server reports the
+  -- entry edited, so a body downloaded before an edit, or before the entry
+  -- was deleted and added again, can't be stored after it (see Body.sq).
+  body_version INTEGER NOT NULL
 );
+
+-- Never reset (not even by clearSynced or clearAll), so no entry gets back a
+-- version an in-flight download started at.
+CREATE TABLE body_version_seq (
+  value INTEGER NOT NULL
+);
+
+INSERT INTO body_version_seq(value) VALUES (0);
 
 CREATE INDEX entry_timeline ON entry(sort_at DESC, id DESC);
 CREATE INDEX entry_subscription ON entry(subscription_id, sort_at DESC);
@@ -38,9 +47,11 @@ LEFT JOIN outbox_state s ON s.entry_id = e.id AND s.field = 'starred';
 
 -- Upsert as insert-or-ignore + update: minSdk 26 ships SQLite 3.18, which
 -- predates ON CONFLICT DO UPDATE (and INSERT OR REPLACE would drop the body).
-insertIgnore:
-INSERT OR IGNORE INTO entry(id, feed_id, type, fetched_at, sort_at, read, starred)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+insertIgnore {
+  UPDATE body_version_seq SET value = value + 1;
+  INSERT OR IGNORE INTO entry(id, feed_id, type, fetched_at, sort_at, read, starred, body_version)
+  VALUES (:id, :feedId, :type, :fetchedAt, :sortAt, :read, :starred, (SELECT value FROM body_version_seq));
+}
 
 updateAll:
 UPDATE entry SET
@@ -102,8 +113,10 @@ WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
 ORDER BY sort_at DESC, id DESC
 LIMIT :limit;
 
-bumpBodyVersion:
-UPDATE entry SET body_version = body_version + 1 WHERE id = ?;
+bumpBodyVersion {
+  UPDATE body_version_seq SET value = value + 1;
+  UPDATE entry SET body_version = (SELECT value FROM body_version_seq) WHERE id = :id;
+}
 
 bodyVersion:
 SELECT body_version FROM entry WHERE id = ?;

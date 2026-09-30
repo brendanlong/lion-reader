@@ -35,6 +35,7 @@ import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlin.random.Random
 import kotlin.time.Instant
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.jsonObject
 
@@ -94,8 +95,18 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     val visible: List<Entry>
         get() = entries.values.filter { it.deletedSeq == null }
 
-    fun api(): LionReaderApi {
-        val http = HttpClient(MockEngine { request -> handle(request) })
+    /**
+     * Answered on the test's [dispatcher] rather than MockEngine's IO threads, so overlapping work
+     * still interleaves, but in the same order every run and a seed replays exactly.
+     */
+    fun api(dispatcher: CoroutineDispatcher): LionReaderApi {
+        val http =
+            HttpClient(MockEngine) {
+                engine {
+                    this.dispatcher = dispatcher
+                    addHandler { request -> handle(request) }
+                }
+            }
         val tokens =
             object : TokenStore {
                 var value: StoredTokens? = StoredTokens("access", "refresh", Long.MAX_VALUE)
