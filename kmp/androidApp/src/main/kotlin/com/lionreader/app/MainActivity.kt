@@ -62,15 +62,15 @@ class MainActivity : ComponentActivity() {
      * Sign-in in an Auth Tab: the browser hands the redirect straight back here, so no other app
      * (the debug build, say) can be picked to open it. A browser without Auth Tabs opens a Custom
      * Tab instead, whose redirect arrives as the App Link ([onNewIntent]); its closing then comes
-     * back here as a cancel, which leaves the sign-in to that link.
+     * back here as a cancel, which leaves the sign-in to that link. If the browser can't verify the
+     * redirect is this app's, it retries in a Custom Tab.
      */
     private val authTab =
         AuthTabIntent.registerActivityResultLauncher(this) { result ->
             when (result.resultCode) {
                 AuthTabIntent.RESULT_OK -> result.resultUri?.let(::completeSignIn)
                 AuthTabIntent.RESULT_VERIFICATION_FAILED,
-                AuthTabIntent.RESULT_VERIFICATION_TIMED_OUT ->
-                    signInError = "Couldn't confirm the sign-in link belongs to this app"
+                AuthTabIntent.RESULT_VERIFICATION_TIMED_OUT -> authTabUrl?.let(::openCustomTab)
                 // Closed by the user, or by a Custom Tab's App Link (see above).
                 AuthTabIntent.RESULT_CANCELED,
                 AuthTabIntent.RESULT_UNKNOWN_CODE -> {}
@@ -130,19 +130,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** What the Auth Tab was opened on, to retry in a Custom Tab. */
+    private var authTabUrl: Uri? = null
+
+    private fun openCustomTab(url: Uri) = CustomTabsIntent.Builder().build().launchUrl(this, url)
+
     private fun startSignIn(serverUrl: String) {
         if (serverUrl != graph.serverUrl) graph.setServerUrl(serverUrl)
         lifecycleScope.launch {
             val request = graph.connection.value.auth.authorizationRequest()
             graph.pendingAuthorization = request
             val url = request.url.toUri()
-            if (url.scheme == "https") {
+            // Auth Tabs only return https redirects on the default port (a dev
+            // server is http, a self-hosted one may have a port).
+            if (url.scheme == "https" && url.port == -1) {
+                authTabUrl = url
                 AuthTabIntent.Builder()
                     .build()
                     .launch(authTab, url, url.host!!, BuildConfig.SIGN_IN_CALLBACK_PATH)
             } else {
-                // A dev server over http: Auth Tabs only return https redirects.
-                CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, url)
+                openCustomTab(url)
             }
         }
     }
