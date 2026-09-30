@@ -59,6 +59,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -112,6 +115,8 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = search != null) { model.setSearch(null) }
+    // The drawer doesn't close itself on back.
+    BackHandler(enabled = drawer.isOpen) { coroutines.launch { drawer.close() } }
     // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
     val timelineList = rememberLazyListState()
     val searchList = remember(search == null) { LazyListState() }
@@ -554,15 +559,35 @@ private fun EntryRow(
     Row(
         modifier =
             Modifier.fillMaxWidth()
-                .clickable(onClick = onOpen)
+                .clickable(onClickLabel = "Open", onClick = onOpen)
                 .background(
                     if (selected) MaterialTheme.colorScheme.secondaryContainer
                     else MaterialTheme.colorScheme.surface
                 )
                 .padding(start = 16.dp, top = 12.dp, bottom = 12.dp)
+                // One stop for TalkBack and Switch Access, with the buttons (and
+                // the swipe) as actions rather than more stops.
                 .semantics {
-                    stateDescription = if (item.read) "Read" else "Unread"
+                    stateDescription =
+                        listOfNotNull(
+                                if (item.read) "Read" else "Unread",
+                                "Starred".takeIf { item.starred },
+                            )
+                            .joinToString(", ")
                     this.selected = selected
+                    customActions =
+                        listOf(
+                            CustomAccessibilityAction(if (item.starred) "Unstar" else "Star") {
+                                onToggleStar()
+                                true
+                            },
+                            CustomAccessibilityAction(
+                                if (item.read) "Mark unread" else "Mark read"
+                            ) {
+                                onToggleRead()
+                                true
+                            },
+                        )
                 },
         verticalAlignment = Alignment.Top,
     ) {
@@ -596,7 +621,7 @@ private fun EntryRow(
                     )
                 }
         }
-        Column {
+        Column(Modifier.clearAndSetSemantics {}) {
             // 44dp (the design system's touch target) keeps a two-button column
             // from stretching short rows.
             IconButton(onClick = onToggleStar, modifier = Modifier.size(44.dp)) {

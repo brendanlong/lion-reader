@@ -2,15 +2,20 @@ package com.lionreader.app.ui
 
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
@@ -32,6 +37,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
+@OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 // The real Application schedules WorkManager, which these tests don\'t need.
 @Config(application = android.app.Application::class)
@@ -177,6 +183,17 @@ class HomeScreenTest {
     }
 
     @Test
+    fun backClosesTheDrawer() {
+        show()
+        composeRule.onNodeWithContentDescription("Lists").performClick()
+        composeRule.onNodeWithText("Settings").assertIsDisplayed()
+
+        Espresso.pressBack()
+
+        composeRule.onNodeWithText("Settings").assertIsNotDisplayed()
+    }
+
+    @Test
     fun tagsStartCollapsedAndExpandOnTap() {
         db.subscriptionQueries.upsertSubscription(
             "sub",
@@ -213,10 +230,15 @@ class HomeScreenTest {
         seed("a", "An article", read = false)
         show()
 
-        composeRule.onNodeWithContentDescription("Star").performClick()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .performCustomAccessibilityActionWithLabel("Star")
 
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
-        composeRule.onNodeWithContentDescription("Unstar").assertIsDisplayed()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .assert(hasStateDescription("Unread, Starred"))
+            .performCustomAccessibilityActionWithLabel("Unstar")
     }
 
     @Test
@@ -242,7 +264,9 @@ class HomeScreenTest {
         seed("a", "An article", read = false)
         show()
 
-        composeRule.onNodeWithContentDescription("Mark read").performClick()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .performCustomAccessibilityActionWithLabel("Mark read")
 
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
         // Still listed: entries touched in this list stay until it's reloaded.

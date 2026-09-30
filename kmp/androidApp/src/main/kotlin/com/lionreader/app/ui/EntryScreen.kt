@@ -3,8 +3,11 @@ package com.lionreader.app.ui
 import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
@@ -38,7 +41,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -121,7 +126,17 @@ fun EntryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {},
+                // Empty to the eye; says which article a swipe arrived at.
+                title = {
+                    Box(
+                        Modifier.fillMaxWidth().height(1.dp).semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription =
+                                "${entries[entryId]?.title ?: "Article"}, " +
+                                    "${pager.settledPage + 1} of ${pages.size}"
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         if (besideList) {

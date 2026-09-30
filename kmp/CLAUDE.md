@@ -104,6 +104,11 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   opening from the list replaces the entry on the back stack rather than
   stacking another, back closes the article beside the list (`PopLatest`),
   and the list highlights the article shown.
+- **Accessibility:** a list row is one TalkBack/Switch Access stop, with
+  its buttons (and the swipe) as custom actions and the buttons themselves
+  hidden from accessibility services. A new row control needs a matching
+  action. Where something changes without focus moving (the reader's pager),
+  a polite live region says what changed.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's
   sanitized HTML, inserted verbatim. Its one script reports where wide tables
   and code blocks are, so a sideways drag on one scrolls it instead of paging
