@@ -57,6 +57,9 @@ class FakeServer {
     /** Status to answer the next batch fetch with, once. */
     var batchFailure: HttpStatusCode? = null
 
+    /** Runs while a body fetch for these ids is in flight (before the server answers). */
+    var duringBatch: (suspend (List<String>) -> Unit)? = null
+
     /** Runs while a state write is in flight (before the server answers). */
     var duringStateWrite: (suspend () -> Unit)? = null
 
@@ -136,6 +139,7 @@ class FakeServer {
             }
             path == "/entries/batch" -> {
                 val ids = body(request, GetManyRequest.serializer()).ids
+                duringBatch?.invoke(ids)
                 json(GetManyResponse.serializer(), GetManyResponse(ids.mapNotNull { entries[it] }))
             }
             path == "/entries/mark-read" -> {

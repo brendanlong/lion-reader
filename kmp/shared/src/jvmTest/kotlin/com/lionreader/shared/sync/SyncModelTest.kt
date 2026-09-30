@@ -150,6 +150,12 @@ class SyncModelTest {
                             launch { quietly { engine.sync() } }
                             launch { quietly { engine.flushOutbox() } }
                             launch { localChange() }
+                            launch {
+                                // Opening an entry downloads its body alongside the sync.
+                                localEntries().randomOrNull(random)?.let {
+                                    quietly { engine.ensureContent(it.id) }
+                                }
+                            }
                         }
                         log += "overlap"
                     }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 
 private const val FLUSH_BATCH = 1000
 private const val CONTENT_BATCH = 50
+private const val ENSURE_ATTEMPTS = 3
 
 /**
  * Keeps the local store in step with the server: sends the outbox, pulls changes (or the initial
@@ -40,9 +41,9 @@ class SyncEngine(
     private val mutex = Mutex()
 
     /**
-     * Serializes body downloads, which run outside [mutex] so a long download never holds up a
-     * refresh or a flush. They only write `entry_body` (see [SyncWriter.storeBodies]), so they
-     * can't race the sync.
+     * Serializes the background body downloads, which run outside [mutex] so a long download never
+     * holds up a refresh or a flush. Downloads only write `entry_body`, guarded by body version
+     * (see [SyncWriter.storeBodies]), so they can't race the sync or each other.
      */
     private val contentMutex = Mutex()
 
@@ -74,11 +75,17 @@ class SyncEngine(
         pull()
     }
 
-    /** Downloads one entry's body now (opening an entry the sync hasn't reached). */
+    /**
+     * Downloads one entry's body now (opening an entry the sync hasn't reached). Not behind
+     * [contentMutex]: the user is waiting, and a background download can take minutes.
+     */
     suspend fun ensureContent(entryId: String) {
-        if (writer.hasBody(entryId)) return
-        val version = writer.bodyVersion(entryId) ?: return
-        contentMutex.withLock { fetchBodies(mapOf(entryId to version)) }
+        // Again if the entry was edited mid-download, which discards the old body.
+        repeat(ENSURE_ATTEMPTS) {
+            if (writer.hasBody(entryId)) return
+            val version = writer.bodyVersion(entryId) ?: return
+            fetchBodies(mapOf(entryId to version))
+        }
     }
 
     /** Forgets all synced data and unsent changes. */
