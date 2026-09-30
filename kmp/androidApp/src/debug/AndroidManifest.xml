@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Debug builds may talk to a dev server over plain http (reached through
-     `adb reverse`), and accept its sign-in redirect handed over with `adb`
-     (Android only delivers an intent that matches a filter). A custom action,
-     not VIEW, so no browser link ever resolves here. See "Running against a
+     `adb reverse`), and accept its sign-in redirect handed over by the dev
+     server's sign-in page (an intent: link) or `adb`. A custom action, not
+     VIEW, so no ordinary link ever resolves here; the sign-in's own state
+     check turns away anything but the redirect it's waiting for. See "Running against a
      dev server" in kmp/CLAUDE.md. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:usesCleartextTraffic="true">
@@ -10,6 +11,9 @@
             <intent-filter>
                 <action android:name="com.lionreader.app.DEBUG_SIGN_IN_CALLBACK" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <!-- So the dev server's sign-in page can open it (Chrome only
+                     starts browsable activities from intent: links). -->
+                <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="http"
                     android:host="localhost"

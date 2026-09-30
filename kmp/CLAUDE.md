@@ -238,20 +238,15 @@ don't test it: debuggable builds skip R8's renaming.)
 
 ## Running against a dev server
 
-Start the app with an issuer the phone can reach over USB, and a debug key so
-it accepts the debug app's redirect path (any fingerprint will do locally), e.g.
-`PORT=<port> NEXT_PUBLIC_APP_URL=http://localhost:<port> ANDROID_DEBUG_APP_CERT_SHA256=<dev key> pnpm dev:local`, then
+Start the app with an issuer the phone can reach over USB, e.g.
+`PORT=<port> NEXT_PUBLIC_APP_URL=http://localhost:<port> pnpm dev:local`, then
 `adb reverse tcp:<port> tcp:<port>` and enter `http://localhost:<port>` as the
 server on the sign-in screen (debug builds allow cleartext). An http redirect
 can't be an App Link, so the sign-in ends on the server's "opened in your
-browser" page; hand the redirect to the app yourself:
-
-```bash
-adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -a com.lionreader.app.DEBUG_SIGN_IN_CALLBACK \
-  -d "'http://localhost:<port>/oauth/app-callback/debug?code=...&state=...'"
-```
-
-(the URL is in the dev server's request log). `pnpm db:seed` creates
+browser" page; on a server on this machine that page has an **Open in the debug
+app** button that hands the redirect over (it's also the URL in the dev
+server's request log, for `adb shell am start -a
+com.lionreader.app.DEBUG_SIGN_IN_CALLBACK -d '<url>'`). `pnpm db:seed` creates
 `test@example.com` / `password123`.
 
 ## Code quality

@@ -20,6 +20,7 @@
 
 import { androidAppConfig, DEBUG_APP_PACKAGE } from "@/server/config/env";
 import { getAcceptedResourceIdentifiers, getIssuer, getResourceIdentifier } from "./config";
+import { isLoopbackUrl } from "./utils";
 import { OAUTH_SCOPES } from "./utils";
 
 export const APP_CLIENT_ID = "lion-reader-app";
@@ -32,9 +33,14 @@ export function getDebugAppRedirectUri(): string {
   return `${getAppRedirectUri()}/debug`;
 }
 
-/** Only while the debug app has a key: nothing else can claim its path. */
+/**
+ * The debug app's path only while it has a published key, so nothing else can
+ * claim it — or on a dev server on this machine, where no other device can.
+ */
 function getAppRedirectUris(): string[] {
-  const debugApp = androidAppConfig.packages.some((app) => app.packageName === DEBUG_APP_PACKAGE);
+  const debugApp =
+    androidAppConfig.packages.some((app) => app.packageName === DEBUG_APP_PACKAGE) ||
+    isLoopbackUrl(getIssuer());
   return debugApp ? [getAppRedirectUri(), getDebugAppRedirectUri()] : [getAppRedirectUri()];
 }
 
