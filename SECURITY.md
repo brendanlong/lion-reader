@@ -71,10 +71,9 @@ Entry bodies, saved articles, and AI summaries are rendered with
 
 - **The native app's reader view** (`kmp/androidApp/.../reader/`) renders the
   same sanitized HTML (article bodies and AI summaries) in a WebView next to
-  the app's tokens. **Invariant: the
-  only script in the reader document is our bundled `scroll-detect.js`** — its
-  CSP (`ReaderHtml.kt`) allows that one file, no fetch/XHR/WebSocket, no
-  `base` or form targets. Allow-listed embeds run their own scripts in their
+  the app's tokens. **Invariant: the only script in the reader document is our
+  bundled `scroll-detect.js`** — its CSP (`ReaderHtml.kt`) allows that one
+  file, no fetch/XHR/WebSocket, no `base` or form targets. Allow-listed embeds run their own scripts in their
   sandboxed cross-origin frames, as on the web. No file or content access, no
   bridge beyond one message channel limited to the asset origin's main frame,
   and every navigation leaves for the browser. The article header's feed text

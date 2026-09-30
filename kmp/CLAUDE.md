@@ -68,8 +68,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   and leaves bodies to a background job.
 - **AI summaries** are fetched only when the user asks (the server generates
   and caches them with the user's web settings) and then kept in
-  `entry_summary` for offline reading while their entry is on the device. An
-  edit to the entry drops its summary.
+  `entry_summary` for offline reading while their entry is on the device.
+  Like bodies, one is stored only if its entry is still at the `body_version`
+  it had when the request started, and an edit drops it.
 - **Retention** (`RetentionPolicy`): entries outside the window go, at most N
   read entries stay, bodies are capped by size (oldest read first); starred,
   saved and entries with unsent changes are always kept.

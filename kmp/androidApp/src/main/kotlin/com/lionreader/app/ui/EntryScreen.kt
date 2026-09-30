@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -75,18 +76,8 @@ fun EntryScreen(
     val coroutines = rememberCoroutineScope()
     val tokens = remember { AppearanceTokens.load(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
-    val summariesAvailable by
-        produceState<Boolean?>(null) {
-            value =
-                try {
-                    withContext(Dispatchers.IO) { account.sync.summariesAvailable() }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    null
-                }
-        }
-    var hiddenSummaries by remember { mutableStateOf(emptySet<String>()) }
+    val summariesAvailable by produceState<Boolean?>(null) { value = account.summariesAvailable() }
+    var hiddenSummaries by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var summarizing by remember { mutableStateOf(emptySet<String>()) }
 
     LaunchedEffect(entryId) {
@@ -107,7 +98,11 @@ fun EntryScreen(
                 },
                 actions = {
                     val current = entry ?: return@TopAppBar
-                    if (summariesAvailable == true || current.summary != null) {
+                    // It shows in the article, so not before the article is on the device.
+                    if (
+                        current.content != null &&
+                            (summariesAvailable == true || current.summary != null)
+                    ) {
                         SummaryButton(
                             summarizing = current.id in summarizing,
                             hasSummary = current.summary != null,
@@ -120,6 +115,7 @@ fun EntryScreen(
                                     else hiddenSummaries + id
                             } else if (id !in summarizing) {
                                 summarizing += id
+                                hiddenSummaries -= id
                                 coroutines.launch {
                                     try {
                                         withContext(Dispatchers.IO) { account.sync.summarize(id) }

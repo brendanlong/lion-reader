@@ -95,10 +95,13 @@ class SyncEngine(
 
     /**
      * Gets the entry's AI summary from the server (which caches it) and keeps it on the device.
-     * Throws on network/server failure.
+     * Throws on network/server failure, and when the server has nothing to show.
      */
     suspend fun summarize(entryId: String) {
-        writer.storeSummary(entryId, api.summarize(entryId))
+        val version = writer.bodyVersion(entryId) ?: return
+        val summary = api.summarize(entryId)
+        check(summary.isNotBlank()) { "Empty summary" }
+        writer.storeSummary(entryId, summary, version)
     }
 
     /** Forgets all synced data and unsent changes. */

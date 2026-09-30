@@ -20,6 +20,9 @@ WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVe
 deleteForEntry:
 DELETE FROM entry_body WHERE entry_id = ?;
 
+content:
+SELECT content FROM entry_body WHERE entry_id = ?;
+
 -- Bodies whose entry is gone (retention, deletions, unsubscribes).
 pruneOrphans:
 DELETE FROM entry_body WHERE entry_id NOT IN (SELECT id FROM entry);

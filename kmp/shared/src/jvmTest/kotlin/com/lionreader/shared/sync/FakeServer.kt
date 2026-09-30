@@ -47,6 +47,9 @@ class FakeServer {
     /** Summaries the server would generate, by entry id; others fail (500). */
     val summaries = mutableMapOf<String, String>()
 
+    /** Runs while a summary request is in flight (before the server answers). */
+    var duringSummary: (suspend () -> Unit)? = null
+
     /** Queued `sync.changes` responses; empty means "no changes". */
     val changes = ArrayDeque<SyncChanges>()
     val requests = mutableListOf<HttpRequestData>()
@@ -155,6 +158,7 @@ class FakeServer {
                 )
             path == "/summarization/generate" -> {
                 val entryId = body(request, GenerateSummaryRequest.serializer()).entryId
+                duringSummary?.invoke()
                 val summary = summaries[entryId]
                 if (summary == null) respond("{}", HttpStatusCode.InternalServerError, jsonHeaders)
                 else json(GeneratedSummary.serializer(), GeneratedSummary(summary))
