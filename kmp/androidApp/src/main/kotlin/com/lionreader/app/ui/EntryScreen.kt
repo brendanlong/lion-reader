@@ -20,6 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -213,7 +214,9 @@ fun EntryScreen(
                 pages[page],
                 tokens,
                 showSummary = pages[page] !in hiddenSummaries,
-                onEntry = { entries[it.id] = it },
+                onEntry = { id, loaded ->
+                    if (loaded == null) entries.remove(id) else entries[id] = loaded
+                },
             )
         }
     }
@@ -244,12 +247,15 @@ private fun EntryPage(
     entryId: String,
     tokens: AppearanceTokens,
     showSummary: Boolean,
-    onEntry: (EntryDetail) -> Unit,
+    onEntry: (String, EntryDetail?) -> Unit,
 ) {
     val context = LocalContext.current
     val entry by
         remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
-    LaunchedEffect(entry) { entry?.let(onEntry) }
+    // Null once it's gone (e.g. deleted), and when the page leaves: the top
+    // bar shows only what's on a page now.
+    LaunchedEffect(entry) { onEntry(entryId, entry) }
+    DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     var loadFailed by remember(entryId) { mutableStateOf(false) }
 
@@ -357,10 +363,5 @@ private fun SummaryButton(
         }
     }
 }
-
-/** Top-bar icons: amber for an active state (unread, starred, summary shown), like the list. */
-@Composable
-private fun actionTint(active: Boolean): Color =
-    if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
 
 private fun Color.css(): String = "#%06X".format(toArgb() and 0xFFFFFF)
