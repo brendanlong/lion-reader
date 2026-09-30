@@ -43,8 +43,40 @@ jobs:
       # installs the compile SDK / build tools it needs on first use.
       # The release build (unsigned here) runs R8, so shrinking problems show
       # up in pull requests rather than at release time.
-      - name: Check and assemble
-        run: ./gradlew check assembleDebug assembleRelease
+      - name: Check and assemble release
+        run: ./gradlew check assembleRelease
+
+      # Apart from the checks, so tests never run with the key. Signed with the
+      # shared dev key (see "Debug app and signing" in kmp/CLAUDE.md), so the
+      # APK installs over any other debug build and can sign in to production.
+      # Pull requests from forks get no secrets: theirs uses the default debug
+      # key and isn't uploaded.
+      - name: Assemble debug
+        id: debug
+        env:
+          DEV_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEV_KEYSTORE_BASE64 }}
+          DEV_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEV_KEYSTORE_PASSWORD }}
+          DEV_KEY_ALIAS: ${{ secrets.ANDROID_DEV_KEY_ALIAS }}
+          DEV_KEY_PASSWORD: ${{ secrets.ANDROID_DEV_KEY_PASSWORD }}
+        run: |
+          if [ -n "$DEV_KEYSTORE_BASE64" ]; then
+            echo "$DEV_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/dev.jks"
+            export ORG_GRADLE_PROJECT_lionReaderDevKeystore="$RUNNER_TEMP/dev.jks"
+            export ORG_GRADLE_PROJECT_lionReaderDevKeystorePassword="$DEV_KEYSTORE_PASSWORD"
+            export ORG_GRADLE_PROJECT_lionReaderDevKeyAlias="$DEV_KEY_ALIAS"
+            export ORG_GRADLE_PROJECT_lionReaderDevKeyPassword="$DEV_KEY_PASSWORD"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          fi
+          ./gradlew assembleDebug
+
+      - name: Upload debug APK
+        if: steps.debug.outputs.signed == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: lion-reader-debug-${{ github.event.pull_request.head.sha || github.sha }}
+          path: kmp/androidApp/build/outputs/apk/debug/androidApp-debug.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload reports
         if: failure()

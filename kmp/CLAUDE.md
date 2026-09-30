@@ -200,6 +200,14 @@ key and can sign in only to dev servers. With both apps installed, Android
 may ask which one opens the sign-in redirect; picking the other one just fails
 that sign-in (PKCE), so retry.
 
+CI (`.github/workflows/android.yml`) signs its debug build with the same key,
+from the `ANDROID_DEV_KEYSTORE_BASE64`, `ANDROID_DEV_KEYSTORE_PASSWORD`,
+`ANDROID_DEV_KEY_ALIAS` and `ANDROID_DEV_KEY_PASSWORD` secrets, and attaches the
+APK to the run, so every PR and master build is installable over any other
+debug build. Anyone who can push a branch to the repository can read those
+secrets (a workflow change can print them), which is why the key only covers
+the debug app.
+
 ## Releases
 
 Release builds are signed with the upload key from CI secrets, versioned from
