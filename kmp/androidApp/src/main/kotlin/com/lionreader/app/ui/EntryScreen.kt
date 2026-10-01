@@ -369,22 +369,15 @@ fun EntryScreen(
 }
 
 /**
- * "Listen from here" on a selection in [entryId]: narration starts at [paragraph], or, already on
- * this article, goes there (and plays).
+ * "Listen" on a selection in [entryId], at [paragraph]
+ * ([com.lionreader.app.narration.Narrator.listenFrom]).
  */
 private fun listenFrom(graph: AppGraph, articles: ArticlePages, entryId: String, paragraph: Int) {
-    val narrator = graph.narrator
-    val state = narrator.state.value
-    if (state?.entryId == entryId) {
-        narrator.seekToParagraph(paragraph)
-        if (!state.playing) narrator.togglePlaying()
-        return
-    }
     val entry = articles.entry(entryId) ?: return
     val paragraphs = articles.paragraphs(entryId) ?: return
-    narrator.narrate(
+    graph.narrator.listenFrom(
         NarratedArticle(entryId, entry.title ?: "Untitled", entry.source, paragraphs),
-        fromParagraph = paragraph,
+        paragraph,
     )
 }
 

@@ -77,7 +77,31 @@ describe("the app reader's narration", () => {
       narrationParagraphForElement(web.paragraphMap, element)
     );
 
-    // In the title, or nothing selected: no paragraph.
+    // Starting outside the article's text: the first paragraph it covers.
+    const first = narrationParagraphForElement(web.paragraphMap, 0);
+    range.selectNodeContents(document.body); // Select all
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    expect(window.lionNarration?.selectedParagraph()).toBe(first);
+    range.setStart(document.querySelector(".lr-summary p")!.firstChild!, 2);
+    range.setEnd(document.querySelector("[data-para-id]")!.firstChild!, 3);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    expect(window.lionNarration?.selectedParagraph()).toBe(first);
+    // At an element boundary: the element after it.
+    const h2 = document.querySelector("h2")!;
+    range.setStart(document.body, Array.from(document.body.childNodes).indexOf(h2));
+    range.setEnd(h2.firstChild!, 3);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    expect(window.lionNarration?.selectedParagraph()).toBe(
+      narrationParagraphForElement(
+        web.paragraphMap,
+        Number(h2.getAttribute("data-para-id")?.slice(5))
+      )
+    );
+
+    // Only in the title, or nothing selected: no paragraph.
     range.selectNodeContents(document.querySelector(".lr-header h1")!);
     window.getSelection()!.removeAllRanges();
     window.getSelection()!.addRange(range);

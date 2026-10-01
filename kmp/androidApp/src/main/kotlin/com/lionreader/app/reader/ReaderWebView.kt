@@ -32,9 +32,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
- *   SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
- *   than file:// access.
+ * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
+ * SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
+ * than file:// access.
  */
 @Composable
 fun ReaderWebView(
@@ -94,9 +94,9 @@ fun ReaderWebView(
 
 /**
  * The article's narration in the page (the reader's narration.js): [paragraph] is the one to
- * * highlight, if any. [onParagraphs] gets the text to speak once the page has extracted it,
- *   [onSeek] the paragraph the user tapped, and [onListenFrom] (given, the selection menu has
- *   "Listen from here") the paragraph a selection starts in.
+ * highlight, if any. [onParagraphs] gets the text to speak once the page has extracted it, [onSeek]
+ * the paragraph the user tapped, and [onListenFrom] the paragraph a selection starts in, when its
+ * menu's Listen is tapped (offered only when this is given).
  */
 data class ReaderNarration(
     val paragraph: Int? = null,
@@ -153,7 +153,19 @@ private class ReaderView(context: Context) : WebView(context) {
         ActionMode.Callback2() {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
             val created = wrapped.onCreateActionMode(mode, menu)
-            if (created && pageReady && onListenFrom != null) {
+            if (created) addListen(menu)
+            return created
+        }
+
+        // The WebView rebuilds its items as the selection changes; Listen stays.
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+            wrapped.onPrepareActionMode(mode, menu)
+            addListen(menu)
+            return true
+        }
+
+        private fun addListen(menu: Menu) {
+            if (pageReady && onListenFrom != null && menu.findItem(LISTEN_FROM_HERE) == null) {
                 // On the toolbar itself: "if room" puts it behind the overflow,
                 // after Define, Copy, Select all and Share.
                 @SuppressLint("AlwaysShowAction")
@@ -161,11 +173,7 @@ private class ReaderView(context: Context) : WebView(context) {
                     .add(Menu.NONE, LISTEN_FROM_HERE, 0, "Listen")
                     .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             }
-            return created
         }
-
-        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean =
-            wrapped.onPrepareActionMode(mode, menu)
 
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
             if (item.itemId != LISTEN_FROM_HERE) return wrapped.onActionItemClicked(mode, item)

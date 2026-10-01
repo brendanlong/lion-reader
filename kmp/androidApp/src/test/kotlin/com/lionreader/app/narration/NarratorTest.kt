@@ -201,6 +201,44 @@ class NarratorTest {
     }
 
     @Test
+    fun listeningFromASelectionStartsThere() {
+        narrator.listenFrom(article("a", "One.", "Two.", "Three."), 1)
+        idle()
+
+        assertEquals("a", state?.entryId)
+        assertTrue(state!!.playing)
+        assertEquals(listOf("Two.", "Three."), synthesized)
+    }
+
+    @Test
+    fun listeningFromASelectionInThePausedArticleGoesThereAndPlays() {
+        narrator.narrate(article("a", "One.", "Two.", "Three."))
+        idle()
+        narrator.togglePlaying()
+        idle()
+        assertFalse(state!!.playing)
+
+        narrator.listenFrom(article("a", "One.", "Two.", "Three."), 2)
+        idle()
+        assertTrue(state!!.playing)
+        assertEquals(2, state?.paragraph)
+    }
+
+    @Test
+    fun listeningFromASelectionInAFollowedArticleNotYetSuppliedUsesItsText() {
+        narrator.narrate(article("a", "One."))
+        idle()
+        narrator.togglePlaying()
+        narrator.follow("b", "Title b")
+        synthesized.clear()
+
+        narrator.listenFrom(article("b", "Four.", "Five."), 1)
+        idle()
+        assertTrue(state!!.playing)
+        assertEquals(listOf("Five."), synthesized)
+    }
+
+    @Test
     fun followingDoesNothingWhileNarrationIsOff() {
         narrator.follow("b", "Title b")
         narrator.supply(article("b", "Two."))
