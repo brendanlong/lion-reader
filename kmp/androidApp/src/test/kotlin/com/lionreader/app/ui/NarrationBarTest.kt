@@ -25,7 +25,7 @@ class NarrationBarTest {
         val state = mutableStateOf(NarrationState("a", "Title", 0, playing = true, waiting = true))
         var toggles = 0
         composeRule.setContent {
-            NarrationBar(state.value, 1f, {}, { toggles++ }, {}, {}, {})
+            NarrationBar(state.value, 1f, {}, { toggles++ }, {}, {})
         }
 
         // A moment of waiting (any seek) doesn't show it.
@@ -47,7 +47,6 @@ class NarrationBarTest {
             NarrationBar(
                 NarrationState("a", "Title", 0, playing = false, waiting = true),
                 1f,
-                {},
                 {},
                 {},
                 {},

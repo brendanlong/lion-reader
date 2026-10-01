@@ -12,7 +12,6 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
 import com.lionreader.app.AppSettings
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -43,14 +42,15 @@ data class NarratedArticle(
 )
 
 /**
- * The article being narrated, the paragraph being spoken, and whether it's playing. [waiting]: it
- * should be playing but has no audio yet (the engine is getting ready, or the next chunk is still
- * being synthesized).
+ * Narration is on while there is a state: the article it's on, the paragraph being spoken (null
+ * when narration has just followed to an article and has no place in it yet), and whether it's
+ * playing or paused. [waiting]: it should be playing but has no audio yet (the article's text
+ * hasn't been supplied, the engine is getting ready, or the next chunk is still being synthesized).
  */
 data class NarrationState(
     val entryId: String,
     val title: String,
-    val paragraph: Int,
+    val paragraph: Int?,
     val playing: Boolean,
     val waiting: Boolean = false,
 )
@@ -69,6 +69,19 @@ class Narrator(
     private val context: Context,
     private val settings: () -> AppSettings,
     private val engineFor: suspend (AppSettings) -> SpeechEngine,
+    /**
+     * Binds a controller, which starts [NarrationService]: it puts the player in a media session
+     * and keeps playback going in the background. Returns the unbinding.
+     */
+    private val connectSession: () -> () -> Unit = {
+        val controller =
+            MediaController.Builder(
+                    context,
+                    SessionToken(context, ComponentName(context, NarrationService::class.java)),
+                )
+                .buildAsync()
+        ({ MediaController.releaseFuture(controller) })
+    },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val dir = File(context.cacheDir, "narration")
@@ -111,23 +124,21 @@ class Narrator(
     /** Whether the feed has synthesized everything it's going to, and the last chunk it added. */
     private var fed = false
     private var lastAdded: Int? = null
-    private var session: ListenableFuture<MediaController>? = null
+    /**
+     * Unbinds the media session; kept from one article to the next, so the notification doesn't
+     * flicker.
+     */
+    private var session: (() -> Unit)? = null
+    /**
+     * The article narration last followed away from, and where it was, to resume on coming back.
+     */
+    private var left: Pair<String, Int>? = null
+    /** The followed article was supplied with nothing to say. */
+    private var silent = false
 
+    /** Turns narration on, playing [article] from [fromParagraph]. */
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
         reset()
-        this.article = article
-        speed = settings().narrationSpeed
-        // Binding a controller starts the service, which puts the player in a
-        // media session and keeps playback going in the background. Kept from
-        // one article to the next, so the notification doesn't flicker.
-        if (session == null) {
-            session =
-                MediaController.Builder(
-                        context,
-                        SessionToken(context, ComponentName(context, NarrationService::class.java)),
-                    )
-                    .buildAsync()
-        }
         _state.value =
             NarrationState(
                 article.entryId,
@@ -136,6 +147,56 @@ class Narrator(
                 playing = true,
                 waiting = true,
             )
+        load(article)
+    }
+
+    /**
+     * Moves narration to another article, playing or paused as it was: what's playing stops at
+     * once, and the new article's audio waits for [supply]. Nothing while narration is off; on the
+     * same article, only takes the [title].
+     */
+    fun follow(entryId: String, title: String) {
+        val current = _state.value ?: return
+        if (current.entryId == entryId) {
+            if (article == null) _state.value = current.copy(title = title)
+            return
+        }
+        val resume = left?.takeIf { it.first == entryId }?.second
+        // An article passed through without a place doesn't replace the one remembered.
+        current.paragraph?.let { left = current.entryId to it }
+        reset()
+        _state.value =
+            NarrationState(entryId, title, resume, current.playing, waiting = current.playing)
+    }
+
+    /**
+     * The text of the article narration [follow]ed to. Its audio is only prepared once it's to
+     * play, so a paused narration doesn't synthesize (and with cloud voices, pay for) each article
+     * it follows. An article with nothing to say leaves narration on, for the next.
+     */
+    fun supply(article: NarratedArticle) {
+        val current = _state.value ?: return
+        if (current.entryId != article.entryId || this.article != null || silent) return
+        if (article.paragraphs.all { it.isBlank() }) {
+            silent = true
+            _state.value = current.copy(title = article.title, waiting = false)
+            return
+        }
+        if (current.playing) {
+            _state.value = current.copy(title = article.title, paragraph = current.paragraph ?: 0)
+            load(article)
+        } else {
+            // No place in it (so no highlight to scroll the page to) until it plays.
+            _state.value = current.copy(title = article.title)
+            this.article = article
+        }
+    }
+
+    /** Gets [article]'s audio ready, starting from the state's paragraph if it's playing. */
+    private fun load(article: NarratedArticle) {
+        this.article = article
+        speed = settings().narrationSpeed
+        if (session == null) session = connectSession()
         preparing = scope.launch {
             val engine =
                 try {
@@ -150,22 +211,37 @@ class Narrator(
                 chunks.runningFold(0) { total, chunk -> total + chunk.text.length }.toIntArray()
             // A tap or pause while the engine was getting ready still counts.
             val wanted = _state.value ?: return@launch
-            startAt(firstChunkOf(wanted.paragraph), play = wanted.playing)
+            startAt(firstChunkOf(wanted.paragraph ?: 0), play = wanted.playing)
         }
     }
 
     fun togglePlaying() {
         if (engine == null) {
-            _state.value = _state.value?.let { it.copy(playing = !it.playing) }
+            val current = _state.value ?: return
+            val playing = !current.playing
+            _state.value = current.copy(playing = playing, waiting = playing && !silent)
+            if (playing) loadPending()
             return
         }
         if (player.playWhenReady) player.pause() else player.play()
     }
 
+    /**
+     * An article supplied while paused gets its audio once it's to play. Only from the app: with
+     * the player empty, media3 hides the notification and doesn't pass a headset's play on.
+     */
+    private fun loadPending() {
+        val pending = article ?: return
+        if (engine == null && preparing?.isActive != true) load(pending)
+    }
+
     fun skipParagraphs(delta: Int) {
         val current = _state.value ?: return
-        if (chunks.isEmpty()) return
-        seekToParagraph((current.paragraph + delta).coerceIn(0, chunks.last().paragraph))
+        // Before the audio is prepared, by the article's paragraphs.
+        val last = chunks.lastOrNull()?.paragraph ?: article?.paragraphs?.lastIndex ?: return
+        // With no place yet, "next" is the first paragraph.
+        val from = current.paragraph ?: -1
+        seekToParagraph((from + delta).coerceIn(0, last))
     }
 
     fun seekToParagraph(paragraph: Int) {
@@ -187,7 +263,8 @@ class Narrator(
     fun stop() {
         reset()
         _state.value = null
-        session?.let(MediaController::releaseFuture)
+        left = null
+        session?.invoke()
         session = null
     }
 
@@ -203,6 +280,7 @@ class Narrator(
         article = null
         engine = null
         chunks = emptyList()
+        silent = false
     }
 
     private fun fail(message: String?) {

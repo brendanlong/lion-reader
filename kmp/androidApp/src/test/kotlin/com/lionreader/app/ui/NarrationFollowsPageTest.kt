@@ -26,10 +26,10 @@ class NarrationFollowsPageTest {
     private var entryId by mutableStateOf("a")
     private var paragraphs by mutableStateOf<List<String>?>(null)
     private var started by mutableStateOf(true)
-    private val narrated = mutableListOf<String>()
-    private var stops = 0
+    private val followed = mutableListOf<String>()
+    private val supplied = mutableListOf<String>()
 
-    private fun playing(id: String, playing: Boolean = true) =
+    private fun on(id: String, playing: Boolean = true) =
         NarrationState(id, "Title $id", paragraph = 0, playing = playing)
 
     private fun show() {
@@ -41,8 +41,20 @@ class NarrationFollowsPageTest {
                 paragraphs,
                 entry = entry(entryId),
                 started = started,
-                narrate = { article: NarratedArticle -> narrated += article.entryId },
-                stop = { stops++ },
+                // As the narrator does (NarratorTest): narration moves to the
+                // article, playing or paused as it was, with no place in it yet.
+                follow = { id, title ->
+                    narration?.let { current ->
+                        if (current.entryId != id) {
+                            followed += id
+                            narration =
+                                NarrationState(id, title, null, current.playing, current.playing)
+                        }
+                    }
+                },
+                supply = { article: NarratedArticle ->
+                    if (narration?.entryId == article.entryId) supplied += article.entryId
+                },
             )
         }
     }
@@ -69,27 +81,31 @@ class NarrationFollowsPageTest {
     }
 
     @Test
-    fun switchesToTheArticleSettledOnOnceItsLoaded() {
-        narration = playing("a")
+    fun followsAtOnceAndSuppliesTheTextOnceSettled() {
+        narration = on("a")
         show()
         entryId = "b"
+        after(16)
+        assertEquals(listOf("b"), followed)
+
         after(2_000)
         // Not loaded yet.
-        assertEquals(emptyList<String>(), narrated)
-
+        assertEquals(emptyList<String>(), supplied)
         paragraphs = listOf("Hello.")
         after(500)
         // Not while it might be swiped past.
-        assertEquals(emptyList<String>(), narrated)
+        assertEquals(emptyList<String>(), supplied)
         after(1_000)
-        assertEquals(listOf("b"), narrated)
+        assertEquals(listOf("b"), supplied)
     }
 
     @Test
-    fun swipingPastArticlesDoesNotStartThem() {
-        narration = playing("a")
+    fun swipingPastArticlesOnlySuppliesTheLast() {
+        narration = on("a")
         paragraphs = listOf("Hello.")
         show()
+        after(1_500)
+        supplied.clear()
         entryId = "b"
         after(300)
         entryId = "c"
@@ -97,60 +113,47 @@ class NarrationFollowsPageTest {
         entryId = "d"
         after(1_500)
 
-        assertEquals(listOf("d"), narrated)
+        assertEquals(listOf("b", "c", "d"), followed)
+        assertEquals(listOf("d"), supplied)
     }
 
     @Test
-    fun pausingOrStoppingWhileWaitingWins() {
-        narration = playing("a")
-        show()
-        entryId = "b"
-        after(500)
-        narration = playing("a", playing = false)
-        after(100)
-        assertEquals(1, stops)
-
-        narration = null
-        paragraphs = listOf("Hello.")
-        after(2_000)
-        assertEquals(emptyList<String>(), narrated)
-    }
-
-    @Test
-    fun aPausedNarrationEndsRatherThanFollow() {
-        narration = playing("a", playing = false)
+    fun aPausedNarrationFollowsToo() {
+        narration = on("a", playing = false)
         paragraphs = listOf("Hello.")
         show()
         entryId = "b"
         after(2_000)
 
-        assertEquals(1, stops)
-        assertEquals(emptyList<String>(), narrated)
+        assertEquals(listOf("b"), followed)
+        assertEquals(false, narration?.playing)
+        assertEquals(listOf("b"), supplied)
+    }
+
+    @Test
+    fun nothingFollowsWhileNarrationIsOff() {
+        paragraphs = listOf("Hello.")
+        show()
+        entryId = "b"
+        after(2_000)
+
+        assertTrue(followed.isEmpty())
+        assertTrue(supplied.isEmpty())
     }
 
     @Test
     fun waitsForTheAppToBeOnScreen() {
-        narration = playing("a")
+        narration = on("a")
         paragraphs = listOf("Hello.")
         started = false
         show()
         entryId = "b"
         after(2_000)
-        assertEquals(emptyList<String>(), narrated)
+        assertTrue(followed.isEmpty())
 
         started = true
         after(1_500)
-        assertEquals(listOf("b"), narrated)
-    }
-
-    @Test
-    fun theArticleBeingNarratedIsLeftAlone() {
-        narration = playing("a")
-        paragraphs = listOf("Hello.")
-        show()
-        after(2_000)
-
-        assertTrue(narrated.isEmpty())
-        assertEquals(0, stops)
+        assertEquals(listOf("b"), followed)
+        assertEquals(listOf("b"), supplied)
     }
 }
