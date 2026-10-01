@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -91,7 +93,6 @@ fun HomeScreen(
     onSettings: () -> Unit,
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
-    SettlePromptly(drawer)
     val coroutines = rememberCoroutineScope()
     val scope by model.scope.collectAsStateWithLifecycle()
     val navigation by model.navigation.collectAsStateWithLifecycle()
@@ -130,7 +131,7 @@ fun HomeScreen(
         gesturesEnabled = search == null || drawer.isOpen,
         drawerContent = {
             // Given the state, it closes on back (with the predictive animation).
-            ModalDrawerSheet(drawerState = drawer) {
+            ModalDrawerSheet(drawerState = drawer, modifier = settlePromptly(drawer)) {
                 Drawer(
                     navigation = navigation,
                     selected = scope,
@@ -237,25 +238,29 @@ fun HomeScreen(
 }
 
 /**
- * The drawer's spring looks done in about 250ms but spends another 300ms nudging its last pixel,
- * and while it's animating the drawer takes any touch as a drag: a tap on a list right after
- * opening it did nothing. So the last couple of pixels snap.
+ * Snaps the drawer's last couple of pixels; apply the returned modifier to its sheet. The drawer's
+ * spring looks done in about 250ms but spends another 300ms nudging its last pixel, and while it
+ * animates the drawer takes any touch as a drag: a tap on a list right after opening (or on the
+ * list behind, right after closing) did nothing.
  */
 @Composable
-internal fun SettlePromptly(drawer: DrawerState) {
+internal fun settlePromptly(drawer: DrawerState): Modifier {
+    // Closed is at minus the sheet's width (where Material anchors it).
+    var sheetWidth by remember { mutableFloatStateOf(Float.NaN) }
     LaunchedEffect(drawer) {
-        var closedOffset: Float? = null
         snapshotFlow { Triple(drawer.isAnimationRunning, drawer.targetValue, drawer.currentOffset) }
             .collect { (animating, target, offset) ->
-                if (offset.isNaN()) return@collect
-                if (!animating) {
-                    if (drawer.currentValue == DrawerValue.Closed) closedOffset = offset
+                // A finger's drag isn't "animating", so never snaps mid-gesture.
+                if (!animating) return@collect
+                val anchor = if (target == DrawerValue.Open) 0f else -sheetWidth
+                if (offset.isNaN() || anchor.isNaN() || abs(offset - anchor) >= SETTLED_PX) {
                     return@collect
                 }
-                val anchor = if (target == DrawerValue.Open) 0f else closedOffset ?: return@collect
-                if (abs(offset - anchor) < SETTLED_PX) drawer.snapTo(target)
+                // Not if a finger caught the drawer since.
+                if (drawer.isAnimationRunning && drawer.targetValue == target) drawer.snapTo(target)
             }
     }
+    return Modifier.onSizeChanged { sheetWidth = it.width.toFloat() }
 }
 
 private const val SETTLED_PX = 2f
