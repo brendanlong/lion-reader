@@ -3915,6 +3915,9 @@
                     "hasOpenrouterApiKey": {
                       "type": "boolean"
                     },
+                    "hasDeepinfraApiKey": {
+                      "type": "boolean"
+                    },
                     "summarizationModel": {
                       "type": [
                         "string",
@@ -3947,6 +3950,7 @@
                     "hasAnthropicApiKey",
                     "hasCerebrasApiKey",
                     "hasOpenrouterApiKey",
+                    "hasDeepinfraApiKey",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -4043,6 +4047,9 @@
                   "openrouterApiKey": {
                     "type": "string"
                   },
+                  "deepinfraApiKey": {
+                    "type": "string"
+                  },
                   "summarizationModel": {
                     "type": "string"
                   },
@@ -4103,6 +4110,9 @@
                     "hasOpenrouterApiKey": {
                       "type": "boolean"
                     },
+                    "hasDeepinfraApiKey": {
+                      "type": "boolean"
+                    },
                     "summarizationModel": {
                       "type": [
                         "string",
@@ -4135,6 +4145,7 @@
                     "hasAnthropicApiKey",
                     "hasCerebrasApiKey",
                     "hasOpenrouterApiKey",
+                    "hasDeepinfraApiKey",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -9442,7 +9453,8 @@
                               "anthropic",
                               "groq",
                               "cerebras",
-                              "openrouter"
+                              "openrouter",
+                              "deepinfra"
                             ]
                           },
                           "contextLength": {
@@ -9542,7 +9554,10 @@
                           },
                           "provider": {
                             "type": "string",
-                            "const": "openrouter"
+                            "enum": [
+                              "deepinfra",
+                              "openrouter"
+                            ]
                           },
                           "voices": {
                             "type": "array",
@@ -9961,7 +9976,8 @@
                               "anthropic",
                               "groq",
                               "cerebras",
-                              "openrouter"
+                              "openrouter",
+                              "deepinfra"
                             ]
                           },
                           "contextLength": {

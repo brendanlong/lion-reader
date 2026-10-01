@@ -298,6 +298,7 @@ export async function createAuthContext(userId: string): Promise<Context> {
       hasAnthropicApiKey: !!user.anthropicApiKey,
       hasCerebrasApiKey: !!user.cerebrasApiKey,
       hasOpenrouterApiKey: !!user.openrouterApiKey,
+      hasDeepinfraApiKey: !!user.deepinfraApiKey,
     },
     apiToken: null,
     authType: "session",

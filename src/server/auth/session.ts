@@ -76,6 +76,7 @@ export interface SessionData {
   hasCerebrasApiKey: boolean;
   /** Whether user has an OpenRouter API key configured (actual key not cached for security) */
   hasOpenrouterApiKey: boolean;
+  hasDeepinfraApiKey: boolean;
 }
 
 /**
@@ -101,6 +102,7 @@ interface CachedSession {
   userHasAnthropicApiKey: boolean;
   userHasCerebrasApiKey: boolean;
   userHasOpenrouterApiKey: boolean;
+  userHasDeepinfraApiKey: boolean;
   userSummarizationModel: string | null;
   userSummarizationMaxWords: number | null;
   userSummarizationPrompt: string | null;
@@ -251,6 +253,7 @@ function serializeForCache(data: SessionData): string {
     userHasAnthropicApiKey: data.hasAnthropicApiKey,
     userHasCerebrasApiKey: data.hasCerebrasApiKey,
     userHasOpenrouterApiKey: data.hasOpenrouterApiKey,
+    userHasDeepinfraApiKey: data.hasDeepinfraApiKey,
     userSummarizationModel: data.user.summarizationModel ?? null,
     userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
@@ -293,6 +296,7 @@ function deserializeFromCache(data: string): SessionData {
       anthropicApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       cerebrasApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       openrouterApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
+      deepinfraApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       summarizationModel: cached.userSummarizationModel,
       summarizationMaxWords: cached.userSummarizationMaxWords,
       summarizationPrompt: cached.userSummarizationPrompt,
@@ -315,6 +319,7 @@ function deserializeFromCache(data: string): SessionData {
     // Fallback for entries written by a release predating the field (#1416,
     // 2026-09-27) during a rollback/roll-forward window.
     hasOpenrouterApiKey: cached.userHasOpenrouterApiKey ?? false,
+    hasDeepinfraApiKey: cached.userHasDeepinfraApiKey ?? false,
   };
 }
 
@@ -413,11 +418,13 @@ export async function validateSession(
       anthropicApiKey: null, // Not cached for security; use getUserApiKeys() when needed
       cerebrasApiKey: null, // Not cached for security; use getUserApiKeys() when needed
       openrouterApiKey: null, // Not cached for security; use getUserApiKeys() when needed
+      deepinfraApiKey: null, // Not cached for security; use getUserApiKeys() when needed
     },
     hasGroqApiKey: !!dbResult.user.groqApiKey,
     hasAnthropicApiKey: !!dbResult.user.anthropicApiKey,
     hasCerebrasApiKey: !!dbResult.user.cerebrasApiKey,
     hasOpenrouterApiKey: !!dbResult.user.openrouterApiKey,
+    hasDeepinfraApiKey: !!dbResult.user.deepinfraApiKey,
   };
 
   // Cache the result in Redis (if available). We cache before applying the
@@ -516,6 +523,7 @@ export interface UserApiKeys {
   anthropicApiKey: string | null;
   cerebrasApiKey: string | null;
   openrouterApiKey: string | null;
+  deepinfraApiKey: string | null;
 }
 
 /**
@@ -532,6 +540,7 @@ export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
       anthropicApiKey: users.anthropicApiKey,
       cerebrasApiKey: users.cerebrasApiKey,
       openrouterApiKey: users.openrouterApiKey,
+      deepinfraApiKey: users.deepinfraApiKey,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -543,16 +552,19 @@ export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
       anthropicApiKey: null,
       cerebrasApiKey: null,
       openrouterApiKey: null,
+      deepinfraApiKey: null,
     };
   }
 
-  const { groqApiKey, anthropicApiKey, cerebrasApiKey, openrouterApiKey } = result[0];
+  const { groqApiKey, anthropicApiKey, cerebrasApiKey, openrouterApiKey, deepinfraApiKey } =
+    result[0];
 
   return {
     groqApiKey: groqApiKey ? decryptApiKey(groqApiKey) : null,
     anthropicApiKey: anthropicApiKey ? decryptApiKey(anthropicApiKey) : null,
     cerebrasApiKey: cerebrasApiKey ? decryptApiKey(cerebrasApiKey) : null,
     openrouterApiKey: openrouterApiKey ? decryptApiKey(openrouterApiKey) : null,
+    deepinfraApiKey: deepinfraApiKey ? decryptApiKey(deepinfraApiKey) : null,
   };
 }
 

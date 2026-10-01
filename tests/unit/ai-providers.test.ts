@@ -22,6 +22,7 @@ const ENV_VARS = [
   "GROQ_API_KEY",
   "CEREBRAS_API_KEY",
   "OPENROUTER_API_KEY",
+  "DEEPINFRA_API_KEY",
   "SUMMARIZATION_MODEL",
   "NARRATION_MODEL",
 ] as const;
@@ -66,6 +67,13 @@ describe("isProviderAvailable / getAvailableProviders", () => {
   it("reports nothing available with no keys at all", () => {
     clearEnv();
     expect(getAvailableProviders({})).toEqual([]);
+  });
+
+  it("leaves speech-only DeepInfra out of the text providers", () => {
+    clearEnv();
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    expect(isProviderAvailable("deepinfra")).toBe(true);
+    expect(getAvailableProviders({ deepinfraApiKey: "d" })).toEqual([]);
   });
 });
 
@@ -309,6 +317,15 @@ describe("isModelAllowed", () => {
     expect(isModelAllowed("openrouter:openai/o1-pro", { openrouterApiKey: "o" }, allowed)).toBe(
       true
     );
+  });
+
+  it("limits DeepInfra models the same way", () => {
+    clearEnv();
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    const speech = ["deepinfra:hexgrad/Kokoro-82M"];
+    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, speech)).toBe(true);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", {}, speech)).toBe(false);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfraApiKey: "d" }, speech)).toBe(true);
   });
 
   it("doesn't restrict other providers", () => {

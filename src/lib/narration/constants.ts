@@ -61,34 +61,45 @@ export const SUGGESTED_NARRATION_MODELS: string[] = [
 export const DEFAULT_NARRATION_MODEL = DEFAULT_NARRATION_MODELS.cerebras;
 
 /**
- * Cloud voices (server-side TTS through OpenRouter). Kokoro is the default:
- * good quality at a few cents per long article ($0.62–$4 per million
- * characters, depending on the host).
+ * Cloud voices (server-side TTS through DeepInfra or OpenRouter). Kokoro is the
+ * default: good quality at about a cent per long article.
  */
-export const DEFAULT_CLOUD_VOICE_MODEL = "openrouter:hexgrad/kokoro-82m";
+export const DEEPINFRA_KOKORO = "deepinfra:hexgrad/Kokoro-82M";
+export const OPENROUTER_KOKORO = "openrouter:hexgrad/kokoro-82m";
+
+/**
+ * The default cloud voice model, in preference order: the first one the user
+ * can use (its provider has a key). DeepInfra directly is several times faster
+ * than OpenRouter, whose speech endpoint adds seconds to every request.
+ */
+export const DEFAULT_CLOUD_VOICE_MODELS: string[] = [DEEPINFRA_KOKORO, OPENROUTER_KOKORO];
+
+/** The default model before the server has said which ones are available. */
+export const DEFAULT_CLOUD_VOICE_MODEL = DEFAULT_CLOUD_VOICE_MODELS[0];
 
 /**
  * Voice used when the user hasn't picked one; models not listed here use the
  * first voice they report.
  */
 export const DEFAULT_CLOUD_VOICES: Record<string, string> = {
-  [DEFAULT_CLOUD_VOICE_MODEL]: "af_heart",
+  [DEEPINFRA_KOKORO]: "af_heart",
+  [OPENROUTER_KOKORO]: "af_heart",
   "openrouter:mistralai/voxtral-mini-tts-2603": "en_paul_neutral",
   "openrouter:deepgram/aura-2": "aura-2-thalia-en",
 };
 
 /** Speech models listed first in the picker. */
 export const SUGGESTED_CLOUD_VOICE_MODELS: string[] = [
-  DEFAULT_CLOUD_VOICE_MODEL,
+  ...DEFAULT_CLOUD_VOICE_MODELS,
   "openrouter:mistralai/voxtral-mini-tts-2603",
   "openrouter:deepgram/aura-2",
 ];
 
 /**
- * The only speech model usable on the server's OpenRouter key; the others
- * cost 4–50x more per character, so they need the user's own key.
+ * The only speech models usable on the server's keys; the others cost 4–50x
+ * more per character, so they need the user's own key for that provider.
  */
-export const SERVER_KEY_CLOUD_VOICE_MODELS: string[] = [DEFAULT_CLOUD_VOICE_MODEL];
+export const SERVER_KEY_CLOUD_VOICE_MODELS: string[] = [DEEPINFRA_KOKORO, OPENROUTER_KOKORO];
 
 /**
  * Longest text synthesized per request. Paragraphs are split into chunks of

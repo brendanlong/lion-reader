@@ -31,15 +31,16 @@ import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import {
-  DEFAULT_CLOUD_VOICE_MODEL,
   MAX_CLOUD_SPEECH_CHARS,
   NARRATION_FORMAT_VERSION,
   NARRATION_PROVIDERS,
   SUGGESTED_NARRATION_MODELS,
 } from "@/lib/narration/constants";
 import {
+  defaultSpeechModelId,
   defaultVoiceFor,
   listSpeechModels,
+  SPEECH_PROVIDERS,
   SpeechRequestError,
   synthesizeSpeech,
 } from "@/server/services/speech";
@@ -395,9 +396,9 @@ export const narrationRouter = createTRPCRouter({
     }),
 
   /**
-   * List speech models for cloud voices. Empty when no OpenRouter key (user or
-   * server) is configured, which is also how the client tells whether cloud
-   * voices are available.
+   * List speech models for cloud voices, across the providers with a key (user
+   * or server). Empty when there's none, which is also how the client tells
+   * whether cloud voices are available.
    */
   listVoiceModels: scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
@@ -415,7 +416,7 @@ export const narrationRouter = createTRPCRouter({
           z.object({
             id: z.string(),
             displayName: z.string(),
-            provider: z.literal("openrouter"),
+            provider: z.enum(SPEECH_PROVIDERS),
             voices: z.array(z.string()),
             defaultVoice: z.string(),
             pricePerMillionCharacters: z.number().optional(),
@@ -426,11 +427,12 @@ export const narrationRouter = createTRPCRouter({
     )
     .query(async ({ ctx }) => {
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const models = (await listSpeechModels(keys)).map((model) => ({
+      const speechModels = await listSpeechModels(keys);
+      const models = speechModels.map((model) => ({
         ...model,
         defaultVoice: defaultVoiceFor(model),
       }));
-      return { models, defaultModelId: DEFAULT_CLOUD_VOICE_MODEL };
+      return { models, defaultModelId: defaultSpeechModelId(speechModels) };
     }),
 
   /**
