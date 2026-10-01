@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,7 +22,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lionreader.app.R
 import com.lionreader.app.narration.NarrationState
@@ -34,9 +32,9 @@ val NARRATION_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 fun speedLabel(speed: Float): String = "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}×"
 
 /**
- * Narration controls: the article, previous/next paragraph, play/pause and speed. The Listen toggle
- * turns narration off. The host draws the surface and the navigation bar inset, so other bars can
- * share them.
+ * Narration controls: previous/next paragraph, play/pause and speed. Narration is always of the
+ * article on screen, so the bar doesn't name it. The Listen toggle turns narration off. The host
+ * draws the surface and the navigation bar inset, so other bars can share them.
  */
 @Composable
 fun NarrationBar(
@@ -50,15 +48,8 @@ fun NarrationBar(
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        Text(
-            state.title,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(start = 8.dp),
-        )
         IconButton(onClick = onPrevious) {
             Icon(painterResource(R.drawable.ic_skip_previous), "Previous paragraph")
         }

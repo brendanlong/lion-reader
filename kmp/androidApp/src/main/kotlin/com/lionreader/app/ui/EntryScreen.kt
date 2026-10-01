@@ -468,7 +468,7 @@ private fun EntryPage(
         val colors = MaterialTheme.colorScheme
         val document =
             readerDocument(
-                header = ReaderHeader(title, byline),
+                header = ReaderHeader(title, byline, current.url),
                 summary = current.summary?.takeIf { showSummary },
                 body = content,
                 settings = settings,
