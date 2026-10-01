@@ -9453,8 +9453,7 @@
                               "anthropic",
                               "groq",
                               "cerebras",
-                              "openrouter",
-                              "deepinfra"
+                              "openrouter"
                             ]
                           },
                           "contextLength": {
@@ -9976,8 +9975,7 @@
                               "anthropic",
                               "groq",
                               "cerebras",
-                              "openrouter",
-                              "deepinfra"
+                              "openrouter"
                             ]
                           },
                           "contextLength": {

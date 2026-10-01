@@ -26,6 +26,10 @@ export const TEXT_AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter"]
 
 export type TextAiProvider = (typeof TEXT_AI_PROVIDERS)[number];
 
+export function isTextAiProvider(provider: AiProvider): provider is TextAiProvider {
+  return (TEXT_AI_PROVIDERS as readonly string[]).includes(provider);
+}
+
 /**
  * Human-readable provider names for the settings UI.
  */

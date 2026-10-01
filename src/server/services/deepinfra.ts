@@ -9,11 +9,13 @@
  */
 
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
 const REQUEST_TIMEOUT_MS = 120_000;
+const CATALOG_TIMEOUT_MS = 15_000;
 const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
 const CATALOG_CACHE_RETRY_MS = 60 * 1000;
 /** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
@@ -151,7 +153,7 @@ export async function listDeepInfraSpeechModels(): Promise<DeepInfraSpeechModel[
 async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
   const response = await fetch(`${DEEPINFRA_API_URL}/models/list`, {
     headers: headers(),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
   if (!response.ok) throw await errorFromResponse(response);
   const entries = z
@@ -163,26 +165,35 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
         ? [parsed.data]
         : [];
     });
-  // The catalog doesn't carry voices; each model's detail does.
+  // The catalog doesn't carry voices; each model's detail does. One model's
+  // detail failing only drops that model.
   const models = await Promise.all(
     entries.map(async (entry): Promise<DeepInfraSpeechModel | null> => {
-      const detail = await fetch(`${DEEPINFRA_API_URL}/models/${entry.model_name}`, {
-        headers: headers(),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      if (!detail.ok) return null;
-      const parsed = modelDetailSchema.safeParse(await detail.json());
-      if (!parsed.success || !canNarrate(parsed.data.in_schema)) return null;
-      const voices = voicesFromSchema(parsed.data.in_schema);
-      if (voices.length === 0) return null;
-      const cents = entry.pricing?.cents_per_input_chars;
-      return {
-        name: entry.model_name,
-        voices,
-        // Cents per character to dollars per million characters.
-        pricePerMillionCharacters:
-          cents == null ? undefined : Number((cents * 10_000).toPrecision(6)),
-      };
+      try {
+        const detail = await fetch(`${DEEPINFRA_API_URL}/models/${entry.model_name}`, {
+          headers: headers(),
+          signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
+        });
+        if (!detail.ok) return null;
+        const parsed = modelDetailSchema.safeParse(await detail.json());
+        if (!parsed.success || !canNarrate(parsed.data.in_schema)) return null;
+        const voices = voicesFromSchema(parsed.data.in_schema);
+        if (voices.length === 0) return null;
+        const cents = entry.pricing?.cents_per_input_chars;
+        return {
+          name: entry.model_name,
+          voices,
+          // Cents per character to dollars per million characters.
+          pricePerMillionCharacters:
+            cents == null ? undefined : Number((cents * 10_000).toPrecision(6)),
+        };
+      } catch (error) {
+        logger.warn("Skipping DeepInfra speech model", {
+          model: entry.model_name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }
     })
   );
   return models.filter((model): model is DeepInfraSpeechModel => model !== null);

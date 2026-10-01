@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { AI_PROVIDERS } from "@/lib/ai/model-ref";
+import { TEXT_AI_PROVIDERS } from "@/lib/ai/model-ref";
 
 // ============================================================================
 // ID Schemas
@@ -65,7 +65,7 @@ export const aiModelListSchema = z.object({
     z.object({
       id: z.string(),
       displayName: z.string(),
-      provider: z.enum(AI_PROVIDERS),
+      provider: z.enum(TEXT_AI_PROVIDERS),
       contextLength: z.number().optional(),
       inputPricePerMillion: z.number().optional(),
       outputPricePerMillion: z.number().optional(),

@@ -348,6 +348,14 @@ describe("isModelAllowed", () => {
       "openrouter:openai/o1-pro"
     );
   });
+
+  it("never summarizes with a speech-only provider", () => {
+    clearEnv();
+    process.env.GROQ_API_KEY = "gsk-server";
+    expect(getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfraApiKey: "d" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.groq
+    );
+  });
 });
 
 describe("buildChatCompletionBody (OpenRouter)", () => {

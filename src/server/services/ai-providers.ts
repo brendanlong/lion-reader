@@ -279,7 +279,7 @@ export interface AiModel {
   /** Provider-qualified reference (`provider:model`) — the stored value. */
   id: string;
   displayName: string;
-  provider: AiProvider;
+  provider: TextAiProvider;
   /** Only reported by some providers. */
   contextLength?: number;
   /** USD per million input/output tokens, when the provider reports prices. */
@@ -426,7 +426,7 @@ export function filterToLatestClaudeGeneration(
 }
 
 async function listProviderModels(
-  provider: AiProvider,
+  provider: TextAiProvider,
   keys: AiProviderKeys | undefined,
   requirements: ModelRequirements
 ): Promise<AiModel[]> {
@@ -485,8 +485,6 @@ async function listProviderModels(
         }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
-    case "deepinfra":
-      return [];
   }
 }
 
@@ -497,7 +495,7 @@ async function listProviderModels(
  */
 export async function listAllModels(
   keys?: AiProviderKeys,
-  providers: readonly AiProvider[] = TEXT_AI_PROVIDERS,
+  providers: readonly TextAiProvider[] = TEXT_AI_PROVIDERS,
   requirements: ModelRequirements = {}
 ): Promise<AiModel[]> {
   const results = await Promise.all(
