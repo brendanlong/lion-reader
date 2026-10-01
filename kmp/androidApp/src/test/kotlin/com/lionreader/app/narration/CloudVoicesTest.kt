@@ -9,6 +9,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import java.nio.file.Files
 import java.util.Base64
@@ -28,6 +29,8 @@ import org.junit.Test
 class CloudVoicesTest {
     private val audio = byteArrayOf(1, 2, 3)
     private var responses = ArrayDeque<Pair<HttpStatusCode, String>>()
+    /** A response for requests whose body has this text, ahead of [responses]. */
+    private var forText: Map<String, Pair<HttpStatusCode, String>> = emptyMap()
     private var requests = 0
     private val cache = Files.createTempDirectory("cloud").toFile()
     private val dir = Files.createTempDirectory("narration").toFile()
@@ -41,9 +44,13 @@ class CloudVoicesTest {
     private fun TestScope.engine(cacheBytes: Long = 5): CloudVoices {
         val http =
             HttpClient(
-                MockEngine {
+                MockEngine { request ->
                     requests++
-                    val (status, body) = responses.removeFirstOrNull() ?: ok
+                    val sent = (request.body as? TextContent)?.text.orEmpty()
+                    val (status, body) =
+                        forText.entries.firstOrNull { it.key in sent }?.value
+                            ?: responses.removeFirstOrNull()
+                            ?: ok
                     respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
             )
@@ -119,6 +126,19 @@ class CloudVoicesTest {
         repeat(10) { responses.addLast(HttpStatusCode.BadGateway to "{}") }
         val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
         assertEquals(SpeechInterrupted::class, error!!::class)
+    }
+
+    @Test
+    fun textTheServerKeepsFailingWhileAnsweringOthersIsSkipped() = runTest {
+        forText = mapOf("Bad." to (HttpStatusCode.InternalServerError to "{}"))
+        val engine = engine()
+        val bad = async { runCatching { engine.synthesize("Bad.", dir, "0") }.exceptionOrNull() }
+        engine.synthesize("Good.", dir, "1")
+
+        val error = bad.await()
+        // Not an interruption to wait out: an ordinary failure, so just this chunk is skipped.
+        assertEquals(false, error is SpeechException)
+        assertEquals(true, error != null)
     }
 
     @Test

@@ -257,7 +257,7 @@ class Narrator(
                     reaching(Starved()) { engineFor(settings()) }
                 } catch (e: SpeechUnavailable) {
                     return@launch fail(e.message)
-                } ?: return@launch
+                }
             // Narration moved on meanwhile (and this should have been cancelled).
             if (current !== audio) return@launch
             val prepared =
@@ -274,12 +274,14 @@ class Narrator(
         if (prepared == null) {
             val state = _state.value ?: return
             val playing = !state.playing
-            _state.value =
-                state.copy(playing = playing, waiting = playing && current != Current.Silent)
             // Supplied while paused: its audio is prepared now. Only from the app: with the
             // player empty, media3 hides the notification and doesn't pass a headset's play on.
-            val pending = onArticle
-            if (playing && pending != null && pending.preparing?.isActive != true) prepare(pending)
+            // Decided first: playing again can finish a preparation waiting on it, there and then.
+            val pending = onArticle?.takeIf { playing && it.preparing?.isActive != true }
+            _state.value =
+                state.copy(playing = playing, waiting = playing && current != Current.Silent)
+            if (playing) _notice.value = null
+            pending?.let(::prepare)
             return
         }
         if (player.playWhenReady) player.pause() else player.play()
@@ -309,6 +311,12 @@ class Narrator(
         if (item != null) player.seekTo(item, 0)
         else onArticle?.let { startAt(it, chunk, play = player.playWhenReady) }
     }
+
+    /**
+     * The player ended only because synthesis hasn't caught up: the feed carries on with the next
+     * chunk when it lands, so "play" mustn't start the last one over.
+     */
+    fun awaitingSynthesis(): Boolean = onArticle?.feed?.fed == false
 
     fun setSpeed(speed: Float) {
         this.speed = speed
@@ -426,18 +434,8 @@ class Narrator(
      * connection in the background doesn't end narration mid-word.
      */
     private suspend fun synthesizeOrSkip(feed: Feed, prepared: Prepared, index: Int): File? {
-        var reachedWhenTroubleBegan: Long? = null
         return try {
-            reaching(
-                feed.starved,
-                // The engine answers but fails this text while others get through: skip it.
-                skip = { e ->
-                    e.serverTrouble &&
-                        reached.value !=
-                            (reachedWhenTroubleBegan
-                                ?: reached.value.also { reachedWhenTroubleBegan = it })
-                },
-            ) {
+            reaching(feed.starved) {
                 prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index")
             }
         } catch (e: CancellationException) {
@@ -450,15 +448,11 @@ class Narrator(
     }
 
     /**
-     * [attempt] until the engine answers (null if [skip] gives up on it). While it can't be reached
-     * ([SpeechInterrupted]) this backs off and tries again; at once when another attempt gets
-     * through, and from the start when narration is played again after a pause.
+     * [attempt] until the engine answers. While it can't be reached ([SpeechInterrupted]) this
+     * backs off and tries again; at once when another attempt gets through, and from the start when
+     * narration is played again after a pause.
      */
-    private suspend fun <T : Any> reaching(
-        starved: Starved,
-        skip: (SpeechInterrupted) -> Boolean = { false },
-        attempt: suspend () -> T,
-    ): T? {
+    private suspend fun <T : Any> reaching(starved: Starved, attempt: suspend () -> T): T {
         var wait = RETRY_FIRST_MILLIS
         while (true) {
             val seen = reached.value
@@ -468,7 +462,6 @@ class Narrator(
                     reached.update { it + 1 }
                 }
             } catch (e: SpeechInterrupted) {
-                if (skip(e)) return null
                 interrupted(starved, e)
             }
             val woke =
@@ -501,7 +494,9 @@ class Narrator(
         val since = starved.since ?: now().also { starved.since = it }
         if (now() - since < pauseAfterMillis) return
         starved.since = null
-        player.pause()
+        // Before the audio's prepared the player may not be playing yet: pause the narration.
+        if (prepared == null) _state.value = state.copy(playing = false, waiting = false)
+        else player.pause()
         _notice.value = "Narration paused: ${error.message}"
     }
 

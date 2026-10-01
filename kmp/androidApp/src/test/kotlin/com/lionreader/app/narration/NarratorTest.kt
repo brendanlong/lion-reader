@@ -23,20 +23,17 @@ class NarratorTest {
     private val synthesized = mutableListOf<String>()
     /** Calls to fail as unreachable before the engine answers again; -1 for all of them. */
     private var unreachableFor = 0
-    /** Texts the server always fails on. */
-    private var troubledTexts = emptySet<String>()
+    /** Getting the engine fails as unreachable while this is set. */
+    private var engineUnreachable = false
 
     private val engine =
         object : SpeechEngine {
             override val maxChunkChars = 400
             override val lookaheadChars = 1200
-            // Overridden to cloud voices' 3 where it matters.
-            override var parallelism = 1
+            override val parallelism = 1
 
             override suspend fun synthesize(text: String, dir: File, name: String): File {
-                if (text in troubledTexts) {
-                    throw SpeechInterrupted("The cloud voice isn't working right now.", true)
-                }
+
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
@@ -50,7 +47,10 @@ class NarratorTest {
         Narrator(
             ApplicationProvider.getApplicationContext(),
             { AppSettings() },
-            { engine },
+            {
+                if (engineUnreachable) throw SpeechInterrupted("Couldn't reach Lion Reader.")
+                engine
+            },
             // Robolectric can't bind media3's session service.
             connectSession = { {} },
         )
@@ -164,16 +164,20 @@ class NarratorTest {
     }
 
     @Test
-    fun aChunkTheServerKeepsFailingIsSkippedWhileOthersGetThrough() {
-        troubledTexts = setOf("Two.")
-        // As cloud voices (the engine that reports server trouble) do.
-        engine.parallelism = 3
-        // Paragraphs a chunk each.
-        narrator.narrate(article("a", "One. ".repeat(80), "Two.", "Three. ".repeat(80)))
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(20))
+    fun outOfReachBeforeTheAudioIsPreparedPausesToo() {
+        engineUnreachable = true
+        narrator.narrate(article("a", "One."))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(100))
+        assertEquals("a", state?.entryId)
+        assertFalse(state!!.playing)
+        assertFalse(state!!.waiting)
+        assertTrue(narrator.notice.value!!.startsWith("Narration paused"))
 
-        assertTrue(synthesized.any { it.startsWith("Three.") })
+        engineUnreachable = false
+        narrator.togglePlaying()
         assertNull(narrator.notice.value)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
+        assertEquals(listOf("One."), synthesized)
     }
 
     @Test

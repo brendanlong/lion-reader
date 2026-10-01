@@ -120,6 +120,9 @@ class AppGraph(private val context: Context) {
                 throw e
             } catch (e: ApiException) {
                 if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
+                if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
+                    throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
+                }
                 lastVoiceModels?.takeIf { it.first == accountDb }?.second
                     ?: throw SpeechInterrupted("Couldn't reach Lion Reader for cloud voices.")
             } catch (_: Exception) {
