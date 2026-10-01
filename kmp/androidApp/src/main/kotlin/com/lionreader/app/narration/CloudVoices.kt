@@ -101,8 +101,8 @@ class CloudVoices(
                 wait *= 2
             }
         }
-        throw SpeechUnavailable(
-            if (serverTrouble) "The cloud voice isn't working right now. Try again later."
+        throw SpeechInterrupted(
+            if (serverTrouble) "The cloud voice isn't working right now."
             else "Couldn't reach the cloud voice. Check your connection."
         )
     }

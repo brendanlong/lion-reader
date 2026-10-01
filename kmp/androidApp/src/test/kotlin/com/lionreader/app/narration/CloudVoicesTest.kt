@@ -115,10 +115,10 @@ class CloudVoicesTest {
     }
 
     @Test
-    fun persistentTroubleEventuallyStops() = runTest {
+    fun persistentTroubleIsAnInterruptionNotTheEnd() = runTest {
         repeat(10) { responses.addLast(HttpStatusCode.BadGateway to "{}") }
         val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
-        assertEquals(SpeechUnavailable::class, error!!::class)
+        assertEquals(SpeechInterrupted::class, error!!::class)
     }
 
     @Test

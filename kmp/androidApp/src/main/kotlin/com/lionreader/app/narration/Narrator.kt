@@ -3,6 +3,7 @@ package com.lionreader.app.narration
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -18,11 +19,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -82,6 +85,9 @@ class Narrator(
                 .buildAsync()
         ({ MediaController.releaseFuture(controller) })
     },
+    /** How long the player can run dry, the engine unreachable, before narration pauses. */
+    private val pauseAfterMillis: Long = 60_000,
+    private val now: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val dir = File(context.cacheDir, "narration")
@@ -89,14 +95,17 @@ class Narrator(
     private val _state = MutableStateFlow<NarrationState?>(null)
     val state: StateFlow<NarrationState?> = _state.asStateFlow()
 
+    // Kept until shown: it's often in the background, with nothing to show it.
     private val _errors =
-        MutableSharedFlow<String>(
-            extraBufferCapacity = 1,
-            onBufferOverflow = BufferOverflow.DROP_OLDEST,
-        )
+        MutableSharedFlow<String>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-    /** Why narration stopped on its own, for the user. */
+    /** Why narration stopped or paused on its own, for the user; [errorShown] once shown. */
     val errors: SharedFlow<String> = _errors.asSharedFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun errorShown() {
+        _errors.resetReplayCache()
+    }
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
@@ -160,6 +169,8 @@ class Narrator(
     /** Synthesis from one chunk on; a seek starts another. */
     private class Feed {
         var job: Job? = null
+        /** Since when the player has run dry with the engine unreachable. */
+        var starvedSince: Long? = null
         /** Whether it has synthesized everything it's going to, and the last chunk it added. */
         var fed = false
         var lastAdded: Int? = null
@@ -237,7 +248,7 @@ class Narrator(
             val engine =
                 try {
                     engineFor(settings())
-                } catch (e: SpeechUnavailable) {
+                } catch (e: SpeechException) {
                     return@launch fail(e.message)
                 }
             // Narration moved on meanwhile (and this should have been cancelled).
@@ -377,7 +388,7 @@ class Narrator(
                     wanted(next, prepared, feed)
             ) {
                 val index = next++
-                inFlight.addLast(index to async { synthesizeOrSkip(prepared, index) })
+                inFlight.addLast(index to async { synthesizeOrSkip(feed, prepared, index) })
             }
             if (inFlight.isEmpty()) {
                 playingChunk.first { wanted(next, prepared, feed) }
@@ -401,17 +412,50 @@ class Narrator(
         else stopIfFinished()
     }
 
-    /** The chunk's audio, or null to skip it; [SpeechUnavailable] ends the narration. */
-    private suspend fun synthesizeOrSkip(prepared: Prepared, index: Int): File? =
-        try {
-            prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: SpeechUnavailable) {
-            throw e
-        } catch (_: Exception) {
-            null
+    /**
+     * The chunk's audio, or null to skip it; [SpeechUnavailable] ends the narration. While the
+     * engine can't be reached ([SpeechInterrupted]), what's queued plays on and this tries again: a
+     * dropped connection in the background doesn't end narration mid-word.
+     */
+    private suspend fun synthesizeOrSkip(feed: Feed, prepared: Prepared, index: Int): File? {
+        var wait = RETRY_FIRST_MILLIS
+        while (true) {
+            try {
+                return prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index").also {
+                    feed.starvedSince = null
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SpeechInterrupted) {
+                interrupted(feed, e)
+            } catch (e: SpeechUnavailable) {
+                throw e
+            } catch (_: Exception) {
+                return null
+            }
+            delay(wait)
+            wait = (wait * 2).coerceAtMost(RETRY_MAX_MILLIS)
+            // Paused (by the user, or below): try again once it's to play.
+            _state.first { it == null || it.playing }
         }
+    }
+
+    /**
+     * The engine couldn't be reached. Once the player has run dry for [pauseAfterMillis] that way,
+     * narration pauses, keeping its place, rather than spin; playing again tries again.
+     */
+    private fun interrupted(feed: Feed, error: SpeechInterrupted) {
+        val state = _state.value
+        if (state == null || !state.playing || !waiting()) {
+            feed.starvedSince = null
+            return
+        }
+        val since = feed.starvedSince ?: now().also { feed.starvedSince = it }
+        if (now() - since < pauseAfterMillis) return
+        feed.starvedSince = null
+        player.pause()
+        _errors.tryEmit("Narration paused: ${error.message}")
+    }
 
     /** Stops once the last chunk there'll ever be has played. */
     private fun stopIfFinished() {
@@ -501,5 +545,7 @@ class Narrator(
 
     private companion object {
         const val KEEP_BEHIND = 5
+        const val RETRY_FIRST_MILLIS = 2_000L
+        const val RETRY_MAX_MILLIS = 30_000L
     }
 }

@@ -105,7 +105,10 @@ fun EntryScreen(
     val articles = rememberArticlePages()
     val narration by graph.narrator.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
-        graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+        graph.narrator.errors.collect {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            graph.narrator.errorShown()
+        }
     }
     NarrationFollowsPage(
         narration,
