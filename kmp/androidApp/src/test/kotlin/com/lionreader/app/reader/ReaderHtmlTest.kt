@@ -4,6 +4,7 @@ import com.lionreader.app.AppSettings
 import com.lionreader.app.ReaderFont
 import com.lionreader.app.TextSize
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +48,28 @@ class ReaderHtmlTest {
         assertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt; · O&#39;Brien"))
         assertFalse(html.contains("<img"))
         assertFalse(html.contains("<script>alert"))
+    }
+
+    @Test
+    fun theTitleLinksToAWebAddressOnly() {
+        fun titleOf(url: String?) =
+            readerDocument(
+                    ReaderHeader("Title", "Feed", url),
+                    null,
+                    "",
+                    AppSettings(),
+                    tokens,
+                    colors,
+                )
+                .substringAfter("<h1>")
+                .substringBefore("</h1>")
+
+        assertEquals(
+            "<a href=\"https://example.com/a?b=1&amp;c=&quot;2&quot;\">Title</a>",
+            titleOf("https://example.com/a?b=1&c=\"2\""),
+        )
+        assertEquals("Title", titleOf("javascript:alert(1)"))
+        assertEquals("Title", titleOf(null))
     }
 
     @Test

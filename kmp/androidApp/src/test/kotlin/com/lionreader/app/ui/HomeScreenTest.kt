@@ -5,7 +5,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -21,6 +24,8 @@ import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso
@@ -59,11 +64,18 @@ class HomeScreenTest {
     private val reader = Reader(db, { 1_000L }, Dispatchers.Unconfined) {}
     private val settings = MutableStateFlow(AppSettings())
 
-    private fun seed(id: String, title: String, read: Boolean, sortAt: Long = 0) {
-        db.entryQueries.insertIgnore(id, "feed", "web", 0, sortAt, if (read) 1 else 0, 0)
+    private fun seed(
+        id: String,
+        title: String,
+        read: Boolean,
+        sortAt: Long = 0,
+        feed: String = "feed",
+        subscription: String? = null,
+    ) {
+        db.entryQueries.insertIgnore(id, feed, "web", 0, sortAt, if (read) 1 else 0, 0)
         db.entryQueries.updateAll(
-            null,
-            "feed",
+            subscription,
+            feed,
             "web",
             null,
             title,
@@ -81,6 +93,11 @@ class HomeScreenTest {
     }
 
     private lateinit var model: HomeViewModel
+
+    private fun SemanticsNodeInteraction.isShownAs(state: String) =
+        fetchSemanticsNode().config.getOrElseNullable(SemanticsProperties.StateDescription) {
+            null
+        } == state
 
     private fun show(showSelection: Boolean = false) {
         model =
@@ -283,6 +300,100 @@ class HomeScreenTest {
             .assert(hasStateDescription("Read"))
         // Still listed: entries touched in this list stay until it's reloaded.
         composeRule.onNodeWithText("An article").assertIsDisplayed()
+    }
+
+    @Test
+    fun pullingToRefreshLetsGoOfReadArticles() {
+        seed("a", "An article", read = false)
+        show()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .performCustomAccessibilityActionWithLabel("Mark read")
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        composeRule.onNodeWithText("An article").assertIsDisplayed()
+
+        model.pullToRefresh()
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("An article").fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    @Test
+    fun swipingRightTogglesReadAndLeftStars() {
+        seed("a", "An article", read = false)
+        show()
+        val row = composeRule.onNodeWithText("An article", substring = true)
+
+        row.performTouchInput { swipeRight() }
+        composeRule.waitUntil { row.isShownAs("Read") }
+        row.performTouchInput { swipeLeft() }
+        composeRule.waitUntil { row.isShownAs("Read, Starred") }
+        // Each swipe toggles from where the row is now.
+        row.performTouchInput { swipeRight() }
+        composeRule.waitUntil { row.isShownAs("Unread, Starred") }
+        row.performTouchInput { swipeLeft() }
+        composeRule.waitUntil { row.isShownAs("Unread") }
+    }
+
+    @Test
+    fun emptyFeedsCanBeLeftOutOfTheDrawer() {
+        for ((id, feed, title) in
+            listOf(
+                Triple("busy", "feed-1", "Busy Feed"),
+                Triple("quiet", "feed-2", "Quiet Feed"),
+            )) {
+            db.subscriptionQueries.upsertSubscription(
+                id,
+                feed,
+                "web",
+                title,
+                "https://e.com/$id",
+                null,
+                0,
+            )
+        }
+        seed("a", "An article", read = false, feed = "feed-1", subscription = "busy")
+        seed("b", "Old news", read = true, feed = "feed-2", subscription = "quiet")
+        show()
+
+        composeRule.onNodeWithContentDescription("Lists").performClick()
+        composeRule.onNodeWithText("Quiet Feed").assertIsDisplayed()
+
+        settings.value = settings.value.copy(hideEmptyLists = true)
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("Quiet Feed").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithText("Busy Feed").assertIsDisplayed()
+    }
+
+    @Test
+    fun theOpenListStaysInTheDrawerWhenEmpty() {
+        db.subscriptionQueries.upsertSubscription(
+            "quiet",
+            "feed-2",
+            "web",
+            "Quiet Feed",
+            "https://e.com/quiet",
+            null,
+            0,
+        )
+        db.subscriptionQueries.insertTagIgnore("tag", "News", null)
+        db.subscriptionQueries.addSubscriptionTag("quiet", "tag")
+        seed("b", "Old news", read = true, feed = "feed-2", subscription = "quiet")
+        settings.value = settings.value.copy(hideEmptyLists = true)
+        show()
+        model.select(ListScope.Subscription("quiet"))
+
+        composeRule.onNodeWithContentDescription("Lists").performClick()
+        // The open feed, and its tag (expanded to show it).
+        composeRule.onNodeWithText("News").assertIsDisplayed()
+        // The top bar's title and the drawer's row.
+        composeRule.onAllNodesWithText("Quiet Feed").assertCountEquals(2)
+
+        model.select(ListScope.All)
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("News").fetchSemanticsNodes().isEmpty()
+        }
     }
 
     @Test

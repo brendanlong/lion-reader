@@ -45,6 +45,20 @@ private val DarkColors =
         surfaceContainerHigh = Zinc800,
     )
 
+// OLED: true black behind everything, so unlit pixels stay off. Raised bars
+// lift to a near-black gray rather than taking on the amber accent.
+private val BlackColors =
+    DarkColors.copy(
+        surfaceTint = Color.White,
+        background = Color.Black,
+        surface = Color.Black,
+        surfaceContainerLowest = Color.Black,
+        surfaceContainerLow = Color.Black,
+        surfaceContainer = Color(0xFF121212),
+        surfaceContainerHigh = Color(0xFF1C1C1C),
+        surfaceContainerHighest = Color(0xFF262626),
+    )
+
 // E-ink: contrast from borders, never fills; every surface white.
 private val EpaperColors =
     lightColorScheme(
@@ -66,7 +80,8 @@ private val EpaperColors =
 fun ThemeChoice.isDark(systemDark: Boolean): Boolean =
     when (this) {
         ThemeChoice.SYSTEM -> systemDark
-        ThemeChoice.DARK -> true
+        ThemeChoice.DARK,
+        ThemeChoice.BLACK -> true
         ThemeChoice.LIGHT,
         ThemeChoice.EPAPER -> false
     }
@@ -74,6 +89,7 @@ fun ThemeChoice.isDark(systemDark: Boolean): Boolean =
 fun colorsFor(theme: ThemeChoice, systemDark: Boolean): ColorScheme =
     when {
         theme == ThemeChoice.EPAPER -> EpaperColors
+        theme == ThemeChoice.BLACK -> BlackColors
         theme.isDark(systemDark) -> DarkColors
         else -> LightColors
     }

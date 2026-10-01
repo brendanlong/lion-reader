@@ -68,8 +68,15 @@ private val fontFaces: String =
             .trimIndent()
     }
 
-/** The article's title and byline, shown above the body. Plain text from the feed. */
-data class ReaderHeader(val title: String, val byline: String)
+/**
+ * The article's title and byline, shown above the body. Plain text from the feed; the title links
+ * to [url] (the original) when that's a web address.
+ */
+data class ReaderHeader(val title: String, val byline: String, val url: String? = null)
+
+/** Only a web address becomes the title's link: the feed controls it. */
+private fun webUrl(url: String?): String? =
+    url?.trim()?.takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) }
 
 /**
  * A complete document for the article: the [header], escaped, the AI [summary] if shown, and the
@@ -127,6 +134,7 @@ fun readerDocument(
         .lr-header { margin: 16px 0 1.5em; padding-bottom: 1em; text-align: left;
           border-bottom: 1px solid ${colors.border}; }
         .lr-header h1 { font-size: 1.5em; margin: 0 0 0.3em; }
+        .lr-header h1 a { color: inherit; text-decoration: none; }
         .lr-byline { margin: 0; color: ${colors.muted}; font-family: sans-serif;
           font-size: 0.875rem; line-height: 1.4; }
         .lr-summary { margin: 0 0 1.5em; padding: 0.75em 1em; border-radius: 8px;
@@ -142,7 +150,10 @@ fun readerDocument(
         """
         .trimIndent() +
         // After trimIndent, so feed text can't change the template's indentation.
-        "<header class=\"lr-header\"><h1>${escapeHtml(header.title)}</h1>" +
+        "<header class=\"lr-header\"><h1>" +
+        (webUrl(header.url)?.let { "<a href=\"${escapeHtml(it)}\">${escapeHtml(header.title)}</a>" }
+            ?: escapeHtml(header.title)) +
+        "</h1>" +
         "<p class=\"lr-byline\">${escapeHtml(header.byline)}</p></header>" +
         (summary?.let {
             "<aside class=\"lr-summary\"><p class=\"lr-summary-label\">AI Summary</p>$it</aside>"

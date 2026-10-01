@@ -75,6 +75,9 @@ class HomeViewModel(
     val unreadOnly: StateFlow<Boolean> =
         settings.map { it.unreadOnly }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val hideEmptyLists: StateFlow<Boolean> =
+        settings.map { it.hideEmptyLists }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val expandedTags: StateFlow<Set<String>> =
         settings.map { it.expandedTags }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
@@ -182,6 +185,15 @@ class HomeViewModel(
     fun markRead(ids: List<String>) {
         keepIds.value = emptySet()
         viewModelScope.launch { reader.setRead(ids, true) }
+    }
+
+    /**
+     * Pulling to refresh also lets go of the read entries kept in an unread-only list, as choosing
+     * the list again does (but not the article open beside it).
+     */
+    fun pullToRefresh() {
+        keepIds.value = setOfNotNull(_shown.value)
+        refresh()
     }
 
     fun refresh() {

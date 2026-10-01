@@ -50,8 +50,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -94,6 +96,7 @@ fun HomeScreen(
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
+    val hideEmptyLists by model.hideEmptyLists.collectAsStateWithLifecycle()
     val search by model.search.collectAsStateWithLifecycle()
     val searchResults by model.searchResults.collectAsStateWithLifecycle()
     val shown by model.shown.collectAsStateWithLifecycle()
@@ -129,6 +132,7 @@ fun HomeScreen(
                     navigation = navigation,
                     selected = scope,
                     expandedTags = expandedTags,
+                    hideEmpty = hideEmptyLists,
                     onToggleTag = model::toggleTag,
                     onSelect = {
                         model.select(it)
@@ -189,7 +193,7 @@ fun HomeScreen(
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = status == SyncStatus.Syncing,
-                onRefresh = model::refresh,
+                onRefresh = model::pullToRefresh,
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) {
                 Column {
@@ -349,10 +353,14 @@ private fun Drawer(
     navigation: Navigation?,
     selected: ListScope,
     expandedTags: Set<String>,
+    /** Leave out feeds and tags with nothing unread, except the one open. */
+    hideEmpty: Boolean,
     onToggleTag: (String) -> Unit,
     onSelect: (ListScope) -> Unit,
     onSettings: () -> Unit,
 ) {
+    fun shown(sub: NavSubscription) =
+        !hideEmpty || sub.unread > 0 || selected == ListScope.Subscription(sub.id)
     LazyColumn(modifier = Modifier.padding(horizontal = 12.dp)) {
         item {
             Text(
@@ -361,6 +369,16 @@ private fun Drawer(
                 modifier = Modifier.padding(16.dp),
             )
         }
+        // Above the lists, which can be long.
+        item {
+            NavigationDrawerItem(
+                label = { Text("Settings") },
+                icon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
+                selected = false,
+                onClick = onSettings,
+            )
+        }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
         item {
             DrawerRow("All", navigation?.allUnread, selected == ListScope.All) {
                 onSelect(ListScope.All)
@@ -377,7 +395,15 @@ private fun Drawer(
             }
         }
         navigation?.let { nav ->
-            if (nav.tags.isNotEmpty() || nav.subscriptions.isNotEmpty()) {
+            val anyListed =
+                if (hideEmpty) {
+                    nav.subscriptions.any(::shown) ||
+                        selected is ListScope.Tag ||
+                        selected == ListScope.Uncategorized
+                } else {
+                    nav.tags.isNotEmpty() || nav.subscriptions.isNotEmpty()
+                }
+            if (anyListed) {
                 item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             }
             fun group(
@@ -385,8 +411,10 @@ private fun Drawer(
                 name: String,
                 unread: Int,
                 scope: ListScope,
-                subscriptions: List<NavSubscription>,
+                all: List<NavSubscription>,
             ) {
+                val subscriptions = all.filter(::shown)
+                if (hideEmpty && unread == 0 && selected != scope && subscriptions.isEmpty()) return
                 // The open feed's group shows its feeds, so the open list stays visible.
                 val expanded =
                     key in expandedTags ||
@@ -433,7 +461,7 @@ private fun Drawer(
             val uncategorized = nav.uncategorized
             if (nav.tags.isEmpty()) {
                 // Without tags there's nothing to group feeds apart from.
-                items(uncategorized, key = { "sub-${it.id}" }) { sub ->
+                items(uncategorized.filter(::shown), key = { "sub-${it.id}" }) { sub ->
                     DrawerRow(sub.title, sub.unread, selected == ListScope.Subscription(sub.id)) {
                         onSelect(ListScope.Subscription(sub.id))
                     }
@@ -447,15 +475,6 @@ private fun Drawer(
                     uncategorized,
                 )
             }
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item {
-            NavigationDrawerItem(
-                label = { Text("Settings") },
-                icon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
-                selected = false,
-                onClick = onSettings,
-            )
         }
     }
 }
@@ -524,14 +543,31 @@ private fun EntryList(
     LaunchedEffect(nearEnd) { if (nearEnd) onLoadMore() }
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.id }) { item ->
+            // Right toggles read, left toggles starred; the row springs back.
+            // The state keeps its first lambda, so it reads the row as it is
+            // now; and it's asked on every frame past the threshold, so it acts
+            // once per swipe, until the row is back at rest.
+            val current by rememberUpdatedState(item)
+            var acted by remember { mutableStateOf(false) }
             val swipe =
                 rememberSwipeToDismissBoxState(
                     confirmValueChange = {
-                        if (it != SwipeToDismissBoxValue.Settled) onToggleRead(item)
+                        if (it != SwipeToDismissBoxValue.Settled && !acted) {
+                            acted = true
+                            if (it == SwipeToDismissBoxValue.StartToEnd) onToggleRead(current)
+                            else onToggleStar(current)
+                        }
                         false
                     }
                 )
-            SwipeToDismissBox(state = swipe, backgroundContent = {}) {
+            LaunchedEffect(swipe) {
+                snapshotFlow { swipe.dismissDirection }
+                    .collect { if (it == SwipeToDismissBoxValue.Settled) acted = false }
+            }
+            SwipeToDismissBox(
+                state = swipe,
+                backgroundContent = { SwipeBackground(swipe.dismissDirection, item) },
+            ) {
                 EntryRow(
                     item,
                     selected = item.id == selectedId,
@@ -542,6 +578,36 @@ private fun EntryList(
             }
             HorizontalDivider()
         }
+    }
+}
+
+/** What letting go of a swipe will do, revealed under the row. */
+@Composable
+private fun SwipeBackground(direction: SwipeToDismissBoxValue, item: TimelineItem) {
+    if (direction == SwipeToDismissBoxValue.Settled) return
+    val read = direction == SwipeToDismissBoxValue.StartToEnd
+    Row(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .padding(horizontal = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = if (read) Arrangement.Start else Arrangement.End,
+    ) {
+        Icon(
+            painterResource(
+                when {
+                    read && item.read -> R.drawable.ic_circle
+                    read -> R.drawable.ic_circle_outline
+                    item.starred -> R.drawable.ic_star_border
+                    else -> R.drawable.ic_star
+                }
+            ),
+            // The row's own actions say this to TalkBack.
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(if (read) 16.dp else 24.dp),
+        )
     }
 }
 

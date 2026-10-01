@@ -17,6 +17,8 @@ enum class ThemeChoice {
     SYSTEM,
     LIGHT,
     DARK,
+    /** Dark on pure black, for OLED screens. */
+    BLACK,
     EPAPER,
 }
 
@@ -52,6 +54,8 @@ data class AppSettings(
     val retentionDays: Int = 30,
     /** Drawer tags shown with their feeds; the rest are collapsed. */
     val expandedTags: Set<String> = emptySet(),
+    /** Leave feeds and tags with nothing unread out of the drawer. */
+    val hideEmptyLists: Boolean = false,
     /** The text-to-speech voice's name; null for the engine's default. */
     val narrationVoice: String? = null,
     val narrationSpeed: Float = 1f,
@@ -77,6 +81,7 @@ class SettingsRepository(private val context: Context) {
         val unreadOnly = booleanPreferencesKey("unread_only")
         val retentionDays = intPreferencesKey("retention_days")
         val expandedTags = stringSetPreferencesKey("expanded_tags")
+        val hideEmptyLists = booleanPreferencesKey("hide_empty_lists")
         val narrationVoice = stringPreferencesKey("narration_voice")
         val narrationSpeed = floatPreferencesKey("narration_speed")
         val narrationAutoScroll = booleanPreferencesKey("narration_auto_scroll")
@@ -97,6 +102,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.unreadOnly] = next.unreadOnly
             prefs[Keys.retentionDays] = next.retentionDays
             prefs[Keys.expandedTags] = next.expandedTags
+            prefs[Keys.hideEmptyLists] = next.hideEmptyLists
             next.narrationVoice?.let { prefs[Keys.narrationVoice] = it }
                 ?: prefs.remove(Keys.narrationVoice)
             prefs[Keys.narrationSpeed] = next.narrationSpeed
@@ -118,6 +124,7 @@ class SettingsRepository(private val context: Context) {
             unreadOnly = this[Keys.unreadOnly] ?: defaults.unreadOnly,
             retentionDays = this[Keys.retentionDays] ?: defaults.retentionDays,
             expandedTags = this[Keys.expandedTags] ?: defaults.expandedTags,
+            hideEmptyLists = this[Keys.hideEmptyLists] ?: defaults.hideEmptyLists,
             narrationVoice = this[Keys.narrationVoice],
             narrationSpeed = this[Keys.narrationSpeed] ?: defaults.narrationSpeed,
             narrationAutoScroll = this[Keys.narrationAutoScroll] ?: defaults.narrationAutoScroll,

@@ -79,7 +79,8 @@ Entry bodies, saved articles, and AI summaries are rendered with
   (the app reads only layout, narration text and taps from it, and calls back
   only `lionNarration.highlight` with a number or null and a boolean), and every navigation leaves
   for the browser. The article header's feed text
-  (title, byline) enters the document only through `escapeHtml`. Loosening any
+  (title, byline) enters the document only through `escapeHtml`, and the title
+  links to the entry's URL only when it's http(s), escaped the same way. Loosening any
   of that needs a security review.
 - **The native app's share target** (`ShareActivity`) is exported, so any app
   can hand it a link to save, with no confirmation beyond the dialog. That's
