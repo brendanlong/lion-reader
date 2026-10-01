@@ -39,7 +39,7 @@ class NarratorTest {
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
-                return File(dir, "$name.wav").apply { writeBytes(ByteArray(0)) }
+                return File(dir, "$name.wav").apply { writeBytes(SILENCE) }
             }
         }
 
@@ -209,4 +209,24 @@ class NarratorTest {
         assertNull(state)
         assertTrue(synthesized.isEmpty())
     }
+}
+
+/**
+ * Half a minute of silence, as a real WAV: an empty file makes the player report an error (on its
+ * own thread, so at any point in a test), which ends the narration.
+ */
+private val SILENCE: ByteArray by lazy {
+    val rate = 8_000
+    val samples = rate * 30
+    java.nio.ByteBuffer.allocate(44 + samples)
+        .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        .apply {
+            put("RIFF".toByteArray()).putInt(36 + samples).put("WAVE".toByteArray())
+            put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1)
+            putInt(rate).putInt(rate).putShort(1).putShort(8)
+            put("data".toByteArray()).putInt(samples)
+            // 8-bit PCM is unsigned: 128 is silence.
+            repeat(samples) { put(128.toByte()) }
+        }
+        .array()
 }
