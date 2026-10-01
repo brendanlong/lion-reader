@@ -115,6 +115,8 @@ export interface EntryListItem {
   updatedAt: Date;
   read: boolean;
   starred: boolean;
+  /** When read state last changed (Recently Read's order); null if it never has. */
+  readChangedAt: Date | null;
   feedTitle: string | null;
   siteName: string | null;
 }
@@ -215,6 +217,7 @@ interface EntryListRow {
   updatedAt: Date;
   read: boolean;
   starred: boolean;
+  readChangedAt: Date | null;
   siteName: string | null;
   feedTitle: string | null;
 }
@@ -239,6 +242,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     fetchedAt: row.fetchedAt,
     read: row.read,
     starred: row.starred,
+    readChangedAt: row.readChangedAt,
     updatedAt: row.updatedAt,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
@@ -291,6 +295,7 @@ const entryListSelectFields = {
   fetchedAt: visibleEntries.fetchedAt,
   read: visibleEntries.read,
   starred: visibleEntries.starred,
+  readChangedAt: visibleEntries.readChangedAt,
   updatedAt: visibleEntries.updatedAt,
   subscriptionId: visibleEntries.subscriptionId,
   siteName: visibleEntries.siteName,
@@ -344,6 +349,7 @@ const fullEntrySelectFields = {
   fullContentError: visibleEntries.fullContentError,
   contentHash: visibleEntries.contentHash,
   fetchFullContent: subscriptions.fetchFullContent,
+  readChangedAt: visibleEntries.readChangedAt,
 };
 
 /**
@@ -624,7 +630,6 @@ export async function listEntries(
     .select({
       ...entryListSelectFields,
       feedTitle: feeds.title,
-      readChangedAt: visibleEntries.readChangedAt,
       sortTs: sortTsInstant,
     })
     .from(visibleEntries)

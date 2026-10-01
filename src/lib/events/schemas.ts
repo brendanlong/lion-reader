@@ -46,6 +46,9 @@ export const newEntryListDataSchema = entryMetadataSchema.extend({
   feedTitle: z.string().nullable(),
   read: z.boolean().optional(),
   starred: z.boolean().optional(),
+  // When read state last changed (Recently Read's order), with read/starred on
+  // the catch-up path; null if it never has.
+  readChangedAt: z.string().nullable().optional(),
 });
 
 export type NewEntryListData = z.infer<typeof newEntryListDataSchema>;
@@ -74,7 +77,7 @@ export interface NewEntryListDataSource {
 export function toNewEntryListData(
   entry: NewEntryListDataSource,
   feedTitle: string | null,
-  state?: { read: boolean; starred: boolean }
+  state?: { read: boolean; starred: boolean; readChangedAt?: Date | null }
 ): NewEntryListData {
   return {
     url: entry.url ?? null,
@@ -85,7 +88,15 @@ export function toNewEntryListData(
     fetchedAt: entry.fetchedAt.toISOString(),
     siteName: entry.siteName ?? null,
     feedTitle,
-    ...(state ? { read: state.read, starred: state.starred } : {}),
+    ...(state
+      ? {
+          read: state.read,
+          starred: state.starred,
+          ...(state.readChangedAt !== undefined
+            ? { readChangedAt: state.readChangedAt?.toISOString() ?? null }
+            : {}),
+        }
+      : {}),
   };
 }
 
@@ -198,6 +209,9 @@ const entryStateChangedEventSchema = z.object({
   entryId: z.string(),
   read: z.boolean(),
   starred: z.boolean(),
+  // When read state last changed (Recently Read's order); null if it never
+  // has. Set by the sync.events catch-up path; absent on the live SSE path.
+  readChangedAt: z.string().nullable().optional(),
   // Absolute unread counts from the server. The client sets these directly
   // instead of estimating deltas from cached state.
   counts: unreadCountsSchema,

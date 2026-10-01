@@ -448,6 +448,35 @@ describe("sync.changes", () => {
     expect(again.events).toEqual([]);
   });
 
+  it("tells the app when read state changed, in sync and every entry read", async () => {
+    const userId = await createUser();
+    const token = await appToken(userId);
+    const [existing] = await subscribedEntries(userId, 1);
+    const bootstrap = await (await rest(token, "GET", "/sync/changes")).json();
+
+    const changedAt = new Date(Date.now() - 1000).toISOString();
+    await rest(token, "POST", "/entries/mark-read", {
+      entries: [{ id: existing, changedAt }],
+      read: true,
+    });
+
+    const delta = await (
+      await rest(token, "GET", `/sync/changes?${new URLSearchParams(bootstrap.cursors)}`)
+    ).json();
+    const state = delta.events.find(
+      (e: { type: string; entryId?: string }) =>
+        e.type === "entry_state_changed" && e.entryId === existing
+    );
+    expect(new Date(state.readChangedAt).toISOString()).toBe(changedAt);
+
+    const list = await (await rest(token, "GET", "/entries?sortBy=readChanged")).json();
+    expect(list.items.map((item: { id: string }) => item.id)).toEqual([existing]);
+    expect(new Date(list.items[0].readChangedAt).toISOString()).toBe(changedAt);
+
+    const batch = await (await rest(token, "POST", "/entries/batch", { ids: [existing] })).json();
+    expect(new Date(batch.entries[0].readChangedAt).toISOString()).toBe(changedAt);
+  });
+
   it("reports deleted saved articles as tombstones", async () => {
     const userId = await createUser();
     const token = await appToken(userId);

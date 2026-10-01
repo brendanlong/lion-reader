@@ -510,6 +510,7 @@ async function collectSyncEvents(
         isSpam: entries.isSpam,
         read: userEntries.read,
         starred: userEntries.starred,
+        readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
         feedId: entries.feedId,
         feedType: feeds.type,
@@ -627,6 +628,7 @@ async function collectSyncEvents(
                   entry: toNewEntryListData(row, row.feedTitle, {
                     read: row.read,
                     starred: row.starred,
+                    readChangedAt: row.readChangedAt,
                   }),
                 }),
             ...(newEntryCounts && { counts: newEntryCounts }),
@@ -660,6 +662,7 @@ async function collectSyncEvents(
           entryId: row.id,
           read: row.read,
           starred: row.starred,
+          readChangedAt: row.readChangedAt?.toISOString() ?? null,
           counts: stateChangedCounts,
           timestamp: row.maxUpdatedAt.toString(),
           updatedAt: row.maxUpdatedAt.toString(),
