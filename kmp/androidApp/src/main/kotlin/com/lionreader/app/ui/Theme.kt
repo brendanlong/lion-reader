@@ -45,9 +45,11 @@ private val DarkColors =
         surfaceContainerHigh = Zinc800,
     )
 
-// OLED: true black behind everything, so unlit pixels stay off.
+// OLED: true black behind everything, so unlit pixels stay off. Raised bars
+// lift to a near-black gray rather than taking on the amber accent.
 private val BlackColors =
     DarkColors.copy(
+        surfaceTint = Color.White,
         background = Color.Black,
         surface = Color.Black,
         surfaceContainerLowest = Color.Black,
