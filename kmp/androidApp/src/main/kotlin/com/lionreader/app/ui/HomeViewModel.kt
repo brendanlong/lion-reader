@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal const val PAGE = 200L
 private const val SEARCH_LIMIT = 200L
 
 sealed interface SyncStatus {
@@ -63,8 +62,8 @@ class HomeViewModel(
         },
     )
 
-    /** Every change to it is one [ListView] step, so a query never sees half of one. */
-    private val view = MutableStateFlow(ListView())
+    /** Every change to it is one [ListState] step, so a query never sees half of one. */
+    private val view = MutableStateFlow(ListState())
 
     val scope: StateFlow<ListScope> =
         view.map { it.scope }.stateIn(viewModelScope, SharingStarted.Eagerly, ListScope.All)
@@ -136,9 +135,13 @@ class HomeViewModel(
         refresh()
     }
 
-    fun select(scope: ListScope) = view.update { it.select(scope) }
+    fun select(scope: ListScope) {
+        view.update { it.select(scope) }
+    }
 
-    fun loadMore() = view.update { it.loadMore() }
+    fun loadMore() {
+        view.update { it.loadMore() }
+    }
 
     private val _shown = MutableStateFlow<String?>(null)
 
