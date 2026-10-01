@@ -84,42 +84,38 @@ class SettingsRepository(private val context: Context) {
 /**
  * Where each setting is kept: its key, and how to read it from and set it on [AppSettings]. A new
  * setting needs a line here as well as its field (SettingsStorageTest checks there's one per
- * field). Keys are what's on devices already; don't rename them.
+ * field). Keys and stored types are what's on devices already; don't change them.
  */
-internal val STORED_SETTINGS: List<Stored> =
+internal val STORED_SETTINGS: List<Stored<*>> =
     listOf(
-        stored(enumKey<ThemeChoice>("theme"), { theme }) { copy(theme = it) },
-        stored(enumKey<ReaderFont>("font"), { font }) { copy(font = it) },
-        stored(enumKey<TextSize>("text_size"), { textSize }) { copy(textSize = it) },
-        stored(booleanPreferencesKey("justify"), { justify }) { copy(justify = it) },
-        stored(booleanPreferencesKey("unread_only"), { unreadOnly }) { copy(unreadOnly = it) },
-        stored(intPreferencesKey("retention_days"), { retentionDays }) {
+        enumStored("theme", { theme }) { copy(theme = it) },
+        enumStored("font", { font }) { copy(font = it) },
+        enumStored("text_size", { textSize }) { copy(textSize = it) },
+        Stored(booleanPreferencesKey("justify"), { justify }) { copy(justify = it) },
+        Stored(booleanPreferencesKey("unread_only"), { unreadOnly }) { copy(unreadOnly = it) },
+        Stored(intPreferencesKey("retention_days"), { retentionDays }) {
             copy(retentionDays = it)
         },
-        stored(stringSetPreferencesKey("expanded_tags"), { expandedTags }) {
+        Stored(stringSetPreferencesKey("expanded_tags"), { expandedTags }) {
             copy(expandedTags = it)
         },
-        stored(booleanPreferencesKey("hide_empty_lists"), { hideEmptyLists }) {
+        Stored(booleanPreferencesKey("hide_empty_lists"), { hideEmptyLists }) {
             copy(hideEmptyLists = it)
         },
-        storedOrNull(stringPreferencesKey("narration_voice"), { narrationVoice }) {
+        Stored(stringPreferencesKey("narration_voice"), { narrationVoice }) {
             copy(narrationVoice = it)
         },
-        stored(floatPreferencesKey("narration_speed"), { narrationSpeed }) {
+        Stored(floatPreferencesKey("narration_speed"), { narrationSpeed }) {
             copy(narrationSpeed = it)
         },
-        stored(booleanPreferencesKey("narration_auto_scroll"), { narrationAutoScroll }) {
+        Stored(booleanPreferencesKey("narration_auto_scroll"), { narrationAutoScroll }) {
             copy(narrationAutoScroll = it)
         },
-        stored(enumKey<NarrationEngine>("narration_engine"), { narrationEngine }) {
-            copy(narrationEngine = it)
-        },
-        storedOrNull(stringPreferencesKey("cloud_voice_model"), { cloudVoiceModel }) {
+        enumStored("narration_engine", { narrationEngine }) { copy(narrationEngine = it) },
+        Stored(stringPreferencesKey("cloud_voice_model"), { cloudVoiceModel }) {
             copy(cloudVoiceModel = it)
         },
-        storedOrNull(stringPreferencesKey("cloud_voice"), { cloudVoice }) {
-            copy(cloudVoice = it)
-        },
+        Stored(stringPreferencesKey("cloud_voice"), { cloudVoice }) { copy(cloudVoice = it) },
     )
 
 internal fun Preferences.toSettings(): AppSettings =
@@ -129,67 +125,30 @@ internal fun MutablePreferences.store(settings: AppSettings) {
     STORED_SETTINGS.forEach { it.write(this, settings) }
 }
 
-/** One setting's place in storage. */
-internal class Stored
-private constructor(
-    private val key: Preferences.Key<Any>,
-    private val get: AppSettings.() -> Any?,
-    private val set: AppSettings.(Any?) -> AppSettings,
+/**
+ * A setting kept under [key]. A null value isn't stored (the key is removed), so it reads back as
+ * the default: right for the nullable settings, whose defaults are null.
+ */
+internal class Stored<S : Any>(
+    private val key: Preferences.Key<S>,
+    private val get: AppSettings.() -> S?,
+    private val set: AppSettings.(S) -> AppSettings,
 ) {
-    /** A missing or unreadable value leaves the default. */
+    /** A missing value leaves the default. */
     fun read(prefs: Preferences, settings: AppSettings): AppSettings =
         prefs[key]?.let { settings.set(it) } ?: settings
 
     fun write(prefs: MutablePreferences, settings: AppSettings) {
         settings.get()?.let { prefs[key] = it } ?: prefs.remove(key)
     }
-
-    companion object {
-        @Suppress("UNCHECKED_CAST")
-        fun <T, S : Any> of(
-            key: StoredKey<T, S>,
-            get: AppSettings.() -> T?,
-            set: AppSettings.(T) -> AppSettings,
-        ): Stored =
-            Stored(
-                key.key as Preferences.Key<Any>,
-                { get()?.let(key.toStored) },
-                { stored -> key.fromStored(stored as S)?.let { set(it) } ?: this },
-            )
-    }
 }
 
-/** How a [T] is kept: under [key] as an [S]; [fromStored] is null for a value it can't read. */
-internal class StoredKey<T, S : Any>(
-    val key: Preferences.Key<S>,
-    val toStored: (T) -> S,
-    val fromStored: (S) -> T?,
-)
-
-private fun <T : Any> plain(key: Preferences.Key<T>) = StoredKey<T, T>(key, { it }, { it })
-
-private inline fun <reified E : Enum<E>> enumKey(name: String) =
-    StoredKey<E, String>(
-        stringPreferencesKey(name),
-        { it.name },
-        { stored -> runCatching { enumValueOf<E>(stored) }.getOrNull() },
-    )
-
-private fun <T : Any> stored(
-    key: Preferences.Key<T>,
-    get: AppSettings.() -> T,
-    set: AppSettings.(T) -> AppSettings,
-) = Stored.of(plain(key), get, set)
-
-private fun <T, S : Any> stored(
-    key: StoredKey<T, S>,
-    get: AppSettings.() -> T,
-    set: AppSettings.(T) -> AppSettings,
-) = Stored.of(key, get, set)
-
-/** Null isn't stored (the key is removed), and reads back as null. */
-private fun <T : Any> storedOrNull(
-    key: Preferences.Key<T>,
-    get: AppSettings.() -> T?,
-    set: AppSettings.(T?) -> AppSettings,
-) = Stored.of(plain(key), get) { set(it) }
+/** An enum, kept by name; a name it doesn't know (an older or newer app's) leaves the default. */
+private inline fun <reified E : Enum<E>> enumStored(
+    name: String,
+    noinline get: AppSettings.() -> E,
+    noinline set: AppSettings.(E) -> AppSettings,
+) =
+    Stored(stringPreferencesKey(name), { get().name }) { stored ->
+        runCatching { enumValueOf<E>(stored) }.getOrNull()?.let { set(it) } ?: this
+    }
