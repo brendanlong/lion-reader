@@ -23,14 +23,20 @@ class NarratorTest {
     private val synthesized = mutableListOf<String>()
     /** Calls to fail as unreachable before the engine answers again; -1 for all of them. */
     private var unreachableFor = 0
+    /** Texts the server always fails on. */
+    private var troubledTexts = emptySet<String>()
 
     private val engine =
         object : SpeechEngine {
             override val maxChunkChars = 400
             override val lookaheadChars = 1200
-            override val parallelism = 1
+            // Overridden to cloud voices' 3 where it matters.
+            override var parallelism = 1
 
             override suspend fun synthesize(text: String, dir: File, name: String): File {
+                if (text in troubledTexts) {
+                    throw SpeechInterrupted("The cloud voice isn't working right now.", true)
+                }
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
@@ -154,7 +160,20 @@ class NarratorTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
 
         assertEquals(listOf("One."), synthesized)
-        assertTrue(narrator.errors.replayCache.isEmpty())
+        assertNull(narrator.notice.value)
+    }
+
+    @Test
+    fun aChunkTheServerKeepsFailingIsSkippedWhileOthersGetThrough() {
+        troubledTexts = setOf("Two.")
+        // As cloud voices (the engine that reports server trouble) do.
+        engine.parallelism = 3
+        // Paragraphs a chunk each.
+        narrator.narrate(article("a", "One. ".repeat(80), "Two.", "Three. ".repeat(80)))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(20))
+
+        assertTrue(synthesized.any { it.startsWith("Three.") })
+        assertNull(narrator.notice.value)
     }
 
     @Test
@@ -167,13 +186,14 @@ class NarratorTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(70))
         assertEquals("a", state?.entryId)
         assertFalse(state!!.playing)
-        assertTrue(narrator.errors.replayCache.single().startsWith("Narration paused"))
+        assertTrue(narrator.notice.value!!.startsWith("Narration paused"))
 
-        // Played again, it tries again.
+        // Played again, it tries again at once (not after the backoff it was in).
         unreachableFor = 0
         narrator.togglePlaying()
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(40))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1))
         assertEquals(listOf("One."), synthesized)
+        assertNull(narrator.notice.value)
     }
 
     @Test

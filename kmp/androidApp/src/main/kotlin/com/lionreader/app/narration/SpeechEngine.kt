@@ -15,21 +15,25 @@ interface SpeechEngine {
 
     /**
      * The audio for [text], as a file the player can play: written into [dir] (the narrator deletes
-     * * it once played) or from the engine's own cache (which it leaves alone). Throws
-     *   [SpeechUnavailable] when narration can't go on with this engine, [SpeechInterrupted] when
-     *   it can't be reached for now (tried again); any other failure skips just this chunk.
+     * it once played) or from the engine's own cache (which it leaves alone). Throws
+     * [SpeechUnavailable] when narration can't go on with this engine, [SpeechInterrupted] when it
+     * can't be reached for now (tried again); any other failure skips just this chunk.
      */
     suspend fun synthesize(text: String, dir: File, name: String): File
 }
 
 /** The engine can't narrate (signed out, no key, the voice rejected): stop, and say why. */
-open class SpeechUnavailable(message: String) : SpeechException(message)
+class SpeechUnavailable(message: String) : SpeechException(message)
 
 /**
  * The engine can't be reached for now (no connection, server trouble): the narrator plays what it
  * has and tries again, pausing if it runs out for long.
  */
-class SpeechInterrupted(message: String) : SpeechException(message)
+class SpeechInterrupted(
+    message: String,
+    /** The engine answered, with trouble: if others get through, it's this text. */
+    val serverTrouble: Boolean = false,
+) : SpeechException(message)
 
 /** Why a chunk couldn't be synthesized, other than the chunk itself (which is just skipped). */
 sealed class SpeechException(message: String) : Exception(message)

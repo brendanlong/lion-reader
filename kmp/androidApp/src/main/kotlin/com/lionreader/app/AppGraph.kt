@@ -7,9 +7,12 @@ import com.lionreader.app.narration.CloudVoices
 import com.lionreader.app.narration.DeviceVoices
 import com.lionreader.app.narration.Narrator
 import com.lionreader.app.narration.SpeechEngine
+import com.lionreader.app.narration.SpeechInterrupted
 import com.lionreader.app.narration.SpeechUnavailable
 import com.lionreader.app.narration.SystemTts
+import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.LionReaderApi
+import com.lionreader.shared.api.VoiceModels
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.AuthorizationRequest
 import com.lionreader.shared.auth.StoredTokens
@@ -98,18 +101,30 @@ class AppGraph(private val context: Context) {
             }
         }
 
+    /**
+     * The voices the server last offered, for the account by that database: narration moving to the
+     * next article mustn't need the network just to find out again.
+     */
+    @Volatile private var lastVoiceModels: Pair<String?, VoiceModels>? = null
+
     /** The cloud model and voice to use: the chosen ones if the server still offers them. */
     private suspend fun cloudVoice(
         api: LionReaderApi,
         settings: AppSettings,
     ): Pair<String, String> {
+        val accountDb = account.value?.dbName
         val available =
             try {
-                api.voiceModels()
+                api.voiceModels().also { lastVoiceModels = accountDb to it }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: ApiException) {
+                if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
+                lastVoiceModels?.takeIf { it.first == accountDb }?.second
+                    ?: throw SpeechInterrupted("Couldn't reach Lion Reader for cloud voices.")
             } catch (_: Exception) {
-                throw SpeechUnavailable("Couldn't reach Lion Reader for cloud voices.")
+                lastVoiceModels?.takeIf { it.first == accountDb }?.second
+                    ?: throw SpeechInterrupted("Couldn't reach Lion Reader for cloud voices.")
             }
         val model =
             available.models.firstOrNull { it.id == settings.cloudVoiceModel }

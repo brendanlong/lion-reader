@@ -91,7 +91,7 @@ class CloudVoices(
                 if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
                     throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
                 }
-                serverTrouble = e.status >= 500
+                serverTrouble = e.status >= 500 || e.status == 429
             } catch (_: Exception) {
                 // Network: try again below.
                 serverTrouble = false
@@ -103,7 +103,8 @@ class CloudVoices(
         }
         throw SpeechInterrupted(
             if (serverTrouble) "The cloud voice isn't working right now."
-            else "Couldn't reach the cloud voice. Check your connection."
+            else "Couldn't reach the cloud voice. Check your connection.",
+            serverTrouble,
         )
     }
 
