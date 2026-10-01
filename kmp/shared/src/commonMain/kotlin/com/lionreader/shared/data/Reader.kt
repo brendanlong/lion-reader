@@ -91,8 +91,7 @@ class Reader(
     private val onLocalChange: () -> Unit,
 ) {
     /**
-     *      * One list, newest first. Entries in [keepIds] stay even once read (with [unreadOnly]) or
-     *
+     * One list, newest first. Entries in [keepIds] stay even once read (with [unreadOnly]) or
      * unstarred (in Starred), so an entry the user just read or swiped doesn't vanish from under
      * them (the web keeps list membership until the list is reloaded).
      */

@@ -270,6 +270,22 @@ class Narrator(
         }
     }
 
+    /**
+     * "Listen" on a selection in [article]: narration from [paragraph], or, already on it, goes
+     * there and plays.
+     */
+    fun listenFrom(article: NarratedArticle, paragraph: Int) {
+        if (_state.value?.entryId != article.entryId) return narrate(article, paragraph)
+        // Followed here but not supplied yet: the selection's page has the text.
+        supply(article)
+        seekToParagraph(paragraph)
+        play()
+    }
+
+    private fun play() {
+        if (prepared != null) player.play() else if (_state.value?.playing == false) togglePlaying()
+    }
+
     fun togglePlaying() {
         if (prepared == null) {
             val state = _state.value ?: return

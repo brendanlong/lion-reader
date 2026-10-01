@@ -472,7 +472,10 @@
     if (event.target.closest(NON_SEEK_TARGETS)) return null;
     if (event.detail > 1 || hadSelectionAtPointerDown2) return null;
     if (window.getSelection()?.isCollapsed === false) return null;
-    const paraId = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
+    return narrationElementIndex(event.target.closest("[data-para-id]"));
+  }
+  function narrationElementIndex(element) {
+    const paraId = element?.getAttribute("data-para-id");
     const elementIndex = paraId ? Number(paraId.replace("para-", "")) : NaN;
     return Number.isInteger(elementIndex) ? elementIndex : null;
   }
@@ -516,6 +519,24 @@
       if (box.top < 0 || box.bottom > window.innerHeight) {
         target.scrollIntoView({ block: "center", behavior: "smooth" });
       }
+    },
+    /**
+     * The paragraph the selection starts in; starting outside the article's text
+     * (Select all, the summary, between elements), the first one it covers.
+     */
+    selectedParagraph() {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+      const range = selection.getRangeAt(0);
+      const container = range.startContainer;
+      const start = container instanceof Element ? container.childNodes[range.startOffset] ?? container : container;
+      const startElement = start instanceof Element ? start : start.parentElement;
+      const element = narrationElementIndex(startElement?.closest("[data-para-id]")) ?? narrationElementIndex(
+        Array.from(document.querySelectorAll("[data-para-id]")).find(
+          (el) => range.intersectsNode(el)
+        )
+      );
+      return element === null ? null : narrationParagraphForElement(paragraphMap, element);
     }
   };
   var hadSelectionAtPointerDown = false;

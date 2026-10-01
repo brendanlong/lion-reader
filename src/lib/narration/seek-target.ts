@@ -24,7 +24,12 @@ export function seekTargetElement(
   if (event.detail > 1 || hadSelectionAtPointerDown) return null;
   if (window.getSelection()?.isCollapsed === false) return null;
 
-  const paraId = event.target.closest("[data-para-id]")?.getAttribute("data-para-id");
+  return narrationElementIndex(event.target.closest("[data-para-id]"));
+}
+
+/** A numbered element's narration element index (its `data-para-id`), if it has one. */
+export function narrationElementIndex(element: Element | null | undefined): number | null {
+  const paraId = element?.getAttribute("data-para-id");
   const elementIndex = paraId ? Number(paraId.replace("para-", "")) : NaN;
   return Number.isInteger(elementIndex) ? elementIndex : null;
 }

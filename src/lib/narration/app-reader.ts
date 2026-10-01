@@ -7,7 +7,8 @@
  *
  * Talks to the app over its `lionReader` message channel: it sends the
  * article's narration once (`{type: "narration"}`) and the paragraph the user
- * tapped (`{type: "seek"}`), and the app calls `lionNarration.highlight`.
+ * tapped (`{type: "seek"}`), and the app calls `lionNarration.highlight` and
+ * `lionNarration.selectedParagraph` (for "Listen" on a selection).
  *
  * @module narration/app-reader
  */
@@ -20,7 +21,7 @@ import {
   type ParagraphMapEntry,
 } from "./paragraph-map";
 import { DIRECT_TTS_VOICE, narrationRuns } from "./runs";
-import { seekTargetElement } from "./seek-target";
+import { narrationElementIndex, seekTargetElement } from "./seek-target";
 
 interface AppChannel {
   postMessage(message: string): void;
@@ -29,7 +30,10 @@ interface AppChannel {
 declare global {
   interface Window {
     lionReader?: AppChannel;
-    lionNarration?: { highlight(paragraph: number | null, scroll: boolean): void };
+    lionNarration?: {
+      highlight(paragraph: number | null, scroll: boolean): void;
+      selectedParagraph(): number | null;
+    };
   }
 }
 
@@ -83,6 +87,30 @@ window.lionNarration = {
     if (box.top < 0 || box.bottom > window.innerHeight) {
       target.scrollIntoView({ block: "center", behavior: "smooth" });
     }
+  },
+
+  /**
+   * The paragraph the selection starts in; starting outside the article's text
+   * (Select all, the summary, between elements), the first one it covers.
+   */
+  selectedParagraph() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+    const range = selection.getRangeAt(0);
+    const container = range.startContainer;
+    const start =
+      container instanceof Element
+        ? (container.childNodes[range.startOffset] ?? container)
+        : container;
+    const startElement = start instanceof Element ? start : start.parentElement;
+    const element =
+      narrationElementIndex(startElement?.closest("[data-para-id]")) ??
+      narrationElementIndex(
+        Array.from(document.querySelectorAll("[data-para-id]")).find((el) =>
+          range.intersectsNode(el)
+        )
+      );
+    return element === null ? null : narrationParagraphForElement(paragraphMap, element);
   },
 };
 
