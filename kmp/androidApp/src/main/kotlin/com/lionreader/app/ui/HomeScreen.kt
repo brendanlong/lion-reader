@@ -636,8 +636,10 @@ private fun SwipeToToggle(
     val gesture = remember { SwipeGesture() }
     val swipe =
         rememberSwipeToDismissBoxState(
-            // Asked as the swipe crosses the threshold, while the finger's still down (acting then
-            // changed the row mid-swipe), and again on letting go with Material's verdict.
+            // Asked on every frame once the row is half-way out while the finger's still down
+            // (acting then changed the row mid-swipe), and on letting go with Material's verdict
+            // (distance or a flick). A drag event landing in the same frame as the lift could
+            // still ask once by distance; the two only disagree for a reversal in that frame.
             confirmValueChange = {
                 if (it != SwipeToDismissBoxValue.Settled && !gesture.pressed && !gesture.acted) {
                     gesture.acted = true

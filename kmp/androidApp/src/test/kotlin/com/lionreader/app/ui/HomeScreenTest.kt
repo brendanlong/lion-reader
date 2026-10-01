@@ -456,6 +456,18 @@ class HomeScreenTest {
     }
 
     @Test
+    fun aQuickShortFlickCounts() {
+        seed("a", "An article", read = false)
+        show()
+        val row = composeRule.onNodeWithText("An article", substring = true)
+
+        row.performTouchInput {
+            swipeRight(startX = left + 10f, endX = right * 0.3f, durationMillis = 40)
+        }
+        composeRule.waitUntil { row.isShownAs("Read") }
+    }
+
+    @Test
     fun unstarringInStarredKeepsTheArticleUntilRefreshed() {
         seed("a", "A starred article", read = true, starred = true)
         settings.value = settings.value.copy(unreadOnly = false)
