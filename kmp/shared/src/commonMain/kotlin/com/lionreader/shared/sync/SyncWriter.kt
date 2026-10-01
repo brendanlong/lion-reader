@@ -67,24 +67,22 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         items.forEach(store::upsertEntry)
     }
 
-    var recentlyReadBackfilled: Boolean
-        get() = store.recentlyReadBackfilled
+    var recentlyReadSeen: Long?
+        get() = store.recentlyReadSeen
         set(value) {
-            store.recentlyReadBackfilled = value
+            store.recentlyReadSeen = value
         }
 
     /**
      * Saves a page of the server's Recently Read, like any list page, keeping only entries read
-     * since [windowStart] (retention would drop the rest); whether the page reached back past it.
+     * since [windowStart] (retention would drop the rest).
      */
-    fun saveRecentlyRead(items: List<EntryListItem>, windowStart: Long): Boolean =
-        db.transactionWithResult {
-            val recent = items.filter { item ->
-                item.readChangedAt?.let { parseMillis(it) >= windowStart } == true
-            }
-            recent.forEach(store::upsertEntry)
-            recent.size < items.size
+    fun saveRecentlyRead(items: List<EntryListItem>, windowStart: Long) = db.transaction {
+        val recent = items.filter { item ->
+            item.readChangedAt?.let { parseMillis(it) >= windowStart } == true
         }
+        recent.forEach(store::upsertEntry)
+    }
 
     fun finishBootstrap(start: SyncCursors) = db.transaction {
         store.cursors = start

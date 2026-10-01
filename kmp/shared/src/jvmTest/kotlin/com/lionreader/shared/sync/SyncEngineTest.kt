@@ -171,7 +171,7 @@ class SyncEngineTest {
     }
 
     @Test
-    fun recentlyReadPagesBackThroughTheWindowOnceThenRefreshesTheNewest() = runTest {
+    fun recentlyReadPagesBackThroughTheWindowThenUntilWhatItSawLastTime() = runTest {
         repeat(150) {
             serve(
                 entry("r%03d".format(it), ageDays = 400, read = true)
@@ -187,15 +187,23 @@ class SyncEngineTest {
 
         engine.sync(downloadContent = false)
         // Read before the window: retention would drop it.
-        assertEquals((0 until 150).map { "r%03d".format(it) }, timeline(ListScope.RecentlyRead))
-        assertEquals(listOf("100", "100"), limits())
+        val all = (0 until 150).map { "r%03d".format(it) }
+        assertEquals(all, timeline(ListScope.RecentlyRead))
+        assertEquals(listOf("20", "100", "100"), limits())
 
-        // Read again elsewhere, which isn't a change to sync: the refresh brings it.
-        server.entries["r100"] =
-            server.entries.getValue("r100").copy(readChangedAt = minutesAgo(-1))
+        // Read again elsewhere, which isn't a change to sync: the refresh brings them.
+        val reread = (149 downTo 120).map { "r%03d".format(it) }
+        reread.forEachIndexed { i, id ->
+            server.entries[id] =
+                server.entries.getValue(id).copy(readChangedAt = minutesAgo(-30 + i))
+        }
         engine.sync(downloadContent = false)
-        assertEquals("r100", timeline(ListScope.RecentlyRead).first())
-        assertEquals(listOf("100", "100", "20"), limits())
+        assertEquals(reread + all.take(120), timeline(ListScope.RecentlyRead))
+        assertEquals(listOf("20", "100", "100", "20", "100"), limits())
+
+        // Nothing new: one short page.
+        engine.sync(downloadContent = false)
+        assertEquals(listOf("20", "100", "100", "20", "100", "20"), limits())
     }
 
     @Test

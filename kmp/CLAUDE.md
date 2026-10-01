@@ -104,8 +104,8 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   server's time, unless an unsent change is later. Opening an entry marks it
   read even if it is already, as on the web. Re-marking an entry read moves the
   server's time without counting as a change to sync (#1118), so every sync
-  also fetches the top of the server's list, and the first one pages back
-  through the window.
+  also pages through the server's list down to what it saw last time (the
+  first, back through the window).
 - **Database work never runs on the main thread**: `Reader`'s writes are
   `suspend` and run on its context (IO in the app); `SyncEngine` doesn't switch
   threads, so the UI calls it on IO.

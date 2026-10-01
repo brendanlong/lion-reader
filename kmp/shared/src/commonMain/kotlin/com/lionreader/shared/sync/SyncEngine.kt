@@ -58,7 +58,7 @@ class SyncEngine(
             flush()
             if (writer.cursors == null) bootstrap()
             pull()
-            refreshRecentlyRead(now() - policy().windowMillis)
+            refreshRecentlyRead(policy())
             writer.evict(policy(), now())
         }
         if (downloadContent) {
@@ -186,24 +186,34 @@ class SyncEngine(
 
     /**
      * The server's Recently Read. The web marks an entry read again whenever it's opened, which
-     * moves it there without counting as a change to sync (#1118), so the newest are fetched every
-     * sync. The first time, it pages back through the retention window.
+     * moves it there without counting as a change to sync (#1118), so every sync pages through it
+     * until what it had seen last time: the first sync, back through the retention window. Never
+     * more than retention keeps.
      */
-    private suspend fun refreshRecentlyRead(windowStart: Long) {
-        val backfilled = writer.recentlyReadBackfilled
+    private suspend fun refreshRecentlyRead(policy: RetentionPolicy) {
+        val windowStart = now() - policy.windowMillis
+        val until = maxOf(writer.recentlyReadSeen ?: Long.MIN_VALUE, windowStart)
+        var newest: Long? = null
+        var fetched = 0
         var cursor: String? = null
         do {
-            val page =
-                api.listRecentlyRead(
-                    cursor,
-                    if (backfilled) RECENTLY_READ_REFRESH else RECENTLY_READ_PAGE,
-                )
-            // A server too old to send read times: try again once it does.
-            if (page.items.any { it.readChangedAt == null }) return
-            val reachedWindowStart = writer.saveRecentlyRead(page.items, windowStart)
+            val limit = if (fetched == 0) RECENTLY_READ_REFRESH else RECENTLY_READ_PAGE
+            val page = api.listRecentlyRead(cursor, limit)
+            val times =
+                page.items.map { item ->
+                    // A server too old to send read times: try again once it does.
+                    parseMillis(item.readChangedAt ?: return)
+                }
+            writer.saveRecentlyRead(page.items, windowStart)
+            newest = newest ?: times.firstOrNull()
+            fetched += page.items.size
             cursor = page.nextCursor
-        } while (!backfilled && !reachedWindowStart && cursor != null)
-        writer.recentlyReadBackfilled = true
+        } while (
+            cursor != null &&
+                (times.lastOrNull() ?: until) > until &&
+                fetched < policy.maxReadEntries
+        )
+        newest?.let { writer.recentlyReadSeen = it }
     }
 
     private suspend fun pull() {
