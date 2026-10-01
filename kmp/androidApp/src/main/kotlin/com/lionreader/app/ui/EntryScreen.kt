@@ -351,6 +351,9 @@ fun EntryScreen(
                                     narration?.takeIf { it.entryId == pages[page] }?.paragraph,
                                 autoScroll = settings.narrationAutoScroll,
                                 onParagraphs = { articles.extracted(pages[page], it) },
+                                onListenFrom = { paragraph ->
+                                    listenFrom(graph, articles, pages[page], paragraph)
+                                },
                                 // Only while this article is the one being narrated.
                                 onSeek = { paragraph ->
                                     if (graph.narrator.state.value?.entryId == pages[page]) {
@@ -363,6 +366,26 @@ fun EntryScreen(
             }
         }
     }
+}
+
+/**
+ * "Listen from here" on a selection in [entryId]: narration starts at [paragraph], or, already on
+ * this article, goes there (and plays).
+ */
+private fun listenFrom(graph: AppGraph, articles: ArticlePages, entryId: String, paragraph: Int) {
+    val narrator = graph.narrator
+    val state = narrator.state.value
+    if (state?.entryId == entryId) {
+        narrator.seekToParagraph(paragraph)
+        if (!state.playing) narrator.togglePlaying()
+        return
+    }
+    val entry = articles.entry(entryId) ?: return
+    val paragraphs = articles.paragraphs(entryId) ?: return
+    narrator.narrate(
+        NarratedArticle(entryId, entry.title ?: "Untitled", entry.source, paragraphs),
+        fromParagraph = paragraph,
+    )
 }
 
 /**

@@ -516,6 +516,16 @@
       if (box.top < 0 || box.bottom > window.innerHeight) {
         target.scrollIntoView({ block: "center", behavior: "smooth" });
       }
+    },
+    /** The paragraph the selection starts in, if it's in the article. */
+    selectedParagraph() {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+      const start = selection.getRangeAt(0).startContainer;
+      const startElement = start instanceof Element ? start : start.parentElement;
+      const paraId = startElement?.closest("[data-para-id]")?.getAttribute("data-para-id");
+      const element = paraId ? Number(paraId.slice("para-".length)) : NaN;
+      return Number.isInteger(element) ? narrationParagraphForElement(paragraphMap, element) : null;
     }
   };
   var hadSelectionAtPointerDown = false;

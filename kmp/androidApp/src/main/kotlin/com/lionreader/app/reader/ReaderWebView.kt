@@ -3,7 +3,11 @@ package com.lionreader.app.reader
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.graphics.RectF
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -83,20 +87,23 @@ fun ReaderWebView(
                 view.loadDataWithBaseURL("$ASSET_ORIGIN/", document, "text/html", "utf-8", null)
             }
             view.highlight(narration.paragraph, narration.autoScroll)
+            view.onListenFrom = narration.onListenFrom
         },
     )
 }
 
 /**
  * The article's narration in the page (the reader's narration.js): [paragraph] is the one to
- * highlight, if any. [onParagraphs] gets the text to speak once the page has extracted it, and
- * [onSeek] the paragraph the user tapped.
+ * * highlight, if any. [onParagraphs] gets the text to speak once the page has extracted it,
+ *   [onSeek] the paragraph the user tapped, and [onListenFrom] (given, the selection menu has
+ *   "Listen from here") the paragraph a selection starts in.
  */
 data class ReaderNarration(
     val paragraph: Int? = null,
     val autoScroll: Boolean = true,
     val onParagraphs: (List<String>) -> Unit = {},
     val onSeek: (Int) -> Unit = {},
+    val onListenFrom: ((Int) -> Unit)? = null,
 )
 
 /**
@@ -133,6 +140,50 @@ private class ReaderView(context: Context) : WebView(context) {
                 highlight(wanted, scroll)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
+        }
+    }
+
+    var onListenFrom: ((Int) -> Unit)? = null
+
+    /** The text selection's menu, with "Listen" (from here) once the page can narrate. */
+    override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? =
+        super.startActionMode(callback?.let(::ListenFromHere), type)
+
+    private inner class ListenFromHere(private val wrapped: ActionMode.Callback) :
+        ActionMode.Callback2() {
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+            val created = wrapped.onCreateActionMode(mode, menu)
+            if (created && pageReady && onListenFrom != null) {
+                // On the toolbar itself: "if room" puts it behind the overflow,
+                // after Define, Copy, Select all and Share.
+                @SuppressLint("AlwaysShowAction")
+                menu
+                    .add(Menu.NONE, LISTEN_FROM_HERE, 0, "Listen")
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            }
+            return created
+        }
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean =
+            wrapped.onPrepareActionMode(mode, menu)
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+            if (item.itemId != LISTEN_FROM_HERE) return wrapped.onActionItemClicked(mode, item)
+            // Asked before the menu closes, which clears the selection.
+            evaluateJavascript("window.lionNarration && lionNarration.selectedParagraph()") { result
+                ->
+                result?.toIntOrNull()?.let { paragraph -> onListenFrom?.invoke(paragraph) }
+                mode.finish()
+            }
+            return true
+        }
+
+        override fun onDestroyActionMode(mode: ActionMode) = wrapped.onDestroyActionMode(mode)
+
+        // Where the floating toolbar goes: the WebView's own answer.
+        override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
+            if (wrapped is ActionMode.Callback2) wrapped.onGetContentRect(mode, view, outRect)
+            else super.onGetContentRect(mode, view, outRect)
         }
     }
 
@@ -216,6 +267,8 @@ private class SideScroller(
     val canScrollLeft: Boolean,
     val canScrollRight: Boolean,
 )
+
+private const val LISTEN_FROM_HERE = 0x4c52
 
 private fun parseRects(json: String?): List<SideScroller> = runCatching {
     val rects = JSONArray(json)

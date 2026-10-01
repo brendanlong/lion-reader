@@ -64,6 +64,28 @@ describe("the app reader's narration", () => {
     button.remove();
   });
 
+  it("finds the paragraph a selection starts in", () => {
+    const bold = document.querySelector("b")!;
+    const range = document.createRange();
+    range.setStart(bold.firstChild!, 2);
+    range.setEnd(bold.firstChild!, 5);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+
+    const element = Number(bold.closest("[data-para-id]")?.getAttribute("data-para-id")?.slice(5));
+    expect(window.lionNarration?.selectedParagraph()).toBe(
+      narrationParagraphForElement(web.paragraphMap, element)
+    );
+
+    // In the title, or nothing selected: no paragraph.
+    range.selectNodeContents(document.querySelector(".lr-header h1")!);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    expect(window.lionNarration?.selectedParagraph()).toBeNull();
+    window.getSelection()!.removeAllRanges();
+    expect(window.lionNarration?.selectedParagraph()).toBeNull();
+  });
+
   it("reports the paragraph a tap lands on", () => {
     const item = document.querySelectorAll("li")[1];
     item.click();

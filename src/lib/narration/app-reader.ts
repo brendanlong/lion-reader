@@ -5,9 +5,10 @@
  * web's own walk over the browser's own parse of it, the way
  * `htmlToClientNarration` does on the web.
  *
- * Talks to the app over its `lionReader` message channel: it sends the
+ *  * Talks to the app over its `lionReader` message channel: it sends the
  * article's narration once (`{type: "narration"}`) and the paragraph the user
- * tapped (`{type: "seek"}`), and the app calls `lionNarration.highlight`.
+ * tapped (`{type: "seek"}`), and the app calls `lionNarration.highlight` and
+ * `lionNarration.selectedParagraph` (for "Listen from here").
  *
  * @module narration/app-reader
  */
@@ -29,7 +30,10 @@ interface AppChannel {
 declare global {
   interface Window {
     lionReader?: AppChannel;
-    lionNarration?: { highlight(paragraph: number | null, scroll: boolean): void };
+    lionNarration?: {
+      highlight(paragraph: number | null, scroll: boolean): void;
+      selectedParagraph(): number | null;
+    };
   }
 }
 
@@ -83,6 +87,17 @@ window.lionNarration = {
     if (box.top < 0 || box.bottom > window.innerHeight) {
       target.scrollIntoView({ block: "center", behavior: "smooth" });
     }
+  },
+
+  /** The paragraph the selection starts in, if it's in the article. */
+  selectedParagraph() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+    const start = selection.getRangeAt(0).startContainer;
+    const startElement = start instanceof Element ? start : start.parentElement;
+    const paraId = startElement?.closest("[data-para-id]")?.getAttribute("data-para-id");
+    const element = paraId ? Number(paraId.slice("para-".length)) : NaN;
+    return Number.isInteger(element) ? narrationParagraphForElement(paragraphMap, element) : null;
   },
 };
 
