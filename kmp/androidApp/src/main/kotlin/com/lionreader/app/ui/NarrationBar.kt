@@ -3,14 +3,12 @@ package com.lionreader.app.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,7 +33,10 @@ val NARRATION_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 fun speedLabel(speed: Float): String = "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}×"
 
-/** Narration controls: the article, previous/next paragraph, play/pause, speed, stop. */
+/**
+ * Narration controls: the article, previous/next paragraph, play/pause, speed and, given [onStop],
+ * stop. The host draws the surface and the navigation bar inset, so other bars can share them.
+ */
 @Composable
 fun NarrationBar(
     state: NarrationState,
@@ -44,64 +45,62 @@ fun NarrationBar(
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onSpeed: (Float) -> Unit,
-    onStop: () -> Unit,
+    onStop: (() -> Unit)?,
 ) {
-    Surface(tonalElevation = 3.dp) {
-        Row(
-            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            state.title,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 8.dp),
+        )
+        IconButton(onClick = onPrevious) {
+            Icon(painterResource(R.drawable.ic_skip_previous), "Previous paragraph")
+        }
+        // Only waits long enough to notice: every seek buffers for a moment.
+        var loading by remember { mutableStateOf(false) }
+        LaunchedEffect(state.playing && state.waiting) {
+            loading = false
+            if (state.playing && state.waiting) {
+                delay(300)
+                loading = true
+            }
+        }
+        IconButton(
+            onClick = onToggle,
+            modifier = Modifier.semantics { if (loading) stateDescription = "Loading" },
         ) {
-            Text(
-                state.title,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
-            )
-            IconButton(onClick = onPrevious) {
-                Icon(painterResource(R.drawable.ic_skip_previous), "Previous paragraph")
+            if (loading) {
+                // Tapping still pauses; the spinner says audio is on its way.
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp).semantics { contentDescription = "Pause" },
+                    strokeWidth = 2.5.dp,
+                )
+            } else {
+                Icon(
+                    painterResource(if (state.playing) R.drawable.ic_pause else R.drawable.ic_play),
+                    if (state.playing) "Pause" else "Play",
+                )
             }
-            // Only waits long enough to notice: every seek buffers for a moment.
-            var loading by remember { mutableStateOf(false) }
-            LaunchedEffect(state.playing && state.waiting) {
-                loading = false
-                if (state.playing && state.waiting) {
-                    delay(300)
-                    loading = true
-                }
+        }
+        IconButton(onClick = onNext) {
+            Icon(painterResource(R.drawable.ic_skip_next), "Next paragraph")
+        }
+        TextButton(
+            onClick = {
+                val next = NARRATION_SPEEDS.firstOrNull { it > speed + 0.01f }
+                onSpeed(next ?: NARRATION_SPEEDS.first())
             }
-            IconButton(
-                onClick = onToggle,
-                modifier = Modifier.semantics { if (loading) stateDescription = "Loading" },
-            ) {
-                if (loading) {
-                    // Tapping still pauses; the spinner says audio is on its way.
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp).semantics { contentDescription = "Pause" },
-                        strokeWidth = 2.5.dp,
-                    )
-                } else {
-                    Icon(
-                        painterResource(
-                            if (state.playing) R.drawable.ic_pause else R.drawable.ic_play
-                        ),
-                        if (state.playing) "Pause" else "Play",
-                    )
-                }
-            }
-            IconButton(onClick = onNext) {
-                Icon(painterResource(R.drawable.ic_skip_next), "Next paragraph")
-            }
-            TextButton(
-                onClick = {
-                    val next = NARRATION_SPEEDS.firstOrNull { it > speed + 0.01f }
-                    onSpeed(next ?: NARRATION_SPEEDS.first())
-                }
-            ) {
-                Text(speedLabel(speed))
-            }
-            IconButton(onClick = onStop) {
+        ) {
+            Text(speedLabel(speed))
+        }
+        onStop?.let { stop ->
+            IconButton(onClick = stop) {
                 Icon(painterResource(R.drawable.ic_close), "Stop narration")
             }
         }

@@ -3,11 +3,15 @@ package com.lionreader.app.ui
 import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
@@ -20,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -37,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -130,6 +136,129 @@ fun EntryScreen(
 
     MarkReadOnArrival(account.reader, entryId, onShown)
 
+    val actions: @Composable RowScope.() -> Unit = actions@{
+        val current = entry ?: return@actions
+        val paragraphs = spoken[current.id]
+        // Amber while this article is being narrated, like the
+        // other toggles; tapping it then stops.
+        val narrating = narration?.entryId == current.id
+        if (narrating || !paragraphs.isNullOrEmpty()) {
+            IconButton(
+                onClick = {
+                    if (narrating) graph.narrator.stop()
+                    else if (paragraphs != null)
+                        graph.narrator.narrate(
+                            NarratedArticle(
+                                current.id,
+                                current.title ?: "Untitled",
+                                current.source,
+                                paragraphs,
+                            )
+                        )
+                }
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_headphones),
+                    contentDescription = if (narrating) "Stop listening" else "Listen",
+                    tint = actionTint(active = narrating),
+                )
+            }
+        }
+        // It shows in the article, so not before the article is on the device.
+        if (current.content != null && (summariesAvailable == true || current.summary != null)) {
+            SummaryButton(
+                summarizing = current.id in summarizing,
+                hasSummary = current.summary != null,
+                shown = current.id !in hiddenSummaries,
+            ) {
+                val id = current.id
+                if (current.summary != null) {
+                    hiddenSummaries =
+                        if (id in hiddenSummaries) hiddenSummaries - id else hiddenSummaries + id
+                } else if (id !in summarizing) {
+                    summarizing += id
+                    hiddenSummaries -= id
+                    coroutines.launch {
+                        try {
+                            withContext(Dispatchers.IO) { account.sync.summarize(id) }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            Toast.makeText(
+                                    context,
+                                    "Couldn't summarize this article",
+                                    Toast.LENGTH_SHORT,
+                                )
+                                .show()
+                        } finally {
+                            summarizing -= id
+                        }
+                    }
+                }
+            }
+        }
+        IconButton(
+            onClick = {
+                coroutines.launch {
+                    account.reader.setRead(listOf(current.id), !current.read)
+                }
+            }
+        ) {
+            Icon(
+                painterResource(
+                    if (current.read) R.drawable.ic_circle_outline else R.drawable.ic_circle
+                ),
+                contentDescription = if (current.read) "Mark unread" else "Mark read",
+                tint = actionTint(active = !current.read),
+                // The list's size: a full-size filled dot outweighs
+                // the outline icons beside it.
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        IconButton(
+            onClick = {
+                coroutines.launch {
+                    account.reader.setStarred(current.id, !current.starred)
+                }
+            }
+        ) {
+            Icon(
+                painterResource(
+                    if (current.starred) R.drawable.ic_star else R.drawable.ic_star_border
+                ),
+                contentDescription = if (current.starred) "Unstar" else "Star",
+                tint = actionTint(active = current.starred),
+            )
+        }
+        current.url?.let { url ->
+            IconButton(
+                onClick = {
+                    context.startActivity(
+                        Intent.createChooser(
+                            Intent(Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_TEXT, url)
+                                .putExtra(Intent.EXTRA_SUBJECT, current.title),
+                            null,
+                        )
+                    )
+                }
+            ) {
+                Icon(painterResource(R.drawable.ic_share), contentDescription = "Share")
+            }
+            IconButton(
+                onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+                }
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_open_in_new),
+                    contentDescription = "Open original",
+                )
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -162,147 +291,37 @@ fun EntryScreen(
                         }
                     }
                 },
-                actions = {
-                    val current = entry ?: return@TopAppBar
-                    val paragraphs = spoken[current.id]
-                    // Amber while this article is being narrated, like the
-                    // other toggles; tapping it then stops, as the bar's X does.
-                    val narrating = narration?.entryId == current.id
-                    if (narrating || !paragraphs.isNullOrEmpty()) {
-                        IconButton(
-                            onClick = {
-                                if (narrating) graph.narrator.stop()
-                                else if (paragraphs != null)
-                                    graph.narrator.narrate(
-                                        NarratedArticle(
-                                            current.id,
-                                            current.title ?: "Untitled",
-                                            current.source,
-                                            paragraphs,
-                                        )
-                                    )
-                            }
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_headphones),
-                                contentDescription = if (narrating) "Stop listening" else "Listen",
-                                tint = actionTint(active = narrating),
-                            )
-                        }
-                    }
-                    // It shows in the article, so not before the article is on the device.
-                    if (
-                        current.content != null &&
-                            (summariesAvailable == true || current.summary != null)
-                    ) {
-                        SummaryButton(
-                            summarizing = current.id in summarizing,
-                            hasSummary = current.summary != null,
-                            shown = current.id !in hiddenSummaries,
-                        ) {
-                            val id = current.id
-                            if (current.summary != null) {
-                                hiddenSummaries =
-                                    if (id in hiddenSummaries) hiddenSummaries - id
-                                    else hiddenSummaries + id
-                            } else if (id !in summarizing) {
-                                summarizing += id
-                                hiddenSummaries -= id
-                                coroutines.launch {
-                                    try {
-                                        withContext(Dispatchers.IO) { account.sync.summarize(id) }
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (_: Exception) {
-                                        Toast.makeText(
-                                                context,
-                                                "Couldn't summarize this article",
-                                                Toast.LENGTH_SHORT,
-                                            )
-                                            .show()
-                                    } finally {
-                                        summarizing -= id
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    IconButton(
-                        onClick = {
-                            coroutines.launch {
-                                account.reader.setRead(listOf(current.id), !current.read)
-                            }
-                        }
-                    ) {
-                        Icon(
-                            painterResource(
-                                if (current.read) R.drawable.ic_circle_outline
-                                else R.drawable.ic_circle
-                            ),
-                            contentDescription = if (current.read) "Mark unread" else "Mark read",
-                            tint = actionTint(active = !current.read),
-                            // The list's size: a full-size filled dot outweighs
-                            // the outline icons beside it.
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            coroutines.launch {
-                                account.reader.setStarred(current.id, !current.starred)
-                            }
-                        }
-                    ) {
-                        Icon(
-                            painterResource(
-                                if (current.starred) R.drawable.ic_star
-                                else R.drawable.ic_star_border
-                            ),
-                            contentDescription = if (current.starred) "Unstar" else "Star",
-                            tint = actionTint(active = current.starred),
-                        )
-                    }
-                    current.url?.let { url ->
-                        IconButton(
-                            onClick = {
-                                context.startActivity(
-                                    Intent.createChooser(
-                                        Intent(Intent.ACTION_SEND)
-                                            .setType("text/plain")
-                                            .putExtra(Intent.EXTRA_TEXT, url)
-                                            .putExtra(Intent.EXTRA_SUBJECT, current.title),
-                                        null,
-                                    )
-                                )
-                            }
-                        ) {
-                            Icon(painterResource(R.drawable.ic_share), contentDescription = "Share")
-                        }
-                        IconButton(
-                            onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
-                            }
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_open_in_new),
-                                contentDescription = "Open original",
-                            )
-                        }
-                    }
-                },
+                // Beside the list, the article's actions stay at the top: the bottom is
+                // the narration bar's. On a phone they're at the bottom, in reach.
+                actions = { if (besideList) actions() },
             )
         },
         bottomBar = {
-            narration?.let {
-                NarrationBar(
-                    state = it,
-                    speed = settings.narrationSpeed,
-                    onPrevious = { graph.narrator.skipParagraphs(-1) },
-                    onToggle = graph.narrator::togglePlaying,
-                    onNext = { graph.narrator.skipParagraphs(1) },
-                    onSpeed = graph::setNarrationSpeed,
-                    onStop = graph.narrator::stop,
-                )
+            if (narration != null || !besideList) {
+                Surface(tonalElevation = 3.dp) {
+                    Column(Modifier.navigationBarsPadding()) {
+                        narration?.let {
+                            NarrationBar(
+                                state = it,
+                                speed = settings.narrationSpeed,
+                                onPrevious = { graph.narrator.skipParagraphs(-1) },
+                                onToggle = graph.narrator::togglePlaying,
+                                onNext = { graph.narrator.skipParagraphs(1) },
+                                onSpeed = graph::setNarrationSpeed,
+                                // On a phone the Listen toggle, just below, stops it.
+                                onStop = graph.narrator::stop.takeIf { besideList },
+                            )
+                        }
+                        if (!besideList) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically,
+                                content = actions,
+                            )
+                        }
+                    }
+                }
             }
         },
     ) { padding ->
