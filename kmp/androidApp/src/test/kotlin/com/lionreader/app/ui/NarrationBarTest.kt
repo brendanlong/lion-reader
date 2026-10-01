@@ -42,6 +42,18 @@ class NarrationBarTest {
     }
 
     @Test
+    fun stopIsOnlyOfferedWhenGiven() {
+        val state = NarrationState("a", "Title", 0, playing = true, waiting = false)
+        val onStop = mutableStateOf<(() -> Unit)?>(null)
+        composeRule.setContent { NarrationBar(state, 1f, {}, {}, {}, {}, onStop.value) }
+        composeRule.onNodeWithContentDescription("Stop narration").assertDoesNotExist()
+
+        onStop.value = {}
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Stop narration").assertIsDisplayed()
+    }
+
+    @Test
     fun pausedShowsPlayEvenWhileWaiting() {
         composeRule.setContent {
             NarrationBar(

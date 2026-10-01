@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -300,21 +301,28 @@ fun EntryScreen(
             if (narration != null || !besideList) {
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.navigationBarsPadding()) {
-                        narration?.let {
+                        narration?.let { narrated ->
                             NarrationBar(
-                                state = it,
+                                state = narrated,
                                 speed = settings.narrationSpeed,
                                 onPrevious = { graph.narrator.skipParagraphs(-1) },
                                 onToggle = graph.narrator::togglePlaying,
                                 onNext = { graph.narrator.skipParagraphs(1) },
                                 onSpeed = graph::setNarrationSpeed,
-                                // On a phone the Listen toggle, just below, stops it.
-                                onStop = graph.narrator::stop.takeIf { besideList },
+                                // On a phone the Listen toggle just below stops it,
+                                // but only once this article is loaded and is the
+                                // one being read.
+                                onStop =
+                                    graph.narrator::stop.takeIf {
+                                        besideList || narrated.entryId != entry?.id
+                                    },
                             )
                         }
                         if (!besideList) {
                             Row(
-                                Modifier.fillMaxWidth(),
+                                // Its height while the article loads, so the page
+                                // doesn't jump when the actions arrive.
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically,
                                 content = actions,
