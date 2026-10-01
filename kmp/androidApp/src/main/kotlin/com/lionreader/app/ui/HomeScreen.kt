@@ -2,6 +2,8 @@ package com.lionreader.app.ui
 
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -47,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,11 +58,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -77,7 +83,11 @@ import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.NavSubscription
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.TimelineItem
+import kotlin.math.abs
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,7 +137,7 @@ fun HomeScreen(
         gesturesEnabled = search == null || drawer.isOpen,
         drawerContent = {
             // Given the state, it closes on back (with the predictive animation).
-            ModalDrawerSheet(drawerState = drawer) {
+            ModalDrawerSheet(drawerState = drawer, modifier = Modifier.settlePromptly(drawer)) {
                 Drawer(
                     navigation = navigation,
                     selected = scope,
@@ -135,11 +145,22 @@ fun HomeScreen(
                     hideEmpty = hideEmptyLists,
                     onToggleTag = model::toggleTag,
                     onSelect = {
+                        val switching = it != scope
                         model.select(it)
-                        coroutines.launch { drawer.close() }
+                        coroutines.launch {
+                            // The new list's first frame is a heavy one; behind the open
+                            // drawer it's a pause, mid-close it skipped most of the animation.
+                            if (switching) {
+                                withTimeoutOrNull(LIST_SWITCH_WAIT_MILLIS) {
+                                    model.items.drop(1).first()
+                                }
+                                withFrameNanos {}
+                            }
+                            drawer.closeSteadily()
+                        }
                     },
                     onSettings = {
-                        coroutines.launch { drawer.close() }
+                        coroutines.launch { drawer.closeSteadily() }
                         onSettings()
                     },
                 )
@@ -165,7 +186,7 @@ fun HomeScreen(
                             )
                         },
                         navigationIcon = {
-                            IconButton(onClick = { coroutines.launch { drawer.open() } }) {
+                            IconButton(onClick = { coroutines.launch { drawer.openSteadily() } }) {
                                 Icon(
                                     painterResource(R.drawable.ic_menu),
                                     contentDescription = "Lists",
@@ -232,6 +253,50 @@ fun HomeScreen(
         }
     }
 }
+
+/**
+ * * Snaps the drawer's last couple of pixels; for the drawer's sheet. The drawer's spring looks
+ *   done in about 250ms but spends another 300ms nudging its last pixel, and while it animates the
+ *   drawer takes any touch as a drag: a tap on a list right after opening (or on the list behind,
+ *   right after closing) did nothing.
+ */
+@Composable
+internal fun Modifier.settlePromptly(drawer: DrawerState): Modifier {
+    // Closed is at minus the sheet's width (where Material anchors it).
+    var sheetWidth by remember { mutableFloatStateOf(Float.NaN) }
+    LaunchedEffect(drawer) {
+        snapshotFlow { Triple(drawer.isAnimationRunning, drawer.targetValue, drawer.currentOffset) }
+            .collect { (animating, target, offset) ->
+                // A finger's drag isn't "animating", so never snaps mid-gesture.
+                if (!animating) return@collect
+                val anchor = if (target == DrawerValue.Open) 0f else -sheetWidth
+                if (offset.isNaN() || anchor.isNaN() || abs(offset - anchor) >= SETTLED_PX) {
+                    return@collect
+                }
+                // Not if a finger caught the drawer since.
+                if (drawer.isAnimationRunning && drawer.targetValue == target) drawer.snapTo(target)
+            }
+    }
+    return onSizeChanged { sheetWidth = it.width.toFloat() }
+}
+
+private const val SETTLED_PX = 2f
+
+/**
+ * Material's own open and close are springs that differ a lot (closing covers most of the way in
+ * ~50ms, a flash); the buttons and lists move it at an even pace. Swipes follow the finger.
+ */
+private suspend fun DrawerState.openSteadily() =
+    animateTo(DrawerValue.Open, tween(DRAWER_OPEN_MILLIS, easing = FastOutSlowInEasing))
+
+private suspend fun DrawerState.closeSteadily() =
+    animateTo(DrawerValue.Closed, tween(DRAWER_CLOSE_MILLIS, easing = FastOutSlowInEasing))
+
+private const val DRAWER_OPEN_MILLIS = 250
+private const val DRAWER_CLOSE_MILLIS = 200
+
+/** At most this long for a list to load before the drawer closes over it anyway. */
+private const val LIST_SWITCH_WAIT_MILLIS = 300L
 
 /** The top bar while searching: the search box, with back and clear. */
 @OptIn(ExperimentalMaterial3Api::class)
