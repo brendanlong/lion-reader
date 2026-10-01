@@ -9,8 +9,9 @@ import com.lionreader.shared.data.ListScope
 internal data class ListState(
     val scope: ListScope = ListScope.All,
     /**
-     * Entries touched since the list was chosen, kept in an unread-only list once read. Bounded:
-     * the ids are bound into one query (SQLite allows 999 variables).
+     * Entries touched since the list was chosen, kept in an unread-only list once read and in
+     * Starred once unstarred, until the list is chosen again or refreshed. Bounded: the ids are
+     * bound into one query (SQLite allows 999 variables).
      */
     val keepIds: Set<String> = emptySet(),
     val limit: Long = PAGE,
