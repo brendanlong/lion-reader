@@ -231,6 +231,13 @@ private fun NarrationSettings(
                             }
                         }
                     }
+                    if (settings.cloudVoiceModel != null && model.id != settings.cloudVoiceModel) {
+                        Text(
+                            "Your chosen model isn't available, so the default is used.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     val voice =
                         settings.cloudVoice?.takeIf { it in model.voices } ?: model.defaultVoice
                     // Only the voice: a model left on the default follows the server's default.

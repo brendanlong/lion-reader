@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   defaultSpeechModelId,
   defaultVoiceFor,
+  resolveSpeechModel,
   toDeepInfraSpeechModels,
   toSpeechModels,
 } from "@/server/services/speech";
@@ -201,5 +202,69 @@ describe("isMp3", () => {
   it("rejects WAV", () => {
     expect(isMp3(new TextEncoder().encode("RIFF\0\0\0\0WAVE"))).toBe(false);
     expect(isMp3(new Uint8Array())).toBe(false);
+  });
+});
+
+describe("resolveSpeechModel", () => {
+  const originalKeys = {
+    deepinfra: process.env.DEEPINFRA_API_KEY,
+    openrouter: process.env.OPENROUTER_API_KEY,
+  };
+  afterEach(() => {
+    for (const [provider, value] of Object.entries(originalKeys)) {
+      const name = `${provider.toUpperCase()}_API_KEY`;
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  const deepInfraKokoro = {
+    id: DEEPINFRA_KOKORO,
+    displayName: "hexgrad: Kokoro 82M",
+    provider: "deepinfra" as const,
+    voices: ["af_heart", "bm_george"],
+  };
+  const qwen = {
+    id: "deepinfra:Qwen/Qwen3-TTS",
+    displayName: "Qwen: Qwen3 TTS",
+    provider: "deepinfra" as const,
+    voices: ["Vivian"],
+  };
+
+  it("uses the default model and voice when nothing is chosen", () => {
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    expect(resolveSpeechModel([deepInfraKokoro], {}, null, null)).toEqual({
+      model: deepInfraKokoro,
+      voice: "af_heart",
+    });
+  });
+
+  it("falls back to the default when the chosen model's provider has no key", () => {
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    delete process.env.OPENROUTER_API_KEY;
+    expect(resolveSpeechModel([deepInfraKokoro], {}, OPENROUTER_KOKORO, "bm_george")).toEqual({
+      model: deepInfraKokoro,
+      voice: "bm_george",
+    });
+  });
+
+  it("falls back from a model the server's key doesn't allow", () => {
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    expect(resolveSpeechModel([deepInfraKokoro], {}, qwen.id, "Vivian")).toEqual({
+      model: deepInfraKokoro,
+      voice: "af_heart",
+    });
+  });
+
+  it("keeps a model chosen on the user's own key, even if it's no longer listed", () => {
+    const keys = { deepinfraApiKey: "d" };
+    expect(resolveSpeechModel([deepInfraKokoro, qwen], keys, qwen.id, null).model).toBe(qwen);
+    expect(() => resolveSpeechModel([deepInfraKokoro], keys, qwen.id, null)).toThrow(
+      "Speech model not available"
+    );
+  });
+
+  it("needs a provider", () => {
+    expect(() => resolveSpeechModel([], {}, null, null)).toThrow("require");
   });
 });

@@ -38,8 +38,9 @@ export function CloudVoiceSettings({
   isLoading: boolean;
 }) {
   const pickedModelId = settings.cloudModelId ? normalizeModelRef(settings.cloudModelId) : null;
-  // A picked model that isn't listed (its provider's key was removed) falls
-  // back to the default on the server too.
+  // A picked model that isn't listed (e.g. its provider's key was removed);
+  // the voices shown are the default model's, which the server falls back to
+  // when the provider has no key.
   const pickedModel = models.find((candidate) => candidate.id === pickedModelId);
   const isPickedUnavailable = pickedModelId !== null && !pickedModel && !isLoading;
   const model = pickedModel ?? models.find((candidate) => candidate.id === defaultModelId);
@@ -115,7 +116,7 @@ export function CloudVoiceSettings({
         />
         {isPickedUnavailable && (
           <p className="ui-text-xs text-muted mt-1.5">
-            Your chosen model isn&apos;t available, so the default is used.
+            Your chosen model isn&apos;t available. Pick another, or Default.
           </p>
         )}
       </div>

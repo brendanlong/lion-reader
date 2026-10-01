@@ -16,7 +16,7 @@ import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
 } from "@/lib/summarization/constants";
-import { DEFAULT_NARRATION_MODEL, DEFAULT_NARRATION_MODELS } from "@/lib/narration/constants";
+import { DEFAULT_NARRATION_MODELS } from "@/lib/narration/constants";
 
 const ENV_VARS = [
   "ANTHROPIC_API_KEY",
@@ -190,12 +190,11 @@ describe("getNarrationModelRef", () => {
     clearEnv();
     // Anthropic models can't do JSON-object responses, and a legacy bare ID
     // parses as Anthropic — both must fall back to the default model.
-    expect(getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(
-      getNarrationModelRef(DEFAULT_NARRATION_MODEL)
-    );
-    expect(getNarrationModelRef("some-bare-model")).toEqual(
-      getNarrationModelRef(DEFAULT_NARRATION_MODEL)
-    );
+    process.env.ANTHROPIC_API_KEY = "sk-ant-server";
+    process.env.GROQ_API_KEY = "gsk-server";
+    const groqDefault = parseModelRef(DEFAULT_NARRATION_MODELS.groq);
+    expect(getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(groqDefault);
+    expect(getNarrationModelRef("some-bare-model")).toEqual(groqDefault);
   });
 });
 

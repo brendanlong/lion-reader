@@ -152,22 +152,21 @@ export function defaultVoiceFor(model: SpeechModel): string {
 export class SpeechRequestError extends Error {}
 
 /**
- * Synthesizes `text` as MP3. A null model or voice means the default. Rejects
- * models the user can't pick in settings, so this can't be used to run
- * arbitrary (or arbitrarily expensive) models.
+ * The model and voice to synthesize with. A null model means the default. A
+ * choice on a provider with no key left (or no longer allowed on the server's
+ * key) falls back to the default; one on the user's own key is kept, and is
+ * an error if the provider stopped listing it.
  */
-export async function synthesizeSpeech(
+export function resolveSpeechModel(
+  models: SpeechModel[],
   keys: AiProviderKeys,
-  options: { model: string | null; voice: string | null; text: string }
-): Promise<Uint8Array> {
-  const models = await listSpeechModels(keys);
+  requestedModel: string | null,
+  requestedVoice: string | null
+): { model: SpeechModel; voice: string } {
   if (models.length === 0) {
     throw new SpeechRequestError("Cloud voices require a DeepInfra or OpenRouter API key");
   }
-  // A choice on a provider with no key left (or no longer allowed on the
-  // server's key) falls back to the default; one on the user's own key is
-  // kept even if the provider stopped listing it.
-  const requested = options.model ? normalizeModelRef(options.model) : null;
+  const requested = requestedModel ? normalizeModelRef(requestedModel) : null;
   const modelId =
     requested && isModelAllowed(requested, keys, SERVER_KEY_CLOUD_VOICE_MODELS)
       ? requested
@@ -179,10 +178,30 @@ export async function synthesizeSpeech(
   // A stored voice the model no longer lists falls back to the default, the
   // same voice the settings page shows as selected.
   const voice =
-    options.voice && model.voices.includes(options.voice) ? options.voice : defaultVoiceFor(model);
+    requestedVoice && model.voices.includes(requestedVoice)
+      ? requestedVoice
+      : defaultVoiceFor(model);
+  return { model, voice };
+}
+
+/**
+ * Synthesizes `text` as MP3. A null model or voice means the default. Rejects
+ * models the user can't pick in settings, so this can't be used to run
+ * arbitrary (or arbitrarily expensive) models.
+ */
+export async function synthesizeSpeech(
+  keys: AiProviderKeys,
+  options: { model: string | null; voice: string | null; text: string }
+): Promise<Uint8Array> {
+  const { model, voice } = resolveSpeechModel(
+    await listSpeechModels(keys),
+    keys,
+    options.model,
+    options.voice
+  );
   const apiKey = getProviderApiKey(model.provider, keys);
   if (!apiKey) {
-    throw new SpeechRequestError(`Speech model not available: ${modelId}`);
+    throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
   const providerModel = parseModelRef(model.id).model;
   return model.provider === "deepinfra"
