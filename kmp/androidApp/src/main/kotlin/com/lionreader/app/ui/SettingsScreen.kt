@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -147,8 +149,8 @@ private fun NarrationSettings(
         produceState<List<VoiceOption>?>(null) {
             value = runCatching { graph.systemTts.voices() }.getOrDefault(emptyList())
         }
-    // Null while loading; empty when this account has none (no OpenRouter key)
-    // or the server can't be reached.
+    // Null while loading; empty when this account has none (no speech provider
+    // key) or the server can't be reached.
     val account by graph.account.collectAsStateWithLifecycle()
     val cloud by
         produceState<VoiceModels?>(null, account) {
@@ -204,23 +206,32 @@ private fun NarrationSettings(
                     Text(
                         if (cloud == null) "Loading cloud voices…"
                         else
-                            "Cloud voices need an OpenRouter key (set on the web) and a connection.",
+                            "Cloud voices need a DeepInfra or OpenRouter key (set on the web) and a connection.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     if (models.size > 1) {
-                        Picker(model.displayName, models, { it.displayName }) { choice ->
+                        Picker(
+                            listOfNotNull(model.displayName, model.providerName)
+                                .joinToString(" · "),
+                            models.sortedBy { it.providerName },
+                            { it.displayName },
+                            group = { it.providerName },
+                        ) { choice ->
                             update { it.copy(cloudVoiceModel = choice.id, cloudVoice = null) }
                         }
                     }
                     val voice =
                         settings.cloudVoice?.takeIf { it in model.voices } ?: model.defaultVoice
+                    // Only the voice: a model left on the default follows the server's default.
                     Picker(voice, model.voices, { it }) { choice ->
-                        update { it.copy(cloudVoiceModel = model.id, cloudVoice = choice) }
+                        update { it.copy(cloudVoice = choice) }
                     }
                     Text(
-                        "Cloud voices send the text being read to ${model.displayName} through OpenRouter.",
+                        "Cloud voices send the text being read to ${model.displayName}" +
+                            (model.providerName?.let { " through $it" } ?: "") +
+                            ".",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -253,6 +264,8 @@ private fun <T> Picker(
     label: String,
     options: List<T>,
     optionLabel: (T) -> String,
+    /** A heading shown above each run of options that share one. */
+    group: (T) -> String? = { null },
     onPick: (T) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -261,7 +274,19 @@ private fun <T> Picker(
             Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEach { option ->
+            options.forEachIndexed { index, option ->
+                val title = group(option)
+                if (title != null && (index == 0 || group(options[index - 1]) != title)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier =
+                            Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
+                                heading()
+                            },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(optionLabel(option)) },
                     onClick = {

@@ -114,7 +114,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
     /** The account this token belongs to. */
     suspend fun me(): AccountUser = get(Me.serializer(), "/auth/me") {}.user
 
-    /** The cloud voices this user can use (none without an OpenRouter key on either side). */
+    /** The cloud voices this user can use (none without a speech provider key on either side). */
     suspend fun voiceModels(): VoiceModels =
         get(VoiceModels.serializer(), "/narration/voice-models") {}
 

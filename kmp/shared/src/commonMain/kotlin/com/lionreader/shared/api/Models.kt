@@ -248,7 +248,17 @@ data class VoiceModel(
     val displayName: String,
     val voices: List<String>,
     val defaultVoice: String,
-)
+    /** `deepinfra` or `openrouter`; absent from older servers. */
+    val provider: String? = null,
+) {
+    val providerName: String?
+        get() =
+            when (provider) {
+                "deepinfra" -> "DeepInfra"
+                "openrouter" -> "OpenRouter"
+                else -> provider
+            }
+}
 
 @Serializable data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String)
 
