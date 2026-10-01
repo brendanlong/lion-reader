@@ -75,6 +75,9 @@ class HomeViewModel(
     val unreadOnly: StateFlow<Boolean> =
         settings.map { it.unreadOnly }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val hideEmptyLists: StateFlow<Boolean> =
+        settings.map { it.hideEmptyLists }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val expandedTags: StateFlow<Set<String>> =
         settings.map { it.expandedTags }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 

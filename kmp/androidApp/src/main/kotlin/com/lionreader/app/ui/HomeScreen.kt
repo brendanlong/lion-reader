@@ -94,6 +94,7 @@ fun HomeScreen(
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
+    val hideEmptyLists by model.hideEmptyLists.collectAsStateWithLifecycle()
     val search by model.search.collectAsStateWithLifecycle()
     val searchResults by model.searchResults.collectAsStateWithLifecycle()
     val shown by model.shown.collectAsStateWithLifecycle()
@@ -129,6 +130,7 @@ fun HomeScreen(
                     navigation = navigation,
                     selected = scope,
                     expandedTags = expandedTags,
+                    hideEmpty = hideEmptyLists,
                     onToggleTag = model::toggleTag,
                     onSelect = {
                         model.select(it)
@@ -349,10 +351,14 @@ private fun Drawer(
     navigation: Navigation?,
     selected: ListScope,
     expandedTags: Set<String>,
+    /** Leave out feeds and tags with nothing unread, except the one open. */
+    hideEmpty: Boolean,
     onToggleTag: (String) -> Unit,
     onSelect: (ListScope) -> Unit,
     onSettings: () -> Unit,
 ) {
+    fun shown(sub: NavSubscription) =
+        !hideEmpty || sub.unread > 0 || selected == ListScope.Subscription(sub.id)
     LazyColumn(modifier = Modifier.padding(horizontal = 12.dp)) {
         item {
             Text(
@@ -361,6 +367,16 @@ private fun Drawer(
                 modifier = Modifier.padding(16.dp),
             )
         }
+        // Above the lists, which can be long.
+        item {
+            NavigationDrawerItem(
+                label = { Text("Settings") },
+                icon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
+                selected = false,
+                onClick = onSettings,
+            )
+        }
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
         item {
             DrawerRow("All", navigation?.allUnread, selected == ListScope.All) {
                 onSelect(ListScope.All)
@@ -385,8 +401,10 @@ private fun Drawer(
                 name: String,
                 unread: Int,
                 scope: ListScope,
-                subscriptions: List<NavSubscription>,
+                all: List<NavSubscription>,
             ) {
+                val subscriptions = all.filter(::shown)
+                if (hideEmpty && unread == 0 && selected != scope && subscriptions.isEmpty()) return
                 // The open feed's group shows its feeds, so the open list stays visible.
                 val expanded =
                     key in expandedTags ||
@@ -433,7 +451,7 @@ private fun Drawer(
             val uncategorized = nav.uncategorized
             if (nav.tags.isEmpty()) {
                 // Without tags there's nothing to group feeds apart from.
-                items(uncategorized, key = { "sub-${it.id}" }) { sub ->
+                items(uncategorized.filter(::shown), key = { "sub-${it.id}" }) { sub ->
                     DrawerRow(sub.title, sub.unread, selected == ListScope.Subscription(sub.id)) {
                         onSelect(ListScope.Subscription(sub.id))
                     }
@@ -447,15 +465,6 @@ private fun Drawer(
                     uncategorized,
                 )
             }
-        }
-        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-        item {
-            NavigationDrawerItem(
-                label = { Text("Settings") },
-                icon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
-                selected = false,
-                onClick = onSettings,
-            )
         }
     }
 }

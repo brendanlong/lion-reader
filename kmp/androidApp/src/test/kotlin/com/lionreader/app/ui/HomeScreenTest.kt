@@ -63,11 +63,18 @@ class HomeScreenTest {
     private val reader = Reader(db, { 1_000L }, Dispatchers.Unconfined) {}
     private val settings = MutableStateFlow(AppSettings())
 
-    private fun seed(id: String, title: String, read: Boolean, sortAt: Long = 0) {
-        db.entryQueries.insertIgnore(id, "feed", "web", 0, sortAt, if (read) 1 else 0, 0)
+    private fun seed(
+        id: String,
+        title: String,
+        read: Boolean,
+        sortAt: Long = 0,
+        feed: String = "feed",
+        subscription: String? = null,
+    ) {
+        db.entryQueries.insertIgnore(id, feed, "web", 0, sortAt, if (read) 1 else 0, 0)
         db.entryQueries.updateAll(
-            null,
-            "feed",
+            subscription,
+            feed,
             "web",
             null,
             title,
@@ -320,6 +327,37 @@ class HomeScreenTest {
         composeRule.waitUntil { row.isShownAs("Read") }
         row.performTouchInput { swipeLeft() }
         composeRule.waitUntil { row.isShownAs("Read, Starred") }
+    }
+
+    @Test
+    fun emptyFeedsCanBeLeftOutOfTheDrawer() {
+        for ((id, feed, title) in
+            listOf(
+                Triple("busy", "feed-1", "Busy Feed"),
+                Triple("quiet", "feed-2", "Quiet Feed"),
+            )) {
+            db.subscriptionQueries.upsertSubscription(
+                id,
+                feed,
+                "web",
+                title,
+                "https://e.com/$id",
+                null,
+                0,
+            )
+        }
+        seed("a", "An article", read = false, feed = "feed-1", subscription = "busy")
+        seed("b", "Old news", read = true, feed = "feed-2", subscription = "quiet")
+        show()
+
+        composeRule.onNodeWithContentDescription("Lists").performClick()
+        composeRule.onNodeWithText("Quiet Feed").assertIsDisplayed()
+
+        settings.value = settings.value.copy(hideEmptyLists = true)
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("Quiet Feed").fetchSemanticsNodes().isEmpty()
+        }
+        composeRule.onNodeWithText("Busy Feed").assertIsDisplayed()
     }
 
     @Test

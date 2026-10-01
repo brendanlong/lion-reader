@@ -109,6 +109,17 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             HorizontalDivider()
             NarrationSettings(graph, settings, ::update)
             HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Hide feeds and tags with no unread articles",
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = settings.hideEmptyLists,
+                    onCheckedChange = { value -> update { it.copy(hideEmptyLists = value) } },
+                )
+            }
+            HorizontalDivider()
             Section("Keep offline") {
                 Text(
                     "Articles older than this are removed from the device. Starred and saved articles are always kept.",
@@ -325,6 +336,7 @@ private val ThemeChoice.label: String
             ThemeChoice.SYSTEM -> "System"
             ThemeChoice.LIGHT -> "Light"
             ThemeChoice.DARK -> "Dark"
+            ThemeChoice.BLACK -> "Black"
             ThemeChoice.EPAPER -> "E-paper"
         }
 
