@@ -93,10 +93,13 @@ data class ReaderNarration(
 )
 
 /**
- * Keeps a sideways drag that starts on a wide table or code block (reported by scroll-detect.js)
- * for the WebView while the block can still scroll that way, so it scrolls instead of the article
- * pager turning the page. It has to be decided here, synchronously, before the pager's touch slop
- * is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
+ * Decides, once per gesture and as soon as its direction is clear, whether the article pager may
+ * have it, like the web's swipe: only a drag at least [SWIPE_RATIO] times as far sideways as up or
+ * down turns the page. Anything steeper stays the WebView's for the whole gesture, so a scroll that
+ * drifts sideways never turns into a page turn halfway through. A sideways drag that starts on a
+ * wide table or code block (reported by scroll-detect.js) also stays the WebView's while the block
+ * can still scroll that way. It has to be decided here, synchronously, before the pager's touch
+ * slop is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
  */
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
@@ -141,6 +144,7 @@ private class ReaderView(context: Context) : WebView(context) {
     private var downX = 0f
     private var downY = 0f
     private var touched: SideScroller? = null
+    private var deciding = false
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -152,22 +156,30 @@ private class ReaderView(context: Context) : WebView(context) {
                 val pageX = (event.x + scrollX) / density
                 val pageY = (event.y + scrollY) / density
                 touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
+                deciding = true
             }
-            MotionEvent.ACTION_MOVE ->
-                touched?.let { block ->
-                    val dx = event.x - downX
-                    val dy = abs(event.y - downY)
-                    if (abs(dx) > decideAfter && abs(dx) > dy) {
-                        // A finger moving left scrolls the block's content right.
-                        val canScroll = if (dx < 0) block.canScrollRight else block.canScrollLeft
-                        if (canScroll) parent?.requestDisallowInterceptTouchEvent(true)
-                        touched = null
-                    } else if (dy > decideAfter) {
-                        touched = null
-                    }
-                }
+            MotionEvent.ACTION_MOVE -> if (deciding) decide(event.x - downX, abs(event.y - downY))
         }
         return super.onTouchEvent(event)
+    }
+
+    private fun decide(dx: Float, dy: Float) {
+        if (abs(dx) <= decideAfter && dy <= decideAfter) return
+        deciding = false
+        val block = touched
+        val keep =
+            when {
+                abs(dx) < dy * SWIPE_RATIO -> true
+                // A finger moving left scrolls the block's content right.
+                block != null -> if (dx < 0) block.canScrollRight else block.canScrollLeft
+                else -> false
+            }
+        if (keep) parent?.requestDisallowInterceptTouchEvent(true)
+    }
+
+    private companion object {
+        /** The web's 2:1 (`MAX_VERTICAL_RATIO` in EntryContentHelpers.ts). */
+        const val SWIPE_RATIO = 2f
     }
 }
 
