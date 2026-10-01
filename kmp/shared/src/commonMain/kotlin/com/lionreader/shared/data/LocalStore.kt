@@ -12,6 +12,7 @@ import com.lionreader.shared.db.LionReaderDatabase
 private const val CURSORS_KEY = "sync_cursors"
 private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
 private const val CATCH_UP_KEY = "catch_up_in_progress"
+private const val RECENTLY_READ_KEY = "recently_read_fetched"
 
 internal fun FeedType.wire(): String =
     when (this) {
@@ -34,6 +35,16 @@ internal class LocalStore(val db: LionReaderDatabase) {
     var bootstrapCursors: SyncCursors?
         get() = readCursors(BOOTSTRAP_CURSORS_KEY)
         set(value) = writeCursors(BOOTSTRAP_CURSORS_KEY, value)
+
+    /**
+     * Whether the server's Recently Read has been downloaded: once, since it reaches back past the
+     * bootstrap (and before this device kept read times).
+     */
+    var recentlyReadFetched: Boolean
+        get() = meta.selectValue(RECENTLY_READ_KEY).executeAsOneOrNull() == "1"
+        set(value) {
+            if (value) meta.upsert(RECENTLY_READ_KEY, "1") else meta.delete(RECENTLY_READ_KEY)
+        }
 
     /** Whether the last pulled page said more pages follow (see SyncEngine.fetchPage). */
     var catchUpInProgress: Boolean
@@ -70,6 +81,8 @@ internal class LocalStore(val db: LionReaderDatabase) {
         fetchedAt: String,
         read: Boolean,
         starred: Boolean,
+        /** Null leaves what's stored: the server sends it only on some paths. */
+        readChangedAt: String?,
     ) {
         val published = publishedAt?.let(::parseMillis)
         val fetched = parseMillis(fetchedAt)
@@ -97,6 +110,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
             sort_at = published ?: fetched,
             read = read.toLong(),
             starred = starred.toLong(),
+            value_ = readChangedAt?.let(::parseMillis),
             id = id,
         )
     }
@@ -117,6 +131,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
             item.fetchedAt,
             item.read,
             item.starred,
+            item.readChangedAt,
         )
 
     fun entryExists(id: String): Boolean = entries.exists(id).executeAsOne() > 0

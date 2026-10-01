@@ -161,8 +161,10 @@ class FakeServer {
                 respond("{}", HttpStatusCode.ServiceUnavailable, jsonHeaders)
             path == "/entries" -> {
                 val params = request.url.parameters
+                val recentlyRead = params["sortBy"] == "readChanged"
                 val matching =
                     entries.values
+                        .filter { !recentlyRead || it.readChangedAt != null }
                         .filter { params["starredOnly"] != "true" || it.starred }
                         .filter {
                             params["type"] == null || it.type.name.lowercase() == params["type"]
@@ -171,7 +173,9 @@ class FakeServer {
                             params["subscriptionId"] == null ||
                                 it.subscriptionId == params["subscriptionId"]
                         }
-                        .sortedByDescending { it.publishedAt ?: it.fetchedAt }
+                        .sortedByDescending {
+                            if (recentlyRead) it.readChangedAt else it.publishedAt ?: it.fetchedAt
+                        }
                 // Newest first, paged like the server (the cursor is an offset here).
                 val offset = params["cursor"]?.toInt() ?: 0
                 val limit = params["limit"]?.toInt() ?: 100
@@ -272,4 +276,5 @@ fun FullEntry.listItem() =
         starred = starred,
         feedTitle = feedTitle,
         siteName = siteName,
+        readChangedAt = readChangedAt,
     )

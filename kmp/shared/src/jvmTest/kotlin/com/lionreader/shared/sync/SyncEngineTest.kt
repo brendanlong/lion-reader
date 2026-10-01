@@ -147,6 +147,30 @@ class SyncEngineTest {
     }
 
     @Test
+    fun recentlyReadIsTheServersOrderWithUnsentChangesOnTop() = runTest {
+        // Recently read on the server, but older than its window: still shown.
+        serve(
+            entry("old", ageDays = 400, read = true).copy(readChangedAt = minutesAgo(10)),
+            entry("a", read = true).copy(readChangedAt = minutesAgo(30)),
+            entry("b", read = true).copy(readChangedAt = minutesAgo(20)),
+            entry("c"),
+        )
+        engine.sync()
+        assertEquals(listOf("old", "b", "a"), timeline(ListScope.RecentlyRead))
+
+        // Offline: the device's own changes are newer than anything the server said.
+        clock = NOW + 1_000
+        reader.setRead(listOf("c"), true)
+        clock = NOW + 2_000
+        reader.setRead(listOf("a"), false)
+        assertEquals(listOf("a", "c", "old", "b"), timeline(ListScope.RecentlyRead))
+
+        // Sent, the order holds: the server's acknowledgement records the times.
+        engine.flushOutbox()
+        assertEquals(listOf("a", "c", "old", "b"), timeline(ListScope.RecentlyRead))
+    }
+
+    @Test
     fun unreadCountsAreTheDevicesOwnIncludingUnsentChanges() = runTest {
         server.subscriptions += Subscription("sub-1", FeedType.WEB)
         serve(entry("a"), entry("b"))

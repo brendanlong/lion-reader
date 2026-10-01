@@ -68,6 +68,11 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         var metadataSeq: Long,
         var stateSeq: Long,
         var deletedSeq: Long? = null,
+        /**
+         * A remote same-value re-assert moved [readChangedAt] since sync last delivered it: like
+         * the real server, a re-assert doesn't count as a change to sync, so the device can't know.
+         */
+        var readTimeUndelivered: Boolean = false,
     ) {
         val updatedSeq: Long
             get() = maxOf(createdSeq, metadataSeq, stateSeq)
@@ -158,9 +163,15 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
 
     /** Another device's write, stamped now. */
     fun remoteWrite(entry: Entry, field: String, value: Boolean) =
-        write(entry, field, value, clock())
+        write(entry, field, value, clock(), remote = true)
 
-    private fun write(entry: Entry, field: String, value: Boolean, changedAt: Long): Boolean {
+    private fun write(
+        entry: Entry,
+        field: String,
+        value: Boolean,
+        changedAt: Long,
+        remote: Boolean = false,
+    ): Boolean {
         val watermark = if (field == "read") entry.readChangedAt else entry.starredChangedAt
         if (watermark != null && watermark > changedAt) return false
         val old = if (field == "read") entry.read else entry.starred
@@ -171,8 +182,12 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             entry.starred = value
             entry.starredChangedAt = changedAt
         }
-        if (old == value) return false
+        if (old == value) {
+            if (remote && field == "read") entry.readTimeUndelivered = true
+            return false
+        }
         entry.stateSeq = ++seq
+        entry.readTimeUndelivered = false
         return true
     }
 
@@ -226,6 +241,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))
                 "/entries" ->
                     list(
+                        params["sortBy"] == "readChanged",
                         params["starredOnly"] == "true",
                         params["type"],
                         params["subscriptionId"],
@@ -296,6 +312,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.id,
                                 e.read,
                                 e.starred,
+                                e.readChangedAt?.let { e.time(it) },
                                 e.subscriptionId,
                                 "feed",
                                 e.type,
@@ -327,6 +344,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     }
 
     private fun list(
+        recentlyRead: Boolean,
         starredOnly: Boolean,
         type: String?,
         subscriptionId: String?,
@@ -338,7 +356,11 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .filter { !starredOnly || it.starred }
                 .filter { type != "saved" || it.type == FeedType.SAVED }
                 .filter { subscriptionId == null || it.subscriptionId == subscriptionId }
-                .sortedWith(compareByDescending<Entry> { it.published }.thenByDescending { it.id })
+                .filter { !recentlyRead || it.readChangedAt != null }
+                .sortedWith(
+                    if (recentlyRead) recentlyReadOrder
+                    else compareByDescending<Entry> { it.published }.thenByDescending { it.id }
+                )
         val offset = cursor?.toInt() ?: 0
         val size = limit?.toInt() ?: 100
         val page = matching.drop(offset).take(size)
@@ -380,6 +402,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             fetchedAt = time(published),
             read = read,
             starred = starred,
+            readChangedAt = readChangedAt?.let { time(it) },
         )
 
     private fun Entry.listItem() =
@@ -393,6 +416,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             fetchedAt = time(published),
             read = read,
             starred = starred,
+            readChangedAt = readChangedAt?.let { time(it) },
         )
 
     private fun Entry.full() =
@@ -407,6 +431,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             read = read,
             starred = starred,
             contentCleaned = content,
+            readChangedAt = readChangedAt?.let { time(it) },
         )
 
     private fun <T> encode(serializer: KSerializer<T>, value: T) =
@@ -416,6 +441,20 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         ApiJson.decodeFromString(serializer, (request.body as TextContent).text)
 
     private val json = headersOf(HttpHeaders.ContentType, "application/json")
+
+    /** The server's Recently Read: entries whose read state changed, latest first. */
+    fun recentlyRead(): List<String> =
+        visible.filter { it.readChangedAt != null }.sortedWith(recentlyReadOrder).map { it.id }
+
+    /**
+     * Entries whose place in [recentlyRead] the device can't know (see
+     * [Entry.readTimeUndelivered]).
+     */
+    fun recentlyReadUndelivered(): Set<String> =
+        visible.filter { it.readTimeUndelivered }.map { it.id }.toSet()
+
+    private val recentlyReadOrder =
+        compareByDescending<Entry> { it.readChangedAt }.thenByDescending { it.id }
 
     private companion object {
         val WRITES = setOf("/entries/mark-read", "/entries/starred")

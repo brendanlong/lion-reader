@@ -26,6 +26,9 @@ sealed interface ListScope {
 
     /** Feeds without a tag. */
     data object Uncategorized : ListScope
+
+    /** Entries whose read state changed, latest first, as the web's Recently Read. */
+    data object RecentlyRead : ListScope
 }
 
 data class TimelineItem(
@@ -100,8 +103,15 @@ class Reader(
         unreadOnly: Boolean,
         keepIds: Collection<String>,
         limit: Long,
-    ): Flow<List<TimelineItem>> =
-        db.entryQueries
+    ): Flow<List<TimelineItem>> {
+        // Read and unread alike: it's the list of what was read.
+        if (scope == ListScope.RecentlyRead) {
+            return db.entryQueries
+                .selectRecentlyRead(limit, ::timelineItem)
+                .asFlow()
+                .mapToList(context)
+        }
+        return db.entryQueries
             .selectTimeline(
                 subscriptionId = (scope as? ListScope.Subscription)?.id,
                 tagId = (scope as? ListScope.Tag)?.id,
@@ -111,21 +121,38 @@ class Reader(
                 unreadOnly = if (unreadOnly) 1L else 0L,
                 keepIds = keepIds,
                 limit = limit,
-            ) { id, _, _, url, title, author, summary, siteName, feedTitle, sortAt, read, starred ->
-                TimelineItem(
-                    id = id,
-                    title = title,
-                    summary = summary,
-                    source = feedTitle ?: siteName,
-                    author = author,
-                    url = url,
-                    sortAtMillis = sortAt,
-                    read = read == 1L,
-                    starred = starred == 1L,
-                )
-            }
+                mapper = ::timelineItem,
+            )
             .asFlow()
             .mapToList(context)
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun timelineItem(
+        id: String,
+        subscriptionId: String?,
+        type: String,
+        url: String?,
+        title: String?,
+        author: String?,
+        summary: String?,
+        siteName: String?,
+        feedTitle: String?,
+        sortAt: Long,
+        read: Long,
+        starred: Long,
+    ) =
+        TimelineItem(
+            id = id,
+            title = title,
+            summary = summary,
+            source = feedTitle ?: siteName,
+            author = author,
+            url = url,
+            sortAtMillis = sortAt,
+            read = read == 1L,
+            starred = starred == 1L,
+        )
 
     fun entry(id: String): Flow<EntryDetail?> =
         db.entryQueries.selectById(id).asFlow().mapToOneOrNull(context).map { row ->
@@ -248,6 +275,7 @@ class Reader(
                 starredOnly = if (scope == ListScope.Starred) 1L else 0L,
                 savedOnly = if (scope == ListScope.Saved) 1L else 0L,
                 uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L,
+                recentlyReadOnly = if (scope == ListScope.RecentlyRead) 1L else 0L,
             )
             .executeAsList()
 }

@@ -98,7 +98,13 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   it had when the request started, and an edit drops it.
 - **Retention** (`RetentionPolicy`): entries outside the window go, at most N
   read entries stay, bodies are capped by size (oldest read first); starred,
-  saved and entries with unsent changes are always kept.
+  saved and entries with unsent changes are always kept, and an entry read
+  within the window counts as recent however old it is.
+- **Recently Read** orders entries by when their read state last changed: the
+  server's time (synced on every entry and backfilled once from its list),
+  unless an unsent change is later. A same-value re-assert from another client
+  moves the server's time without counting as a change to sync (#1118), so it
+  can reorder the web's list but not the device's.
 - **Database work never runs on the main thread**: `Reader`'s writes are
   `suspend` and run on its context (IO in the app); `SyncEngine` doesn't switch
   threads, so the UI calls it on IO.

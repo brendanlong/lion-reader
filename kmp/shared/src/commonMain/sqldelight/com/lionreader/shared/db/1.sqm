@@ -1,0 +1,19 @@
+-- Recently Read (0.1.0's database is version 1): when read state last
+-- changed, from the server, and the view's merge of it with unsent changes.
+ALTER TABLE entry ADD COLUMN read_changed_at INTEGER;
+
+DROP VIEW entry_view;
+
+CREATE VIEW entry_view AS
+SELECT
+  e.*,
+  COALESCE(r.value, e.read) AS effective_read,
+  COALESCE(s.value, e.starred) AS effective_starred,
+  CASE
+    WHEN r.changed_at IS NOT NULL AND (e.read_changed_at IS NULL OR r.changed_at > e.read_changed_at)
+    THEN r.changed_at
+    ELSE e.read_changed_at
+  END AS effective_read_changed_at
+FROM entry e
+LEFT JOIN outbox_state r ON r.entry_id = e.id AND r.field = 'read'
+LEFT JOIN outbox_state s ON s.entry_id = e.id AND s.field = 'starred';

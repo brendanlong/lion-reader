@@ -78,6 +78,13 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             cursor?.let { parameter("cursor", it) }
         }
 
+    /** The server's Recently Read: entries whose read state changed, latest first. */
+    suspend fun listRecentlyRead(limit: Int = 100): EntryListPage =
+        get(EntryListPage.serializer(), "/entries") {
+            parameter("sortBy", "readChanged")
+            parameter("limit", limit)
+        }
+
     suspend fun getEntries(ids: List<String>): List<FullEntry> =
         post(
                 GetManyResponse.serializer(),

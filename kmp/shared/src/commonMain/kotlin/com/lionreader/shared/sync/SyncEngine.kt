@@ -56,6 +56,8 @@ class SyncEngine(
             flush()
             if (writer.cursors == null) bootstrap()
             pull()
+            // Read history from before the bootstrap's window (or this device).
+            if (!writer.recentlyReadFetched) writer.saveRecentlyRead(api.listRecentlyRead().items)
             writer.evict(policy(), now())
         }
         if (downloadContent) {
