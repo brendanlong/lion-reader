@@ -43,8 +43,9 @@ data class NarratedArticle(
 )
 
 /**
- * The article being narrated, the paragraph being spoken, and whether it's playing. [waiting]: it
- * should be playing but has no audio yet (the engine is getting ready, or the next chunk is still
+ * Narration is on while there is a state: the article it's on, the paragraph being spoken, and
+ * whether it's playing or paused. [waiting]: it should be playing but has no audio yet (the
+ * article's text hasn't been supplied, the engine is getting ready, or the next chunk is still
  * being synthesized).
  */
 data class NarrationState(
@@ -113,8 +114,53 @@ class Narrator(
     private var lastAdded: Int? = null
     private var session: ListenableFuture<MediaController>? = null
 
+    /** Turns narration on, playing [article] from [fromParagraph]. */
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
         reset()
+        _state.value =
+            NarrationState(
+                article.entryId,
+                article.title,
+                fromParagraph,
+                playing = true,
+                waiting = true,
+            )
+        load(article)
+    }
+
+    /**
+     * Moves narration to another article, playing or paused as it was: what's playing stops at
+     * once, and the new article's audio waits for [supply]. Nothing while narration is off; on the
+     * same article, only takes the [title].
+     */
+    fun follow(entryId: String, title: String) {
+        val current = _state.value ?: return
+        if (current.entryId == entryId) {
+            if (article == null) _state.value = current.copy(title = title)
+            return
+        }
+        reset()
+        _state.value = NarrationState(entryId, title, 0, current.playing, waiting = current.playing)
+    }
+
+    /**
+     * The text of the article narration [follow]ed to. Its audio is only prepared once it's to
+     * play, so a paused narration doesn't synthesize (and with cloud voices, pay for) each article
+     * it follows. An article with nothing to say leaves narration on, for the next.
+     */
+    fun supply(article: NarratedArticle) {
+        val current = _state.value ?: return
+        if (current.entryId != article.entryId || this.article != null) return
+        if (article.paragraphs.isEmpty()) {
+            _state.value = current.copy(title = article.title, waiting = false)
+            return
+        }
+        _state.value = current.copy(title = article.title)
+        if (current.playing) load(article) else this.article = article
+    }
+
+    /** Gets [article]'s audio ready, starting from the state's paragraph if it's playing. */
+    private fun load(article: NarratedArticle) {
         this.article = article
         speed = settings().narrationSpeed
         // Binding a controller starts the service, which puts the player in a
@@ -128,14 +174,6 @@ class Narrator(
                     )
                     .buildAsync()
         }
-        _state.value =
-            NarrationState(
-                article.entryId,
-                article.title,
-                fromParagraph,
-                playing = true,
-                waiting = true,
-            )
         preparing = scope.launch {
             val engine =
                 try {
@@ -156,10 +194,19 @@ class Narrator(
 
     fun togglePlaying() {
         if (engine == null) {
-            _state.value = _state.value?.let { it.copy(playing = !it.playing) }
+            val current = _state.value ?: return
+            val playing = !current.playing
+            _state.value = current.copy(playing = playing, waiting = playing)
+            if (playing) loadPending()
             return
         }
         if (player.playWhenReady) player.pause() else player.play()
+    }
+
+    /** An article supplied while paused gets its audio once it's to play. */
+    private fun loadPending() {
+        val pending = article ?: return
+        if (engine == null && preparing?.isActive != true) load(pending)
     }
 
     fun skipParagraphs(delta: Int) {
@@ -362,6 +409,8 @@ class Narrator(
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 _state.value = _state.value?.copy(playing = playWhenReady, waiting = waiting())
+                // Play from the notification or a headset, before the audio was prepared.
+                if (playWhenReady) loadPending()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {

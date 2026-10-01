@@ -34,8 +34,9 @@ val NARRATION_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 fun speedLabel(speed: Float): String = "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}×"
 
 /**
- * Narration controls: the article, previous/next paragraph, play/pause, speed and, given [onStop],
- * stop. The host draws the surface and the navigation bar inset, so other bars can share them.
+ * Narration controls: the article, previous/next paragraph, play/pause and speed. The Listen toggle
+ * turns narration off. The host draws the surface and the navigation bar inset, so other bars can
+ * share them.
  */
 @Composable
 fun NarrationBar(
@@ -45,7 +46,6 @@ fun NarrationBar(
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onSpeed: (Float) -> Unit,
-    onStop: (() -> Unit)?,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -98,11 +98,6 @@ fun NarrationBar(
             }
         ) {
             Text(speedLabel(speed))
-        }
-        onStop?.let { stop ->
-            IconButton(onClick = stop) {
-                Icon(painterResource(R.drawable.ic_close), "Stop narration")
-            }
         }
     }
 }

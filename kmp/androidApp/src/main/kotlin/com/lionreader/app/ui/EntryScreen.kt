@@ -123,8 +123,8 @@ fun EntryScreen(
                 .currentStateAsState()
                 .value
                 .isAtLeast(Lifecycle.State.STARTED),
-        narrate = graph.narrator::narrate,
-        stop = graph.narrator::stop,
+        follow = graph.narrator::follow,
+        supply = graph.narrator::supply,
     )
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = entries[pages[pager.targetPage]]
@@ -140,9 +140,9 @@ fun EntryScreen(
     val actions: @Composable RowScope.() -> Unit = actions@{
         val current = entry ?: return@actions
         val paragraphs = spoken[current.id]
-        // Amber while this article is being narrated, like the
-        // other toggles; tapping it then stops.
-        val narrating = narration?.entryId == current.id
+        // Amber while narration is on, like the other toggles; it follows
+        // swipes, so tapping it then stops whichever article it's on.
+        val narrating = narration != null
         if (narrating || !paragraphs.isNullOrEmpty()) {
             IconButton(
                 onClick = {
@@ -301,21 +301,14 @@ fun EntryScreen(
             if (narration != null || !besideList) {
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.navigationBarsPadding()) {
-                        narration?.let { narrated ->
+                        narration?.let {
                             NarrationBar(
-                                state = narrated,
+                                state = it,
                                 speed = settings.narrationSpeed,
                                 onPrevious = { graph.narrator.skipParagraphs(-1) },
                                 onToggle = graph.narrator::togglePlaying,
                                 onNext = { graph.narrator.skipParagraphs(1) },
                                 onSpeed = graph::setNarrationSpeed,
-                                // On a phone the Listen toggle just below stops it,
-                                // but only once this article is loaded and is the
-                                // one being read.
-                                onStop =
-                                    graph.narrator::stop.takeIf {
-                                        besideList || narrated.entryId != entry?.id
-                                    },
                             )
                         }
                         if (!besideList) {
@@ -382,11 +375,11 @@ fun EntryScreen(
 }
 
 /**
- * Narration is of the article on screen: when the pager settles on another while one plays, and
- * stays there for [settle] (so swiping past articles doesn't start, and with cloud voices pay for,
- * each), narration switches to it once its [paragraphs] are in. A paused narration ends instead.
- * Only while the app is on screen: a switch empties the player, and media3 can't bring its
- * foreground service back from the background.
+ * Narration, while on, is of the article on screen: when the pager moves to another, what's playing
+ * stops at once and narration follows it, playing or paused as it was. Its text is supplied once
+ * the page has it and has stayed for [settle] (so swiping past articles doesn't synthesize, and
+ * with cloud voices pay for, each). Only while the app is on screen: a switch empties the player,
+ * and media3 can't bring its foreground service back from the background.
  */
 @Composable
 internal fun NarrationFollowsPage(
@@ -395,20 +388,21 @@ internal fun NarrationFollowsPage(
     paragraphs: List<String>?,
     entry: EntryDetail?,
     started: Boolean,
-    narrate: (NarratedArticle) -> Unit,
-    stop: () -> Unit,
+    follow: (entryId: String, title: String) -> Unit,
+    supply: (NarratedArticle) -> Unit,
     settle: Long = 1_000,
 ) {
+    val on = narration != null
+    LaunchedEffect(on, entryId, entry?.title, started) {
+        if (on && started) follow(entryId, entry?.title ?: "")
+    }
     val current by rememberUpdatedState(entry)
-    val other = narration?.takeIf { it.entryId != entryId }
-    LaunchedEffect(entryId, other?.entryId, other?.playing, paragraphs, entry == null, started) {
-        if (other == null) return@LaunchedEffect
-        if (!other.playing) return@LaunchedEffect stop()
-        if (paragraphs == null || !started) return@LaunchedEffect
+    val following = narration?.entryId == entryId
+    LaunchedEffect(following, entryId, paragraphs, entry == null, started) {
+        if (!following || paragraphs == null || !started) return@LaunchedEffect
         delay(settle)
         val shown = current ?: return@LaunchedEffect
-        if (paragraphs.isEmpty()) stop()
-        else narrate(NarratedArticle(entryId, shown.title ?: "Untitled", shown.source, paragraphs))
+        supply(NarratedArticle(entryId, shown.title ?: "Untitled", shown.source, paragraphs))
     }
 }
 
