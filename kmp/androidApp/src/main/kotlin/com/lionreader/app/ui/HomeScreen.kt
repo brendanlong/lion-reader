@@ -253,10 +253,10 @@ fun HomeScreen(
 }
 
 /**
- * * Snaps the drawer's last couple of pixels; for the drawer's sheet. The drawer's spring looks
- *   done in about 250ms but spends another 300ms nudging its last pixel, and while it animates the
- *   drawer takes any touch as a drag: a tap on a list right after opening (or on the list behind,
- *   right after closing) did nothing.
+ * Snaps the drawer's last couple of pixels; for the drawer's sheet. The drawer's spring looks done
+ * in about 250ms but spends another 300ms nudging its last pixel, and while it animates the drawer
+ * takes any touch as a drag: a tap on a list right after opening (or on the list behind, right
+ * after closing) did nothing.
  */
 @Composable
 internal fun Modifier.settlePromptly(drawer: DrawerState): Modifier {

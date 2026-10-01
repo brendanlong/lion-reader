@@ -76,9 +76,9 @@ class SyncEngine(
     }
 
     /**
-     * * Downloads one entry's body now (opening an entry the sync hasn't reached); whether the
-     *   entry now has one. Not behind [contentMutex]: the user is waiting, and a background
-     *   download can take minutes.
+     * Downloads one entry's body now (opening an entry the sync hasn't reached); whether the entry
+     * now has one. Not behind [contentMutex]: the user is waiting, and a background download can
+     * take minutes.
      */
     suspend fun ensureContent(entryId: String): Boolean {
         // Again if the entry was edited mid-download, which discards the old body.

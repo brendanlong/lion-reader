@@ -35,9 +35,9 @@ internal class PulledPage(
  * committed ahead of data a later request was supposed to bring.
  *
  * Table ownership: `entry` state and metadata, subscriptions, tags and cursors are written here
- * * under the sync lock; bodies only by [storeBodies] and summaries only by [storeSummary] (both
- *   outside the lock, version-guarded, and deleted here with their entry); the outbox by `Reader`
- *   (and cleared here once sent).
+ * under the sync lock; bodies only by [storeBodies] and summaries only by [storeSummary] (both
+ * outside the lock, version-guarded, and deleted here with their entry); the outbox by `Reader`
+ * (and cleared here once sent).
  */
 internal class SyncWriter(private val db: LionReaderDatabase) {
     private val store = LocalStore(db)

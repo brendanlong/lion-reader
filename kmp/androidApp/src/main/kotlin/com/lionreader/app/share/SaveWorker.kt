@@ -17,10 +17,10 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 
 /**
- * * Saves a shared link in the background, so it survives the share dialog closing and waits for a
- *   network when offline, however long that takes. It only gives up when the server rejects the
- *   link (or the user signs out); anything else retries, backing off to every few hours. The dialog
- *   follows its progress by the unique work name.
+ * Saves a shared link in the background, so it survives the share dialog closing and waits for a
+ * network when offline, however long that takes. It only gives up when the server rejects the link
+ * (or the user signs out); anything else retries, backing off to every few hours. The dialog
+ * follows its progress by the unique work name.
  */
 class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
