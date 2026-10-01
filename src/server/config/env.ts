@@ -232,6 +232,8 @@ function parseFingerprints(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+export const DEBUG_APP_PACKAGE = "com.lionreader.app.debug";
+
 /**
  * Native Android app builds, keyed by package: the release app and a separate
  * debug app that installs alongside it. Each package's signing-certificate
@@ -252,7 +254,7 @@ export const androidAppConfig = {
         certSha256Fingerprints: parseFingerprints(process.env.ANDROID_APP_CERT_SHA256),
       },
       {
-        packageName: "com.lionreader.app.debug",
+        packageName: DEBUG_APP_PACKAGE,
         certSha256Fingerprints: parseFingerprints(process.env.ANDROID_DEBUG_APP_CERT_SHA256),
       },
     ].filter((app) => app.certSha256Fingerprints.length > 0);

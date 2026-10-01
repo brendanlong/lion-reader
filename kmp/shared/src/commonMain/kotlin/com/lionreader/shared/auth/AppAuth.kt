@@ -52,9 +52,11 @@ class AppAuth(
     val serverUrl: String,
     private val http: HttpClient,
     private val store: TokenStore,
+    /** Each build of the app has its own, so only it receives its redirects. */
+    callbackPath: String = "/oauth/app-callback",
     private val now: () -> Long,
 ) {
-    val redirectUri: String = "$serverUrl/oauth/app-callback"
+    val redirectUri: String = "$serverUrl$callbackPath"
 
     private val mutex = Mutex()
     private val _signedIn = MutableStateFlow(store.load() != null)

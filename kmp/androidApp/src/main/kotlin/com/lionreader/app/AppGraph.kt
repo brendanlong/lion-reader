@@ -249,7 +249,14 @@ private fun accountDbName(serverUrl: String, userId: String): String {
 }
 
 class ServerConnection(serverUrl: String, http: HttpClient, tokens: TokenStore) {
-    val auth = AppAuth(serverUrl, http, tokens, System::currentTimeMillis)
+    val auth =
+        AppAuth(
+            serverUrl,
+            http,
+            tokens,
+            BuildConfig.SIGN_IN_CALLBACK_PATH,
+            System::currentTimeMillis,
+        )
     val api = LionReaderApi(http, auth)
 }
 

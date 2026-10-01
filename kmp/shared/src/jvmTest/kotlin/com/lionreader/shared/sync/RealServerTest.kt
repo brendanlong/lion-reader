@@ -63,7 +63,10 @@ class RealServerTest {
                 }
             }
         val api =
-            LionReaderApi(http, AppAuth(fixture.serverUrl, http, tokens, System::currentTimeMillis))
+            LionReaderApi(
+                http,
+                AppAuth(fixture.serverUrl, http, tokens, now = System::currentTimeMillis),
+            )
         var deviceClock = System.currentTimeMillis()
         JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).use { driver ->
             AppSchema.create(driver)

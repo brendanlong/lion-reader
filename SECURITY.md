@@ -208,7 +208,8 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - The signing keys published in `/.well-known/assetlinks.json`
   (`androidAppConfig`, from `ANDROID_APP_CERT_SHA256` /
   `ANDROID_DEBUG_APP_CERT_SHA256`) decide which installed apps receive that
-  client's authorization codes. **List only keys we control** — never
+  client's authorization codes. The debug app's redirect path is only accepted
+  while it has a published key. **List only keys we control** — never
   Android's default debug key, whose password is public.
 
 ## 7. Cross-user data isolation (shared content)

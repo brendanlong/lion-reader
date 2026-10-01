@@ -18,11 +18,14 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   event type newer than the app is skipped (`parseSyncEvent`). Never use the
   tRPC wire format (superjson) or the Google Reader API.
 - **Auth.** OAuth 2.1 + PKCE against the server's built-in `lion-reader-app`
-  client, in a Custom Tab; the redirect `https://<server>/oauth/app-callback`
-  is claimed as a verified App Link (`assetlinks.json`, fed by
-  `ANDROID_APP_CERT_SHA256` and, for the debug app, `ANDROID_DEBUG_APP_CERT_SHA256`
-  on the server). Never a custom scheme: any app can
-  register one and finish a sign-in under our client id. Refresh tokens rotate
+  client, in an Auth Tab (which hands the redirect straight back to the app
+  that opened it; a browser without them opens a Custom Tab). The redirect
+  `https://<server>/oauth/app-callback` (the debug app's:
+  `/oauth/app-callback/debug`, so the two apps never compete for one) is
+  claimed as a verified App Link (`assetlinks.json`, fed by
+  `ANDROID_APP_CERT_SHA256` and, for the debug app,
+  `ANDROID_DEBUG_APP_CERT_SHA256` on the server). Never a custom scheme: any
+  app can register one and finish a sign-in under our client id. Refresh tokens rotate
   and the server revokes the family on reuse, so refresh is serialized
   (`AppAuth`'s mutex; the UI, WorkManager and the callback share one
   `AppGraph` and so one `AppAuth` — a new one is made only when a signed-out
@@ -195,9 +198,7 @@ and point Gradle at it with properties (e.g. in `~/.gradle/gradle.properties`
 on your own machine, or `ORG_GRADLE_PROJECT_*` variables): `lionReaderDevKeystore`
 (path), `lionReaderDevKeystorePassword`, `lionReaderDevKeyAlias`,
 `lionReaderDevKeyPassword`. Without them, debug builds use the default debug
-key and can sign in only to dev servers. With both apps installed, Android
-may ask which one opens the sign-in redirect; picking the other one just fails
-that sign-in (PKCE), so retry.
+key and can sign in only to dev servers.
 
 CI (`.github/workflows/android.yml`) signs its debug build with the same key,
 from the `ANDROID_DEV_KEYSTORE_BASE64`, `ANDROID_DEV_KEYSTORE_PASSWORD`,
@@ -242,14 +243,10 @@ Start the app with an issuer the phone can reach over USB, e.g.
 `adb reverse tcp:<port> tcp:<port>` and enter `http://localhost:<port>` as the
 server on the sign-in screen (debug builds allow cleartext). An http redirect
 can't be an App Link, so the sign-in ends on the server's "opened in your
-browser" page; hand the redirect to the app yourself:
-
-```bash
-adb shell am start -n com.lionreader.app.debug/com.lionreader.app.MainActivity -a com.lionreader.app.DEBUG_SIGN_IN_CALLBACK \
-  -d "'http://localhost:<port>/oauth/app-callback?code=...&state=...'"
-```
-
-(the URL is in the dev server's request log). `pnpm db:seed` creates
+browser" page; on a server on this machine that page has an **Open in the debug
+app** button that hands the redirect over (it's also the URL in the dev
+server's request log, for `adb shell am start -a
+com.lionreader.app.DEBUG_SIGN_IN_CALLBACK -d '<url>'`). `pnpm db:seed` creates
 `test@example.com` / `password123`.
 
 ## Code quality

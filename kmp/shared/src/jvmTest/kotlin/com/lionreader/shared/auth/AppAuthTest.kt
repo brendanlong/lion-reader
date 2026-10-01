@@ -15,6 +15,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 
 class AppAuthTest {
@@ -88,5 +89,24 @@ class AppAuthTest {
         assertFailsWith<AuthException> { auth.accessToken() }
         assertTrue(auth.signedIn.value)
         assertEquals("old-refresh", store.tokens?.refreshToken)
+    }
+
+    @Test
+    fun eachBuildAsksForItsOwnRedirect() = runTest {
+        fun redirectOf(auth: AppAuth) = runBlocking {
+            io.ktor.http.Url(auth.authorizationRequest().url).parameters["redirect_uri"]
+        }
+        val http = HttpClient(MockEngine { respond("") })
+
+        assertEquals(
+            "https://lion.test/oauth/app-callback",
+            redirectOf(AppAuth("https://lion.test", http, store) { 0L }),
+        )
+        assertEquals(
+            "https://lion.test/oauth/app-callback/debug",
+            redirectOf(
+                AppAuth("https://lion.test", http, store, "/oauth/app-callback/debug") { 0L }
+            ),
+        )
     }
 }

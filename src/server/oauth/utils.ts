@@ -141,6 +141,15 @@ export function isValidCodeChallenge(codeChallenge: string): boolean {
  */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
+/** Whether [url] is on this machine (a dev server), not reachable from anywhere else. */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Validates a redirect URI against allowed URIs for a client.
  * Uses exact string matching as required by OAuth 2.1, except for loopback
