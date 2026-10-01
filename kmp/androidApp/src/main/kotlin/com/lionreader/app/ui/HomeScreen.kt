@@ -84,8 +84,6 @@ import com.lionreader.shared.data.NavSubscription
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.TimelineItem
 import kotlin.math.abs
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -145,17 +143,13 @@ fun HomeScreen(
                     hideEmpty = hideEmptyLists,
                     onToggleTag = model::toggleTag,
                     onSelect = {
-                        val switching = it != scope
                         model.select(it)
                         coroutines.launch {
-                            // The new list's first frame is a heavy one; behind the open
-                            // drawer it's a pause, mid-close it skipped most of the animation.
-                            if (switching) {
-                                withTimeoutOrNull(LIST_SWITCH_WAIT_MILLIS) {
-                                    model.items.drop(1).first()
-                                }
-                                withFrameNanos {}
-                            }
+                            // A new list's first frame is a heavy one; behind the open drawer
+                            // it's a pause, mid-close it skipped most of the animation.
+                            val newList =
+                                withTimeoutOrNull(LIST_SWITCH_WAIT_MILLIS) { model.awaitLoaded(it) }
+                            if (newList != false) withFrameNanos {}
                             drawer.closeSteadily()
                         }
                     },
