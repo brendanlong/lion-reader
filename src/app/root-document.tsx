@@ -28,6 +28,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Merriweather, Literata, Inter, Source_Sans_3 } from "next/font/google";
 import { PageViewTracker } from "@/components/analytics/PageViewTracker";
 import { defaultOpenGraph } from "@/lib/metadata";
+import { DEFAULT_FAVICON_URL } from "@/lib/favicon/dynamic-favicon";
 import { appUrl } from "@/server/config/env";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, THEMES } from "@/lib/theme/config";
@@ -81,6 +82,7 @@ export const rootMetadata: Metadata = {
     icon: [
       { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
       { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: DEFAULT_FAVICON_URL, sizes: "any", type: "image/svg+xml" },
     ],
     apple: "/apple-touch-icon.png",
   },

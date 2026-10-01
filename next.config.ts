@@ -152,8 +152,8 @@ const nextConfig: NextConfig = {
       },
       {
         // Non-hashed public/ assets (favicon/icons, emojis, svgs,
-        // social-preview.png): a moderate TTL so an update propagates without a
-        // filename hash. Deliberately NOT immutable for that reason. This glob
+        // social-preview.png) and the generated /api/favicon/*.svg icons: a
+        // moderate TTL so an update propagates without a filename hash. Deliberately NOT immutable for that reason. This glob
         // also matches image/font extensions under /_next/static/media; in
         // production the immutable rule below runs after it and wins there
         // (last match wins).

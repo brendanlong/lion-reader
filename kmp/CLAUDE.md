@@ -121,7 +121,7 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   Fonts subset to Latin woff2 by `scripts/subset-fonts.py` (its header says how
   to run it).
 - **Launcher icon** layers (`res/mipmap-*`) are generated from the repo-root
-  `assets/logo-original.svg` by `scripts/app-icon.py` (its header says how).
+  `public/logo.svg` by `scripts/app-icon.py` (its header says how).
   Debug builds get their own background color so they're easy to tell apart,
   except with themed icons on, which use only the monochrome layer.
 - **Background sync** runs through WorkManager (`SyncScheduler`): a periodic

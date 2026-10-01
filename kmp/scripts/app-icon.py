@@ -9,7 +9,7 @@ the whole logo is just a blob. The background is the web's maskable blue
 Render the logo first; ImageMagick's built-in SVG renderer gets its shapes
 wrong, so use librsvg (or anything built on it, like sharp). From kmp/:
 
-    rsvg-convert -w 1024 -h 1024 ../assets/logo-original.svg -o logo.png
+    rsvg-convert -w 1024 -h 1024 ../public/logo.svg -o logo.png
     uv run --no-project --with pillow python scripts/app-icon.py logo.png
 """
 import math, sys

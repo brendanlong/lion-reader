@@ -12,6 +12,7 @@ import { useState, type ReactNode } from "react";
 import { ClientLink } from "@/components/ui/client-link";
 import { CloseIcon, MenuIcon } from "@/components/ui/icons";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { DynamicFavicon } from "@/components/layout/DynamicFavicon";
 
 const CONTROL_BUTTON_CLASS =
   "control-outline text-muted hover:bg-surface-muted flex h-10 w-10 items-center justify-center rounded-md active:bg-zinc-200 lg:hidden dark:active:bg-zinc-700";
@@ -28,6 +29,7 @@ export function LayoutShell({ headerRight, children }: LayoutShellProps) {
 
   return (
     <div className="bg-canvas flex h-screen">
+      <DynamicFavicon />
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
