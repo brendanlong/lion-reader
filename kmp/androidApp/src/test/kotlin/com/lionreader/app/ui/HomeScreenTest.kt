@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -209,18 +210,23 @@ class HomeScreenTest {
         show()
         composeRule.waitUntil { model.items.value != null }
         var loaded = false
+        var waitedForTheOpenList = true
         // Starred and Saved are both empty: the entries don't change, the list does.
         model.select(ListScope.Starred)
         model.viewModelScope.launch {
             model.awaitLoaded(ListScope.Starred)
             model.select(ListScope.Saved)
             model.awaitLoaded(ListScope.Saved)
+            // Already there: no wait.
+            model.select(ListScope.Saved)
+            waitedForTheOpenList = model.awaitLoaded(ListScope.Saved)
             loaded = true
         }
         composeRule.waitUntil(timeoutMillis = 2_000) {
             shadowOf(Looper.getMainLooper()).idle()
             loaded
         }
+        assertFalse(waitedForTheOpenList)
     }
 
     @Test

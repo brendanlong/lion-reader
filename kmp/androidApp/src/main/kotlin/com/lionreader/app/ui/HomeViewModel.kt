@@ -102,9 +102,14 @@ class HomeViewModel(
             .map { it?.second }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Returns once [scope]'s entries have loaded (after [select]ing it). */
-    suspend fun awaitLoaded(scope: ListScope) {
+    /**
+     * Returns once [scope]'s entries have loaded (after [select]ing it): at once if they're the
+     * ones loaded already. Whether it had to wait, i.e. there's a new list to draw.
+     */
+    suspend fun awaitLoaded(scope: ListScope): Boolean {
+        if (loaded.value?.first == scope) return false
         loaded.first { it?.first == scope }
+        return true
     }
 
     private val _search = MutableStateFlow<String?>(null)
