@@ -164,7 +164,14 @@ export async function synthesizeSpeech(
   if (models.length === 0) {
     throw new SpeechRequestError("Cloud voices require a DeepInfra or OpenRouter API key");
   }
-  const modelId = normalizeModelRef(options.model ?? defaultSpeechModelId(models));
+  // A choice on a provider with no key left (or no longer allowed on the
+  // server's key) falls back to the default; one on the user's own key is
+  // kept even if the provider stopped listing it.
+  const requested = options.model ? normalizeModelRef(options.model) : null;
+  const modelId =
+    requested && isModelAllowed(requested, keys, SERVER_KEY_CLOUD_VOICE_MODELS)
+      ? requested
+      : defaultSpeechModelId(models);
   const model = models.find((candidate) => candidate.id === modelId);
   if (!model) {
     throw new SpeechRequestError(`Speech model not available: ${modelId}`);

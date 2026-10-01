@@ -9,6 +9,7 @@ import {
   supportsReasoningEffort,
 } from "@/server/services/ai-providers";
 import { getNarrationModelRef } from "@/server/services/narration";
+import { parseModelRef } from "@/lib/ai/model-ref";
 import { buildChatCompletionBody } from "@/server/services/openrouter";
 import { getSummarizationModelId } from "@/server/services/summarization";
 import {
@@ -81,7 +82,7 @@ describe("getSummarizationModelId", () => {
   it("prefers the user model", () => {
     clearEnv();
     process.env.SUMMARIZATION_MODEL = "groq:foo";
-    expect(getSummarizationModelId("cerebras:bar", {})).toBe("cerebras:bar");
+    expect(getSummarizationModelId("cerebras:bar", { cerebrasApiKey: "c" })).toBe("cerebras:bar");
   });
 
   it("falls back to the env var", () => {
@@ -170,7 +171,7 @@ describe("getNarrationModelRef", () => {
 
   it("uses the user model when set", () => {
     clearEnv();
-    expect(getNarrationModelRef("groq:openai/gpt-oss-20b")).toEqual({
+    expect(getNarrationModelRef("groq:openai/gpt-oss-20b", { groqApiKey: "g" })).toEqual({
       provider: "groq",
       model: "openai/gpt-oss-20b",
     });
@@ -330,6 +331,7 @@ describe("isModelAllowed", () => {
 
   it("doesn't restrict other providers", () => {
     clearEnv();
+    process.env.ANTHROPIC_API_KEY = "sk-ant-server";
     expect(isModelAllowed("anthropic:claude-opus-5", {}, allowed)).toBe(true);
     expect(isModelAllowed("claude-opus-5", {}, allowed)).toBe(true);
   });
@@ -347,6 +349,20 @@ describe("isModelAllowed", () => {
     expect(getSummarizationModelId("openrouter:openai/o1-pro", { openrouterApiKey: "o" })).toBe(
       "openrouter:openai/o1-pro"
     );
+  });
+
+  it("rejects a model whose provider has no key at all", () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    expect(isModelAllowed("anthropic:claude-opus-5", {}, allowed)).toBe(false);
+    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {}, allowed)).toBe(false);
+    expect(getSummarizationModelId("anthropic:claude-opus-5", {})).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
+    );
+    expect(getNarrationModelRef("groq:openai/gpt-oss-120b", {})).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
+    );
+    expect(isModelAllowed("anthropic:claude-opus-5", { anthropicApiKey: "a" }, allowed)).toBe(true);
   });
 
   it("never summarizes with a speech-only provider", () => {

@@ -78,10 +78,12 @@ export function isProviderAvailable(provider: AiProvider, keys?: AiProviderKeys)
 }
 
 /**
- * OpenRouter's and DeepInfra's catalogs include models costing 100x our
- * defaults, so when a request would be billed to the server's key (the user
- * has no key of their own for that provider) only the given models may be
- * listed or used.
+ * Whether a user's stored model choice can be used. A model whose provider
+ * has no key at all (the user removed theirs and the server has none) isn't,
+ * so callers fall back to the default. OpenRouter's and DeepInfra's catalogs
+ * include models costing 100x our defaults, so when a request would be billed
+ * to the server's key (the user has no key of their own for that provider)
+ * only the given models may be listed or used.
  */
 export function isModelAllowed(
   modelRef: string,
@@ -89,6 +91,7 @@ export function isModelAllowed(
   allowedWithServerKey: readonly string[]
 ): boolean {
   const { provider } = parseModelRef(modelRef);
+  if (!isProviderAvailable(provider, keys)) return false;
   if ((provider !== "openrouter" && provider !== "deepinfra") || userKeyFor(provider, keys)) {
     return true;
   }
