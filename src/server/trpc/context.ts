@@ -128,11 +128,13 @@ function syntheticSession(
       anthropicApiKey: null,
       cerebrasApiKey: null,
       openrouterApiKey: null,
+      deepinfraApiKey: null,
     },
     hasGroqApiKey: !!user.groqApiKey,
     hasAnthropicApiKey: !!user.anthropicApiKey,
     hasCerebrasApiKey: !!user.cerebrasApiKey,
     hasOpenrouterApiKey: !!user.openrouterApiKey,
+    hasDeepinfraApiKey: !!user.deepinfraApiKey,
   };
 }
 

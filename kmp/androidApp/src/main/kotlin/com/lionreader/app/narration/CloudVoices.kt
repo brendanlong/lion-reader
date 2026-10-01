@@ -18,10 +18,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * Cloud voices (Kokoro and friends through the server's `narration.synthesize`, on the user's or
- * the server's OpenRouter key). Audio is cached on disk by model, voice and text, so listening
- * again doesn't pay again; the cache is trimmed to [cacheBytes], least recently used first.
- * Requests run in [scope], not the caller's: every request is paid for, so one the narrator stops
- * waiting for (the user skipped past it) still finishes into the cache.
+ * the server's DeepInfra or OpenRouter key). Audio is cached on disk by model, voice and text, so
+ * listening again doesn't pay again; the cache is trimmed to [cacheBytes], least recently used
+ * first. Requests run in [scope], not the caller's: every request is paid for, so one the narrator
+ * stops waiting for (the user skipped past it) still finishes into the cache.
  */
 class CloudVoices(
     private val api: LionReaderApi,

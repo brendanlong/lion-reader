@@ -9,19 +9,21 @@ import {
   supportsReasoningEffort,
 } from "@/server/services/ai-providers";
 import { getNarrationModelRef } from "@/server/services/narration";
+import { parseModelRef } from "@/lib/ai/model-ref";
 import { buildChatCompletionBody } from "@/server/services/openrouter";
 import { getSummarizationModelId } from "@/server/services/summarization";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
 } from "@/lib/summarization/constants";
-import { DEFAULT_NARRATION_MODEL, DEFAULT_NARRATION_MODELS } from "@/lib/narration/constants";
+import { DEFAULT_NARRATION_MODELS } from "@/lib/narration/constants";
 
 const ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "GROQ_API_KEY",
   "CEREBRAS_API_KEY",
   "OPENROUTER_API_KEY",
+  "DEEPINFRA_API_KEY",
   "SUMMARIZATION_MODEL",
   "NARRATION_MODEL",
 ] as const;
@@ -67,13 +69,20 @@ describe("isProviderAvailable / getAvailableProviders", () => {
     clearEnv();
     expect(getAvailableProviders({})).toEqual([]);
   });
+
+  it("leaves speech-only DeepInfra out of the text providers", () => {
+    clearEnv();
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    expect(isProviderAvailable("deepinfra")).toBe(true);
+    expect(getAvailableProviders({ deepinfraApiKey: "d" })).toEqual([]);
+  });
 });
 
 describe("getSummarizationModelId", () => {
   it("prefers the user model", () => {
     clearEnv();
     process.env.SUMMARIZATION_MODEL = "groq:foo";
-    expect(getSummarizationModelId("cerebras:bar", {})).toBe("cerebras:bar");
+    expect(getSummarizationModelId("cerebras:bar", { cerebrasApiKey: "c" })).toBe("cerebras:bar");
   });
 
   it("falls back to the env var", () => {
@@ -162,7 +171,7 @@ describe("getNarrationModelRef", () => {
 
   it("uses the user model when set", () => {
     clearEnv();
-    expect(getNarrationModelRef("groq:openai/gpt-oss-20b")).toEqual({
+    expect(getNarrationModelRef("groq:openai/gpt-oss-20b", { groqApiKey: "g" })).toEqual({
       provider: "groq",
       model: "openai/gpt-oss-20b",
     });
@@ -181,12 +190,11 @@ describe("getNarrationModelRef", () => {
     clearEnv();
     // Anthropic models can't do JSON-object responses, and a legacy bare ID
     // parses as Anthropic — both must fall back to the default model.
-    expect(getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(
-      getNarrationModelRef(DEFAULT_NARRATION_MODEL)
-    );
-    expect(getNarrationModelRef("some-bare-model")).toEqual(
-      getNarrationModelRef(DEFAULT_NARRATION_MODEL)
-    );
+    process.env.ANTHROPIC_API_KEY = "sk-ant-server";
+    process.env.GROQ_API_KEY = "gsk-server";
+    const groqDefault = parseModelRef(DEFAULT_NARRATION_MODELS.groq);
+    expect(getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(groqDefault);
+    expect(getNarrationModelRef("some-bare-model")).toEqual(groqDefault);
   });
 });
 
@@ -311,8 +319,18 @@ describe("isModelAllowed", () => {
     );
   });
 
+  it("limits DeepInfra models the same way", () => {
+    clearEnv();
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    const speech = ["deepinfra:hexgrad/Kokoro-82M"];
+    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, speech)).toBe(true);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", {}, speech)).toBe(false);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfraApiKey: "d" }, speech)).toBe(true);
+  });
+
   it("doesn't restrict other providers", () => {
     clearEnv();
+    process.env.ANTHROPIC_API_KEY = "sk-ant-server";
     expect(isModelAllowed("anthropic:claude-opus-5", {}, allowed)).toBe(true);
     expect(isModelAllowed("claude-opus-5", {}, allowed)).toBe(true);
   });
@@ -329,6 +347,28 @@ describe("isModelAllowed", () => {
     });
     expect(getSummarizationModelId("openrouter:openai/o1-pro", { openrouterApiKey: "o" })).toBe(
       "openrouter:openai/o1-pro"
+    );
+  });
+
+  it("rejects a model whose provider has no key at all", () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    expect(isModelAllowed("anthropic:claude-opus-5", {}, allowed)).toBe(false);
+    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {}, allowed)).toBe(false);
+    expect(getSummarizationModelId("anthropic:claude-opus-5", {})).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
+    );
+    expect(getNarrationModelRef("groq:openai/gpt-oss-120b", {})).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
+    );
+    expect(isModelAllowed("anthropic:claude-opus-5", { anthropicApiKey: "a" }, allowed)).toBe(true);
+  });
+
+  it("never summarizes with a speech-only provider", () => {
+    clearEnv();
+    process.env.GROQ_API_KEY = "gsk-server";
+    expect(getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfraApiKey: "d" })).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.groq
     );
   });
 });

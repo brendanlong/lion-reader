@@ -549,7 +549,8 @@ CREATE TABLE public.users (
     cerebras_api_key text,
     narration_model text,
     getting_started_at timestamp with time zone,
-    openrouter_api_key text
+    openrouter_api_key text,
+    deepinfra_api_key text
 );
 
 CREATE VIEW public.visible_entries AS

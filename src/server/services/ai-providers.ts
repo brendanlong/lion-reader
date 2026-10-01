@@ -5,8 +5,9 @@
  * behind one interface so features (summarization, narration preprocessing)
  * can run on any configured provider. Per-user API keys override the
  * server-wide env keys (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`,
- * `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`); a provider is "available" when
- * either is set.
+ * `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`, `DEEPINFRA_API_KEY`); a provider
+ * is "available" when either is set. DeepInfra is only used for cloud voices
+ * (`services/speech.ts`), so the text features skip it.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -14,12 +15,13 @@ import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
 import {
-  AI_PROVIDERS,
+  TEXT_AI_PROVIDERS,
   formatModelRef,
   normalizeModelRef,
   parseModelRef,
   type AiProvider,
   type ModelRef,
+  type TextAiProvider,
 } from "@/lib/ai/model-ref";
 import {
   listOpenRouterModels,
@@ -37,6 +39,7 @@ export interface AiProviderKeys {
   groqApiKey?: string | null;
   cerebrasApiKey?: string | null;
   openrouterApiKey?: string | null;
+  deepinfraApiKey?: string | null;
 }
 
 export const AI_PROVIDER_ENV_KEYS: Record<AiProvider, string> = {
@@ -44,6 +47,7 @@ export const AI_PROVIDER_ENV_KEYS: Record<AiProvider, string> = {
   groq: "GROQ_API_KEY",
   cerebras: "CEREBRAS_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
+  deepinfra: "DEEPINFRA_API_KEY",
 };
 
 function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
@@ -56,6 +60,8 @@ function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null 
       return keys?.cerebrasApiKey ?? null;
     case "openrouter":
       return keys?.openrouterApiKey ?? null;
+    case "deepinfra":
+      return keys?.deepinfraApiKey ?? null;
   }
 }
 
@@ -72,9 +78,12 @@ export function isProviderAvailable(provider: AiProvider, keys?: AiProviderKeys)
 }
 
 /**
- * OpenRouter's catalog includes models costing 100x our defaults, so when a
- * request would be billed to the server's key (the user has no OpenRouter key
- * of their own) only the given models may be listed or used.
+ * Whether a user's stored model choice can be used. A model whose provider
+ * has no key at all (the user removed theirs and the server has none) isn't,
+ * so callers fall back to the default. OpenRouter's and DeepInfra's catalogs
+ * include models costing 100x our defaults, so when a request would be billed
+ * to the server's key (the user has no key of their own for that provider)
+ * only the given models may be listed or used.
  */
 export function isModelAllowed(
   modelRef: string,
@@ -82,17 +91,18 @@ export function isModelAllowed(
   allowedWithServerKey: readonly string[]
 ): boolean {
   const { provider } = parseModelRef(modelRef);
-  if (provider !== "openrouter" || userKeyFor(provider, keys)) {
+  if (!isProviderAvailable(provider, keys)) return false;
+  if ((provider !== "openrouter" && provider !== "deepinfra") || userKeyFor(provider, keys)) {
     return true;
   }
   return allowedWithServerKey.includes(normalizeModelRef(modelRef));
 }
 
 /**
- * Lists the providers that can currently be used, in declaration order.
+ * Lists the text providers that can currently be used, in declaration order.
  */
-export function getAvailableProviders(keys?: AiProviderKeys): AiProvider[] {
-  return AI_PROVIDERS.filter((provider) => isProviderAvailable(provider, keys));
+export function getAvailableProviders(keys?: AiProviderKeys): TextAiProvider[] {
+  return TEXT_AI_PROVIDERS.filter((provider) => isProviderAvailable(provider, keys));
 }
 
 // Global clients for the server-wide env keys, created lazily. Clients for
@@ -260,6 +270,8 @@ export async function generateChatCompletion(
         reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
       });
     }
+    case "deepinfra":
+      throw new Error("DeepInfra is only used for cloud voices");
   }
 }
 
@@ -270,7 +282,7 @@ export interface AiModel {
   /** Provider-qualified reference (`provider:model`) — the stored value. */
   id: string;
   displayName: string;
-  provider: AiProvider;
+  provider: TextAiProvider;
   /** Only reported by some providers. */
   contextLength?: number;
   /** USD per million input/output tokens, when the provider reports prices. */
@@ -417,7 +429,7 @@ export function filterToLatestClaudeGeneration(
 }
 
 async function listProviderModels(
-  provider: AiProvider,
+  provider: TextAiProvider,
   keys: AiProviderKeys | undefined,
   requirements: ModelRequirements
 ): Promise<AiModel[]> {
@@ -480,13 +492,13 @@ async function listProviderModels(
 }
 
 /**
- * Lists selectable models across the requested providers (default: all),
+ * Lists selectable text models across the requested providers (default: all),
  * skipping providers with no key configured. A provider whose listing fails
  * is logged and skipped so the others still show up.
  */
 export async function listAllModels(
   keys?: AiProviderKeys,
-  providers: readonly AiProvider[] = AI_PROVIDERS,
+  providers: readonly TextAiProvider[] = TEXT_AI_PROVIDERS,
   requirements: ModelRequirements = {}
 ): Promise<AiModel[]> {
   const results = await Promise.all(

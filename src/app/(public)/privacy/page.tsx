@@ -202,7 +202,7 @@ export default function PrivacyPolicyPage() {
           </Card>
 
           <Card padding="md">
-            <LegalSubsection title="Audio Narration (Cerebras, Groq, OpenRouter) — Optional">
+            <LegalSubsection title="Audio Narration (Cerebras, Groq, OpenRouter, DeepInfra) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
                 AI text processing in narration settings, article content is sent to the AI provider
@@ -218,9 +218,10 @@ export default function PrivacyPolicyPage() {
               <LegalParagraph>
                 With browser or enhanced voices, audio is generated entirely on your device. If you
                 choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
-                sent to OpenRouter, which forwards it to the host of the speech model you picked
-                (for example Kokoro, hosted by DeepInfra or Together) to generate the audio. The
-                generated audio is streamed back to your device and not stored on our servers.
+                sent to the provider of the speech model you picked to generate the audio: DeepInfra
+                directly (the default, Kokoro), or OpenRouter, which forwards it to the company
+                hosting that model (for example DeepInfra or Together). The generated audio is
+                streamed back to your device and not stored on our servers.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, device voices send the article text to your device&apos;s
@@ -241,6 +242,9 @@ export default function PrivacyPolicyPage() {
                 </TextLink>
                 <TextLink href="https://openrouter.ai/privacy" external className="ui-text-sm">
                   OpenRouter&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink href="https://deepinfra.com/privacy" external className="ui-text-sm">
+                  DeepInfra&apos;s Privacy Policy &rarr;
                 </TextLink>
               </p>
             </LegalSubsection>

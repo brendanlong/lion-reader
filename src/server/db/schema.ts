@@ -97,6 +97,7 @@ export const users = pgTable(
     anthropicApiKey: text("anthropic_api_key"), // Anthropic: AI summarization
     cerebrasApiKey: text("cerebras_api_key"), // Cerebras: narration LLM preprocessing + summaries
     openrouterApiKey: text("openrouter_api_key"), // OpenRouter: narration LLM preprocessing + summaries
+    deepinfraApiKey: text("deepinfra_api_key"), // DeepInfra: cloud voices
     summarizationModel: text("summarization_model"), // provider:model ref for summaries (legacy: bare Anthropic ID)
     summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
     summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt

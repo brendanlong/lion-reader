@@ -14,9 +14,21 @@
 /**
  * Supported AI providers.
  */
-export const AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter"] as const;
+export const AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter", "deepinfra"] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number];
+
+/**
+ * Providers used for text generation (summaries, narration preprocessing).
+ * DeepInfra is only used for cloud voices.
+ */
+export const TEXT_AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter"] as const;
+
+export type TextAiProvider = (typeof TEXT_AI_PROVIDERS)[number];
+
+export function isTextAiProvider(provider: AiProvider): provider is TextAiProvider {
+  return (TEXT_AI_PROVIDERS as readonly string[]).includes(provider);
+}
 
 /**
  * Human-readable provider names for the settings UI.
@@ -26,6 +38,7 @@ export const AI_PROVIDER_DISPLAY_NAMES: Record<AiProvider, string> = {
   groq: "Groq",
   cerebras: "Cerebras",
   openrouter: "OpenRouter",
+  deepinfra: "DeepInfra",
 };
 
 /**

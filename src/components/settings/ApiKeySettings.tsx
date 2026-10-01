@@ -2,7 +2,7 @@
  * API Key Settings Components
  *
  * Settings sections for user-configured AI provider API keys (Anthropic,
- * Groq, Cerebras, OpenRouter) and the model settings that build on them. User keys
+ * Groq, Cerebras, OpenRouter, DeepInfra) and the model settings that build on them. User keys
  * override the server's global API keys when set.
  */
 
@@ -28,8 +28,14 @@ import { ModelPicker } from "./ModelPicker";
 import { SettingsSection } from "./SettingsSection";
 
 interface ProviderKeyConfig {
-  field: "anthropicApiKey" | "groqApiKey" | "cerebrasApiKey" | "openrouterApiKey";
-  hasKeyField: "hasAnthropicApiKey" | "hasGroqApiKey" | "hasCerebrasApiKey" | "hasOpenrouterApiKey";
+  field:
+    "anthropicApiKey" | "groqApiKey" | "cerebrasApiKey" | "openrouterApiKey" | "deepinfraApiKey";
+  hasKeyField:
+    | "hasAnthropicApiKey"
+    | "hasGroqApiKey"
+    | "hasCerebrasApiKey"
+    | "hasOpenrouterApiKey"
+    | "hasDeepinfraApiKey";
   provider: AiProvider;
   placeholder: string;
   keyUrl: string;
@@ -63,6 +69,13 @@ const PROVIDER_KEY_CONFIGS: ProviderKeyConfig[] = [
     provider: "openrouter",
     placeholder: "sk-or-...",
     keyUrl: "https://openrouter.ai/settings/keys",
+  },
+  {
+    field: "deepinfraApiKey",
+    hasKeyField: "hasDeepinfraApiKey",
+    provider: "deepinfra",
+    placeholder: "Your DeepInfra API key",
+    keyUrl: "https://deepinfra.com/dash/api_keys",
   },
 ];
 
@@ -228,11 +241,12 @@ export function AiProviderKeySettings() {
       title="AI Provider API Keys"
       description={
         <>
-          Add an API key for one or more AI providers to enable AI features: article summaries (any
-          provider) and narration text processing (Groq, Cerebras, or OpenRouter). OpenRouter gives
-          access to hundreds of models from many labs with one key; without your own OpenRouter key,
-          only the suggested OpenRouter models are available. Keys are stored encrypted and override
-          the server&apos;s keys when set.
+          Add an API key for one or more AI providers to enable AI features: article summaries
+          (Anthropic, Groq, Cerebras, or OpenRouter), narration text processing (Groq, Cerebras, or
+          OpenRouter), and cloud voices (DeepInfra or OpenRouter). OpenRouter gives access to
+          hundreds of models from many labs with one key. Without your own OpenRouter or DeepInfra
+          key, only the suggested models from that provider are available. Keys are stored encrypted
+          and override the server&apos;s keys when set.
         </>
       }
     >
@@ -264,12 +278,12 @@ function FeatureModelPicker({
   models: PickerModel[];
   suggestedModelIds: string[];
   isLoading: boolean;
-  onChange: (value: string) => void;
+  onChange: (value: string | null) => void;
 }) {
   return (
     <ModelPicker
       id={id}
-      value={currentModel ? normalizeModelRef(currentModel) : defaultModelId}
+      value={currentModel ? normalizeModelRef(currentModel) : null}
       defaultModelId={defaultModelId}
       models={models}
       suggestedModelIds={suggestedModelIds}
@@ -311,10 +325,10 @@ export function SummarizationSettings() {
   const defaultPrompt = defaultPromptQuery.data?.prompt ?? "";
 
   const handleModelChange = useCallback(
-    (value: string) => {
+    (value: string | null) => {
       updateWithToast(
         updatePreferences,
-        { summarizationModel: value || "" },
+        { summarizationModel: value ?? "" },
         "Model updated",
         "Failed to update model"
       );
@@ -560,10 +574,10 @@ export function NarrationAiSettings() {
   const defaultModelId = modelsQuery.data?.defaultModelId ?? DEFAULT_NARRATION_MODEL;
 
   const handleModelChange = useCallback(
-    (value: string) => {
+    (value: string | null) => {
       updateWithToast(
         updatePreferences,
-        { narrationModel: value || "" },
+        { narrationModel: value ?? "" },
         "Model updated",
         "Failed to update model"
       );

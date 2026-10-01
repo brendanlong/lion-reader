@@ -4,14 +4,14 @@
  * These are used by both the server service and frontend settings UI.
  */
 
-import type { AiProvider } from "@/lib/ai/model-ref";
+import type { TextAiProvider } from "@/lib/ai/model-ref";
 
 /**
  * Default summarization model per provider, as `provider:model` references.
  * The effective default is the first configured provider's entry, in
  * {@link SUMMARIZATION_PROVIDER_PRIORITY} order.
  */
-export const DEFAULT_SUMMARIZATION_MODELS: Record<AiProvider, string> = {
+export const DEFAULT_SUMMARIZATION_MODELS: Record<TextAiProvider, string> = {
   anthropic: "anthropic:claude-sonnet-5",
   groq: "groq:openai/gpt-oss-120b",
   cerebras: "cerebras:gpt-oss-120b",
@@ -26,7 +26,7 @@ export const DEFAULT_SUMMARIZATION_MODELS: Record<AiProvider, string> = {
  * last: it can reach the others, so someone holding a direct key meant to use
  * it, and adding a server OpenRouter key doesn't change anyone's default.
  */
-export const SUMMARIZATION_PROVIDER_PRIORITY: AiProvider[] = [
+export const SUMMARIZATION_PROVIDER_PRIORITY: TextAiProvider[] = [
   "cerebras",
   "groq",
   "anthropic",

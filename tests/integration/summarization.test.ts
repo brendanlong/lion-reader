@@ -9,7 +9,7 @@
  * that in so the sanitize-on-read guarantee can't be silently dropped.
  */
 
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, userEntries, entrySummaries } from "../../src/server/db/schema";
@@ -83,31 +83,29 @@ async function createVisibleEntry(
 }
 
 const createdUserIds: string[] = [];
-let previousAnthropicKey: string | undefined;
-let previousGroqKey: string | undefined;
+const PROVIDER_ENV = [
+  "ANTHROPIC_API_KEY",
+  "GROQ_API_KEY",
+  "CEREBRAS_API_KEY",
+  "OPENROUTER_API_KEY",
+  "SUMMARIZATION_MODEL",
+] as const;
+const previousEnv = Object.fromEntries(PROVIDER_ENV.map((name) => [name, process.env[name]]));
 
 beforeAll(() => {
   // Make summarization "available" via the server key so the router reaches the
   // cached read path (no real LLM call — a cached summary is returned first).
-  previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  // Nothing else is configured, so a developer's own keys can't turn a
+  // failing generation into a real call.
+  for (const name of PROVIDER_ENV) delete process.env[name];
   process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
-  // ...and make sure Groq is *not* configured: the regenerate tests below point
-  // the user at a Groq model so the generation path fails at "no key" instead
-  // of making a real network call.
-  previousGroqKey = process.env.GROQ_API_KEY;
-  delete process.env.GROQ_API_KEY;
 });
 
 afterAll(async () => {
-  if (previousAnthropicKey === undefined) {
-    delete process.env.ANTHROPIC_API_KEY;
-  } else {
-    process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
-  }
-  if (previousGroqKey === undefined) {
-    delete process.env.GROQ_API_KEY;
-  } else {
-    process.env.GROQ_API_KEY = previousGroqKey;
+  for (const name of PROVIDER_ENV) {
+    const previous = previousEnv[name];
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
   }
   for (const userId of createdUserIds) {
     await db.delete(users).where(eq(users.id, userId));
@@ -210,19 +208,25 @@ describe("summarization.generate entry visibility", () => {
  * client always sends the flag). These lock in that the `useFullContent`-omitted
  * branch honours it too.
  *
- * The user is pointed at a Groq model while only the Anthropic server key is
+ * The server's model is a Groq one while only the Anthropic server key is
  * set, so once the router gets past the cache it fails deterministically with
  * "Groq API key not configured" — no network call, and reaching that error is
- * itself the proof that the cached summary was not served.
+ * itself the proof that the cached summary was not served. (A *user's* model
+ * on an unconfigured provider would fall back to a configured one instead.)
  */
 describe("summarization.generate regenerate bypasses the cache", () => {
   const UNCONFIGURED_MODEL = "groq:llama-3.3-70b-versatile";
 
+  beforeEach(() => {
+    process.env.SUMMARIZATION_MODEL = UNCONFIGURED_MODEL;
+  });
+
+  afterEach(() => {
+    delete process.env.SUMMARIZATION_MODEL;
+  });
+
   async function createUser(): Promise<string> {
-    const userId = await createTestUser({
-      emailPrefix: "summ",
-      summarizationModel: UNCONFIGURED_MODEL,
-    });
+    const userId = await createTestUser({ emailPrefix: "summ" });
     createdUserIds.push(userId);
     return userId;
   }
@@ -304,9 +308,9 @@ describe("summarization.generate regenerate bypasses the cache", () => {
  * insert the placeholder row. The loser must get the winner's row, not a
  * unique-violation 500.
  *
- * The user is pointed at a Groq model while only the Anthropic server key is
- * set, so both requests fail deterministically at "Groq API key not configured"
- * — past the placeholder insert, with no network call.
+ * The server's model is a Groq one while only the Anthropic server key is set,
+ * so both requests fail deterministically at "Groq API key not configured" —
+ * past the placeholder insert, with no network call.
  *
  * Nothing here forces the two requests to interleave *inside* the insert
  * window, so this asserts that concurrent requests converge on one row; the
@@ -314,11 +318,16 @@ describe("summarization.generate regenerate bypasses the cache", () => {
  * constraint violation (its cache key is global, so two users collide).
  */
 describe("summarization.generate concurrent placeholder creation", () => {
+  beforeEach(() => {
+    process.env.SUMMARIZATION_MODEL = "groq:llama-3.3-70b-versatile";
+  });
+
+  afterEach(() => {
+    delete process.env.SUMMARIZATION_MODEL;
+  });
+
   it("survives two concurrent requests for the same entry", async () => {
-    const userId = await createTestUser({
-      emailPrefix: "summ",
-      summarizationModel: "groq:llama-3.3-70b-versatile",
-    });
+    const userId = await createTestUser({ emailPrefix: "summ" });
     createdUserIds.push(userId);
     const contentHash = `hash-${generateUuidv7()}`;
     const entryId = await createVisibleEntry(userId, contentHash);

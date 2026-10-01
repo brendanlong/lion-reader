@@ -107,11 +107,11 @@ class CloudVoicesTest {
     fun aRejectionStopsNarrationWithTheServersReason() = runTest {
         responses.addLast(
             HttpStatusCode.BadRequest to
-                """{"message":"Cloud voices require an OpenRouter API key"}"""
+                """{"message":"Cloud voices require a DeepInfra or OpenRouter API key"}"""
         )
         val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
         assertEquals(SpeechUnavailable::class, error!!::class)
-        assertEquals("Cloud voices require an OpenRouter API key", error.message)
+        assertEquals("Cloud voices require a DeepInfra or OpenRouter API key", error.message)
     }
 
     @Test

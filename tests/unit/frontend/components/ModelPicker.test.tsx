@@ -26,11 +26,11 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
 });
 
-function renderPicker(onChange = vi.fn()) {
+function renderPicker(onChange = vi.fn(), value: string | null = "cerebras:gpt-oss-120b") {
   render(
     <ModelPicker
       id="model"
-      value="cerebras:gpt-oss-120b"
+      value={value}
       defaultModelId="cerebras:gpt-oss-120b"
       models={models}
       suggestedModelIds={["openrouter:google/gemini-3.8-flash"]}
@@ -57,7 +57,7 @@ describe("ModelPicker", () => {
         .getAllByRole("option")
         .map((option) => option.textContent)
     ).toEqual([
-      expect.stringContaining("gpt-oss-120b (default)"),
+      expect.stringContaining("gpt-oss-120b"),
       expect.stringContaining("Google: Gemini 3.8 Flash"),
     ]);
     expect(screen.getByRole("option", { selected: true })).toHaveTextContent("gpt-oss-120b");
@@ -77,7 +77,7 @@ describe("ModelPicker", () => {
     const { input, onChange } = renderPicker();
     fireEvent.focus(input);
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(input).toHaveAttribute("aria-activedescendant", "model-option-1");
+    expect(input).toHaveAttribute("aria-activedescendant", "model-option-2");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onChange).toHaveBeenCalledWith("openrouter:google/gemini-3.8-flash");
   });
@@ -108,11 +108,33 @@ describe("ModelPicker", () => {
     );
     const input = screen.getByRole("combobox");
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(input).toHaveAttribute("aria-activedescendant", "model-option-1");
-    fireEvent.keyDown(input, { key: "End" });
     expect(input).toHaveAttribute("aria-activedescendant", "model-option-2");
+    fireEvent.keyDown(input, { key: "End" });
+    expect(input).toHaveAttribute("aria-activedescendant", "model-option-3");
     fireEvent.keyDown(input, { key: "Home" });
     expect(input).toHaveAttribute("aria-activedescendant", "model-option-0");
+  });
+
+  it("follows the default when nothing is picked", () => {
+    const { input } = renderPicker(vi.fn(), null);
+    expect(input).toHaveValue("Default (gpt-oss-120b)");
+    fireEvent.focus(input);
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
+      "Default (gpt-oss-120b)"
+    );
+    expect(input).toHaveAttribute("aria-activedescendant", "model-option-0");
+  });
+
+  it("goes back to the default from a picked model, and hides it while searching", () => {
+    const { input, onChange } = renderPicker();
+    fireEvent.focus(input);
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("Default (gpt-oss-120b)");
+    fireEvent.click(screen.getByRole("option", { name: /^Default/ }));
+    expect(onChange).toHaveBeenCalledWith(null);
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "gpt" } });
+    expect(screen.queryByRole("option", { name: /^Default/ })).not.toBeInTheDocument();
   });
 
   it("says so when nothing matches", () => {

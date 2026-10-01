@@ -1,20 +1,26 @@
 /**
- * Cloud voices: server-side text-to-speech through OpenRouter's speech models.
+ * Cloud voices: server-side text-to-speech through DeepInfra or OpenRouter.
  * Keys stay on the server, so the browser gets audio from our API rather than
- * calling OpenRouter itself.
+ * calling a provider itself.
  */
 
 import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
 import {
-  DEFAULT_CLOUD_VOICE_MODEL,
+  DEFAULT_CLOUD_VOICE_MODELS,
   DEFAULT_CLOUD_VOICES,
   SERVER_KEY_CLOUD_VOICE_MODELS,
 } from "@/lib/narration/constants";
+import { logger } from "@/lib/logger";
 import {
   getProviderApiKey,
   isModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
+import {
+  deepInfraSpeech,
+  listDeepInfraSpeechModels,
+  type DeepInfraSpeechModel,
+} from "@/server/services/deepinfra";
 import {
   listOpenRouterModels,
   openRouterSpeech,
@@ -22,26 +28,49 @@ import {
   type OpenRouterModel,
 } from "@/server/services/openrouter";
 
+export const SPEECH_PROVIDERS = ["deepinfra", "openrouter"] as const;
+
+export type SpeechProvider = (typeof SPEECH_PROVIDERS)[number];
+
 export interface SpeechModel {
   /** `provider:model` ref. */
   id: string;
   displayName: string;
-  provider: "openrouter";
+  provider: SpeechProvider;
   voices: string[];
   /** USD per million input characters. */
   pricePerMillionCharacters?: number;
 }
 
+/**
+ * Speech models the user can pick, across the providers that have a key. A
+ * provider whose catalog can't be fetched is logged and left out, so the
+ * others still show up.
+ */
 export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechModel[]> {
-  if (!getProviderApiKey("openrouter", keys)) {
-    return [];
-  }
-  return toSpeechModels(await listOpenRouterModels("speech"), keys);
+  const lists = await Promise.all(
+    SPEECH_PROVIDERS.filter((provider) => getProviderApiKey(provider, keys)).map(
+      async (provider) => {
+        try {
+          return provider === "deepinfra"
+            ? toDeepInfraSpeechModels(await listDeepInfraSpeechModels(), keys)
+            : toSpeechModels(await listOpenRouterModels("speech"), keys);
+        } catch (error) {
+          logger.error("Failed to list speech models", {
+            provider,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        }
+      }
+    )
+  );
+  return lists.flat().sort(byDisplayName);
 }
 
 /**
- * Speech models the user can pick: those that list voices, limited to the
- * server-key allowlist when running on the server's key.
+ * OpenRouter's speech models the user can pick: those that list voices, limited
+ * to the server-key allowlist when running on the server's key.
  */
 export function toSpeechModels(
   catalog: OpenRouterModel[],
@@ -64,7 +93,34 @@ export function toSpeechModels(
         },
       ];
     })
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    .sort(byDisplayName);
+}
+
+function byDisplayName(a: SpeechModel, b: SpeechModel): number {
+  return a.displayName.localeCompare(b.displayName);
+}
+
+/** DeepInfra's speech models the user can pick, like {@link toSpeechModels}. */
+export function toDeepInfraSpeechModels(
+  catalog: DeepInfraSpeechModel[],
+  keys: AiProviderKeys | undefined
+): SpeechModel[] {
+  return catalog
+    .flatMap((model): SpeechModel[] => {
+      const id = formatModelRef("deepinfra", model.name);
+      if (!isModelAllowed(id, keys, SERVER_KEY_CLOUD_VOICE_MODELS)) return [];
+      return [
+        {
+          id,
+          // "hexgrad/Kokoro-82M" → "hexgrad: Kokoro 82M", like OpenRouter's names.
+          displayName: model.name.replace("/", ": ").replaceAll("-", " "),
+          provider: "deepinfra",
+          voices: model.voices,
+          pricePerMillionCharacters: model.pricePerMillionCharacters,
+        },
+      ];
+    })
+    .sort(byDisplayName);
 }
 
 /**
@@ -78,12 +134,55 @@ function pricePerMillionCharacters(model: OpenRouterModel): number | undefined {
   return pricePerMillionUnits(model.pricing?.prompt);
 }
 
+/** The model used when the user hasn't picked one (or theirs is gone). */
+export function defaultSpeechModelId(models: SpeechModel[]): string {
+  const ids = new Set(models.map((model) => model.id));
+  return (
+    DEFAULT_CLOUD_VOICE_MODELS.find((id) => ids.has(id)) ??
+    models[0]?.id ??
+    DEFAULT_CLOUD_VOICE_MODELS[0]
+  );
+}
+
 export function defaultVoiceFor(model: SpeechModel): string {
   const preferred = DEFAULT_CLOUD_VOICES[model.id];
   return preferred && model.voices.includes(preferred) ? preferred : model.voices[0];
 }
 
 export class SpeechRequestError extends Error {}
+
+/**
+ * The model and voice to synthesize with. A null model means the default. A
+ * choice on a provider with no key left (or no longer allowed on the server's
+ * key) falls back to the default; one on the user's own key is kept, and is
+ * an error if the provider stopped listing it.
+ */
+export function resolveSpeechModel(
+  models: SpeechModel[],
+  keys: AiProviderKeys,
+  requestedModel: string | null,
+  requestedVoice: string | null
+): { model: SpeechModel; voice: string } {
+  if (models.length === 0) {
+    throw new SpeechRequestError("Cloud voices require a DeepInfra or OpenRouter API key");
+  }
+  const requested = requestedModel ? normalizeModelRef(requestedModel) : null;
+  const modelId =
+    requested && isModelAllowed(requested, keys, SERVER_KEY_CLOUD_VOICE_MODELS)
+      ? requested
+      : defaultSpeechModelId(models);
+  const model = models.find((candidate) => candidate.id === modelId);
+  if (!model) {
+    throw new SpeechRequestError(`Speech model not available: ${modelId}`);
+  }
+  // A stored voice the model no longer lists falls back to the default, the
+  // same voice the settings page shows as selected.
+  const voice =
+    requestedVoice && model.voices.includes(requestedVoice)
+      ? requestedVoice
+      : defaultVoiceFor(model);
+  return { model, voice };
+}
 
 /**
  * Synthesizes `text` as MP3. A null model or voice means the default. Rejects
@@ -94,18 +193,18 @@ export async function synthesizeSpeech(
   keys: AiProviderKeys,
   options: { model: string | null; voice: string | null; text: string }
 ): Promise<Uint8Array> {
-  const apiKey = getProviderApiKey("openrouter", keys);
+  const { model, voice } = resolveSpeechModel(
+    await listSpeechModels(keys),
+    keys,
+    options.model,
+    options.voice
+  );
+  const apiKey = getProviderApiKey(model.provider, keys);
   if (!apiKey) {
-    throw new SpeechRequestError("Cloud voices require an OpenRouter API key");
+    throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
-  const modelId = normalizeModelRef(options.model ?? DEFAULT_CLOUD_VOICE_MODEL);
-  const model = (await listSpeechModels(keys)).find((candidate) => candidate.id === modelId);
-  if (!model) {
-    throw new SpeechRequestError(`Speech model not available: ${modelId}`);
-  }
-  // A stored voice the model no longer lists falls back to the default, the
-  // same voice the settings page shows as selected.
-  const voice =
-    options.voice && model.voices.includes(options.voice) ? options.voice : defaultVoiceFor(model);
-  return openRouterSpeech(apiKey, parseModelRef(model.id).model, voice, options.text);
+  const providerModel = parseModelRef(model.id).model;
+  return model.provider === "deepinfra"
+    ? deepInfraSpeech(apiKey, providerModel, voice, options.text)
+    : openRouterSpeech(apiKey, providerModel, voice, options.text);
 }

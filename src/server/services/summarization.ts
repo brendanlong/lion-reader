@@ -12,7 +12,7 @@ import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { markdownToHtmlAsync } from "@/server/markdown";
 import { parseFragment, serialize } from "parse5";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
-import { parseModelRef } from "@/lib/ai/model-ref";
+import { isTextAiProvider, parseModelRef } from "@/lib/ai/model-ref";
 import {
   generateChatCompletion,
   getAvailableProviders,
@@ -262,7 +262,11 @@ export function isSummarizationAvailable(keys?: AiProviderKeys): boolean {
  * of the first configured provider (see SUMMARIZATION_PROVIDER_PRIORITY).
  */
 export function getSummarizationModelId(userModel?: string | null, keys?: AiProviderKeys): string {
-  if (userModel && isModelAllowed(userModel, keys, SUGGESTED_SUMMARIZATION_MODELS)) {
+  if (
+    userModel &&
+    isTextAiProvider(parseModelRef(userModel).provider) &&
+    isModelAllowed(userModel, keys, SUGGESTED_SUMMARIZATION_MODELS)
+  ) {
     return userModel;
   }
   if (process.env.SUMMARIZATION_MODEL) {
