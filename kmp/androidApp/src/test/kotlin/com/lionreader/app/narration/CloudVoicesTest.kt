@@ -13,6 +13,7 @@ import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import java.nio.file.Files
 import java.util.Base64
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -29,8 +30,8 @@ import org.junit.Test
 class CloudVoicesTest {
     private val audio = byteArrayOf(1, 2, 3)
     private var responses = ArrayDeque<Pair<HttpStatusCode, String>>()
-    /** A response for requests whose body has this text, ahead of [responses]. */
-    private var forText: Map<String, Pair<HttpStatusCode, String>> = emptyMap()
+    /** How to answer requests whose body has this text, ahead of [responses]. */
+    private var forText: Map<String, suspend () -> Pair<HttpStatusCode, String>> = emptyMap()
     private var requests = 0
     private val cache = Files.createTempDirectory("cloud").toFile()
     private val dir = Files.createTempDirectory("narration").toFile()
@@ -48,7 +49,7 @@ class CloudVoicesTest {
                     requests++
                     val sent = (request.body as? TextContent)?.text.orEmpty()
                     val (status, body) =
-                        forText.entries.firstOrNull { it.key in sent }?.value
+                        forText.entries.firstOrNull { it.key in sent }?.value?.invoke()
                             ?: responses.removeFirstOrNull()
                             ?: ok
                     respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
@@ -130,10 +131,27 @@ class CloudVoicesTest {
 
     @Test
     fun textTheServerKeepsFailingWhileAnsweringOthersIsSkipped() = runTest {
-        forText = mapOf("Bad." to (HttpStatusCode.InternalServerError to "{}"))
+        // In this order (the mock answers on its own threads): Bad. fails, then Good. is answered,
+        // then Bad. fails again.
+        val badTried = CompletableDeferred<Unit>()
+        val goodAnswered = CompletableDeferred<Unit>()
+        forText =
+            mapOf(
+                "Bad." to
+                    {
+                        if (!badTried.complete(Unit)) goodAnswered.await()
+                        HttpStatusCode.InternalServerError to "{}"
+                    },
+                "Good." to
+                    {
+                        badTried.await()
+                        ok
+                    },
+            )
         val engine = engine()
         val bad = async { runCatching { engine.synthesize("Bad.", dir, "0") }.exceptionOrNull() }
         engine.synthesize("Good.", dir, "1")
+        goodAnswered.complete(Unit)
 
         val error = bad.await()
         // Not an interruption to wait out: an ordinary failure, so just this chunk is skipped.
