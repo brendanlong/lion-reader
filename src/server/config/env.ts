@@ -232,6 +232,7 @@ function parseFingerprints(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+export const RELEASE_APP_PACKAGE = "com.lionreader.app";
 export const DEBUG_APP_PACKAGE = "com.lionreader.app.debug";
 
 /**
@@ -250,7 +251,7 @@ export const androidAppConfig = {
   get packages(): Array<{ packageName: string; certSha256Fingerprints: string[] }> {
     return [
       {
-        packageName: "com.lionreader.app",
+        packageName: RELEASE_APP_PACKAGE,
         certSha256Fingerprints: parseFingerprints(process.env.ANDROID_APP_CERT_SHA256),
       },
       {

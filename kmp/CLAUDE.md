@@ -24,8 +24,11 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   `/oauth/app-callback/debug`, so the two apps never compete for one) is
   claimed as a verified App Link (`assetlinks.json`, fed by
   `ANDROID_APP_CERT_SHA256` and, for the debug app,
-  `ANDROID_DEBUG_APP_CERT_SHA256` on the server). Never a custom scheme: any
-  app can register one and finish a sign-in under our client id. Refresh tokens rotate
+  `ANDROID_DEBUG_APP_CERT_SHA256` on the server). A browser doesn't always
+  hand the link over (Firefox after a same-site login, or a device that hasn't
+  verified the link), so the page at that URL has a button that opens the app
+  by package. Never a custom scheme: any app can register one and finish a
+  sign-in under our client id. Refresh tokens rotate
   and the server revokes the family on reuse, so refresh is serialized
   (`AppAuth`'s mutex; the UI, WorkManager and the callback share one
   `AppGraph` and so one `AppAuth` — a new one is made only when a signed-out
@@ -243,8 +246,7 @@ Start the app with an issuer the phone can reach over USB, e.g.
 `adb reverse tcp:<port> tcp:<port>` and enter `http://localhost:<port>` as the
 server on the sign-in screen (debug builds allow cleartext). An http redirect
 can't be an App Link, so the sign-in ends on the server's "opened in your
-browser" page; on a server on this machine that page has an **Open in the debug
-app** button that hands the redirect over (it's also the URL in the dev
+browser" page; its **Open the debug app** button hands the redirect over (it's also the URL in the dev
 server's request log, for `adb shell am start -a
 com.lionreader.app.DEBUG_SIGN_IN_CALLBACK -d '<url>'`). `pnpm db:seed` creates
 `test@example.com` / `password123`.
