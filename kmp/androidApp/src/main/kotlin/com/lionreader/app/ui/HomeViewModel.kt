@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -84,12 +85,27 @@ class HomeViewModel(
     val navigation: StateFlow<Navigation?> =
         reader.navigation().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val items: StateFlow<List<TimelineItem>?> =
+    /** The list's entries, with the list they're of (so a switch can wait for them). */
+    private val loaded: StateFlow<Pair<ListScope, List<TimelineItem>>?> =
         combine(_scope, unreadOnly, keepIds, limit) { scope, unread, keep, limit ->
                 Query(scope, unread, keep, limit)
             }
-            .flatMapLatest { reader.timeline(it.scope, it.unreadOnly, it.keepIds, it.limit) }
+            .flatMapLatest { query ->
+                reader.timeline(query.scope, query.unreadOnly, query.keepIds, query.limit).map {
+                    query.scope to it
+                }
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val items: StateFlow<List<TimelineItem>?> =
+        loaded
+            .map { it?.second }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Returns once [scope]'s entries have loaded (after [select]ing it). */
+    suspend fun awaitLoaded(scope: ListScope) {
+        loaded.first { it?.first == scope }
+    }
 
     private val _search = MutableStateFlow<String?>(null)
 

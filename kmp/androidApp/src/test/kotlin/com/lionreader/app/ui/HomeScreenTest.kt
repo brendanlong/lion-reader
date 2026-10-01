@@ -27,6 +27,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -39,6 +40,7 @@ import com.lionreader.shared.db.LionReaderDatabase
 import java.time.Duration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -200,6 +202,25 @@ class HomeScreenTest {
         composeRule
             .onNodeWithText("An article", substring = true)
             .assert(hasStateDescription("Unread, Starred"))
+    }
+
+    @Test
+    fun aSwitchToAnEmptyListFromAnEmptyListIsSeenToLoad() {
+        show()
+        composeRule.waitUntil { model.items.value != null }
+        var loaded = false
+        // Starred and Saved are both empty: the entries don't change, the list does.
+        model.select(ListScope.Starred)
+        model.viewModelScope.launch {
+            model.awaitLoaded(ListScope.Starred)
+            model.select(ListScope.Saved)
+            model.awaitLoaded(ListScope.Saved)
+            loaded = true
+        }
+        composeRule.waitUntil(timeoutMillis = 2_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            loaded
+        }
     }
 
     @Test
