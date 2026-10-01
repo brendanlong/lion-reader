@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -21,6 +23,8 @@ import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso
@@ -81,6 +85,11 @@ class HomeScreenTest {
     }
 
     private lateinit var model: HomeViewModel
+
+    private fun SemanticsNodeInteraction.isShownAs(state: String) =
+        fetchSemanticsNode().config.getOrElseNullable(SemanticsProperties.StateDescription) {
+            null
+        } == state
 
     private fun show(showSelection: Boolean = false) {
         model =
@@ -283,6 +292,34 @@ class HomeScreenTest {
             .assert(hasStateDescription("Read"))
         // Still listed: entries touched in this list stay until it's reloaded.
         composeRule.onNodeWithText("An article").assertIsDisplayed()
+    }
+
+    @Test
+    fun pullingToRefreshLetsGoOfReadArticles() {
+        seed("a", "An article", read = false)
+        show()
+        composeRule
+            .onNodeWithText("An article", substring = true)
+            .performCustomAccessibilityActionWithLabel("Mark read")
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        composeRule.onNodeWithText("An article").assertIsDisplayed()
+
+        model.pullToRefresh()
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("An article").fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    @Test
+    fun swipingRightTogglesReadAndLeftStars() {
+        seed("a", "An article", read = false)
+        show()
+        val row = composeRule.onNodeWithText("An article", substring = true)
+
+        row.performTouchInput { swipeRight() }
+        composeRule.waitUntil { row.isShownAs("Read") }
+        row.performTouchInput { swipeLeft() }
+        composeRule.waitUntil { row.isShownAs("Read, Starred") }
     }
 
     @Test

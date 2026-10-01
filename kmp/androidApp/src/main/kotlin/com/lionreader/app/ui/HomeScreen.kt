@@ -189,7 +189,7 @@ fun HomeScreen(
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = status == SyncStatus.Syncing,
-                onRefresh = model::refresh,
+                onRefresh = model::pullToRefresh,
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) {
                 Column {
@@ -524,14 +524,22 @@ private fun EntryList(
     LaunchedEffect(nearEnd) { if (nearEnd) onLoadMore() }
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.id }) { item ->
+            // Right toggles read, left toggles starred; the row springs back.
             val swipe =
                 rememberSwipeToDismissBoxState(
                     confirmValueChange = {
-                        if (it != SwipeToDismissBoxValue.Settled) onToggleRead(item)
+                        when (it) {
+                            SwipeToDismissBoxValue.StartToEnd -> onToggleRead(item)
+                            SwipeToDismissBoxValue.EndToStart -> onToggleStar(item)
+                            SwipeToDismissBoxValue.Settled -> {}
+                        }
                         false
                     }
                 )
-            SwipeToDismissBox(state = swipe, backgroundContent = {}) {
+            SwipeToDismissBox(
+                state = swipe,
+                backgroundContent = { SwipeBackground(swipe.dismissDirection, item) },
+            ) {
                 EntryRow(
                     item,
                     selected = item.id == selectedId,
@@ -542,6 +550,36 @@ private fun EntryList(
             }
             HorizontalDivider()
         }
+    }
+}
+
+/** What letting go of a swipe will do, revealed under the row. */
+@Composable
+private fun SwipeBackground(direction: SwipeToDismissBoxValue, item: TimelineItem) {
+    if (direction == SwipeToDismissBoxValue.Settled) return
+    val read = direction == SwipeToDismissBoxValue.StartToEnd
+    Row(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .padding(horizontal = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = if (read) Arrangement.Start else Arrangement.End,
+    ) {
+        Icon(
+            painterResource(
+                when {
+                    read && item.read -> R.drawable.ic_circle
+                    read -> R.drawable.ic_circle_outline
+                    item.starred -> R.drawable.ic_star_border
+                    else -> R.drawable.ic_star
+                }
+            ),
+            // The row's own actions say this to TalkBack.
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(if (read) 16.dp else 24.dp),
+        )
     }
 }
 

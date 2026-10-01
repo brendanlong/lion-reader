@@ -184,6 +184,15 @@ class HomeViewModel(
         viewModelScope.launch { reader.setRead(ids, true) }
     }
 
+    /**
+     * Pulling to refresh also lets go of the read entries kept in an unread-only list, as choosing
+     * the list again does (but not the article open beside it).
+     */
+    fun pullToRefresh() {
+        keepIds.value = setOfNotNull(_shown.value)
+        refresh()
+    }
+
     fun refresh() {
         if (_status.value == SyncStatus.Syncing) return
         _status.value = SyncStatus.Syncing
