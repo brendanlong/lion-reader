@@ -7,11 +7,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.shared.data.AppSchema
+import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -49,6 +51,17 @@ class MarkReadOnArrivalTest {
         composeRule.waitForIdle()
 
         assertFalse(read("a"))
+    }
+
+    @Test
+    fun arrivingAtAReadEntryMovesItToTheTopOfRecentlyRead() {
+        db.entryQueries.insertIgnore("a", "feed", "web", 0, 0, 1, 0)
+        composeRule.setContent { MarkReadOnArrival(reader, "a") {} }
+        composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
+        val recentlyRead = runBlocking {
+            reader.timeline(ListScope.RecentlyRead, false, emptySet(), 10).first()
+        }
+        assertEquals(listOf("a"), recentlyRead.map { it.id })
     }
 
     @Test

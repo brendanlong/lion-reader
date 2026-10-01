@@ -18,6 +18,8 @@ import kotlinx.coroutines.sync.withLock
 private const val FLUSH_BATCH = 1000
 private const val CONTENT_BATCH = 50
 private const val ENSURE_ATTEMPTS = 3
+private const val RECENTLY_READ_PAGE = 100
+private const val RECENTLY_READ_REFRESH = 20
 
 /**
  * Keeps the local store in step with the server: sends the outbox, pulls changes (or the initial
@@ -56,8 +58,7 @@ class SyncEngine(
             flush()
             if (writer.cursors == null) bootstrap()
             pull()
-            // Read history from before the bootstrap's window (or this device).
-            if (!writer.recentlyReadFetched) writer.saveRecentlyRead(api.listRecentlyRead().items)
+            refreshRecentlyRead(now() - policy().windowMillis)
             writer.evict(policy(), now())
         }
         if (downloadContent) {
@@ -181,6 +182,28 @@ class SyncEngine(
         }
 
         writer.finishBootstrap(start)
+    }
+
+    /**
+     * The server's Recently Read. The web marks an entry read again whenever it's opened, which
+     * moves it there without counting as a change to sync (#1118), so the newest are fetched every
+     * sync. The first time, it pages back through the retention window.
+     */
+    private suspend fun refreshRecentlyRead(windowStart: Long) {
+        val backfilled = writer.recentlyReadBackfilled
+        var cursor: String? = null
+        do {
+            val page =
+                api.listRecentlyRead(
+                    cursor,
+                    if (backfilled) RECENTLY_READ_REFRESH else RECENTLY_READ_PAGE,
+                )
+            // A server too old to send read times: try again once it does.
+            if (page.items.any { it.readChangedAt == null }) return
+            val reachedWindowStart = writer.saveRecentlyRead(page.items, windowStart)
+            cursor = page.nextCursor
+        } while (!backfilled && !reachedWindowStart && cursor != null)
+        writer.recentlyReadBackfilled = true
     }
 
     private suspend fun pull() {

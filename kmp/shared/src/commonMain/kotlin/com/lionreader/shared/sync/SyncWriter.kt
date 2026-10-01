@@ -67,15 +67,24 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         items.forEach(store::upsertEntry)
     }
 
-    val recentlyReadFetched: Boolean
-        get() = store.recentlyReadFetched
+    var recentlyReadBackfilled: Boolean
+        get() = store.recentlyReadBackfilled
+        set(value) {
+            store.recentlyReadBackfilled = value
+        }
 
-    /** The server's Recently Read, saved like any list page; once (see LocalStore). */
-    fun saveRecentlyRead(items: List<EntryListItem>) = db.transaction {
-        items.forEach(store::upsertEntry)
-        // A server without read times sends none: ask again once it has them.
-        store.recentlyReadFetched = items.all { it.readChangedAt != null }
-    }
+    /**
+     * Saves a page of the server's Recently Read, like any list page, keeping only entries read
+     * since [windowStart] (retention would drop the rest); whether the page reached back past it.
+     */
+    fun saveRecentlyRead(items: List<EntryListItem>, windowStart: Long): Boolean =
+        db.transactionWithResult {
+            val recent = items.filter { item ->
+                item.readChangedAt?.let { parseMillis(it) >= windowStart } == true
+            }
+            recent.forEach(store::upsertEntry)
+            recent.size < items.size
+        }
 
     fun finishBootstrap(start: SyncCursors) = db.transaction {
         store.cursors = start
@@ -253,14 +262,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                     db.entryQueries.updateServerState(
                         if (state.read) 1 else 0,
                         if (state.starred) 1 else 0,
-                        null,
+                        state.readChangedAt?.let(::parseMillis),
                         state.id,
                     )
-                    // The server took the change's time as its own (it keeps a
-                    // newer one; sync brings that), so Recently Read keeps it.
-                    if (op.field_ == "read") {
-                        db.entryQueries.updateReadChangedAt(op.changed_at, op.entry_id)
-                    }
                 }
             }
         }

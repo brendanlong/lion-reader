@@ -209,14 +209,10 @@ class SyncModelTest {
         val pending = db.outboxQueries.countStates().executeAsOne()
         if (pending != 0L) return "$pending changes still unsent"
 
-        val undelivered = server.recentlyReadUndelivered()
         val recentlyRead =
-            reader.timeline(ListScope.RecentlyRead, false, emptySet(), 10_000).first().map {
-                it.id
-            } - undelivered
-        val serverRecentlyRead = server.recentlyRead() - undelivered
-        if (recentlyRead != serverRecentlyRead) {
-            return "recently read: device $recentlyRead, server $serverRecentlyRead"
+            reader.timeline(ListScope.RecentlyRead, false, emptySet(), 10_000).first().map { it.id }
+        if (recentlyRead != server.recentlyRead()) {
+            return "recently read: device $recentlyRead, server ${server.recentlyRead()}"
         }
 
         for ((key, change) in lastLocal) {

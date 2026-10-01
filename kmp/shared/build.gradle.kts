@@ -54,7 +54,16 @@ kotlin {
 }
 
 sqldelight {
-    databases { create("LionReaderDatabase") { packageName.set("com.lionreader.shared.db") } }
+    databases {
+        create("LionReaderDatabase") {
+            packageName.set("com.lionreader.shared.db")
+            // Each released schema (N.db, generated with
+            // generateCommonMainLionReaderDatabaseSchema) is checked against
+            // the migrations that start from it.
+            schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
+            verifyMigrations.set(true)
+        }
+    }
 }
 
 // RealServerTest reads its fixture from the environment; make it a task input

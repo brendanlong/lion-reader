@@ -97,6 +97,7 @@ data class EntryState(
     val subscriptionId: String? = null,
     val read: Boolean,
     val starred: Boolean,
+    val readChangedAt: String? = null,
 )
 
 @Serializable data class BulkStateResponse(val entries: List<EntryState>)

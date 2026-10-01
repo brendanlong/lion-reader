@@ -68,11 +68,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         var metadataSeq: Long,
         var stateSeq: Long,
         var deletedSeq: Long? = null,
-        /**
-         * A remote same-value re-assert moved [readChangedAt] since sync last delivered it: like
-         * the real server, a re-assert doesn't count as a change to sync, so the device can't know.
-         */
-        var readTimeUndelivered: Boolean = false,
     ) {
         val updatedSeq: Long
             get() = maxOf(createdSeq, metadataSeq, stateSeq)
@@ -163,15 +158,9 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
 
     /** Another device's write, stamped now. */
     fun remoteWrite(entry: Entry, field: String, value: Boolean) =
-        write(entry, field, value, clock(), remote = true)
+        write(entry, field, value, clock())
 
-    private fun write(
-        entry: Entry,
-        field: String,
-        value: Boolean,
-        changedAt: Long,
-        remote: Boolean = false,
-    ): Boolean {
+    private fun write(entry: Entry, field: String, value: Boolean, changedAt: Long): Boolean {
         val watermark = if (field == "read") entry.readChangedAt else entry.starredChangedAt
         if (watermark != null && watermark > changedAt) return false
         val old = if (field == "read") entry.read else entry.starred
@@ -182,12 +171,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             entry.starred = value
             entry.starredChangedAt = changedAt
         }
-        if (old == value) {
-            if (remote && field == "read") entry.readTimeUndelivered = true
-            return false
-        }
+        if (old == value) return false
         entry.stateSeq = ++seq
-        entry.readTimeUndelivered = false
         return true
     }
 
@@ -386,7 +371,15 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val states =
             changes
                 .mapNotNull { c -> visible.find { it.id == c.id } }
-                .map { EntryState(it.id, it.subscriptionId, it.read, it.starred) }
+                .map {
+                    EntryState(
+                        it.id,
+                        it.subscriptionId,
+                        it.read,
+                        it.starred,
+                        it.readChangedAt?.let { t -> it.time(t) },
+                    )
+                }
         return encode(
             BulkStateResponse.serializer(),
             BulkStateResponse(states),
@@ -445,13 +438,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     /** The server's Recently Read: entries whose read state changed, latest first. */
     fun recentlyRead(): List<String> =
         visible.filter { it.readChangedAt != null }.sortedWith(recentlyReadOrder).map { it.id }
-
-    /**
-     * Entries whose place in [recentlyRead] the device can't know (see
-     * [Entry.readTimeUndelivered]).
-     */
-    fun recentlyReadUndelivered(): Set<String> =
-        visible.filter { it.readTimeUndelivered }.map { it.id }.toSet()
 
     private val recentlyReadOrder =
         compareByDescending<Entry> { it.readChangedAt }.thenByDescending { it.id }

@@ -77,10 +77,6 @@ WHERE id = ?;
 updateServerState:
 UPDATE entry SET read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at) WHERE id = ?;
 
--- A sent read change's time, once the server has accepted it.
-updateReadChangedAt:
-UPDATE entry SET read_changed_at = ? WHERE id = ?;
-
 updateServerRead:
 UPDATE entry SET read = ? WHERE id = ?;
 

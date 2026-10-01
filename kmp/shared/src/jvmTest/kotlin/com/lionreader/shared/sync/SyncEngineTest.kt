@@ -171,6 +171,34 @@ class SyncEngineTest {
     }
 
     @Test
+    fun recentlyReadPagesBackThroughTheWindowOnceThenRefreshesTheNewest() = runTest {
+        repeat(150) {
+            serve(
+                entry("r%03d".format(it), ageDays = 400, read = true)
+                    .copy(readChangedAt = minutesAgo(it))
+            )
+        }
+        val longAgo = Instant.fromEpochMilliseconds(NOW - 400 * DAY).toString()
+        serve(entry("before", ageDays = 400, read = true).copy(readChangedAt = longAgo))
+        fun limits() =
+            server.requests
+                .filter { it.url.parameters["sortBy"] == "readChanged" }
+                .map { it.url.parameters["limit"] }
+
+        engine.sync(downloadContent = false)
+        // Read before the window: retention would drop it.
+        assertEquals((0 until 150).map { "r%03d".format(it) }, timeline(ListScope.RecentlyRead))
+        assertEquals(listOf("100", "100"), limits())
+
+        // Read again elsewhere, which isn't a change to sync: the refresh brings it.
+        server.entries["r100"] =
+            server.entries.getValue("r100").copy(readChangedAt = minutesAgo(-1))
+        engine.sync(downloadContent = false)
+        assertEquals("r100", timeline(ListScope.RecentlyRead).first())
+        assertEquals(listOf("100", "100", "20"), limits())
+    }
+
+    @Test
     fun unreadCountsAreTheDevicesOwnIncludingUnsentChanges() = runTest {
         server.subscriptions += Subscription("sub-1", FeedType.WEB)
         serve(entry("a"), entry("b"))

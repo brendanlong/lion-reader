@@ -101,10 +101,11 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   saved and entries with unsent changes are always kept, and an entry read
   within the window counts as recent however old it is.
 - **Recently Read** orders entries by when their read state last changed: the
-  server's time (synced on every entry and backfilled once from its list),
-  unless an unsent change is later. A same-value re-assert from another client
-  moves the server's time without counting as a change to sync (#1118), so it
-  can reorder the web's list but not the device's.
+  server's time, unless an unsent change is later. Opening an entry marks it
+  read even if it is already, as on the web. Re-marking an entry read moves the
+  server's time without counting as a change to sync (#1118), so every sync
+  also fetches the top of the server's list, and the first one pages back
+  through the window.
 - **Database work never runs on the main thread**: `Reader`'s writes are
   `suspend` and run on its context (IO in the app); `SyncEngine` doesn't switch
   threads, so the UI calls it on IO.
@@ -266,10 +267,10 @@ com.lionreader.app.DEBUG_SIGN_IN_CALLBACK -d '<url>'`). `pnpm db:seed` creates
   `lint.xml` holds the global suppressions (the "newer version available"
   checks, which would fail an unchanged tree whenever upstream ships); an
   in-code `@SuppressLint` needs a comment saying why.
-- Until a build is released, a schema change bumps the generation in the
-  database file name (`DB_PREFIX` in `AppGraph.kt`) instead of shipping a
-  migration: older files are deleted and the account resyncs. After release,
-  schema changes need SQLDelight migrations (`.sqm`).
+- A schema change ships as a SQLDelight migration (`N.sqm`, from version N),
+  plus the new version's schema (`N+1.db` in `sqldelight/databases/`, from
+  `generateCommonMainLionReaderDatabaseSchema`). `check` migrates every `.db`
+  there and fails unless the result matches a fresh database.
 - SQL targets SQLite 3.18 (minSdk 26's), SQLDelight's default dialect: no
   UPSERT (`ON CONFLICT DO UPDATE`) — use insert-or-ignore + update, not
   `INSERT OR REPLACE`, which deletes the row (and its downloaded body, and

@@ -12,7 +12,7 @@ import com.lionreader.shared.db.LionReaderDatabase
 private const val CURSORS_KEY = "sync_cursors"
 private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
 private const val CATCH_UP_KEY = "catch_up_in_progress"
-private const val RECENTLY_READ_KEY = "recently_read_fetched"
+private const val RECENTLY_READ_KEY = "recently_read_backfilled"
 
 internal fun FeedType.wire(): String =
     when (this) {
@@ -37,10 +37,10 @@ internal class LocalStore(val db: LionReaderDatabase) {
         set(value) = writeCursors(BOOTSTRAP_CURSORS_KEY, value)
 
     /**
-     * Whether the server's Recently Read has been downloaded: once, since it reaches back past the
-     * bootstrap (and before this device kept read times).
+     * Whether the server's Recently Read has been downloaded back through the retention window:
+     * once, since it reaches back past the bootstrap (and before this device kept read times).
      */
-    var recentlyReadFetched: Boolean
+    var recentlyReadBackfilled: Boolean
         get() = meta.selectValue(RECENTLY_READ_KEY).executeAsOneOrNull() == "1"
         set(value) {
             if (value) meta.upsert(RECENTLY_READ_KEY, "1") else meta.delete(RECENTLY_READ_KEY)

@@ -220,7 +220,10 @@ class FakeServer {
             path == "/entries/mark-read" -> {
                 val body = body(request, MarkReadRequest.serializer())
                 markReadRequests += body
-                stateWrite(body.entries.map { it.id }) { it.copy(read = body.read) }
+                val times = body.entries.associate { it.id to it.changedAt }
+                stateWrite(body.entries.map { it.id }) {
+                    it.copy(read = body.read, readChangedAt = times[it.id])
+                }
             }
             path == "/entries/starred" -> {
                 val body = body(request, SetStarredRequest.serializer())
@@ -247,7 +250,15 @@ class FakeServer {
                 ids.forEach { id -> entries[id]?.let { entries[id] = change(it) } }
                 val states =
                     ids.mapNotNull { entries[it] }
-                        .map { EntryState(it.id, it.subscriptionId, it.read, it.starred) }
+                        .map {
+                            EntryState(
+                                it.id,
+                                it.subscriptionId,
+                                it.read,
+                                it.starred,
+                                it.readChangedAt,
+                            )
+                        }
                 json(BulkStateResponse.serializer(), BulkStateResponse(states))
             }
 
