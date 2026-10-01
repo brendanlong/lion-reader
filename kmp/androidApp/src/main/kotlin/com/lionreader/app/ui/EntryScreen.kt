@@ -306,6 +306,11 @@ fun EntryScreen(
             HorizontalPager(
                 state = pager,
                 key = { pages[it] },
+                // The neighbours are ready before a swipe: creating a page's
+                // WebView mid-swipe blanks the one on screen for a frame, and
+                // the next page's narration (its Listen button) comes from its
+                // WebView having loaded.
+                beyondViewportPageCount = 1,
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) { page ->
                 CompositionLocalProvider(LocalViewConfiguration provides pageConfig) {

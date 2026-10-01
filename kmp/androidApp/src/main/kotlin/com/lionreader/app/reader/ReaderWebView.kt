@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.RectF
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
@@ -49,6 +50,10 @@ fun ReaderWebView(
                 settings.allowContentAccess = false
                 settings.domStorageEnabled = false
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                // Drawn into its own layer, so the pager moving it shifts a
+                // finished picture: on some devices a WebView that's moved
+                // mid-swipe draws a blank frame.
+                setLayerType(View.LAYER_TYPE_HARDWARE, null)
                 if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
                     WebViewCompat.addWebMessageListener(this, "lionReader", setOf(ASSET_ORIGIN)) {
                         _,
