@@ -1,15 +1,21 @@
 name: Android
 
+# kmp/scripts only generate checked-in files, so a change to their output
+# still triggers this.
 on:
   push:
     branches: [master]
     paths:
       - "kmp/**"
+      - "!kmp/**/*.md"
+      - "!kmp/scripts/**"
       - ".github/workflows/android.yml"
   pull_request:
     branches: [master]
     paths:
       - "kmp/**"
+      - "!kmp/**/*.md"
+      - "!kmp/scripts/**"
       - ".github/workflows/android.yml"
 
 permissions:
