@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -77,6 +78,7 @@ import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.NavSubscription
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.TimelineItem
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +91,7 @@ fun HomeScreen(
     onSettings: () -> Unit,
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
+    SettlePromptly(drawer)
     val coroutines = rememberCoroutineScope()
     val scope by model.scope.collectAsStateWithLifecycle()
     val navigation by model.navigation.collectAsStateWithLifecycle()
@@ -232,6 +235,30 @@ fun HomeScreen(
         }
     }
 }
+
+/**
+ * The drawer's spring looks done in about 250ms but spends another 300ms nudging its last pixel,
+ * and while it's animating the drawer takes any touch as a drag: a tap on a list right after
+ * opening it did nothing. So the last couple of pixels snap.
+ */
+@Composable
+internal fun SettlePromptly(drawer: DrawerState) {
+    LaunchedEffect(drawer) {
+        var closedOffset: Float? = null
+        snapshotFlow { Triple(drawer.isAnimationRunning, drawer.targetValue, drawer.currentOffset) }
+            .collect { (animating, target, offset) ->
+                if (offset.isNaN()) return@collect
+                if (!animating) {
+                    if (drawer.currentValue == DrawerValue.Closed) closedOffset = offset
+                    return@collect
+                }
+                val anchor = if (target == DrawerValue.Open) 0f else closedOffset ?: return@collect
+                if (abs(offset - anchor) < SETTLED_PX) drawer.snapTo(target)
+            }
+    }
+}
+
+private const val SETTLED_PX = 2f
 
 /** The top bar while searching: the search box, with back and clear. */
 @OptIn(ExperimentalMaterial3Api::class)
