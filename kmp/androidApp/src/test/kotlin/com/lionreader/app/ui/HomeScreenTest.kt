@@ -7,6 +7,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
@@ -327,6 +328,11 @@ class HomeScreenTest {
         composeRule.waitUntil { row.isShownAs("Read") }
         row.performTouchInput { swipeLeft() }
         composeRule.waitUntil { row.isShownAs("Read, Starred") }
+        // Each swipe toggles from where the row is now.
+        row.performTouchInput { swipeRight() }
+        composeRule.waitUntil { row.isShownAs("Unread, Starred") }
+        row.performTouchInput { swipeLeft() }
+        composeRule.waitUntil { row.isShownAs("Unread") }
     }
 
     @Test
@@ -358,6 +364,36 @@ class HomeScreenTest {
             composeRule.onAllNodesWithText("Quiet Feed").fetchSemanticsNodes().isEmpty()
         }
         composeRule.onNodeWithText("Busy Feed").assertIsDisplayed()
+    }
+
+    @Test
+    fun theOpenListStaysInTheDrawerWhenEmpty() {
+        db.subscriptionQueries.upsertSubscription(
+            "quiet",
+            "feed-2",
+            "web",
+            "Quiet Feed",
+            "https://e.com/quiet",
+            null,
+            0,
+        )
+        db.subscriptionQueries.insertTagIgnore("tag", "News", null)
+        db.subscriptionQueries.addSubscriptionTag("quiet", "tag")
+        seed("b", "Old news", read = true, feed = "feed-2", subscription = "quiet")
+        settings.value = settings.value.copy(hideEmptyLists = true)
+        show()
+        model.select(ListScope.Subscription("quiet"))
+
+        composeRule.onNodeWithContentDescription("Lists").performClick()
+        // The open feed, and its tag (expanded to show it).
+        composeRule.onNodeWithText("News").assertIsDisplayed()
+        // The top bar's title and the drawer's row.
+        composeRule.onAllNodesWithText("Quiet Feed").assertCountEquals(2)
+
+        model.select(ListScope.All)
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("News").fetchSemanticsNodes().isEmpty()
+        }
     }
 
     @Test

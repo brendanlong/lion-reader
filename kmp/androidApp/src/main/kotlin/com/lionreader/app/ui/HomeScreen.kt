@@ -50,8 +50,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -393,7 +395,15 @@ private fun Drawer(
             }
         }
         navigation?.let { nav ->
-            if (nav.tags.isNotEmpty() || nav.subscriptions.isNotEmpty()) {
+            val anyListed =
+                if (hideEmpty) {
+                    nav.subscriptions.any(::shown) ||
+                        selected is ListScope.Tag ||
+                        selected == ListScope.Uncategorized
+                } else {
+                    nav.tags.isNotEmpty() || nav.subscriptions.isNotEmpty()
+                }
+            if (anyListed) {
                 item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             }
             fun group(
@@ -534,17 +544,26 @@ private fun EntryList(
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.id }) { item ->
             // Right toggles read, left toggles starred; the row springs back.
+            // The state keeps its first lambda, so it reads the row as it is
+            // now; and it's asked on every frame past the threshold, so it acts
+            // once per swipe, until the row is back at rest.
+            val current by rememberUpdatedState(item)
+            var acted by remember { mutableStateOf(false) }
             val swipe =
                 rememberSwipeToDismissBoxState(
                     confirmValueChange = {
-                        when (it) {
-                            SwipeToDismissBoxValue.StartToEnd -> onToggleRead(item)
-                            SwipeToDismissBoxValue.EndToStart -> onToggleStar(item)
-                            SwipeToDismissBoxValue.Settled -> {}
+                        if (it != SwipeToDismissBoxValue.Settled && !acted) {
+                            acted = true
+                            if (it == SwipeToDismissBoxValue.StartToEnd) onToggleRead(current)
+                            else onToggleStar(current)
                         }
                         false
                     }
                 )
+            LaunchedEffect(swipe) {
+                snapshotFlow { swipe.dismissDirection }
+                    .collect { if (it == SwipeToDismissBoxValue.Settled) acted = false }
+            }
             SwipeToDismissBox(
                 state = swipe,
                 backgroundContent = { SwipeBackground(swipe.dismissDirection, item) },
