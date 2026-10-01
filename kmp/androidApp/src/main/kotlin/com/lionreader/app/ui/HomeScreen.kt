@@ -145,14 +145,17 @@ fun HomeScreen(
                     hideEmpty = hideEmptyLists,
                     onToggleTag = model::toggleTag,
                     onSelect = {
+                        val switching = it != scope
                         model.select(it)
                         coroutines.launch {
                             // The new list's first frame is a heavy one; behind the open
                             // drawer it's a pause, mid-close it skipped most of the animation.
-                            withTimeoutOrNull(LIST_SWITCH_WAIT_MILLIS) {
-                                model.items.drop(1).first()
+                            if (switching) {
+                                withTimeoutOrNull(LIST_SWITCH_WAIT_MILLIS) {
+                                    model.items.drop(1).first()
+                                }
+                                withFrameNanos {}
                             }
-                            withFrameNanos {}
                             drawer.closeSteadily()
                         }
                     },
