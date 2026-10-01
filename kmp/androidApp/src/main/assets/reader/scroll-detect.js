@@ -12,14 +12,18 @@
       var el = blocks[i];
       var max = el.scrollWidth - el.clientWidth;
       if (max <= 1) continue;
+      // An RTL block's scrollLeft runs from -max (scrolled to its end) to 0.
+      var rtl = getComputedStyle(el).direction === "rtl";
+      var left = rtl ? el.scrollLeft > 1 - max : el.scrollLeft > 0;
+      var right = rtl ? el.scrollLeft < -1 : el.scrollLeft < max - 1;
       var r = el.getBoundingClientRect();
       rects.push([
         r.left + window.scrollX,
         r.top + window.scrollY,
         r.right + window.scrollX,
         r.bottom + window.scrollY,
-        el.scrollLeft > 0 ? 1 : 0,
-        el.scrollLeft < max - 1 ? 1 : 0,
+        left ? 1 : 0,
+        right ? 1 : 0,
       ]);
     }
     var message = JSON.stringify(rects);

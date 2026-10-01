@@ -14,8 +14,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
@@ -140,7 +142,9 @@ private class ReaderView(context: Context) : WebView(context) {
         )
     }
 
-    private val decideAfter = ViewConfiguration.get(context).scaledTouchSlop / 2f
+    /** The system touch slop: the pager waits for twice this ([pagerViewConfiguration]). */
+    private val decideAfter = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private var pointerId = MotionEvent.INVALID_POINTER_ID
     private var downX = 0f
     private var downY = 0f
     private var touched: SideScroller? = null
@@ -150,6 +154,7 @@ private class ReaderView(context: Context) : WebView(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                pointerId = event.getPointerId(0)
                 downX = event.x
                 downY = event.y
                 val density = resources.displayMetrics.density
@@ -158,23 +163,40 @@ private class ReaderView(context: Context) : WebView(context) {
                 touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
                 deciding = true
             }
-            MotionEvent.ACTION_MOVE -> if (deciding) decide(event.x - downX, abs(event.y - downY))
+            // Two fingers aren't a page turn.
+            MotionEvent.ACTION_POINTER_DOWN -> if (deciding) keep()
+            MotionEvent.ACTION_MOVE ->
+                if (deciding) {
+                    val index = event.findPointerIndex(pointerId)
+                    if (index >= 0)
+                        decide(event.getX(index) - downX, abs(event.getY(index) - downY))
+                }
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> deciding = false
         }
         return super.onTouchEvent(event)
     }
 
+    /**
+     * Rechecked on every move until it keeps the gesture or the pager takes it (a cancel), so a
+     * drag that starts a little sideways and turns into a scroll is still kept.
+     */
     private fun decide(dx: Float, dy: Float) {
         if (abs(dx) <= decideAfter && dy <= decideAfter) return
-        deciding = false
         val block = touched
-        val keep =
+        val wanted =
             when {
                 abs(dx) < dy * SWIPE_RATIO -> true
                 // A finger moving left scrolls the block's content right.
                 block != null -> if (dx < 0) block.canScrollRight else block.canScrollLeft
                 else -> false
             }
-        if (keep) parent?.requestDisallowInterceptTouchEvent(true)
+        if (wanted) keep()
+    }
+
+    private fun keep() {
+        deciding = false
+        parent?.requestDisallowInterceptTouchEvent(true)
     }
 
     private companion object {
@@ -235,5 +257,19 @@ private class ReaderWebViewClient(private val assets: WebViewAssetLoader) : WebV
         (view.parent as? ViewGroup)?.removeView(view)
         view.destroy()
         return true
+    }
+}
+
+/**
+ * For the article pager: twice the touch slop (as Android's own paging slop), so a page's
+ * [ReaderView] has decided whether to keep a drag before the pager could take it.
+ */
+@Composable
+fun pagerViewConfiguration(): androidx.compose.ui.platform.ViewConfiguration {
+    val config = LocalViewConfiguration.current
+    return remember(config) {
+        object : androidx.compose.ui.platform.ViewConfiguration by config {
+            override val touchSlop = config.touchSlop * 2
+        }
     }
 }
