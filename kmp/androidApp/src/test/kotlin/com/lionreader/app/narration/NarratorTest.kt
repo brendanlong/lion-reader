@@ -98,6 +98,7 @@ class NarratorTest {
         narrator.narrate(article("a", "One.", "Two.", "Three."), fromParagraph = 2)
         idle()
         narrator.follow("b", "Title b")
+        narrator.follow("c", "Title c")
         narrator.follow("a", "Title a")
 
         assertEquals(2, state?.paragraph)
@@ -131,6 +132,8 @@ class NarratorTest {
         narrator.togglePlaying()
         narrator.follow("b", "Title b")
         narrator.supply(article("b", "One.", "Two.", "Three."))
+        narrator.skipParagraphs(1)
+        assertEquals(0, state?.paragraph)
         narrator.skipParagraphs(1)
         assertEquals(1, state?.paragraph)
         narrator.skipParagraphs(5)

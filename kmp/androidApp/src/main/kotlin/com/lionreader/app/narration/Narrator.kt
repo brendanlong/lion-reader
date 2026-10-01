@@ -162,7 +162,8 @@ class Narrator(
             return
         }
         val resume = left?.takeIf { it.first == entryId }?.second
-        left = current.paragraph?.let { current.entryId to it }
+        // An article passed through without a place doesn't replace the one remembered.
+        current.paragraph?.let { left = current.entryId to it }
         reset()
         _state.value =
             NarrationState(entryId, title, resume, current.playing, waiting = current.playing)
@@ -238,7 +239,9 @@ class Narrator(
         val current = _state.value ?: return
         // Before the audio is prepared, by the article's paragraphs.
         val last = chunks.lastOrNull()?.paragraph ?: article?.paragraphs?.lastIndex ?: return
-        seekToParagraph(((current.paragraph ?: 0) + delta).coerceIn(0, last))
+        // With no place yet, "next" is the first paragraph.
+        val from = current.paragraph ?: -1
+        seekToParagraph((from + delta).coerceIn(0, last))
     }
 
     fun seekToParagraph(paragraph: Int) {
