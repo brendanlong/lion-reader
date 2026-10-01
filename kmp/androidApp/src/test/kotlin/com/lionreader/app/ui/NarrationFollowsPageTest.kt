@@ -41,16 +41,20 @@ class NarrationFollowsPageTest {
                 paragraphs,
                 entry = entry(entryId),
                 started = started,
-                // As the narrator does: narration moves to the article, as it was.
-                follow = { id, _ ->
+                // As the narrator does (NarratorTest): narration moves to the
+                // article, playing or paused as it was, with no place in it yet.
+                follow = { id, title ->
                     narration?.let { current ->
                         if (current.entryId != id) {
                             followed += id
-                            narration = current.copy(entryId = id)
+                            narration =
+                                NarrationState(id, title, null, current.playing, current.playing)
                         }
                     }
                 },
-                supply = { article: NarratedArticle -> supplied += article.entryId },
+                supply = { article: NarratedArticle ->
+                    if (narration?.entryId == article.entryId) supplied += article.entryId
+                },
             )
         }
     }
