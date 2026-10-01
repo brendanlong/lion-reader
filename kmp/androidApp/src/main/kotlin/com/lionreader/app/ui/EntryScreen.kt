@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +64,7 @@ import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderNarration
 import com.lionreader.app.reader.ReaderWebView
+import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.reader.readerDocument
 import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
@@ -297,38 +300,45 @@ fun EntryScreen(
             }
         },
     ) { padding ->
-        HorizontalPager(
-            state = pager,
-            key = { pages[it] },
-            modifier = Modifier.padding(padding).fillMaxSize(),
-        ) { page ->
-            EntryPage(
-                graph,
-                account,
-                pages[page],
-                tokens,
-                showSummary = pages[page] !in hiddenSummaries,
-                onEntry = { id, loaded ->
-                    if (loaded == null) {
-                        entries.remove(id)
-                        spoken.remove(id)
-                    } else {
-                        entries[id] = loaded
-                    }
-                },
-                narration =
-                    ReaderNarration(
-                        paragraph = narration?.takeIf { it.entryId == pages[page] }?.paragraph,
-                        autoScroll = settings.narrationAutoScroll,
-                        onParagraphs = { spoken[pages[page]] = it },
-                        // Only while this article is the one being narrated.
-                        onSeek = { paragraph ->
-                            if (graph.narrator.state.value?.entryId == pages[page]) {
-                                graph.narrator.seekToParagraph(paragraph)
+        val pageConfig = LocalViewConfiguration.current
+        // The pager waits for a bigger drag, so the reader decides first (pagerViewConfiguration).
+        CompositionLocalProvider(LocalViewConfiguration provides pagerViewConfiguration()) {
+            HorizontalPager(
+                state = pager,
+                key = { pages[it] },
+                modifier = Modifier.padding(padding).fillMaxSize(),
+            ) { page ->
+                CompositionLocalProvider(LocalViewConfiguration provides pageConfig) {
+                    EntryPage(
+                        graph,
+                        account,
+                        pages[page],
+                        tokens,
+                        showSummary = pages[page] !in hiddenSummaries,
+                        onEntry = { id, loaded ->
+                            if (loaded == null) {
+                                entries.remove(id)
+                                spoken.remove(id)
+                            } else {
+                                entries[id] = loaded
                             }
                         },
-                    ),
-            )
+                        narration =
+                            ReaderNarration(
+                                paragraph =
+                                    narration?.takeIf { it.entryId == pages[page] }?.paragraph,
+                                autoScroll = settings.narrationAutoScroll,
+                                onParagraphs = { spoken[pages[page]] = it },
+                                // Only while this article is the one being narrated.
+                                onSeek = { paragraph ->
+                                    if (graph.narrator.state.value?.entryId == pages[page]) {
+                                        graph.narrator.seekToParagraph(paragraph)
+                                    }
+                                },
+                            ),
+                    )
+                }
+            }
         }
     }
 }

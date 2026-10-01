@@ -112,9 +112,12 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   action. Where something changes without focus moving (the reader's pager),
   a polite live region says what changed.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's
-  sanitized HTML, inserted verbatim. Its one script reports where wide tables
-  and code blocks are, so a sideways drag on one scrolls it instead of paging
-  (`ReaderView`).
+  sanitized HTML, inserted verbatim. As on the web, only a drag at least twice
+  as far sideways as vertical turns the page (judged over its first few dp,
+  with the pager waiting for twice the usual touch slop so the reader decides
+  first), so a scroll can't turn into a page turn (`ReaderView`). A script reports where
+  wide tables and code blocks are, so a sideways drag on one scrolls it
+  instead.
 - **Appearance tokens** (`androidApp/src/main/assets/reader/appearance.json`)
   are generated from the web's `src/lib/appearance/config.ts` by
   `pnpm app:appearance` (a unit test fails when stale). Fonts are OFL Google

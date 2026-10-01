@@ -14,8 +14,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
@@ -93,10 +95,13 @@ data class ReaderNarration(
 )
 
 /**
- * Keeps a sideways drag that starts on a wide table or code block (reported by scroll-detect.js)
- * for the WebView while the block can still scroll that way, so it scrolls instead of the article
- * pager turning the page. It has to be decided here, synchronously, before the pager's touch slop
- * is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
+ * Decides, once per gesture and as soon as its direction is clear, whether the article pager may
+ * have it, like the web's swipe: only a drag at least [SWIPE_RATIO] times as far sideways as up or
+ * down turns the page. Anything steeper stays the WebView's for the whole gesture, so a scroll that
+ * drifts sideways never turns into a page turn halfway through. A sideways drag that starts on a
+ * wide table or code block (reported by scroll-detect.js) also stays the WebView's while the block
+ * can still scroll that way. It has to be decided here, synchronously, before the pager's touch
+ * slop is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
  */
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
@@ -137,37 +142,66 @@ private class ReaderView(context: Context) : WebView(context) {
         )
     }
 
-    private val decideAfter = ViewConfiguration.get(context).scaledTouchSlop / 2f
+    /** The system touch slop: the pager waits for twice this ([pagerViewConfiguration]). */
+    private val decideAfter = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private var pointerId = MotionEvent.INVALID_POINTER_ID
     private var downX = 0f
     private var downY = 0f
     private var touched: SideScroller? = null
+    private var deciding = false
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                pointerId = event.getPointerId(0)
                 downX = event.x
                 downY = event.y
                 val density = resources.displayMetrics.density
                 val pageX = (event.x + scrollX) / density
                 val pageY = (event.y + scrollY) / density
                 touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
+                deciding = true
             }
+            // Two fingers aren't a page turn.
+            MotionEvent.ACTION_POINTER_DOWN -> if (deciding) keep()
             MotionEvent.ACTION_MOVE ->
-                touched?.let { block ->
-                    val dx = event.x - downX
-                    val dy = abs(event.y - downY)
-                    if (abs(dx) > decideAfter && abs(dx) > dy) {
-                        // A finger moving left scrolls the block's content right.
-                        val canScroll = if (dx < 0) block.canScrollRight else block.canScrollLeft
-                        if (canScroll) parent?.requestDisallowInterceptTouchEvent(true)
-                        touched = null
-                    } else if (dy > decideAfter) {
-                        touched = null
-                    }
+                if (deciding) {
+                    val index = event.findPointerIndex(pointerId)
+                    if (index >= 0)
+                        decide(event.getX(index) - downX, abs(event.getY(index) - downY))
                 }
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> deciding = false
         }
         return super.onTouchEvent(event)
+    }
+
+    /**
+     * Rechecked on every move until it keeps the gesture or the pager takes it (a cancel), so a
+     * drag that starts a little sideways and turns into a scroll is still kept.
+     */
+    private fun decide(dx: Float, dy: Float) {
+        if (abs(dx) <= decideAfter && dy <= decideAfter) return
+        val block = touched
+        val wanted =
+            when {
+                abs(dx) < dy * SWIPE_RATIO -> true
+                // A finger moving left scrolls the block's content right.
+                block != null -> if (dx < 0) block.canScrollRight else block.canScrollLeft
+                else -> false
+            }
+        if (wanted) keep()
+    }
+
+    private fun keep() {
+        deciding = false
+        parent?.requestDisallowInterceptTouchEvent(true)
+    }
+
+    private companion object {
+        /** The web's 2:1 (`MAX_VERTICAL_RATIO` in EntryContentHelpers.ts). */
+        const val SWIPE_RATIO = 2f
     }
 }
 
@@ -223,5 +257,19 @@ private class ReaderWebViewClient(private val assets: WebViewAssetLoader) : WebV
         (view.parent as? ViewGroup)?.removeView(view)
         view.destroy()
         return true
+    }
+}
+
+/**
+ * For the article pager: twice the touch slop (as Android's own paging slop), so a page's
+ * [ReaderView] has decided whether to keep a drag before the pager could take it.
+ */
+@Composable
+fun pagerViewConfiguration(): androidx.compose.ui.platform.ViewConfiguration {
+    val config = LocalViewConfiguration.current
+    return remember(config) {
+        object : androidx.compose.ui.platform.ViewConfiguration by config {
+            override val touchSlop = config.touchSlop * 2
+        }
     }
 }
