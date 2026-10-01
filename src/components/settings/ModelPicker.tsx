@@ -1,7 +1,8 @@
 /**
  * Searchable model picker (ARIA combobox) for AI settings. Provider catalogs
  * like OpenRouter's list hundreds of models, so suggested models lead and
- * search covers the rest.
+ * search covers the rest. The first option, "Default", follows the server's
+ * default instead of pinning today's default model.
  */
 
 "use client";
@@ -16,13 +17,13 @@ import {
 
 interface ModelPickerProps {
   id: string;
-  /** The selected `provider:model` ref (the default when the user hasn't picked one). */
-  value: string;
+  /** The selected `provider:model` ref, or null to follow the default. */
+  value: string | null;
   defaultModelId: string;
   models: PickerModel[];
   suggestedModelIds: string[];
   isLoading: boolean;
-  onChange: (value: string) => void;
+  onChange: (value: string | null) => void;
 }
 
 export function ModelPicker({
@@ -45,13 +46,24 @@ export function ModelPicker({
     () => buildModelPickerSections(models, { query, suggestedModelIds, defaultModelId }),
     [models, query, suggestedModelIds, defaultModelId]
   );
-  const options = useMemo(() => sections.flatMap((section) => section.models), [sections]);
+  // null is the "Default" option, listed first unless searching.
+  const showDefault = query.trim() === "";
+  const options = useMemo(
+    () => [...(showDefault ? [null] : []), ...sections.flatMap((section) => section.models)],
+    [showDefault, sections]
+  );
   const active = Math.max(0, Math.min(activeIndex, options.length - 1));
 
   const listboxId = `${id}-listbox`;
   const optionId = (index: number) => `${id}-option-${index}`;
+  const defaultModel = models.find((model) => model.id === defaultModelId);
+  const defaultLabel = `Default (${defaultModel?.displayName ?? defaultModelId})`;
   const selected = models.find((model) => model.id === value);
-  const selectedLabel = isLoading ? "Loading models..." : (selected?.displayName ?? value);
+  const selectedLabel = isLoading
+    ? "Loading models..."
+    : value === null
+      ? defaultLabel
+      : (selected?.displayName ?? value);
 
   useEffect(() => {
     if (isOpen && scrollToActiveRef.current) {
@@ -72,19 +84,16 @@ export function ModelPicker({
       defaultModelId,
     }).flatMap((section) => section.models);
     setQuery("");
-    moveTo(
-      Math.max(
-        0,
-        unfiltered.findIndex((model) => model.id === value)
-      )
-    );
+    // + 1 for the Default option; a value missing from the list (-1) lands on it.
+    moveTo(value === null ? 0 : unfiltered.findIndex((model) => model.id === value) + 1);
     setIsOpen(true);
   };
 
-  const select = (model: PickerModel) => {
+  const select = (option: PickerModel | null) => {
     setIsOpen(false);
-    if (model.id !== value) {
-      onChange(model.id);
+    const next = option?.id ?? null;
+    if (next !== value) {
+      onChange(next);
     }
   };
 
@@ -114,7 +123,7 @@ export function ModelPicker({
         moveTo(options.length - 1);
         break;
       case "Enter":
-        if (options[active]) {
+        if (active < options.length) {
           event.preventDefault();
           select(options[active]);
         }
@@ -126,9 +135,42 @@ export function ModelPicker({
     }
   };
 
-  const sectionOffsets = sections.map((_, sectionIndex) =>
-    sections.slice(0, sectionIndex).reduce((count, section) => count + section.models.length, 0)
+  const firstModelIndex = showDefault ? 1 : 0;
+  const sectionOffsets = sections.map(
+    (_, sectionIndex) =>
+      firstModelIndex +
+      sections.slice(0, sectionIndex).reduce((count, section) => count + section.models.length, 0)
   );
+
+  const renderOption = (
+    option: PickerModel | null,
+    index: number,
+    label: string,
+    details: string
+  ) => {
+    const isSelected = (option?.id ?? null) === value;
+    return (
+      <div
+        key={option?.id ?? "default"}
+        id={optionId(index)}
+        role="option"
+        aria-selected={isSelected}
+        onClick={() => select(option)}
+        onMouseMove={() => setActiveIndex(index)}
+        className={`flex cursor-pointer items-start gap-2 px-3 py-2 ${
+          index === active ? "control-outline bg-surface-muted" : "control-outline-none"
+        }`}
+      >
+        <span className="mt-0.5 w-4 flex-shrink-0">
+          {isSelected && <CheckIcon className="text-body h-4 w-4" />}
+        </span>
+        <span className="min-w-0">
+          <span className="ui-text-sm text-body block">{label}</span>
+          <span className="ui-text-xs text-muted block break-words">{details}</span>
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="relative">
@@ -172,6 +214,8 @@ export function ModelPicker({
             </p>
           )}
           <div id={listboxId} role="listbox">
+            {showDefault &&
+              renderOption(null, 0, defaultLabel, "Follows the server's default if it changes")}
             {sections.map((section, sectionIndex) => {
               const headingId = `${id}-section-${sectionIndex}`;
               return (
@@ -183,38 +227,14 @@ export function ModelPicker({
                   >
                     {section.label}
                   </div>
-                  {section.models.map((model, modelIndex) => {
-                    const index = sectionOffsets[sectionIndex] + modelIndex;
-                    const isSelected = model.id === value;
-                    return (
-                      <div
-                        key={model.id}
-                        id={optionId(index)}
-                        role="option"
-                        aria-selected={isSelected}
-                        onClick={() => select(model)}
-                        onMouseMove={() => setActiveIndex(index)}
-                        className={`flex cursor-pointer items-start gap-2 px-3 py-2 ${
-                          index === active
-                            ? "control-outline bg-surface-muted"
-                            : "control-outline-none"
-                        }`}
-                      >
-                        <span className="mt-0.5 w-4 flex-shrink-0">
-                          {isSelected && <CheckIcon className="text-body h-4 w-4" />}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="ui-text-sm text-body block">
-                            {model.displayName}
-                            {model.id === defaultModelId ? " (default)" : ""}
-                          </span>
-                          <span className="ui-text-xs text-muted block break-words">
-                            {formatModelDetails(model)}
-                          </span>
-                        </span>
-                      </div>
-                    );
-                  })}
+                  {section.models.map((model, modelIndex) =>
+                    renderOption(
+                      model,
+                      sectionOffsets[sectionIndex] + modelIndex,
+                      model.displayName,
+                      formatModelDetails(model)
+                    )
+                  )}
                 </div>
               );
             })}

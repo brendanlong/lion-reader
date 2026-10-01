@@ -37,7 +37,8 @@ export function CloudVoiceSettings({
   defaultModelId: string;
   isLoading: boolean;
 }) {
-  const modelId = settings.cloudModelId ? normalizeModelRef(settings.cloudModelId) : defaultModelId;
+  const pickedModelId = settings.cloudModelId ? normalizeModelRef(settings.cloudModelId) : null;
+  const modelId = pickedModelId ?? defaultModelId;
   const model = models.find((candidate) => candidate.id === modelId);
   const voice =
     settings.voiceId && model?.voices.includes(settings.voiceId)
@@ -92,7 +93,7 @@ export function CloudVoiceSettings({
         </label>
         <ModelPicker
           id="cloud-voice-model"
-          value={modelId}
+          value={pickedModelId}
           defaultModelId={defaultModelId}
           models={models}
           suggestedModelIds={SUGGESTED_CLOUD_VOICE_MODELS}
@@ -100,7 +101,12 @@ export function CloudVoiceSettings({
           onChange={(value) => {
             stopPreview();
             // Voice names are per model.
-            setSettings((prev) => ({ ...prev, cloudModelId: value, voiceId: null }));
+            const keepVoice = (value ?? defaultModelId) === modelId;
+            setSettings((prev) => ({
+              ...prev,
+              cloudModelId: value,
+              voiceId: keepVoice ? prev.voiceId : null,
+            }));
           }}
         />
       </div>

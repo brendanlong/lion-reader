@@ -48,6 +48,7 @@ import com.lionreader.app.ReaderFont
 import com.lionreader.app.TextSize
 import com.lionreader.app.ThemeChoice
 import com.lionreader.app.narration.VoiceOption
+import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
 import kotlinx.coroutines.launch
 
@@ -198,10 +199,9 @@ private fun NarrationSettings(
             }
             NarrationEngine.CLOUD -> {
                 val models = cloud?.models.orEmpty()
-                val model =
-                    models.firstOrNull { it.id == settings.cloudVoiceModel }
-                        ?: models.firstOrNull { it.id == cloud?.defaultModelId }
-                        ?: models.firstOrNull()
+                val defaultModel =
+                    models.firstOrNull { it.id == cloud?.defaultModelId } ?: models.firstOrNull()
+                val model = models.firstOrNull { it.id == settings.cloudVoiceModel } ?: defaultModel
                 if (model == null) {
                     Text(
                         if (cloud == null) "Loading cloud voices…"
@@ -212,14 +212,23 @@ private fun NarrationSettings(
                     )
                 } else {
                     if (models.size > 1) {
-                        Picker(
-                            listOfNotNull(model.displayName, model.providerName)
-                                .joinToString(" · "),
-                            models.sortedBy { it.providerName },
-                            { it.displayName },
-                            group = { it.providerName },
+                        val defaultLabel = "Default (${modelLabel(defaultModel ?: model)})"
+                        // null is "Default": it follows the server's default if that changes.
+                        Picker<VoiceModel?>(
+                            if (settings.cloudVoiceModel == null) defaultLabel
+                            else modelLabel(model),
+                            listOf(null) + models.sortedBy { it.providerName },
+                            { it?.displayName ?: defaultLabel },
+                            group = { it?.providerName },
                         ) { choice ->
-                            update { it.copy(cloudVoiceModel = choice.id, cloudVoice = null) }
+                            // Voice names are per model.
+                            val keepVoice = (choice ?: defaultModel)?.id == model.id
+                            update {
+                                it.copy(
+                                    cloudVoiceModel = choice?.id,
+                                    cloudVoice = it.cloudVoice.takeIf { keepVoice },
+                                )
+                            }
                         }
                     }
                     val voice =
@@ -298,6 +307,10 @@ private fun <T> Picker(
         }
     }
 }
+
+/** Both providers serve a "Kokoro 82M", so name the provider too. */
+private fun modelLabel(model: VoiceModel): String =
+    listOfNotNull(model.displayName, model.providerName).joinToString(" · ")
 
 private val ThemeChoice.label: String
     get() =

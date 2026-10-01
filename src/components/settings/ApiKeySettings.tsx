@@ -278,12 +278,12 @@ function FeatureModelPicker({
   models: PickerModel[];
   suggestedModelIds: string[];
   isLoading: boolean;
-  onChange: (value: string) => void;
+  onChange: (value: string | null) => void;
 }) {
   return (
     <ModelPicker
       id={id}
-      value={currentModel ? normalizeModelRef(currentModel) : defaultModelId}
+      value={currentModel ? normalizeModelRef(currentModel) : null}
       defaultModelId={defaultModelId}
       models={models}
       suggestedModelIds={suggestedModelIds}
@@ -325,10 +325,10 @@ export function SummarizationSettings() {
   const defaultPrompt = defaultPromptQuery.data?.prompt ?? "";
 
   const handleModelChange = useCallback(
-    (value: string) => {
+    (value: string | null) => {
       updateWithToast(
         updatePreferences,
-        { summarizationModel: value || "" },
+        { summarizationModel: value ?? "" },
         "Model updated",
         "Failed to update model"
       );
@@ -574,10 +574,10 @@ export function NarrationAiSettings() {
   const defaultModelId = modelsQuery.data?.defaultModelId ?? DEFAULT_NARRATION_MODEL;
 
   const handleModelChange = useCallback(
-    (value: string) => {
+    (value: string | null) => {
       updateWithToast(
         updatePreferences,
-        { narrationModel: value || "" },
+        { narrationModel: value ?? "" },
         "Model updated",
         "Failed to update model"
       );
