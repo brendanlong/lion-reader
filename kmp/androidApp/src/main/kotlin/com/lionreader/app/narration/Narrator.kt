@@ -3,6 +3,7 @@ package com.lionreader.app.narration
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -21,17 +22,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** What to narrate: an article's paragraphs, as the reader's narration script extracted them. */
 data class NarratedArticle(
@@ -82,6 +82,9 @@ class Narrator(
                 .buildAsync()
         ({ MediaController.releaseFuture(controller) })
     },
+    /** How long the player can run dry, the engine unreachable, before narration pauses. */
+    private val pauseAfterMillis: Long = 60_000,
+    private val now: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val dir = File(context.cacheDir, "narration")
@@ -89,14 +92,22 @@ class Narrator(
     private val _state = MutableStateFlow<NarrationState?>(null)
     val state: StateFlow<NarrationState?> = _state.asStateFlow()
 
-    private val _errors =
-        MutableSharedFlow<String>(
-            extraBufferCapacity = 1,
-            onBufferOverflow = BufferOverflow.DROP_OLDEST,
-        )
+    private val _notice = MutableStateFlow<String?>(null)
 
-    /** Why narration stopped on its own, for the user. */
-    val errors: SharedFlow<String> = _errors.asSharedFlow()
+    /**
+     * Why narration stopped or paused on its own, for the user: kept until shown (it's often in the
+     * background, with nothing to show it), and dropped once narration goes on.
+     */
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    fun noticeShown(message: String) {
+        _notice.compareAndSet(message, null)
+    }
+
+    /**
+     * Counts the engine answering, so attempts waiting out a dropped connection try again at once.
+     */
+    private val reached = MutableStateFlow(0L)
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
@@ -160,6 +171,7 @@ class Narrator(
     /** Synthesis from one chunk on; a seek starts another. */
     private class Feed {
         var job: Job? = null
+        val starved = Starved()
         /** Whether it has synthesized everything it's going to, and the last chunk it added. */
         var fed = false
         var lastAdded: Int? = null
@@ -172,9 +184,15 @@ class Narrator(
     private val prepared: Prepared?
         get() = onArticle?.prepared
 
+    /** Since when the player has run dry with the engine unreachable. */
+    private class Starved {
+        var since: Long? = null
+    }
+
     /** Turns narration on, playing [article] from [fromParagraph]. */
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
         reset()
+        _notice.value = null
         _state.value =
             NarrationState(
                 article.entryId,
@@ -236,7 +254,7 @@ class Narrator(
         audio.preparing = scope.launch {
             val engine =
                 try {
-                    engineFor(settings())
+                    reaching(Starved()) { engineFor(settings()) }
                 } catch (e: SpeechUnavailable) {
                     return@launch fail(e.message)
                 }
@@ -256,12 +274,14 @@ class Narrator(
         if (prepared == null) {
             val state = _state.value ?: return
             val playing = !state.playing
-            _state.value =
-                state.copy(playing = playing, waiting = playing && current != Current.Silent)
             // Supplied while paused: its audio is prepared now. Only from the app: with the
             // player empty, media3 hides the notification and doesn't pass a headset's play on.
-            val pending = onArticle
-            if (playing && pending != null && pending.preparing?.isActive != true) prepare(pending)
+            // Decided first: playing again can finish a preparation waiting on it, there and then.
+            val pending = onArticle?.takeIf { playing && it.preparing?.isActive != true }
+            _state.value =
+                state.copy(playing = playing, waiting = playing && current != Current.Silent)
+            if (playing) _notice.value = null
+            pending?.let(::prepare)
             return
         }
         if (player.playWhenReady) player.pause() else player.play()
@@ -292,6 +312,12 @@ class Narrator(
         else onArticle?.let { startAt(it, chunk, play = player.playWhenReady) }
     }
 
+    /**
+     * The player ended only because synthesis hasn't caught up: the feed carries on with the next
+     * chunk when it lands, so "play" mustn't start the last one over.
+     */
+    fun awaitingSynthesis(): Boolean = onArticle?.feed?.fed == false
+
     fun setSpeed(speed: Float) {
         this.speed = speed
         player.setPlaybackSpeed(speed)
@@ -300,6 +326,7 @@ class Narrator(
     fun stop() {
         reset()
         _state.value = null
+        _notice.value = null
         left = null
         session?.invoke()
         session = null
@@ -316,7 +343,7 @@ class Narrator(
 
     private fun fail(message: String?) {
         stop()
-        _errors.tryEmit(message ?: "Couldn't read this article aloud.")
+        _notice.value = message ?: "Couldn't read this article aloud."
     }
 
     /** The playlist index of [chunk], if it's there. */
@@ -377,7 +404,7 @@ class Narrator(
                     wanted(next, prepared, feed)
             ) {
                 val index = next++
-                inFlight.addLast(index to async { synthesizeOrSkip(prepared, index) })
+                inFlight.addLast(index to async { synthesizeOrSkip(feed, prepared, index) })
             }
             if (inFlight.isEmpty()) {
                 playingChunk.first { wanted(next, prepared, feed) }
@@ -401,10 +428,16 @@ class Narrator(
         else stopIfFinished()
     }
 
-    /** The chunk's audio, or null to skip it; [SpeechUnavailable] ends the narration. */
-    private suspend fun synthesizeOrSkip(prepared: Prepared, index: Int): File? =
-        try {
-            prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index")
+    /**
+     * The chunk's audio, or null to skip it; [SpeechUnavailable] ends the narration. While the
+     * engine can't be reached, what's queued plays on and this tries again ([reaching]): a dropped
+     * connection in the background doesn't end narration mid-word.
+     */
+    private suspend fun synthesizeOrSkip(feed: Feed, prepared: Prepared, index: Int): File? {
+        return try {
+            reaching(feed.starved) {
+                prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index")
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: SpeechUnavailable) {
@@ -412,6 +445,60 @@ class Narrator(
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * [attempt] until the engine answers. While it can't be reached ([SpeechInterrupted]) this
+     * backs off and tries again; at once when another attempt gets through, and from the start when
+     * narration is played again after a pause.
+     */
+    private suspend fun <T : Any> reaching(starved: Starved, attempt: suspend () -> T): T {
+        var wait = RETRY_FIRST_MILLIS
+        while (true) {
+            val seen = reached.value
+            try {
+                return attempt().also {
+                    starved.since = null
+                    reached.update { it + 1 }
+                }
+            } catch (e: SpeechInterrupted) {
+                interrupted(starved, e)
+            }
+            val woke =
+                withTimeoutOrNull(wait) {
+                    combine(_state, reached) { state, count ->
+                            state?.playing == false || count != seen
+                        }
+                        .first { it }
+                }
+            if (woke == null) {
+                wait = (wait * 2).coerceAtMost(RETRY_MAX_MILLIS)
+            } else {
+                // Paused (by the user, or below): try again once it's played again.
+                _state.first { it == null || it.playing }
+                wait = RETRY_FIRST_MILLIS
+            }
+        }
+    }
+
+    /**
+     * The engine couldn't be reached. Once the player has run dry for [pauseAfterMillis] that way,
+     * narration pauses, keeping its place, rather than spin; playing again tries again.
+     */
+    private fun interrupted(starved: Starved, error: SpeechInterrupted) {
+        val state = _state.value
+        if (state == null || !state.playing || !waiting()) {
+            starved.since = null
+            return
+        }
+        val since = starved.since ?: now().also { starved.since = it }
+        if (now() - since < pauseAfterMillis) return
+        starved.since = null
+        // Before the audio's prepared the player may not be playing yet: pause the narration.
+        if (prepared == null) _state.value = state.copy(playing = false, waiting = false)
+        else player.pause()
+        _notice.value = "Narration paused: ${error.message}"
+    }
 
     /** Stops once the last chunk there'll ever be has played. */
     private fun stopIfFinished() {
@@ -480,6 +567,8 @@ class Narrator(
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 _state.value = _state.value?.copy(playing = playWhenReady, waiting = waiting())
+                // Going on: what paused it is past.
+                if (playWhenReady) _notice.value = null
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -501,5 +590,7 @@ class Narrator(
 
     private companion object {
         const val KEEP_BEHIND = 5
+        const val RETRY_FIRST_MILLIS = 2_000L
+        const val RETRY_MAX_MILLIS = 30_000L
     }
 }

@@ -60,6 +60,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.repeatOnLifecycle
 import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
@@ -77,6 +78,7 @@ import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -104,8 +106,15 @@ fun EntryScreen(
     val entryId = pages[pager.settledPage]
     val articles = rememberArticlePages()
     val narration by graph.narrator.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) {
-        graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    // Only while on screen, so a notice from the background waits to be seen.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            graph.narrator.notice.filterNotNull().collect {
+                Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                graph.narrator.noticeShown(it)
+            }
+        }
     }
     NarrationFollowsPage(
         narration,

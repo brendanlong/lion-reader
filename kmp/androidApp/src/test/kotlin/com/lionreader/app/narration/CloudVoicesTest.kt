@@ -9,9 +9,11 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import java.nio.file.Files
 import java.util.Base64
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -28,6 +30,8 @@ import org.junit.Test
 class CloudVoicesTest {
     private val audio = byteArrayOf(1, 2, 3)
     private var responses = ArrayDeque<Pair<HttpStatusCode, String>>()
+    /** How to answer requests whose body has this text, ahead of [responses]. */
+    private var forText: Map<String, suspend () -> Pair<HttpStatusCode, String>> = emptyMap()
     private var requests = 0
     private val cache = Files.createTempDirectory("cloud").toFile()
     private val dir = Files.createTempDirectory("narration").toFile()
@@ -41,9 +45,13 @@ class CloudVoicesTest {
     private fun TestScope.engine(cacheBytes: Long = 5): CloudVoices {
         val http =
             HttpClient(
-                MockEngine {
+                MockEngine { request ->
                     requests++
-                    val (status, body) = responses.removeFirstOrNull() ?: ok
+                    val sent = (request.body as? TextContent)?.text.orEmpty()
+                    val (status, body) =
+                        forText.entries.firstOrNull { it.key in sent }?.value?.invoke()
+                            ?: responses.removeFirstOrNull()
+                            ?: ok
                     respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
             )
@@ -115,10 +123,40 @@ class CloudVoicesTest {
     }
 
     @Test
-    fun persistentTroubleEventuallyStops() = runTest {
+    fun persistentTroubleIsAnInterruptionNotTheEnd() = runTest {
         repeat(10) { responses.addLast(HttpStatusCode.BadGateway to "{}") }
         val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
-        assertEquals(SpeechUnavailable::class, error!!::class)
+        assertEquals(SpeechInterrupted::class, error!!::class)
+    }
+
+    @Test
+    fun textTheServerKeepsFailingWhileAnsweringOthersIsSkipped() = runTest {
+        // In this order (the mock answers on its own threads): Bad. fails, then Good. is answered,
+        // then Bad. fails again.
+        val badTried = CompletableDeferred<Unit>()
+        val goodAnswered = CompletableDeferred<Unit>()
+        forText =
+            mapOf(
+                "Bad." to
+                    {
+                        if (!badTried.complete(Unit)) goodAnswered.await()
+                        HttpStatusCode.InternalServerError to "{}"
+                    },
+                "Good." to
+                    {
+                        badTried.await()
+                        ok
+                    },
+            )
+        val engine = engine()
+        val bad = async { runCatching { engine.synthesize("Bad.", dir, "0") }.exceptionOrNull() }
+        engine.synthesize("Good.", dir, "1")
+        goodAnswered.complete(Unit)
+
+        val error = bad.await()
+        // Not an interruption to wait out: an ordinary failure, so just this chunk is skipped.
+        assertEquals(false, error is SpeechException)
+        assertEquals(true, error != null)
     }
 
     @Test

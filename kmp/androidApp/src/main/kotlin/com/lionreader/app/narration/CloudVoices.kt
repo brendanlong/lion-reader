@@ -7,6 +7,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +33,9 @@ class CloudVoices(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val cacheBytes: Long = 50L * 1024 * 1024,
 ) : SpeechEngine {
+    /** Times the server has answered with speech (not cache hits). */
+    private val answered = AtomicLong()
+
     /** Requests in flight by cache key, so the same text twice is one request. */
     private val inFlight = ConcurrentHashMap<String, Deferred<File>>()
 
@@ -79,11 +83,13 @@ class CloudVoices(
 
     /** On IO (the caller's [scope] dispatcher): the audio arrives as a large base64 JSON body. */
     private suspend fun request(text: String): ByteArray {
+        val answeredBefore = answered.get()
         var wait = 1_000L
         var serverTrouble = false
+        var busy = false
         for (attempt in 1..ATTEMPTS) {
             try {
-                return api.synthesizeSpeech(model, voice, text)
+                return api.synthesizeSpeech(model, voice, text).also { answered.incrementAndGet() }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiException) {
@@ -92,17 +98,24 @@ class CloudVoices(
                     throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
                 }
                 serverTrouble = e.status >= 500
+                busy = e.status == 429
             } catch (_: Exception) {
                 // Network: try again below.
                 serverTrouble = false
+                busy = false
             }
             if (attempt < ATTEMPTS) {
                 delay(wait)
                 wait *= 2
             }
         }
-        throw SpeechUnavailable(
-            if (serverTrouble) "The cloud voice isn't working right now. Try again later."
+        // It answers other requests but keeps failing this one: it's this text, so the narrator
+        // skips just this chunk (any exception but a SpeechException).
+        if (serverTrouble && answered.get() > answeredBefore) {
+            throw IOException("The cloud voice couldn't say this part.")
+        }
+        throw SpeechInterrupted(
+            if (serverTrouble || busy) "The cloud voice isn't working right now."
             else "Couldn't reach the cloud voice. Check your connection."
         )
     }
