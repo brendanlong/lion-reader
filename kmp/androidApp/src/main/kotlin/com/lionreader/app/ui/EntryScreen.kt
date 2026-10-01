@@ -165,22 +165,28 @@ fun EntryScreen(
                 actions = {
                     val current = entry ?: return@TopAppBar
                     val paragraphs = spoken[current.id]
-                    if (!paragraphs.isNullOrEmpty() && narration?.entryId != current.id) {
+                    // Amber while this article is being narrated, like the
+                    // other toggles; tapping it then stops, as the bar's X does.
+                    val narrating = narration?.entryId == current.id
+                    if (narrating || !paragraphs.isNullOrEmpty()) {
                         IconButton(
                             onClick = {
-                                graph.narrator.narrate(
-                                    NarratedArticle(
-                                        current.id,
-                                        current.title ?: "Untitled",
-                                        current.source,
-                                        paragraphs,
+                                if (narrating) graph.narrator.stop()
+                                else if (paragraphs != null)
+                                    graph.narrator.narrate(
+                                        NarratedArticle(
+                                            current.id,
+                                            current.title ?: "Untitled",
+                                            current.source,
+                                            paragraphs,
+                                        )
                                     )
-                                )
                             }
                         ) {
                             Icon(
                                 painterResource(R.drawable.ic_headphones),
-                                contentDescription = "Listen",
+                                contentDescription = if (narrating) "Stop listening" else "Listen",
+                                tint = actionTint(active = narrating),
                             )
                         }
                     }
