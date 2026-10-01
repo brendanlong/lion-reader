@@ -12,6 +12,7 @@ import { CheckIcon, ChevronDownIcon } from "@/components/ui/icons";
 import {
   buildModelPickerSections,
   formatModelDetails,
+  formatModelName,
   type PickerModel,
 } from "@/lib/ai/model-picker";
 
@@ -57,13 +58,15 @@ export function ModelPicker({
   const listboxId = `${id}-listbox`;
   const optionId = (index: number) => `${id}-option-${index}`;
   const defaultModel = models.find((model) => model.id === defaultModelId);
-  const defaultLabel = `Default (${defaultModel?.displayName ?? defaultModelId})`;
+  const defaultLabel = `Default (${defaultModel ? formatModelName(defaultModel) : defaultModelId})`;
   const selected = models.find((model) => model.id === value);
   const selectedLabel = isLoading
     ? "Loading models..."
     : value === null
       ? defaultLabel
-      : (selected?.displayName ?? value);
+      : selected
+        ? formatModelName(selected)
+        : value;
 
   useEffect(() => {
     if (isOpen && scrollToActiveRef.current) {

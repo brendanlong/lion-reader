@@ -44,7 +44,7 @@ function renderPicker(onChange = vi.fn(), value: string | null = "cerebras:gpt-o
 describe("ModelPicker", () => {
   it("shows the selected model's name while closed", () => {
     const { input } = renderPicker();
-    expect(input).toHaveValue("gpt-oss-120b");
+    expect(input).toHaveValue("gpt-oss-120b · Cerebras");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
@@ -117,10 +117,10 @@ describe("ModelPicker", () => {
 
   it("follows the default when nothing is picked", () => {
     const { input } = renderPicker(vi.fn(), null);
-    expect(input).toHaveValue("Default (gpt-oss-120b)");
+    expect(input).toHaveValue("Default (gpt-oss-120b · Cerebras)");
     fireEvent.focus(input);
     expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
-      "Default (gpt-oss-120b)"
+      "Default (gpt-oss-120b · Cerebras)"
     );
     expect(input).toHaveAttribute("aria-activedescendant", "model-option-0");
   });
@@ -128,7 +128,7 @@ describe("ModelPicker", () => {
   it("goes back to the default from a picked model, and hides it while searching", () => {
     const { input, onChange } = renderPicker();
     fireEvent.focus(input);
-    expect(screen.getAllByRole("option")[0]).toHaveTextContent("Default (gpt-oss-120b)");
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("Default (gpt-oss-120b · Cerebras)");
     fireEvent.click(screen.getByRole("option", { name: /^Default/ }));
     expect(onChange).toHaveBeenCalledWith(null);
 

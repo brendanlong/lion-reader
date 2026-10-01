@@ -20,6 +20,8 @@ const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
 const CATALOG_CACHE_RETRY_MS = 60 * 1000;
 /** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
 const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
+/** What `service_tier: "priority"` costs over the catalog's listed price. */
+const PRIORITY_PRICE_MULTIPLIER = 1.5;
 
 export interface DeepInfraSpeechModel {
   /** DeepInfra's model name, e.g. `hexgrad/Kokoro-82M`. */
@@ -183,9 +185,12 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
         return {
           name: entry.model_name,
           voices,
-          // Cents per character to dollars per million characters.
+          // Cents per character to dollars per million characters, at the
+          // priority tier we request.
           pricePerMillionCharacters:
-            cents == null ? undefined : Number((cents * 10_000).toPrecision(6)),
+            cents == null
+              ? undefined
+              : Number((cents * 10_000 * PRIORITY_PRICE_MULTIPLIER).toPrecision(6)),
         };
       } catch (error) {
         logger.warn("Skipping DeepInfra speech model", {
