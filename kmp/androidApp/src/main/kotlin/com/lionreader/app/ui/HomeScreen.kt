@@ -131,7 +131,7 @@ fun HomeScreen(
         gesturesEnabled = search == null || drawer.isOpen,
         drawerContent = {
             // Given the state, it closes on back (with the predictive animation).
-            ModalDrawerSheet(drawerState = drawer, modifier = settlePromptly(drawer)) {
+            ModalDrawerSheet(drawerState = drawer, modifier = Modifier.settlePromptly(drawer)) {
                 Drawer(
                     navigation = navigation,
                     selected = scope,
@@ -238,13 +238,13 @@ fun HomeScreen(
 }
 
 /**
- * Snaps the drawer's last couple of pixels; apply the returned modifier to its sheet. The drawer's
- * spring looks done in about 250ms but spends another 300ms nudging its last pixel, and while it
- * animates the drawer takes any touch as a drag: a tap on a list right after opening (or on the
- * list behind, right after closing) did nothing.
+ * * Snaps the drawer's last couple of pixels; for the drawer's sheet. The drawer's spring looks
+ *   done in about 250ms but spends another 300ms nudging its last pixel, and while it animates the
+ *   drawer takes any touch as a drag: a tap on a list right after opening (or on the list behind,
+ *   right after closing) did nothing.
  */
 @Composable
-internal fun settlePromptly(drawer: DrawerState): Modifier {
+internal fun Modifier.settlePromptly(drawer: DrawerState): Modifier {
     // Closed is at minus the sheet's width (where Material anchors it).
     var sheetWidth by remember { mutableFloatStateOf(Float.NaN) }
     LaunchedEffect(drawer) {
@@ -260,7 +260,7 @@ internal fun settlePromptly(drawer: DrawerState): Modifier {
                 if (drawer.isAnimationRunning && drawer.targetValue == target) drawer.snapTo(target)
             }
     }
-    return Modifier.onSizeChanged { sheetWidth = it.width.toFloat() }
+    return onSizeChanged { sheetWidth = it.width.toFloat() }
 }
 
 private const val SETTLED_PX = 2f

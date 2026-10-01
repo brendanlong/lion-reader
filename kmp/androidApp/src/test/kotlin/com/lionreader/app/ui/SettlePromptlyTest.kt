@@ -7,6 +7,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
@@ -38,7 +39,10 @@ class SettlePromptlyTest {
             ModalNavigationDrawer(
                 drawerState = drawer,
                 drawerContent = {
-                    ModalDrawerSheet(drawerState = drawer, modifier = settlePromptly(drawer)) {
+                    ModalDrawerSheet(
+                        drawerState = drawer,
+                        modifier = Modifier.settlePromptly(drawer),
+                    ) {
                         Text("Lists")
                     }
                 },
@@ -71,6 +75,21 @@ class SettlePromptlyTest {
 
         assertEquals(DrawerValue.Closed, drawer.currentValue)
         assertFalse(drawer.isAnimationRunning)
+    }
+
+    @Test
+    fun aSwipeLetGoShortOfOpenSettlesBackSmoothly() {
+        show()
+        composeRule.mainClock.autoAdvance = true
+        // Slow, and not far enough to open: it settles back closed.
+        composeRule.onRoot().performTouchInput {
+            swipeRight(startX = 1f, endX = right * 0.2f, durationMillis = 800)
+        }
+        composeRule.mainClock.autoAdvance = false
+        composeRule.mainClock.advanceTimeBy(32)
+        assertTrue(drawer.isAnimationRunning)
+        composeRule.mainClock.advanceTimeBy(500)
+        assertEquals(DrawerValue.Closed, drawer.currentValue)
     }
 
     @Test
