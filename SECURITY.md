@@ -211,6 +211,14 @@ Entry bodies, saved articles, and AI summaries are rendered with
   client's authorization codes. The debug app's redirect path is only accepted
   while it has a published key. **List only keys we control** — never
   Android's default debug key, whose password is public.
+- **Never hand a code to an app by package name** (an `intent:` link, a button
+  on the callback page): Android lets any app use a package name the real app
+  isn't installed under, so that skips the key check above. The one exception
+  is local development: a server on a loopback issuer (`isLoopbackUrl`) accepts
+  the debug redirect path without a key, and its callback page hands the
+  redirect to the debug build by package (`OpenInDebugApp`). Abusing that needs
+  an impostor debug app on the developer's own phone, signing in to their own
+  machine.
 
 ## 7. Cross-user data isolation (shared content)
 
