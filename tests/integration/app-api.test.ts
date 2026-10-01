@@ -455,10 +455,13 @@ describe("sync.changes", () => {
     const bootstrap = await (await rest(token, "GET", "/sync/changes")).json();
 
     const changedAt = new Date(Date.now() - 1000).toISOString();
-    await rest(token, "POST", "/entries/mark-read", {
-      entries: [{ id: existing, changedAt }],
-      read: true,
-    });
+    const marked = await (
+      await rest(token, "POST", "/entries/mark-read", {
+        entries: [{ id: existing, changedAt }],
+        read: true,
+      })
+    ).json();
+    expect(new Date(marked.entries[0].readChangedAt).toISOString()).toBe(changedAt);
 
     const delta = await (
       await rest(token, "GET", `/sync/changes?${new URLSearchParams(bootstrap.cursors)}`)

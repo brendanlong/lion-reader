@@ -407,6 +407,7 @@ export function createDemoStore(): DemoStore {
           starred: state.starred,
           type: state.entry.type,
           updatedAt: state.updatedAt,
+          readChangedAt: state.readChangedAt,
         });
       }
       return {

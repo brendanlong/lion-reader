@@ -6828,6 +6828,12 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "readChangedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -6836,7 +6842,8 @@
                           "read",
                           "starred",
                           "type",
-                          "updatedAt"
+                          "updatedAt",
+                          "readChangedAt"
                         ],
                         "additionalProperties": false
                       }
@@ -7446,6 +7453,12 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "readChangedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -7454,7 +7467,8 @@
                           "read",
                           "starred",
                           "type",
-                          "updatedAt"
+                          "updatedAt",
+                          "readChangedAt"
                         ],
                         "additionalProperties": false
                       }

@@ -216,6 +216,7 @@ const bulkStateChangeOutputSchema = z.object({
       starred: z.boolean(), // For updating starred unread count
       type: feedTypeSchema, // For updating saved/email counts
       updatedAt: z.date(), // For cache freshness comparison
+      readChangedAt: z.date().nullable(), // The read time the server kept
     })
   ),
   // Absolute counts for all affected lists. Absent when no value actually

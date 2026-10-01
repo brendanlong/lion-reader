@@ -180,6 +180,7 @@ export interface MarkReadEntryState {
   starred: boolean;
   type: "web" | "email" | "saved";
   updatedAt: Date;
+  readChangedAt: Date | null;
 }
 
 // ============================================================================
@@ -982,6 +983,7 @@ export async function markEntriesRead(
       starred: visibleEntries.starred,
       type: visibleEntries.type,
       updatedAt: visibleEntries.updatedAt,
+      readChangedAt: visibleEntries.readChangedAt,
     })
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
@@ -1229,6 +1231,7 @@ async function selectStarredEntryStates(
       updatedAt: sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`.mapWith(
         userEntries.updatedAt
       ),
+      readChangedAt: userEntries.readChangedAt,
     })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))
