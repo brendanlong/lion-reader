@@ -35,7 +35,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -103,12 +102,7 @@ fun EntryScreen(
     val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
     val pager = rememberPagerState(initialPage = pages.indexOf(startId)) { pages.size }
     val entryId = pages[pager.settledPage]
-    // Each page reports its entry, so the top bar can follow the page a swipe
-    // is heading to (not the one it settles on) with that page's state
-    // already loaded.
-    val entries = remember { mutableStateMapOf<String, EntryDetail>() }
-    // What each page's reader extracted to narrate.
-    val spoken = remember { mutableStateMapOf<String, List<String>>() }
+    val articles = rememberArticlePages()
     val narration by graph.narrator.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         graph.narrator.errors.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -116,8 +110,8 @@ fun EntryScreen(
     NarrationFollowsPage(
         narration,
         entryId,
-        spoken[entryId],
-        entries[entryId],
+        articles.paragraphs(entryId),
+        articles.entry(entryId),
         started =
             LocalLifecycleOwner.current.lifecycle
                 .currentStateAsState()
@@ -127,19 +121,17 @@ fun EntryScreen(
         supply = graph.narrator::supply,
     )
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
-    val entry = entries[pages[pager.targetPage]]
+    val entry = articles.entry(pages[pager.targetPage])
     val coroutines = rememberCoroutineScope()
     val tokens = remember { AppearanceTokens.load(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
     val summariesAvailable by produceState<Boolean?>(null) { value = account.summariesAvailable() }
-    var hiddenSummaries by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    var summarizing by remember { mutableStateOf(emptySet<String>()) }
 
     MarkReadOnArrival(account.reader, entryId, onShown)
 
     val actions: @Composable RowScope.() -> Unit = actions@{
         val current = entry ?: return@actions
-        val paragraphs = spoken[current.id]
+        val paragraphs = articles.paragraphs(current.id)
         // Amber while narration is on, like the other toggles; it follows
         // swipes, so tapping it then stops whichever article it's on.
         val narrating = narration != null
@@ -168,17 +160,14 @@ fun EntryScreen(
         // It shows in the article, so not before the article is on the device.
         if (current.content != null && (summariesAvailable == true || current.summary != null)) {
             SummaryButton(
-                summarizing = current.id in summarizing,
+                summarizing = articles.isSummarizing(current.id),
                 hasSummary = current.summary != null,
-                shown = current.id !in hiddenSummaries,
+                shown = articles.summaryShown(current.id),
             ) {
                 val id = current.id
                 if (current.summary != null) {
-                    hiddenSummaries =
-                        if (id in hiddenSummaries) hiddenSummaries - id else hiddenSummaries + id
-                } else if (id !in summarizing) {
-                    summarizing += id
-                    hiddenSummaries -= id
+                    articles.toggleSummary(id)
+                } else if (articles.startSummarizing(id)) {
                     coroutines.launch {
                         try {
                             withContext(Dispatchers.IO) { account.sync.summarize(id) }
@@ -192,7 +181,7 @@ fun EntryScreen(
                                 )
                                 .show()
                         } finally {
-                            summarizing -= id
+                            articles.doneSummarizing(id)
                         }
                     }
                 }
@@ -268,7 +257,7 @@ fun EntryScreen(
                     Box(
                         Modifier.fillMaxWidth().height(1.dp).semantics {
                             // Once it's loaded, so a slow page isn't announced twice.
-                            val shown = entries[entryId] ?: return@semantics
+                            val shown = articles.entry(entryId) ?: return@semantics
                             liveRegion = LiveRegionMode.Polite
                             heading()
                             contentDescription =
@@ -345,21 +334,14 @@ fun EntryScreen(
                         account,
                         pages[page],
                         tokens,
-                        showSummary = pages[page] !in hiddenSummaries,
-                        onEntry = { id, loaded ->
-                            if (loaded == null) {
-                                entries.remove(id)
-                                spoken.remove(id)
-                            } else {
-                                entries[id] = loaded
-                            }
-                        },
+                        showSummary = articles.summaryShown(pages[page]),
+                        onEntry = articles::loaded,
                         narration =
                             ReaderNarration(
                                 paragraph =
                                     narration?.takeIf { it.entryId == pages[page] }?.paragraph,
                                 autoScroll = settings.narrationAutoScroll,
-                                onParagraphs = { spoken[pages[page]] = it },
+                                onParagraphs = { articles.extracted(pages[page], it) },
                                 // Only while this article is the one being narrated.
                                 onSeek = { paragraph ->
                                     if (graph.narrator.state.value?.entryId == pages[page]) {

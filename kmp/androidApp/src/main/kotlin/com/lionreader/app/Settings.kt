@@ -1,6 +1,7 @@
 package com.lionreader.app
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -73,67 +74,81 @@ data class AppSettings(
 private val Context.settingsStore by preferencesDataStore("settings")
 
 class SettingsRepository(private val context: Context) {
-    private object Keys {
-        val theme = stringPreferencesKey("theme")
-        val font = stringPreferencesKey("font")
-        val textSize = stringPreferencesKey("text_size")
-        val justify = booleanPreferencesKey("justify")
-        val unreadOnly = booleanPreferencesKey("unread_only")
-        val retentionDays = intPreferencesKey("retention_days")
-        val expandedTags = stringSetPreferencesKey("expanded_tags")
-        val hideEmptyLists = booleanPreferencesKey("hide_empty_lists")
-        val narrationVoice = stringPreferencesKey("narration_voice")
-        val narrationSpeed = floatPreferencesKey("narration_speed")
-        val narrationAutoScroll = booleanPreferencesKey("narration_auto_scroll")
-        val narrationEngine = stringPreferencesKey("narration_engine")
-        val cloudVoiceModel = stringPreferencesKey("cloud_voice_model")
-        val cloudVoice = stringPreferencesKey("cloud_voice")
-    }
-
     val settings: Flow<AppSettings> = context.settingsStore.data.map { it.toSettings() }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
-        context.settingsStore.edit { prefs ->
-            val next = transform(prefs.toSettings())
-            prefs[Keys.theme] = next.theme.name
-            prefs[Keys.font] = next.font.name
-            prefs[Keys.textSize] = next.textSize.name
-            prefs[Keys.justify] = next.justify
-            prefs[Keys.unreadOnly] = next.unreadOnly
-            prefs[Keys.retentionDays] = next.retentionDays
-            prefs[Keys.expandedTags] = next.expandedTags
-            prefs[Keys.hideEmptyLists] = next.hideEmptyLists
-            next.narrationVoice?.let { prefs[Keys.narrationVoice] = it }
-                ?: prefs.remove(Keys.narrationVoice)
-            prefs[Keys.narrationSpeed] = next.narrationSpeed
-            prefs[Keys.narrationAutoScroll] = next.narrationAutoScroll
-            prefs[Keys.narrationEngine] = next.narrationEngine.name
-            next.cloudVoiceModel?.let { prefs[Keys.cloudVoiceModel] = it }
-                ?: prefs.remove(Keys.cloudVoiceModel)
-            next.cloudVoice?.let { prefs[Keys.cloudVoice] = it } ?: prefs.remove(Keys.cloudVoice)
-        }
-    }
-
-    private fun Preferences.toSettings(): AppSettings {
-        val defaults = AppSettings()
-        return AppSettings(
-            theme = enumOr(this[Keys.theme], defaults.theme),
-            font = enumOr(this[Keys.font], defaults.font),
-            textSize = enumOr(this[Keys.textSize], defaults.textSize),
-            justify = this[Keys.justify] ?: defaults.justify,
-            unreadOnly = this[Keys.unreadOnly] ?: defaults.unreadOnly,
-            retentionDays = this[Keys.retentionDays] ?: defaults.retentionDays,
-            expandedTags = this[Keys.expandedTags] ?: defaults.expandedTags,
-            hideEmptyLists = this[Keys.hideEmptyLists] ?: defaults.hideEmptyLists,
-            narrationVoice = this[Keys.narrationVoice],
-            narrationSpeed = this[Keys.narrationSpeed] ?: defaults.narrationSpeed,
-            narrationAutoScroll = this[Keys.narrationAutoScroll] ?: defaults.narrationAutoScroll,
-            narrationEngine = enumOr(this[Keys.narrationEngine], defaults.narrationEngine),
-            cloudVoiceModel = this[Keys.cloudVoiceModel],
-            cloudVoice = this[Keys.cloudVoice],
-        )
+        context.settingsStore.edit { prefs -> prefs.store(transform(prefs.toSettings())) }
     }
 }
 
-private inline fun <reified T : Enum<T>> enumOr(name: String?, default: T): T =
-    name?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
+/**
+ * Where each setting is kept: its key, and how to read it from and set it on [AppSettings]. A new
+ * setting needs a line here as well as its field (SettingsStorageTest checks there's one per
+ * field). Keys and stored types are what's on devices already; don't change them.
+ */
+internal val STORED_SETTINGS: List<Stored<*>> =
+    listOf(
+        enumStored("theme", { theme }) { copy(theme = it) },
+        enumStored("font", { font }) { copy(font = it) },
+        enumStored("text_size", { textSize }) { copy(textSize = it) },
+        Stored(booleanPreferencesKey("justify"), { justify }) { copy(justify = it) },
+        Stored(booleanPreferencesKey("unread_only"), { unreadOnly }) { copy(unreadOnly = it) },
+        Stored(intPreferencesKey("retention_days"), { retentionDays }) {
+            copy(retentionDays = it)
+        },
+        Stored(stringSetPreferencesKey("expanded_tags"), { expandedTags }) {
+            copy(expandedTags = it)
+        },
+        Stored(booleanPreferencesKey("hide_empty_lists"), { hideEmptyLists }) {
+            copy(hideEmptyLists = it)
+        },
+        Stored(stringPreferencesKey("narration_voice"), { narrationVoice }) {
+            copy(narrationVoice = it)
+        },
+        Stored(floatPreferencesKey("narration_speed"), { narrationSpeed }) {
+            copy(narrationSpeed = it)
+        },
+        Stored(booleanPreferencesKey("narration_auto_scroll"), { narrationAutoScroll }) {
+            copy(narrationAutoScroll = it)
+        },
+        enumStored("narration_engine", { narrationEngine }) { copy(narrationEngine = it) },
+        Stored(stringPreferencesKey("cloud_voice_model"), { cloudVoiceModel }) {
+            copy(cloudVoiceModel = it)
+        },
+        Stored(stringPreferencesKey("cloud_voice"), { cloudVoice }) { copy(cloudVoice = it) },
+    )
+
+internal fun Preferences.toSettings(): AppSettings =
+    STORED_SETTINGS.fold(AppSettings()) { settings, stored -> stored.read(this, settings) }
+
+internal fun MutablePreferences.store(settings: AppSettings) {
+    STORED_SETTINGS.forEach { it.write(this, settings) }
+}
+
+/**
+ * A setting kept under [key]. A null value isn't stored (the key is removed), so it reads back as
+ * the default: right for the nullable settings, whose defaults are null.
+ */
+internal class Stored<S : Any>(
+    private val key: Preferences.Key<S>,
+    private val get: AppSettings.() -> S?,
+    private val set: AppSettings.(S) -> AppSettings,
+) {
+    /** A missing value leaves the default. */
+    fun read(prefs: Preferences, settings: AppSettings): AppSettings =
+        prefs[key]?.let { settings.set(it) } ?: settings
+
+    fun write(prefs: MutablePreferences, settings: AppSettings) {
+        settings.get()?.let { prefs[key] = it } ?: prefs.remove(key)
+    }
+}
+
+/** An enum, kept by name; a name it doesn't know (an older or newer app's) leaves the default. */
+private inline fun <reified E : Enum<E>> enumStored(
+    name: String,
+    noinline get: AppSettings.() -> E,
+    noinline set: AppSettings.(E) -> AppSettings,
+) =
+    Stored(stringPreferencesKey(name), { get().name }) { stored ->
+        runCatching { enumValueOf<E>(stored) }.getOrNull()?.let { set(it) } ?: this
+    }

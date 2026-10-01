@@ -26,12 +26,11 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val PAGE = 200L
 private const val SEARCH_LIMIT = 200L
-private const val MAX_KEPT = 200
 
 sealed interface SyncStatus {
     data object Idle : SyncStatus
@@ -63,12 +62,11 @@ class HomeViewModel(
         },
     )
 
-    private val _scope = MutableStateFlow<ListScope>(ListScope.All)
-    val scope: StateFlow<ListScope> = _scope.asStateFlow()
+    /** Every change to it is one [ListState] step, so a query never sees half of one. */
+    private val view = MutableStateFlow(ListState())
 
-    /** Entries touched since the list was chosen stay in an unread-only list. */
-    private val keepIds = MutableStateFlow<Set<String>>(emptySet())
-    private val limit = MutableStateFlow(PAGE)
+    val scope: StateFlow<ListScope> =
+        view.map { it.scope }.stateIn(viewModelScope, SharingStarted.Eagerly, ListScope.All)
 
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Idle)
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
@@ -87,12 +85,10 @@ class HomeViewModel(
 
     /** The list's entries, with the list they're of (so a switch can wait for them). */
     private val loaded: StateFlow<Pair<ListScope, List<TimelineItem>>?> =
-        combine(_scope, unreadOnly, keepIds, limit) { scope, unread, keep, limit ->
-                Query(scope, unread, keep, limit)
-            }
-            .flatMapLatest { query ->
-                reader.timeline(query.scope, query.unreadOnly, query.keepIds, query.limit).map {
-                    query.scope to it
+        combine(view, unreadOnly, ::Pair)
+            .flatMapLatest { (view, unreadOnly) ->
+                reader.timeline(view.scope, unreadOnly, view.keepIds, view.limit).map {
+                    view.scope to it
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -135,25 +131,16 @@ class HomeViewModel(
     fun shownIds(): List<String> =
         (if (_search.value != null) searchResults.value else items.value).orEmpty().map { it.id }
 
-    private data class Query(
-        val scope: ListScope,
-        val unreadOnly: Boolean,
-        val keepIds: Set<String>,
-        val limit: Long,
-    )
-
     init {
         refresh()
     }
 
     fun select(scope: ListScope) {
-        _scope.value = scope
-        keepIds.value = emptySet()
-        limit.value = PAGE
+        view.update { it.select(scope) }
     }
 
     fun loadMore() {
-        limit.value += PAGE
+        view.update { it.loadMore() }
     }
 
     private val _shown = MutableStateFlow<String?>(null)
@@ -163,20 +150,15 @@ class HomeViewModel(
 
     fun opened(id: String) {
         _shown.value = id
-        keep(id)
+        view.update { it.keep(id) }
     }
 
     fun shownClosed() {
         _shown.value = null
     }
 
-    /** Bounded: the ids are bound into one query (SQLite allows 999 variables). */
-    private fun keep(id: String) {
-        keepIds.value = (keepIds.value - id + id).toList().takeLast(MAX_KEPT).toSet()
-    }
-
     fun setUnreadOnly(value: Boolean) {
-        keepIds.value = emptySet()
+        view.update { it.letGoOfKept() }
         viewModelScope.launch { updateSettings { it.copy(unreadOnly = value) } }
     }
 
@@ -192,7 +174,7 @@ class HomeViewModel(
     }
 
     fun toggleRead(item: TimelineItem) {
-        keep(item.id)
+        view.update { it.keep(item.id) }
         viewModelScope.launch { reader.setRead(listOf(item.id), !item.read) }
     }
 
@@ -201,10 +183,10 @@ class HomeViewModel(
     }
 
     /** The entries mark-all-read would mark, taken when the user is asked to confirm. */
-    suspend fun unreadInList(): List<String> = reader.unreadIds(_scope.value)
+    suspend fun unreadInList(): List<String> = reader.unreadIds(view.value.scope)
 
     fun markRead(ids: List<String>) {
-        keepIds.value = emptySet()
+        view.update { it.letGoOfKept() }
         viewModelScope.launch { reader.setRead(ids, true) }
     }
 
@@ -213,7 +195,7 @@ class HomeViewModel(
      * the list again does (but not the article open beside it).
      */
     fun pullToRefresh() {
-        keepIds.value = setOfNotNull(_shown.value)
+        view.update { it.letGoOfKept(except = _shown.value) }
         refresh()
     }
 
