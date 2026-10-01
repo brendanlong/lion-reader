@@ -78,6 +78,14 @@ function formatPrice(usd: number): string {
   return `$${usd < 0.1 ? Number(usd.toPrecision(2)) : usd.toFixed(2)}`;
 }
 
+/**
+ * The name with its provider, e.g. "hexgrad: Kokoro 82M · DeepInfra": the
+ * same model can be listed by more than one provider.
+ */
+export function formatModelName(model: PickerModel): string {
+  return `${model.displayName} · ${AI_PROVIDER_DISPLAY_NAMES[model.provider]}`;
+}
+
 /** e.g. "OpenRouter · 131K context · $0.15 in / $0.60 out per 1M tokens". */
 export function formatModelDetails(model: PickerModel): string {
   const parts: string[] = [AI_PROVIDER_DISPLAY_NAMES[model.provider]];
