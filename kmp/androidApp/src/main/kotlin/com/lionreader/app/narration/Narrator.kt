@@ -165,11 +165,12 @@ class Narrator(
         var lastAdded: Int? = null
     }
 
-    private val article: Current.Article?
+    /** The article narration is on, once its text is supplied. */
+    private val onArticle: Current.Article?
         get() = current as? Current.Article
 
     private val prepared: Prepared?
-        get() = article?.prepared
+        get() = onArticle?.prepared
 
     /** Turns narration on, playing [article] from [fromParagraph]. */
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
@@ -239,13 +240,15 @@ class Narrator(
                 } catch (e: SpeechUnavailable) {
                     return@launch fail(e.message)
                 }
+            // Narration moved on meanwhile (and this should have been cancelled).
+            if (current !== audio) return@launch
             val prepared =
                 Prepared(engine, speechChunks(audio.article.paragraphs, engine.maxChunkChars))
             if (prepared.chunks.isEmpty()) return@launch stop()
             audio.prepared = prepared
             // A tap or pause while the engine was getting ready still counts.
             val wanted = _state.value ?: return@launch
-            startAt(prepared.firstChunkOf(wanted.paragraph ?: 0), play = wanted.playing)
+            startAt(audio, prepared.firstChunkOf(wanted.paragraph ?: 0), play = wanted.playing)
         }
     }
 
@@ -257,7 +260,7 @@ class Narrator(
                 state.copy(playing = playing, waiting = playing && current != Current.Silent)
             // Supplied while paused: its audio is prepared now. Only from the app: with the
             // player empty, media3 hides the notification and doesn't pass a headset's play on.
-            val pending = article
+            val pending = onArticle
             if (playing && pending != null && pending.preparing?.isActive != true) prepare(pending)
             return
         }
@@ -268,7 +271,9 @@ class Narrator(
         val state = _state.value ?: return
         // Before the audio is prepared, by the article's paragraphs.
         val last =
-            prepared?.chunks?.last()?.paragraph ?: article?.article?.paragraphs?.lastIndex ?: return
+            prepared?.chunks?.last()?.paragraph
+                ?: onArticle?.article?.paragraphs?.lastIndex
+                ?: return
         // With no place yet, "next" is the first paragraph.
         val from = state.paragraph ?: -1
         seekToParagraph((from + delta).coerceIn(0, last))
@@ -283,7 +288,8 @@ class Narrator(
         }
         val chunk = prepared.firstChunkOf(paragraph)
         val item = itemOf(chunk)
-        if (item != null) player.seekTo(item, 0) else startAt(chunk, play = player.playWhenReady)
+        if (item != null) player.seekTo(item, 0)
+        else onArticle?.let { startAt(it, chunk, play = player.playWhenReady) }
     }
 
     fun setSpeed(speed: Float) {
@@ -301,7 +307,7 @@ class Narrator(
 
     /** Stops what's playing and forgets the article, keeping the media session. */
     private fun reset() {
-        article?.cancel()
+        onArticle?.cancel()
         current = Current.Awaiting
         player.stop()
         player.clearMediaItems()
@@ -319,8 +325,7 @@ class Narrator(
             player.getMediaItemAt(it).mediaId == "$chunk"
         }
 
-    private fun startAt(chunk: Int, play: Boolean) {
-        val audio = article ?: return
+    private fun startAt(audio: Current.Article, chunk: Int, play: Boolean) {
         val prepared = audio.prepared ?: return
         audio.feed?.job?.cancel()
         player.stop()
@@ -410,7 +415,7 @@ class Narrator(
 
     /** Stops once the last chunk there'll ever be has played. */
     private fun stopIfFinished() {
-        val feed = article?.feed ?: return
+        val feed = onArticle?.feed ?: return
         val playing = player.currentMediaItem?.mediaId?.toIntOrNull()
         if (feed.fed && player.playbackState == Player.STATE_ENDED && playing == feed.lastAdded) {
             stop()
@@ -431,7 +436,7 @@ class Narrator(
             .build()
 
     private fun publish(chunk: Int) {
-        val audio = article ?: return
+        val audio = onArticle ?: return
         val prepared = audio.prepared ?: return
         _state.value =
             NarrationState(
@@ -452,7 +457,7 @@ class Narrator(
             player.mediaItemCount == 0 ||
             player.playbackState == Player.STATE_BUFFERING ||
             player.playbackState == Player.STATE_IDLE ||
-            (player.playbackState == Player.STATE_ENDED && article?.feed?.fed != true)
+            (player.playbackState == Player.STATE_ENDED && onArticle?.feed?.fed != true)
 
     private fun updateWaiting() {
         _state.value = _state.value?.copy(waiting = waiting())
@@ -488,7 +493,7 @@ class Narrator(
                 if (player.hasNextMediaItem()) {
                     player.seekToNextMediaItem()
                     player.prepare()
-                } else if (article?.feed?.fed == true) {
+                } else if (onArticle?.feed?.fed == true) {
                     fail("Couldn't play this article's narration.")
                 }
             }
