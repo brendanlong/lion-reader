@@ -6,6 +6,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +66,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -602,31 +606,7 @@ private fun EntryList(
     LaunchedEffect(nearEnd) { if (nearEnd) onLoadMore() }
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.id }) { item ->
-            // Right toggles read, left toggles starred; the row springs back.
-            // The state keeps its first lambda, so it reads the row as it is
-            // now; and it's asked on every frame past the threshold, so it acts
-            // once per swipe, until the row is back at rest.
-            val current by rememberUpdatedState(item)
-            var acted by remember { mutableStateOf(false) }
-            val swipe =
-                rememberSwipeToDismissBoxState(
-                    confirmValueChange = {
-                        if (it != SwipeToDismissBoxValue.Settled && !acted) {
-                            acted = true
-                            if (it == SwipeToDismissBoxValue.StartToEnd) onToggleRead(current)
-                            else onToggleStar(current)
-                        }
-                        false
-                    }
-                )
-            LaunchedEffect(swipe) {
-                snapshotFlow { swipe.dismissDirection }
-                    .collect { if (it == SwipeToDismissBoxValue.Settled) acted = false }
-            }
-            SwipeToDismissBox(
-                state = swipe,
-                backgroundContent = { SwipeBackground(swipe.dismissDirection, item) },
-            ) {
+            SwipeToToggle(item, onToggleRead, onToggleStar) {
                 EntryRow(
                     item,
                     selected = item.id == selectedId,
@@ -638,6 +618,63 @@ private fun EntryList(
             HorizontalDivider()
         }
     }
+}
+
+/**
+ * Swiping a row right toggles read, left toggles starred, when the swipe counts (far enough, or a
+ * quick flick: Material's call) on letting go. The row always springs back.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToToggle(
+    item: TimelineItem,
+    onToggleRead: (TimelineItem) -> Unit,
+    onToggleStar: (TimelineItem) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val current by rememberUpdatedState(item)
+    val gesture = remember { SwipeGesture() }
+    val swipe =
+        rememberSwipeToDismissBoxState(
+            // Asked on every frame once the row is half-way out while the finger's still down
+            // (acting then changed the row mid-swipe), and on letting go with Material's verdict
+            // (distance or a flick). A drag event landing in the same frame as the lift could
+            // still ask once by distance; the two only disagree for a reversal in that frame.
+            confirmValueChange = {
+                if (it != SwipeToDismissBoxValue.Settled && !gesture.pressed && !gesture.acted) {
+                    gesture.acted = true
+                    if (it == SwipeToDismissBoxValue.StartToEnd) onToggleRead(current)
+                    else onToggleStar(current)
+                }
+                false
+            }
+        )
+    SwipeToDismissBox(
+        state = swipe,
+        backgroundContent = { SwipeBackground(swipe.dismissDirection, item) },
+        modifier =
+            Modifier.pointerInput(Unit) {
+                // Watched, not consumed, ahead of the swipe: it sees the finger
+                // lift before the swipe settles.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    gesture.pressed = true
+                    gesture.acted = false
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                    } while (event.changes.any { it.pressed })
+                    gesture.pressed = false
+                }
+            },
+    ) {
+        content()
+    }
+}
+
+/** One swipe on a row: whether the finger's down, and whether it has toggled anything. */
+private class SwipeGesture {
+    var pressed = false
+    var acted = false
 }
 
 /** What letting go of a swipe will do, revealed under the row. */

@@ -179,6 +179,7 @@ class HomeViewModel(
     }
 
     fun toggleStar(item: TimelineItem) {
+        view.update { it.keep(item.id) }
         viewModelScope.launch { reader.setStarred(item.id, !item.starred) }
     }
 

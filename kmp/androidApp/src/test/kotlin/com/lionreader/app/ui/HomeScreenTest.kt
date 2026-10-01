@@ -74,8 +74,10 @@ class HomeScreenTest {
         sortAt: Long = 0,
         feed: String = "feed",
         subscription: String? = null,
+        starred: Boolean = false,
     ) {
-        db.entryQueries.insertIgnore(id, feed, "web", 0, sortAt, if (read) 1 else 0, 0)
+        val starredFlag = if (starred) 1L else 0L
+        db.entryQueries.insertIgnore(id, feed, "web", 0, sortAt, if (read) 1 else 0, starredFlag)
         db.entryQueries.updateAll(
             subscription,
             feed,
@@ -90,12 +92,15 @@ class HomeScreenTest {
             0,
             sortAt,
             if (read) 1 else 0,
-            0,
+            starredFlag,
             id,
         )
     }
 
     private lateinit var model: HomeViewModel
+
+    private fun SemanticsNodeInteraction.state(): String? =
+        fetchSemanticsNode().config.getOrElseNullable(SemanticsProperties.StateDescription) { null }
 
     private fun SemanticsNodeInteraction.isShownAs(state: String) =
         fetchSemanticsNode().config.getOrElseNullable(SemanticsProperties.StateDescription) {
@@ -420,6 +425,64 @@ class HomeScreenTest {
         model.select(ListScope.All)
         composeRule.waitUntil {
             composeRule.onAllNodesWithText("News").fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    @Test
+    fun aSwipeActsOnlyOnLettingGo() {
+        seed("a", "An article", read = false)
+        show()
+        val row = composeRule.onNodeWithText("An article", substring = true)
+
+        // All the way over and back again.
+        row.performTouchInput {
+            down(centerLeft + Offset(10f, 0f))
+            moveTo(center.copy(x = right * 0.95f))
+            moveTo(centerLeft + Offset(30f, 0f))
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals("Unread", row.state())
+
+        // Far across: nothing until letting go.
+        row.performTouchInput {
+            down(centerLeft + Offset(10f, 0f))
+            moveTo(center.copy(x = right * 0.9f))
+        }
+        composeRule.waitForIdle()
+        assertEquals("Unread", row.state())
+        row.performTouchInput { up() }
+        composeRule.waitUntil { row.isShownAs("Read") }
+    }
+
+    @Test
+    fun aQuickShortFlickCounts() {
+        seed("a", "An article", read = false)
+        show()
+        val row = composeRule.onNodeWithText("An article", substring = true)
+
+        row.performTouchInput {
+            swipeRight(startX = left + 10f, endX = right * 0.3f, durationMillis = 40)
+        }
+        composeRule.waitUntil { row.isShownAs("Read") }
+    }
+
+    @Test
+    fun unstarringInStarredKeepsTheArticleUntilRefreshed() {
+        seed("a", "A starred article", read = true, starred = true)
+        settings.value = settings.value.copy(unreadOnly = false)
+        show()
+        model.select(ListScope.Starred)
+        val row = composeRule.onNodeWithText("A starred article", substring = true)
+        composeRule.waitUntil { row.isShownAs("Read, Starred") }
+
+        row.performTouchInput { swipeLeft() }
+        composeRule.waitUntil { row.isShownAs("Read") }
+        row.assertIsDisplayed()
+
+        model.pullToRefresh()
+        composeRule.waitUntil {
+            composeRule.onAllNodesWithText("A starred article").fetchSemanticsNodes().isEmpty()
         }
     }
 
