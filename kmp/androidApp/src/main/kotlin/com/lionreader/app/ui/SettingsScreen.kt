@@ -106,25 +106,41 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
                     update { it.copy(textSize = choice) }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Justify text", modifier = Modifier.weight(1f))
-                Switch(
-                    checked = settings.justify,
-                    onCheckedChange = { value -> update { it.copy(justify = value) } },
-                )
+            SettingSwitch("Justify text", settings.justify) { value ->
+                update { it.copy(justify = value) }
             }
             HorizontalDivider()
             NarrationSettings(graph, settings, ::update)
             HorizontalDivider()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Hide feeds and tags with no unread articles",
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = settings.hideEmptyLists,
-                    onCheckedChange = { value -> update { it.copy(hideEmptyLists = value) } },
-                )
+            SettingSwitch("Hide feeds and tags with no unread articles", settings.hideEmptyLists) {
+                value ->
+                update { it.copy(hideEmptyLists = value) }
+            }
+            HorizontalDivider()
+            Section("E-readers") {
+                val epaper = settings.theme == ThemeChoice.EPAPER
+                SettingSwitch(
+                    "Animations",
+                    settings.animates,
+                    note = "Always off with the E-paper theme".takeIf { epaper },
+                    enabled = !epaper,
+                ) { value ->
+                    update { it.copy(animations = value) }
+                }
+                SettingSwitch(
+                    "Scroll a page at a time",
+                    settings.pageScrolling,
+                    note = "Swiping up or down moves articles and lists most of a screen at once.",
+                ) { value ->
+                    update { it.copy(pageScrolling = value) }
+                }
+                SettingSwitch(
+                    "Turn pages with the volume buttons",
+                    settings.volumeKeyPaging,
+                    note = "Except while narration is playing.",
+                ) { value ->
+                    update { it.copy(volumeKeyPaging = value) }
+                }
             }
             HorizontalDivider()
             Section("Keep offline") {
@@ -313,12 +329,9 @@ private fun NarrationSettings(
     Section("Narration speed") {
         Choices(NARRATION_SPEEDS, settings.narrationSpeed, ::speedLabel, graph::setNarrationSpeed)
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Keep the paragraph being read on screen", modifier = Modifier.weight(1f))
-        Switch(
-            checked = settings.narrationAutoScroll,
-            onCheckedChange = { value -> update { it.copy(narrationAutoScroll = value) } },
-        )
+    SettingSwitch("Keep the paragraph being read on screen", settings.narrationAutoScroll) { value
+        ->
+        update { it.copy(narrationAutoScroll = value) }
     }
 }
 
@@ -390,6 +403,29 @@ private val ThemeChoice.label: String
             ThemeChoice.BLACK -> "Black"
             ThemeChoice.EPAPER -> "E-paper"
         }
+
+@Composable
+private fun SettingSwitch(
+    label: String,
+    checked: Boolean,
+    note: String? = null,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label)
+            note?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
+    }
+}
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {

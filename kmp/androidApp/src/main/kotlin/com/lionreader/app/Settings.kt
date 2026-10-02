@@ -57,6 +57,12 @@ data class AppSettings(
     val expandedTags: Set<String> = emptySet(),
     /** Leave feeds and tags with nothing unread out of the drawer. */
     val hideEmptyLists: Boolean = false,
+    /** Off for e-readers, where animation only smears; always off with the E-paper theme. */
+    val animations: Boolean = true,
+    /** Swipes move lists and articles a page at a time (for e-readers), rather than scrolling. */
+    val pageScrolling: Boolean = false,
+    /** The volume buttons turn pages in lists and articles. */
+    val volumeKeyPaging: Boolean = false,
     /** The text-to-speech voice's name; null for the engine's default. */
     val narrationVoice: String? = null,
     val narrationSpeed: Float = 1f,
@@ -71,6 +77,9 @@ data class AppSettings(
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
+
+    val animates: Boolean
+        get() = animations && theme != ThemeChoice.EPAPER
 }
 
 private val Context.settingsStore by preferencesDataStore("settings")
@@ -103,6 +112,13 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         },
         Stored(booleanPreferencesKey("hide_empty_lists"), { hideEmptyLists }) {
             copy(hideEmptyLists = it)
+        },
+        Stored(booleanPreferencesKey("animations"), { animations }) { copy(animations = it) },
+        Stored(booleanPreferencesKey("page_scrolling"), { pageScrolling }) {
+            copy(pageScrolling = it)
+        },
+        Stored(booleanPreferencesKey("volume_key_paging"), { volumeKeyPaging }) {
+            copy(volumeKeyPaging = it)
         },
         Stored(stringPreferencesKey("narration_voice"), { narrationVoice }) {
             copy(narrationVoice = it)

@@ -70,6 +70,7 @@ import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderNarration
+import com.lionreader.app.reader.ReaderPaging
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.reader.readerDocument
@@ -360,6 +361,8 @@ fun EntryScreen(
                                     }
                                 },
                             ),
+                        // The volume buttons turn the page on screen, not its neighbours'.
+                        active = page == pager.currentPage,
                     )
                 }
             }
@@ -439,6 +442,7 @@ private fun EntryPage(
     showSummary: Boolean,
     onEntry: (String, EntryDetail?) -> Unit,
     narration: ReaderNarration,
+    active: Boolean,
 ) {
     val context = LocalContext.current
     val entry by
@@ -489,13 +493,27 @@ private fun EntryPage(
                         codeBackground = colors.surfaceContainer.css(),
                     ),
             )
-        ReaderWebView(document, Modifier.fillMaxSize(), narration)
+        ReaderWebView(
+            document,
+            Modifier.fillMaxSize(),
+            narration,
+            ReaderPaging(
+                swipes = settings.pageScrolling,
+                turns = graph.pageTurns.takeIf { active },
+                smoothScroll = settings.animates,
+            ),
+        )
         return
     }
+    val scroll = rememberScrollState()
     Column(
         modifier =
             Modifier.fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .pageSwipes(
+                    rememberPageTurner(scroll, graph.pageTurns, active),
+                    settings.pageScrolling,
+                )
+                .verticalScroll(scroll, enabled = !settings.pageScrolling)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall)

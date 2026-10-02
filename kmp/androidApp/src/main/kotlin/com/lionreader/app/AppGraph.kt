@@ -10,6 +10,7 @@ import com.lionreader.app.narration.SpeechEngine
 import com.lionreader.app.narration.SpeechInterrupted
 import com.lionreader.app.narration.SpeechUnavailable
 import com.lionreader.app.narration.SystemTts
+import com.lionreader.app.ui.PageTurns
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.VoiceModels
@@ -85,6 +86,13 @@ class AppGraph(private val context: Context) {
 
     /** Text-to-speech narration; one article at a time, app-wide. */
     val narrator: Narrator by narratorInstance
+
+    /** Whether narration is playing (without starting the narrator to ask). */
+    val narrating: Boolean
+        get() = narratorInstance.isInitialized() && narrator.state.value?.playing == true
+
+    /** What the volume buttons turn the pages of, when the settings have them do so. */
+    val pageTurns = PageTurns()
 
     /** Cloud narration audio: the account's articles, so it goes with the account. */
     private val cloudVoiceCache = File(context.cacheDir, "cloud-voices")
