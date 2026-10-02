@@ -39,10 +39,19 @@ const catalog: OpenRouterModel[] = [
   },
 ];
 
-const originalServerKey = process.env.OPENROUTER_API_KEY;
+const ENV_VARS = [
+  "OPENROUTER_API_KEY",
+  "DEEPINFRA_API_KEY",
+  "SERVER_KEY_MODELS",
+  "SERVER_KEY_MAX_SPEECH_PRICE",
+] as const;
+const originalEnv = Object.fromEntries(ENV_VARS.map((name) => [name, process.env[name]]));
 afterEach(() => {
-  if (originalServerKey === undefined) delete process.env.OPENROUTER_API_KEY;
-  else process.env.OPENROUTER_API_KEY = originalServerKey;
+  for (const name of ENV_VARS) {
+    const value = originalEnv[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 });
 
 describe("toSpeechModels", () => {
@@ -61,8 +70,15 @@ describe("toSpeechModels", () => {
     expect(gemini.pricePerMillionCharacters).toBeUndefined();
   });
 
-  it("limits the server's key to the suggested models", () => {
+  it("lists every model with voices on the server's key by default", () => {
     process.env.OPENROUTER_API_KEY = "sk-or-server";
+    expect(toSpeechModels(catalog, {})).toHaveLength(3);
+  });
+
+  it("limits the server's key to models within the speech price cap", () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MAX_SPEECH_PRICE = "5";
+    // Gemini's per-character cost is unknown, so it's left out too.
     expect(toSpeechModels(catalog, {}).map((model) => model.id)).toEqual([
       "openrouter:hexgrad/kokoro-82m",
     ]);
@@ -87,12 +103,6 @@ const deepInfraCatalog: DeepInfraSpeechModel[] = [
 ];
 
 describe("toDeepInfraSpeechModels", () => {
-  const originalDeepInfraKey = process.env.DEEPINFRA_API_KEY;
-  afterEach(() => {
-    if (originalDeepInfraKey === undefined) delete process.env.DEEPINFRA_API_KEY;
-    else process.env.DEEPINFRA_API_KEY = originalDeepInfraKey;
-  });
-
   it("lists every model on the user's own key, named like OpenRouter's", () => {
     const models = toDeepInfraSpeechModels(deepInfraCatalog, { deepinfra: "d" });
     expect(models.map((model) => [model.id, model.displayName, model.provider])).toEqual([
@@ -102,15 +112,17 @@ describe("toDeepInfraSpeechModels", () => {
     expect(models[0].pricePerMillionCharacters).toBe(0.62);
   });
 
-  it("limits the server's key to Kokoro", () => {
+  it("limits the server's key to the listed models", () => {
     process.env.DEEPINFRA_API_KEY = "server";
+    process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
     expect(toDeepInfraSpeechModels(deepInfraCatalog, {}).map((model) => model.id)).toEqual([
       "deepinfra:hexgrad/Kokoro-82M",
     ]);
   });
 
-  it("isn't limited by an OpenRouter key", () => {
+  it("isn't unlocked by an OpenRouter key", () => {
     process.env.DEEPINFRA_API_KEY = "server";
+    process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
     expect(toDeepInfraSpeechModels(deepInfraCatalog, { openrouter: "o" })).toHaveLength(1);
   });
 });
@@ -199,18 +211,6 @@ describe("canNarrate", () => {
 });
 
 describe("resolveSpeechModel", () => {
-  const originalKeys = {
-    deepinfra: process.env.DEEPINFRA_API_KEY,
-    openrouter: process.env.OPENROUTER_API_KEY,
-  };
-  afterEach(() => {
-    for (const [provider, value] of Object.entries(originalKeys)) {
-      const name = `${provider.toUpperCase()}_API_KEY`;
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  });
-
   const deepInfraKokoro = {
     id: DEEPINFRA_KOKORO,
     displayName: "hexgrad: Kokoro 82M",
@@ -253,6 +253,7 @@ describe("resolveSpeechModel", () => {
 
   it("falls back from a model the server's key doesn't allow", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
+    process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
     expect(resolveSpeechModel(catalog([deepInfraKokoro]), {}, qwen.id, "Vivian")).toEqual({
       model: deepInfraKokoro,
       voice: "af_heart",

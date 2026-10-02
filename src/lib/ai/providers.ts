@@ -18,11 +18,6 @@ export interface AiProviderInfo {
   text: boolean;
   /** Used for cloud voices. */
   speech: boolean;
-  /**
-   * Its catalog has models costing far more than our defaults, so on the
-   * server's key only an allowlist of them may be used.
-   */
-  serverKeyAllowlist: boolean;
 }
 
 export const AI_PROVIDER_INFO = {
@@ -32,7 +27,6 @@ export const AI_PROVIDER_INFO = {
     keyPlaceholder: "sk-ant-...",
     text: true,
     speech: false,
-    serverKeyAllowlist: false,
   },
   groq: {
     displayName: "Groq",
@@ -40,7 +34,6 @@ export const AI_PROVIDER_INFO = {
     keyPlaceholder: "gsk_...",
     text: true,
     speech: false,
-    serverKeyAllowlist: false,
   },
   cerebras: {
     displayName: "Cerebras",
@@ -48,7 +41,6 @@ export const AI_PROVIDER_INFO = {
     keyPlaceholder: "csk-...",
     text: true,
     speech: false,
-    serverKeyAllowlist: false,
   },
   deepinfra: {
     displayName: "DeepInfra",
@@ -56,7 +48,6 @@ export const AI_PROVIDER_INFO = {
     keyPlaceholder: "Your DeepInfra API key",
     text: false,
     speech: true,
-    serverKeyAllowlist: true,
   },
   openrouter: {
     displayName: "OpenRouter",
@@ -64,7 +55,6 @@ export const AI_PROVIDER_INFO = {
     keyPlaceholder: "sk-or-...",
     text: true,
     speech: true,
-    serverKeyAllowlist: true,
   },
   breezeblue: {
     displayName: "BreezeBlue",
@@ -72,7 +62,6 @@ export const AI_PROVIDER_INFO = {
     keyPlaceholder: "Your BreezeBlue API key",
     text: false,
     speech: true,
-    serverKeyAllowlist: false,
   },
 } as const satisfies Record<string, AiProviderInfo>;
 

@@ -30,11 +30,7 @@ import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
-import {
-  NARRATION_FORMAT_VERSION,
-  NARRATION_PROVIDERS,
-  SUGGESTED_NARRATION_MODELS,
-} from "@/lib/narration/constants";
+import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { defaultSpeechModelId, defaultVoiceFor, listSpeechModels } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
@@ -251,7 +247,7 @@ export const narrationRouter = createTRPCRouter({
       // If user disabled LLM normalization, no provider is configured, or we had a recent error, fall back to plain text
       if (
         !input.useLlmNormalization ||
-        !isNarrationLlmAvailable(keys, userNarrationModel) ||
+        !(await isNarrationLlmAvailable(keys, userNarrationModel)) ||
         !canRetryLLM
       ) {
         return fallbackResponse();
@@ -350,7 +346,7 @@ export const narrationRouter = createTRPCRouter({
       // Availability only needs to know which keys exist, not decrypt them.
       const providers = await getApiKeyProviders(ctx.session.user.id);
       const keys = Object.fromEntries(providers.map((provider) => [provider, "configured"]));
-      return { available: isNarrationLlmAvailable(keys, ctx.session.user.narrationModel) };
+      return { available: await isNarrationLlmAvailable(keys, ctx.session.user.narrationModel) };
     }),
 
   /**
@@ -375,9 +371,9 @@ export const narrationRouter = createTRPCRouter({
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
       const models = (await listAllModels(keys, NARRATION_PROVIDERS, { jsonObject: true })).filter(
-        (model) => isModelAllowed(model.id, keys, SUGGESTED_NARRATION_MODELS)
+        (model) => isModelAllowed(model.id, keys, model)
       );
-      const defaultRef = getNarrationModelRef(null, keys);
+      const defaultRef = await getNarrationModelRef(null, keys);
       return { models, defaultModelId: formatModelRef(defaultRef.provider, defaultRef.model) };
     }),
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   filterToLatestClaudeGeneration,
+  generateChatCompletion,
   getAvailableProviders,
   isChatModelId,
   isModelAllowed,
@@ -8,10 +9,11 @@ import {
   isUsableOpenRouterModel,
   supportsReasoningEffort,
 } from "@/server/services/ai-providers";
-import { getNarrationModelRef } from "@/server/services/narration";
+import { getNarrationModelRef, isNarrationLlmAvailable } from "@/server/services/narration";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import { buildChatCompletionBody } from "@/server/services/openrouter";
-import { getSummarizationModelId } from "@/server/services/summarization";
+import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
+import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
@@ -26,6 +28,10 @@ const ENV_VARS = [
   "DEEPINFRA_API_KEY",
   "SUMMARIZATION_MODEL",
   "NARRATION_MODEL",
+  "SERVER_KEY_MODELS",
+  "SERVER_KEY_MAX_INPUT_PRICE",
+  "SERVER_KEY_MAX_OUTPUT_PRICE",
+  "SERVER_KEY_MAX_SPEECH_PRICE",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_VARS.map((name) => [name, process.env[name]]));
@@ -79,122 +85,134 @@ describe("isProviderAvailable / getAvailableProviders", () => {
 });
 
 describe("getSummarizationModelId", () => {
-  it("prefers the user model", () => {
+  it("prefers the user model", async () => {
     clearEnv();
     process.env.SUMMARIZATION_MODEL = "groq:foo";
-    expect(getSummarizationModelId("cerebras:bar", { cerebras: "c" })).toBe("cerebras:bar");
+    expect(await getSummarizationModelId("cerebras:bar", { cerebras: "c" })).toBe("cerebras:bar");
   });
 
-  it("falls back to the env var", () => {
+  it("falls back to the env var", async () => {
     clearEnv();
+    process.env.GROQ_API_KEY = "gsk-server";
     process.env.SUMMARIZATION_MODEL = "groq:foo";
-    expect(getSummarizationModelId(null, {})).toBe("groq:foo");
+    expect(await getSummarizationModelId(null, {})).toBe("groq:foo");
   });
 
-  it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic > OpenRouter)", () => {
+  it("skips an env model that can't be used", async () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    process.env.SUMMARIZATION_MODEL = "groq:foo";
+    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
+    process.env.GROQ_API_KEY = "gsk-server";
+    process.env.SERVER_KEY_MODELS = "cerebras:*";
+    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
+  });
+
+  it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic > OpenRouter)", async () => {
     clearEnv();
     // Cerebras wins over both others when configured.
-    expect(getSummarizationModelId(null, { groq: "g", cerebras: "c" })).toBe(
+    expect(await getSummarizationModelId(null, { groq: "g", cerebras: "c" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
-    expect(getSummarizationModelId(null, { anthropic: "a", cerebras: "c" })).toBe(
+    expect(await getSummarizationModelId(null, { anthropic: "a", cerebras: "c" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
     // Groq wins over Anthropic.
-    expect(getSummarizationModelId(null, { anthropic: "a", groq: "g" })).toBe(
+    expect(await getSummarizationModelId(null, { anthropic: "a", groq: "g" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.groq
     );
     // A direct Anthropic key wins over the OpenRouter aggregator.
-    expect(getSummarizationModelId(null, { anthropic: "a", openrouter: "o" })).toBe(
+    expect(await getSummarizationModelId(null, { anthropic: "a", openrouter: "o" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.anthropic
     );
-    expect(getSummarizationModelId(null, { openrouter: "o" })).toBe(
+    expect(await getSummarizationModelId(null, { openrouter: "o" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.openrouter
     );
     // Anthropic only when it's the sole option.
-    expect(getSummarizationModelId(null, { anthropic: "a" })).toBe(
+    expect(await getSummarizationModelId(null, { anthropic: "a" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.anthropic
     );
   });
 
-  it("defaults to the first-priority provider (Cerebras) when nothing is configured", () => {
+  it("defaults to the first-priority provider (Cerebras) when nothing is configured", async () => {
     clearEnv();
     expect(SUMMARIZATION_PROVIDER_PRIORITY[0]).toBe("cerebras");
-    expect(getSummarizationModelId(null, {})).toBe(
+    expect(await getSummarizationModelId(null, {})).toBe(
       DEFAULT_SUMMARIZATION_MODELS[SUMMARIZATION_PROVIDER_PRIORITY[0]]
     );
   });
 });
 
 describe("getNarrationModelRef", () => {
-  it("defaults to the Cerebras gpt-oss-120b model when nothing is configured", () => {
+  it("defaults to the Cerebras gpt-oss-120b model when nothing is configured", async () => {
     clearEnv();
-    expect(getNarrationModelRef(null)).toEqual({
+    expect(await getNarrationModelRef(null)).toEqual({
       provider: "cerebras",
       model: "gpt-oss-120b",
     });
   });
 
-  it("defaults to the first configured provider (Cerebras before Groq)", () => {
+  it("defaults to the first configured provider (Cerebras before Groq)", async () => {
     clearEnv();
     // Only Groq configured → Groq default.
-    expect(getNarrationModelRef(null, { groq: "g" })).toEqual({
+    expect(await getNarrationModelRef(null, { groq: "g" })).toEqual({
       provider: "groq",
       model: "openai/gpt-oss-120b",
     });
     expect(DEFAULT_NARRATION_MODELS.groq).toBe("groq:openai/gpt-oss-120b");
     // Both configured → Cerebras wins (fastest, listed first).
-    expect(getNarrationModelRef(null, { groq: "g", cerebras: "c" })).toEqual({
+    expect(await getNarrationModelRef(null, { groq: "g", cerebras: "c" })).toEqual({
       provider: "cerebras",
       model: "gpt-oss-120b",
     });
     expect(DEFAULT_NARRATION_MODELS.cerebras).toBe("cerebras:gpt-oss-120b");
   });
 
-  it("defaults to OpenRouter when it's the only JSON-mode provider configured", () => {
+  it("defaults to OpenRouter when it's the only JSON-mode provider configured", async () => {
     clearEnv();
-    expect(getNarrationModelRef(null, { openrouter: "o", anthropic: "a" })).toEqual({
+    expect(await getNarrationModelRef(null, { openrouter: "o", anthropic: "a" })).toEqual({
       provider: "openrouter",
       model: "openai/gpt-oss-120b",
     });
   });
 
-  it("accepts OpenRouter model IDs, including ones containing colons", () => {
+  it("accepts OpenRouter model IDs, including ones containing colons", async () => {
     clearEnv();
-    expect(getNarrationModelRef("openrouter:openai/gpt-oss-20b:free", { openrouter: "o" })).toEqual(
-      {
-        provider: "openrouter",
-        model: "openai/gpt-oss-20b:free",
-      }
-    );
+    expect(
+      await getNarrationModelRef("openrouter:openai/gpt-oss-20b:free", { openrouter: "o" })
+    ).toEqual({
+      provider: "openrouter",
+      model: "openai/gpt-oss-20b:free",
+    });
   });
 
-  it("uses the user model when set", () => {
+  it("uses the user model when set", async () => {
     clearEnv();
-    expect(getNarrationModelRef("groq:openai/gpt-oss-20b", { groq: "g" })).toEqual({
+    expect(await getNarrationModelRef("groq:openai/gpt-oss-20b", { groq: "g" })).toEqual({
       provider: "groq",
       model: "openai/gpt-oss-20b",
     });
   });
 
-  it("uses the env var when the user model is unset", () => {
+  it("uses the env var when the user model is unset", async () => {
     clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
     process.env.NARRATION_MODEL = "cerebras:llama-3.3-70b";
-    expect(getNarrationModelRef(null)).toEqual({
+    expect(await getNarrationModelRef(null)).toEqual({
       provider: "cerebras",
       model: "llama-3.3-70b",
     });
   });
 
-  it("falls back to the default for non-OpenAI-compatible references", () => {
+  it("falls back to the default for non-OpenAI-compatible references", async () => {
     clearEnv();
     // Anthropic models can't do JSON-object responses, and a legacy bare ID
     // parses as Anthropic — both must fall back to the default model.
     process.env.ANTHROPIC_API_KEY = "sk-ant-server";
     process.env.GROQ_API_KEY = "gsk-server";
     const groqDefault = parseModelRef(DEFAULT_NARRATION_MODELS.groq);
-    expect(getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(groqDefault);
-    expect(getNarrationModelRef("some-bare-model")).toEqual(groqDefault);
+    expect(await getNarrationModelRef("anthropic:claude-sonnet-5")).toEqual(groqDefault);
+    expect(await getNarrationModelRef("some-bare-model")).toEqual(groqDefault);
   });
 });
 
@@ -303,71 +321,183 @@ describe("isUsableOpenRouterModel", () => {
 });
 
 describe("isModelAllowed", () => {
-  const allowed = ["openrouter:openai/gpt-oss-120b"];
-
-  it("limits OpenRouter models to the allowed list on the server's key", () => {
+  it("allows every model on the server's keys by default", () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
-    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {}, allowed)).toBe(true);
-    expect(isModelAllowed("openrouter:openai/o1-pro", {}, allowed)).toBe(false);
+    expect(isModelAllowed("openrouter:openai/o1-pro", {})).toBe(true);
   });
 
-  it("allows any OpenRouter model on the user's own key", () => {
+  it("limits the server's keys to the listed models", () => {
     clearEnv();
-    expect(isModelAllowed("openrouter:openai/o1-pro", { openrouter: "o" }, allowed)).toBe(true);
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.ANTHROPIC_API_KEY = "sk-ant-server";
+    process.env.SERVER_KEY_MODELS = " openrouter:openai/gpt-oss-120b , claude-haiku-5 ";
+    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {})).toBe(true);
+    expect(isModelAllowed("openrouter:openai/o1-pro", {})).toBe(false);
+    // Bare IDs are Anthropic's, whichever side they're on.
+    expect(isModelAllowed("anthropic:claude-haiku-5", {})).toBe(true);
+    expect(isModelAllowed("claude-opus-5", {})).toBe(false);
   });
 
-  it("limits DeepInfra models the same way", () => {
+  it("allows a whole provider with provider:*", () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MODELS = "cerebras:*";
+    expect(isModelAllowed("cerebras:llama-3.3-70b", {})).toBe(true);
+    expect(isModelAllowed("openrouter:cerebras/llama-3.3-70b", {})).toBe(false);
+  });
+
+  it("allows text models priced within both caps", () => {
+    clearEnv();
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MAX_INPUT_PRICE = "0.35";
+    process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "0.75";
+    const model = "openrouter:some/model";
+    const price = (input?: number, output?: number) => ({
+      inputPricePerMillion: input,
+      outputPricePerMillion: output,
+    });
+    expect(isModelAllowed(model, {}, price(0.35, 0.75))).toBe(true);
+    expect(isModelAllowed(model, {}, price(0, 0))).toBe(true);
+    expect(isModelAllowed(model, {}, price(0.01, 0.8))).toBe(false);
+    expect(isModelAllowed(model, {}, price(0.4, 0.1))).toBe(false);
+    // An unknown price is never within a cap.
+    expect(isModelAllowed(model, {}, price(0.01, undefined))).toBe(false);
+    expect(isModelAllowed(model, {})).toBe(false);
+  });
+
+  it("checks only the caps that are set", () => {
+    clearEnv();
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "1";
+    const price = { inputPricePerMillion: 5, outputPricePerMillion: 1 };
+    expect(isModelAllowed("openrouter:some/model", {}, price)).toBe(true);
+  });
+
+  it("allows speech models by the speech cap, not the token caps", () => {
     clearEnv();
     process.env.DEEPINFRA_API_KEY = "di-server";
-    const speech = ["deepinfra:hexgrad/Kokoro-82M"];
-    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, speech)).toBe(true);
-    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", {}, speech)).toBe(false);
-    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfra: "d" }, speech)).toBe(true);
+    process.env.SERVER_KEY_MAX_INPUT_PRICE = "100";
+    process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "100";
+    const kokoro = { pricePerMillionCharacters: 0.93 };
+    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, kokoro)).toBe(false);
+    process.env.SERVER_KEY_MAX_SPEECH_PRICE = "1";
+    expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, kokoro)).toBe(true);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", {}, { pricePerMillionCharacters: 20 })).toBe(
+      false
+    );
   });
 
-  it("doesn't restrict other providers", () => {
-    clearEnv();
-    process.env.ANTHROPIC_API_KEY = "sk-ant-server";
-    expect(isModelAllowed("anthropic:claude-opus-5", {}, allowed)).toBe(true);
-    expect(isModelAllowed("claude-opus-5", {}, allowed)).toBe(true);
-  });
-
-  it("ignores a disallowed stored model when picking the model to run", () => {
+  it("allows nothing by an unparseable cap", () => {
     clearEnv();
     process.env.OPENROUTER_API_KEY = "sk-or-server";
-    expect(getSummarizationModelId("openrouter:openai/o1-pro", {})).toBe(
+    process.env.SERVER_KEY_MAX_SPEECH_PRICE = "one dollar";
+    expect(isModelAllowed("openrouter:a/b", {}, { pricePerMillionCharacters: 0 })).toBe(false);
+  });
+
+  it("allows any model on the user's own key", () => {
+    clearEnv();
+    process.env.SERVER_KEY_MODELS = "cerebras:gpt-oss-120b";
+    expect(isModelAllowed("openrouter:openai/o1-pro", { openrouter: "o" })).toBe(true);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfra: "d" })).toBe(true);
+  });
+
+  it("isn't unlocked by the user's key for another provider", () => {
+    clearEnv();
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    process.env.SERVER_KEY_MODELS = "deepinfra:hexgrad/Kokoro-82M";
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { openrouter: "o" })).toBe(false);
+  });
+
+  it("ignores a disallowed stored model when picking the model to run", async () => {
+    clearEnv();
+    process.env.OPENROUTER_API_KEY = "sk-or-server";
+    process.env.SERVER_KEY_MODELS = "openrouter:openai/gpt-oss-120b";
+    expect(await getSummarizationModelId("openrouter:openai/o1-pro", {})).toBe(
       DEFAULT_SUMMARIZATION_MODELS.openrouter
     );
-    expect(getNarrationModelRef("openrouter:openai/o1-pro", {})).toEqual({
+    expect(await getNarrationModelRef("openrouter:openai/o1-pro", {})).toEqual({
       provider: "openrouter",
       model: "openai/gpt-oss-120b",
     });
-    expect(getSummarizationModelId("openrouter:openai/o1-pro", { openrouter: "o" })).toBe(
+    expect(await getSummarizationModelId("openrouter:openai/o1-pro", { openrouter: "o" })).toBe(
       "openrouter:openai/o1-pro"
     );
   });
 
-  it("rejects a model whose provider has no key at all", () => {
+  it("skips a provider whose default isn't allowed when picking the default", async () => {
     clearEnv();
     process.env.CEREBRAS_API_KEY = "csk-server";
-    expect(isModelAllowed("anthropic:claude-opus-5", {}, allowed)).toBe(false);
-    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {}, allowed)).toBe(false);
-    expect(getSummarizationModelId("anthropic:claude-opus-5", {})).toBe(
-      DEFAULT_SUMMARIZATION_MODELS.cerebras
+    process.env.GROQ_API_KEY = "gsk-server";
+    process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.groq;
+    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.groq);
+    expect(await getNarrationModelRef(null, {})).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS.groq)
     );
-    expect(getNarrationModelRef("groq:openai/gpt-oss-120b", {})).toEqual(
-      parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
-    );
-    expect(isModelAllowed("anthropic:claude-opus-5", { anthropic: "a" }, allowed)).toBe(true);
   });
 
-  it("never summarizes with a speech-only provider", () => {
+  it("rejects a model whose provider has no key at all", async () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    expect(isModelAllowed("anthropic:claude-opus-5", {})).toBe(false);
+    expect(isModelAllowed("openrouter:openai/gpt-oss-120b", {})).toBe(false);
+    expect(await getSummarizationModelId("anthropic:claude-opus-5", {})).toBe(
+      DEFAULT_SUMMARIZATION_MODELS.cerebras
+    );
+    expect(await getNarrationModelRef("groq:openai/gpt-oss-120b", {})).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
+    );
+    expect(isModelAllowed("anthropic:claude-opus-5", { anthropic: "a" })).toBe(true);
+  });
+
+  it("reports summarization unavailable when no model can be used", async () => {
     clearEnv();
     process.env.GROQ_API_KEY = "gsk-server";
-    expect(getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfra: "d" })).toBe(
+    expect(await isSummarizationAvailable({})).toBe(true);
+    process.env.SERVER_KEY_MODELS = "cerebras:*";
+    expect(await isSummarizationAvailable({})).toBe(false);
+    expect(await isNarrationLlmAvailable({})).toBe(false);
+    expect(await isSummarizationAvailable({ groq: "g" })).toBe(true);
+  });
+
+  it("holds only price-allowed models to the price caps", () => {
+    clearEnv();
+    expect(serverKeyTokenPriceCaps("openrouter:a/b")).toBeNull();
+    process.env.SERVER_KEY_MODELS = "openrouter:openai/gpt-oss-120b";
+    process.env.SERVER_KEY_MAX_INPUT_PRICE = "0.35";
+    process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "0.75";
+    expect(serverKeyTokenPriceCaps("openrouter:openai/gpt-oss-120b")).toBeNull();
+    expect(serverKeyTokenPriceCaps("openrouter:a/b")).toEqual({
+      maxInputPrice: 0.35,
+      maxOutputPrice: 0.75,
+    });
+  });
+
+  it("never summarizes with a speech-only provider", async () => {
+    clearEnv();
+    process.env.GROQ_API_KEY = "gsk-server";
+    expect(await getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfra: "d" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.groq
     );
+  });
+});
+
+describe("generateChatCompletion", () => {
+  it("refuses a model the server's key doesn't allow, before calling the provider", async () => {
+    clearEnv();
+    process.env.GROQ_API_KEY = "gsk-server";
+    process.env.SERVER_KEY_MODELS = DEFAULT_SUMMARIZATION_MODELS.groq;
+    await expect(
+      generateChatCompletion(
+        parseModelRef("groq:qwen/qwen3-32b"),
+        {},
+        {
+          userPrompt: "hi",
+          maxTokens: 10,
+        }
+      )
+    ).rejects.toThrow("isn't allowed on the server's Groq key");
   });
 });
 
@@ -413,5 +543,13 @@ describe("buildChatCompletionBody (OpenRouter)", () => {
     expect(body).toMatchObject({ provider: { sort: "throughput" } });
     expect(body.provider).not.toHaveProperty("require_parameters");
     expect(body).not.toHaveProperty("response_format");
+  });
+
+  it("keeps to the price caps it's given", () => {
+    const options = { userPrompt: "hi", maxTokens: 100 };
+    expect(
+      buildChatCompletionBody("m", options, [], { maxInputPrice: 0.35, maxOutputPrice: 0.75 })
+    ).toMatchObject({ provider: { max_price: { prompt: 0.35, completion: 0.75 } } });
+    expect(buildChatCompletionBody("m", options, []).provider).not.toHaveProperty("max_price");
   });
 });

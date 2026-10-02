@@ -17,14 +17,13 @@ import { isTextAiProvider } from "@/lib/ai/providers";
 import {
   generateChatCompletion,
   getAvailableProviders,
-  isModelAllowed,
+  isTextModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
-  SUGGESTED_SUMMARIZATION_MODELS,
 } from "@/lib/summarization/constants";
 
 /**
@@ -205,7 +204,7 @@ export async function generateSummary(
   }
 ): Promise<GenerateSummaryResult> {
   // Priority: user model > environment > default
-  const modelId = getSummarizationModelId(options?.userModel, options?.keys);
+  const modelId = await getSummarizationModelId(options?.userModel, options?.keys);
   const modelRef = parseModelRef(modelId);
 
   try {
@@ -246,11 +245,14 @@ export async function generateSummary(
 }
 
 /**
- * Checks if summarization is available (any provider has a user or server
- * key configured).
+ * Checks if summarization is available: the model it would use can be used
+ * (see `isModelAllowed`).
  */
-export function isSummarizationAvailable(keys?: AiProviderKeys): boolean {
-  return getAvailableProviders(keys).length > 0;
+export async function isSummarizationAvailable(
+  keys?: AiProviderKeys,
+  userModel?: string | null
+): Promise<boolean> {
+  return isTextModelAllowed(await getSummarizationModelId(userModel, keys), keys);
 }
 
 /**
@@ -258,24 +260,33 @@ export function isSummarizationAvailable(keys?: AiProviderKeys): boolean {
  * (legacy stored values may be bare Anthropic IDs — parse with
  * `parseModelRef`).
  *
- * Priority: user setting (if allowed — see `isModelAllowed`) >
- * `SUMMARIZATION_MODEL` env var > the default model
- * of the first configured provider (see SUMMARIZATION_PROVIDER_PRIORITY).
+ * Priority: user setting > `SUMMARIZATION_MODEL` env var > the default model
+ * of the first configured provider (see SUMMARIZATION_PROVIDER_PRIORITY),
+ * each only if it can be used (see `isModelAllowed`).
  */
-export function getSummarizationModelId(userModel?: string | null, keys?: AiProviderKeys): string {
+export async function getSummarizationModelId(
+  userModel?: string | null,
+  keys?: AiProviderKeys
+): Promise<string> {
   if (
     userModel &&
     isTextAiProvider(parseModelRef(userModel).provider) &&
-    isModelAllowed(userModel, keys, SUGGESTED_SUMMARIZATION_MODELS)
+    (await isTextModelAllowed(userModel, keys))
   ) {
     return userModel;
   }
-  if (process.env.SUMMARIZATION_MODEL) {
-    return process.env.SUMMARIZATION_MODEL;
+  const envModel = process.env.SUMMARIZATION_MODEL;
+  if (envModel && (await isTextModelAllowed(envModel, keys))) {
+    return envModel;
   }
   const available = getAvailableProviders(keys);
-  // When nothing is configured summarization is disabled anyway, so the value
-  // is nominal — fall back to the highest-priority provider's default.
+  for (const provider of SUMMARIZATION_PROVIDER_PRIORITY) {
+    const model = DEFAULT_SUMMARIZATION_MODELS[provider];
+    if (available.includes(provider) && (await isTextModelAllowed(model, keys))) {
+      return model;
+    }
+  }
+  // Nothing usable means summarization fails anyway, so the value is nominal.
   const provider =
     SUMMARIZATION_PROVIDER_PRIORITY.find((p) => available.includes(p)) ??
     SUMMARIZATION_PROVIDER_PRIORITY[0];

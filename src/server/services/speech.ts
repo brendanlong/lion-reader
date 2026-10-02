@@ -6,11 +6,7 @@
 
 import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
 import { aiProviderNames, SPEECH_PROVIDERS, type SpeechProvider } from "@/lib/ai/providers";
-import {
-  DEFAULT_CLOUD_VOICE_MODELS,
-  DEFAULT_CLOUD_VOICES,
-  SERVER_KEY_CLOUD_VOICE_MODELS,
-} from "@/lib/narration/constants";
+import { DEFAULT_CLOUD_VOICE_MODELS, DEFAULT_CLOUD_VOICES } from "@/lib/narration/constants";
 import { logger } from "@/lib/logger";
 import {
   getProviderApiKey,
@@ -84,8 +80,8 @@ const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = 
     speak: openRouterSpeech,
   },
   breezeblue: {
-    listModels: async (_keys, apiKey) =>
-      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey)),
+    listModels: async (keys, apiKey) =>
+      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey), keys),
     speak: breezeBlueSpeech,
   },
 };
@@ -133,8 +129,8 @@ export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechCat
 }
 
 /**
- * OpenRouter's speech models the user can pick: those that list voices, limited
- * to the server-key allowlist when running on the server's key.
+ * OpenRouter's speech models the user can pick: those that list voices and are
+ * allowed on the key they'd run on (see `isModelAllowed`).
  */
 export function toSpeechModels(
   catalog: OpenRouterModel[],
@@ -144,7 +140,8 @@ export function toSpeechModels(
     .flatMap((model): SpeechModel[] => {
       const voices = model.supported_voices ?? [];
       const id = formatModelRef("openrouter", model.id);
-      if (voices.length === 0 || !isModelAllowed(id, keys, SERVER_KEY_CLOUD_VOICE_MODELS)) {
+      const price = pricePerMillionCharacters(model);
+      if (voices.length === 0 || !isModelAllowed(id, keys, { pricePerMillionCharacters: price })) {
         return [];
       }
       return [
@@ -153,7 +150,7 @@ export function toSpeechModels(
           displayName: model.name,
           provider: "openrouter",
           voices: voicesNamedById(voices),
-          pricePerMillionCharacters: pricePerMillionCharacters(model),
+          pricePerMillionCharacters: price,
         },
       ];
     })
@@ -172,7 +169,7 @@ export function toDeepInfraSpeechModels(
   return catalog
     .flatMap((model): SpeechModel[] => {
       const id = formatModelRef("deepinfra", model.name);
-      if (!isModelAllowed(id, keys, SERVER_KEY_CLOUD_VOICE_MODELS)) return [];
+      if (!isModelAllowed(id, keys, model)) return [];
       return [
         {
           id,
@@ -188,7 +185,10 @@ export function toDeepInfraSpeechModels(
 }
 
 /** BreezeBlue's models, each with the voices this key can pick from. */
-function toBreezeBlueSpeechModels(catalog: BreezeBlueCatalog): SpeechModel[] {
+function toBreezeBlueSpeechModels(
+  catalog: BreezeBlueCatalog,
+  keys: AiProviderKeys | undefined
+): SpeechModel[] {
   return catalog.models
     .map((model): SpeechModel => ({
       id: formatModelRef("breezeblue", model.id),
@@ -196,6 +196,7 @@ function toBreezeBlueSpeechModels(catalog: BreezeBlueCatalog): SpeechModel[] {
       provider: "breezeblue",
       voices: catalog.voices,
     }))
+    .filter((model) => isModelAllowed(model.id, keys))
     .sort(byDisplayName);
 }
 
@@ -258,8 +259,9 @@ export function resolveSpeechModel(
       `Cloud voices require an API key from ${aiProviderNames(SPEECH_PROVIDERS)}`
     );
   }
+  const onOwnKey = requestedProvider !== null && !!keys[requestedProvider];
   const modelId =
-    requested && isModelAllowed(requested, keys, SERVER_KEY_CLOUD_VOICE_MODELS)
+    requested && (onOwnKey || models.some((candidate) => candidate.id === requested))
       ? requested
       : defaultSpeechModelId(models);
   const model = models.find((candidate) => candidate.id === modelId);

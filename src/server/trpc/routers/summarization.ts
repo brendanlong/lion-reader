@@ -30,15 +30,9 @@ import {
   DEFAULT_SUMMARIZATION_PROMPT,
   sanitizeSummaryHtml,
 } from "@/server/services/summarization";
-import {
-  getAvailableProviders,
-  isModelAllowed,
-  listAllModels,
-} from "@/server/services/ai-providers";
-import { SUGGESTED_SUMMARIZATION_MODELS } from "@/lib/summarization/constants";
+import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
-import { isTextAiProvider } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
@@ -128,7 +122,7 @@ export const summarizationRouter = createTRPCRouter({
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(userId);
 
-      const currentModelId = getSummarizationModelId(userSummarizationModel, keys);
+      const currentModelId = await getSummarizationModelId(userSummarizationModel, keys);
       const currentMaxWords = getMaxWords(userMaxWords);
       const currentPromptHash = hashPrompt(userPrompt);
 
@@ -183,7 +177,7 @@ export const summarizationRouter = createTRPCRouter({
       });
 
       // Check if summarization is available (user key or server key, any provider)
-      if (!isSummarizationAvailable(keys)) {
+      if (!(await isSummarizationAvailable(keys, userSummarizationModel))) {
         throw errors.internal(
           "AI summarization is not configured. Add an AI provider API key in Settings to enable it."
         );
@@ -386,9 +380,12 @@ export const summarizationRouter = createTRPCRouter({
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(async ({ ctx }) => {
-      const userProviders = await getApiKeyProviders(ctx.session.user.id);
-      const available = userProviders.some(isTextAiProvider) || getAvailableProviders().length > 0;
-      return { available };
+      // Availability only needs to know which keys exist, not decrypt them.
+      const providers = await getApiKeyProviders(ctx.session.user.id);
+      const keys = Object.fromEntries(providers.map((provider) => [provider, "configured"]));
+      return {
+        available: await isSummarizationAvailable(keys, ctx.session.user.summarizationModel),
+      };
     }),
 
   /**
@@ -413,9 +410,9 @@ export const summarizationRouter = createTRPCRouter({
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
       const models = (await listAllModels(keys)).filter((model) =>
-        isModelAllowed(model.id, keys, SUGGESTED_SUMMARIZATION_MODELS)
+        isModelAllowed(model.id, keys, model)
       );
-      return { models, defaultModelId: getSummarizationModelId(null, keys) };
+      return { models, defaultModelId: await getSummarizationModelId(null, keys) };
     }),
 
   /**

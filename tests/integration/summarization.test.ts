@@ -9,13 +9,16 @@
  * that in so the sanitize-on-read guarantee can't be silently dropped.
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, userEntries, entrySummaries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
+import { DEFAULT_SUMMARIZATION_MODELS } from "../../src/lib/summarization/constants";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import {
   createAuthContext,
@@ -89,19 +92,44 @@ const PROVIDER_ENV = [
   "CEREBRAS_API_KEY",
   "OPENROUTER_API_KEY",
   "SUMMARIZATION_MODEL",
+  "SERVER_KEY_MODELS",
+  "SERVER_KEY_MAX_INPUT_PRICE",
+  "SERVER_KEY_MAX_OUTPUT_PRICE",
+  "SERVER_KEY_MAX_SPEECH_PRICE",
+  "ANTHROPIC_BASE_URL",
 ] as const;
 const previousEnv = Object.fromEntries(PROVIDER_ENV.map((name) => [name, process.env[name]]));
 
-beforeAll(() => {
+/** What the stand-in for Anthropic answers every request with. */
+const PROVIDER_REFUSAL = "stub provider refused";
+let providerStub: Server;
+
+beforeAll(async () => {
   // Make summarization "available" via the server key so the router reaches the
-  // cached read path (no real LLM call — a cached summary is returned first).
-  // Nothing else is configured, so a developer's own keys can't turn a
-  // failing generation into a real call.
+  // cached read path. Nothing else is configured, so a developer's own keys
+  // can't turn a failing generation into a real call; generation goes to a
+  // local stand-in for Anthropic that refuses it (a 400, which the SDK doesn't
+  // retry). The SDK reads ANTHROPIC_BASE_URL when the server's client is made.
   for (const name of PROVIDER_ENV) delete process.env[name];
+  providerStub = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          type: "error",
+          error: { type: "invalid_request_error", message: PROVIDER_REFUSAL },
+        })
+      );
+    });
+  });
+  await new Promise<void>((resolve) => providerStub.listen(0, "127.0.0.1", resolve));
+  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(providerStub.address() as AddressInfo).port}`;
   process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
 });
 
 afterAll(async () => {
+  await new Promise<void>((resolve) => providerStub.close(() => resolve()));
   for (const name of PROVIDER_ENV) {
     const previous = previousEnv[name];
     if (previous === undefined) delete process.env[name];
@@ -208,23 +236,11 @@ describe("summarization.generate entry visibility", () => {
  * client always sends the flag). These lock in that the `useFullContent`-omitted
  * branch honours it too.
  *
- * The server's model is a Groq one while only the Anthropic server key is
- * set, so once the router gets past the cache it fails deterministically with
- * "Groq API key not configured" — no network call, and reaching that error is
- * itself the proof that the cached summary was not served. (A *user's* model
- * on an unconfigured provider would fall back to a configured one instead.)
+ * Once the router gets past the cache, the stand-in provider refuses the
+ * request, and reaching that error is itself the proof that the cached summary
+ * was not served.
  */
 describe("summarization.generate regenerate bypasses the cache", () => {
-  const UNCONFIGURED_MODEL = "groq:llama-3.3-70b-versatile";
-
-  beforeEach(() => {
-    process.env.SUMMARIZATION_MODEL = UNCONFIGURED_MODEL;
-  });
-
-  afterEach(() => {
-    delete process.env.SUMMARIZATION_MODEL;
-  });
-
   async function createUser(): Promise<string> {
     const userId = await createTestUser({ emailPrefix: "summ" });
     createdUserIds.push(userId);
@@ -237,7 +253,7 @@ describe("summarization.generate regenerate bypasses the cache", () => {
       userId,
       contentHash,
       summaryText: text,
-      modelId: UNCONFIGURED_MODEL,
+      modelId: DEFAULT_SUMMARIZATION_MODELS.anthropic,
       promptVersion: CURRENT_PROMPT_VERSION,
       generatedAt: new Date(),
       createdAt: new Date(),
@@ -266,7 +282,7 @@ describe("summarization.generate regenerate bypasses the cache", () => {
     const caller = createCaller(await createAuthContext(userId));
 
     await expect(caller.summarization.generate({ entryId, regenerate: true })).rejects.toThrow(
-      "Groq API key not configured"
+      PROVIDER_REFUSAL
     );
 
     // The generation attempt is recorded on the cached row, so the request
@@ -296,7 +312,7 @@ describe("summarization.generate regenerate bypasses the cache", () => {
     expect(cached.summary).toContain("Cached full-content summary");
 
     await expect(caller.summarization.generate({ entryId, regenerate: true })).rejects.toThrow(
-      "Groq API key not configured"
+      PROVIDER_REFUSAL
     );
   });
 });
@@ -308,8 +324,7 @@ describe("summarization.generate regenerate bypasses the cache", () => {
  * insert the placeholder row. The loser must get the winner's row, not a
  * unique-violation 500.
  *
- * The server's model is a Groq one while only the Anthropic server key is set,
- * so both requests fail deterministically at "Groq API key not configured" —
+ * The stand-in provider refuses both requests, so they fail deterministically
  * past the placeholder insert, with no network call.
  *
  * Nothing here forces the two requests to interleave *inside* the insert
@@ -318,14 +333,6 @@ describe("summarization.generate regenerate bypasses the cache", () => {
  * constraint violation (its cache key is global, so two users collide).
  */
 describe("summarization.generate concurrent placeholder creation", () => {
-  beforeEach(() => {
-    process.env.SUMMARIZATION_MODEL = "groq:llama-3.3-70b-versatile";
-  });
-
-  afterEach(() => {
-    delete process.env.SUMMARIZATION_MODEL;
-  });
-
   it("survives two concurrent requests for the same entry", async () => {
     const userId = await createTestUser({ emailPrefix: "summ" });
     createdUserIds.push(userId);
@@ -340,12 +347,10 @@ describe("summarization.generate concurrent placeholder creation", () => {
       callers.map((caller) => caller.summarization.generate({ entryId }))
     );
 
-    // Both got as far as the (unconfigured) LLM call rather than a duplicate-key error.
+    // Both got as far as the LLM call rather than a duplicate-key error.
     for (const result of results) {
       expect(result.status).toBe("rejected");
-      expect(String((result as PromiseRejectedResult).reason)).toContain(
-        "Groq API key not configured"
-      );
+      expect(String((result as PromiseRejectedResult).reason)).toContain(PROVIDER_REFUSAL);
     }
     const rows = await db.select().from(entrySummaries).where(eq(entrySummaries.userId, userId));
     expect(rows).toHaveLength(1);

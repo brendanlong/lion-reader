@@ -9,6 +9,7 @@ import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { appUrl } from "@/server/config/env";
 import type { ChatCompletionOptions } from "@/server/services/ai-providers";
+import type { ModelPrice } from "@/server/services/server-key-models";
 import type { PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
 
@@ -69,7 +70,8 @@ function headers(apiKey?: string): Record<string, string> {
 export function buildChatCompletionBody(
   model: string,
   options: ChatCompletionOptions,
-  supportedParameters: readonly string[]
+  supportedParameters: readonly string[],
+  priceCaps: TokenPriceCaps | null = null
 ): Record<string, unknown> {
   const supports = (parameter: string) => supportedParameters.includes(parameter);
   return {
@@ -92,14 +94,26 @@ export function buildChatCompletionBody(
       // Only route to hosts that honor JSON mode rather than having the
       // parameter silently dropped.
       ...(options.jsonObject ? { require_parameters: true } : {}),
+      ...(priceCaps
+        ? {
+            max_price: { prompt: priceCaps.maxInputPrice, completion: priceCaps.maxOutputPrice },
+          }
+        : {}),
     },
   };
+}
+
+/** USD per million tokens; hosts charging more are skipped. */
+interface TokenPriceCaps {
+  maxInputPrice?: number;
+  maxOutputPrice?: number;
 }
 
 export async function openRouterChatCompletion(
   apiKey: string,
   model: string,
-  options: ChatCompletionOptions
+  options: ChatCompletionOptions,
+  priceCaps: TokenPriceCaps | null = null
 ): Promise<string> {
   // Without the catalog, fall back to sending no optional parameters.
   const catalog = await listOpenRouterModels("text").catch(() => []);
@@ -109,7 +123,7 @@ export async function openRouterChatCompletion(
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     body: JSON.stringify(
-      buildChatCompletionBody(model, options, catalogEntry?.supported_parameters ?? [])
+      buildChatCompletionBody(model, options, catalogEntry?.supported_parameters ?? [], priceCaps)
     ),
   });
   if (!response.ok) {
@@ -120,6 +134,16 @@ export async function openRouterChatCompletion(
     throw new Error(`OpenRouter request failed: ${parsed.error.message ?? "unknown error"}`);
   }
   return parsed.choices?.[0]?.message?.content ?? "";
+}
+
+/** A text model's price, or none if the catalog can't be fetched or lacks it. */
+export async function openRouterTextModelPrice(model: string): Promise<ModelPrice> {
+  const catalog = await listOpenRouterModels("text").catch(() => []);
+  const entry = catalog.find((candidate) => candidate.id === model);
+  return {
+    inputPricePerMillion: pricePerMillionUnits(entry?.pricing?.prompt),
+    outputPricePerMillion: pricePerMillionUnits(entry?.pricing?.completion),
+  };
 }
 
 const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[] }>();
