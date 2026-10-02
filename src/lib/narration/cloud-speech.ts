@@ -8,12 +8,14 @@
  */
 
 import { z } from "zod";
-import { AAC_MIME_TYPE, getMediaSourceClass } from "./audio-encoding";
 import { MAX_CLOUD_SPEECH_CHARS } from "./constants";
 import {
+  AAC_MIME_TYPE,
+  getMediaSourceClass,
   MediaSourcePlayer,
   splitIntoSpeechChunks,
   StreamInterruptedError,
+  TransientSynthesisError,
   UNSUPPORTED_MESSAGE,
 } from "./media-source-player";
 
@@ -41,16 +43,30 @@ async function errorMessage(response: Response): Promise<string> {
   return `Speech synthesis failed (${response.status})`;
 }
 
-/** Times a busy answer is asked again before the chunk fails. */
-const BUSY_ATTEMPTS = 5;
+/** Statuses worth trying again for: a timeout, our rate limit, server trouble. */
+function isTransientStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+/** The server's "come back shortly": a busy voice (503), or our rate limit (429). */
+function isBusyStatus(status: number): boolean {
+  return status === 503 || status === 429;
+}
+
+/** Times a chunk is asked for while busy, before playback pauses there. */
+const BUSY_ATTEMPTS = 3;
 const BUSY_FIRST_WAIT_MS = 1_000;
 const BUSY_MAX_WAIT_MS = 10_000;
 
 /**
  * `request`'s response, asked again while the server says the voice is busy
- * (503, or our rate limit's 429), waiting as long as it asks within reason.
- * The server has already waited out a busy provider for a while, so this only
- * matters when many listeners share a provider's key.
+ * ({@link isBusyStatus}), waiting as long as it asks within reason. The
+ * server has already waited out a busy provider for up to 15 s of each
+ * request, and then the player pauses without asking again. Other transient
+ * failures (no connection, a 5xx) are one request each, which the player tries
+ * three more times after waits of 17 s in all. So a chunk costs at most six
+ * requests (three failures, then a busy round), each lasting at most the
+ * server's speech timeout (`SPEECH_TIMEOUT_MS`, 2 min), plus 37 s of waits.
  */
 export async function fetchWhenFree(
   request: () => Promise<Response>,
@@ -60,7 +76,7 @@ export async function fetchWhenFree(
   let backoff = BUSY_FIRST_WAIT_MS;
   for (let attempt = 1; ; attempt++) {
     const response = await request();
-    if ((response.status !== 503 && response.status !== 429) || attempt === BUSY_ATTEMPTS) {
+    if (!isBusyStatus(response.status) || attempt === BUSY_ATTEMPTS) {
       return response;
     }
     const asked = Number(response.headers.get("Retry-After")) * 1000;
@@ -91,29 +107,45 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 /**
  * Speaks `text`, yielding the MP4's bytes as they arrive. Throws
  * {@link StreamInterruptedError} if they stop arriving partway, so the player
- * can try the chunk again.
+ * can try the chunk again, and {@link TransientSynthesisError} for trouble
+ * that may pass (no connection, a 5xx); the server's 4xx (a provider refusing
+ * the key, say) end narration with its message.
  */
 async function* streamCloudSpeech(
   voice: CloudVoice,
   text: string,
   signal: AbortSignal
 ): AsyncGenerator<Uint8Array> {
-  const response = await fetchWhenFree(
-    () =>
-      fetch(SPEECH_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: voice.model,
-          voice: voice.voice,
-          text,
-          pauseSeconds: voice.pauseSeconds,
+  let response: Response;
+  try {
+    response = await fetchWhenFree(
+      () =>
+        fetch(SPEECH_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: voice.model,
+            voice: voice.voice,
+            text,
+            pauseSeconds: voice.pauseSeconds,
+          }),
+          signal,
         }),
-        signal,
-      }),
-    signal
-  );
-  if (!response.ok) throw new Error(await errorMessage(response));
+      signal
+    );
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new TransientSynthesisError("Couldn't reach Lion Reader for the cloud voice");
+  }
+  if (!response.ok) {
+    const message = await errorMessage(response);
+    // fetchWhenFree has asked again for these already: the player pauses
+    // rather than ask more.
+    const retried = isBusyStatus(response.status);
+    throw isTransientStatus(response.status)
+      ? new TransientSynthesisError(message, !retried)
+      : new Error(message);
+  }
   if (!response.body) throw new Error("Speech synthesis returned no audio");
 
   const reader = response.body.getReader();

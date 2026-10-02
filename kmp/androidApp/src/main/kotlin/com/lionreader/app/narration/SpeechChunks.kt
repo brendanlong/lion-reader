@@ -27,7 +27,27 @@ private fun pieces(text: String, maxChars: Int): List<String> =
         }
 
 private fun breakWords(text: String, maxChars: Int): List<String> =
-    if (text.length <= maxChars) listOf(text) else pack(text.split(' '), maxChars)
+    if (text.length <= maxChars) listOf(text)
+    else pack(text.split(' ').flatMap { slices(it, maxChars) }, maxChars)
+
+/**
+ * [text] in pieces of at most [maxChars], cut anywhere: a run with no space at all (a long URL,
+ * unspaced CJK text) would be one chunk the server refuses. Never between a surrogate pair.
+ */
+private fun slices(text: String, maxChars: Int): List<String> {
+    // With fewer, a surrogate pair could never fit and this would never end.
+    require(maxChars >= 2) { "maxChars must be at least 2" }
+    val pieces = mutableListOf<String>()
+    var start = 0
+    while (text.length - start > maxChars) {
+        var end = start + maxChars
+        if (text[end - 1].isHighSurrogate()) end--
+        pieces += text.substring(start, end)
+        start = end
+    }
+    pieces += text.substring(start)
+    return pieces
+}
 
 /** Joins consecutive pieces while they fit in [maxChars]. */
 private fun pack(pieces: List<String>, maxChars: Int): List<String> {

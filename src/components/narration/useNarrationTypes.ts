@@ -6,7 +6,6 @@
 
 import type { NarrationState } from "@/lib/narration/ArticleNarrator";
 import type { PlaybackStatus } from "@/lib/narration/media-source-player";
-import { splitNarrationParagraphs } from "@/lib/narration/paragraph-map";
 
 // ============================================================================
 // Configuration Types
@@ -43,7 +42,7 @@ export interface UseNarrationConfig {
  * The state `useNarration` exposes, which spans **two index spaces**.
  *
  * The player (`ArticleNarrator` or `MediaSourcePlayer`) counts *narration
- * paragraphs* — the segments `splitIntoParagraphs` produces — while highlighting
+ * paragraphs* — the segments `splitNarrationParagraphs` produces — while highlighting
  * needs the *DOM element* the current segment came from. The paragraph map
  * translates one to the other, and it is not the identity: one element can
  * narrate as several paragraphs and an element can narrate as none (see
@@ -107,17 +106,6 @@ export const DEFAULT_NARRATION_STATE: UseNarrationState = {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Splits narration text into paragraphs.
- *
- * Delegates to the shared {@link splitNarrationParagraphs} so the player's
- * paragraph indexing stays identical to how `buildAlignedNarration` chunks the
- * text and builds the paragraph map (see `@/lib/narration/paragraph-map`).
- */
-export function splitIntoParagraphs(text: string): string[] {
-  return splitNarrationParagraphs(text);
-}
 
 /**
  * Which controls the narration UI should offer for the current state.

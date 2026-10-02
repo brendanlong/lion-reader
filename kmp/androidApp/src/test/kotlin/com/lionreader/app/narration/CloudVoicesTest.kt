@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -66,7 +67,11 @@ class CloudVoicesTest {
 
     private val ok = Answer.Speech(audio)
 
-    private fun TestScope.engine(cacheBytes: Long = 5, pauseSeconds: Float = 0.25f): CloudVoices {
+    private fun TestScope.engine(
+        cacheBytes: Long = 5,
+        pauseSeconds: Float = 0.25f,
+        shared: CloudSpeechRequests = CloudSpeechRequests(),
+    ): CloudVoices {
         val http =
             HttpClient(
                 MockEngine { request ->
@@ -107,6 +112,7 @@ class CloudVoicesTest {
                 backgroundScope.coroutineContext +
                     SupervisorJob(backgroundScope.coroutineContext.job)
             ),
+            shared,
             // Retries wait on the test's clock.
             io = StandardTestDispatcher(testScheduler),
             cacheBytes = cacheBytes,
@@ -224,6 +230,50 @@ class CloudVoicesTest {
             "Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue",
             error.message,
         )
+    }
+
+    @Test
+    fun aProviderRefusingTheKeyStopsNarrationSayingSo() = runTest {
+        responses.addLast(
+            Answer.Error(
+                HttpStatusCode.UnprocessableEntity,
+                """{"message":"BreezeBlue refused the request: Insufficient credits"}""",
+            )
+        )
+        val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
+        assertEquals(SpeechUnavailable::class, error!!::class)
+        assertEquals("BreezeBlue refused the request: Insufficient credits", error.message)
+        assertEquals(1, requests)
+    }
+
+    @Test
+    fun aTimeoutIsRetried() = runTest {
+        responses.addLast(Answer.Error(HttpStatusCode.RequestTimeout))
+        assertArrayEquals(audio, played(engine().synthesize("Hello.", dir, "0")))
+        assertEquals(2, requests)
+    }
+
+    @Test
+    fun theLimitOnRequestsAtOnceHoldsAcrossEngines() = runTest {
+        // An engine per article: requests the narrator left behind run on beside the new ones.
+        val shared = CloudSpeechRequests()
+        val held = List(2) { ByteChannel(autoFlush = true) }
+        responses.addAll(held.map { Answer.Stream(it) })
+        val first = engine(cacheBytes = 1_000_000, shared = shared)
+        val second = engine(cacheBytes = 1_000_000, shared = shared)
+        // Each answers once its first audio is in; both streams stay open.
+        withContext(Dispatchers.IO) { held.forEach { it.writeFully(speech, 0, 100) } }
+        first.synthesize("One.", dir, "0")
+        second.synthesize("Two.", dir, "1")
+
+        val third = async { second.synthesize("Three.", dir, "2") }
+        withContext(Dispatchers.IO) { delay(200) }
+        assertEquals(2, requests)
+
+        held[0].flushAndClose()
+        assertArrayEquals(audio, played(third.await()))
+        assertEquals(3, requests)
+        held[1].flushAndClose()
     }
 
     @Test

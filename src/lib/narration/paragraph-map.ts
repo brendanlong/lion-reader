@@ -38,13 +38,10 @@ export interface ParagraphMapEntry {
 }
 
 /**
- * Splits narration text into paragraphs exactly as the playback engines do.
- *
- * This MUST stay identical to the splitting in `ArticleNarrator.loadArticle`,
- * `MediaSourcePlayer` (fed via `splitIntoParagraphs`), and
- * `useNarrationTypes.splitIntoParagraphs` — they all consume the output of this
- * module's `buildAlignedNarration`, so a divergent split would break the
- * paragraph-index ↔ map alignment.
+ * Splits narration text into the paragraphs every player counts (the browser
+ * voices' `ArticleNarrator`, the `MediaSourcePlayer`, the app through
+ * `app-reader`). Always split with this: the paragraph map built by
+ * {@link buildAlignedNarration} is aligned with its paragraphs.
  */
 export function splitNarrationParagraphs(text: string): string[] {
   return text

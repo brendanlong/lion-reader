@@ -3,7 +3,8 @@ import {
   defaultSpeechModelId,
   defaultVoiceFor,
   resolveSpeechModel,
-  SpeechRequestError,
+  SpeechRejectedError,
+  SpeechUnavailableError,
   type SpeechModel,
   toDeepInfraSpeechModels,
   toSpeechModels,
@@ -15,6 +16,7 @@ import {
   type DeepInfraSpeechModel,
 } from "@/server/services/deepinfra";
 import type { OpenRouterModel } from "@/server/services/openrouter";
+import { ProviderRejectedError } from "@/server/services/provider-errors";
 import { DEEPINFRA_KOKORO, OPENROUTER_KOKORO } from "@/lib/narration/constants";
 
 const catalog: OpenRouterModel[] = [
@@ -227,9 +229,13 @@ describe("resolveSpeechModel", () => {
     voices: [{ id: "Vivian", name: "Vivian" }],
   };
 
-  const catalog = (models: SpeechModel[], unavailable: SpeechProvider[] = []) => ({
+  const catalog = (
+    models: SpeechModel[],
+    unavailable: SpeechProvider[] = [],
+    error: unknown = new Error("timed out")
+  ) => ({
     models,
-    unavailable,
+    unavailable: unavailable.map((provider) => ({ provider, error })),
   });
 
   it("uses the default model and voice when nothing is chosen", () => {
@@ -275,13 +281,28 @@ describe("resolveSpeechModel", () => {
     const keys = { openrouter: "o" };
     expect(() =>
       resolveSpeechModel(catalog([deepInfraKokoro], ["openrouter"]), keys, OPENROUTER_KOKORO, null)
-    ).toThrow(Error);
-    expect(() =>
-      resolveSpeechModel(catalog([deepInfraKokoro], ["openrouter"]), keys, OPENROUTER_KOKORO, null)
-    ).not.toThrow(SpeechRequestError);
-    expect(() => resolveSpeechModel(catalog([], ["deepinfra"]), {}, null, null)).not.toThrow(
-      SpeechRequestError
+    ).toThrow(
+      new SpeechUnavailableError("Couldn't get OpenRouter's cloud voices; try again shortly")
     );
+    expect(() => resolveSpeechModel(catalog([], ["deepinfra"]), {}, null, null)).toThrow(
+      SpeechUnavailableError
+    );
+  });
+
+  it("passes on a provider refusing the key, with its reason only on the user's own key", () => {
+    const refused = new ProviderRejectedError("402", "OpenRouter", "Insufficient credits");
+    expect(() =>
+      resolveSpeechModel(
+        catalog([], ["openrouter"], refused),
+        { openrouter: "o" },
+        OPENROUTER_KOKORO,
+        null
+      )
+    ).toThrow(new SpeechRejectedError("OpenRouter refused the request: Insufficient credits"));
+    process.env.OPENROUTER_API_KEY = "or-server";
+    expect(() =>
+      resolveSpeechModel(catalog([], ["openrouter"], refused), {}, OPENROUTER_KOKORO, null)
+    ).toThrow(new SpeechRejectedError("OpenRouter cloud voices aren't available right now"));
   });
 
   it("needs a provider, and names them", () => {

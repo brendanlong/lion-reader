@@ -277,9 +277,16 @@ fun EntryScreen(
                             NarrationBar(
                                 state = it,
                                 speed = settings.narrationSpeed,
-                                onPrevious = { graph.narrator.skipParagraphs(-1) },
+                                // Read again whenever the narration state changes.
+                                onPrevious =
+                                    if (graph.narrator.canSkipParagraphs(-1)) {
+                                        { graph.narrator.skipParagraphs(-1) }
+                                    } else null,
                                 onToggle = graph.narrator::togglePlaying,
-                                onNext = { graph.narrator.skipParagraphs(1) },
+                                onNext =
+                                    if (graph.narrator.canSkipParagraphs(1)) {
+                                        { graph.narrator.skipParagraphs(1) }
+                                    } else null,
                                 onSpeed = graph::setNarrationSpeed,
                             )
                         }

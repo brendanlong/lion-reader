@@ -125,6 +125,23 @@ export function setupMediaSession(
 }
 
 /**
+ * Offers the OS's previous/next buttons only where there's a paragraph to go
+ * to, so they grey out on the first and last. Call after
+ * {@link setupMediaSession}, which offers both.
+ */
+export function setMediaSessionSkips(
+  controls: Pick<MediaSessionControls, "previousTrack" | "nextTrack">,
+  { previous, next }: { previous: boolean; next: boolean }
+): void {
+  if (!isMediaSessionSupported()) return;
+  navigator.mediaSession.setActionHandler(
+    "previoustrack",
+    previous ? () => controls.previousTrack() : null
+  );
+  navigator.mediaSession.setActionHandler("nexttrack", next ? () => controls.nextTrack() : null);
+}
+
+/**
  * Synchronizes the OS media session with the current narration status and drives
  * the silent audio element that keeps the controls visible.
  *

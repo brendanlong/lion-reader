@@ -204,8 +204,9 @@ export class ArticleNarrator {
     }
 
     if (this.status === "paused") {
-      if (this.isFirefoxBrowser) {
-        // Firefox workaround: restart from current paragraph
+      // Nothing paused to resume: Firefox's pause cancels (see pause()), and
+      // a skip while paused cancels too. Speak the current paragraph from its start.
+      if (this.utterance === null) {
         this.speakCurrentParagraph();
       } else {
         speechSynthesis.resume();
@@ -229,42 +230,19 @@ export class ArticleNarrator {
     this.currentIndex = 0;
   }
 
-  /**
-   * Skips to the next paragraph.
-   * If at the last paragraph, stops playback.
-   */
+  /** Skips to the next paragraph; nothing on the last (the controls offer none there). */
   skipForward(): void {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      return;
-    }
-
-    if (this.paragraphs.length === 0) {
-      return;
-    }
-
-    this.cancelForSkip();
-
-    // Move to next paragraph, but don't exceed bounds
-    if (this.currentIndex < this.paragraphs.length - 1) {
-      this.currentIndex++;
-      this.speakCurrentParagraph();
-    } else {
-      // At the last paragraph, stop
-      this.setStatus("idle");
-    }
+    if (this.currentIndex < this.paragraphs.length - 1) this.skipTo(this.currentIndex + 1);
   }
 
-  /**
-   * Skips to the previous paragraph.
-   * If at the first paragraph, restarts it.
-   */
+  /** Skips to the previous paragraph; nothing on the first. */
   skipBackward(): void {
-    this.skipTo(this.currentIndex - 1);
+    if (this.currentIndex > 0) this.skipTo(this.currentIndex - 1);
   }
 
   /**
-   * Starts speaking from the given paragraph (clamped to the article's bounds),
-   * whether currently playing or paused.
+   * Moves to the given paragraph (clamped to the article's bounds): speaking
+   * it if playing, or staying paused there to start from it on resume.
    */
   skipTo(paragraphIndex: number): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -275,10 +253,12 @@ export class ArticleNarrator {
       return;
     }
 
+    const paused = this.status === "paused";
     this.cancelForSkip();
 
     this.currentIndex = clamp(paragraphIndex, 0, this.paragraphs.length - 1);
-    this.speakCurrentParagraph();
+    if (paused) this.notifyStateChange();
+    else this.speakCurrentParagraph();
   }
 
   /**

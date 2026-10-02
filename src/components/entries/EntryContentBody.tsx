@@ -209,11 +209,6 @@ export function EntryContentBody({
     showOriginal,
   });
 
-  const { highlightedParagraphIds } = useNarrationHighlight({
-    currentParagraphIndex: narration.state.currentParagraph,
-    isPlaying: narration.state.status === "playing",
-  });
-
   // Get narration settings for auto-scroll preference
   const [narrationSettings] = useNarrationSettings();
 
@@ -229,7 +224,13 @@ export function EntryContentBody({
   const showNarration = !hideNarration && narrationSettings.enabled;
   const isNarrationActive = getNarrationPhase(narration.state, narration.isLoading).isActive;
 
-  // While narration is active, clicking a paragraph narrates from there. Clicks
+  const { highlightedParagraphIds } = useNarrationHighlight({
+    currentParagraphIndex: narration.state.currentParagraph,
+    isActive: isNarrationActive,
+  });
+
+  // While narration is active, clicking a paragraph narrates from there (a
+  // paused narration moves there and stays paused). Clicks
   // that mean something else — following a link, finishing a text selection —
   // are left alone.
   const { playFromElement } = narration;

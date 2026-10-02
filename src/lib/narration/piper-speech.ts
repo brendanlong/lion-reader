@@ -8,12 +8,12 @@
 
 import {
   decodeToPcm,
-  getMediaSourceClass,
   loadSegmentEncoder,
   withTrailingSilence,
   type SegmentEncoder,
 } from "./audio-encoding";
 import {
+  getMediaSourceClass,
   MediaSourcePlayer,
   splitIntoSentenceChunks,
   UNSUPPORTED_MESSAGE,

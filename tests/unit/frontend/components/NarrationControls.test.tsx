@@ -284,7 +284,7 @@ describe("playFromElement", () => {
     expect(lastSpoken()).toBe("Gamma");
   });
 
-  it("resumes playback when seeking while paused", async () => {
+  it("moves while paused, staying paused, and resumes from there", async () => {
     renderSeekHarness(5);
     await startNarration();
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
@@ -292,11 +292,31 @@ describe("playFromElement", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Seek" }));
 
+    await waitFor(() => expect(screen.getByText("7 of 7")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
+    expect(speech.speak).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument());
-    expect(screen.getByText("7 of 7")).toBeInTheDocument();
     expect(lastSpoken()).toBe("Eta");
-    // The engine was paused; a new utterance would queue silently behind it.
-    expect(speech.resume).toHaveBeenCalled();
+  });
+});
+
+describe("ArticleNarrator at the ends of the article", () => {
+  it("does nothing on previous at the first paragraph, or next at the last", async () => {
+    const { ArticleNarrator } = await import("@/lib/narration/ArticleNarrator");
+    const narrator = new ArticleNarrator();
+    narrator.loadArticle("First.\n\nLast.");
+    narrator.play();
+    narrator.skipBackward();
+    expect(narrator.getState()).toMatchObject({ status: "playing", currentParagraph: 0 });
+    narrator.skipForward();
+    narrator.skipForward();
+    expect(narrator.getState()).toMatchObject({ status: "playing", currentParagraph: 1 });
+    expect(speech.speak.mock.calls.map(([utterance]) => utterance.text)).toEqual([
+      "First.",
+      "Last.",
+    ]);
   });
 });
 

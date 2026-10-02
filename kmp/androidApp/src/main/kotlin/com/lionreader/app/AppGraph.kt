@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import androidx.core.net.toUri
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.lionreader.app.narration.CloudSpeechRequests
 import com.lionreader.app.narration.CloudVoices
 import com.lionreader.app.narration.DeviceVoices
 import com.lionreader.app.narration.Narrator
@@ -93,6 +94,9 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
     /** Cloud narration audio: the account's articles, so it goes with the account. */
     private val cloudVoiceCache = File(context.cacheDir, "cloud-voices")
 
+    /** Shared by every article's engine, so its limit on requests at once holds app-wide. */
+    private val cloudSpeechRequests = CloudSpeechRequests()
+
     private suspend fun speechEngine(settings: AppSettings): SpeechEngine =
         when (settings.narrationEngine) {
             NarrationEngine.DEVICE -> DeviceVoices(systemTts, settings.narrationVoice)
@@ -109,6 +113,7 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
                     settings.cloudVoicePauseSeconds.coerceIn(0f, 2f),
                     cloudVoiceCache,
                     scope,
+                    cloudSpeechRequests,
                 )
             }
         }
@@ -127,12 +132,16 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
         val accountDb = account.value?.dbName
         val available =
             try {
-                api.voiceModels().also { lastVoiceModels = accountDb to it }
+                // With the picked voice, which the server lists while the provider has it, even
+                // once it's left the voices it offers.
+                api.voiceModels(settings.cloudVoiceModel, settings.cloudVoice).also {
+                    lastVoiceModels = accountDb to it
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiException) {
                 if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
-                if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
+                if (e.isPermanent || (e.status in 400..499 && e.status != 408 && e.status != 429)) {
                     throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
                 }
                 lastVoiceModels?.takeIf { it.first == accountDb }?.second

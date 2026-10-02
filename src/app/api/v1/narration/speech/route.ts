@@ -11,8 +11,10 @@
  * `SameSite=Lax`, and a JSON body can't come from a cross-site form.
  *
  * Errors before any audio are JSON shaped like the REST API's (`message`, and
- * `data.appErrorCode` where tRPC would set one) with the status it would use;
- * a failure after audio has started cuts the stream short.
+ * `data.appErrorCode` where tRPC would set one) with the status it would use:
+ * 4xx when trying again won't help (a provider refusing the key is a 422, its
+ * message written to be shown), 503 when it might. A failure after audio has
+ * started cuts the stream short.
  */
 
 import { z } from "zod";
@@ -25,7 +27,12 @@ import {
   readRequestBufferWithSizeLimit,
 } from "@/server/http/fetch";
 import { getUserApiKeys } from "@/server/auth/session";
-import { SpeechRequestError, streamSpeech } from "@/server/services/speech";
+import {
+  SpeechRejectedError,
+  SpeechRequestError,
+  SpeechUnavailableError,
+  streamSpeech,
+} from "@/server/services/speech";
 import { ProviderBusyError } from "@/server/services/provider-errors";
 import {
   checkRateLimit,
@@ -117,7 +124,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const keys = await getUserApiKeys(auth.userId);
   try {
-    const audio = await streamSpeech(keys, input, req.signal);
+    const audio = await streamSpeech(keys, { ...input, userId: auth.userId }, req.signal);
     return new Response(audio, {
       headers: {
         ...limitHeaders,
@@ -140,6 +147,16 @@ export async function POST(req: Request): Promise<Response> {
     }
     if (error instanceof SpeechRequestError) {
       return errorResponse(400, "BAD_REQUEST", error.message, limitHeaders);
+    }
+    if (error instanceof SpeechRejectedError) {
+      return errorResponse(422, "UNPROCESSABLE_CONTENT", error.message, limitHeaders);
+    }
+    if (error instanceof SpeechUnavailableError) {
+      logger.warn("Speech models unavailable", { model: input.model, error: error.message });
+      return errorResponse(503, "SERVICE_UNAVAILABLE", error.message, {
+        ...limitHeaders,
+        "Retry-After": "30",
+      });
     }
     logger.error("Speech synthesis failed", {
       model: input.model,

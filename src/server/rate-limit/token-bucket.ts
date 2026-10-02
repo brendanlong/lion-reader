@@ -80,6 +80,15 @@ export const RATE_LIMIT_CONFIGS = {
     capacity: 30_000,
     refillRate: 500, // characters per second
   },
+  /**
+   * Looking up a picked cloud voice the provider no longer lists, which on
+   * the server's key is a request on the operator's account. A user changing
+   * voices does a few; a script trying ids gets one a minute.
+   */
+  voiceLookup: {
+    capacity: 10,
+    refillRate: 1 / 60,
+  },
 } as const satisfies Record<string, RateLimitConfig>;
 
 export type RateLimitType = keyof typeof RATE_LIMIT_CONFIGS;

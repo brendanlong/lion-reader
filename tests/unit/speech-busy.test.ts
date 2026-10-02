@@ -3,6 +3,7 @@ import { speakWhenFree } from "@/server/services/speech";
 import {
   ProviderBusyError,
   providerError,
+  ProviderRejectedError,
   retryAfterSeconds,
 } from "@/server/services/provider-errors";
 
@@ -71,13 +72,31 @@ describe("providerError", () => {
     expect(error.message).toContain("concurrent generation limit");
   });
 
-  it("reads OpenAI-style messages, and isn't busy for other statuses", async () => {
+  it("reads OpenAI-style messages, and is a rejection for the provider's refusals", async () => {
     const error = await providerError(
       "OpenRouter",
       new Response(JSON.stringify({ error: { message: "No credits" } }), { status: 402 })
     );
     expect(error).not.toBeInstanceOf(ProviderBusyError);
+    expect(error).toBeInstanceOf(ProviderRejectedError);
+    expect(error).toMatchObject({ provider: "OpenRouter", detail: "No credits" });
     expect(error.message).toBe("OpenRouter request failed with status 402: No credits");
+  });
+
+  it("isn't a rejection for a request made without a key", async () => {
+    const error = await providerError("DeepInfra", new Response("{}", { status: 403 }), {
+      keyed: false,
+    });
+    expect(error).not.toBeInstanceOf(ProviderRejectedError);
+  });
+
+  it("is a plain error for trouble that can pass", async () => {
+    for (const status of [408, 409, 500, 503]) {
+      const error = await providerError("DeepInfra", new Response("oops", { status }));
+      expect(error).not.toBeInstanceOf(ProviderRejectedError);
+      expect(error).not.toBeInstanceOf(ProviderBusyError);
+      expect(error.message).toBe(`DeepInfra request failed with status ${status}`);
+    }
   });
 });
 

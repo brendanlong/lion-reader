@@ -315,16 +315,36 @@ class Narrator(
         if (player.playWhenReady) player.pause() else player.play()
     }
 
+    /**
+     * Moves [delta] paragraphs; nothing past either end (the controls offer nothing there, but a
+     * headset button can still come in).
+     */
     fun skipParagraphs(delta: Int) {
-        val state = _state.value ?: return
-        // Before the audio is prepared, by the article's paragraphs.
-        val last =
-            prepared?.chunks?.last()?.paragraph
-                ?: onArticle?.article?.paragraphs?.lastIndex
-                ?: return
+        paragraphAfter(delta)?.let(::seekToParagraph)
+    }
+
+    /** Whether [skipParagraphs] by [delta] would go anywhere. */
+    fun canSkipParagraphs(delta: Int): Boolean = paragraphAfter(delta) != null
+
+    private fun paragraphAfter(delta: Int): Int? {
+        val state = _state.value ?: return null
+        // The paragraphs with something to say: the chunks', or before the audio is prepared, the
+        // article's.
+        val spoken =
+            prepared?.chunks?.map { it.paragraph }?.distinct()
+                ?: onArticle
+                    ?.article
+                    ?.paragraphs
+                    ?.withIndex()
+                    ?.filter { it.value.isNotBlank() }
+                    ?.map {
+                        it.index
+                    }
+                ?: return null
         // With no place yet, "next" is the first paragraph.
         val from = state.paragraph ?: -1
-        seekToParagraph((from + delta).coerceIn(0, last))
+        return if (delta > 0) spoken.filter { it > from }.getOrNull(delta - 1)
+        else spoken.filter { it < from }.let { it.getOrNull(it.size + delta) }
     }
 
     fun seekToParagraph(paragraph: Int) {

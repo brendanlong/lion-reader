@@ -1,17 +1,16 @@
 /**
  * useNarrationHighlight Hook
  *
- * Manages highlighting state during narration playback. Returns the paragraph
- * index that should be highlighted based on the current narration position.
- *
- * With the simplified 1:1 paragraph mapping, narration paragraph N always
- * corresponds to original paragraph N.
+ * Which paragraph to highlight: the DOM element being narrated
+ * (`state.currentParagraph`, already translated from the player's narration
+ * paragraph through the paragraph map), for as long as narration is on —
+ * paused included, so the reader can see where it will pick up, as in the app.
  *
  * Usage:
  * ```tsx
  * const { highlightedParagraphIds } = useNarrationHighlight({
  *   currentParagraphIndex: state.currentParagraph,
- *   isPlaying: state.status === 'playing',
+ *   isActive: getNarrationPhase(state, isLoading).isActive,
  * });
  * ```
  */
@@ -20,73 +19,34 @@
 
 import { useMemo } from "react";
 
-/**
- * Configuration for the useNarrationHighlight hook.
- */
 export interface UseNarrationHighlightProps {
-  /** Current narration paragraph index (0-based) */
+  /** DOM element index (`para-N`) of the paragraph being narrated. */
   currentParagraphIndex: number;
-  /** Whether narration is currently playing */
-  isPlaying: boolean;
+  /** Whether narration is on: playing, paused or buffering, with a position. */
+  isActive: boolean;
 }
 
-/**
- * Return type for the useNarrationHighlight hook.
- */
 export interface UseNarrationHighlightResult {
-  /** Set of original paragraph indices that should be highlighted */
+  /** DOM element indices to highlight. */
   highlightedParagraphIds: Set<number>;
 }
 
-/**
- * Pure function to compute highlighted paragraph IDs.
- *
- * This is the core business logic, extracted for testability.
- * With 1:1 mapping, the highlighted paragraph is simply the current index.
- *
- * @param currentParagraphIndex - Current narration paragraph index
- * @param isPlaying - Whether narration is playing
- * @returns Set of original paragraph indices to highlight
- */
+/** The pure core of {@link useNarrationHighlight}. */
 export function computeHighlightedParagraphs(
   currentParagraphIndex: number,
-  isPlaying: boolean
+  isActive: boolean
 ): Set<number> {
-  // No highlighting when not playing
-  if (!isPlaying) {
-    return new Set<number>();
-  }
-
-  // No highlighting for invalid indices
-  if (currentParagraphIndex < 0) {
-    return new Set<number>();
-  }
-
-  // 1:1 mapping: highlight the current paragraph index
+  if (!isActive || currentParagraphIndex < 0) return new Set<number>();
   return new Set([currentParagraphIndex]);
 }
 
-/**
- * Hook for managing paragraph highlighting during narration.
- *
- * Returns the set of original paragraph indices that should be highlighted
- * based on the current narration position.
- *
- * Features:
- * - Returns empty set when not playing (no highlighting when paused/stopped)
- * - Uses 1:1 mapping (narration paragraph N = original paragraph N)
- * - Handles edge cases gracefully (negative index)
- *
- * @param props - Configuration including current index and playing state
- * @returns Object with highlightedParagraphIds set
- */
 export function useNarrationHighlight({
   currentParagraphIndex,
-  isPlaying,
+  isActive,
 }: UseNarrationHighlightProps): UseNarrationHighlightResult {
   const highlightedParagraphIds = useMemo(
-    () => computeHighlightedParagraphs(currentParagraphIndex, isPlaying),
-    [currentParagraphIndex, isPlaying]
+    () => computeHighlightedParagraphs(currentParagraphIndex, isActive),
+    [currentParagraphIndex, isActive]
   );
 
   return { highlightedParagraphIds };

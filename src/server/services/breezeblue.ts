@@ -3,7 +3,8 @@
  *
  * BreezeBlue has thousands of voices, so we offer a few: the key owner's own
  * (the ones they favorited on BreezeBlue and the ones they made), then the
- * trending English narration voices. Everything is cached per key and never
+ * trending English narration voices; `speech.ts` keeps a picked voice that has
+ * left those ({@link findBreezeBlueVoice}). Everything is cached per key and never
  * shown for another: even the models and trending voices are the account's
  * view (it can rename a voice in its library, and models are per account).
  */
@@ -12,6 +13,7 @@ import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
+import { CatalogCache } from "@/server/services/catalog-cache";
 
 /** Overridable for tests, like the SDKs' `GROQ_BASE_URL`. */
 function apiUrl(): string {
@@ -20,7 +22,10 @@ function apiUrl(): string {
 const CATALOG_TIMEOUT_MS = 15_000;
 /** Short, so a voice favorited on BreezeBlue shows up soon. */
 const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
-/** A failure is kept briefly too, so an outage doesn't cost every chunk a timeout. */
+/**
+ * Before a refresh that failed is tried again; a first fetch's failure is kept
+ * as long, so an outage doesn't cost every chunk a timeout.
+ */
 const CATALOG_FAILURE_TTL_MS = 30 * 1000;
 const MAX_CACHED_KEYS = 1000;
 const TRENDING_VOICES = 30;
@@ -132,25 +137,43 @@ async function fetchCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
   return { models, voices: voices.map(({ id, name }) => ({ id, name })) };
 }
 
-const catalogs = new Map<string, { expiresAt: number; catalog: Promise<BreezeBlueCatalog> }>();
+const catalogs = new CatalogCache(fetchCatalog, {
+  ttlMs: CATALOG_CACHE_TTL_MS,
+  retryMs: CATALOG_FAILURE_TTL_MS,
+  failureTtlMs: CATALOG_FAILURE_TTL_MS,
+  maxEntries: MAX_CACHED_KEYS,
+});
 
-/** The models, and the voices this key can pick from. */
+/** The models, and the voices this key is offered: its own, then trending ones. */
 export function getBreezeBlueCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
-  const now = Date.now();
-  const current = catalogs.get(apiKey);
-  if (current && now < current.expiresAt) return current.catalog;
-  catalogs.delete(apiKey);
-  // Oldest first, since every entry is (re)inserted when fetched.
-  for (const [key, entry] of catalogs) {
-    if (catalogs.size < MAX_CACHED_KEYS && now < entry.expiresAt) break;
-    catalogs.delete(key);
-  }
-  const entry = { expiresAt: now + CATALOG_CACHE_TTL_MS, catalog: fetchCatalog(apiKey) };
-  catalogs.set(apiKey, entry);
-  entry.catalog.catch(() => {
-    entry.expiresAt = Date.now() + CATALOG_FAILURE_TTL_MS;
+  return catalogs.get(apiKey);
+}
+
+/**
+ * Voice `id` as this key sees it, whether or not the catalog lists it (a voice
+ * picked from trending can leave the list any day); null if the key has no
+ * such voice (BreezeBlue answers 404 `RESOURCE_NOT_FOUND`). Not cached: the
+ * caller decides when a lookup is worth its request.
+ */
+export async function findBreezeBlueVoice(
+  apiKey: string,
+  id: string
+): Promise<BreezeBlueVoice | null> {
+  // encodeURIComponent leaves these alone, and they'd be a path segment.
+  if (id === "." || id === "..") return null;
+  const response = await fetch(`${apiUrl()}/voices/${encodeURIComponent(id)}`, {
+    headers: headers(apiKey),
+    signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
-  return entry.catalog;
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return null;
+  }
+  if (!response.ok) throw await providerError("BreezeBlue", response);
+  const parsed = voiceSchema.safeParse(await response.json());
+  return parsed.success && parsed.data.voice_id === id
+    ? { id, name: breezeBlueVoiceName(parsed.data) }
+    : null;
 }
 
 /**

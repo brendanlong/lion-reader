@@ -34,15 +34,15 @@ describe("fetchWhenFree", () => {
       waits.push(ms);
     };
     const busy = await fetchWhenFree(
-      answers([503], [503], [503], [503], [503], [200]),
+      answers([503], [503], [503], [200]),
       new AbortController().signal,
       record
     );
     expect(busy.status).toBe(503);
-    expect(waits).toHaveLength(4);
+    expect(waits).toHaveLength(2);
 
     const broken = await fetchWhenFree(answers([500]), new AbortController().signal, record);
     expect(broken.status).toBe(500);
-    expect(waits).toHaveLength(4);
+    expect(waits).toHaveLength(2);
   });
 });
