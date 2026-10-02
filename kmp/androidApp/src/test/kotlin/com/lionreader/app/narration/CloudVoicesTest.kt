@@ -44,7 +44,6 @@ import org.robolectric.annotation.Config
 // The real Application schedules WorkManager, which these tests don't need.
 @Config(application = android.app.Application::class)
 class CloudVoicesTest {
-    /** Not MP3, but too short for a seek header to matter: published as soon as it ends. */
     private val audio = byteArrayOf(1, 2, 3)
 
     /** An answer: speech, an error's status and JSON, or a stream the test writes itself. */
@@ -75,10 +74,10 @@ class CloudVoicesTest {
                         forText.entries.firstOrNull { it.key in sent }?.value?.invoke()
                             ?: responses.removeFirstOrNull()
                             ?: ok
-                    val mpeg = headersOf(HttpHeaders.ContentType, "audio/mpeg")
+                    val mp4 = headersOf(HttpHeaders.ContentType, "audio/mp4")
                     when (answer) {
-                        is Answer.Speech -> respond(answer.audio, HttpStatusCode.OK, mpeg)
-                        is Answer.Stream -> respond(answer.channel, HttpStatusCode.OK, mpeg)
+                        is Answer.Speech -> respond(answer.audio, HttpStatusCode.OK, mp4)
+                        is Answer.Stream -> respond(answer.channel, HttpStatusCode.OK, mp4)
                         is Answer.Error ->
                             respond(
                                 answer.json,
@@ -110,9 +109,8 @@ class CloudVoicesTest {
         )
     }
 
-    private val speech by lazy {
-        javaClass.getResourceAsStream("/two-sentences.mp3")!!.use { it.readBytes() }
-    }
+    /** Longer than one network read, so it arrives in parts. */
+    private val speech = ByteArray(5_000) { it.toByte() }
 
     /** Everything the player would read from [uri], once it's all arrived. */
     private suspend fun played(uri: Uri): ByteArray =
@@ -134,24 +132,7 @@ class CloudVoicesTest {
         }
 
     private fun cached(): List<File> =
-        cache.listFiles { file -> file.extension == "mp3" }!!.toList()
-
-    @Test
-    fun realSpeechIsStoredAndServedWithoutItsSeekHeader() = runTest {
-        responses += Answer.Speech(speech)
-        val engine = engine(cacheBytes = 1_000_000)
-
-        assertArrayEquals(
-            withoutSeekHeader(speech),
-            played(engine.synthesize("Two sentences.", dir, "0")),
-        )
-
-        // One cached before the fix is fixed when it's next used.
-        val stored = cached().single()
-        stored.writeBytes(speech)
-        assertEquals(Uri.fromFile(stored), engine.synthesize("Two sentences.", dir, "1"))
-        assertArrayEquals(withoutSeekHeader(speech), stored.readBytes())
-    }
+        cache.listFiles { file -> file.extension == "mp4" }!!.toList()
 
     @Test
     fun playbackStartsBeforeTheSpeechHasAllArrived() = runTest {
@@ -171,8 +152,8 @@ class CloudVoicesTest {
             channel.writeFully(speech, split, speech.size)
             channel.flushAndClose()
         }
-        assertArrayEquals(withoutSeekHeader(speech), played(uri))
-        assertArrayEquals(withoutSeekHeader(speech), cached().single().readBytes())
+        assertArrayEquals(speech, played(uri))
+        assertArrayEquals(speech, cached().single().readBytes())
     }
 
     @Test
@@ -190,7 +171,7 @@ class CloudVoicesTest {
         // Nothing half-written is kept, and the next try is a new request.
         responses += Answer.Speech(speech)
         assertArrayEquals(
-            withoutSeekHeader(speech),
+            speech,
             played(engine.synthesize("Two sentences.", dir, "1")),
         )
         assertEquals(2, requests)
@@ -298,8 +279,11 @@ class CloudVoicesTest {
         played(engine.synthesize("One.", dir, "0"))
         val first = cached().single()
         first.setLastModified(1_000)
+        val leftover = File(cache, "old.mp3").apply { writeBytes(audio) }
         played(engine.synthesize("Two.", dir, "1"))
         assertEquals(false, first.exists())
         assertEquals(1, cached().size)
+        // From before speech came as MP4.
+        assertEquals(false, leftover.exists())
     }
 }

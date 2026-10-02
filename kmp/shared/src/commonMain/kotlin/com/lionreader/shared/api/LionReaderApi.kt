@@ -133,8 +133,8 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     /**
      * Speaks [text] (at most [MAX_CLOUD_SPEECH_CHARS]) with a cloud voice, handing [onAudio] the
-     * MP3 as the server streams it. Throws [ApiException] for an error answer; a failure once audio
-     * has started throws from reading it.
+     * audio (AAC in fragmented MP4) as the server streams it. Throws [ApiException] for an error
+     * answer; a failure once audio has started throws from reading it.
      */
     suspend fun streamSpeech(
         model: String,
@@ -168,7 +168,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                         }
                         if (!response.status.isSuccess()) decode(JsonObject.serializer(), response)
                         // A captive portal's page, say.
-                        if (response.contentType()?.match(ContentType.Audio.MPEG) != true) {
+                        if (response.contentType()?.match(ContentType.Audio.MP4) != true) {
                             throw ApiException(response.status.value, "Not audio")
                         }
                         val body = response.bodyAsChannel()

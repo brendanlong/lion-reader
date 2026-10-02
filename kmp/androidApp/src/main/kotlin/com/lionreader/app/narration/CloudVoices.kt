@@ -57,13 +57,9 @@ class CloudVoices(
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri {
         val key = key(text)
-        val cached = File(cacheDir, "$key.mp3")
+        val cached = File(cacheDir, "$key.$EXTENSION")
         if (cached.exists()) {
-            withContext(io) {
-                cached.setLastModified(System.currentTimeMillis())
-                // Cached before seek headers were blanked (see withoutSeekHeader).
-                blankSeekHeader(cached)
-            }
+            withContext(io) { cached.setLastModified(System.currentTimeMillis()) }
             return Uri.fromFile(cached)
         }
         val started = CompletableDeferred<StreamedAudio>()
@@ -90,7 +86,7 @@ class CloudVoices(
                 request(text) { bytes ->
                     val into = writer ?: CacheWriter(cached).also { writer = it }
                     into.write(bytes)
-                    into.audio?.let(started::complete)
+                    started.complete(into.audio)
                 }
                 val done = writer ?: throw IOException("The cloud voice sent no audio")
                 started.complete(done.finish())
@@ -105,51 +101,32 @@ class CloudVoices(
             }
         }
 
-    /**
-     * Writes a stream into the cache: its start held back until its seek header can be blanked (see
-     * [withoutSeekHeader]), then each part handed to the player as it comes.
-     */
+    /** Writes a stream into the cache, handing each part to the player as it comes. */
     private inner class CacheWriter(private val cached: File) {
         private val partial =
             cacheDir.mkdirs().let {
                 File.createTempFile(cached.nameWithoutExtension, ".part", cacheDir)
             }
         private val out = FileOutputStream(partial)
-        private var head: ByteArray? = ByteArray(0)
 
-        /** Once the start is in: what the player reads. */
-        var audio: StreamedAudio? = null
-            private set
+        /** What the player reads. */
+        val audio = StreamedAudio(partial)
 
         fun write(bytes: ByteArray) {
-            val pending = head
-            if (pending == null) {
-                out.write(bytes)
-                audio!!.appended(bytes.size)
-            } else if (seekHeaderSettled(pending + bytes)) {
-                publish(pending + bytes)
-            } else {
-                head = pending + bytes
-            }
-        }
-
-        private fun publish(start: ByteArray) {
-            head = null
-            out.write(withoutSeekHeader(start))
-            audio = StreamedAudio(partial).also { it.appended(start.size) }
+            out.write(bytes)
+            audio.appended(bytes.size)
         }
 
         fun finish(): StreamedAudio {
-            head?.let(::publish)
             out.close()
             if (!partial.renameTo(cached)) throw IOException("Couldn't cache speech")
-            return audio!!.also { it.finish(cached) }
+            return audio.also { it.finish(cached) }
         }
 
         fun fail(cause: Throwable) {
             out.close()
             partial.delete()
-            audio?.fail(cause as? Exception ?: IOException(cause))
+            audio.fail(cause as? Exception ?: IOException(cause))
         }
     }
 
@@ -211,12 +188,14 @@ class CloudVoices(
             .joinToString("") { "%02x".format(it) }
 
     private fun trim() {
-        val files = cacheDir.listFiles { file -> file.extension == "mp3" }.orEmpty()
-        // Leftovers of a write the process didn't live to finish.
+        val files = cacheDir.listFiles { file -> file.extension == EXTENSION }.orEmpty()
+        // Leftovers of a write the process didn't live to finish, and MP3s from
+        // before speech came as MP4.
         cacheDir
             .listFiles { file ->
-                file.extension == "part" &&
-                    file.lastModified() < System.currentTimeMillis() - 10 * 60_000
+                file.extension == "mp3" ||
+                    (file.extension == "part" &&
+                        file.lastModified() < System.currentTimeMillis() - 10 * 60_000)
             }
             ?.forEach { it.delete() }
         var size = files.sumOf { it.length() }
@@ -229,5 +208,7 @@ class CloudVoices(
 
     private companion object {
         const val ATTEMPTS = 4
+        /** AAC in fragmented MP4, as the server sends it. */
+        const val EXTENSION = "mp4"
     }
 }
