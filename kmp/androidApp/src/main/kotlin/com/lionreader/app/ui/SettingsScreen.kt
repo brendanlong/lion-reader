@@ -228,9 +228,9 @@ private fun NarrationSettings(
                         Picker<VoiceModel?>(
                             if (settings.cloudVoiceModel == null) defaultLabel
                             else modelLabel(model),
-                            listOf(null) + models.sortedBy { it.providerName },
+                            listOf(null) + models.sortedBy { it.providerDisplayName },
                             { it?.displayName ?: defaultLabel },
-                            group = { it?.providerName },
+                            group = { it?.providerDisplayName },
                         ) { choice ->
                             // Voice names are per model.
                             val keepVoice = (choice ?: defaultModel)?.id == model.id
@@ -249,16 +249,14 @@ private fun NarrationSettings(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    val voice =
-                        settings.cloudVoice?.takeIf { it in model.voices } ?: model.defaultVoice
+                    val voice = settings.cloudVoice?.takeIf(model::hasVoice) ?: model.defaultVoice
                     // Only the voice: a model left on the default follows the server's default.
-                    Picker(model.voiceName(voice), model.voices, model::voiceName) { choice ->
-                        update { it.copy(cloudVoice = choice) }
+                    Picker(model.voiceName(voice), model.voices, { it.name }) { choice ->
+                        update { it.copy(cloudVoice = choice.id) }
                     }
                     Text(
-                        "Cloud voices send the text being read to ${model.displayName}" +
-                            (model.providerName?.let { " through $it" } ?: "") +
-                            ".",
+                        "Cloud voices send the text being read to ${model.displayName} through " +
+                            "${model.providerDisplayName}.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -328,7 +326,7 @@ private fun <T> Picker(
 
 /** Both providers serve a "Kokoro 82M", so name the provider too. */
 private fun modelLabel(model: VoiceModel): String =
-    listOfNotNull(model.displayName, model.providerName).joinToString(" · ")
+    "${model.displayName} · ${model.providerDisplayName}"
 
 private val ThemeChoice.label: String
     get() =

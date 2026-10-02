@@ -199,11 +199,7 @@ class SyncEngine(
         do {
             val limit = if (fetched == 0) RECENTLY_READ_REFRESH else RECENTLY_READ_PAGE
             val page = api.listRecentlyRead(cursor, limit)
-            val times =
-                page.items.map { item ->
-                    // A server too old to send read times: try again once it does.
-                    parseMillis(item.readChangedAt ?: return)
-                }
+            val times = page.items.mapNotNull { it.readChangedAt?.let(::parseMillis) }
             writer.saveRecentlyRead(page.items, windowStart)
             newest = newest ?: times.firstOrNull()
             fetched += page.items.size

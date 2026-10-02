@@ -19,8 +19,7 @@ type VoiceModel = {
   id: string;
   displayName: string;
   provider: AiProvider;
-  voices: string[];
-  voiceNames: Record<string, string>;
+  voices: { id: string; name: string }[];
   defaultVoice: string;
   pricePerMillionCharacters?: number;
 };
@@ -47,7 +46,7 @@ export function CloudVoiceSettings({
   const model = pickedModel ?? models.find((candidate) => candidate.id === defaultModelId);
   const modelId = model?.id ?? pickedModelId ?? defaultModelId;
   const voice =
-    settings.voiceId && model?.voices.includes(settings.voiceId)
+    settings.voiceId && model?.voices.some((candidate) => candidate.id === settings.voiceId)
       ? settings.voiceId
       : model?.defaultVoice;
 
@@ -141,9 +140,9 @@ export function CloudVoiceSettings({
             className="ui-text-sm bg-surface text-body border-edge-input block flex-1 rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {model ? (
-              model.voices.map((id) => (
+              model.voices.map(({ id, name }) => (
                 <option key={id} value={id}>
-                  {model.voiceNames[id] ?? id}
+                  {name}
                   {id === model.defaultVoice ? " (default)" : ""}
                 </option>
               ))

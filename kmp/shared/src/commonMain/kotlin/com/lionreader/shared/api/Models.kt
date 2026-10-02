@@ -32,7 +32,7 @@ data class EntryListItem(
     val starred: Boolean,
     val feedTitle: String? = null,
     val siteName: String? = null,
-    /** When read state last changed; null if it never has (or from an older server). */
+    /** When read state last changed; null if it never has. */
     val readChangedAt: String? = null,
 )
 
@@ -248,24 +248,24 @@ sealed interface SyncEvent {
 /** The server's limit on one speech request. */
 const val MAX_CLOUD_SPEECH_CHARS = 1000
 
+/** [id] is what speech requests take; [name] is for showing. */
+@Serializable data class CloudVoice(val id: String, val name: String)
+
 @Serializable
 data class VoiceModel(
     val id: String,
     val displayName: String,
-    /** Ids, which are what synthesis takes. */
-    val voices: List<String>,
+    val voices: List<CloudVoice>,
+    /** A voice id. */
     val defaultVoice: String,
-    /** Display names, for the voices whose name isn't their id. */
-    val voiceNames: Map<String, String> = emptyMap(),
-    /** The provider's id (e.g. `deepinfra`); absent from older servers. */
-    val provider: String? = null,
-    /** The provider's name, for showing (e.g. `DeepInfra`); absent from older servers. */
-    val providerDisplayName: String? = null,
+    /** The provider's id, e.g. `deepinfra`. */
+    val provider: String,
+    /** The provider's name, for showing, e.g. `DeepInfra`. */
+    val providerDisplayName: String,
 ) {
-    val providerName: String?
-        get() = providerDisplayName ?: provider
+    fun hasVoice(id: String): Boolean = voices.any { it.id == id }
 
-    fun voiceName(id: String): String = voiceNames[id] ?: id
+    fun voiceName(id: String): String = voices.firstOrNull { it.id == id }?.name ?: id
 }
 
 @Serializable data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String)
