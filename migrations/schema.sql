@@ -541,8 +541,6 @@ CREATE TABLE public.users (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     invite_id uuid,
     show_spam boolean DEFAULT false NOT NULL,
-    groq_api_key text,
-    anthropic_api_key text,
     summarization_model text,
     summarization_max_words integer,
     summarization_prompt text,
@@ -553,11 +551,8 @@ CREATE TABLE public.users (
     saved_unread_count integer DEFAULT 0 NOT NULL,
     starred_unread_count integer DEFAULT 0 NOT NULL,
     greader_user_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
-    cerebras_api_key text,
     narration_model text,
-    getting_started_at timestamp with time zone,
-    openrouter_api_key text,
-    deepinfra_api_key text
+    getting_started_at timestamp with time zone
 );
 
 CREATE VIEW public.visible_entries AS
