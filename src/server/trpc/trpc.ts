@@ -322,11 +322,10 @@ export function scopedUnconfirmedProcedure(scopes: OAuthScope | OAuthScope[]) {
 async function performRateLimitCheck(
   userId: string | null,
   headers: Headers,
-  type: RateLimitType,
-  cost = 1
+  type: RateLimitType
 ): Promise<Record<string, string>> {
   const identifier = getClientIdentifier(userId, headers);
-  const result = await checkRateLimit(identifier, type, { cost });
+  const result = await checkRateLimit(identifier, type);
 
   if (!result.allowed) {
     const config = RATE_LIMIT_CONFIGS[type];

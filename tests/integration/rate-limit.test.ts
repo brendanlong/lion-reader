@@ -4,23 +4,15 @@
  * (The speech route's character charge is tested with the route, in app-api.)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import Redis from "ioredis";
+import { describe, it, expect, beforeAll } from "vitest";
 import { checkRateLimit, RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 
-let redis: Redis;
-
 beforeAll(() => {
-  const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) {
+  // Without Redis the limiter fails open, and these would pass vacuously.
+  if (!process.env.REDIS_URL) {
     throw new Error("REDIS_URL must be set for rate-limit integration tests");
   }
-  redis = new Redis(redisUrl);
-});
-
-afterAll(async () => {
-  await redis.quit();
 });
 
 describe("checkRateLimit", () => {
