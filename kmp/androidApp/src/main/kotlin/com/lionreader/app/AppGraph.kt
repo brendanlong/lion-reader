@@ -166,9 +166,7 @@ class AppGraph(private val context: Context) {
         context
             .databaseList()
             .filter {
-                it.endsWith(".db") &&
-                    ((it.startsWith("account-") && !it.startsWith(DB_PREFIX)) ||
-                        it == "lionreader.db")
+                it.endsWith(".db") && it.startsWith("account-") && !it.startsWith(DB_PREFIX)
             }
             .forEach { context.deleteDatabase(it) }
         val dbName =
