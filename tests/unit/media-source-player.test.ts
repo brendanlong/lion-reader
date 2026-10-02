@@ -802,6 +802,27 @@ describe("MediaSourcePlayer", () => {
     expect(player.getStatus()).toBe("playing");
   });
 
+  it("asks again on play after moving while blocked", async () => {
+    const { audio, calls, player, failSynthesis, respond } = setup(["A.", "B.", "C."], {
+      retryDelaysMs: [0],
+    });
+    void player.play();
+    await respond("A.");
+    for (const text of ["B.", "C."]) {
+      await failSynthesis(text, new TransientSynthesisError("Offline"));
+      await failSynthesis(text, new TransientSynthesisError("Offline"));
+    }
+    audio.advanceTo(1);
+    audio.dispatchEvent(new Event("waiting"));
+    expect(player.getStatus()).toBe("paused");
+
+    await player.skipTo(2);
+    void player.play();
+    await respond("C.");
+    expect(calls.filter((text) => text === "C.")).toHaveLength(3);
+    expect(player.getStatus()).toBe("playing");
+  });
+
   it("doesn't ask again itself for a chunk the synthesis already retried", async () => {
     const { audio, calls, player, events, failSynthesis, respond } = setup(["A.", "B."], {
       retryDelaysMs: [0, 0, 0],

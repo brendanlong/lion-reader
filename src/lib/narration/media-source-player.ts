@@ -547,11 +547,12 @@ export class MediaSourcePlayer {
       return;
     }
     const request = ++this.playRequest;
+    // It may have paused where synthesis ran out (pauseIfBlocked), or been
+    // paused, or moved, while failures piled up: every failed chunk is asked
+    // for afresh.
+    this.forgetFailures();
     if (this.status === "paused" && !this.jumpPending) {
       this.setStatus(this.isPlayheadBuffered() ? "playing" : "buffering");
-      // It may have paused where synthesis ran out (pauseIfBlocked), or been
-      // paused while failures piled up: every failed chunk is asked for afresh.
-      this.forgetFailures();
       void this.pump();
     } else {
       this.startRun(this.index);

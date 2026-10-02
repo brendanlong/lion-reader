@@ -108,6 +108,12 @@ export interface SpeechCatalog {
   models: SpeechModel[];
   /** Providers with a key whose catalog couldn't be fetched just now, and why. */
   unavailable: { provider: SpeechProvider; error: unknown }[];
+  /**
+   * The picked voice is missing from its model's voices only because it
+   * couldn't be checked just now (a failed or rate-limited lookup), not
+   * because the provider has no such voice.
+   */
+  pickedVoiceUnchecked?: boolean;
 }
 
 /** The model and voice a user picked (null: the defaults). */
@@ -151,8 +157,8 @@ export async function listSpeechModels(
     .flat()
     .filter((model) => model.voices.length > 0)
     .sort(byDisplayName);
-  if (picked?.voice) await keepPickedVoice(models, keys, picked);
-  return { models, unavailable };
+  const kept = picked?.voice ? await keepPickedVoice(models, keys, picked) : "listed";
+  return { models, unavailable, ...(kept === "unchecked" ? { pickedVoiceUnchecked: true } : {}) };
 }
 
 /** How long a picked voice's lookup is trusted, found or not. */
@@ -168,7 +174,12 @@ const MAX_KEPT_VOICES = 1000;
  */
 const keptVoices = new Map<
   string,
-  { voice: string; expiresAt: number; found: Promise<SpeechVoice | null> }
+  {
+    voice: string;
+    expiresAt: number;
+    /** The voice; null if the key has none such; "unchecked" if it couldn't be asked. */
+    found: Promise<SpeechVoice | null | "unchecked">;
+  }
 >();
 
 /**
@@ -178,38 +189,56 @@ const keptVoices = new Map<
  * model the request would run on, which is only listed if it's allowed on the
  * key it would bill: so a lookup is never made for a model the user can't
  * use. Lookups are cached per user and rate-limited, since on the server's
- * key they're made with the operator's account. Any failure leaves the voice
- * out, and the request falls back to the model's default voice.
+ * key they're made with the operator's account. A voice the key doesn't have
+ * is left out (the request falls back to the model's default voice); one that
+ * couldn't be checked is left out too, but reported "unchecked", so speech
+ * can refuse for now rather than say it in the wrong voice.
  */
 async function keepPickedVoice(
   models: SpeechModel[],
   keys: AiProviderKeys | undefined,
   { model: pickedModel, voice, userId }: SpeechChoice
-): Promise<void> {
-  if (!voice) return;
+): Promise<"listed" | "kept" | "missing" | "unchecked"> {
+  if (!voice) return "listed";
   const id = pickedModel ? normalizeModelRef(pickedModel) : defaultSpeechModelId(models);
   const index = models.findIndex((candidate) => candidate.id === id);
   const model = models[index];
   const findVoice = model && SPEECH_PROVIDER_ADAPTERS[model.provider].findVoice;
-  if (!model || !findVoice || hasVoice(model, voice)) return;
+  if (!model || hasVoice(model, voice)) return "listed";
   const apiKey = getProviderApiKey(model.provider, keys);
-  if (!apiKey) return;
+  if (!findVoice || !apiKey) return "missing";
 
   const slot = JSON.stringify([userId, model.provider, apiKey]);
   const now = Date.now();
   let entry = keptVoices.get(slot);
   if (!entry || entry.voice !== voice || now >= entry.expiresAt) {
-    const limit = await checkRateLimit(`user:${userId}`, "voiceLookup", { fallback: "memory" });
-    if (!limit.allowed) return;
-    const lookup = { voice, expiresAt: now + KEPT_VOICE_TTL_MS, found: findVoice(apiKey, voice) };
-    lookup.found = lookup.found.catch((error: unknown) => {
-      logger.warn("Couldn't look up a picked speech voice", {
-        provider: model.provider,
-        error: error instanceof Error ? error.message : String(error),
+    // In the map before anything is awaited, so a user's parallel requests
+    // (the player's look-ahead) share one lookup and one rate-limit token.
+    const lookup: NonNullable<typeof entry> = {
+      voice,
+      expiresAt: now + KEPT_VOICE_TTL_MS,
+      found: Promise.resolve(null),
+    };
+    lookup.found = (async () => {
+      const limit = await checkRateLimit(`user:${userId}`, "voiceLookup", {
+        fallback: "memory",
       });
-      lookup.expiresAt = Date.now() + KEPT_VOICE_FAILURE_TTL_MS;
-      return null;
-    });
+      if (!limit.allowed) {
+        // Asked again on the next request, which pays for the limit check only.
+        lookup.expiresAt = 0;
+        return "unchecked";
+      }
+      try {
+        return await findVoice(apiKey, voice);
+      } catch (error) {
+        logger.warn("Couldn't look up a picked speech voice", {
+          provider: model.provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        lookup.expiresAt = Date.now() + KEPT_VOICE_FAILURE_TTL_MS;
+        return "unchecked";
+      }
+    })();
     entry = lookup;
     keptVoices.delete(slot);
     keptVoices.set(slot, entry);
@@ -220,7 +249,10 @@ async function keepPickedVoice(
     }
   }
   const kept = await entry.found;
-  if (kept) models[index] = { ...model, voices: [...model.voices, kept] };
+  if (kept === "unchecked") return kept;
+  if (!kept) return "missing";
+  models[index] = { ...model, voices: [...model.voices, kept] };
+  return "kept";
 }
 
 /**
@@ -416,12 +448,14 @@ export async function streamSpeech(
   options: SpeechChoice & { text: string; pauseSeconds?: number },
   signal?: AbortSignal
 ): Promise<ReadableStream<Uint8Array>> {
-  const { model, voice } = resolveSpeechModel(
-    await listSpeechModels(keys, options),
-    keys,
-    options.model,
-    options.voice
-  );
+  const catalog = await listSpeechModels(keys, options);
+  const { model, voice } = resolveSpeechModel(catalog, keys, options.model, options.voice);
+  // Saying it in the default voice instead would be cached as the picked one's.
+  if (catalog.pickedVoiceUnchecked && voice !== options.voice) {
+    throw new SpeechUnavailableError(
+      `Couldn't check the voice with ${aiProviderName(model.provider)}; try again shortly`
+    );
+  }
   const apiKey = getProviderApiKey(model.provider, keys);
   if (!apiKey) {
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);

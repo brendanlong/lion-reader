@@ -12,6 +12,7 @@ import { eq } from "drizzle-orm";
 import {
   listSpeechModels,
   SpeechRejectedError,
+  SpeechUnavailableError,
   streamSpeech,
 } from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
@@ -226,7 +227,44 @@ describe("BreezeBlue voices", () => {
     }
   });
 
-  it("rate-limits one user's lookups, and keeps one entry per user", async () => {
+  it("keeps one lookup per user: changing voices replaces it", async () => {
+    const key = randomUUID();
+    const userId = randomUUID();
+    const [first, second] = [`library-${randomUUID()}`, `library-${randomUUID()}`];
+    for (const voice of [first, first, second, first]) {
+      await listSpeechModels(
+        { breezeblue: key },
+        { model: "breezeblue:breeze-tts-2", voice, userId }
+      );
+    }
+    expect([lookupsOf(first), lookupsOf(second)]).toEqual([2, 1]);
+  });
+
+  it("shares one lookup between a user's requests at once", async () => {
+    const key = randomUUID();
+    const userId = randomUUID();
+    const voice = `library-${randomUUID()}`;
+    const lists = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        listSpeechModels({ breezeblue: key }, { model: "breezeblue:breeze-tts-2", voice, userId })
+      )
+    );
+    expect(lookupsOf(voice)).toBe(1);
+    for (const { models } of lists) expect(models[0].voices.at(-1)?.id).toBe(voice);
+  });
+
+  it("doesn't ask about the ids . and ..", async () => {
+    const before = voiceLookups.length;
+    for (const voice of [".", ".."]) {
+      await listSpeechModels(
+        { breezeblue: randomUUID() },
+        { model: "breezeblue:breeze-tts-2", voice, userId: randomUUID() }
+      );
+    }
+    expect(voiceLookups.length).toBe(before);
+  });
+
+  it("rate-limits one user's lookups", async () => {
     const key = randomUUID();
     const userId = randomUUID();
     const voices = Array.from({ length: 15 }, () => `library-${randomUUID()}`);
@@ -315,6 +353,39 @@ describe("BreezeBlue speech", () => {
     );
     await new Response(stream).arrayBuffer();
     expect(speechRequests.at(-1)?.path).toContain(`/text-to-speech/${picked}/`);
+  });
+
+  it("speaks in the default voice when the key has no such voice", async () => {
+    const key = randomUUID();
+    const stream = await streamSpeech(
+      { breezeblue: key },
+      { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: "gone", text: "Hi." }
+    );
+    await new Response(stream).arrayBuffer();
+    expect(speechRequests.at(-1)?.path).toContain(`/text-to-speech/fav-narrator-${key}/`);
+  });
+
+  it("refuses for now, rather than use another voice, when it couldn't check the voice", async () => {
+    const before = speechRequests.length;
+    const speak = (voice: string, userId: string) =>
+      streamSpeech(
+        { breezeblue: randomUUID() },
+        { model: "breezeblue:breeze-tts-2", userId, voice, text: "Hi." }
+      );
+    await expect(speak(`broken-${randomUUID()}`, randomUUID())).rejects.toThrow(
+      SpeechUnavailableError
+    );
+
+    // Out of lookups.
+    const userId = randomUUID();
+    for (let i = 0; i < 10; i++) {
+      await listSpeechModels(
+        { breezeblue: randomUUID() },
+        { model: "breezeblue:breeze-tts-2", voice: `library-${randomUUID()}`, userId }
+      );
+    }
+    await expect(speak(`library-${randomUUID()}`, userId)).rejects.toThrow(SpeechUnavailableError);
+    expect(speechRequests.length).toBe(before);
   });
 
   it("says why BreezeBlue refused the user's own key", async () => {

@@ -159,6 +159,8 @@ export async function findBreezeBlueVoice(
   apiKey: string,
   id: string
 ): Promise<BreezeBlueVoice | null> {
+  // encodeURIComponent leaves these alone, and they'd be a path segment.
+  if (id === "." || id === "..") return null;
   const response = await fetch(`${apiUrl()}/voices/${encodeURIComponent(id)}`, {
     headers: headers(apiKey),
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
