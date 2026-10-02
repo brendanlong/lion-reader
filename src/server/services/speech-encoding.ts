@@ -130,11 +130,19 @@ function prepend(
   });
 }
 
-/** Below this (about -50 dBFS), a sample at a clip's edges counts as silence. */
-const SILENCE_LEVEL = 100;
+/**
+ * Silence at a clip's edges is measured in windows this long, by their RMS, so
+ * a click or a stray noise peak in a tail doesn't count as sound.
+ */
+const WINDOW_SECONDS = 0.01;
+/**
+ * A window quieter than this (RMS, about -47 dBFS) is silence. Models' tails
+ * measured up to 100, with single samples up to about 460.
+ */
+const SILENCE_RMS = 150;
 /** Kept before the first sound, so its attack isn't clipped. */
 const LEAD_IN_SECONDS = 0.05;
-/** Kept of the silence after the last sound, even with no pause, so its decay isn't clipped. */
+/** Kept of the silence after the last sound even with less pause, so its decay isn't clipped. */
 const DECAY_SECONDS = 0.05;
 
 function joined(parts: Uint8Array[]): Uint8Array {
@@ -152,16 +160,18 @@ function joined(parts: Uint8Array[]): Uint8Array {
  * Evens out the silence at a clip's ends, which models vary (BreezeBlue
  * leaves 50 ms to 700 ms after its speech), so chunks played back to back
  * pause alike: what's before the first sound is cut to {@link LEAD_IN_SECONDS},
- * and what's after the last becomes exactly `pauseSeconds`, the model's own
- * kept up to that long (so a word's decay stays), padded with silence past
- * it. Fed 16-bit PCM in pieces of any size; silence inside the speech is held
- * only until the sound after it arrives.
+ * and what's after the last becomes `pauseSeconds` (at least
+ * {@link DECAY_SECONDS}), the model's own kept up to that long, so a word's
+ * decay stays, and padded with silence past it. Fed 16-bit PCM in pieces of
+ * any size; silence inside the speech is held only until the sound after it
+ * arrives.
  */
 export class ClipEdges {
-  private readonly frameBytes: number;
+  private readonly windowBytes: number;
   private readonly leadInBytes: number;
   private readonly pauseBytes: number;
   private readonly keptTailBytes: number;
+  /** Less than a window, waiting for the rest of it. */
   private partial: Uint8Array = new Uint8Array(0);
   private started = false;
   /** Before the first sound: the end of the silence so far. After it: the silence since the last. */
@@ -169,8 +179,9 @@ export class ClipEdges {
   private quietBytes = 0;
 
   constructor(sampleRate: number, channels: number, pauseSeconds: number) {
-    this.frameBytes = 2 * channels;
-    const bytesFor = (seconds: number) => Math.round(seconds * sampleRate) * this.frameBytes;
+    const frameBytes = 2 * channels;
+    const bytesFor = (seconds: number) => Math.round(seconds * sampleRate) * frameBytes;
+    this.windowBytes = Math.max(frameBytes, bytesFor(WINDOW_SECONDS));
     this.leadInBytes = bytesFor(LEAD_IN_SECONDS);
     this.pauseBytes = bytesFor(pauseSeconds);
     this.keptTailBytes = Math.max(this.pauseBytes, bytesFor(DECAY_SECONDS));
@@ -179,45 +190,57 @@ export class ClipEdges {
   /** What of `bytes` (and what's held from before) can be encoded now. */
   push(bytes: Uint8Array): Uint8Array {
     const data = this.partial.length ? joined([this.partial, bytes]) : bytes;
-    const whole = data.length - (data.length % this.frameBytes);
+    const whole = data.length - (data.length % this.windowBytes);
     this.partial = data.slice(whole);
-    const frames = data.subarray(0, whole);
-    const first = this.loudFrame(frames, "first");
+    const windows = data.subarray(0, whole);
+    const first = this.loudWindow(windows, "first");
     if (first === -1) {
-      this.holdQuiet(frames);
+      this.holdQuiet(windows);
       return new Uint8Array(0);
     }
-    const last = this.loudFrame(frames, "last");
+    const end = this.loudWindow(windows, "last") + this.windowBytes;
     const out: Uint8Array[] = [];
     // Silence inside the speech is kept whole; only the opening silence is cut.
     let from = 0;
     if (this.started) {
       out.push(...this.quiet);
     } else {
-      const before = joined([...this.quiet, frames.subarray(0, first)]);
+      const before = joined([...this.quiet, windows.subarray(0, first)]);
       out.push(before.subarray(Math.max(0, before.length - this.leadInBytes)));
       from = first;
       this.started = true;
     }
-    out.push(frames.subarray(from, last + this.frameBytes));
-    this.quiet = [frames.slice(last + this.frameBytes)];
-    this.quietBytes = this.quiet[0].length;
+    out.push(windows.subarray(from, end));
+    this.quiet = end < windows.length ? [windows.slice(end)] : [];
+    this.quietBytes = windows.length - end;
     return joined(out);
   }
 
   /** The end of the clip: its silence, made the pause. */
   finish(): Uint8Array {
+    // Sound to the very end, in the last short window: what's held is all kept.
+    if (this.partial.length && isLoud(this.partial)) {
+      return joined([...this.quiet, this.partial, new Uint8Array(this.pauseBytes)]);
+    }
     if (!this.started) return new Uint8Array(this.pauseBytes);
-    const tail = joined(this.quiet).subarray(0, this.keptTailBytes);
-    const end = new Uint8Array(Math.max(this.pauseBytes, tail.length));
-    end.set(tail);
+    const tail = [...this.quiet, this.partial];
+    const end = new Uint8Array(
+      Math.max(this.pauseBytes, Math.min(this.keptTailBytes, this.quietBytes + this.partial.length))
+    );
+    let at = 0;
+    for (const part of tail) {
+      if (at >= this.keptTailBytes) break;
+      const piece = part.subarray(0, this.keptTailBytes - at);
+      end.set(piece, at);
+      at += piece.length;
+    }
     return end;
   }
 
-  private holdQuiet(frames: Uint8Array): void {
-    if (frames.length === 0) return;
-    this.quiet.push(frames.slice());
-    this.quietBytes += frames.length;
+  private holdQuiet(windows: Uint8Array): void {
+    if (windows.length === 0) return;
+    this.quiet.push(windows.slice());
+    this.quietBytes += windows.length;
     if (!this.started && this.quietBytes > this.leadInBytes) {
       // Only the end of the opening silence can be kept.
       const kept = joined(this.quiet);
@@ -226,18 +249,24 @@ export class ClipEdges {
     }
   }
 
-  /** Byte offset of the first or last frame with a sample above silence; -1 for none. */
-  private loudFrame(frames: Uint8Array, which: "first" | "last"): number {
-    const view = new DataView(frames.buffer, frames.byteOffset, frames.byteLength);
-    const count = frames.length / this.frameBytes;
+  /** Byte offset of the first or last window louder than silence; -1 for none. */
+  private loudWindow(windows: Uint8Array, which: "first" | "last"): number {
+    const count = windows.length / this.windowBytes;
     for (let n = 0; n < count; n++) {
-      const frame = which === "first" ? n : count - 1 - n;
-      for (let b = frame * this.frameBytes; b < (frame + 1) * this.frameBytes; b += 2) {
-        if (Math.abs(view.getInt16(b, true)) >= SILENCE_LEVEL) return frame * this.frameBytes;
-      }
+      const start = (which === "first" ? n : count - 1 - n) * this.windowBytes;
+      if (isLoud(windows.subarray(start, start + this.windowBytes))) return start;
     }
     return -1;
   }
+}
+
+/** Whether `samples` (16-bit PCM) are louder than silence, by their RMS. */
+function isLoud(samples: Uint8Array): boolean {
+  const view = new DataView(samples.buffer, samples.byteOffset, samples.byteLength);
+  const count = Math.floor(samples.length / 2);
+  let energy = 0;
+  for (let i = 0; i < count; i++) energy += view.getInt16(i * 2, true) ** 2;
+  return count > 0 && energy >= SILENCE_RMS * SILENCE_RMS * count;
 }
 
 /**

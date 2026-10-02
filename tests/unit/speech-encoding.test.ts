@@ -283,6 +283,25 @@ describe("ClipEdges", () => {
     expect(seconds(out, 2)).toBeCloseTo(0.05 + 0.3 + 0.25, 3);
   });
 
+  it("treats a noisy tail with a click in it as silence", () => {
+    // Noise around RMS 60 with peaks to about 100, as models' tails measure, and one loud sample.
+    const view = new DataView(new ArrayBuffer(Math.round(0.6 * rate) * 2));
+    for (let at = 0; at < view.byteLength; at += 2) {
+      view.setInt16(at, Math.round(Math.sin(at * 0.7) * 85), true);
+    }
+    view.setInt16(Math.round(0.4 * rate) * 2, 900, true);
+    const out = through(cat(sound(0.5), new Uint8Array(view.buffer)), 0.25);
+    expect(seconds(out)).toBeCloseTo(0.5 + 0.25, 3);
+  });
+
+  it("pads the whole pause after sound that runs to the last sample", () => {
+    expect(seconds(through(sound(0.505), 1))).toBeCloseTo(0.505 + 1, 3);
+  });
+
+  it("keeps the decay's length even with a shorter pause", () => {
+    expect(seconds(through(cat(sound(0.5), silence(0.5)), 0.02))).toBeCloseTo(0.55, 3);
+  });
+
   it("is just the pause for a clip with no sound", () => {
     expect(seconds(through(silence(2), 1))).toBe(1);
   });
