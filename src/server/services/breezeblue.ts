@@ -8,7 +8,6 @@
  * view (it can rename a voice in its library, and models are per account).
  */
 
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
@@ -143,23 +142,21 @@ async function fetchCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
   return { models, voices: voices.map(({ id, name }) => ({ id, name })) };
 }
 
-/** By a hash of the key, so keys aren't kept in memory longer than a request. */
 const catalogs = new Map<string, { expiresAt: number; catalog: Promise<BreezeBlueCatalog> }>();
 
 /** The models, and the voices this key can pick from. */
 export function getBreezeBlueCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
-  const id = createHash("sha256").update(apiKey).digest("hex");
   const now = Date.now();
-  const current = catalogs.get(id);
+  const current = catalogs.get(apiKey);
   if (current && now < current.expiresAt) return current.catalog;
-  catalogs.delete(id);
+  catalogs.delete(apiKey);
   // Oldest first, since every entry is (re)inserted when fetched.
   for (const [key, entry] of catalogs) {
     if (catalogs.size < MAX_CACHED_KEYS && now < entry.expiresAt) break;
     catalogs.delete(key);
   }
   const entry = { expiresAt: now + CATALOG_CACHE_TTL_MS, catalog: fetchCatalog(apiKey) };
-  catalogs.set(id, entry);
+  catalogs.set(apiKey, entry);
   entry.catalog.catch(() => {
     entry.expiresAt = Date.now() + CATALOG_FAILURE_TTL_MS;
   });
