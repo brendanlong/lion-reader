@@ -23,6 +23,12 @@ class ServerUrlTest {
     }
 
     @Test
+    fun anInternationalizedHostIsInPunycode() {
+        assertEquals("https://xn--bcher-kva.example", valid("Bücher.example"))
+        assertEquals("https://xn--bcher-kva.example:8443", valid("https://bücher.example:8443/"))
+    }
+
+    @Test
     fun plainHttpOnlyWhereAllowed() {
         assertTrue(parseServerUrl("http://localhost:3000", false) is ServerUrlInput.Invalid)
         assertEquals("http://localhost:3000", valid("http://localhost:3000", allowHttp = true))
