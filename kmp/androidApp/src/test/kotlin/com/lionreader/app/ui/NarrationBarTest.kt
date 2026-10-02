@@ -42,6 +42,19 @@ class NarrationBarTest {
     }
 
     @Test
+    fun theSpeedButtonSaysWhatItIs() {
+        var speed = 0f
+        composeRule.setContent {
+            NarrationBar(NarrationState("a", "Title", 0, playing = true), 1f, {}, {}, {}) {
+                speed = it
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Narration speed: 1×").performClick()
+        assertEquals(1.25f, speed)
+    }
+
+    @Test
     fun pausedShowsPlayEvenWhileWaiting() {
         composeRule.setContent {
             NarrationBar(

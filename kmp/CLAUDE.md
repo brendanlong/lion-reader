@@ -124,8 +124,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **Accessibility:** a list row is one TalkBack/Switch Access stop, with
   its buttons (and the swipe) as custom actions and the buttons themselves
   hidden from accessibility services. A new row control needs a matching
-  action. Where something changes without focus moving (the reader's pager),
-  a polite live region says what changed.
+  action. So is a switch with its label (`SettingSwitch`). Where something
+  changes without focus moving (the reader's pager, a sign-in error), a polite
+  live region says what changed.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's
   sanitized HTML, inserted verbatim. As on the web, only a drag at least twice
   as far sideways as vertical turns the page (judged over its first few dp,
