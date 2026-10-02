@@ -18,6 +18,7 @@ import { errors } from "../errors";
 import { sessions, users, oauthAccounts, userApiKeys } from "@/server/db/schema";
 import {
   getApiKeyProviders,
+  getUnreadableApiKeyProviders,
   revokeSession,
   revokeOtherUserSessionsOrReport,
   invalidateUserSessionCaches,
@@ -55,6 +56,8 @@ const preferencesOutputSchema = z.object({
   canConfigureApiKeys: z.boolean(),
   /** The providers the user has set their own API key for. */
   apiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
+  /** Those of them whose saved key can't be read, and has to be entered again. */
+  unreadableApiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
   summarizationModel: z.string().nullable(),
   summarizationMaxWords: z.number().nullable(),
   summarizationPrompt: z.string().nullable(),
@@ -376,6 +379,7 @@ export const usersRouter = createTRPCRouter({
         showSpam: ctx.session.user.showSpam,
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(ctx.session.user.id),
+        unreadableApiKeyProviders: await getUnreadableApiKeyProviders(ctx.session.user.id),
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
@@ -401,7 +405,7 @@ export const usersRouter = createTRPCRouter({
       z.object({
         showSpam: z.boolean().optional(),
         // API keys by provider: empty string clears the key, non-empty sets it
-        apiKeys: z.partialRecord(z.enum(AI_PROVIDERS), z.string().max(1000)).optional(),
+        apiKeys: z.partialRecord(z.enum(AI_PROVIDERS), z.string().trim().max(1000)).optional(),
         summarizationModel: z.string().optional(),
         narrationModel: z.string().optional(),
         // Summarization settings: null clears (reverts to default)
@@ -495,6 +499,7 @@ export const usersRouter = createTRPCRouter({
         showSpam: updatedUser[0]?.showSpam ?? false,
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(userId),
+        unreadableApiKeyProviders: await getUnreadableApiKeyProviders(userId),
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,

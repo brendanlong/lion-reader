@@ -39,9 +39,13 @@ const openRouterModelSchema = z.object({
 
 export type OpenRouterModel = z.infer<typeof openRouterModelSchema>;
 
+/** OpenRouter's error body, which can also arrive in a 200 for an upstream failure. */
+const errorSchema = z
+  .object({ message: z.string().nullish(), code: z.union([z.number(), z.string()]).nullish() })
+  .nullish();
+
 const chatCompletionResponseSchema = z.object({
-  // OpenRouter can report an upstream failure in a 200 body.
-  error: z.object({ message: z.string().nullish() }).nullish(),
+  error: errorSchema,
   choices: z
     .array(
       z.object({
@@ -109,6 +113,44 @@ interface TokenPriceCaps {
   maxOutputPrice?: number;
 }
 
+/**
+ * A failed chat completion: the status OpenRouter answered with (for an
+ * upstream failure in a 200 body, the code it reports for it) and its message.
+ */
+export class OpenRouterChatError extends Error {
+  constructor(
+    readonly status: number | undefined,
+    readonly providerMessage: string | undefined
+  ) {
+    super(
+      `OpenRouter request failed${status ? ` with status ${status}` : ""}: ${providerMessage ?? "unknown error"}`
+    );
+  }
+}
+
+function chatError(error: z.infer<typeof errorSchema>, status?: number): OpenRouterChatError {
+  const code = typeof error?.code === "number" ? error.code : undefined;
+  return new OpenRouterChatError(status ?? code, error?.message?.slice(0, 500) ?? undefined);
+}
+
+/**
+ * The text of a chat completion answered with `status` and `body`.
+ *
+ * @throws OpenRouterChatError for a failure, whether in the status or the body
+ */
+export function chatCompletionText(status: number, body: unknown): string {
+  if (status < 200 || status >= 300) {
+    const parsed = z.object({ error: errorSchema }).safeParse(body);
+    // The answer's own status wins over a code in its body.
+    throw chatError(parsed.success ? parsed.data.error : null, status);
+  }
+  const parsed = chatCompletionResponseSchema.parse(body);
+  if (parsed.error) {
+    throw chatError(parsed.error);
+  }
+  return parsed.choices?.[0]?.message?.content ?? "";
+}
+
 export async function openRouterChatCompletion(
   apiKey: string,
   model: string,
@@ -126,14 +168,7 @@ export async function openRouterChatCompletion(
       buildChatCompletionBody(model, options, catalogEntry?.supported_parameters ?? [], priceCaps)
     ),
   });
-  if (!response.ok) {
-    throw await providerError("OpenRouter", response);
-  }
-  const parsed = chatCompletionResponseSchema.parse(await response.json());
-  if (parsed.error) {
-    throw new Error(`OpenRouter request failed: ${parsed.error.message ?? "unknown error"}`);
-  }
-  return parsed.choices?.[0]?.message?.content ?? "";
+  return chatCompletionText(response.status, await response.json().catch(() => null));
 }
 
 /** A text model's price, or none if the catalog can't be fetched or lacks it. */

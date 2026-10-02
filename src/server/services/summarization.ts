@@ -1,7 +1,7 @@
 /**
  * Summarization service for AI-powered article summaries.
  *
- * Uses a configurable AI provider (Anthropic, Groq, Cerebras, or OpenRouter) to generate
+ * Uses any text provider in the registry (`@/lib/ai/providers`) to generate
  * concise summaries of articles. Summaries are cached by content hash for
  * deduplication across entries.
  */

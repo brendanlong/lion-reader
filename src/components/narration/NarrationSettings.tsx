@@ -57,7 +57,7 @@ export function NarrationSettings() {
   // Track voice loading state separately (starts true, set false when voices load)
   const [isLoadingVoices, setIsLoadingVoices] = useState(true);
 
-  // Check if AI text processing is available (GROQ_API_KEY configured)
+  // Whether the narration model's provider has a user or server key
   const { data: aiAvailability } = trpc.narration.isAiTextProcessingAvailable.useQuery();
   const isAiTextProcessingAvailable = aiAvailability?.available ?? false;
 

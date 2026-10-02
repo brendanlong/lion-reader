@@ -116,6 +116,33 @@ describe("oauthGrants.list", () => {
     expect((await caller.oauthGrants.list())[0].lastUsedAt).toBeInstanceOf(Date);
   });
 
+  it("rewrites last_used_at only once it's a minute stale", async () => {
+    // The app presents its token on every request, so a write per use would be
+    // a write per speech chunk.
+    const userId = await createUser();
+    const clientId = await createRegisteredClient("Busy Client");
+    const { accessToken } = await createTokens({ clientId, userId, scopes: ["mcp"] });
+    const tokenRow = eq(oauthAccessTokens.tokenHash, hashToken(accessToken));
+    const lastUsedAt = async () =>
+      (
+        await db
+          .select({ at: oauthAccessTokens.lastUsedAt })
+          .from(oauthAccessTokens)
+          .where(tokenRow)
+      )[0].at;
+
+    const fresh = new Date(Date.now() - 10_000);
+    await db.update(oauthAccessTokens).set({ lastUsedAt: fresh }).where(tokenRow);
+    await validateAccessToken(accessToken);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(await lastUsedAt()).toEqual(fresh);
+
+    const stale = new Date(Date.now() - 120_000);
+    await db.update(oauthAccessTokens).set({ lastUsedAt: stale }).where(tokenRow);
+    await validateAccessToken(accessToken);
+    await expect.poll(lastUsedAt).not.toEqual(stale);
+  });
+
   it("does not leak another user's grants", async () => {
     const userId = await createUser();
     const otherUserId = await createUser();

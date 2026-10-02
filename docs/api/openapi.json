@@ -3917,6 +3917,20 @@
                         ]
                       }
                     },
+                    "unreadableApiKeyProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "anthropic",
+                          "groq",
+                          "cerebras",
+                          "deepinfra",
+                          "openrouter",
+                          "breezeblue"
+                        ]
+                      }
+                    },
                     "summarizationModel": {
                       "type": [
                         "string",
@@ -3946,6 +3960,7 @@
                     "showSpam",
                     "canConfigureApiKeys",
                     "apiKeyProviders",
+                    "unreadableApiKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -4110,6 +4125,20 @@
                         ]
                       }
                     },
+                    "unreadableApiKeyProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "anthropic",
+                          "groq",
+                          "cerebras",
+                          "deepinfra",
+                          "openrouter",
+                          "breezeblue"
+                        ]
+                      }
+                    },
                     "summarizationModel": {
                       "type": [
                         "string",
@@ -4139,6 +4168,7 @@
                     "showSpam",
                     "canConfigureApiKeys",
                     "apiKeyProviders",
+                    "unreadableApiKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",

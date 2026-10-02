@@ -27,7 +27,11 @@ import {
   getNarrationModelRef,
 } from "@/server/services/narration";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
-import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
+import {
+  isModelAllowed,
+  listAllModels,
+  UnreadableApiKeyError,
+} from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
 import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
@@ -318,8 +322,11 @@ export const narrationRouter = createTRPCRouter({
         // Track the error
         trackNarrationGenerationError("api_error");
 
-        // Store error in narration_content for retry tracking
-        await recordFailure(error instanceof Error ? error.message : "Unknown error");
+        // Store error in narration_content for retry tracking. Not one user's
+        // unreadable key: the row is shared by everyone narrating this content.
+        if (!(error instanceof UnreadableApiKeyError)) {
+          await recordFailure(error instanceof Error ? error.message : "Unknown error");
+        }
 
         return fallbackResponse();
       }
@@ -328,8 +335,8 @@ export const narrationRouter = createTRPCRouter({
   /**
    * Check if AI text processing is available.
    *
-   * Returns true if the configured narration model's provider (Groq,
-   * Cerebras, or OpenRouter) has a user-configured or server-configured API key.
+   * Returns true if the configured narration model's provider has a
+   * user-configured or server-configured API key.
    */
   isAiTextProcessingAvailable: protectedProcedure
     .meta({

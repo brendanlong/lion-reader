@@ -16,7 +16,9 @@ import { isAiProvider, type AiProvider } from "@/lib/ai/providers";
 import type { AiProviderKeys } from "@/server/services/ai-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
-import { decryptApiKey } from "@/lib/encryption";
+import * as Sentry from "@sentry/nextjs";
+import { assertEncryptionConfigured, decryptApiKey } from "@/lib/encryption";
+import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
 import { errors } from "@/server/trpc/errors";
 
@@ -489,17 +491,65 @@ export async function getApiKeyProviders(userId: string): Promise<AiProvider[]> 
  * API keys are intentionally not cached in the Redis session cache to prevent
  * exposure if Redis is compromised. This function should be called only when
  * the actual key values are needed (e.g., narration, summarization endpoints).
+ *
+ * A missing or malformed `API_KEY_ENCRYPTION_KEY` throws. A key that doesn't
+ * decrypt under it is reported and comes back as `UNREADABLE_API_KEY`, so
+ * the user's other keys still work and that provider doesn't quietly move
+ * onto the server's key. The row stays: a wrong (but well-formed) encryption
+ * key fails every row, and fixing it should bring them all back.
  */
 export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
   const rows = await db
     .select({ provider: userApiKeys.provider, encryptedKey: userApiKeys.encryptedKey })
     .from(userApiKeys)
     .where(eq(userApiKeys.userId, userId));
-  return Object.fromEntries(
-    rows.flatMap(({ provider, encryptedKey }) =>
-      isAiProvider(provider) ? [[provider, decryptApiKey(encryptedKey)]] : []
-    )
-  );
+  if (rows.length > 0) {
+    assertEncryptionConfigured();
+  }
+  const keys: AiProviderKeys = {};
+  for (const { provider, encryptedKey } of rows) {
+    if (!isAiProvider(provider)) continue;
+    try {
+      keys[provider] = decryptApiKey(encryptedKey);
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { source: "api-key-decrypt", provider },
+        extra: { userId },
+      });
+      keys[provider] = UNREADABLE_API_KEY;
+    }
+  }
+  return keys;
+}
+
+/**
+ * The providers whose saved key {@link getUserApiKeys} would find unreadable,
+ * for Settings to ask for again. Never throws and reports nothing — that's for
+ * actual use — and finds none when encryption isn't configured, where the
+ * settings page hides keys altogether.
+ */
+export async function getUnreadableApiKeyProviders(userId: string): Promise<AiProvider[]> {
+  try {
+    assertEncryptionConfigured();
+  } catch {
+    return [];
+  }
+  const rows = await db
+    .select({ provider: userApiKeys.provider, encryptedKey: userApiKeys.encryptedKey })
+    .from(userApiKeys)
+    .where(eq(userApiKeys.userId, userId))
+    .orderBy(userApiKeys.provider);
+  return rows
+    .filter(({ encryptedKey }) => {
+      try {
+        decryptApiKey(encryptedKey);
+        return false;
+      } catch {
+        return true;
+      }
+    })
+    .map((row) => row.provider)
+    .filter(isAiProvider);
 }
 
 /**

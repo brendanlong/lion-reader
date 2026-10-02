@@ -1,17 +1,29 @@
 import { describe, it, expect, afterEach } from "vitest";
+import Anthropic from "@anthropic-ai/sdk";
+import Cerebras from "@cerebras/cerebras_cloud_sdk";
+import Groq from "groq-sdk";
 import {
+  classifyTextGenerationError,
+  TextGenerationError,
   filterToLatestClaudeGeneration,
   generateChatCompletion,
   getAvailableProviders,
+  getProviderApiKey,
   isChatModelId,
   isModelAllowed,
   isProviderAvailable,
   isUsableOpenRouterModel,
   supportsReasoningEffort,
+  type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { getNarrationModelRef, isNarrationLlmAvailable } from "@/server/services/narration";
 import { parseModelRef } from "@/lib/ai/model-ref";
-import { buildChatCompletionBody } from "@/server/services/openrouter";
+import {
+  buildChatCompletionBody,
+  chatCompletionText,
+  OpenRouterChatError,
+} from "@/server/services/openrouter";
+import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
 import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
@@ -54,6 +66,17 @@ afterEach(() => {
 });
 
 describe("isProviderAvailable / getAvailableProviders", () => {
+  it("keeps a provider whose saved key can't be read off the server's key", () => {
+    clearEnv();
+    process.env.DEEPINFRA_API_KEY = "server-key";
+    const keys: AiProviderKeys = { deepinfra: UNREADABLE_API_KEY };
+    // Still the user's own provider, so callers reach its clear error...
+    expect(isProviderAvailable("deepinfra", keys)).toBe(true);
+    // ...but there's no key to call it with, the server's included.
+    expect(getProviderApiKey("deepinfra", keys)).toBeNull();
+    expect(getProviderApiKey("deepinfra", {})).toBe("server-key");
+  });
+
   it("uses per-user keys", () => {
     clearEnv();
     expect(isProviderAvailable("cerebras", { cerebras: "csk-test" })).toBe(true);
@@ -551,5 +574,122 @@ describe("buildChatCompletionBody (OpenRouter)", () => {
       buildChatCompletionBody("m", options, [], { maxInputPrice: 0.35, maxOutputPrice: 0.75 })
     ).toMatchObject({ provider: { max_price: { prompt: 0.35, completion: 0.75 } } });
     expect(buildChatCompletionBody("m", options, []).provider).not.toHaveProperty("max_price");
+  });
+});
+
+describe("classifyTextGenerationError", () => {
+  const headers = new Headers();
+
+  it("treats rate limiting and overload as busy", () => {
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(429, undefined, "slow", headers))
+    ).toBe("busy");
+    // Anthropic's "overloaded"
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(529, undefined, "busy", headers))
+    ).toBe("busy");
+    expect(
+      classifyTextGenerationError(Groq.APIError.generate(503, undefined, "busy", headers))
+    ).toBe("busy");
+    // A timeout, and Groq's flex tier out of capacity
+    expect(
+      classifyTextGenerationError(Groq.APIError.generate(408, undefined, "slow", headers))
+    ).toBe("busy");
+    expect(
+      classifyTextGenerationError(Groq.APIError.generate(498, undefined, "full", headers))
+    ).toBe("busy");
+    expect(classifyTextGenerationError(new OpenRouterChatError(429, "slow down"))).toBe("busy");
+  });
+
+  it("classifies OpenRouter's failures by status, or for one in a 200 body, its code", () => {
+    const failureOf = (status: number, body: unknown): unknown => {
+      try {
+        chatCompletionText(status, body);
+      } catch (error) {
+        return error;
+      }
+      throw new Error("expected a failure");
+    };
+
+    const upstream = failureOf(200, { error: { code: 429, message: "Provider returned error" } });
+    expect(classifyTextGenerationError(upstream)).toBe("busy");
+    expect(new TextGenerationError("openrouter", "busy", true, upstream).providerMessage).toBe(
+      "Provider returned error"
+    );
+
+    const refused = failureOf(402, { error: { code: 402, message: "Insufficient credits" } });
+    expect(classifyTextGenerationError(refused)).toBe("rejected");
+    expect(new TextGenerationError("openrouter", "rejected", true, refused).providerMessage).toBe(
+      "Insufficient credits"
+    );
+    // Not JSON at all: the status still decides.
+    expect(classifyTextGenerationError(failureOf(503, null))).toBe("busy");
+
+    expect(chatCompletionText(200, { choices: [{ message: { content: "ok" } }] })).toBe("ok");
+  });
+
+  it("treats an unreachable provider as busy", () => {
+    expect(classifyTextGenerationError(new Anthropic.APIConnectionError({}))).toBe("busy");
+    expect(classifyTextGenerationError(new Cerebras.APIConnectionTimeoutError())).toBe("busy");
+    expect(classifyTextGenerationError(new TypeError("fetch failed"))).toBe("busy");
+    expect(classifyTextGenerationError(new DOMException("timed out", "TimeoutError"))).toBe("busy");
+  });
+
+  it("treats other 4xx answers as rejections", () => {
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(401, undefined, "bad key", headers))
+    ).toBe("rejected");
+    expect(
+      classifyTextGenerationError(Cerebras.APIError.generate(400, undefined, "bad model", {}))
+    ).toBe("rejected");
+    expect(classifyTextGenerationError(new OpenRouterChatError(402, "no credit"))).toBe("rejected");
+  });
+
+  it("treats anything else as a failure", () => {
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(500, undefined, "oops", headers))
+    ).toBe("failed");
+    expect(classifyTextGenerationError(new Error("something else"))).toBe("failed");
+    expect(classifyTextGenerationError("not even an error")).toBe("failed");
+  });
+});
+
+describe("TextGenerationError.providerMessage", () => {
+  it("is the provider's own explanation, not the SDK's status and JSON body", () => {
+    const anthropic = Anthropic.APIError.generate(
+      401,
+      { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } },
+      undefined,
+      new Headers()
+    );
+    expect(anthropic.message).not.toBe("invalid x-api-key");
+    expect(new TextGenerationError("anthropic", "rejected", true, anthropic).providerMessage).toBe(
+      "invalid x-api-key"
+    );
+
+    const groq = Groq.APIError.generate(
+      400,
+      { error: { message: "model not found", type: "invalid_request_error" } },
+      undefined,
+      new Headers()
+    );
+    expect(new TextGenerationError("groq", "rejected", true, groq).providerMessage).toBe(
+      "model not found"
+    );
+
+    expect(
+      new TextGenerationError(
+        "openrouter",
+        "rejected",
+        true,
+        new OpenRouterChatError(402, "no credit")
+      ).providerMessage
+    ).toBe("no credit");
+  });
+
+  it("falls back to the error's message when there's no explanation", () => {
+    expect(
+      new TextGenerationError("groq", "failed", true, new Error("socket hang up")).providerMessage
+    ).toBe("socket hang up");
   });
 });
