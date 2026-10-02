@@ -4,7 +4,56 @@
  * (OpenRouter and other OpenAI-compatible APIs).
  */
 
-/** The provider turned the request away for now (429): it can be tried again. */
+/**
+ * How a provider call failed, as far as the caller should care:
+ * - `busy`: rate limited, overloaded, or unreachable — worth trying again shortly.
+ * - `rejected`: the provider refused the request (bad key, no credit, a model
+ *   or request it won't serve) — retrying unchanged won't help.
+ * - `failed`: anything else.
+ */
+export type ProviderFailure = "busy" | "rejected" | "failed";
+
+/**
+ * HTTP statuses meaning "not right now": a timeout, rate limiting, an
+ * unavailable upstream, Groq's 498 (flex tier out of capacity), and
+ * Anthropic's 529 (overloaded).
+ */
+const BUSY_STATUSES: ReadonlySet<number> = new Set([408, 429, 498, 502, 503, 504, 529]);
+
+/**
+ * What a provider answering `status` means. A request made without a key (a
+ * public catalog) is never a rejection: a 4xx there says nothing about the
+ * user's key, so it's trouble to wait out.
+ */
+export function classifyProviderStatus(
+  status: number,
+  { keyed = true }: { keyed?: boolean } = {}
+): ProviderFailure {
+  if (BUSY_STATUSES.has(status)) return "busy";
+  // A conflict can pass on another try.
+  if (keyed && status >= 400 && status < 500 && status !== 409) return "rejected";
+  return "failed";
+}
+
+/**
+ * A plain-fetch request that got no answer: a network failure is a TypeError,
+ * a timeout a TimeoutError DOMException.
+ */
+export function isFetchConnectionError(error: unknown): boolean {
+  return (
+    (error instanceof TypeError && error.message === "fetch failed") ||
+    (error instanceof DOMException && error.name === "TimeoutError")
+  );
+}
+
+/** What a failed plain-fetch provider call (see {@link providerError}) means. */
+export function classifyProviderError(error: unknown): ProviderFailure {
+  if (error instanceof ProviderBusyError || isFetchConnectionError(error)) return "busy";
+  if (error instanceof ProviderRejectedError) return "rejected";
+  return "failed";
+}
+
+/** The provider turned the request away for now: it can be tried again. */
 export class ProviderBusyError extends Error {
   constructor(
     message: string,
@@ -42,8 +91,7 @@ export function retryAfterSeconds(header: string | null, now = Date.now()): numb
 
 /**
  * The error for `provider`'s failed `response`, with its message if it gave
- * one. A request made without a key (a public catalog) is never a rejection:
- * a 4xx there says nothing about the user's key, so it's trouble to wait out.
+ * one: busy, rejected or neither, by {@link classifyProviderStatus}.
  */
 export async function providerError(
   provider: string,
@@ -60,12 +108,12 @@ export async function providerError(
   }
   const { status } = response;
   const message = `${provider} request failed with status ${status}${detail ? `: ${detail}` : ""}`;
-  if (status === 429) {
-    return new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")));
+  switch (classifyProviderStatus(status, { keyed })) {
+    case "busy":
+      return new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")));
+    case "rejected":
+      return new ProviderRejectedError(message, provider, detail);
+    case "failed":
+      return new Error(message);
   }
-  // A timeout (408) or a conflict (409) can pass on another try.
-  if (keyed && status >= 400 && status < 500 && status !== 408 && status !== 409) {
-    return new ProviderRejectedError(message, provider, detail);
-  }
-  return new Error(message);
 }
