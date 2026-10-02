@@ -11,8 +11,9 @@
  * requests are CSRF-safe the way tRPC's are: the session cookie is
  * `SameSite=Lax`, and a JSON body can't come from a cross-site form.
  *
- * Errors before any audio are JSON `{ code, message }` with the status the
- * REST API would use; a failure after audio has started cuts the stream short.
+ * Errors before any audio are JSON shaped like the REST API's (`message`, and
+ * `data.appErrorCode` where tRPC would set one) with the status it would use;
+ * a failure after audio has started cuts the stream short.
  */
 
 import { z } from "zod";
@@ -44,9 +45,11 @@ function errorResponse(
   status: number,
   code: string,
   message: string,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  appErrorCode?: string
 ): Response {
-  return new Response(JSON.stringify({ code, message }), {
+  const data = appErrorCode ? { appErrorCode } : undefined;
+  return new Response(JSON.stringify({ code, message, data }), {
     status,
     headers: { "Content-Type": "application/json", ...headers },
   });
@@ -58,8 +61,10 @@ export async function POST(req: Request): Promise<Response> {
   if (!auth.confirmed) {
     return errorResponse(
       403,
-      "SIGNUP_CONFIRMATION_REQUIRED",
-      "You must complete signup before accessing this resource"
+      "FORBIDDEN",
+      "You must complete signup before accessing this resource",
+      {},
+      "SIGNUP_CONFIRMATION_REQUIRED"
     );
   }
   if (!req.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
