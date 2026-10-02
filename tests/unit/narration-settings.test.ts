@@ -262,7 +262,7 @@ describe("DEFAULT_NARRATION_SETTINGS", () => {
     expect(DEFAULT_NARRATION_SETTINGS.highlightEnabled).toBe(true);
     expect(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled).toBe(true);
     expect(DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds).toBe(0.1);
-    expect(DEFAULT_NARRATION_SETTINGS.cloudPauseSeconds).toBe(1);
+    expect(DEFAULT_NARRATION_SETTINGS.cloudPauseSeconds).toBe(0.6);
   });
 });
 
