@@ -149,6 +149,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.androidx.work.testing)
     testImplementation(libs.robolectric)
     // Hosts the ComponentActivity that createComposeRule() launches.
     debugImplementation(libs.androidx.compose.ui.test.manifest)

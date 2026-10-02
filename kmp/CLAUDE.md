@@ -41,7 +41,12 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   involuntary sign-out doesn't touch them); another account gets a fresh file
   and the previous one is deleted; signing out deletes it (after trying to
   send the unsent changes, and asking before losing any), and then the
-  tokens, before revoking them.
+  tokens, before revoking them. Start-up deletes any other account's file
+  (one a sign-out or switch didn't live to finish). A kept account isn't shown
+  or synced after a new sign-in until `/auth/me` says the tokens are its
+  (`AccountSession.confirmed`): they may be someone else's. A closed session's
+  database turns any further use into a cancellation (`SessionDriver`), since
+  screens and syncs can still be running on it.
 - **Local state vs. unsent changes.** `entry.read`/`starred` hold the last
   server state; the user's changes live in `outbox_state` (one row per entry
   and field, device timestamp) and win on display through `entry_view`. A
@@ -124,7 +129,7 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **Accessibility:** a list row is one TalkBack/Switch Access stop, with
   its buttons (and the swipe) as custom actions and the buttons themselves
   hidden from accessibility services. A new row control needs a matching
-  action. So is a switch with its label (`SettingSwitch`). Where something
+  action. A switch and its label are one stop too (`SettingSwitch`). Where something
   changes without focus moving (the reader's pager, a sign-in error), a polite
   live region says what changed.
 - **Reader view.** Hardened per SECURITY.md §1; the body is the server's

@@ -82,7 +82,11 @@ class MainActivity : ComponentActivity() {
                 AuthTabIntent.RESULT_VERIFICATION_FAILED,
                 AuthTabIntent.RESULT_VERIFICATION_TIMED_OUT ->
                     graph.pendingAuthorization?.let {
-                        runCatching { openCustomTab(it.url.toUri()) }
+                        try {
+                            openCustomTab(it.url.toUri())
+                        } catch (_: ActivityNotFoundException) {
+                            Toast.makeText(this, NO_BROWSER, Toast.LENGTH_LONG).show()
+                        }
                     }
                 // Closed by the user, or by a Custom Tab's App Link (see above).
                 AuthTabIntent.RESULT_CANCELED,
@@ -193,11 +197,14 @@ class MainActivity : ComponentActivity() {
             SignInScreen(graph.serverUrl, error, allowHttp = BuildConfig.DEBUG, ::startSignIn)
             return
         }
-        if (account == null || account.connection !== connection) {
+        val confirmed = account?.confirmed?.collectAsStateWithLifecycle()?.value == true
+        if (account == null || account.connection !== connection || !confirmed) {
             // Signed in, but which account isn't settled yet (e.g. the
             // /auth/me call failed offline); keep trying.
             LaunchedEffect(connection) {
-                while (graph.account.value?.connection !== connection) {
+                while (
+                    graph.account.value.let { it?.connection !== connection || !it.confirmed.value }
+                ) {
                     runCatching { graph.signedIn() }
                     delay(5_000)
                 }

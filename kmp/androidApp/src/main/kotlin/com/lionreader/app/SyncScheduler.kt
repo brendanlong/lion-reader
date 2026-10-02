@@ -70,7 +70,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         val graph = applicationContext.graph
         val account = graph.account.value ?: return Result.success()
-        if (!account.connection.auth.signedIn.value) return Result.success()
+        if (!account.connection.auth.signedIn.value || !account.confirmed.value) {
+            return Result.success()
+        }
         return try {
             // SyncEngine doesn't leave the caller's thread, and it's database work.
             withContext(Dispatchers.IO) {

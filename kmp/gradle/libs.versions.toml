@@ -68,6 +68,7 @@ androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-te
 androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-test-espresso" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-test-junit" }
 androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "androidx-work" }
+androidx-work-testing = { module = "androidx.work:work-testing", version.ref = "androidx-work" }
 androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "androidx-webkit" }
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
