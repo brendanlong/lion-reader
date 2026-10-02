@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Rect
 import android.graphics.RectF
+import android.os.SystemClock
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
@@ -24,6 +25,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -74,7 +76,6 @@ fun ReaderWebView(
                 ReaderView(context)
                     .also { shown[0] = it }
                     .apply {
-                        onPageReady = losses::pageReady
                         // For our scripts; the CSP keeps anything else from running.
                         @SuppressLint("SetJavaScriptEnabled")
                         settings.javaScriptEnabled = true
@@ -130,29 +131,31 @@ fun ReaderWebView(
 
 /**
  * A page whose renderer went away gets a new WebView. The system reclaiming renderers is routine
- * (low-memory e-readers do it often); a page that crashes its renderer [MAX_RENDERER_CRASHES] times
- * in a row, without once loading, is given up on.
+ * (low-memory e-readers do it often); a page whose renderer crashes [MAX_RENDERER_CRASHES] times
+ * within [CRASH_WINDOW_MILLIS] is given up on, whether or not it loaded in between, so one that
+ * crashes just after loading doesn't reload for ever.
  */
-internal class RendererLosses {
+internal class RendererLosses(private val now: () -> Long = SystemClock::elapsedRealtime) {
     /** Keys the page's WebView: a new one each loss. */
     var generation by mutableIntStateOf(0)
         private set
 
-    private var crashes by mutableIntStateOf(0)
-
-    val gaveUp: Boolean
-        get() = crashes >= MAX_RENDERER_CRASHES
+    private val crashes = ArrayDeque<Long>()
+    var gaveUp by mutableStateOf(false)
+        private set
 
     fun lost(crashed: Boolean) {
-        if (crashed) crashes++
+        if (crashed) {
+            val at = now()
+            crashes.addLast(at)
+            while (at - crashes.first() > CRASH_WINDOW_MILLIS) crashes.removeFirst()
+            if (crashes.size >= MAX_RENDERER_CRASHES) gaveUp = true
+        }
         generation++
-    }
-
-    fun pageReady() {
-        crashes = 0
     }
 }
 
+internal const val CRASH_WINDOW_MILLIS = 60_000L
 internal const val MAX_RENDERER_CRASHES = 3
 
 /**
@@ -198,7 +201,6 @@ private class ReaderView(context: Context) : WebView(context) {
 
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
-    var onPageReady: () -> Unit = {}
     /** Its renderer is gone, so it can only be destroyed. */
     var rendererLost = false
     private var wanted: Int? = null
@@ -218,7 +220,6 @@ private class ReaderView(context: Context) : WebView(context) {
                 val paragraphs = message.optJSONArray("paragraphs") ?: return
                 narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
                 pageReady = true
-                onPageReady()
                 shown = null
                 highlight(wanted, scroll)
             }

@@ -6,10 +6,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RendererLossesTest {
+    private var clock = 0L
+    private val losses = RendererLosses { clock }
+
     @Test
     fun theSystemReclaimingRenderersNeverGivesUp() {
-        val losses = RendererLosses()
-
         repeat(10) { losses.lost(crashed = false) }
 
         assertFalse(losses.gaveUp)
@@ -17,10 +18,11 @@ class RendererLossesTest {
     }
 
     @Test
-    fun givesUpOnTheThirdCrashInARow() {
-        val losses = RendererLosses()
-
-        repeat(MAX_RENDERER_CRASHES - 1) { losses.lost(crashed = true) }
+    fun givesUpOnThreeCrashesWithinAMinute() {
+        repeat(MAX_RENDERER_CRASHES - 1) {
+            losses.lost(crashed = true)
+            clock += 10_000
+        }
         assertFalse(losses.gaveUp)
         losses.lost(crashed = true)
 
@@ -29,12 +31,11 @@ class RendererLossesTest {
     }
 
     @Test
-    fun aPageThatLoadedStartsCountingAgain() {
-        val losses = RendererLosses()
-
-        repeat(MAX_RENDERER_CRASHES - 1) { losses.lost(crashed = true) }
-        losses.pageReady()
-        repeat(MAX_RENDERER_CRASHES - 1) { losses.lost(crashed = true) }
+    fun crashesFarApartDontAddUp() {
+        repeat(5) {
+            losses.lost(crashed = true)
+            clock += CRASH_WINDOW_MILLIS
+        }
 
         assertFalse(losses.gaveUp)
     }
