@@ -23,6 +23,7 @@ import {
 } from "@/lib/ai/providers";
 import {
   listOpenRouterModels,
+  OpenRouterChatError,
   openRouterChatCompletion,
   openRouterTextModelPrice,
   pricePerMillionUnits,
@@ -34,13 +35,22 @@ import {
   serverKeyTokenPriceCaps,
   type ModelPrice,
 } from "@/server/services/server-key-models";
-import { ProviderBusyError } from "@/server/services/provider-errors";
+import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 
 /**
  * Per-user provider API keys, as `getUserApiKeys` returns them. A missing or
- * null entry falls back to the server's key.
+ * null entry falls back to the server's key; {@link UNREADABLE_API_KEY} doesn't.
  */
-export type AiProviderKeys = Partial<Record<AiProvider, string | null>>;
+export type AiProviderKeys = Partial<Record<AiProvider, string | null | typeof UNREADABLE_API_KEY>>;
+
+/** A call to a provider whose saved key can't be read. */
+export class UnreadableApiKeyError extends Error {
+  constructor(readonly provider: AiProvider) {
+    super(
+      `Your saved ${aiProviderName(provider)} API key can't be read; enter it again in Settings.`
+    );
+  }
+}
 
 /** Each provider's server key: `<PROVIDER>_API_KEY`. */
 export const AI_PROVIDER_ENV_KEYS = Object.fromEntries(
@@ -48,11 +58,21 @@ export const AI_PROVIDER_ENV_KEYS = Object.fromEntries(
 ) as Record<AiProvider, string>;
 
 function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
-  return keys?.[provider] ?? null;
+  const key = keys?.[provider];
+  return typeof key === "string" && key ? key : null;
 }
 
-/** The user's key for the provider, else the server's, else null. */
+/** Whether calls to the provider are the user's own (their key, even an unreadable one). */
+function isOnUserKey(provider: AiProvider, keys?: AiProviderKeys): boolean {
+  return !!userKeyFor(provider, keys) || keys?.[provider] === UNREADABLE_API_KEY;
+}
+
+/**
+ * The user's key for the provider, else the server's, else null. Null, not the
+ * server's, when the user's saved key can't be read.
+ */
 export function getProviderApiKey(provider: AiProvider, keys?: AiProviderKeys): string | null {
+  if (keys?.[provider] === UNREADABLE_API_KEY) return null;
   return userKeyFor(provider, keys) ?? process.env[AI_PROVIDER_ENV_KEYS[provider]] ?? null;
 }
 
@@ -60,7 +80,7 @@ export function getProviderApiKey(provider: AiProvider, keys?: AiProviderKeys): 
  * Checks whether a provider can be used (user key or server env key set).
  */
 export function isProviderAvailable(provider: AiProvider, keys?: AiProviderKeys): boolean {
-  return !!userKeyFor(provider, keys) || !!process.env[AI_PROVIDER_ENV_KEYS[provider]];
+  return isOnUserKey(provider, keys) || !!process.env[AI_PROVIDER_ENV_KEYS[provider]];
 }
 
 /**
@@ -75,7 +95,7 @@ export function isModelAllowed(
 ): boolean {
   const { provider } = parseModelRef(modelRef);
   if (!isProviderAvailable(provider, keys)) return false;
-  return !!userKeyFor(provider, keys) || isAllowedOnServerKey(modelRef, price);
+  return isOnUserKey(provider, keys) || isAllowedOnServerKey(modelRef, price);
 }
 
 /** {@link isModelAllowed} for a text model, looking up its price if that's what decides. */
@@ -103,10 +123,13 @@ export function getAvailableProviders(keys?: AiProviderKeys): TextAiProvider[] {
 }
 
 /**
- * Per-attempt timeout for the provider SDKs, matching OpenRouter's. Anthropic's
- * default is 10 minutes, far longer than anyone waits for a summary.
+ * The provider SDKs' timeout and retries: each attempt gets the timeout, so
+ * together they keep a hung provider to about two minutes (OpenRouter's
+ * request, which isn't retried, gets two minutes in all). The SDK defaults —
+ * Anthropic's 10 minutes, and two retries everywhere — would hold a request
+ * far longer than anyone waits for a summary.
  */
-const TEXT_REQUEST_TIMEOUT_MS = 120_000;
+const TEXT_CLIENT_OPTIONS = { timeout: 60_000, maxRetries: 1 };
 
 // Global clients for the server-wide env keys, created lazily. Clients for
 // per-user keys are always created fresh (never cached).
@@ -115,46 +138,49 @@ let globalGroqClient: Groq | null = null;
 let globalCerebrasClient: Cerebras | null = null;
 
 function getAnthropicClient(keys?: AiProviderKeys): Anthropic | null {
+  if (keys?.anthropic === UNREADABLE_API_KEY) return null;
   const userKey = userKeyFor("anthropic", keys);
   if (userKey) {
-    return new Anthropic({ apiKey: userKey, timeout: TEXT_REQUEST_TIMEOUT_MS });
+    return new Anthropic({ apiKey: userKey, ...TEXT_CLIENT_OPTIONS });
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     return null;
   }
   globalAnthropicClient ??= new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    timeout: TEXT_REQUEST_TIMEOUT_MS,
+    ...TEXT_CLIENT_OPTIONS,
   });
   return globalAnthropicClient;
 }
 
 function getGroqClient(keys?: AiProviderKeys): Groq | null {
+  if (keys?.groq === UNREADABLE_API_KEY) return null;
   const userKey = userKeyFor("groq", keys);
   if (userKey) {
-    return new Groq({ apiKey: userKey, timeout: TEXT_REQUEST_TIMEOUT_MS });
+    return new Groq({ apiKey: userKey, ...TEXT_CLIENT_OPTIONS });
   }
   if (!process.env.GROQ_API_KEY) {
     return null;
   }
   globalGroqClient ??= new Groq({
     apiKey: process.env.GROQ_API_KEY,
-    timeout: TEXT_REQUEST_TIMEOUT_MS,
+    ...TEXT_CLIENT_OPTIONS,
   });
   return globalGroqClient;
 }
 
 function getCerebrasClient(keys?: AiProviderKeys): Cerebras | null {
+  if (keys?.cerebras === UNREADABLE_API_KEY) return null;
   const userKey = userKeyFor("cerebras", keys);
   if (userKey) {
-    return new Cerebras({ apiKey: userKey, timeout: TEXT_REQUEST_TIMEOUT_MS });
+    return new Cerebras({ apiKey: userKey, ...TEXT_CLIENT_OPTIONS });
   }
   if (!process.env.CEREBRAS_API_KEY) {
     return null;
   }
   globalCerebrasClient ??= new Cerebras({
     apiKey: process.env.CEREBRAS_API_KEY,
-    timeout: TEXT_REQUEST_TIMEOUT_MS,
+    ...TEXT_CLIENT_OPTIONS,
   });
   return globalCerebrasClient;
 }
@@ -206,6 +232,9 @@ export type TextGenerationFailure = "busy" | "rejected" | "failed";
 
 /** A failed {@link generateChatCompletion}; the provider's error is the `cause`. */
 export class TextGenerationError extends Error {
+  /** What the provider said, without the SDK's decoration, for showing the user. */
+  readonly providerMessage: string;
+
   constructor(
     readonly provider: TextAiProvider,
     readonly failure: TextGenerationFailure,
@@ -217,11 +246,16 @@ export class TextGenerationError extends Error {
     cause: unknown
   ) {
     super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.providerMessage = providerMessageOf(cause) ?? this.message;
   }
 }
 
-/** HTTP statuses meaning "not right now" (529 is Anthropic's "overloaded"). */
-const BUSY_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504, 529]);
+/**
+ * HTTP statuses meaning "not right now": a timeout, rate limiting, an
+ * unavailable upstream, Groq's 498 (flex tier out of capacity), and
+ * Anthropic's 529 (overloaded).
+ */
+const BUSY_STATUSES: ReadonlySet<number> = new Set([408, 429, 498, 502, 503, 504, 529]);
 
 const SDKS = [Anthropic, Groq, Cerebras];
 
@@ -235,6 +269,28 @@ function isConnectionError(error: unknown): boolean {
   );
 }
 
+/** The string at `path` in `value`, if there is one. */
+function stringAt(value: unknown, ...path: string[]): string | undefined {
+  let current = value;
+  for (const key of path) {
+    if (current === null || typeof current !== "object" || !(key in current)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" && current ? current : undefined;
+}
+
+/**
+ * The provider's own explanation of a failure. An SDK error's message is its
+ * status plus the JSON body; the explanation is in that body, at `error.message`
+ * (Anthropic, and the OpenAI-shaped Groq and Cerebras) or `message`.
+ */
+function providerMessageOf(error: unknown): string | undefined {
+  if (error instanceof OpenRouterChatError) return error.providerMessage;
+  if (!SDKS.some((sdk) => error instanceof sdk.APIError)) return undefined;
+  const body = (error as { error?: unknown }).error;
+  return stringAt(body, "error", "message") ?? stringAt(body, "message");
+}
+
 /** The HTTP status a provider answered a failed request with, if it answered. */
 function providerStatusOf(error: unknown): number | undefined {
   const status =
@@ -243,7 +299,7 @@ function providerStatusOf(error: unknown): number | undefined {
 }
 
 export function classifyTextGenerationError(error: unknown): TextGenerationFailure {
-  if (error instanceof ProviderBusyError || isConnectionError(error)) return "busy";
+  if (isConnectionError(error)) return "busy";
   const status = providerStatusOf(error);
   if (status === undefined) return "failed";
   if (BUSY_STATUSES.has(status)) return "busy";
@@ -268,6 +324,9 @@ export async function generateChatCompletion(
   if (!isTextAiProvider(provider)) {
     throw new Error(`${aiProviderName(provider)} is only used for cloud voices`);
   }
+  if (keys?.[provider] === UNREADABLE_API_KEY) {
+    throw new UnreadableApiKeyError(provider);
+  }
   if (!isProviderAvailable(provider, keys)) {
     throw new Error(`${aiProviderName(provider)} API key not configured`);
   }
@@ -284,7 +343,7 @@ export async function generateChatCompletion(
     throw new TextGenerationError(
       provider,
       classifyTextGenerationError(error),
-      !!userKeyFor(provider, keys),
+      isOnUserKey(provider, keys),
       error
     );
   }
@@ -596,8 +655,9 @@ async function listProviderModels(
 
 /**
  * Lists selectable text models across the requested providers (default: all),
- * skipping providers with no key configured. A provider whose listing fails
- * is logged and skipped so the others still show up.
+ * skipping providers with no usable key (none, or the user's can't be read).
+ * A provider whose listing fails is logged and skipped so the others still
+ * show up.
  */
 export async function listAllModels(
   keys?: AiProviderKeys,
@@ -606,7 +666,7 @@ export async function listAllModels(
 ): Promise<AiModel[]> {
   const results = await Promise.all(
     providers
-      .filter((provider) => isProviderAvailable(provider, keys))
+      .filter((provider) => getProviderApiKey(provider, keys) !== null)
       .map(async (provider) => {
         try {
           return await listProviderModels(provider, keys, requirements);

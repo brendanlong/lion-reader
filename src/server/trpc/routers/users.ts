@@ -18,6 +18,7 @@ import { errors } from "../errors";
 import { sessions, users, oauthAccounts, userApiKeys } from "@/server/db/schema";
 import {
   getApiKeyProviders,
+  getUserApiKeys,
   revokeSession,
   revokeOtherUserSessionsOrReport,
   invalidateUserSessionCaches,
@@ -26,6 +27,7 @@ import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
+import { unreadableKeyProviders } from "@/server/services/unreadable-api-key";
 import { revokeUserClientTokens } from "@/server/oauth/service";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
 
@@ -55,6 +57,8 @@ const preferencesOutputSchema = z.object({
   canConfigureApiKeys: z.boolean(),
   /** The providers the user has set their own API key for. */
   apiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
+  /** Those of them whose saved key can't be read, and has to be entered again. */
+  unreadableApiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
   summarizationModel: z.string().nullable(),
   summarizationMaxWords: z.number().nullable(),
   summarizationPrompt: z.string().nullable(),
@@ -376,6 +380,9 @@ export const usersRouter = createTRPCRouter({
         showSpam: ctx.session.user.showSpam,
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(ctx.session.user.id),
+        unreadableApiKeyProviders: unreadableKeyProviders(
+          await getUserApiKeys(ctx.session.user.id)
+        ),
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
@@ -402,8 +409,8 @@ export const usersRouter = createTRPCRouter({
         showSpam: z.boolean().optional(),
         // API keys by provider: empty string clears the key, non-empty sets it
         apiKeys: z.partialRecord(z.enum(AI_PROVIDERS), z.string().trim().max(1000)).optional(),
-        summarizationModel: z.string().max(200).optional(),
-        narrationModel: z.string().max(200).optional(),
+        summarizationModel: z.string().optional(),
+        narrationModel: z.string().optional(),
         // Summarization settings: null clears (reverts to default)
         summarizationMaxWords: z.number().int().min(1).max(10000).nullable().optional(),
         summarizationPrompt: z.string().max(10000).nullable().optional(),
@@ -495,6 +502,7 @@ export const usersRouter = createTRPCRouter({
         showSpam: updatedUser[0]?.showSpam ?? false,
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(userId),
+        unreadableApiKeyProviders: unreadableKeyProviders(await getUserApiKeys(userId)),
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,

@@ -38,6 +38,14 @@ function getEncryptionKey(): Buffer {
 }
 
 /**
+ * Throws, as decrypting would, if API_KEY_ENCRYPTION_KEY is missing or the
+ * wrong size: what's wrong is the server, not any one stored value.
+ */
+export function assertEncryptionConfigured(): void {
+  getEncryptionKey();
+}
+
+/**
  * Returns true if the encryption key is configured.
  */
 export function isEncryptionConfigured(): boolean {

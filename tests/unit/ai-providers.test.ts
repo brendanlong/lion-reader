@@ -4,20 +4,31 @@ import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
 import {
   classifyTextGenerationError,
+  TextGenerationError,
   filterToLatestClaudeGeneration,
   generateChatCompletion,
   getAvailableProviders,
+  getProviderApiKey,
   isChatModelId,
   isModelAllowed,
   isProviderAvailable,
   isUsableOpenRouterModel,
   supportsReasoningEffort,
+  type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { getNarrationModelRef, isNarrationLlmAvailable } from "@/server/services/narration";
 import { parseModelRef } from "@/lib/ai/model-ref";
-import { buildChatCompletionBody } from "@/server/services/openrouter";
-import { ProviderBusyError } from "@/server/services/provider-errors";
-import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
+import {
+  buildChatCompletionBody,
+  chatCompletionText,
+  OpenRouterChatError,
+} from "@/server/services/openrouter";
+import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import {
+  getSummarizationModelId,
+  isSummarizationAvailable,
+  summaryAttemptSource,
+} from "@/server/services/summarization";
 import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
@@ -59,6 +70,17 @@ afterEach(() => {
 });
 
 describe("isProviderAvailable / getAvailableProviders", () => {
+  it("keeps a provider whose saved key can't be read off the server's key", () => {
+    clearEnv();
+    process.env.DEEPINFRA_API_KEY = "server-key";
+    const keys: AiProviderKeys = { deepinfra: UNREADABLE_API_KEY };
+    // Still the user's own provider, so callers reach its clear error...
+    expect(isProviderAvailable("deepinfra", keys)).toBe(true);
+    // ...but there's no key to call it with, the server's included.
+    expect(getProviderApiKey("deepinfra", keys)).toBeNull();
+    expect(getProviderApiKey("deepinfra", {})).toBe("server-key");
+  });
+
   it("uses per-user keys", () => {
     clearEnv();
     expect(isProviderAvailable("cerebras", { cerebras: "csk-test" })).toBe(true);
@@ -573,10 +595,41 @@ describe("classifyTextGenerationError", () => {
     expect(
       classifyTextGenerationError(Groq.APIError.generate(503, undefined, "busy", headers))
     ).toBe("busy");
-    // OpenRouter's 429
-    expect(classifyTextGenerationError(new ProviderBusyError("OpenRouter busy", null))).toBe(
-      "busy"
+    // A timeout, and Groq's flex tier out of capacity
+    expect(
+      classifyTextGenerationError(Groq.APIError.generate(408, undefined, "slow", headers))
+    ).toBe("busy");
+    expect(
+      classifyTextGenerationError(Groq.APIError.generate(498, undefined, "full", headers))
+    ).toBe("busy");
+    expect(classifyTextGenerationError(new OpenRouterChatError(429, "slow down"))).toBe("busy");
+  });
+
+  it("classifies OpenRouter's failures by status, or for one in a 200 body, its code", () => {
+    const failureOf = (status: number, body: unknown): unknown => {
+      try {
+        chatCompletionText(status, body);
+      } catch (error) {
+        return error;
+      }
+      throw new Error("expected a failure");
+    };
+
+    const upstream = failureOf(200, { error: { code: 429, message: "Provider returned error" } });
+    expect(classifyTextGenerationError(upstream)).toBe("busy");
+    expect(new TextGenerationError("openrouter", "busy", true, upstream).providerMessage).toBe(
+      "Provider returned error"
     );
+
+    const refused = failureOf(402, { error: { code: 402, message: "Insufficient credits" } });
+    expect(classifyTextGenerationError(refused)).toBe("rejected");
+    expect(new TextGenerationError("openrouter", "rejected", true, refused).providerMessage).toBe(
+      "Insufficient credits"
+    );
+    // Not JSON at all: the status still decides.
+    expect(classifyTextGenerationError(failureOf(503, null))).toBe("busy");
+
+    expect(chatCompletionText(200, { choices: [{ message: { content: "ok" } }] })).toBe("ok");
   });
 
   it("treats an unreachable provider as busy", () => {
@@ -593,10 +646,7 @@ describe("classifyTextGenerationError", () => {
     expect(
       classifyTextGenerationError(Cerebras.APIError.generate(400, undefined, "bad model", {}))
     ).toBe("rejected");
-    // OpenRouter's errors carry the status they were answered with.
-    expect(
-      classifyTextGenerationError(Object.assign(new Error("no credit"), { status: 402 }))
-    ).toBe("rejected");
+    expect(classifyTextGenerationError(new OpenRouterChatError(402, "no credit"))).toBe("rejected");
   });
 
   it("treats anything else as a failure", () => {
@@ -605,5 +655,65 @@ describe("classifyTextGenerationError", () => {
     ).toBe("failed");
     expect(classifyTextGenerationError(new Error("something else"))).toBe("failed");
     expect(classifyTextGenerationError("not even an error")).toBe("failed");
+  });
+});
+
+describe("TextGenerationError.providerMessage", () => {
+  it("is the provider's own explanation, not the SDK's status and JSON body", () => {
+    const anthropic = Anthropic.APIError.generate(
+      401,
+      { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } },
+      undefined,
+      new Headers()
+    );
+    expect(anthropic.message).not.toBe("invalid x-api-key");
+    expect(new TextGenerationError("anthropic", "rejected", true, anthropic).providerMessage).toBe(
+      "invalid x-api-key"
+    );
+
+    const groq = Groq.APIError.generate(
+      400,
+      { error: { message: "model not found", type: "invalid_request_error" } },
+      undefined,
+      new Headers()
+    );
+    expect(new TextGenerationError("groq", "rejected", true, groq).providerMessage).toBe(
+      "model not found"
+    );
+
+    expect(
+      new TextGenerationError(
+        "openrouter",
+        "rejected",
+        true,
+        new OpenRouterChatError(402, "no credit")
+      ).providerMessage
+    ).toBe("no credit");
+  });
+
+  it("falls back to the error's message when there's no explanation", () => {
+    expect(
+      new TextGenerationError("groq", "failed", true, new Error("socket hang up")).providerMessage
+    ).toBe("socket hang up");
+  });
+});
+
+describe("summaryAttemptSource", () => {
+  it("tells models and keys apart without containing the key", () => {
+    const source = summaryAttemptSource("anthropic:claude-x", { anthropic: "sk-ant-secret" });
+    expect(source).not.toContain("sk-ant-secret");
+    expect(source).toBe(summaryAttemptSource("anthropic:claude-x", { anthropic: "sk-ant-secret" }));
+    expect(source).not.toBe(summaryAttemptSource("anthropic:claude-x", { anthropic: "sk-ant-2" }));
+    expect(source).not.toBe(
+      summaryAttemptSource("anthropic:claude-y", { anthropic: "sk-ant-secret" })
+    );
+    expect(source).not.toBe(summaryAttemptSource("anthropic:claude-x", {}));
+    // Another provider's key doesn't matter.
+    expect(summaryAttemptSource("anthropic:claude-x", { groq: "gsk" })).toBe(
+      summaryAttemptSource("anthropic:claude-x", {})
+    );
+    expect(summaryAttemptSource("anthropic:claude-x", { anthropic: UNREADABLE_API_KEY })).not.toBe(
+      summaryAttemptSource("anthropic:claude-x", {})
+    );
   });
 });

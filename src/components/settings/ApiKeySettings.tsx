@@ -11,7 +11,7 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { CheckIcon } from "@/components/ui/icons";
+import { AlertIcon, CheckIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TextLink } from "@/components/ui/text-link";
@@ -104,6 +104,7 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
 
   const { displayName: providerName, keyUrl, keyPlaceholder } = AI_PROVIDER_INFO[provider];
   const hasKey = preferencesQuery.data?.apiKeyProviders.includes(provider) ?? false;
+  const isUnreadable = preferencesQuery.data?.unreadableApiKeyProviders.includes(provider) ?? false;
   const inputId = `${provider}-api-key-input`;
 
   const handleSave = useCallback(() => {
@@ -161,10 +162,17 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
         <div className="flex items-center gap-3">
           {hasKey ? (
             <>
-              <span className="ui-text-sm text-success inline-flex items-center">
-                <CheckIcon className="mr-1 h-4 w-4" />
-                API key configured
-              </span>
+              {isUnreadable ? (
+                <span className="ui-text-sm text-danger inline-flex items-center">
+                  <AlertIcon className="mr-1 h-4 w-4" />
+                  Saved key can&apos;t be read; enter it again
+                </span>
+              ) : (
+                <span className="ui-text-sm text-success inline-flex items-center">
+                  <CheckIcon className="mr-1 h-4 w-4" />
+                  API key configured
+                </span>
+              )}
               <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
                 Change
               </Button>

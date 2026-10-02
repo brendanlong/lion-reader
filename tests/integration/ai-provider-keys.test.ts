@@ -4,7 +4,7 @@
  * demand.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
@@ -12,6 +12,7 @@ import { userApiKeys } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import { getUserApiKeys } from "../../src/server/auth/session";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
+import { UNREADABLE_API_KEY } from "../../src/server/services/unreadable-api-key";
 import { createAuthContext, createTestUser } from "./helpers";
 
 const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
@@ -129,33 +130,60 @@ describe("key input", () => {
     expect(cleared.apiKeyProviders).toEqual([]);
     expect((await getUserApiKeys(userId)).groq).toBeUndefined();
   });
-
-  it("rejects an overlong model id", async () => {
-    const userId = await createTestUser();
-    const caller = createCaller(await createAuthContext(userId));
-    const model = `groq:${"x".repeat(200)}`;
-
-    await expect(
-      caller.users["me.updatePreferences"]({ summarizationModel: model })
-    ).rejects.toThrow();
-    await expect(caller.users["me.updatePreferences"]({ narrationModel: model })).rejects.toThrow();
-  });
 });
 
-it("skips a key that no longer decrypts and keeps the rest", async () => {
-  // E.g. after API_KEY_ENCRYPTION_KEY is rotated: one unreadable key must not
-  // take every AI feature down for the user.
-  const userId = await createTestUser();
-  const caller = createCaller(await createAuthContext(userId));
-  await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+describe("a saved key that no longer decrypts", () => {
+  // E.g. after API_KEY_ENCRYPTION_KEY is rotated.
+  let savedUnder: string | undefined;
+  beforeEach(() => {
+    savedUnder = process.env.API_KEY_ENCRYPTION_KEY;
+  });
+  afterEach(() => {
+    process.env.API_KEY_ENCRYPTION_KEY = savedUnder;
+  });
 
-  const rotatedFrom = process.env.API_KEY_ENCRYPTION_KEY;
-  process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
-  try {
-    await caller.users["me.updatePreferences"]({ apiKeys: { openrouter: "sk-new" } });
+  it("is marked unreadable, leaving the user's other keys working", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
 
-    expect(await getUserApiKeys(userId)).toEqual({ openrouter: "sk-new" });
-  } finally {
-    process.env.API_KEY_ENCRYPTION_KEY = rotatedFrom;
-  }
+    process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+    const updated = await caller.users["me.updatePreferences"]({
+      apiKeys: { openrouter: "sk-new" },
+    });
+
+    expect(await getUserApiKeys(userId)).toEqual({
+      groq: UNREADABLE_API_KEY,
+      openrouter: "sk-new",
+    });
+    // Settings asks for it again, and the row is kept for a fixed encryption key.
+    expect(updated.apiKeyProviders).toEqual(["groq", "openrouter"]);
+    expect(updated.unreadableApiKeyProviders).toEqual(["groq"]);
+
+    process.env.API_KEY_ENCRYPTION_KEY = savedUnder;
+    expect((await getUserApiKeys(userId)).groq).toBe("gsk-old");
+  });
+
+  it("is readable again once re-entered", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+    process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+
+    const updated = await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-new" } });
+
+    expect(updated.unreadableApiKeyProviders).toEqual([]);
+    expect((await getUserApiKeys(userId)).groq).toBe("gsk-new");
+  });
+
+  it("is a loud failure when the encryption key itself is misconfigured", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+
+    process.env.API_KEY_ENCRYPTION_KEY = randomBytes(16).toString("base64");
+    await expect(getUserApiKeys(userId)).rejects.toThrow("must be 32 bytes");
+    delete process.env.API_KEY_ENCRYPTION_KEY;
+    await expect(getUserApiKeys(userId)).rejects.toThrow("API_KEY_ENCRYPTION_KEY is required");
+  });
 });

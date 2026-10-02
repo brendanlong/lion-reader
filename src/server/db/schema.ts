@@ -1134,6 +1134,8 @@ export const entrySummaries = pgTable(
     // Error tracking for retry logic
     error: text("error"),
     errorAt: timestamp("error_at", { withTimezone: true }),
+    // The model and key the failed attempt ran on (`summaryAttemptSource`)
+    errorSource: text("error_source"),
   },
   (table) => [
     // Index for finding stale summaries

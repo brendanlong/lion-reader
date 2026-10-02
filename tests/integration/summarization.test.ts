@@ -339,8 +339,9 @@ describe("summarization.generate regenerate bypasses the cache", () => {
  * insert the placeholder row. The loser must get the winner's row, not a
  * unique-violation 500.
  *
- * The stand-in provider refuses the requests, so they fail deterministically
- * past the placeholder insert (the second may instead meet the first's backoff).
+ * The stand-in provider refuses the requests, so each fails past the
+ * placeholder insert: at the provider, or — if the other already recorded its
+ * failure — at the backoff. A duplicate-key error would have neither code.
  *
  * Nothing here forces the two requests to interleave *inside* the insert
  * window, so this asserts that concurrent requests converge on one row; the
@@ -362,11 +363,10 @@ describe("summarization.generate concurrent placeholder creation", () => {
       callers.map((caller) => caller.summarization.generate({ entryId }))
     );
 
-    // Both got as far as the LLM call rather than a duplicate-key error.
     for (const result of results) {
       expect(result.status).toBe("rejected");
-      expect(String((result as PromiseRejectedResult).reason)).toContain(
-        "Failed to generate summary"
+      expect(["INTERNAL_ERROR", "SUMMARY_RECENTLY_FAILED"]).toContain(
+        getAppErrorCode((result as PromiseRejectedResult).reason)
       );
     }
     const rows = await db.select().from(entrySummaries).where(eq(entrySummaries.userId, userId));
@@ -441,6 +441,45 @@ describe("summarization.generate provider failures", () => {
     const error = await failure(caller.summarization.generate({ entryId }));
     expect(error.code).toBe("BAD_REQUEST");
     expect(getAppErrorCode(error)).toBe("AI_PROVIDER_REJECTED");
-    expect(error.message).toContain("invalid x-api-key");
+    expect(error.message).toBe("Anthropic rejected the request: invalid x-api-key");
+  });
+
+  it("retries at once, without regenerate, once the user changes the key that failed", async () => {
+    providerAnswer = { status: 401, type: "authentication_error", message: "invalid x-api-key" };
+    const { caller, entryId } = await setUp();
+    await caller.users["me.updatePreferences"]({ apiKeys: { anthropic: "sk-ant-old" } });
+    await failure(caller.summarization.generate({ entryId }));
+
+    // Same key: the backoff holds.
+    expect(getAppErrorCode(await failure(caller.summarization.generate({ entryId })))).toBe(
+      "SUMMARY_RECENTLY_FAILED"
+    );
+    expect(providerRequests).toBe(1);
+
+    // A new key is a new attempt.
+    await caller.users["me.updatePreferences"]({ apiKeys: { anthropic: "sk-ant-new" } });
+    expect(getAppErrorCode(await failure(caller.summarization.generate({ entryId })))).toBe(
+      "AI_PROVIDER_REJECTED"
+    );
+    expect(providerRequests).toBe(2);
+  });
+
+  it("says so, without calling anyone, when the user's saved key can't be read", async () => {
+    const { caller, entryId } = await setUp();
+    await caller.users["me.updatePreferences"]({ apiKeys: { anthropic: "sk-ant-user-key" } });
+    const savedUnder = process.env.API_KEY_ENCRYPTION_KEY;
+    process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+    try {
+      const error = await failure(caller.summarization.generate({ entryId }));
+      expect(error.code).toBe("BAD_REQUEST");
+      expect(getAppErrorCode(error)).toBe("AI_PROVIDER_KEY_UNREADABLE");
+      expect(error.message).toBe(
+        "Your saved Anthropic API key can't be read; enter it again in Settings."
+      );
+      // Not quietly on the server's key instead.
+      expect(providerRequests).toBe(0);
+    } finally {
+      process.env.API_KEY_ENCRYPTION_KEY = savedUnder;
+    }
   });
 });

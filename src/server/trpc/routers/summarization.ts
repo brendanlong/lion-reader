@@ -29,14 +29,21 @@ import {
   hashPrompt,
   DEFAULT_SUMMARIZATION_PROMPT,
   sanitizeSummaryHtml,
+  summaryAttemptSource,
 } from "@/server/services/summarization";
-import { isModelAllowed, listAllModels, TextGenerationError } from "@/server/services/ai-providers";
+import {
+  isModelAllowed,
+  listAllModels,
+  TextGenerationError,
+  UnreadableApiKeyError,
+} from "@/server/services/ai-providers";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
 import { aiProviderName } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import type { TRPCError } from "@trpc/server";
+import * as Sentry from "@sentry/nextjs";
 
 // ============================================================================
 // Constants
@@ -48,34 +55,51 @@ import type { TRPCError } from "@trpc/server";
 const RETRY_AFTER_MS = 60 * 60 * 1000;
 
 /**
- * The error to answer a failed generation with, and whether it's worth
- * recording as the backoff. A busy provider isn't: the next tap should simply
- * try again. The provider's own message is shown only when the user's key made
- * the call — on the server's key it may describe the operator's account, so it
- * stays in the logs.
+ * The error to answer a failed generation with; whether it's worth recording
+ * as the backoff; and whether it's ours to look into (reported to Sentry,
+ * with the provider's error, which the client never sees).
+ *
+ * A busy provider isn't backed off: the next tap should simply try again. Nor
+ * is an unreadable saved key, which costs no provider call. The provider's own
+ * message is shown only when the user's key made the call — on the server's
+ * key it may describe the operator's account.
  */
-function summaryFailure(error: unknown): { error: TRPCError; backoff: boolean } {
+function summaryFailure(error: unknown): { error: TRPCError; backoff: boolean; report: boolean } {
+  if (error instanceof UnreadableApiKeyError) {
+    // Reported when the key failed to decrypt.
+    return { error: errors.aiProviderKeyUnreadable(error.message), backoff: false, report: false };
+  }
   if (!(error instanceof TextGenerationError)) {
     // Our own (e.g. no key configured, an empty response).
     const message = error instanceof Error ? error.message : "Unknown error";
-    return { error: errors.internal(`Failed to generate summary: ${message}`), backoff: true };
+    return {
+      error: errors.internal(`Failed to generate summary: ${message}`),
+      backoff: true,
+      report: true,
+    };
   }
   const provider = aiProviderName(error.provider);
   if (error.failure === "busy") {
-    return { error: errors.aiProviderBusy(provider), backoff: false };
+    return { error: errors.aiProviderBusy(provider), backoff: false, report: false };
   }
   if (!error.usedUserKey) {
     return {
       error: errors.internal("Failed to generate summary. Please try again later."),
       backoff: true,
+      report: true,
+    };
+  }
+  if (error.failure === "rejected") {
+    return {
+      error: errors.aiProviderRejected(provider, error.providerMessage),
+      backoff: true,
+      report: false,
     };
   }
   return {
-    error:
-      error.failure === "rejected"
-        ? errors.aiProviderRejected(provider, error.message)
-        : errors.internal(`Failed to generate summary: ${error.message}`),
+    error: errors.internal(`Failed to generate summary: ${error.providerMessage}`),
     backoff: true,
+    report: true,
   };
 }
 
@@ -325,11 +349,14 @@ export const summarizationRouter = createTRPCRouter({
       // Check if we should retry after a previous error. The backoff guards
       // against automatic retry loops; an explicit user retry (the error
       // card's "Try again" / the regenerate button both send regenerate:
-      // true) always goes through — e.g. after the user fixes the failure by
-      // changing model or keys.
+      // true) always goes through, and so does any request once the model or
+      // key that failed has changed — the app never sends regenerate, and the
+      // user may just have fixed the cause.
+      const attemptSource = summaryAttemptSource(currentModelId, keys);
       const canRetry =
         input.regenerate ||
         !summaryRecord.errorAt ||
+        summaryRecord.errorSource !== attemptSource ||
         Date.now() - summaryRecord.errorAt.getTime() > RETRY_AFTER_MS;
 
       if (!canRetry) {
@@ -362,6 +389,7 @@ export const summarizationRouter = createTRPCRouter({
             generatedAt: new Date(),
             error: null,
             errorAt: null,
+            errorSource: null,
           })
           .where(eq(entrySummaries.id, summaryRecord.id));
 
@@ -379,12 +407,19 @@ export const summarizationRouter = createTRPCRouter({
         });
 
         const failure = summaryFailure(error);
+        if (failure.report) {
+          // The tRPC error carries only our code; the provider's error is here.
+          Sentry.captureException(error, {
+            tags: { source: "summarization" },
+            extra: { userId, modelId: currentModelId },
+          });
+        }
         if (failure.backoff) {
           // What the user was told, not the raw error: this is echoed back by
           // the backoff above.
           await ctx.db
             .update(entrySummaries)
-            .set({ error: failure.error.message, errorAt: new Date() })
+            .set({ error: failure.error.message, errorAt: new Date(), errorSource: attemptSource })
             .where(eq(entrySummaries.id, summaryRecord.id));
         }
         throw failure.error;

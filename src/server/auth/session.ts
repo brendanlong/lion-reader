@@ -16,8 +16,9 @@ import { isAiProvider, type AiProvider } from "@/lib/ai/providers";
 import type { AiProviderKeys } from "@/server/services/ai-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
-import { decryptApiKey } from "@/lib/encryption";
-import { logger } from "@/lib/logger";
+import * as Sentry from "@sentry/nextjs";
+import { assertEncryptionConfigured, decryptApiKey } from "@/lib/encryption";
+import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
 import { errors } from "@/server/trpc/errors";
 
@@ -491,30 +492,34 @@ export async function getApiKeyProviders(userId: string): Promise<AiProvider[]> 
  * exposure if Redis is compromised. This function should be called only when
  * the actual key values are needed (e.g., narration, summarization endpoints).
  *
- * A key that no longer decrypts (e.g. after `API_KEY_ENCRYPTION_KEY` was
- * rotated) is skipped, so that provider falls back to the server's key rather
- * than every AI feature failing for the user.
+ * A missing or malformed `API_KEY_ENCRYPTION_KEY` throws. A key that doesn't
+ * decrypt under it is reported and comes back as `UNREADABLE_API_KEY`, so
+ * the user's other keys still work and that provider doesn't quietly move
+ * onto the server's key. The row stays: a wrong (but well-formed) encryption
+ * key fails every row, and fixing it should bring them all back.
  */
 export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
   const rows = await db
     .select({ provider: userApiKeys.provider, encryptedKey: userApiKeys.encryptedKey })
     .from(userApiKeys)
     .where(eq(userApiKeys.userId, userId));
-  return Object.fromEntries(
-    rows.flatMap(({ provider, encryptedKey }) => {
-      if (!isAiProvider(provider)) return [];
-      try {
-        return [[provider, decryptApiKey(encryptedKey)]];
-      } catch (err) {
-        logger.error("Failed to decrypt a stored API key", {
-          userId,
-          provider,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return [];
-      }
-    })
-  );
+  if (rows.length > 0) {
+    assertEncryptionConfigured();
+  }
+  const keys: AiProviderKeys = {};
+  for (const { provider, encryptedKey } of rows) {
+    if (!isAiProvider(provider)) continue;
+    try {
+      keys[provider] = decryptApiKey(encryptedKey);
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { source: "api-key-decrypt", provider },
+        extra: { userId },
+      });
+      keys[provider] = UNREADABLE_API_KEY;
+    }
+  }
+  return keys;
 }
 
 /**

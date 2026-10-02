@@ -57,6 +57,7 @@ const errorCodeToTRPCCode = {
   // Only for a call made with the user's own key: their key, credit, or model
   // choice is the problem, not our server.
   AI_PROVIDER_REJECTED: "BAD_REQUEST",
+  AI_PROVIDER_KEY_UNREADABLE: "BAD_REQUEST",
   // The error backoff turned the request away; the failure itself was reported
   // when it happened.
   SUMMARY_RECENTLY_FAILED: "TOO_MANY_REQUESTS",
@@ -177,6 +178,9 @@ export const errors = {
 
   aiProviderRejected: (provider: string, reason: string) =>
     createError("AI_PROVIDER_REJECTED", `${provider} rejected the request: ${reason}`),
+
+  /** The user's saved key for the provider doesn't decrypt; they have to enter it again. */
+  aiProviderKeyUnreadable: (message: string) => createError("AI_PROVIDER_KEY_UNREADABLE", message),
 
   summaryRecentlyFailed: (previousError: string) =>
     createError(
