@@ -14,7 +14,6 @@ import {
   confirmedProtectedProcedure as protectedProcedure,
   expensiveConfirmedProtectedProcedure,
   scopedProtectedProcedure,
-  speechScopedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
@@ -31,7 +30,6 @@ import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { AI_PROVIDER_DISPLAY_NAMES, formatModelRef } from "@/lib/ai/model-ref";
 import {
-  MAX_CLOUD_SPEECH_CHARS,
   NARRATION_FORMAT_VERSION,
   NARRATION_PROVIDERS,
   SUGGESTED_NARRATION_MODELS,
@@ -42,8 +40,6 @@ import {
   listSpeechModels,
   voiceNamesFor,
   SPEECH_PROVIDERS,
-  SpeechRequestError,
-  synthesizeSpeech,
 } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
@@ -441,47 +437,5 @@ export const narrationRouter = createTRPCRouter({
         defaultVoice: defaultVoiceFor(model),
       }));
       return { models, defaultModelId: defaultSpeechModelId(speechModels) };
-    }),
-
-  /**
-   * One chunk of narration with a cloud voice, as base64 AAC in MP4: what
-   * `/api/v1/narration/speech` streams, read whole, for app versions from
-   * before that. (They play it whatever the type says: ExoPlayer goes by the
-   * bytes.)
-   */
-  synthesize: speechScopedProtectedProcedure(
-    OAUTH_SCOPES.READER_FULL_ACCESS,
-    z.object({
-      /** `provider:model` ref; null means the default model. */
-      model: z.string().max(200).nullable(),
-      /** Null means the model's default voice. */
-      voice: z.string().max(200).nullable(),
-      text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
-    })
-  )
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/narration/synthesize",
-        tags: ["Narration"],
-        summary: "Synthesize narration audio with a cloud voice",
-      },
-    })
-    .output(z.object({ audio: z.string(), mimeType: z.literal("audio/mp4") }))
-    .mutation(async ({ ctx, input }) => {
-      const keys = await getUserApiKeys(ctx.session.user.id);
-      try {
-        const audio = await synthesizeSpeech(keys, input);
-        return { audio: Buffer.from(audio).toString("base64"), mimeType: "audio/mp4" as const };
-      } catch (error) {
-        if (error instanceof SpeechRequestError) {
-          throw errors.validation(error.message);
-        }
-        logger.error("Speech synthesis failed", {
-          model: input.model,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw errors.internal("Speech synthesis failed");
-      }
     }),
 });

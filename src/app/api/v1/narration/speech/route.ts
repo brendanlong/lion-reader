@@ -3,10 +3,8 @@
  *
  * One chunk of narration spoken by a cloud voice, streamed as AAC in
  * fragmented MP4 while the provider generates it (see `speech-encoding.ts`),
- * so playback can start on the first bytes. It's a
- * route handler because tRPC (and so the generated REST API) can't stream a
- * binary body; `narration.synthesize` is the same thing read whole, for app
- * versions from before this existed.
+ * so playback can start on the first bytes. It's a route handler because tRPC
+ * (and so the generated REST API) can't stream a binary body.
  *
  * Takes the web's session or the app's token (see `route-auth.ts`). Browser
  * requests are CSRF-safe the way tRPC's are: the session cookie is

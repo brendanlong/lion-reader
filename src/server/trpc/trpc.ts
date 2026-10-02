@@ -7,7 +7,7 @@
 
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
-import { ZodError, type ZodType } from "zod";
+import { ZodError } from "zod";
 import type { Context } from "./context";
 import type { OpenApiMeta } from "trpc-to-openapi";
 import type { OAuthScope } from "@/server/oauth/utils";
@@ -16,7 +16,6 @@ import {
   getClientIdentifier,
   getRateLimitHeaders,
   RATE_LIMIT_CONFIGS,
-  speechRateLimitCost,
   type RateLimitType,
 } from "@/server/rate-limit";
 import { signupConfig } from "@/server/config/env";
@@ -430,31 +429,6 @@ export const expensiveConfirmedProtectedProcedure = t.procedure
  */
 export function expensiveScopedProtectedProcedure(scopes: OAuthScope | OAuthScope[]) {
   return scopedProtectedProcedure(scopes).use(createAuthenticatedRateLimitMiddleware("expensive"));
-}
-
-/**
- * {@link scopedProtectedProcedure} on the speech-synthesis rate limit, which is
- * counted in characters: each call is charged {@link speechRateLimitCost} of
- * its validated `text`, so the input schema is part of the builder.
- * The limit is per user, shared by sessions and tokens.
- *
- * @param scopes - The required scope(s) for token access (any-of)
- */
-export function speechScopedProtectedProcedure<TInput extends { text: string }>(
-  scopes: OAuthScope | OAuthScope[],
-  input: ZodType<TInput, TInput>
-) {
-  return scopedProtectedProcedure(scopes)
-    .input(input)
-    .use(async ({ ctx, input, next }) => {
-      const rateLimitHeaders = await performRateLimitCheck(
-        ctx.session.user.id,
-        ctx.headers,
-        "speech",
-        speechRateLimitCost(input.text)
-      );
-      return next({ ctx: { ...ctx, rateLimitHeaders } });
-    });
 }
 
 // ============================================================================

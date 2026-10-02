@@ -747,40 +747,18 @@ describe("cloud voices", () => {
     }
   });
 
-  it("lets the app list voice models and ask for speech", async () => {
+  it("lets the app list voice models", async () => {
     const userId = await createUser();
     const token = await appToken(userId);
 
     const models = await rest(token, "GET", "/narration/voice-models");
     expect(models.status).toBe(200);
     expect((await models.json()).models).toEqual([]);
-
-    const speech = await rest(token, "POST", "/narration/synthesize", {
-      model: null,
-      voice: null,
-      text: "Hello.",
-    });
-    // Past the gate: rejected for the missing key, not the token.
-    expect(speech.status).toBe(400);
-    expect((await speech.json()).message).toContain("OpenRouter API key");
-    // And charged to the user's speech bucket, the one the web draws on too
-    // (short texts pay the 200-character floor).
-    const redis = new Redis(process.env.REDIS_URL!);
-    try {
-      const left = Number(await redis.hget(`rate_limit:speech:user:${userId}`, "tokens"));
-      expect(left).toBeCloseTo(RATE_LIMIT_CONFIGS.speech.capacity - 200, -2);
-    } finally {
-      await redis.quit();
-    }
   });
 
   it("rejects an mcp API token", async () => {
     const { token } = await createApiToken(await createUser(), ["mcp"]);
     expect((await rest(token, "GET", "/narration/voice-models")).status).toBe(403);
-    expect(
-      (await rest(token, "POST", "/narration/synthesize", { model: null, voice: null, text: "Hi" }))
-        .status
-    ).toBe(403);
   });
 });
 
@@ -828,13 +806,19 @@ describe("streamed speech", () => {
     }
   });
 
-  it("charges the speech bucket the tRPC endpoint uses", async () => {
+  it("charges the speech bucket by characters, with a floor for short texts", async () => {
     const userId = await createUser();
-    await speech({ authorization: `Bearer ${await appToken(userId)}` });
+    const auth = { authorization: `Bearer ${await appToken(userId)}` };
     const redis = new Redis(process.env.REDIS_URL!);
+    const left = async () => Number(await redis.hget(`rate_limit:speech:user:${userId}`, "tokens"));
     try {
-      const left = Number(await redis.hget(`rate_limit:speech:user:${userId}`, "tokens"));
-      expect(left).toBeCloseTo(RATE_LIMIT_CONFIGS.speech.capacity - 200, -2);
+      await speech(auth);
+      expect(await left()).toBeCloseTo(RATE_LIMIT_CONFIGS.speech.capacity - 200, -2);
+
+      const long = "word ".repeat(180);
+      const before = await left();
+      await speech(auth, { model: null, voice: null, text: long });
+      expect(before - (await left())).toBeGreaterThan(long.length - 50);
     } finally {
       await redis.quit();
     }
