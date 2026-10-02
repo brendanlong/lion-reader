@@ -130,6 +130,116 @@ function prepend(
   });
 }
 
+/** Below this (about -50 dBFS), a sample at a clip's edges counts as silence. */
+const SILENCE_LEVEL = 100;
+/** Kept before the first sound, so its attack isn't clipped. */
+const LEAD_IN_SECONDS = 0.05;
+/** Kept of the silence after the last sound, even with no pause, so its decay isn't clipped. */
+const DECAY_SECONDS = 0.05;
+
+function joined(parts: Uint8Array[]): Uint8Array {
+  if (parts.length === 1) return parts[0];
+  const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.length;
+  }
+  return bytes;
+}
+
+/**
+ * Evens out the silence at a clip's ends, which models vary (BreezeBlue
+ * leaves 50 ms to 700 ms after its speech), so chunks played back to back
+ * pause alike: what's before the first sound is cut to {@link LEAD_IN_SECONDS},
+ * and what's after the last becomes exactly `pauseSeconds`, the model's own
+ * kept up to that long (so a word's decay stays), padded with silence past
+ * it. Fed 16-bit PCM in pieces of any size; silence inside the speech is held
+ * only until the sound after it arrives.
+ */
+export class ClipEdges {
+  private readonly frameBytes: number;
+  private readonly leadInBytes: number;
+  private readonly pauseBytes: number;
+  private readonly keptTailBytes: number;
+  private partial: Uint8Array = new Uint8Array(0);
+  private started = false;
+  /** Before the first sound: the end of the silence so far. After it: the silence since the last. */
+  private quiet: Uint8Array[] = [];
+  private quietBytes = 0;
+
+  constructor(sampleRate: number, channels: number, pauseSeconds: number) {
+    this.frameBytes = 2 * channels;
+    const bytesFor = (seconds: number) => Math.round(seconds * sampleRate) * this.frameBytes;
+    this.leadInBytes = bytesFor(LEAD_IN_SECONDS);
+    this.pauseBytes = bytesFor(pauseSeconds);
+    this.keptTailBytes = Math.max(this.pauseBytes, bytesFor(DECAY_SECONDS));
+  }
+
+  /** What of `bytes` (and what's held from before) can be encoded now. */
+  push(bytes: Uint8Array): Uint8Array {
+    const data = this.partial.length ? joined([this.partial, bytes]) : bytes;
+    const whole = data.length - (data.length % this.frameBytes);
+    this.partial = data.slice(whole);
+    const frames = data.subarray(0, whole);
+    const first = this.loudFrame(frames, "first");
+    if (first === -1) {
+      this.holdQuiet(frames);
+      return new Uint8Array(0);
+    }
+    const last = this.loudFrame(frames, "last");
+    const out: Uint8Array[] = [];
+    // Silence inside the speech is kept whole; only the opening silence is cut.
+    let from = 0;
+    if (this.started) {
+      out.push(...this.quiet);
+    } else {
+      const before = joined([...this.quiet, frames.subarray(0, first)]);
+      out.push(before.subarray(Math.max(0, before.length - this.leadInBytes)));
+      from = first;
+      this.started = true;
+    }
+    out.push(frames.subarray(from, last + this.frameBytes));
+    this.quiet = [frames.slice(last + this.frameBytes)];
+    this.quietBytes = this.quiet[0].length;
+    return joined(out);
+  }
+
+  /** The end of the clip: its silence, made the pause. */
+  finish(): Uint8Array {
+    if (!this.started) return new Uint8Array(this.pauseBytes);
+    const tail = joined(this.quiet).subarray(0, this.keptTailBytes);
+    const end = new Uint8Array(Math.max(this.pauseBytes, tail.length));
+    end.set(tail);
+    return end;
+  }
+
+  private holdQuiet(frames: Uint8Array): void {
+    if (frames.length === 0) return;
+    this.quiet.push(frames.slice());
+    this.quietBytes += frames.length;
+    if (!this.started && this.quietBytes > this.leadInBytes) {
+      // Only the end of the opening silence can be kept.
+      const kept = joined(this.quiet);
+      this.quiet = [kept.slice(kept.length - this.leadInBytes)];
+      this.quietBytes = this.leadInBytes;
+    }
+  }
+
+  /** Byte offset of the first or last frame with a sample above silence; -1 for none. */
+  private loudFrame(frames: Uint8Array, which: "first" | "last"): number {
+    const view = new DataView(frames.buffer, frames.byteOffset, frames.byteLength);
+    const count = frames.length / this.frameBytes;
+    for (let n = 0; n < count; n++) {
+      const frame = which === "first" ? n : count - 1 - n;
+      for (let b = frame * this.frameBytes; b < (frame + 1) * this.frameBytes; b += 2) {
+        if (Math.abs(view.getInt16(b, true)) >= SILENCE_LEVEL) return frame * this.frameBytes;
+      }
+    }
+    return -1;
+  }
+}
+
 /**
  * Longest a whole stream may take, provider and client together: past this a
  * client that stopped reading (and so blocks the encoder on backpressure)
@@ -144,8 +254,8 @@ const QUEUED_FRAGMENTS = 8;
  * is still arriving. Resolves once the first audio has arrived, so a provider
  * that fails before sending any is still an ordinary error; failures after
  * that error the stream. Cancelling the result, an error, or the deadline
- * stops reading the provider and frees the encoder at once. `pauseSeconds` of
- * silence follow the speech.
+ * stops reading the provider and frees the encoder at once. The clip's edges
+ * are evened out to end in `pauseSeconds` of silence ({@link ClipEdges}).
  */
 export async function encodeSpeech(
   pcm: PcmStream,
@@ -251,16 +361,16 @@ export async function encodeSpeech(
 
   const encode = async () => {
     await output.start();
+    const edges = new ClipEdges(pcm.sampleRate, pcm.channels, pauseSeconds);
     let total = 0;
     let next: ReadableStreamReadResult<Uint8Array> = first;
     while (!next.done) {
       total += next.value.length;
       if (total > maxBytes) throw new Error("Speech audio too long");
-      await add(speech.encode(next.value));
+      await add(speech.encode(edges.push(next.value)));
       next = await reader.read();
     }
-    const silentFrames = Math.round(pauseSeconds * pcm.sampleRate);
-    if (silentFrames > 0) await add(speech.encode(new Uint8Array(silentFrames * 2 * pcm.channels)));
+    await add(speech.encode(edges.finish()));
     await add(speech.finish());
     await output.finalize();
     if (failure) return;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
-import { encodeSpeech, pcmFromWav, pcmOrWav } from "@/server/services/speech-encoding";
+import { ClipEdges, encodeSpeech, pcmFromWav, pcmOrWav } from "@/server/services/speech-encoding";
 
 function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -217,5 +217,73 @@ describe("encodeSpeech", () => {
     });
     const audio = await encodeSpeech({ sampleRate: 8_000, channels: 1, data });
     await expect(readAll(audio)).rejects.toThrow("too long");
+  });
+});
+
+describe("ClipEdges", () => {
+  const rate = 24_000;
+  const silence = (seconds: number, channels = 1) =>
+    new Uint8Array(Math.round(seconds * rate) * 2 * channels);
+  const cat = (...parts: Uint8Array[]) => {
+    const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+    let at = 0;
+    for (const part of parts) {
+      bytes.set(part, at);
+      at += part.length;
+    }
+    return bytes;
+  };
+  /** The clip through ClipEdges, fed in pieces of `size` bytes. */
+  const through = (clip: Uint8Array, pauseSeconds: number, size = clip.length, channels = 1) => {
+    const edges = new ClipEdges(rate, channels, pauseSeconds);
+    const out: Uint8Array[] = [];
+    for (let at = 0; at < clip.length; at += size)
+      out.push(edges.push(clip.subarray(at, at + size)));
+    out.push(edges.finish());
+    return cat(...out);
+  };
+  const seconds = (bytes: Uint8Array, channels = 1) => bytes.length / 2 / channels / rate;
+  /** Loud from its first sample to its last, unlike a tone, which starts at zero. */
+  const sound = (duration: number, channels = 1) => {
+    const view = new DataView(new ArrayBuffer(Math.round(duration * rate) * 2 * channels));
+    for (let at = 0; at < view.byteLength; at += 2) view.setInt16(at, 8000, true);
+    return new Uint8Array(view.buffer);
+  };
+
+  it("cuts the opening silence and makes the closing silence the pause", () => {
+    const speech = sound(0.5);
+    const out = through(cat(silence(0.4), speech, silence(0.7)), 1);
+    expect(seconds(out)).toBeCloseTo(0.05 + 0.5 + 1, 3);
+    // The speech is untouched, and everything after it is silent.
+    const start = Math.round(0.05 * rate) * 2;
+    expect(out.subarray(start, start + speech.length)).toEqual(speech);
+    expect(out.subarray(start + speech.length).every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("cuts a long closing silence back to the pause", () => {
+    const out = through(cat(sound(0.5), silence(1.8)), 1);
+    expect(seconds(out)).toBeCloseTo(1.5, 3);
+  });
+
+  it("keeps a word's decay even with no pause", () => {
+    const out = through(cat(sound(0.5), silence(0.5)), 0);
+    expect(seconds(out)).toBeCloseTo(0.55, 3);
+  });
+
+  it("keeps silence inside the speech whole, however the PCM arrives", () => {
+    const clip = cat(silence(0.2), sound(0.3), silence(0.6), sound(0.3), silence(0.2));
+    const whole = through(clip, 0.5);
+    expect(seconds(whole)).toBeCloseTo(0.05 + 0.3 + 0.6 + 0.3 + 0.5, 3);
+    for (const size of [1, 7, 4801]) expect(through(clip, 0.5, size)).toEqual(whole);
+  });
+
+  it("works in whole frames of every channel", () => {
+    const clip = cat(silence(0.2, 2), sound(0.3, 2), silence(0.1, 2));
+    const out = through(clip, 0.25, 3, 2);
+    expect(seconds(out, 2)).toBeCloseTo(0.05 + 0.3 + 0.25, 3);
+  });
+
+  it("is just the pause for a clip with no sound", () => {
+    expect(seconds(through(silence(2), 1))).toBe(1);
   });
 });
