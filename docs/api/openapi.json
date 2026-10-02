@@ -9600,9 +9600,21 @@
                               "openrouter"
                             ]
                           },
+                          "providerDisplayName": {
+                            "type": "string"
+                          },
                           "voices": {
                             "type": "array",
                             "items": {
+                              "type": "string"
+                            }
+                          },
+                          "voiceNames": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
                               "type": "string"
                             }
                           },
@@ -9617,7 +9629,9 @@
                           "id",
                           "displayName",
                           "provider",
+                          "providerDisplayName",
                           "voices",
+                          "voiceNames",
                           "defaultVoice"
                         ],
                         "additionalProperties": false
