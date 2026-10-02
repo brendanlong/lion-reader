@@ -119,8 +119,9 @@ class CloudVoices(
 
         fun finish(): StreamedAudio {
             out.close()
-            if (!partial.renameTo(cached)) throw IOException("Couldn't cache speech")
-            return audio.also { it.finish(cached) }
+            // Not cached if it can't be moved, but it plays from where it is.
+            audio.finish(cached)
+            return audio
         }
 
         fun fail(cause: Throwable) {

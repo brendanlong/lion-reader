@@ -29,7 +29,9 @@ class NarratorTest {
     private var engineUnreachable = false
     /** Texts whose next synthesis streams half its audio and waits: see [streamed]. */
     private val streamHalf = mutableSetOf<String>()
-    private val streamed = mutableListOf<StreamedAudio>()
+    /** Texts whose every synthesis streams half and then breaks off. */
+    private val alwaysBreaks = mutableSetOf<String>()
+    private val streamed = mutableListOf<Pair<StreamedAudio, File>>()
 
     private val engine =
         object : SpeechEngine {
@@ -44,9 +46,12 @@ class NarratorTest {
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
-                if (streamHalf.remove(text)) {
+                if (streamHalf.remove(text) || text in alwaysBreaks) {
                     val file = File(dir, "$name.part").apply { writeBytes(SILENCE.copyOf(HALF)) }
-                    return StreamedAudio(file).also { it.appended(HALF) }.also(streamed::add).uri
+                    val audio = StreamedAudio(file).also { it.appended(HALF) }
+                    streamed += audio to file
+                    if (text in alwaysBreaks) breakOff(audio to file)
+                    return audio.uri
                 }
                 return Uri.fromFile(File(dir, "$name.wav").apply { writeBytes(SILENCE) })
             }
@@ -63,6 +68,21 @@ class NarratorTest {
             // Robolectric can't bind media3's session service.
             connectSession = { {} },
         )
+
+    /** Stops [audio] partway, as CloudVoices does: the half-written file goes too. */
+    private fun breakOff(stream: Pair<StreamedAudio, File>) {
+        stream.first.fail(IOException("Connection reset"))
+        stream.second.delete()
+    }
+
+    /** Lets the player, which reports errors from its own thread, catch up until [done]. */
+    private fun idleUntil(done: () -> Boolean) {
+        repeat(100) {
+            if (done()) return
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+            Thread.sleep(10)
+        }
+    }
 
     private fun article(id: String, vararg paragraphs: String) =
         NarratedArticle(id, "Title $id", null, paragraphs.toList())
@@ -252,18 +272,24 @@ class NarratorTest {
         streamHalf += "One."
         narrator.narrate(article("a", "One.", "Two."))
         idle()
-        streamed.single().fail(IOException("Connection reset"))
+        breakOff(streamed.single())
 
-        // The player reports it from its own thread.
-        repeat(100) {
-            if (synthesized.count { it == "One." } == 2) return@repeat
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
-            Thread.sleep(10)
-        }
+        idleUntil { synthesized.count { it == "One." } == 2 }
         assertEquals(2, synthesized.count { it == "One." })
         assertEquals("a", state?.entryId)
         assertTrue(state!!.playing)
         assertEquals(0, state?.paragraph)
+    }
+
+    @Test
+    fun speechThatKeepsStoppingPartwayIsSkippedAfterTwoMoreTries() {
+        alwaysBreaks += "One."
+        narrator.narrate(article("a", "One.", "Two."))
+        idleUntil { state?.paragraph == 1 }
+
+        assertEquals(3, synthesized.count { it == "One." })
+        assertEquals(1, state?.paragraph)
+        assertTrue(state!!.playing)
     }
 
     @Test

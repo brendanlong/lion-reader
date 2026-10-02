@@ -118,7 +118,10 @@ class Narrator(
     private fun buildPlayer(): ExoPlayer =
         ExoPlayer.Builder(context)
             // Reads streamed chunks as they arrive (StreamedAudio), and files.
-            .setMediaSourceFactory(DefaultMediaSourceFactory(NarrationDataSource.Factory()))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(NarrationDataSource.Factory())
+                    .setLoadErrorHandlingPolicy(NarrationLoadErrorPolicy())
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -182,6 +185,8 @@ class Narrator(
         /** Whether it has synthesized everything it's going to, and the last chunk it added. */
         var fed = false
         var lastAdded: Int? = null
+        /** Times each chunk has been said again after stopping partway (see [replay]). */
+        val replays = mutableMapOf<Int, Int>()
     }
 
     /** The article narration is on, once its text is supplied. */
@@ -618,16 +623,19 @@ class Narrator(
 
     /**
      * [chunk]'s audio stopped partway ([SpeechStreamBroken]): synthesizes it again and plays it
-     * from its start, or moves past it if it can't be said. The player waits, idle, meanwhile.
+     * from its start, or moves past it if it can't be said or has stopped partway too often. The
+     * player waits, idle, meanwhile.
      */
     private fun replay(chunk: Int) {
         val audio = onArticle ?: return
         val prepared = audio.prepared ?: return
         val feed = audio.feed ?: return
+        // Each is paid for: one that keeps breaking is skipped, as the web does.
+        val replays = feed.replays.merge(chunk, 1, Int::plus)!!
         scope.launch {
             val again =
                 try {
-                    synthesizeOrSkip(feed, prepared, chunk)
+                    if (replays > MAX_REPLAYS) null else synthesizeOrSkip(feed, prepared, chunk)
                 } catch (e: SpeechUnavailable) {
                     if (onArticle?.feed === feed) fail(e.message)
                     return@launch
@@ -656,6 +664,7 @@ class Narrator(
 
     private companion object {
         const val KEEP_BEHIND = 5
+        const val MAX_REPLAYS = 2
         const val RETRY_FIRST_MILLIS = 2_000L
         const val RETRY_MAX_MILLIS = 30_000L
     }

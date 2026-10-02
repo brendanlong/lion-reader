@@ -8,6 +8,8 @@ import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.FileDataSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -26,9 +28,7 @@ class StreamedAudio(file: File) {
     private var failure: IOException? = null
 
     /** Where the audio is: the file being written, then wherever [finish] moved it. */
-    @Volatile
-    var file: File = file
-        private set
+    private var file: File = file
 
     val uri: Uri = Uri.Builder().scheme(SCHEME).authority(UUID.randomUUID().toString()).build()
 
@@ -43,12 +43,17 @@ class StreamedAudio(file: File) {
             lock.notifyAll()
         }
 
-    /** All of it is written; it's at [at] now (moved there, so readers already open read on). */
-    fun finish(at: File) =
+    /**
+     * All of it is written: moves it to [to] (readers already open read on), or leaves it where it
+     * is if it can't. Whether it moved.
+     */
+    fun finish(to: File): Boolean =
         synchronized(lock) {
-            file = at
+            val moved = file.renameTo(to)
+            if (moved) file = to
             finished = true
             lock.notifyAll()
+            moved
         }
 
     /** It won't arrive: readers past what's written get [SpeechStreamBroken]. */
@@ -56,6 +61,16 @@ class StreamedAudio(file: File) {
         synchronized(lock) {
             failure = SpeechStreamBroken(cause)
             lock.notifyAll()
+        }
+
+    /**
+     * The audio, open at [position]: wherever it is now ([finish] moves it under the same lock).
+     * Throws [SpeechStreamBroken] if it stopped partway, so the player gives up on it at once.
+     */
+    internal fun openAt(position: Long): RandomAccessFile =
+        synchronized(lock) {
+            failure?.let { throw it }
+            RandomAccessFile(file, "r").also { it.seek(position) }
         }
 
     /**
@@ -123,7 +138,7 @@ class NarrationDataSource : BaseDataSource(/* isNetwork= */ false) {
             StreamedAudio.forUri(dataSpec.uri)
                 ?: throw IOException("No such narration stream: ${dataSpec.uri}")
         streamed = audio
-        input = RandomAccessFile(audio.file, "r").also { it.seek(dataSpec.position) }
+        input = audio.openAt(dataSpec.position)
         position = dataSpec.position
         transferStarted(dataSpec)
         return C.LENGTH_UNSET.toLong()
@@ -162,4 +177,21 @@ class NarrationDataSource : BaseDataSource(/* isNetwork= */ false) {
     class Factory : DataSource.Factory {
         override fun createDataSource(): DataSource = NarrationDataSource()
     }
+}
+
+/**
+ * The player's default, except that a [SpeechStreamBroken] isn't retried: the rest won't come, so
+ * it's reported at once, for the narrator to say the chunk again.
+ */
+@OptIn(UnstableApi::class)
+class NarrationLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long =
+        if (
+            generateSequence<Throwable>(loadErrorInfo.exception) { it.cause }
+                .any {
+                    it is SpeechStreamBroken
+                }
+        )
+            C.TIME_UNSET
+        else super.getRetryDelayMsFor(loadErrorInfo)
 }
