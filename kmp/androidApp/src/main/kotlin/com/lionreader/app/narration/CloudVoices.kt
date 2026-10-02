@@ -52,10 +52,11 @@ class CloudVoices(
     private val inFlight = ConcurrentHashMap<String, Deferred<StreamedAudio>>()
 
     override val maxChunkChars = MAX_CLOUD_SPEECH_CHARS
-    // Requests take anywhere from under a second to many, so a minute ahead,
-    // a few at a time (as the web does).
+    // Requests take anywhere from under a second to many, so a minute ahead. One at a time (as
+    // the web does): each streams faster than it plays, and providers limit concurrent requests
+    // per key, which several listeners share on the server's.
     override val lookaheadChars = 900
-    override val parallelism = 3
+    override val parallelism = 1
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri {
         val key = key(text)
@@ -163,8 +164,9 @@ class CloudVoices(
                     if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
                         throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
                     }
-                    serverTrouble = e.status >= 500
-                    busy = e.status == 429
+                    // 503: the server's provider is busy, which isn't this text's fault.
+                    busy = e.status == 429 || e.status == 503
+                    serverTrouble = e.status >= 500 && !busy
                 } else {
                     // Network: try again below.
                     serverTrouble = false

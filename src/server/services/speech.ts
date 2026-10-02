@@ -18,6 +18,7 @@ import {
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { encodeSpeech, type PcmStream } from "@/server/services/speech-encoding";
+import { ProviderBusyError } from "@/server/services/provider-errors";
 import {
   deepInfraSpeech,
   listDeepInfraSpeechModels,
@@ -278,7 +279,8 @@ const SPEECH_TIMEOUT_MS = 120_000;
  * as the provider generates it, then `pauseSeconds` of silence. A null model
  * or voice means the default. Rejects models the user can't pick in settings,
  * so this can't be used to run arbitrary (or arbitrarily expensive) models.
- * Aborting `signal` (the client went away) stops the provider's request.
+ * Aborting `signal` (the client went away) stops the provider's request. A
+ * provider that's busy is asked again for a while ({@link speakWhenFree}).
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
@@ -297,12 +299,65 @@ export async function streamSpeech(
   }
   const providerModel = parseModelRef(model.id).model;
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
-  const pcm = await SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
-    apiKey,
-    providerModel,
-    voice,
-    options.text,
-    signal ? AbortSignal.any([signal, timeout]) : timeout
+  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const pcm = await speakWhenFree(
+    () =>
+      SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
+        apiKey,
+        providerModel,
+        voice,
+        options.text,
+        combined
+      ),
+    combined
   );
   return encodeSpeech(pcm, { pauseSeconds: options.pauseSeconds });
+}
+
+/** How long a busy provider is asked again before the client is told to come back later. */
+const BUSY_RETRY_MS = 15_000;
+const BUSY_FIRST_WAIT_MS = 500;
+const BUSY_MAX_WAIT_MS = 5_000;
+
+/**
+ * `speak`, asked again while the provider is busy ({@link ProviderBusyError}:
+ * a plan's concurrency limit, say, which several listeners on the server's key
+ * can hit together), waiting as long as it asks, within reason. Past
+ * {@link BUSY_RETRY_MS} the last busy error is thrown, for the client to retry
+ * later.
+ */
+export async function speakWhenFree<T>(
+  speak: () => Promise<T>,
+  signal: AbortSignal,
+  budgetMs = BUSY_RETRY_MS
+): Promise<T> {
+  const deadline = Date.now() + budgetMs;
+  let wait = BUSY_FIRST_WAIT_MS;
+  for (;;) {
+    try {
+      return await speak();
+    } catch (error) {
+      if (!(error instanceof ProviderBusyError)) throw error;
+      const asked = error.retryAfterSeconds === null ? wait : error.retryAfterSeconds * 1000;
+      const delay = Math.min(Math.max(asked, BUSY_FIRST_WAIT_MS), BUSY_MAX_WAIT_MS);
+      if (Date.now() + delay > deadline) throw error;
+      await sleep(delay, signal);
+      wait = Math.min(wait * 2, BUSY_MAX_WAIT_MS);
+    }
+  }
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }

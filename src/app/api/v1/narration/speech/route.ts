@@ -26,6 +26,7 @@ import {
 } from "@/server/http/fetch";
 import { getUserApiKeys } from "@/server/auth/session";
 import { SpeechRequestError, streamSpeech } from "@/server/services/speech";
+import { ProviderBusyError } from "@/server/services/provider-errors";
 import {
   checkRateLimit,
   getClientIdentifier,
@@ -125,6 +126,17 @@ export async function POST(req: Request): Promise<Response> {
       },
     });
   } catch (error) {
+    if (error instanceof ProviderBusyError) {
+      return errorResponse(
+        503,
+        "SERVICE_UNAVAILABLE",
+        "The cloud voice is busy; try again shortly",
+        {
+          ...limitHeaders,
+          "Retry-After": String(Math.ceil(error.retryAfterSeconds ?? 5)),
+        }
+      );
+    }
     if (error instanceof SpeechRequestError) {
       return errorResponse(400, "BAD_REQUEST", error.message, limitHeaders);
     }

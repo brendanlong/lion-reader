@@ -117,7 +117,7 @@ export const MAX_CLOUD_SPEECH_CHARS = 1000;
  * brings the joins near a sentence's pause for the voices we've measured.
  */
 export const DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS = 0.25;
-export const CLOUD_SPEECH_PAUSE_CHOICES = [0, 0.1, 0.25, 0.5, 0.75, 1];
+export const CLOUD_SPEECH_PAUSE_CHOICES = [0, 0.25, 0.5, 0.75, 1, 1.5, 2];
 export const MAX_CLOUD_SPEECH_PAUSE_SECONDS = 2;
 
 /**
