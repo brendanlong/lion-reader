@@ -1,7 +1,9 @@
 package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.LionReaderApi
+import com.lionreader.shared.api.failure
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -76,9 +78,12 @@ suspend fun followLiveUpdates(
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException) {
-            if (e.signedOut) break
-            // The server's Retry-After when its Redis is down.
-            if (e.status == 503) wait = 30.seconds
+            when (e.failure()) {
+                ApiFailure.SignedOut -> break
+                // The server's Retry-After when its Redis is down.
+                is ApiFailure.Busy -> wait = 30.seconds
+                else -> {}
+            }
         } catch (_: Exception) {}
         if ((opened?.elapsedNow() ?: Duration.ZERO) >= stable) failures = 0
         delay(maxOf(wait, retry(failures++)))

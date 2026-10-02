@@ -1,6 +1,7 @@
 package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.ListFilter
 import com.lionreader.shared.api.MarkReadRequest
@@ -9,6 +10,7 @@ import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.api.SyncChanges
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
+import com.lionreader.shared.api.failure
 import com.lionreader.shared.api.parseSyncEvent
 import com.lionreader.shared.data.formatMillis
 import com.lionreader.shared.data.parseMillis
@@ -147,15 +149,16 @@ class SyncEngine(
     }
 
     /**
-     * Runs one outbox request: its result, or null when the server rejected the request itself (it
-     * would never succeed, so it's dropped). Anything else (network, 401, 429, 5xx) throws, keeping
-     * the change for the next flush.
+     * Runs one outbox request: its result, or null when the request itself can never succeed
+     * ([ApiFailure.Invalid]), so it's dropped. Anything else throws, keeping the change for the
+     * next flush: a refusal (401, 403…) isn't shown to be about the change, and the change is the
+     * user's.
      */
     private suspend fun <T> sendOrReject(request: suspend () -> T): T? =
         try {
             request()
         } catch (e: ApiException) {
-            if (e.isPermanent) null else throw e
+            if (e.failure() is ApiFailure.Invalid) null else throw e
         }
 
     // ---- Pull ------------------------------------------------------------

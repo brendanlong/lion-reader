@@ -37,31 +37,16 @@ private const val SPEECH_STALL_MILLIS = 60_000L
 private const val MAX_BATCH_IDS = 100
 
 /**
- * A non-2xx response, or no response at all when [signedOut]. [serverMessage] is the server's own
- * explanation, when it sent one, fit to show the user; [appErrorCode] its machine-readable reason,
- * for the errors that have one (e.g. `NEEDS_GOOGLE_SIGNIN`).
+ * A non-2xx response, or no response at all when signed out (status 0); [failure] says what it
+ * means. [serverMessage] is the server's own explanation, when it sent one; [appErrorCode] its
+ * machine-readable reason, for the errors that have one (e.g. `NEEDS_GOOGLE_SIGNIN`).
  */
 class ApiException(
     val status: Int,
     message: String,
     val serverMessage: String? = null,
     val appErrorCode: String? = null,
-) : Exception(message) {
-    /**
-     * The server rejected the request itself; retrying it unchanged won't help. A coded 4xx is such
-     * an answer (e.g. `NEEDS_GOOGLE_SIGNIN`), except 429, which is "try again later".
-     */
-    val isPermanent: Boolean
-        get() =
-            status == 400 ||
-                status == 404 ||
-                status == 422 ||
-                (appErrorCode != null && status in 400..499 && status != 429)
-
-    /** There's no signed-in account to send the request as; it was never sent. */
-    val signedOut: Boolean
-        get() = status == 0
-}
+) : Exception(message)
 
 enum class ListFilter {
     ALL,
