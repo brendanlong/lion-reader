@@ -29,6 +29,10 @@ type VoiceModel = {
   pricePerMillionCharacters?: number;
 };
 
+function pauseLabel(seconds: number): string {
+  return seconds === 0 ? "None" : `${seconds.toFixed(2)} s`;
+}
+
 export function CloudVoiceSettings({
   settings,
   setSettings,
@@ -176,7 +180,7 @@ export function CloudVoiceSettings({
           htmlFor="cloud-voice-pause"
           className="ui-text-sm text-body mb-1.5 block font-medium tabular-nums"
         >
-          Pause between chunks: {settings.cloudPauseSeconds.toFixed(2)} s
+          Pause between chunks: {pauseLabel(settings.cloudPauseSeconds)}
         </label>
         <input
           id="cloud-voice-pause"
@@ -185,6 +189,7 @@ export function CloudVoiceSettings({
           max={MAX_CLOUD_SPEECH_PAUSE_SECONDS}
           step={CLOUD_SPEECH_PAUSE_STEP_SECONDS}
           value={settings.cloudPauseSeconds}
+          aria-valuetext={pauseLabel(settings.cloudPauseSeconds)}
           onChange={(e) => {
             const cloudPauseSeconds = Number(e.target.value);
             setSettings((prev) => ({ ...prev, cloudPauseSeconds }));

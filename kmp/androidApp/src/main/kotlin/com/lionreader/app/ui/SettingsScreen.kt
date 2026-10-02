@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -34,10 +35,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -268,11 +272,27 @@ private fun NarrationSettings(
                     )
                     Slider(
                         value = pause,
-                        onValueChange = { pause = (it / PAUSE_STEP).roundToInt() * PAUSE_STEP },
+                        // In 0.05 s: keys and steps move by one. Rounded, since 9 steps of 0.05f
+                        // isn't quite 0.45f.
+                        onValueChange = {
+                            pause = (it * STEPS_PER_SECOND).roundToInt() / STEPS_PER_SECOND
+                        },
                         valueRange = 0f..MAX_PAUSE,
+                        steps = (MAX_PAUSE * STEPS_PER_SECOND).roundToInt() - 1,
                         onValueChangeFinished = {
                             update { it.copy(cloudVoicePauseSeconds = pause) }
                         },
+                        // A tick per step would be forty.
+                        colors =
+                            SliderDefaults.colors(
+                                activeTickColor = Color.Transparent,
+                                inactiveTickColor = Color.Transparent,
+                            ),
+                        modifier =
+                            Modifier.semantics {
+                                contentDescription = "Pause between chunks"
+                                stateDescription = pauseLabel(pause)
+                            },
                     )
                     Text(
                         "Articles are spoken a few sentences at a time. Some voices run those " +
@@ -304,7 +324,7 @@ private fun NarrationSettings(
 
 /** The server takes up to 2 seconds. */
 private const val MAX_PAUSE = 2f
-private const val PAUSE_STEP = 0.05f
+private const val STEPS_PER_SECOND = 20f
 
 private fun pauseLabel(seconds: Float): String =
     if (seconds == 0f) "None" else "${shortNumber(seconds)} s"
