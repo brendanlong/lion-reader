@@ -55,9 +55,7 @@ fun ReaderWebView(
 ) {
     val current by rememberUpdatedState(narration)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
-    // Each renderer the page has lost (a crash, or the system reclaiming it) gets it a new
-    // WebView; one that keeps crashing it gets a message.
-    var renderersLost by remember { mutableIntStateOf(0) }
+    val losses = remember { RendererLosses() }
     val turns = paging.turns
     if (turns != null) {
         DisposableEffect(turns) {
@@ -65,17 +63,18 @@ fun ReaderWebView(
             onDispose { unregister() }
         }
     }
-    if (renderersLost > MAX_RENDERERS_LOST) {
+    if (losses.gaveUp) {
         Box(modifier.padding(16.dp)) { Text("This article couldn't be shown.") }
         return
     }
-    key(renderersLost) {
+    key(losses.generation) {
         AndroidView(
             modifier = modifier,
             factory = { context ->
                 ReaderView(context)
                     .also { shown[0] = it }
                     .apply {
+                        onPageReady = losses::pageReady
                         // For our scripts; the CSP keeps anything else from running.
                         @SuppressLint("SetJavaScriptEnabled")
                         settings.javaScriptEnabled = true
@@ -106,7 +105,7 @@ fun ReaderWebView(
                                         WebViewAssetLoader.AssetsPathHandler(context),
                                     )
                                     .build(),
-                                onRendererLost = { renderersLost++ },
+                                onRendererLost = losses::lost,
                             )
                     }
             },
@@ -129,7 +128,32 @@ fun ReaderWebView(
     }
 }
 
-private const val MAX_RENDERERS_LOST = 3
+/**
+ * A page whose renderer went away gets a new WebView. The system reclaiming renderers is routine
+ * (low-memory e-readers do it often); a page that crashes its renderer [MAX_RENDERER_CRASHES] times
+ * in a row, without once loading, is given up on.
+ */
+internal class RendererLosses {
+    /** Keys the page's WebView: a new one each loss. */
+    var generation by mutableIntStateOf(0)
+        private set
+
+    private var crashes by mutableIntStateOf(0)
+
+    val gaveUp: Boolean
+        get() = crashes >= MAX_RENDERER_CRASHES
+
+    fun lost(crashed: Boolean) {
+        if (crashed) crashes++
+        generation++
+    }
+
+    fun pageReady() {
+        crashes = 0
+    }
+}
+
+internal const val MAX_RENDERER_CRASHES = 3
 
 /**
  * The article's narration in the page (the reader's narration.js): [paragraph] is the one to
@@ -174,6 +198,7 @@ private class ReaderView(context: Context) : WebView(context) {
 
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
+    var onPageReady: () -> Unit = {}
     /** Its renderer is gone, so it can only be destroyed. */
     var rendererLost = false
     private var wanted: Int? = null
@@ -193,6 +218,7 @@ private class ReaderView(context: Context) : WebView(context) {
                 val paragraphs = message.optJSONArray("paragraphs") ?: return
                 narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
                 pageReady = true
+                onPageReady()
                 shown = null
                 highlight(wanted, scroll)
             }
@@ -402,7 +428,7 @@ private fun parseRects(json: String?): List<SideScroller> = runCatching {
 @SuppressLint("MissingOnRenderProcessGone")
 private class ReaderWebViewClient(
     private val assets: WebViewAssetLoader,
-    private val onRendererLost: () -> Unit,
+    private val onRendererLost: (crashed: Boolean) -> Unit,
 ) : WebViewClient() {
     override fun shouldInterceptRequest(
         view: WebView,
@@ -426,7 +452,7 @@ private class ReaderWebViewClient(
     // (ReaderWebView), which destroys this one.
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
         (view as? ReaderView)?.rendererLost = true
-        onRendererLost()
+        onRendererLost(detail.didCrash())
         return true
     }
 }
