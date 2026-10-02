@@ -501,8 +501,12 @@ export async function validateAccessToken(token: string): Promise<OAuthTokenData
 
   const { token: accessToken, user } = result[0];
 
-  // Update last_used_at asynchronously
-  void updateAccessTokenLastUsed(accessToken.id);
+  // Update last_used_at asynchronously. The app sends one token on every
+  // request (each speech chunk included), so skip the write while it's fresh.
+  const now = Date.now();
+  if (!accessToken.lastUsedAt || now - accessToken.lastUsedAt.getTime() >= LAST_USED_REFRESH_MS) {
+    void updateAccessTokenLastUsed(accessToken.id);
+  }
 
   return {
     tokenId: accessToken.id,
@@ -514,6 +518,9 @@ export async function validateAccessToken(token: string): Promise<OAuthTokenData
     user,
   };
 }
+
+/** How stale an access token's `last_used_at` may get before it's rewritten. */
+const LAST_USED_REFRESH_MS = 60 * 1000;
 
 /**
  * Updates the last_used_at timestamp for an access token.
