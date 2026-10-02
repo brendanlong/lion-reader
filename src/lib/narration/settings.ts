@@ -85,7 +85,7 @@ export interface NarrationSettings {
    */
   sentenceGapSeconds: number;
 
-  /** Silence after each chunk of cloud speech (see `CLOUD_SPEECH_PAUSE_CHOICES`). */
+  /** Silence after each chunk of cloud speech, in seconds. */
   cloudPauseSeconds: number;
 }
 

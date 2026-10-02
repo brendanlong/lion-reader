@@ -20,11 +20,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -50,6 +52,7 @@ import com.lionreader.app.ThemeChoice
 import com.lionreader.app.narration.VoiceOption
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private val RETENTION_CHOICES = listOf(7, 14, 30, 90)
@@ -254,14 +257,23 @@ private fun NarrationSettings(
                     Picker(model.voiceName(voice), model.voices, { it.name }) { choice ->
                         update { it.copy(cloudVoice = choice.id) }
                     }
-                    Text("Pause between chunks", style = MaterialTheme.typography.labelLarge)
-                    Choices(
-                        CLOUD_VOICE_PAUSES,
-                        settings.cloudVoicePauseSeconds,
-                        ::pauseLabel,
-                    ) { pause ->
-                        update { it.copy(cloudVoicePauseSeconds = pause) }
-                    }
+                    // Saved when the drag ends, not on every step of it.
+                    var pause by
+                        remember(settings.cloudVoicePauseSeconds) {
+                            mutableFloatStateOf(settings.cloudVoicePauseSeconds)
+                        }
+                    Text(
+                        "Pause between chunks: ${pauseLabel(pause)}",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Slider(
+                        value = pause,
+                        onValueChange = { pause = (it / PAUSE_STEP).roundToInt() * PAUSE_STEP },
+                        valueRange = 0f..MAX_PAUSE,
+                        onValueChangeFinished = {
+                            update { it.copy(cloudVoicePauseSeconds = pause) }
+                        },
+                    )
                     Text(
                         "Articles are spoken a few sentences at a time. Some voices run those " +
                             "pieces together; this adds a pause after each one.",
@@ -290,7 +302,9 @@ private fun NarrationSettings(
     }
 }
 
-private val CLOUD_VOICE_PAUSES = listOf(0f, 0.25f, 0.5f, 0.75f, 1f, 1.5f, 2f)
+/** The server takes up to 2 seconds. */
+private const val MAX_PAUSE = 2f
+private const val PAUSE_STEP = 0.05f
 
 private fun pauseLabel(seconds: Float): String =
     if (seconds == 0f) "None" else "${shortNumber(seconds)} s"

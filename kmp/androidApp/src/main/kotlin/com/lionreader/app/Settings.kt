@@ -67,7 +67,7 @@ data class AppSettings(
     val cloudVoiceModel: String? = null,
     val cloudVoice: String? = null,
     /** Silence after each chunk of cloud speech. */
-    val cloudVoicePauseSeconds: Float = 0.25f,
+    val cloudVoicePauseSeconds: Float = 1f,
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
