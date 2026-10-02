@@ -40,8 +40,16 @@ export function retryAfterSeconds(header: string | null, now = Date.now()): numb
   return Number.isNaN(date) ? null : Math.max(0, (date - now) / 1000);
 }
 
-/** The error for `provider`'s failed `response`, with its message if it gave one. */
-export async function providerError(provider: string, response: Response): Promise<Error> {
+/**
+ * The error for `provider`'s failed `response`, with its message if it gave
+ * one. A request made without a key (a public catalog) is never a rejection:
+ * a 4xx there says nothing about the user's key, so it's trouble to wait out.
+ */
+export async function providerError(
+  provider: string,
+  response: Response,
+  { keyed = true }: { keyed?: boolean } = {}
+): Promise<Error> {
   let detail: string | null = null;
   try {
     const body = (await response.json()) as { detail?: unknown; error?: { message?: unknown } };
@@ -56,7 +64,7 @@ export async function providerError(provider: string, response: Response): Promi
     return new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")));
   }
   // A timeout (408) or a conflict (409) can pass on another try.
-  if (status >= 400 && status < 500 && status !== 408 && status !== 409) {
+  if (keyed && status >= 400 && status < 500 && status !== 408 && status !== 409) {
     return new ProviderRejectedError(message, provider, detail);
   }
   return new Error(message);

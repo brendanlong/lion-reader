@@ -27,7 +27,7 @@ const voiceLookups: string[] = [];
 /** Speech requests to turn away as busy before answering. */
 let busyAnswers = 0;
 const previousBaseUrl = process.env.BREEZEBLUE_BASE_URL;
-const previousServerKey = process.env.BREEZEBLUE_API_KEY;
+const savedKeys = new Map<string, string | undefined>();
 
 const voice = (id: string, name: string) => ({
   voice_id: id,
@@ -51,7 +51,17 @@ beforeAll(async () => {
       const id = decodeURIComponent(url.pathname.slice("/voices/".length));
       // Any voice of the library, like one that has left the trending list.
       if (id.startsWith("library-")) return json(voice(id, "From the library"));
-      return json({ detail: "Voice not found" }, 404);
+      if (id.startsWith("broken-")) return json({ detail: "Something went wrong" }, 400);
+      // What BreezeBlue answers for an id it doesn't know (checked against the real API).
+      return json(
+        {
+          ok: false,
+          code: "RESOURCE_NOT_FOUND",
+          detail: "Voice not found.",
+          error: "Voice not found.",
+        },
+        404
+      );
     }
     if (url.pathname === "/models") {
       return json([{ model_id: "breeze-tts-2", name: "Breeze TTS 2" }]);
@@ -105,14 +115,21 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   process.env.BREEZEBLUE_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  delete process.env.BREEZEBLUE_API_KEY;
+  // No other provider's server key: only the stand-in is reached.
+  for (const name of Object.values(AI_PROVIDER_ENV_KEYS)) {
+    savedKeys.set(name, process.env[name]);
+    delete process.env[name];
+  }
 });
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   if (previousBaseUrl === undefined) delete process.env.BREEZEBLUE_BASE_URL;
   else process.env.BREEZEBLUE_BASE_URL = previousBaseUrl;
-  if (previousServerKey !== undefined) process.env.BREEZEBLUE_API_KEY = previousServerKey;
+  for (const [name, value] of savedKeys) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 });
 
 async function breezeBlueVoices(key: string): Promise<Array<{ id: string; name: string }>> {
@@ -143,14 +160,19 @@ describe("BreezeBlue voices", () => {
     expect(names).not.toContain(first);
   });
 
+  const lookupsOf = (voice: string) =>
+    voiceLookups.filter((path) => path === `/voices/${voice}`).length;
+
   it("keeps offering a picked voice that has left the list, while the key has it", async () => {
     const key = randomUUID();
+    const userId = randomUUID();
     const picked = `library-${randomUUID()}`;
-    const list = async (voice: string) => {
-      const { models } = await listSpeechModels(
+    const list = async (voice: string, model: string | null = "breezeblue:breeze-tts-2") => {
+      const { models, unavailable } = await listSpeechModels(
         { breezeblue: key },
-        { model: "breezeblue:breeze-tts-2", voice }
+        { model, voice, userId }
       );
+      expect(unavailable).toEqual([]);
       return models[0].voices;
     };
 
@@ -158,13 +180,71 @@ describe("BreezeBlue voices", () => {
       id: picked,
       name: "From the library (American, female, middle aged)",
     });
-    await list(picked);
-    expect(voiceLookups.filter((path) => path === `/voices/${picked}`)).toHaveLength(1);
+    // The default model is BreezeBlue's here, so a pick of "the default" keeps it too.
+    expect((await list(picked, null)).at(-1)?.id).toBe(picked);
+    expect(lookupsOf(picked)).toBe(1);
 
     expect((await list("deleted")).map((voice) => voice.id)).not.toContain("deleted");
     // One it lists anyway isn't looked up.
     await list("trending");
-    expect(voiceLookups).not.toContain("/voices/trending");
+    expect(lookupsOf("trending")).toBe(0);
+  });
+
+  it("lists the catalog without the voice when its lookup fails", async () => {
+    const voice = `broken-${randomUUID()}`;
+    const { models, unavailable } = await listSpeechModels(
+      { breezeblue: randomUUID() },
+      { model: "breezeblue:breeze-tts-2", voice, userId: randomUUID() }
+    );
+    expect(unavailable).toEqual([]);
+    expect(models[0].voices.map((candidate) => candidate.id)).not.toContain(voice);
+    expect(lookupsOf(voice)).toBe(1);
+  });
+
+  it("only looks a voice up for the model it's picked with", async () => {
+    // A Kokoro voice, picked with a model of a provider this user has no key for.
+    const voice = `library-${randomUUID()}`;
+    await listSpeechModels(
+      { breezeblue: randomUUID() },
+      { model: "deepinfra:hexgrad/Kokoro-82M", voice, userId: randomUUID() }
+    );
+    expect(lookupsOf(voice)).toBe(0);
+  });
+
+  it("doesn't look voices up on the server's key for a model not allowed there", async () => {
+    const previous = process.env.SERVER_KEY_MODELS;
+    process.env.BREEZEBLUE_API_KEY = `server-${randomUUID()}`;
+    process.env.SERVER_KEY_MODELS = "deepinfra:*";
+    try {
+      const voice = `library-${randomUUID()}`;
+      await listSpeechModels({}, { model: "breezeblue:breeze-tts-2", voice, userId: randomUUID() });
+      expect(lookupsOf(voice)).toBe(0);
+    } finally {
+      delete process.env.BREEZEBLUE_API_KEY;
+      if (previous === undefined) delete process.env.SERVER_KEY_MODELS;
+      else process.env.SERVER_KEY_MODELS = previous;
+    }
+  });
+
+  it("rate-limits one user's lookups, and keeps one entry per user", async () => {
+    const key = randomUUID();
+    const userId = randomUUID();
+    const voices = Array.from({ length: 15 }, () => `library-${randomUUID()}`);
+    for (const voice of voices) {
+      await listSpeechModels(
+        { breezeblue: key },
+        { model: "breezeblue:breeze-tts-2", voice, userId }
+      );
+    }
+    expect(voices.filter((voice) => lookupsOf(voice) > 0)).toHaveLength(10);
+
+    // Another user's lookup isn't held up by the first one's.
+    const other = `library-${randomUUID()}`;
+    await listSpeechModels(
+      { breezeblue: key },
+      { model: "breezeblue:breeze-tts-2", voice: other, userId: randomUUID() }
+    );
+    expect(lookupsOf(other)).toBe(1);
   });
 });
 
@@ -173,7 +253,12 @@ describe("BreezeBlue speech", () => {
     const key = randomUUID();
     const stream = await streamSpeech(
       { breezeblue: key },
-      { model: "breezeblue:breeze-tts-2", voice: `fav-${key}`, text: "Hello." }
+      {
+        model: "breezeblue:breeze-tts-2",
+        userId: randomUUID(),
+        voice: `fav-${key}`,
+        text: "Hello.",
+      }
     );
     const audio = Buffer.from(await new Response(stream).arrayBuffer());
 
@@ -190,7 +275,13 @@ describe("BreezeBlue speech", () => {
     const duration = async (pauseSeconds: number) => {
       const stream = await streamSpeech(
         { breezeblue: key },
-        { model: "breezeblue:breeze-tts-2", voice: null, text: "Hello.", pauseSeconds }
+        {
+          model: "breezeblue:breeze-tts-2",
+          userId: randomUUID(),
+          voice: null,
+          text: "Hello.",
+          pauseSeconds,
+        }
       );
       const audio = new Uint8Array(await new Response(stream).arrayBuffer());
       return new Input({ source: new BufferSource(audio), formats: ALL_FORMATS }).computeDuration();
@@ -208,7 +299,7 @@ describe("BreezeBlue speech", () => {
     const before = speechRequests.length;
     const stream = await streamSpeech(
       { breezeblue: randomUUID() },
-      { model: "breezeblue:breeze-tts-2", voice: null, text: "Busy." }
+      { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: null, text: "Busy." }
     );
     const audio = Buffer.from(await new Response(stream).arrayBuffer());
     expect(audio.subarray(4, 8).toString()).toBe("ftyp");
@@ -220,7 +311,7 @@ describe("BreezeBlue speech", () => {
     const picked = `library-${randomUUID()}`;
     const stream = await streamSpeech(
       { breezeblue: randomUUID() },
-      { model: "breezeblue:breeze-tts-2", voice: picked, text: "Hi." }
+      { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: picked, text: "Hi." }
     );
     await new Response(stream).arrayBuffer();
     expect(speechRequests.at(-1)?.path).toContain(`/text-to-speech/${picked}/`);
@@ -230,7 +321,7 @@ describe("BreezeBlue speech", () => {
     const speak = (key: string) =>
       streamSpeech(
         { breezeblue: key },
-        { model: "breezeblue:breeze-tts-2", voice: null, text: "Hi." }
+        { model: "breezeblue:breeze-tts-2", userId: randomUUID(), voice: null, text: "Hi." }
       );
     await expect(speak(`broke-${randomUUID()}`)).rejects.toThrow(
       new SpeechRejectedError("BreezeBlue refused the request: Insufficient credits")
@@ -243,27 +334,18 @@ describe("BreezeBlue speech", () => {
   it("errors the audio, rather than ending it, when BreezeBlue stops partway", async () => {
     const stream = await streamSpeech(
       { breezeblue: randomUUID() },
-      { model: "breezeblue:breeze-tts-2", voice: "library-cut-off", text: "Hi." }
+      {
+        model: "breezeblue:breeze-tts-2",
+        userId: randomUUID(),
+        voice: "library-cut-off",
+        text: "Hi.",
+      }
     );
     await expect(new Response(stream).arrayBuffer()).rejects.toThrow();
   });
 });
 
 describe("the speech route", () => {
-  const savedKeys = new Map<string, string | undefined>();
-  beforeAll(() => {
-    for (const name of Object.values(AI_PROVIDER_ENV_KEYS)) {
-      savedKeys.set(name, process.env[name]);
-      delete process.env[name];
-    }
-  });
-  afterAll(() => {
-    for (const [name, value] of savedKeys) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  });
-
   it("answers the server's key being refused with a 422 that keeps the reason private", async () => {
     process.env.BREEZEBLUE_API_KEY = `refused-${randomUUID()}`;
     const userId = await createTestUser({ emailPrefix: "breezeblue" });

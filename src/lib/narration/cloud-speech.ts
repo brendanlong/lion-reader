@@ -48,16 +48,25 @@ function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-/** Times a busy answer is asked again before the chunk fails. */
-const BUSY_ATTEMPTS = 5;
+/** The server's "come back shortly": a busy voice (503), or our rate limit (429). */
+function isBusyStatus(status: number): boolean {
+  return status === 503 || status === 429;
+}
+
+/** Times a chunk is asked for while busy, before playback pauses there. */
+const BUSY_ATTEMPTS = 3;
 const BUSY_FIRST_WAIT_MS = 1_000;
 const BUSY_MAX_WAIT_MS = 10_000;
 
 /**
  * `request`'s response, asked again while the server says the voice is busy
- * (503, or our rate limit's 429), waiting as long as it asks within reason.
- * The server has already waited out a busy provider for a while, so this only
- * matters when many listeners share a provider's key.
+ * ({@link isBusyStatus}), waiting as long as it asks within reason. The
+ * server has already waited out a busy provider for up to 15 s per request,
+ * so a busy chunk costs at most 3 × 15 s + 2 × 10 s ≈ 65 s and three requests,
+ * and the player then pauses without asking again. Other transient failures
+ * (no connection, a 5xx) are one request each, which the player tries three
+ * more times over 17 s, so the worst case for a chunk is three of those and
+ * then a busy round: six requests, about a minute and a half.
  */
 export async function fetchWhenFree(
   request: () => Promise<Response>,
@@ -67,7 +76,7 @@ export async function fetchWhenFree(
   let backoff = BUSY_FIRST_WAIT_MS;
   for (let attempt = 1; ; attempt++) {
     const response = await request();
-    if ((response.status !== 503 && response.status !== 429) || attempt === BUSY_ATTEMPTS) {
+    if (!isBusyStatus(response.status) || attempt === BUSY_ATTEMPTS) {
       return response;
     }
     const asked = Number(response.headers.get("Retry-After")) * 1000;
@@ -130,8 +139,11 @@ async function* streamCloudSpeech(
   }
   if (!response.ok) {
     const message = await errorMessage(response);
+    // fetchWhenFree has asked again for these already: the player pauses
+    // rather than ask more.
+    const retried = isBusyStatus(response.status);
     throw isTransientStatus(response.status)
-      ? new TransientSynthesisError(message)
+      ? new TransientSynthesisError(message, !retried)
       : new Error(message);
   }
   if (!response.body) throw new Error("Speech synthesis returned no audio");

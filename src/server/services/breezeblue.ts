@@ -3,8 +3,8 @@
  *
  * BreezeBlue has thousands of voices, so we offer a few: the key owner's own
  * (the ones they favorited on BreezeBlue and the ones they made), then the
- * trending English narration voices, and the voice picked before if it's left
- * those (else it would silently change). Everything is cached per key and never
+ * trending English narration voices; `speech.ts` keeps a picked voice that has
+ * left those ({@link findBreezeBlueVoice}). Everything is cached per key and never
  * shown for another: even the models and trending voices are the account's
  * view (it can rename a voice in its library, and models are per account).
  */
@@ -137,23 +137,33 @@ async function fetchCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
   return { models, voices: voices.map(({ id, name }) => ({ id, name })) };
 }
 
-const CACHE_OPTIONS = {
+const catalogs = new CatalogCache(fetchCatalog, {
   ttlMs: CATALOG_CACHE_TTL_MS,
   retryMs: CATALOG_FAILURE_TTL_MS,
   failureTtlMs: CATALOG_FAILURE_TTL_MS,
   maxEntries: MAX_CACHED_KEYS,
-};
+});
 
-const catalogs = new CatalogCache(fetchCatalog, CACHE_OPTIONS);
+/** The models, and the voices this key is offered: its own, then trending ones. */
+export function getBreezeBlueCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
+  return catalogs.get(apiKey);
+}
 
-/** A voice by id, as this key sees it; null if it has no such voice. */
-async function fetchVoice(lookup: string): Promise<BreezeBlueVoice | null> {
-  const [apiKey, id] = z.tuple([z.string(), z.string()]).parse(JSON.parse(lookup));
+/**
+ * Voice `id` as this key sees it, whether or not the catalog lists it (a voice
+ * picked from trending can leave the list any day); null if the key has no
+ * such voice (BreezeBlue answers 404 `RESOURCE_NOT_FOUND`). Not cached: the
+ * caller decides when a lookup is worth its request.
+ */
+export async function findBreezeBlueVoice(
+  apiKey: string,
+  id: string
+): Promise<BreezeBlueVoice | null> {
   const response = await fetch(`${apiUrl()}/voices/${encodeURIComponent(id)}`, {
     headers: headers(apiKey),
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
-  if (response.status === 404 || response.status === 422) {
+  if (response.status === 404) {
     await response.body?.cancel();
     return null;
   }
@@ -162,23 +172,6 @@ async function fetchVoice(lookup: string): Promise<BreezeBlueVoice | null> {
   return parsed.success && parsed.data.voice_id === id
     ? { id, name: breezeBlueVoiceName(parsed.data) }
     : null;
-}
-
-const voices = new CatalogCache(fetchVoice, CACHE_OPTIONS);
-
-/**
- * The models, and the voices this key can pick from: its own and the trending
- * ones, and `keep` (a voice picked before, which can drop out of trending
- * whenever) as long as the key can still use it.
- */
-export async function getBreezeBlueCatalog(
-  apiKey: string,
-  keep: string | null = null
-): Promise<BreezeBlueCatalog> {
-  const catalog = await catalogs.get(apiKey);
-  if (!keep || catalog.voices.some((voice) => voice.id === keep)) return catalog;
-  const kept = await voices.get(JSON.stringify([apiKey, keep]));
-  return kept ? { ...catalog, voices: [...catalog.voices, kept] } : catalog;
 }
 
 /**

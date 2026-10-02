@@ -28,9 +28,11 @@ import {
 } from "@/server/services/deepinfra";
 import {
   breezeBlueSpeech,
+  findBreezeBlueVoice,
   getBreezeBlueCatalog,
   type BreezeBlueCatalog,
 } from "@/server/services/breezeblue";
+import { checkRateLimit } from "@/server/rate-limit";
 import {
   listOpenRouterModels,
   openRouterSpeech,
@@ -60,16 +62,13 @@ export interface SpeechModel {
  * `AiProvider` (`@/lib/ai/providers`), which is where its name and key live.
  */
 interface SpeechProviderAdapter {
+  /** The models the user can pick on these keys; `apiKey` is this provider's. */
+  listModels(keys: AiProviderKeys | undefined, apiKey: string): Promise<SpeechModel[]>;
   /**
-   * The models the user can pick on these keys; `apiKey` is this provider's.
-   * A provider that lists only some of its voices also lists `voice` (the one
-   * the user picked) if the key can use it.
+   * For a provider that lists only some of its voices: `voice` as `apiKey`
+   * sees it, or null if it has none such (see {@link keepPickedVoice}).
    */
-  listModels(
-    keys: AiProviderKeys | undefined,
-    apiKey: string,
-    voice: string | null
-  ): Promise<SpeechModel[]>;
+  findVoice?(apiKey: string, voice: string): Promise<SpeechVoice | null>;
   /**
    * `text` spoken by `voice` of `model` (provider-native ids), as PCM streamed
    * as it's generated. Rejects when the provider refuses.
@@ -93,8 +92,9 @@ const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = 
     speak: openRouterSpeech,
   },
   breezeblue: {
-    listModels: async (keys, apiKey, voice) =>
-      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey, voice), keys),
+    listModels: async (keys, apiKey) =>
+      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey), keys),
+    findVoice: findBreezeBlueVoice,
     speak: breezeBlueSpeech,
   },
 };
@@ -110,32 +110,31 @@ export interface SpeechCatalog {
   unavailable: { provider: SpeechProvider; error: unknown }[];
 }
 
-/** The model and voice the user picked; null for the defaults. */
+/** The model and voice a user picked (null: the defaults). */
 export interface SpeechChoice {
   model: string | null;
   voice: string | null;
+  userId: string;
 }
 
 /**
- * Speech models the user can pick, across the providers that have a key, with
- * the voice in `picked` among its model's voices as long as the provider has
- * it. A provider whose catalog can't be fetched is logged and left out, so the
- * others still show up.
+ * Speech models the user can pick, across the providers that have a key. A
+ * provider whose catalog can't be fetched is logged and left out, so the
+ * others still show up. Given the user's pick, its voice is kept among its
+ * model's voices while the provider has it ({@link keepPickedVoice}).
  */
 export async function listSpeechModels(
   keys?: AiProviderKeys,
-  picked: SpeechChoice = { model: null, voice: null }
+  picked?: SpeechChoice
 ): Promise<SpeechCatalog> {
-  const pickedProvider = picked.model ? parseModelRef(picked.model).provider : null;
   const unavailable: SpeechCatalog["unavailable"] = [];
   const lists = await Promise.all(
     SPEECH_PROVIDERS.flatMap((provider) => {
       const apiKey = getProviderApiKey(provider, keys);
       return apiKey ? [{ provider, apiKey }] : [];
     }).map(async ({ provider, apiKey }) => {
-      const voice = pickedProvider === null || pickedProvider === provider ? picked.voice : null;
       try {
-        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys, apiKey, voice);
+        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys, apiKey);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (error instanceof ProviderRejectedError) {
@@ -152,7 +151,76 @@ export async function listSpeechModels(
     .flat()
     .filter((model) => model.voices.length > 0)
     .sort(byDisplayName);
+  if (picked?.voice) await keepPickedVoice(models, keys, picked);
   return { models, unavailable };
+}
+
+/** How long a picked voice's lookup is trusted, found or not. */
+const KEPT_VOICE_TTL_MS = 5 * 60 * 1000;
+/** How long a lookup that failed is, before asking again. */
+const KEPT_VOICE_FAILURE_TTL_MS = 30 * 1000;
+const MAX_KEPT_VOICES = 1000;
+
+/**
+ * Each user's latest lookup per provider key: one entry per user, so a user
+ * changing voices only ever replaces their own, and nobody can push the
+ * others' out faster than by being that many users.
+ */
+const keptVoices = new Map<
+  string,
+  { voice: string; expiresAt: number; found: Promise<SpeechVoice | null> }
+>();
+
+/**
+ * Adds the picked voice to its model's voices when the provider no longer
+ * offers it (BreezeBlue lists the key's own and the day's trending voices;
+ * a voice picked from trending would otherwise silently change). Only for the
+ * model the request would run on, which is only listed if it's allowed on the
+ * key it would bill: so a lookup is never made for a model the user can't
+ * use. Lookups are cached per user and rate-limited, since on the server's
+ * key they're made with the operator's account. Any failure leaves the voice
+ * out, and the request falls back to the model's default voice.
+ */
+async function keepPickedVoice(
+  models: SpeechModel[],
+  keys: AiProviderKeys | undefined,
+  { model: pickedModel, voice, userId }: SpeechChoice
+): Promise<void> {
+  if (!voice) return;
+  const id = pickedModel ? normalizeModelRef(pickedModel) : defaultSpeechModelId(models);
+  const index = models.findIndex((candidate) => candidate.id === id);
+  const model = models[index];
+  const findVoice = model && SPEECH_PROVIDER_ADAPTERS[model.provider].findVoice;
+  if (!model || !findVoice || hasVoice(model, voice)) return;
+  const apiKey = getProviderApiKey(model.provider, keys);
+  if (!apiKey) return;
+
+  const slot = JSON.stringify([userId, model.provider, apiKey]);
+  const now = Date.now();
+  let entry = keptVoices.get(slot);
+  if (!entry || entry.voice !== voice || now >= entry.expiresAt) {
+    const limit = await checkRateLimit(`user:${userId}`, "voiceLookup", { fallback: "memory" });
+    if (!limit.allowed) return;
+    const lookup = { voice, expiresAt: now + KEPT_VOICE_TTL_MS, found: findVoice(apiKey, voice) };
+    lookup.found = lookup.found.catch((error: unknown) => {
+      logger.warn("Couldn't look up a picked speech voice", {
+        provider: model.provider,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      lookup.expiresAt = Date.now() + KEPT_VOICE_FAILURE_TTL_MS;
+      return null;
+    });
+    entry = lookup;
+    keptVoices.delete(slot);
+    keptVoices.set(slot, entry);
+    // Oldest first, since every entry is (re)inserted when looked up.
+    for (const oldest of keptVoices.keys()) {
+      if (keptVoices.size <= MAX_KEPT_VOICES) break;
+      keptVoices.delete(oldest);
+    }
+  }
+  const kept = await entry.found;
+  if (kept) models[index] = { ...model, voices: [...model.voices, kept] };
 }
 
 /**
@@ -345,7 +413,7 @@ const SPEECH_TIMEOUT_MS = 120_000;
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
-  options: { model: string | null; voice: string | null; text: string; pauseSeconds?: number },
+  options: SpeechChoice & { text: string; pauseSeconds?: number },
   signal?: AbortSignal
 ): Promise<ReadableStream<Uint8Array>> {
   const { model, voice } = resolveSpeechModel(

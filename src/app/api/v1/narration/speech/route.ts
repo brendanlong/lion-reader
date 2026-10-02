@@ -124,7 +124,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const keys = await getUserApiKeys(auth.userId);
   try {
-    const audio = await streamSpeech(keys, input, req.signal);
+    const audio = await streamSpeech(keys, { ...input, userId: auth.userId }, req.signal);
     return new Response(audio, {
       headers: {
         ...limitHeaders,

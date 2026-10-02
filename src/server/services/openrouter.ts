@@ -168,7 +168,7 @@ async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouter
     { headers: headers(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
   );
   if (!response.ok) {
-    throw await providerError("OpenRouter", response);
+    throw await providerError("OpenRouter", response, { keyed: false });
   }
   const body = z.object({ data: z.array(z.unknown()) }).parse(await response.json());
   return body.data.flatMap((entry) => {

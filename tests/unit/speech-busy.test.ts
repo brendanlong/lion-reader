@@ -83,6 +83,13 @@ describe("providerError", () => {
     expect(error.message).toBe("OpenRouter request failed with status 402: No credits");
   });
 
+  it("isn't a rejection for a request made without a key", async () => {
+    const error = await providerError("DeepInfra", new Response("{}", { status: 403 }), {
+      keyed: false,
+    });
+    expect(error).not.toBeInstanceOf(ProviderRejectedError);
+  });
+
   it("is a plain error for trouble that can pass", async () => {
     for (const status of [408, 409, 500, 503]) {
       const error = await providerError("DeepInfra", new Response("oops", { status }));

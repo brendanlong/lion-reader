@@ -60,7 +60,9 @@ const TIME_EPSILON = 0.01;
 const MAX_STREAM_RETRIES = 2;
 /**
  * The waits before trying a chunk again after a transient failure. Each try
- * may be paid for (and is rate-limited), so a few, spaced out.
+ * may be paid for (and is rate-limited), so a few, spaced out; a failure the
+ * synthesis already retried itself isn't retried here (see
+ * `TransientSynthesisError.retryable`), so the layers don't multiply.
  */
 const RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 
@@ -138,7 +140,15 @@ export function splitIntoSpeechChunks(paragraphs: string[], maxChars: number): S
  * if it still fails, playback pauses where it ran out, for play to try again.
  * Any other failure stops narration.
  */
-export class TransientSynthesisError extends Error {}
+export class TransientSynthesisError extends Error {
+  constructor(
+    message: string,
+    /** False when the synthesis already asked again itself, enough: pause without more. */
+    readonly retryable = true
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Thrown by a synthesis whose audio stopped arriving partway (a dropped
@@ -539,7 +549,9 @@ export class MediaSourcePlayer {
     const request = ++this.playRequest;
     if (this.status === "paused" && !this.jumpPending) {
       this.setStatus(this.isPlayheadBuffered() ? "playing" : "buffering");
-      // It may have paused where synthesis ran out (see interrupt).
+      // It may have paused where synthesis ran out (pauseIfBlocked), or been
+      // paused while failures piled up: every failed chunk is asked for afresh.
+      this.forgetFailures();
       void this.pump();
     } else {
       this.startRun(this.index);
@@ -582,12 +594,7 @@ export class MediaSourcePlayer {
   stop(): void {
     for (const queued of this.queuedSyntheses.splice(0)) queued.skip();
     this.abortSyntheses(() => true);
-    // Failures are kept so look-ahead doesn't ask again; playing again does.
-    for (const [chunk, audio] of this.chunkAudio) {
-      if (audio.failed) this.chunkAudio.delete(chunk);
-    }
-    this.transientFailures.clear();
-    this.blocked = null;
+    this.forgetFailures();
     this.run++;
     this.playRequest++;
     this.audio.pause();
@@ -946,7 +953,7 @@ export class MediaSourcePlayer {
       // A stream that keeps dropping has been asked for enough.
       return error;
     }
-    if (error instanceof TransientSynthesisError) {
+    if (error instanceof TransientSynthesisError && error.retryable) {
       const failures = this.transientFailures.get(chunk) ?? 0;
       if (failures < this.retryDelaysMs.length) {
         this.transientFailures.set(chunk, failures + 1);
@@ -959,20 +966,29 @@ export class MediaSourcePlayer {
   /**
    * Pauses where the run can't go on ({@link blocked}), once the playhead has
    * caught up with it, so what's buffered still plays. Playing again tries
-   * the chunk afresh.
+   * the chunks afresh.
    */
   private pauseIfBlocked(): void {
     const blocked = this.blocked;
     if (!blocked || blocked.run !== this.run) return;
     if (this.status !== "buffering" || this.isPlayheadBuffered()) return;
     this.blocked = null;
-    const chunk = this.nextAppend;
-    const audio = this.chunkAudio.get(chunk);
-    if (audio?.failed) this.chunkAudio.delete(chunk);
-    this.streamRetries.delete(chunk);
-    this.transientFailures.delete(chunk);
     this.pause();
     this.callbacks.onInterrupted?.(blocked.error);
+  }
+
+  /**
+   * Forgets every failed chunk and its retries, so they're asked for again.
+   * Kept until then so look-ahead, which runs on every time update, doesn't
+   * ask again and again.
+   */
+  private forgetFailures(): void {
+    for (const [chunk, audio] of this.chunkAudio) {
+      if (audio.failed) this.chunkAudio.delete(chunk);
+    }
+    this.streamRetries.clear();
+    this.transientFailures.clear();
+    this.blocked = null;
   }
 
   /** Stops the unfinished syntheses of the chunks `drop` picks, and forgets them. */
@@ -1127,7 +1143,10 @@ export class MediaSourcePlayer {
       paragraph: chunk.paragraph,
       sentence: this.index - firstOfParagraph,
     };
-    this.callbacks.onPositionChange?.(position, this.paragraphCount);
+    // Up to the last paragraph with something to say, so the controls'
+    // "is there a next one" agrees with skipForward, which moves by chunks.
+    const spoken = (this.chunks.at(-1)?.paragraph ?? -1) + 1;
+    this.callbacks.onPositionChange?.(position, Math.min(this.paragraphCount, spoken));
   }
 
   private setStatus(status: PlaybackStatus): void {

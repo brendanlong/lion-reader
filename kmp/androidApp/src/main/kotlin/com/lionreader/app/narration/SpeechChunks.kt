@@ -35,6 +35,8 @@ private fun breakWords(text: String, maxChars: Int): List<String> =
  * unspaced CJK text) would be one chunk the server refuses. Never between a surrogate pair.
  */
 private fun slices(text: String, maxChars: Int): List<String> {
+    // With fewer, a surrogate pair could never fit and this would never end.
+    require(maxChars >= 2) { "maxChars must be at least 2" }
     val pieces = mutableListOf<String>()
     var start = 0
     while (text.length - start > maxChars) {

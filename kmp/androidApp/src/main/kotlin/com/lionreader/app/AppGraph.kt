@@ -141,7 +141,7 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
                 throw e
             } catch (e: ApiException) {
                 if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
-                if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
+                if (e.isPermanent || (e.status in 400..499 && e.status != 408 && e.status != 429)) {
                     throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
                 }
                 lastVoiceModels?.takeIf { it.first == accountDb }?.second

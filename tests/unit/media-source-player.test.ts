@@ -324,10 +324,14 @@ function setup(
   });
   const statuses: PlaybackStatus[] = [];
   const paragraphsSeen: number[] = [];
+  const totalsSeen: number[] = [];
   const events = { ended: 0, errors: [] as Error[], interruptions: [] as Error[] };
   player.setCallbacks({
     onStatusChange: (status) => statuses.push(status),
-    onPositionChange: (position) => paragraphsSeen.push(position.paragraph),
+    onPositionChange: (position, total) => {
+      paragraphsSeen.push(position.paragraph);
+      totalsSeen.push(total);
+    },
     onEnd: () => events.ended++,
     onError: (error) => events.errors.push(error),
     onInterrupted: (error) => events.interruptions.push(error),
@@ -361,6 +365,7 @@ function setup(
     player,
     statuses,
     paragraphsSeen,
+    totalsSeen,
     events,
     respond,
     stream,
@@ -757,6 +762,65 @@ describe("MediaSourcePlayer", () => {
     await respond("B.");
     expect(calls).toEqual(["A.", "B.", "B.", "B."]);
     expect(events.ended).toBe(0);
+  });
+
+  it("asks for every chunk that failed in an outage again on play, not only the next", async () => {
+    const { audio, calls, player, events, failSynthesis, respond } = setup(["A.", "B.", "C."], {
+      retryDelaysMs: [0],
+    });
+    void player.play();
+    await respond("A.");
+    // Both look-ahead chunks fail through their retries.
+    for (const text of ["B.", "C."]) {
+      await failSynthesis(text, new TransientSynthesisError("Offline"));
+      await failSynthesis(text, new TransientSynthesisError("Offline"));
+    }
+    audio.advanceTo(1);
+    audio.dispatchEvent(new Event("waiting"));
+    expect(player.getStatus()).toBe("paused");
+
+    void player.play();
+    await respond("B.");
+    await respond("C.");
+    expect(calls.filter((text) => text === "C.")).toHaveLength(3);
+    audio.advanceTo(2.5);
+    audio.dispatchEvent(new Event("waiting"));
+    expect(player.getStatus()).not.toBe("paused");
+    expect(events.interruptions).toHaveLength(1);
+  });
+
+  it("asks again on play when paused by the user while chunks were failing", async () => {
+    const { calls, player, failSynthesis, respond } = setup(["A.", "B."], { retryDelaysMs: [0] });
+    void player.play();
+    await respond("A.");
+    await failSynthesis("B.", new TransientSynthesisError("Offline"));
+    await failSynthesis("B.", new TransientSynthesisError("Offline"));
+    player.pause();
+    void player.play();
+    await respond("B.");
+    expect(calls).toEqual(["A.", "B.", "B.", "B."]);
+    expect(player.getStatus()).toBe("playing");
+  });
+
+  it("doesn't ask again itself for a chunk the synthesis already retried", async () => {
+    const { audio, calls, player, events, failSynthesis, respond } = setup(["A.", "B."], {
+      retryDelaysMs: [0, 0, 0],
+    });
+    void player.play();
+    await respond("A.");
+    await failSynthesis("B.", new TransientSynthesisError("Busy", false));
+    expect(calls).toEqual(["A.", "B."]);
+    audio.advanceTo(1);
+    audio.dispatchEvent(new Event("waiting"));
+    expect(player.getStatus()).toBe("paused");
+    expect(events.interruptions.map((error) => error.message)).toEqual(["Busy"]);
+  });
+
+  it("counts paragraphs up to the last with something to say, as skipping does", async () => {
+    const { player, totalsSeen, respond } = setup(["A.", "B.", " "]);
+    void player.play();
+    await respond("A.");
+    expect(totalsSeen.at(-1)).toBe(2);
   });
 
   it("drops audio well behind the playhead", async () => {

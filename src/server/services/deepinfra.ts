@@ -13,7 +13,7 @@ import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmFromWav, pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
-import { providerError } from "@/server/services/provider-errors";
+import { providerError, ProviderRejectedError } from "@/server/services/provider-errors";
 import { CatalogCache } from "@/server/services/catalog-cache";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
@@ -129,7 +129,7 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
     headers: headers(),
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
-  if (!response.ok) throw await providerError("DeepInfra", response);
+  if (!response.ok) throw await providerError("DeepInfra", response, { keyed: false });
   const entries = z
     .array(z.unknown())
     .parse(await response.json())
@@ -182,7 +182,7 @@ interface PcmFormat {
 }
 
 /** Each model's PCM format, once a probe has asked (see {@link deepInfraSpeech}). */
-const pcmFormats = new Map<string, Promise<PcmFormat>>();
+const pcmFormats = new Map<string, { apiKey: string; format: Promise<PcmFormat> }>();
 
 /** A word for the probe to say: its WAV's header is all it's for. */
 const PROBE_TEXT = "Hi.";
@@ -218,9 +218,9 @@ function requestSpeech(
  * started it, since others may be waiting on it too.
  */
 function pcmFormatOf(apiKey: string, model: string, voice: string): Promise<PcmFormat> {
-  let format = pcmFormats.get(model);
-  if (!format) {
-    format = (async () => {
+  let probe = pcmFormats.get(model);
+  if (!probe) {
+    const format = (async () => {
       const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
       const response = await requestSpeech(apiKey, model, voice, PROBE_TEXT, "wav", signal);
       if (!response.ok || !response.body) throw await providerError("DeepInfra", response);
@@ -228,13 +228,23 @@ function pcmFormatOf(apiKey: string, model: string, voice: string): Promise<PcmF
       await data.cancel();
       return { sampleRate, channels };
     })();
-    pcmFormats.set(model, format);
-    const probe = format;
-    probe.catch(() => {
-      if (pcmFormats.get(model) === probe) pcmFormats.delete(model);
+    const started = { apiKey, format };
+    probe = started;
+    pcmFormats.set(model, started);
+    format.catch(() => {
+      if (pcmFormats.get(model) === started) pcmFormats.delete(model);
     });
   }
-  return format;
+  const { apiKey: probedWith, format } = probe;
+  // Another key's refusal (another user's, or the operator's) is no reason
+  // to show this caller, whose key the speech request has just accepted.
+  return probedWith === apiKey
+    ? format
+    : format.catch((error: unknown) => {
+        throw error instanceof ProviderRejectedError
+          ? new Error("Couldn't learn DeepInfra's audio format")
+          : error;
+      });
 }
 
 /**
