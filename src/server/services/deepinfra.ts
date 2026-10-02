@@ -202,14 +202,72 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
   return models.filter((model): model is DeepInfraSpeechModel => model !== null);
 }
 
-/** Each model's PCM format, learned from its first WAV. */
-const pcmFormats = new Map<string, { sampleRate: number; channels: number }>();
+interface PcmFormat {
+  sampleRate: number;
+  channels: number;
+}
+
+/** Each model's PCM format, once a probe has asked (see {@link deepInfraSpeech}). */
+const pcmFormats = new Map<string, Promise<PcmFormat>>();
+
+/** A word for the probe to say: its WAV's header is all it's for. */
+const PROBE_TEXT = "Hi.";
+const PROBE_TIMEOUT_MS = 30_000;
+
+function requestSpeech(
+  apiKey: string,
+  model: string,
+  voice: string,
+  input: string,
+  format: "pcm" | "wav",
+  signal: AbortSignal
+): Promise<Response> {
+  return fetch(`${DEEPINFRA_API_URL}/v1/audio/speech`, {
+    method: "POST",
+    headers: { ...headers(apiKey), "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify({
+      model,
+      voice,
+      input,
+      response_format: format,
+      stream: true,
+      service_tier: "priority",
+    }),
+  });
+}
+
+/**
+ * `model`'s PCM format, from the header of a WAV of {@link PROBE_TEXT}; asked
+ * once per model and kept, unless the probe fails. The probe isn't tied to
+ * the request that started it, since others may be waiting on it too.
+ */
+function pcmFormatOf(apiKey: string, model: string, voice: string): Promise<PcmFormat> {
+  let format = pcmFormats.get(model);
+  if (!format) {
+    format = (async () => {
+      const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+      const response = await requestSpeech(apiKey, model, voice, PROBE_TEXT, "wav", signal);
+      if (!response.ok || !response.body) throw await errorFromResponse(response);
+      const { sampleRate, channels, data } = await pcmFromWav(response.body);
+      await data.cancel();
+      return { sampleRate, channels };
+    })();
+    pcmFormats.set(model, format);
+    const probe = format;
+    probe.catch(() => {
+      if (pcmFormats.get(model) === probe) pcmFormats.delete(model);
+    });
+  }
+  return format;
+}
 
 /**
  * Speech as PCM, streamed as it's generated. Only PCM streams (a WAV's header
  * gives its length, so DeepInfra sends it whole), but it has no header and
- * DeepInfra ignores a requested rate, so a model's first request is a WAV, to
- * learn the format it speaks in.
+ * DeepInfra ignores a requested rate, so the format comes from a probe: a WAV
+ * of a word, asked alongside the first request for each model, which answers
+ * before the speech does.
  */
 export async function deepInfraSpeech(
   apiKey: string,
@@ -218,25 +276,16 @@ export async function deepInfraSpeech(
   input: string,
   signal: AbortSignal
 ): Promise<PcmStream> {
-  const format = pcmFormats.get(model);
-  const response = await fetch(`${DEEPINFRA_API_URL}/v1/audio/speech`, {
-    method: "POST",
-    headers: { ...headers(apiKey), "Content-Type": "application/json" },
-    signal,
-    body: JSON.stringify({
-      model,
-      voice,
-      input,
-      response_format: format ? "pcm" : "wav",
-      stream: true,
-      service_tier: "priority",
-    }),
-  });
-  if (!response.ok || !response.body) {
-    throw await errorFromResponse(response);
+  const [speech, format] = await Promise.allSettled([
+    requestSpeech(apiKey, model, voice, input, "pcm", signal),
+    pcmFormatOf(apiKey, model, voice),
+  ]);
+  if (speech.status === "rejected") throw speech.reason;
+  const response = speech.value;
+  if (format.status === "rejected") {
+    await response.body?.cancel();
+    throw format.reason;
   }
-  if (format) return { ...format, data: response.body };
-  const pcm = await pcmFromWav(response.body);
-  pcmFormats.set(model, { sampleRate: pcm.sampleRate, channels: pcm.channels });
-  return pcm;
+  if (!response.ok || !response.body) throw await errorFromResponse(response);
+  return { ...format.value, data: response.body };
 }
