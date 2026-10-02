@@ -380,7 +380,9 @@ export const narrationRouter = createTRPCRouter({
   /**
    * List speech models for cloud voices, across the providers with a key (user
    * or server). Empty when there's none, which is also how the client tells
-   * whether cloud voices are available.
+   * whether cloud voices are available. Given the model and voice the user
+   * picked, that voice is listed while the provider still has it, even if the
+   * provider's list of voices to offer has moved on.
    */
   listVoiceModels: scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
@@ -391,7 +393,15 @@ export const narrationRouter = createTRPCRouter({
         summary: "List speech models for cloud voices",
       },
     })
-    .input(z.void())
+    .input(
+      z
+        .object({
+          /** `provider:model` ref of the user's pick. */
+          model: z.string().max(200).optional(),
+          voice: z.string().max(200).optional(),
+        })
+        .optional()
+    )
     .output(
       z.object({
         models: z.array(
@@ -409,9 +419,12 @@ export const narrationRouter = createTRPCRouter({
         defaultModelId: z.string(),
       })
     )
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx, input }) => {
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const { models: speechModels } = await listSpeechModels(keys);
+      const { models: speechModels } = await listSpeechModels(keys, {
+        model: input?.model ?? null,
+        voice: input?.voice ?? null,
+      });
       const models = speechModels.map((model) => ({
         ...model,
         providerDisplayName: aiProviderName(model.provider),

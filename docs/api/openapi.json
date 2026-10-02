@@ -9567,6 +9567,24 @@
             "Authorization": []
           }
         ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "voice",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -9647,6 +9665,16 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid input data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.BAD_REQUEST"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Authorization not provided",
             "content": {
@@ -9663,6 +9691,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/error.FORBIDDEN"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.NOT_FOUND"
                 }
               }
             }

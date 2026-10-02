@@ -5,7 +5,12 @@
  */
 
 import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
-import { aiProviderNames, SPEECH_PROVIDERS, type SpeechProvider } from "@/lib/ai/providers";
+import {
+  aiProviderName,
+  aiProviderNames,
+  SPEECH_PROVIDERS,
+  type SpeechProvider,
+} from "@/lib/ai/providers";
 import { DEFAULT_CLOUD_VOICE_MODELS, DEFAULT_CLOUD_VOICES } from "@/lib/narration/constants";
 import { logger } from "@/lib/logger";
 import {
@@ -15,7 +20,7 @@ import {
 } from "@/server/services/ai-providers";
 import { encodeSpeech, type PcmStream } from "@/server/services/speech-encoding";
 import { setTimeout } from "node:timers/promises";
-import { ProviderBusyError } from "@/server/services/provider-errors";
+import { ProviderBusyError, ProviderRejectedError } from "@/server/services/provider-errors";
 import {
   deepInfraSpeech,
   listDeepInfraSpeechModels,
@@ -52,11 +57,19 @@ export interface SpeechModel {
 
 /**
  * A cloud voice provider's catalog and synthesis. A provider is also an
- * `AiProvider` (`@/lib/ai/model-ref`), which is where its name and key live.
+ * `AiProvider` (`@/lib/ai/providers`), which is where its name and key live.
  */
 interface SpeechProviderAdapter {
-  /** The models the user can pick on these keys; `apiKey` is this provider's. */
-  listModels(keys: AiProviderKeys | undefined, apiKey: string): Promise<SpeechModel[]>;
+  /**
+   * The models the user can pick on these keys; `apiKey` is this provider's.
+   * A provider that lists only some of its voices also lists `voice` (the one
+   * the user picked) if the key can use it.
+   */
+  listModels(
+    keys: AiProviderKeys | undefined,
+    apiKey: string,
+    voice: string | null
+  ): Promise<SpeechModel[]>;
   /**
    * `text` spoken by `voice` of `model` (provider-native ids), as PCM streamed
    * as it's generated. Rejects when the provider refuses.
@@ -80,8 +93,8 @@ const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = 
     speak: openRouterSpeech,
   },
   breezeblue: {
-    listModels: async (keys, apiKey) =>
-      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey), keys),
+    listModels: async (keys, apiKey, voice) =>
+      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey, voice), keys),
     speak: breezeBlueSpeech,
   },
 };
@@ -93,30 +106,44 @@ function voicesNamedById(ids: string[]): SpeechVoice[] {
 export interface SpeechCatalog {
   /** Models with at least one voice. */
   models: SpeechModel[];
-  /** Providers with a key whose catalog couldn't be fetched just now. */
-  unavailable: SpeechProvider[];
+  /** Providers with a key whose catalog couldn't be fetched just now, and why. */
+  unavailable: { provider: SpeechProvider; error: unknown }[];
+}
+
+/** The model and voice the user picked; null for the defaults. */
+export interface SpeechChoice {
+  model: string | null;
+  voice: string | null;
 }
 
 /**
- * Speech models the user can pick, across the providers that have a key. A
- * provider whose catalog can't be fetched is logged and left out, so the
+ * Speech models the user can pick, across the providers that have a key, with
+ * the voice in `picked` among its model's voices as long as the provider has
+ * it. A provider whose catalog can't be fetched is logged and left out, so the
  * others still show up.
  */
-export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechCatalog> {
-  const unavailable: SpeechProvider[] = [];
+export async function listSpeechModels(
+  keys?: AiProviderKeys,
+  picked: SpeechChoice = { model: null, voice: null }
+): Promise<SpeechCatalog> {
+  const pickedProvider = picked.model ? parseModelRef(picked.model).provider : null;
+  const unavailable: SpeechCatalog["unavailable"] = [];
   const lists = await Promise.all(
     SPEECH_PROVIDERS.flatMap((provider) => {
       const apiKey = getProviderApiKey(provider, keys);
       return apiKey ? [{ provider, apiKey }] : [];
     }).map(async ({ provider, apiKey }) => {
+      const voice = pickedProvider === null || pickedProvider === provider ? picked.voice : null;
       try {
-        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys, apiKey);
+        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys, apiKey, voice);
       } catch (error) {
-        logger.error("Failed to list speech models", {
-          provider,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        unavailable.push(provider);
+        const message = error instanceof Error ? error.message : String(error);
+        if (error instanceof ProviderRejectedError) {
+          logger.warn("Speech provider refused to list models", { provider, error: message });
+        } else {
+          logger.error("Failed to list speech models", { provider, error: message });
+        }
+        unavailable.push({ provider, error });
         return [];
       }
     })
@@ -233,6 +260,33 @@ export function defaultVoiceFor(model: SpeechModel): string {
 
 export class SpeechRequestError extends Error {}
 
+/** A provider refused this key or request; the message is for the user. */
+export class SpeechRejectedError extends Error {}
+
+/** A provider's catalog couldn't be fetched: likely to pass, so worth trying again. */
+export class SpeechUnavailableError extends Error {}
+
+/**
+ * What to tell the user about a provider refusing: on their own key, what the
+ * provider said (a bad key, no credit), which they can act on; on the
+ * server's, nothing about the operator's account.
+ */
+function speechRejection(
+  provider: SpeechProvider,
+  error: ProviderRejectedError,
+  keys: AiProviderKeys
+): SpeechRejectedError {
+  const name = aiProviderName(provider);
+  if (!keys[provider]) {
+    return new SpeechRejectedError(`${name} cloud voices aren't available right now`);
+  }
+  return new SpeechRejectedError(
+    error.detail
+      ? `${name} refused the request: ${error.detail}`
+      : `${name} refused the request; check your ${name} API key`
+  );
+}
+
 /**
  * The model and voice to synthesize with. A null model means the default. A
  * choice on a provider with no key left (or no longer allowed on the server's
@@ -246,13 +300,17 @@ export function resolveSpeechModel(
   requestedVoice: string | null
 ): { model: SpeechModel; voice: string } {
   const requested = requestedModel ? normalizeModelRef(requestedModel) : null;
-  // Not the user's fault, and likely to pass: worth trying again, not giving up on.
   const requestedProvider = requested ? parseModelRef(requested).provider : null;
-  if (
-    (models.length === 0 && unavailable.length > 0) ||
-    unavailable.some((provider) => provider === requestedProvider)
-  ) {
-    throw new Error(`Couldn't list ${unavailable.join(", ")} speech models`);
+  const failed =
+    unavailable.find(({ provider }) => provider === requestedProvider) ??
+    (models.length === 0 ? unavailable[0] : undefined);
+  if (failed) {
+    if (failed.error instanceof ProviderRejectedError) {
+      throw speechRejection(failed.provider, failed.error, keys);
+    }
+    throw new SpeechUnavailableError(
+      `Couldn't get ${aiProviderName(failed.provider)}'s cloud voices; try again shortly`
+    );
   }
   if (models.length === 0) {
     throw new SpeechRequestError(
@@ -291,7 +349,7 @@ export async function streamSpeech(
   signal?: AbortSignal
 ): Promise<ReadableStream<Uint8Array>> {
   const { model, voice } = resolveSpeechModel(
-    await listSpeechModels(keys),
+    await listSpeechModels(keys, options),
     keys,
     options.model,
     options.voice
@@ -303,17 +361,26 @@ export async function streamSpeech(
   const providerModel = parseModelRef(model.id).model;
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  const pcm = await speakWhenFree(
-    () =>
-      SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
-        apiKey,
-        providerModel,
-        voice,
-        options.text,
-        combined
-      ),
-    combined
-  );
+  let pcm: PcmStream;
+  try {
+    pcm = await speakWhenFree(
+      () =>
+        SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
+          apiKey,
+          providerModel,
+          voice,
+          options.text,
+          combined
+        ),
+      combined
+    );
+  } catch (error) {
+    if (error instanceof ProviderRejectedError) {
+      logger.warn("Speech provider refused", { model: model.id, error: error.message });
+      throw speechRejection(model.provider, error, keys);
+    }
+    throw error;
+  }
   return encodeSpeech(pcm, { pauseSeconds: options.pauseSeconds });
 }
 

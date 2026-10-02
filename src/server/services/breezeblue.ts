@@ -3,7 +3,8 @@
  *
  * BreezeBlue has thousands of voices, so we offer a few: the key owner's own
  * (the ones they favorited on BreezeBlue and the ones they made), then the
- * trending English narration voices. Everything is cached per key and never
+ * trending English narration voices, and the voice picked before if it's left
+ * those (else it would silently change). Everything is cached per key and never
  * shown for another: even the models and trending voices are the account's
  * view (it can rename a voice in its library, and models are per account).
  */
@@ -12,6 +13,7 @@ import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
+import { CatalogCache } from "@/server/services/catalog-cache";
 
 /** Overridable for tests, like the SDKs' `GROQ_BASE_URL`. */
 function apiUrl(): string {
@@ -20,7 +22,10 @@ function apiUrl(): string {
 const CATALOG_TIMEOUT_MS = 15_000;
 /** Short, so a voice favorited on BreezeBlue shows up soon. */
 const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
-/** A failure is kept briefly too, so an outage doesn't cost every chunk a timeout. */
+/**
+ * Before a refresh that failed is tried again; a first fetch's failure is kept
+ * as long, so an outage doesn't cost every chunk a timeout.
+ */
 const CATALOG_FAILURE_TTL_MS = 30 * 1000;
 const MAX_CACHED_KEYS = 1000;
 const TRENDING_VOICES = 30;
@@ -132,25 +137,48 @@ async function fetchCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
   return { models, voices: voices.map(({ id, name }) => ({ id, name })) };
 }
 
-const catalogs = new Map<string, { expiresAt: number; catalog: Promise<BreezeBlueCatalog> }>();
+const CACHE_OPTIONS = {
+  ttlMs: CATALOG_CACHE_TTL_MS,
+  retryMs: CATALOG_FAILURE_TTL_MS,
+  failureTtlMs: CATALOG_FAILURE_TTL_MS,
+  maxEntries: MAX_CACHED_KEYS,
+};
 
-/** The models, and the voices this key can pick from. */
-export function getBreezeBlueCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
-  const now = Date.now();
-  const current = catalogs.get(apiKey);
-  if (current && now < current.expiresAt) return current.catalog;
-  catalogs.delete(apiKey);
-  // Oldest first, since every entry is (re)inserted when fetched.
-  for (const [key, entry] of catalogs) {
-    if (catalogs.size < MAX_CACHED_KEYS && now < entry.expiresAt) break;
-    catalogs.delete(key);
-  }
-  const entry = { expiresAt: now + CATALOG_CACHE_TTL_MS, catalog: fetchCatalog(apiKey) };
-  catalogs.set(apiKey, entry);
-  entry.catalog.catch(() => {
-    entry.expiresAt = Date.now() + CATALOG_FAILURE_TTL_MS;
+const catalogs = new CatalogCache(fetchCatalog, CACHE_OPTIONS);
+
+/** A voice by id, as this key sees it; null if it has no such voice. */
+async function fetchVoice(lookup: string): Promise<BreezeBlueVoice | null> {
+  const [apiKey, id] = z.tuple([z.string(), z.string()]).parse(JSON.parse(lookup));
+  const response = await fetch(`${apiUrl()}/voices/${encodeURIComponent(id)}`, {
+    headers: headers(apiKey),
+    signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
-  return entry.catalog;
+  if (response.status === 404 || response.status === 422) {
+    await response.body?.cancel();
+    return null;
+  }
+  if (!response.ok) throw await providerError("BreezeBlue", response);
+  const parsed = voiceSchema.safeParse(await response.json());
+  return parsed.success && parsed.data.voice_id === id
+    ? { id, name: breezeBlueVoiceName(parsed.data) }
+    : null;
+}
+
+const voices = new CatalogCache(fetchVoice, CACHE_OPTIONS);
+
+/**
+ * The models, and the voices this key can pick from: its own and the trending
+ * ones, and `keep` (a voice picked before, which can drop out of trending
+ * whenever) as long as the key can still use it.
+ */
+export async function getBreezeBlueCatalog(
+  apiKey: string,
+  keep: string | null = null
+): Promise<BreezeBlueCatalog> {
+  const catalog = await catalogs.get(apiKey);
+  if (!keep || catalog.voices.some((voice) => voice.id === keep)) return catalog;
+  const kept = await voices.get(JSON.stringify([apiKey, keep]));
+  return kept ? { ...catalog, voices: [...catalog.voices, kept] } : catalog;
 }
 
 /**

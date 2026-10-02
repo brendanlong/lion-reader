@@ -12,6 +12,7 @@ import type { ChatCompletionOptions } from "@/server/services/ai-providers";
 import type { ModelPrice } from "@/server/services/server-key-models";
 import type { PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
+import { CatalogCache } from "@/server/services/catalog-cache";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -146,41 +147,19 @@ export async function openRouterTextModelPrice(model: string): Promise<ModelPric
   };
 }
 
-const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[] }>();
-const refreshes = new Map<string, Promise<OpenRouterModel[]>>();
+const modelCache = new CatalogCache(fetchOpenRouterModels, {
+  ttlMs: MODEL_CACHE_TTL_MS,
+  retryMs: MODEL_CACHE_RETRY_MS,
+});
 
 /**
  * Lists OpenRouter models producing the given output modality. Entries that
- * don't match the expected shape are skipped rather than failing the list. If
- * a refresh fails, the stale list is served and the refresh retried a minute
- * later rather than on every call.
+ * don't match the expected shape are skipped rather than failing the list.
  */
-export async function listOpenRouterModels(
+export function listOpenRouterModels(
   outputModality: "text" | "speech"
 ): Promise<OpenRouterModel[]> {
-  const cached = modelCache.get(outputModality);
-  if (cached && Date.now() < cached.expiresAt) {
-    return cached.models;
-  }
-  // Concurrent callers (e.g. parallel speech prefetches) share one refresh.
-  let refresh = refreshes.get(outputModality);
-  if (!refresh) {
-    refresh = (async () => {
-      try {
-        const models = await fetchOpenRouterModels(outputModality);
-        modelCache.set(outputModality, { expiresAt: Date.now() + MODEL_CACHE_TTL_MS, models });
-        return models;
-      } catch (error) {
-        if (!cached) throw error;
-        cached.expiresAt = Date.now() + MODEL_CACHE_RETRY_MS;
-        return cached.models;
-      } finally {
-        refreshes.delete(outputModality);
-      }
-    })();
-    refreshes.set(outputModality, refresh);
-  }
-  return refresh;
+  return modelCache.get(outputModality);
 }
 
 async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouterModel[]> {

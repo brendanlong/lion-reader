@@ -15,6 +15,22 @@ export class ProviderBusyError extends Error {
   }
 }
 
+/**
+ * The provider refused the request itself (a bad key, no credit left, a voice
+ * or input it won't take): asking again won't help.
+ */
+export class ProviderRejectedError extends Error {
+  constructor(
+    message: string,
+    /** The provider's name, for showing. */
+    readonly provider: string,
+    /** What the provider said, if anything. */
+    readonly detail: string | null
+  ) {
+    super(message);
+  }
+}
+
 /** `Retry-After`, in seconds: a number of them, or a date. */
 export function retryAfterSeconds(header: string | null, now = Date.now()): number | null {
   if (!header) return null;
@@ -26,16 +42,22 @@ export function retryAfterSeconds(header: string | null, now = Date.now()): numb
 
 /** The error for `provider`'s failed `response`, with its message if it gave one. */
 export async function providerError(provider: string, response: Response): Promise<Error> {
-  let detail = "";
+  let detail: string | null = null;
   try {
     const body = (await response.json()) as { detail?: unknown; error?: { message?: unknown } };
     const message = typeof body.detail === "string" ? body.detail : body.error?.message;
-    if (typeof message === "string") detail = `: ${message.slice(0, 500)}`;
+    if (typeof message === "string") detail = message.slice(0, 500);
   } catch {
     // Non-JSON error body; the status is enough.
   }
-  const message = `${provider} request failed with status ${response.status}${detail}`;
-  return response.status === 429
-    ? new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")))
-    : new Error(message);
+  const { status } = response;
+  const message = `${provider} request failed with status ${status}${detail ? `: ${detail}` : ""}`;
+  if (status === 429) {
+    return new ProviderBusyError(message, retryAfterSeconds(response.headers.get("retry-after")));
+  }
+  // A timeout (408) or a conflict (409) can pass on another try.
+  if (status >= 400 && status < 500 && status !== 408 && status !== 409) {
+    return new ProviderRejectedError(message, provider, detail);
+  }
+  return new Error(message);
 }

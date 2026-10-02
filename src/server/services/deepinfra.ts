@@ -14,6 +14,7 @@ import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmFromWav, pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
+import { CatalogCache } from "@/server/services/catalog-cache";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
 const CATALOG_TIMEOUT_MS = 15_000;
@@ -113,30 +114,14 @@ export function canNarrate(schema: InputSchema): boolean {
   return (formats?.includes("pcm") && formats.includes("wav")) ?? false;
 }
 
-let cached: { expiresAt: number; models: DeepInfraSpeechModel[] } | null = null;
-let refresh: Promise<DeepInfraSpeechModel[]> | null = null;
+const catalog = new CatalogCache(fetchSpeechModels, {
+  ttlMs: CATALOG_CACHE_TTL_MS,
+  retryMs: CATALOG_CACHE_RETRY_MS,
+});
 
-/**
- * DeepInfra's speech models that can narrate with preset voices. If a refresh fails, the
- * stale list is served and the refresh retried a minute later.
- */
-export async function listDeepInfraSpeechModels(): Promise<DeepInfraSpeechModel[]> {
-  const current = cached;
-  if (current && Date.now() < current.expiresAt) return current.models;
-  refresh ??= (async () => {
-    try {
-      const models = await fetchSpeechModels();
-      cached = { expiresAt: Date.now() + CATALOG_CACHE_TTL_MS, models };
-      return models;
-    } catch (error) {
-      if (!current) throw error;
-      current.expiresAt = Date.now() + CATALOG_CACHE_RETRY_MS;
-      return current.models;
-    } finally {
-      refresh = null;
-    }
-  })();
-  return refresh;
+/** DeepInfra's speech models that can narrate with preset voices. */
+export function listDeepInfraSpeechModels(): Promise<DeepInfraSpeechModel[]> {
+  return catalog.get("");
 }
 
 async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
@@ -272,15 +257,15 @@ export async function deepInfraSpeech(
   ]);
   if (speech.status === "rejected") throw speech.reason;
   const response = speech.value;
+  if (!response.ok || !response.body) throw await providerError("DeepInfra", response);
   let format: PcmFormat;
   try {
     // The probe may have been someone else's, failing for their key: once
     // more on ours (the failed one is gone from the cache by now).
     format = probed.status === "fulfilled" ? probed.value : await pcmFormatOf(apiKey, model, voice);
   } catch (error) {
-    await response.body?.cancel();
+    await response.body.cancel();
     throw error;
   }
-  if (!response.ok || !response.body) throw await providerError("DeepInfra", response);
   return pcmOrWav(response.body, format);
 }

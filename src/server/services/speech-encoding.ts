@@ -298,7 +298,9 @@ export async function encodeSpeech(
 
   let encoder: SpeechEncoder | null = null;
   let first: ReadableStreamReadResult<Uint8Array>;
+  let mb: typeof Mediabunny;
   try {
+    mb = await import("mediabunny");
     encoder = new SpeechEncoder(pcm.sampleRate, pcm.channels, BITRATE);
     do {
       first = await reader.read();
@@ -329,27 +331,36 @@ export async function encodeSpeech(
     },
     new CountQueuingStrategy({ highWaterMark: QUEUED_FRAGMENTS })
   );
+
+  let output: Mediabunny.Output;
+  let source: Mediabunny.EncodedAudioPacketSource;
+  try {
+    output = new mb.Output({
+      format: new mb.Mp4OutputFormat({ fastStart: "fragmented", minimumFragmentDuration: 0.5 }),
+      target: new mb.StreamTarget(
+        new WritableStream<Mediabunny.StreamTargetChunk>({
+          write: async (chunk) => {
+            if (failure) throw failure;
+            controller.enqueue(chunk.data);
+            while (!failure && (controller.desiredSize ?? 0) <= 0) {
+              await new Promise<void>((resolve) => (wake = resolve));
+            }
+            if (failure) throw failure;
+          },
+        })
+      ),
+    });
+    source = new mb.EncodedAudioPacketSource("aac");
+    output.addAudioTrack(source);
+  } catch (error) {
+    speech.close();
+    await reader.cancel().catch(() => {});
+    throw error;
+  }
   const deadline = setTimeout(
     () => stop(new Error("Speech stream took too long"), true),
     deadlineMs
   );
-
-  const mb = await import("mediabunny");
-  const output = new mb.Output({
-    format: new mb.Mp4OutputFormat({ fastStart: "fragmented", minimumFragmentDuration: 0.5 }),
-    target: new mb.StreamTarget(
-      new WritableStream<Mediabunny.StreamTargetChunk>({
-        write: async (chunk) => {
-          if (failure) throw failure;
-          controller.enqueue(chunk.data);
-          while (!failure && (controller.desiredSize ?? 0) <= 0) {
-            await new Promise<void>((resolve) => (wake = resolve));
-          }
-          if (failure) throw failure;
-        },
-      })
-    ),
-  });
 
   function stop(error: unknown, tellClient: boolean) {
     if (failure) return;
@@ -362,9 +373,6 @@ export async function encodeSpeech(
     void output.cancel().catch(() => {});
     if (tellClient) controller.error(error);
   }
-
-  const source = new mb.EncodedAudioPacketSource("aac");
-  output.addAudioTrack(source);
 
   const frameSeconds = speech.frameSamples / pcm.sampleRate;
   let frames = 0;
