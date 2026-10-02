@@ -107,29 +107,6 @@ export async function pcmOrWav(
     : { ...format, data: rest };
 }
 
-/** `pcm` followed by `seconds` of silence. */
-export function withTrailingSilence(pcm: PcmStream, seconds: number): PcmStream {
-  if (seconds <= 0) return pcm;
-  const silence = new Uint8Array(Math.round(seconds * pcm.sampleRate) * 2 * pcm.channels);
-  const reader = pcm.data.getReader();
-  let ended = false;
-  return {
-    ...pcm,
-    data: new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        if (ended) return controller.close();
-        const { done, value } = await reader.read();
-        if (!done) return controller.enqueue(value);
-        ended = true;
-        controller.enqueue(silence);
-      },
-      cancel(reason) {
-        return reader.cancel(reason);
-      },
-    }),
-  };
-}
-
 /** `first`, then the rest of `reader`. */
 function prepend(
   first: Uint8Array,
@@ -167,11 +144,15 @@ const QUEUED_FRAGMENTS = 8;
  * is still arriving. Resolves once the first audio has arrived, so a provider
  * that fails before sending any is still an ordinary error; failures after
  * that error the stream. Cancelling the result, an error, or the deadline
- * stops reading the provider and frees the encoder at once.
+ * stops reading the provider and frees the encoder at once. `pauseSeconds` of
+ * silence follow the speech.
  */
 export async function encodeSpeech(
   pcm: PcmStream,
-  deadlineMs = STREAM_DEADLINE_MS
+  {
+    pauseSeconds = 0,
+    deadlineMs = STREAM_DEADLINE_MS,
+  }: { pauseSeconds?: number; deadlineMs?: number } = {}
 ): Promise<ReadableStream<Uint8Array>> {
   const reader = pcm.data.getReader();
   const maxBytes = MAX_SECONDS * pcm.sampleRate * 2 * pcm.channels;
@@ -278,6 +259,8 @@ export async function encodeSpeech(
       await add(speech.encode(next.value));
       next = await reader.read();
     }
+    const silentFrames = Math.round(pauseSeconds * pcm.sampleRate);
+    if (silentFrames > 0) await add(speech.encode(new Uint8Array(silentFrames * 2 * pcm.channels)));
     await add(speech.finish());
     await output.finalize();
     if (failure) return;

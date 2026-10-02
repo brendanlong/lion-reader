@@ -101,7 +101,8 @@ class AppGraph(private val context: Context) {
                     api,
                     choice.first,
                     choice.second,
-                    settings.cloudVoicePauseSeconds,
+                    // The server takes up to 2 seconds.
+                    settings.cloudVoicePauseSeconds.coerceIn(0f, 2f),
                     cloudVoiceCache,
                     scope,
                 )

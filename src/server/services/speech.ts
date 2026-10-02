@@ -17,11 +17,7 @@ import {
   isModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
-import {
-  encodeSpeech,
-  withTrailingSilence,
-  type PcmStream,
-} from "@/server/services/speech-encoding";
+import { encodeSpeech, type PcmStream } from "@/server/services/speech-encoding";
 import {
   deepInfraSpeech,
   listDeepInfraSpeechModels,
@@ -308,5 +304,5 @@ export async function streamSpeech(
     options.text,
     signal ? AbortSignal.any([signal, timeout]) : timeout
   );
-  return encodeSpeech(withTrailingSilence(pcm, options.pauseSeconds ?? 0));
+  return encodeSpeech(pcm, { pauseSeconds: options.pauseSeconds });
 }

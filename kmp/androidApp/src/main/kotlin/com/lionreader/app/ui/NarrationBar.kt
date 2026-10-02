@@ -25,11 +25,16 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.lionreader.app.R
 import com.lionreader.app.narration.NarrationState
+import java.text.NumberFormat
 import kotlinx.coroutines.delay
 
 val NARRATION_SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
-fun speedLabel(speed: Float): String = "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}×"
+fun speedLabel(speed: Float): String = "${shortNumber(speed)}×"
+
+/** "1", "0.25" (or "0,25"), in the user's locale. */
+fun shortNumber(value: Float): String =
+    NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }.format(value)
 
 /**
  * Narration controls: previous/next paragraph, play/pause and speed. Narration is always of the

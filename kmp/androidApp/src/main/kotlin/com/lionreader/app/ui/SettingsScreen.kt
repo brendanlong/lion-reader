@@ -293,7 +293,7 @@ private fun NarrationSettings(
 private val CLOUD_VOICE_PAUSES = listOf(0f, 0.1f, 0.25f, 0.5f, 0.75f, 1f)
 
 private fun pauseLabel(seconds: Float): String =
-    if (seconds == 0f) "None" else "${"%.2f".format(seconds).trimEnd('0').trimEnd('.')} s"
+    if (seconds == 0f) "None" else "${shortNumber(seconds)} s"
 
 private val NarrationEngine.label: String
     get() =
