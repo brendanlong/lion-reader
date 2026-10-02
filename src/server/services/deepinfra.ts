@@ -12,6 +12,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { pcmFromWav, type PcmStream } from "@/server/services/speech-encoding";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
 const CATALOG_TIMEOUT_MS = 15_000;
@@ -113,14 +114,14 @@ export function voicesFromSchema(schema: InputSchema): string[] {
 
 /**
  * Whether a model can read a narration chunk: it takes MAX_CLOUD_SPEECH_CHARS
- * of text and can return MP3. Some can't (Orpheus caps input at 300
- * characters; HiggsAudio only returns PCM).
+ * of text and can return WAV, whose header says the PCM's format (bare PCM
+ * doesn't). Some can't (Orpheus caps input at 300 characters).
  */
 export function canNarrate(schema: InputSchema): boolean {
   const input = propertyOf(schema, "input") ?? propertyOf(schema, "text");
   if (!input || (input.maxLength ?? Infinity) < MAX_CLOUD_SPEECH_CHARS) return false;
   const formats = enumOf(schema, "response_format") ?? enumOf(schema, "output_format");
-  return formats?.includes("mp3") ?? false;
+  return formats?.includes("wav") ?? false;
 }
 
 let cached: { expiresAt: number; models: DeepInfraSpeechModel[] } | null = null;
@@ -201,14 +202,14 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
   return models.filter((model): model is DeepInfraSpeechModel => model !== null);
 }
 
-/** Speech as MP3 (or so DeepInfra says: see `services/speech.ts`), streamed as it's generated. */
+/** Speech as PCM, from a WAV streamed as it's generated. */
 export async function deepInfraSpeech(
   apiKey: string,
   model: string,
   voice: string,
   input: string,
   signal: AbortSignal
-): Promise<ReadableStream<Uint8Array>> {
+): Promise<PcmStream> {
   const response = await fetch(`${DEEPINFRA_API_URL}/v1/audio/speech`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
@@ -217,12 +218,12 @@ export async function deepInfraSpeech(
       model,
       voice,
       input,
-      response_format: "mp3",
+      response_format: "wav",
       service_tier: "priority",
     }),
   });
   if (!response.ok || !response.body) {
     throw await errorFromResponse(response);
   }
-  return response.body;
+  return pcmFromWav(response.body);
 }

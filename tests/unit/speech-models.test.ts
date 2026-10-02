@@ -2,8 +2,6 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   defaultSpeechModelId,
   defaultVoiceFor,
-  checkedMp3Stream,
-  isMp3,
   resolveSpeechModel,
   SpeechRequestError,
   voiceNamesFor,
@@ -213,18 +211,6 @@ describe("canNarrate", () => {
   });
 });
 
-describe("isMp3", () => {
-  it("recognizes an ID3 tag or an MPEG frame", () => {
-    expect(isMp3(new Uint8Array([0x49, 0x44, 0x33, 0x04]))).toBe(true);
-    expect(isMp3(new Uint8Array([0xff, 0xf3, 0x84, 0xc4]))).toBe(true);
-  });
-
-  it("rejects WAV", () => {
-    expect(isMp3(new TextEncoder().encode("RIFF\0\0\0\0WAVE"))).toBe(false);
-    expect(isMp3(new Uint8Array())).toBe(false);
-  });
-});
-
 describe("resolveSpeechModel", () => {
   const originalKeys = {
     deepinfra: process.env.DEEPINFRA_API_KEY,
@@ -314,35 +300,5 @@ describe("resolveSpeechModel", () => {
     expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
       "Cloud voices require a DeepInfra or OpenRouter API key"
     );
-  });
-});
-
-describe("checkedMp3Stream", () => {
-  function streamOf(...chunks: number[][]): ReadableStream<Uint8Array> {
-    return new ReadableStream({
-      start(controller) {
-        for (const chunk of chunks) controller.enqueue(new Uint8Array(chunk));
-        controller.close();
-      },
-    });
-  }
-
-  async function readAll(stream: ReadableStream<Uint8Array>): Promise<number[]> {
-    return [...new Uint8Array(await new Response(stream).arrayBuffer())];
-  }
-
-  it("passes MP3 through, even when the first chunk is too short to tell", async () => {
-    const stream = await checkedMp3Stream(streamOf([0x49], [0x44, 0x33, 1], [2, 3]));
-    expect(await readAll(stream)).toEqual([0x49, 0x44, 0x33, 1, 2, 3]);
-  });
-
-  it("rejects audio that isn't MP3 before any of it is passed on", async () => {
-    await expect(checkedMp3Stream(streamOf([0x52, 0x49, 0x46, 0x46]))).rejects.toThrow("MP3");
-    await expect(checkedMp3Stream(streamOf())).rejects.toThrow("MP3");
-  });
-
-  it("cuts a stream off once it's too large", async () => {
-    const stream = await checkedMp3Stream(streamOf([0xff, 0xfb, 0], [1, 2, 3], [4, 5, 6]), 7);
-    await expect(readAll(stream)).rejects.toThrow("too large");
   });
 });

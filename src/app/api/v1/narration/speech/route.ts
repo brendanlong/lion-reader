@@ -1,8 +1,9 @@
 /**
  * POST /api/v1/narration/speech
  *
- * One chunk of narration spoken by a cloud voice, streamed as MP3 while the
- * provider generates it, so playback can start on the first bytes. It's a
+ * One chunk of narration spoken by a cloud voice, streamed as AAC in
+ * fragmented MP4 while the provider generates it (see `speech-encoding.ts`),
+ * so playback can start on the first bytes. It's a
  * route handler because tRPC (and so the generated REST API) can't stream a
  * binary body; `narration.synthesize` is the same thing read whole, for app
  * versions from before this existed.
@@ -106,7 +107,7 @@ export async function POST(req: Request): Promise<Response> {
     return new Response(audio, {
       headers: {
         ...limitHeaders,
-        "Content-Type": "audio/mpeg",
+        "Content-Type": "audio/mp4",
         "Cache-Control": "no-store",
       },
     });

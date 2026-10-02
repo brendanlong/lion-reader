@@ -1,0 +1,10 @@
+[package]
+name = "lion-reader-speech-encoder-core"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+# FFI bindings to Fraunhofer FDK AAC, built from its vendored C++ source.
+fdk-aac-sys = "0.5"

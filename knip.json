@@ -7,6 +7,7 @@
       "ignoreDependencies": ["mammoth"]
     },
     "native/sanitizer": {},
-    "native/markdown": {}
+    "native/markdown": {},
+    "native/speech-encoder": {}
   }
 }

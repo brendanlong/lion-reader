@@ -1,0 +1,13 @@
+{
+  "name": "@lion-reader/speech-encoder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native (Rust) speech encoding for cloud voices: PCM to AAC-LC with Fraunhofer FDK AAC.",
+  "main": "index.js",
+  "type": "commonjs",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "node ../build.mjs speech-encoder",
+    "build:debug": "node ../build.mjs speech-encoder --debug"
+  }
+}

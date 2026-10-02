@@ -9,6 +9,7 @@ import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { appUrl } from "@/server/config/env";
 import type { ChatCompletionOptions } from "@/server/services/ai-providers";
+import type { PcmStream } from "@/server/services/speech-encoding";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -185,14 +186,17 @@ async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouter
   });
 }
 
-/** Speech as MP3 via the OpenAI-compatible speech endpoint, streamed as it's generated. */
+/**
+ * Speech as PCM via the OpenAI-compatible speech endpoint, streamed as it's
+ * generated. Its format is in the content type (`audio/pcm;rate=24000;channels=1`).
+ */
 export async function openRouterSpeech(
   apiKey: string,
   model: string,
   voice: string,
   input: string,
   signal: AbortSignal
-): Promise<ReadableStream<Uint8Array>> {
+): Promise<PcmStream> {
   const response = await fetch(`${OPENROUTER_API_URL}/audio/speech`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
@@ -201,14 +205,21 @@ export async function openRouterSpeech(
       model,
       voice,
       input,
-      response_format: "mp3",
+      response_format: "pcm",
       provider: { sort: "latency" },
     }),
   });
   if (!response.ok || !response.body) {
     throw await errorFromResponse(response);
   }
-  return response.body;
+  const contentType = response.headers.get("content-type") ?? "";
+  const param = (name: string) => Number(new RegExp(`${name}=(\\d+)`).exec(contentType)?.[1]);
+  const sampleRate = param("rate");
+  if (!contentType.startsWith("audio/pcm") || !sampleRate) {
+    await response.body.cancel();
+    throw new Error(`OpenRouter speech in an unknown format: ${contentType}`);
+  }
+  return { sampleRate, channels: param("channels") || 1, data: response.body };
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   isModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
+import { encodeSpeech, type PcmStream } from "@/server/services/speech-encoding";
 import {
   deepInfraSpeech,
   listDeepInfraSpeechModels,
@@ -62,9 +63,8 @@ interface SpeechProviderAdapter {
   /** The models the user can pick on these keys. */
   listModels(keys: AiProviderKeys | undefined): Promise<SpeechModel[]>;
   /**
-   * `text` spoken by `voice` of `model` (provider-native ids), as MP3 streamed
-   * as it's generated. Rejects when the provider refuses; checked as MP3 by
-   * {@link checkedMp3Stream}.
+   * `text` spoken by `voice` of `model` (provider-native ids), as PCM streamed
+   * as it's generated. Rejects when the provider refuses.
    */
   speak(
     apiKey: string,
@@ -72,7 +72,7 @@ interface SpeechProviderAdapter {
     voice: string,
     text: string,
     signal: AbortSignal
-  ): Promise<ReadableStream<Uint8Array>>;
+  ): Promise<PcmStream>;
 }
 
 const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = {
@@ -265,74 +265,9 @@ export function resolveSpeechModel(
 
 /** Longest a provider gets to finish a chunk. */
 const SPEECH_TIMEOUT_MS = 120_000;
-/** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
-const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
-
 /**
- * Some models (MiMo) ignore `response_format` and send WAV, still labelled
- * `audio/mpeg`, so check the bytes: an ID3 tag or an MPEG frame sync.
- */
-export function isMp3(audio: Uint8Array): boolean {
-  const isId3 = audio[0] === 0x49 && audio[1] === 0x44 && audio[2] === 0x33;
-  const isFrameSync = audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0;
-  return isId3 || isFrameSync;
-}
-
-/**
- * A provider's audio, checked: it must start like an MP3 and stay under
- * `maxBytes`. Resolves once the first bytes have arrived and passed, so a
- * provider that fails before sending audio is still an ordinary error;
- * failures after that error the stream.
- */
-export async function checkedMp3Stream(
-  body: ReadableStream<Uint8Array>,
-  maxBytes = MAX_SPEECH_BYTES
-): Promise<ReadableStream<Uint8Array>> {
-  const reader = body.getReader();
-  let head = new Uint8Array(0);
-  while (head.length < 3) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const joined = new Uint8Array(head.length + value.length);
-    joined.set(head);
-    joined.set(value, head.length);
-    head = joined;
-  }
-  if (!isMp3(head) || head.length > maxBytes) {
-    await reader.cancel();
-    throw new Error(head.length > maxBytes ? "Speech audio too large" : "Speech audio isn't MP3");
-  }
-  let pending: Uint8Array | null = head;
-  let total = head.length;
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (pending) {
-        controller.enqueue(pending);
-        pending = null;
-        return;
-      }
-      const { done, value } = await reader.read();
-      if (done) {
-        controller.close();
-        return;
-      }
-      total += value.length;
-      if (total > maxBytes) {
-        await reader.cancel();
-        controller.error(new Error("Speech audio too large"));
-        return;
-      }
-      controller.enqueue(value);
-    },
-    cancel(reason) {
-      return reader.cancel(reason);
-    },
-  });
-}
-
-/**
- * `text` spoken as MP3, streamed as the provider generates it. A null model or
- * voice means the default. Rejects models the user can't pick in settings, so
+ * `text` spoken as AAC in fragmented MP4 (see `speech-encoding.ts`), streamed
+ * as the provider generates it. A null model or voice means the default. Rejects models the user can't pick in settings, so
  * this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request.
  */
@@ -353,14 +288,14 @@ export async function streamSpeech(
   }
   const providerModel = parseModelRef(model.id).model;
   const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
-  const body = await SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
+  const pcm = await SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
     apiKey,
     providerModel,
     voice,
     options.text,
     signal ? AbortSignal.any([signal, timeout]) : timeout
   );
-  return checkedMp3Stream(body);
+  return encodeSpeech(pcm);
 }
 
 /** {@link streamSpeech}, read whole: for `narration.synthesize`, which installed apps still call. */
