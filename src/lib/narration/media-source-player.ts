@@ -27,6 +27,7 @@
  */
 
 import { splitIntoSentences } from "./sentence-splitter";
+import { mp4PrimingSeconds } from "./mp4-priming";
 import { getMediaSourceClass } from "./audio-encoding";
 
 /** Rough speaking speed at 1×, for sizing chunks that aren't synthesized yet. */
@@ -733,6 +734,14 @@ export class MediaSourcePlayer {
         await this.enqueue(async (buffer) => {
           if (run !== this.run) return;
           const start = placed?.start ?? this.placed.at(-1)?.end ?? this.runStart;
+          if (!placed) {
+            // Each chunk is its own encode, starting with the encoder's
+            // priming. Its edit list says to skip that, but sequence mode
+            // ignores edit lists, so the append window cuts it instead;
+            // otherwise every join would pause for it.
+            buffer.timestampOffset = start - mp4PrimingSeconds(bytes);
+            buffer.appendWindowStart = start;
+          }
           await update(buffer, () => buffer.appendBuffer(bytes as BufferSource));
           if (run !== this.run) return;
           const end = rangeEndFrom(buffer, start);

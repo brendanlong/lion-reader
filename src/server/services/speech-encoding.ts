@@ -224,10 +224,19 @@ export async function encodeSpeech(
   output.addAudioTrack(source);
 
   const frameSeconds = speech.frameSamples / pcm.sampleRate;
+  // Stamped back by the encoder's priming, so the first frames start before
+  // zero: mediabunny writes that as the edit list players skip it by, and
+  // chunks join without its silence between them.
+  const primingSeconds = speech.delaySamples / pcm.sampleRate;
   let frames = 0;
   const add = async (units: Buffer[]) => {
     for (const unit of units) {
-      const packet = new mb.EncodedPacket(unit, "key", frames * frameSeconds, frameSeconds);
+      const packet = new mb.EncodedPacket(
+        unit,
+        "key",
+        frames * frameSeconds - primingSeconds,
+        frameSeconds
+      );
       await source.add(
         packet,
         frames === 0
