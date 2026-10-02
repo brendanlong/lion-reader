@@ -12,8 +12,7 @@
  *   million characters (USD) is at most this.
  *
  * Only OpenRouter (text and speech) and DeepInfra (speech) report prices, so
- * other providers' models have to be listed. OpenRouter's price is its
- * cheapest host's; we route for throughput, which can cost more.
+ * other providers' models have to be listed.
  */
 
 import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
@@ -87,15 +86,32 @@ function withinPriceCaps(policy: ServerKeyModelPolicy, price: ModelPrice): boole
   );
 }
 
+function isListed(policy: ServerKeyModelPolicy, modelRef: string): boolean {
+  const ref = normalizeModelRef(modelRef);
+  const wildcard = `${parseModelRef(ref).provider}:*`;
+  return policy.models.some((model) => model === ref || model === wildcard);
+}
+
 /**
  * Whether the model may run on the server's key. Without a price, only a
  * model listed in `SERVER_KEY_MODELS` (or any model, when unrestricted) is.
  */
 export function isAllowedOnServerKey(modelRef: string, price: ModelPrice = {}): boolean {
   const policy = serverKeyModelPolicy();
-  if (!policy) return true;
-  const ref = normalizeModelRef(modelRef);
-  const wildcard = `${parseModelRef(ref).provider}:*`;
-  if (policy.models.some((model) => model === ref || model === wildcard)) return true;
+  if (!policy || isListed(policy, modelRef)) return true;
   return withinPriceCaps(policy, price);
+}
+
+/**
+ * The token price caps a request for this model on the server's key must keep
+ * to, or null if it isn't held to them (it's listed, or nothing's limited).
+ * OpenRouter's catalog price is its cheapest host's, and we route for
+ * throughput, so it's told to skip hosts charging more.
+ */
+export function serverKeyTokenPriceCaps(
+  modelRef: string
+): { maxInputPrice?: number; maxOutputPrice?: number } | null {
+  const policy = serverKeyModelPolicy();
+  if (!policy || isListed(policy, modelRef)) return null;
+  return { maxInputPrice: policy.maxInputPrice, maxOutputPrice: policy.maxOutputPrice };
 }

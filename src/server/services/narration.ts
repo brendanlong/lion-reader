@@ -107,25 +107,25 @@ Return ONLY valid JSON.`;
 
 /**
  * Resolves the narration model as a `provider:model` reference.
- * Priority: user setting (if allowed — see `isModelAllowed`) > `NARRATION_MODEL`
- * env var > the default model of the first configured provider whose default
- * is allowed, in `NARRATION_PROVIDERS` order.
+ * Priority: user setting > `NARRATION_MODEL` env var > the default model of
+ * the first configured provider, in `NARRATION_PROVIDERS` order, each only if
+ * it can be used (see `isModelAllowed`).
  *
  * Narration preprocessing requires JSON-object responses, which only the
  * OpenAI-compatible providers support — a reference that resolves to another
- * provider (e.g. a legacy bare model ID) falls back to the default model.
+ * provider (e.g. a legacy bare model ID) is skipped.
  */
 export async function getNarrationModelRef(
   userModel?: string | null,
   keys?: AiProviderKeys
 ): Promise<ModelRef> {
-  const allowedUserModel =
-    userModel && (await isTextModelAllowed(userModel, keys)) ? userModel : null;
-  const explicit = allowedUserModel || process.env.NARRATION_MODEL;
-  if (explicit) {
-    const ref = parseModelRef(explicit);
-    if (isNarrationProvider(ref.provider)) {
-      return ref;
+  for (const explicit of [userModel, process.env.NARRATION_MODEL]) {
+    if (
+      explicit &&
+      isNarrationProvider(parseModelRef(explicit).provider) &&
+      (await isTextModelAllowed(explicit, keys))
+    ) {
+      return parseModelRef(explicit);
     }
   }
   for (const provider of NARRATION_PROVIDERS) {

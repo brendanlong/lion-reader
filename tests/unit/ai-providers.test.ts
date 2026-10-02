@@ -9,10 +9,11 @@ import {
   isUsableOpenRouterModel,
   supportsReasoningEffort,
 } from "@/server/services/ai-providers";
-import { getNarrationModelRef } from "@/server/services/narration";
+import { getNarrationModelRef, isNarrationLlmAvailable } from "@/server/services/narration";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import { buildChatCompletionBody } from "@/server/services/openrouter";
-import { getSummarizationModelId } from "@/server/services/summarization";
+import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
+import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
@@ -92,8 +93,19 @@ describe("getSummarizationModelId", () => {
 
   it("falls back to the env var", async () => {
     clearEnv();
+    process.env.GROQ_API_KEY = "gsk-server";
     process.env.SUMMARIZATION_MODEL = "groq:foo";
     expect(await getSummarizationModelId(null, {})).toBe("groq:foo");
+  });
+
+  it("skips an env model that can't be used", async () => {
+    clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
+    process.env.SUMMARIZATION_MODEL = "groq:foo";
+    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
+    process.env.GROQ_API_KEY = "gsk-server";
+    process.env.SERVER_KEY_MODELS = "cerebras:*";
+    expect(await getSummarizationModelId(null, {})).toBe(DEFAULT_SUMMARIZATION_MODELS.cerebras);
   });
 
   it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic > OpenRouter)", async () => {
@@ -184,6 +196,7 @@ describe("getNarrationModelRef", () => {
 
   it("uses the env var when the user model is unset", async () => {
     clearEnv();
+    process.env.CEREBRAS_API_KEY = "csk-server";
     process.env.NARRATION_MODEL = "cerebras:llama-3.3-70b";
     expect(await getNarrationModelRef(null)).toEqual({
       provider: "cerebras",
@@ -438,6 +451,29 @@ describe("isModelAllowed", () => {
     expect(isModelAllowed("anthropic:claude-opus-5", { anthropic: "a" })).toBe(true);
   });
 
+  it("reports summarization unavailable when no model can be used", async () => {
+    clearEnv();
+    process.env.GROQ_API_KEY = "gsk-server";
+    expect(await isSummarizationAvailable({})).toBe(true);
+    process.env.SERVER_KEY_MODELS = "cerebras:*";
+    expect(await isSummarizationAvailable({})).toBe(false);
+    expect(await isNarrationLlmAvailable({})).toBe(false);
+    expect(await isSummarizationAvailable({ groq: "g" })).toBe(true);
+  });
+
+  it("holds only price-allowed models to the price caps", () => {
+    clearEnv();
+    expect(serverKeyTokenPriceCaps("openrouter:a/b")).toBeNull();
+    process.env.SERVER_KEY_MODELS = "openrouter:openai/gpt-oss-120b";
+    process.env.SERVER_KEY_MAX_INPUT_PRICE = "0.35";
+    process.env.SERVER_KEY_MAX_OUTPUT_PRICE = "0.75";
+    expect(serverKeyTokenPriceCaps("openrouter:openai/gpt-oss-120b")).toBeNull();
+    expect(serverKeyTokenPriceCaps("openrouter:a/b")).toEqual({
+      maxInputPrice: 0.35,
+      maxOutputPrice: 0.75,
+    });
+  });
+
   it("never summarizes with a speech-only provider", async () => {
     clearEnv();
     process.env.GROQ_API_KEY = "gsk-server";
@@ -507,5 +543,13 @@ describe("buildChatCompletionBody (OpenRouter)", () => {
     expect(body).toMatchObject({ provider: { sort: "throughput" } });
     expect(body.provider).not.toHaveProperty("require_parameters");
     expect(body).not.toHaveProperty("response_format");
+  });
+
+  it("keeps to the price caps it's given", () => {
+    const options = { userPrompt: "hi", maxTokens: 100 };
+    expect(
+      buildChatCompletionBody("m", options, [], { maxInputPrice: 0.35, maxOutputPrice: 0.75 })
+    ).toMatchObject({ provider: { max_price: { prompt: 0.35, completion: 0.75 } } });
+    expect(buildChatCompletionBody("m", options, []).provider).not.toHaveProperty("max_price");
   });
 });

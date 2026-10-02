@@ -31,6 +31,7 @@ import {
 import {
   hasServerKeyPriceCaps,
   isAllowedOnServerKey,
+  serverKeyTokenPriceCaps,
   type ModelPrice,
 } from "@/server/services/server-key-models";
 
@@ -269,10 +270,15 @@ export async function generateChatCompletion(
       // Match Groq/Cerebras: only gpt-oss gets a reasoning effort. On OpenRouter
       // it would otherwise switch on (billed) extended thinking for Claude,
       // Gemini, etc.
-      return openRouterChatCompletion(apiKey, ref.model, {
-        ...options,
-        reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
-      });
+      return openRouterChatCompletion(
+        apiKey,
+        ref.model,
+        {
+          ...options,
+          reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
+        },
+        userKeyFor("openrouter", keys) ? null : serverKeyTokenPriceCaps(modelRef)
+      );
     }
   }
 }
