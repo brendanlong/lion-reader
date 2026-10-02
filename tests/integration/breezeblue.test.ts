@@ -35,7 +35,12 @@ beforeAll(async () => {
     }
     if (url.pathname === "/voices") {
       if (url.searchParams.get("favorites_only") === "true") {
-        return json({ voices: [voice(`fav-${key}`, `Favorite of ${key}`)] });
+        return json({
+          voices: [
+            voice(`fav-${key}`, `Favorite of ${key}`),
+            { ...voice(`fav-narrator-${key}`, "Narrator"), primary_category_code: "narration" },
+          ],
+        });
       }
       if (url.searchParams.get("voice_type") === "personal") {
         return json({ voices: [voice(`mine-${key}`, `Made by ${key}`)] });
@@ -76,9 +81,10 @@ async function breezeBlueVoices(key: string): Promise<Array<{ id: string; name: 
 }
 
 describe("BreezeBlue voices", () => {
-  it("lists the key's own voices first, then trending ones, with descriptions", async () => {
+  it("lists the key's own voices first, narrators leading, then trending ones", async () => {
     const key = randomUUID();
     expect(await breezeBlueVoices(key)).toEqual([
+      { id: `fav-narrator-${key}`, name: "Narrator (American, female, middle aged)" },
       { id: `fav-${key}`, name: `Favorite of ${key} (American, female, middle aged)` },
       { id: `mine-${key}`, name: `Made by ${key} (American, female, middle aged)` },
       { id: "trending", name: `Elara, as ${key} calls her (American, female, middle aged)` },

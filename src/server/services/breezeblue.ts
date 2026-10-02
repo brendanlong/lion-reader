@@ -52,7 +52,12 @@ const voiceSchema = z.object({
   accent: z.string().nullish(),
   gender: z.string().nullish(),
   age: z.string().nullish(),
+  primary_category_code: z.string().nullish(),
 });
+
+interface ListedVoice extends BreezeBlueVoice {
+  narration: boolean;
+}
 
 const voicesPageSchema = z.object({ voices: z.array(z.unknown()) });
 
@@ -90,13 +95,18 @@ function breezeBlueVoiceName(voice: z.infer<typeof voiceSchema>): string {
   return traits.length > 0 ? `${voice.name} (${traits.join(", ")})` : voice.name;
 }
 
-async function fetchVoices(apiKey: string, query: string): Promise<BreezeBlueVoice[]> {
+async function fetchVoices(apiKey: string, query: string): Promise<ListedVoice[]> {
   const page = voicesPageSchema.parse(await getJson(apiKey, `/voices?${query}`));
   return page.voices.flatMap((entry) => {
     const parsed = voiceSchema.safeParse(entry);
-    return parsed.success
-      ? [{ id: parsed.data.voice_id, name: breezeBlueVoiceName(parsed.data) }]
-      : [];
+    if (!parsed.success) return [];
+    return [
+      {
+        id: parsed.data.voice_id,
+        name: breezeBlueVoiceName(parsed.data),
+        narration: parsed.data.primary_category_code === "narration",
+      },
+    ];
   });
 }
 
@@ -113,16 +123,24 @@ async function fetchModels(apiKey: string): Promise<BreezeBlueModel[]> {
 async function fetchCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
   const [models, favorites, personal, trending] = await Promise.all([
     fetchModels(apiKey),
-    fetchVoices(apiKey, "favorites_only=true&page_size=100"),
+    // Library voices only, which trending sorting requires; the ones the
+    // owner made come from the next query.
+    fetchVoices(apiKey, "favorites_only=true&voice_type=default&sort=trend&page_size=100"),
     fetchVoices(apiKey, "voice_type=personal&page_size=100"),
     fetchVoices(
       apiKey,
       `voice_type=default&primary_category_code=narration&language_code=en&sort=trend&page_size=${TRENDING_VOICES}`
     ),
   ]);
-  const own = [...favorites, ...personal];
+  // Favorites by popularity, narration voices first: the first is the default.
+  const own = [
+    ...favorites.filter((voice) => voice.narration),
+    ...favorites.filter((voice) => !voice.narration),
+    ...personal,
+  ];
   const ownIds = new Set(own.map((voice) => voice.id));
-  return { models, voices: [...own, ...trending.filter((voice) => !ownIds.has(voice.id))] };
+  const voices = [...own, ...trending.filter((voice) => !ownIds.has(voice.id))];
+  return { models, voices: voices.map(({ id, name }) => ({ id, name })) };
 }
 
 /** By a hash of the key, so keys aren't kept in memory longer than a request. */
