@@ -105,7 +105,8 @@ fun EntryScreen(
     besideList: Boolean,
 ) {
     val context = LocalContext.current
-    val pages = remember(startId) { if (startId in ids) ids else listOf(startId) }
+    // EntryKey.openedFrom always lists the entry it opens.
+    val pages = ids
     val pager = rememberPagerState(initialPage = pages.indexOf(startId)) { pages.size }
     val entryId = pages[pager.settledPage]
     val articles = rememberArticlePages()
@@ -153,14 +154,7 @@ fun EntryScreen(
                 onClick = {
                     if (narrating) graph.narrator.stop()
                     else if (paragraphs != null)
-                        graph.narrator.narrate(
-                            NarratedArticle(
-                                current.id,
-                                current.title ?: "Untitled",
-                                current.source,
-                                paragraphs,
-                            )
-                        )
+                        graph.narrator.narrate(narratedArticle(current.id, current, paragraphs))
                 }
             ) {
                 Icon(
@@ -207,16 +201,7 @@ fun EntryScreen(
                 }
             }
         ) {
-            Icon(
-                painterResource(
-                    if (current.read) R.drawable.ic_circle_outline else R.drawable.ic_circle
-                ),
-                contentDescription = if (current.read) "Mark unread" else "Mark read",
-                tint = actionTint(active = !current.read),
-                // The list's size: a full-size filled dot outweighs
-                // the outline icons beside it.
-                modifier = Modifier.size(16.dp),
-            )
+            ReadToggleIcon(current.read)
         }
         IconButton(
             onClick = {
@@ -225,13 +210,7 @@ fun EntryScreen(
                 }
             }
         ) {
-            Icon(
-                painterResource(
-                    if (current.starred) R.drawable.ic_star else R.drawable.ic_star_border
-                ),
-                contentDescription = if (current.starred) "Unstar" else "Star",
-                tint = actionTint(active = current.starred),
-            )
+            StarToggleIcon(current.starred)
         }
         webUrl(current.url)?.let { url ->
             IconButton(onClick = { context.shareWebPage(url, current.title) }) {
@@ -372,11 +351,11 @@ fun EntryScreen(
 private fun listenFrom(graph: AppGraph, articles: ArticlePages, entryId: String, paragraph: Int) {
     val entry = articles.entry(entryId) ?: return
     val paragraphs = articles.paragraphs(entryId) ?: return
-    graph.narrator.listenFrom(
-        NarratedArticle(entryId, entry.title ?: "Untitled", entry.source, paragraphs),
-        paragraph,
-    )
+    graph.narrator.listenFrom(narratedArticle(entryId, entry, paragraphs), paragraph)
 }
+
+private fun narratedArticle(entryId: String, entry: EntryDetail, paragraphs: List<String>) =
+    NarratedArticle(entryId, entry.title ?: "Untitled", entry.source, paragraphs)
 
 /**
  * Narration, while on, is of the article on screen: when the pager moves to another, what's playing
@@ -406,7 +385,7 @@ internal fun NarrationFollowsPage(
         if (!following || paragraphs == null || !started) return@LaunchedEffect
         delay(settle)
         val shown = current ?: return@LaunchedEffect
-        supply(NarratedArticle(entryId, shown.title ?: "Untitled", shown.source, paragraphs))
+        supply(narratedArticle(entryId, shown, paragraphs))
     }
 }
 
@@ -471,23 +450,22 @@ private fun EntryPage(
     val content = current.content
     if (content != null) {
         val colors = MaterialTheme.colorScheme
-        val document =
-            readerDocument(
-                header = ReaderHeader(title, byline, current.url),
-                summary = current.summary?.takeIf { showSummary },
-                body = content,
-                settings = settings,
-                tokens = tokens,
-                colors =
-                    ReaderColors(
-                        text = colors.onSurface.css(),
-                        muted = colors.onSurfaceVariant.css(),
-                        link = colors.primary.css(),
-                        background = colors.surface.css(),
-                        border = colors.outlineVariant.css(),
-                        codeBackground = colors.surfaceContainer.css(),
-                    ),
+        val readerColors =
+            ReaderColors(
+                text = colors.onSurface.css(),
+                muted = colors.onSurfaceVariant.css(),
+                link = colors.primary.css(),
+                background = colors.surface.css(),
+                border = colors.outlineVariant.css(),
+                codeBackground = colors.surfaceContainer.css(),
             )
+        val header = ReaderHeader(title, byline, current.url)
+        val summary = current.summary?.takeIf { showSummary }
+        // Not rebuilt on every recomposition (each narration step is one).
+        val document =
+            remember(header, summary, content, settings, tokens, readerColors) {
+                readerDocument(header, summary, content, settings, tokens, readerColors)
+            }
         ReaderWebView(
             document,
             Modifier.fillMaxSize(),

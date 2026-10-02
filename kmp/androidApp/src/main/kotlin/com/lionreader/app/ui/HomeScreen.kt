@@ -814,23 +814,10 @@ private fun EntryRow(
             // 44dp (the design system's touch target) keeps a two-button column
             // from stretching short rows.
             IconButton(onClick = onToggleStar, modifier = Modifier.size(44.dp)) {
-                Icon(
-                    painterResource(
-                        if (item.starred) R.drawable.ic_star else R.drawable.ic_star_border
-                    ),
-                    contentDescription = if (item.starred) "Unstar" else "Star",
-                    tint = actionTint(active = item.starred),
-                )
+                StarToggleIcon(item.starred)
             }
             IconButton(onClick = onToggleRead, modifier = Modifier.size(44.dp)) {
-                Icon(
-                    painterResource(
-                        if (item.read) R.drawable.ic_circle_outline else R.drawable.ic_circle
-                    ),
-                    contentDescription = if (item.read) "Mark unread" else "Mark read",
-                    tint = actionTint(active = !item.read),
-                    modifier = Modifier.size(16.dp),
-                )
+                ReadToggleIcon(item.read)
             }
         }
     }
