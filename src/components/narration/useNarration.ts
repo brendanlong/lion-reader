@@ -125,14 +125,21 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     model: settings.cloudModelId,
     voice: settings.voiceId,
     sentenceGapSeconds: settings.sentenceGapSeconds,
+    cloudPauseSeconds: settings.cloudPauseSeconds,
   });
   useEffect(() => {
     voiceRef.current = {
       model: settings.cloudModelId,
       voice: settings.voiceId,
       sentenceGapSeconds: settings.sentenceGapSeconds,
+      cloudPauseSeconds: settings.cloudPauseSeconds,
     };
-  }, [settings.cloudModelId, settings.voiceId, settings.sentenceGapSeconds]);
+  }, [
+    settings.cloudModelId,
+    settings.voiceId,
+    settings.sentenceGapSeconds,
+    settings.cloudPauseSeconds,
+  ]);
 
   // Initialize narrator instance (for browser voices)
   useEffect(() => {
@@ -244,6 +251,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       cloudPlayerRef.current = createCloudSpeechPlayer(() => ({
         model: voiceRef.current.model,
         voice: voiceRef.current.voice,
+        pauseSeconds: voiceRef.current.cloudPauseSeconds,
       }));
       cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }

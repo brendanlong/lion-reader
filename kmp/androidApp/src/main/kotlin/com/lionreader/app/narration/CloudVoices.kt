@@ -26,7 +26,7 @@ import kotlinx.coroutines.withContext
  * Cloud voices (Kokoro and friends through the server's `/narration/speech`, on the user's or the
  * server's provider key). Each chunk streams: [synthesize] answers as soon as the first audio is
  * in, and the player reads the rest as it arrives ([StreamedAudio]). Audio is cached on disk by
- * model, voice and text, so listening again doesn't pay again; the cache is trimmed to
+ * model, voice, pause and text, so listening again doesn't pay again; the cache is trimmed to
  * [cacheBytes], least recently used first. Requests run in [scope], not the caller's: every request
  * is paid for, so one the narrator stops waiting for (the user skipped past it) still finishes into
  * the cache.
@@ -35,6 +35,8 @@ class CloudVoices(
     private val api: LionReaderApi,
     private val model: String,
     private val voice: String,
+    /** Silence after each chunk, so chunks played back to back pause like sentences do. */
+    private val pauseSeconds: Float,
     private val cacheDir: File,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
@@ -146,7 +148,7 @@ class CloudVoices(
         for (attempt in 1..ATTEMPTS) {
             var started = false
             try {
-                api.streamSpeech(model, voice, text) { bytes ->
+                api.streamSpeech(model, voice, text, pauseSeconds) { bytes ->
                     if (!started) answered.incrementAndGet()
                     started = true
                     onAudio(bytes)
@@ -187,7 +189,7 @@ class CloudVoices(
 
     private fun key(text: String): String =
         MessageDigest.getInstance("SHA-256")
-            .digest("$model\n$voice\n$text".toByteArray())
+            .digest("$model\n$voice\n$pauseSeconds\n$text".toByteArray())
             .joinToString("") { "%02x".format(it) }
 
     private fun trim() {

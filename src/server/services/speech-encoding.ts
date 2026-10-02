@@ -107,6 +107,29 @@ export async function pcmOrWav(
     : { ...format, data: rest };
 }
 
+/** `pcm` followed by `seconds` of silence. */
+export function withTrailingSilence(pcm: PcmStream, seconds: number): PcmStream {
+  if (seconds <= 0) return pcm;
+  const silence = new Uint8Array(Math.round(seconds * pcm.sampleRate) * 2 * pcm.channels);
+  const reader = pcm.data.getReader();
+  let ended = false;
+  return {
+    ...pcm,
+    data: new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (ended) return controller.close();
+        const { done, value } = await reader.read();
+        if (!done) return controller.enqueue(value);
+        ended = true;
+        controller.enqueue(silence);
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      },
+    }),
+  };
+}
+
 /** `first`, then the rest of `reader`. */
 function prepend(
   first: Uint8Array,

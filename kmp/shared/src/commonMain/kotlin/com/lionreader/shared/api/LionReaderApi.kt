@@ -140,6 +140,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         model: String,
         voice: String,
         text: String,
+        pauseSeconds: Float,
         onAudio: suspend (ByteArray) -> Unit,
     ) {
         var token = auth.accessToken() ?: throw ApiException(0, "Signed out")
@@ -153,7 +154,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                         setBody(
                             ApiJson.encodeToString(
                                 SpeechRequest.serializer(),
-                                SpeechRequest(model, voice, text),
+                                SpeechRequest(model, voice, text, pauseSeconds),
                             )
                         )
                         bearerAuth(token)

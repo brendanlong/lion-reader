@@ -97,7 +97,14 @@ class AppGraph(private val context: Context) {
                     account.value?.connection?.api
                         ?: throw SpeechUnavailable("Sign in to use cloud voices.")
                 val choice = cloudVoice(api, settings)
-                CloudVoices(api, choice.first, choice.second, cloudVoiceCache, scope)
+                CloudVoices(
+                    api,
+                    choice.first,
+                    choice.second,
+                    settings.cloudVoicePauseSeconds,
+                    cloudVoiceCache,
+                    scope,
+                )
             }
         }
 

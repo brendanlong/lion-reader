@@ -9,6 +9,7 @@
 
 import { useSyncExternalStore } from "react";
 import { TTS_PROVIDER_IDS, type TTSProviderId } from "./types";
+import { DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS, MAX_CLOUD_SPEECH_PAUSE_SECONDS } from "./constants";
 
 /**
  * User preferences for narration playback.
@@ -83,6 +84,9 @@ export interface NarrationSettings {
    * Default: 0.3 seconds
    */
   sentenceGapSeconds: number;
+
+  /** Silence after each chunk of cloud speech (see `CLOUD_SPEECH_PAUSE_CHOICES`). */
+  cloudPauseSeconds: number;
 }
 
 /**
@@ -99,6 +103,7 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   autoScrollEnabled: true,
   useLlmNormalization: false,
   sentenceGapSeconds: 0.1,
+  cloudPauseSeconds: DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS,
 };
 
 /**
@@ -176,6 +181,12 @@ export function loadNarrationSettings(): NarrationSettings {
         parsed.sentenceGapSeconds <= 1.0
           ? parsed.sentenceGapSeconds
           : DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds,
+      cloudPauseSeconds:
+        typeof parsed.cloudPauseSeconds === "number" &&
+        parsed.cloudPauseSeconds >= 0 &&
+        parsed.cloudPauseSeconds <= MAX_CLOUD_SPEECH_PAUSE_SECONDS
+          ? parsed.cloudPauseSeconds
+          : DEFAULT_NARRATION_SETTINGS.cloudPauseSeconds,
     };
   } catch {
     // If parsing fails, return defaults

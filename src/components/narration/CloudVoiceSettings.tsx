@@ -12,7 +12,11 @@ import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, type AiProvider } from "@/lib/ai/providers";
 import { createCloudSpeechPlayer } from "@/lib/narration/cloud-speech";
 import type { MediaSourcePlayer } from "@/lib/narration/media-source-player";
-import { PREVIEW_TEXT, SUGGESTED_CLOUD_VOICE_MODELS } from "@/lib/narration/constants";
+import {
+  CLOUD_SPEECH_PAUSE_CHOICES,
+  PREVIEW_TEXT,
+  SUGGESTED_CLOUD_VOICE_MODELS,
+} from "@/lib/narration/constants";
 import type { NarrationSettings, SetNarrationSettings } from "@/lib/narration/settings";
 
 type VoiceModel = {
@@ -23,6 +27,13 @@ type VoiceModel = {
   defaultVoice: string;
   pricePerMillionCharacters?: number;
 };
+
+/** The choices, plus a stored value that isn't one of them. */
+function pauseChoices(current: number): number[] {
+  return CLOUD_SPEECH_PAUSE_CHOICES.includes(current)
+    ? CLOUD_SPEECH_PAUSE_CHOICES
+    : [...CLOUD_SPEECH_PAUSE_CHOICES, current].sort((a, b) => a - b);
+}
 
 export function CloudVoiceSettings({
   settings,
@@ -64,7 +75,11 @@ export function CloudVoiceSettings({
   // Plays the way narration does, so what you hear is what narration sounds like.
   const handlePreview = () => {
     stopPreview();
-    const player = createCloudSpeechPlayer(() => ({ model: modelId, voice: voice ?? null }));
+    const player = createCloudSpeechPlayer(() => ({
+      model: modelId,
+      voice: voice ?? null,
+      pauseSeconds: settings.cloudPauseSeconds,
+    }));
     previewRef.current = player;
     // Callbacks only count while this is still the preview playing; a stop,
     // a newer preview, or a voice/model change supersedes it.
@@ -160,6 +175,34 @@ export function CloudVoiceSettings({
             {preview === "playing" ? "Stop" : "Preview"}
           </Button>
         </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="cloud-voice-pause"
+          className="ui-text-sm text-body mb-1.5 block font-medium"
+        >
+          Pause between chunks
+        </label>
+        <select
+          id="cloud-voice-pause"
+          value={settings.cloudPauseSeconds}
+          onChange={(e) => {
+            const cloudPauseSeconds = Number(e.target.value);
+            setSettings((prev) => ({ ...prev, cloudPauseSeconds }));
+          }}
+          className="ui-text-sm bg-surface text-body border-edge-input block rounded-md border px-3 py-2"
+        >
+          {pauseChoices(settings.cloudPauseSeconds).map((seconds) => (
+            <option key={seconds} value={seconds}>
+              {seconds === 0 ? "None" : `${seconds} s`}
+            </option>
+          ))}
+        </select>
+        <p className="ui-text-xs text-muted mt-1.5">
+          Articles are spoken a few sentences at a time. Some voices run those pieces together; this
+          adds a pause after each one.
+        </p>
       </div>
 
       <p className="ui-text-xs text-muted">

@@ -66,6 +66,8 @@ data class AppSettings(
     /** The cloud voice model (`provider:model`) and voice; null for the server's defaults. */
     val cloudVoiceModel: String? = null,
     val cloudVoice: String? = null,
+    /** Silence after each chunk of cloud speech. */
+    val cloudVoicePauseSeconds: Float = 0.25f,
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
@@ -116,6 +118,9 @@ internal val STORED_SETTINGS: List<Stored<*>> =
             copy(cloudVoiceModel = it)
         },
         Stored(stringPreferencesKey("cloud_voice"), { cloudVoice }) { copy(cloudVoice = it) },
+        Stored(floatPreferencesKey("cloud_voice_pause_seconds"), { cloudVoicePauseSeconds }) {
+            copy(cloudVoicePauseSeconds = it)
+        },
     )
 
 internal fun Preferences.toSettings(): AppSettings =

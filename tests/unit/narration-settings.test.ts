@@ -219,6 +219,7 @@ describe("saveNarrationSettings", () => {
       autoScrollEnabled: true,
       useLlmNormalization: true,
       sentenceGapSeconds: 0.3,
+      cloudPauseSeconds: 0.5,
     };
 
     saveNarrationSettings(settings);
@@ -241,6 +242,7 @@ describe("saveNarrationSettings", () => {
       autoScrollEnabled: false,
       useLlmNormalization: false,
       sentenceGapSeconds: 0.5,
+      cloudPauseSeconds: 0.75,
     };
 
     saveNarrationSettings(originalSettings);
@@ -260,6 +262,28 @@ describe("DEFAULT_NARRATION_SETTINGS", () => {
     expect(DEFAULT_NARRATION_SETTINGS.highlightEnabled).toBe(true);
     expect(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled).toBe(true);
     expect(DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds).toBe(0.1);
+  });
+});
+
+describe("cloud voice pause", () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+  });
+
+  it("keeps a stored pause in range and replaces one outside it", () => {
+    localStorageMock.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ cloudPauseSeconds: 0.5 })
+    );
+    expect(loadNarrationSettings().cloudPauseSeconds).toBe(0.5);
+
+    localStorageMock.setItem(
+      "lion-reader-narration-settings",
+      JSON.stringify({ cloudPauseSeconds: 60 })
+    );
+    expect(loadNarrationSettings().cloudPauseSeconds).toBe(
+      DEFAULT_NARRATION_SETTINGS.cloudPauseSeconds
+    );
   });
 });
 

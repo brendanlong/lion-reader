@@ -36,6 +36,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -59,17 +60,19 @@ class CloudVoicesTest {
     /** How to answer requests whose body has this text, ahead of [responses]. */
     private var forText: Map<String, suspend () -> Answer> = emptyMap()
     private var requests = 0
+    private val bodies = mutableListOf<String>()
     private val cache = Files.createTempDirectory("cloud").toFile()
     private val dir = Files.createTempDirectory("narration").toFile()
 
     private val ok = Answer.Speech(audio)
 
-    private fun TestScope.engine(cacheBytes: Long = 5): CloudVoices {
+    private fun TestScope.engine(cacheBytes: Long = 5, pauseSeconds: Float = 0.25f): CloudVoices {
         val http =
             HttpClient(
                 MockEngine { request ->
                     requests++
                     val sent = (request.body as? TextContent)?.text.orEmpty()
+                    bodies += sent
                     val answer =
                         forText.entries.firstOrNull { it.key in sent }?.value?.invoke()
                             ?: responses.removeFirstOrNull()
@@ -97,6 +100,7 @@ class CloudVoicesTest {
             LionReaderApi(http, AppAuth("https://lion.test", http, tokens) { 0L }),
             "openrouter:hexgrad/kokoro-82m",
             "af_heart",
+            pauseSeconds,
             cache,
             // Like the app's scope: a failed request fails only its caller.
             CoroutineScope(
@@ -188,6 +192,14 @@ class CloudVoicesTest {
         assertEquals(1, requests)
         // Outside the narrator's directory, which it clears.
         assertEquals(cache, File(again.path!!).parentFile)
+    }
+
+    @Test
+    fun thePauseIsAskedForAndPartOfTheCacheKey() = runTest {
+        played(engine(pauseSeconds = 0.5f).synthesize("Hello.", dir, "0"))
+        assertTrue(""""pauseSeconds":0.5""" in bodies.single())
+        played(engine(pauseSeconds = 0f).synthesize("Hello.", dir, "1"))
+        assertEquals(2, requests)
     }
 
     @Test

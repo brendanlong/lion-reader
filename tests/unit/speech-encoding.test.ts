@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
-import { encodeSpeech, pcmFromWav, pcmOrWav } from "@/server/services/speech-encoding";
+import {
+  encodeSpeech,
+  pcmFromWav,
+  pcmOrWav,
+  withTrailingSilence,
+} from "@/server/services/speech-encoding";
 
 function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -194,5 +199,25 @@ describe("encodeSpeech", () => {
     });
     const audio = await encodeSpeech({ sampleRate: 8_000, channels: 1, data });
     await expect(readAll(audio)).rejects.toThrow("too long");
+  });
+});
+
+describe("withTrailingSilence", () => {
+  it("adds that much silence after the speech", async () => {
+    const speech = tone(0.5, 24_000, 2);
+    const pcm = withTrailingSilence(
+      { sampleRate: 24_000, channels: 2, data: streamOf(speech) },
+      0.25
+    );
+
+    const bytes = await readAll(pcm.data);
+    expect(bytes.length).toBe(speech.length + 0.25 * 24_000 * 2 * 2);
+    expect(bytes.subarray(0, speech.length)).toEqual(speech);
+    expect(bytes.subarray(speech.length).every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("leaves the speech alone with no pause", () => {
+    const pcm = { sampleRate: 24_000, channels: 1, data: streamOf(tone(0.1, 24_000)) };
+    expect(withTrailingSilence(pcm, 0)).toBe(pcm);
   });
 });
