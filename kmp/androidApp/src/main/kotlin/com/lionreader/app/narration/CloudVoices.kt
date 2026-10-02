@@ -20,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
@@ -52,10 +54,17 @@ class CloudVoices(
     private val inFlight = ConcurrentHashMap<String, Deferred<StreamedAudio>>()
 
     override val maxChunkChars = MAX_CLOUD_SPEECH_CHARS
-    // Requests take anywhere from under a second to many, so a minute ahead,
-    // a few at a time (as the web does).
+    // Requests take anywhere from under a second to many, so a minute ahead. One is started at a
+    // time, once the one before has started playing; see [streams] for how many run at once.
     override val lookaheadChars = 900
-    override val parallelism = 3
+    override val parallelism = 1
+
+    /**
+     * Requests streaming at once, two as on the web: the next chunk's wait for its first audio
+     * overlaps the one before's download, and no more, since providers limit concurrent requests
+     * per key and several listeners share the server's.
+     */
+    private val streams = Semaphore(2)
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri {
         val key = key(text)
@@ -85,10 +94,12 @@ class CloudVoices(
         scope.launch(io, CoroutineStart.LAZY) {
             var writer: CacheWriter? = null
             try {
-                request(text) { bytes ->
-                    val into = writer ?: CacheWriter(cached).also { writer = it }
-                    into.write(bytes)
-                    started.complete(into.audio)
+                streams.withPermit {
+                    request(text) { bytes ->
+                        val into = writer ?: CacheWriter(cached).also { writer = it }
+                        into.write(bytes)
+                        started.complete(into.audio)
+                    }
                 }
                 val done = writer ?: throw IOException("The cloud voice sent no audio")
                 started.complete(done.finish())
@@ -163,8 +174,9 @@ class CloudVoices(
                     if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
                         throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
                     }
-                    serverTrouble = e.status >= 500
-                    busy = e.status == 429
+                    // 503: the server's provider is busy, which isn't this text's fault.
+                    busy = e.status == 429 || e.status == 503
+                    serverTrouble = e.status >= 500 && !busy
                 } else {
                     // Network: try again below.
                     serverTrouble = false

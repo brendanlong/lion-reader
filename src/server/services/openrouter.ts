@@ -10,6 +10,7 @@ import { USER_AGENT } from "@/server/http/user-agent";
 import { appUrl } from "@/server/config/env";
 import type { ChatCompletionOptions } from "@/server/services/ai-providers";
 import type { PcmStream } from "@/server/services/speech-encoding";
+import { providerError } from "@/server/services/provider-errors";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -57,19 +58,6 @@ function headers(apiKey?: string): Record<string, string> {
     "X-OpenRouter-Title": "Lion Reader",
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   };
-}
-
-async function errorFromResponse(response: Response): Promise<Error> {
-  let detail = "";
-  try {
-    const body = (await response.json()) as { error?: { message?: unknown } };
-    if (typeof body.error?.message === "string") {
-      detail = `: ${body.error.message.slice(0, 500)}`;
-    }
-  } catch {
-    // Non-JSON error body; the status is enough.
-  }
-  return new Error(`OpenRouter request failed with status ${response.status}${detail}`);
 }
 
 /**
@@ -125,7 +113,7 @@ export async function openRouterChatCompletion(
     ),
   });
   if (!response.ok) {
-    throw await errorFromResponse(response);
+    throw await providerError("OpenRouter", response);
   }
   const parsed = chatCompletionResponseSchema.parse(await response.json());
   if (parsed.error) {
@@ -177,7 +165,7 @@ async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouter
     { headers: headers(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
   );
   if (!response.ok) {
-    throw await errorFromResponse(response);
+    throw await providerError("OpenRouter", response);
   }
   const body = z.object({ data: z.array(z.unknown()) }).parse(await response.json());
   return body.data.flatMap((entry) => {
@@ -212,7 +200,7 @@ export async function openRouterSpeech(
     }),
   });
   if (!response.ok || !response.body) {
-    throw await errorFromResponse(response);
+    throw await providerError("OpenRouter", response);
   }
   const contentType = response.headers.get("content-type") ?? "";
   const param = (name: string) => Number(new RegExp(`${name}=(\\d+)`).exec(contentType)?.[1]);

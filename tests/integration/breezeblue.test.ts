@@ -12,6 +12,8 @@ import { listSpeechModels, streamSpeech } from "../../src/server/services/speech
 
 let server: Server;
 const speechRequests: Array<{ path: string; key: string; body: unknown }> = [];
+/** Speech requests to turn away as busy before answering. */
+let busyAnswers = 0;
 const previousBaseUrl = process.env.BREEZEBLUE_BASE_URL;
 const previousServerKey = process.env.BREEZEBLUE_API_KEY;
 
@@ -48,6 +50,12 @@ beforeAll(async () => {
       }
       // An account sees voices it saved under its own alias.
       return json({ voices: [voice("trending", `Elara, as ${key} calls her`)] });
+    }
+    if (url.pathname.startsWith("/text-to-speech/") && busyAnswers > 0) {
+      busyAnswers--;
+      res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "0" });
+      res.end(JSON.stringify({ detail: "Your plan's concurrent generation limit was reached." }));
+      return;
     }
     if (url.pathname.startsWith("/text-to-speech/")) {
       let body = "";
@@ -136,5 +144,18 @@ describe("BreezeBlue speech", () => {
     const paused = await duration(1);
     expect(paused).toBeGreaterThanOrEqual(1.25);
     expect(paused).toBeLessThan(1.5);
+  });
+
+  it("waits out BreezeBlue being busy", async () => {
+    busyAnswers = 2;
+    const before = speechRequests.length;
+    const stream = await streamSpeech(
+      { breezeblue: randomUUID() },
+      { model: "breezeblue:breeze-tts-2", voice: null, text: "Busy." }
+    );
+    const audio = Buffer.from(await new Response(stream).arrayBuffer());
+    expect(audio.subarray(4, 8).toString()).toBe("ftyp");
+    expect(busyAnswers).toBe(0);
+    expect(speechRequests.length).toBe(before + 1);
   });
 });

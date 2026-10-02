@@ -215,12 +215,15 @@ class CloudVoicesTest {
         responses.addLast(
             Answer.Error(
                 HttpStatusCode.BadRequest,
-                """{"message":"Cloud voices require a DeepInfra or OpenRouter API key"}""",
+                """{"message":"Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue"}""",
             )
         )
         val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
         assertEquals(SpeechUnavailable::class, error!!::class)
-        assertEquals("Cloud voices require a DeepInfra or OpenRouter API key", error.message)
+        assertEquals(
+            "Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue",
+            error.message,
+        )
     }
 
     @Test
@@ -258,6 +261,32 @@ class CloudVoicesTest {
         // Not an interruption to wait out: an ordinary failure, so just this chunk is skipped.
         assertEquals(false, error is SpeechException)
         assertEquals(true, error != null)
+    }
+
+    @Test
+    fun aBusyVoiceIsWaitedOutEvenWhileOtherTextIsAnswered() = runTest {
+        // As above, but the server says its provider is busy: not this text's fault.
+        val busyTried = CompletableDeferred<Unit>()
+        val goodAnswered = CompletableDeferred<Unit>()
+        forText =
+            mapOf(
+                "Busy." to
+                    {
+                        if (!busyTried.complete(Unit)) goodAnswered.await()
+                        Answer.Error(HttpStatusCode.ServiceUnavailable)
+                    },
+                "Good." to
+                    {
+                        busyTried.await()
+                        ok
+                    },
+            )
+        val engine = engine()
+        val busy = async { runCatching { engine.synthesize("Busy.", dir, "0") }.exceptionOrNull() }
+        engine.synthesize("Good.", dir, "1")
+        goodAnswered.complete(Unit)
+
+        assertEquals(SpeechInterrupted::class, busy.await()!!::class)
     }
 
     @Test

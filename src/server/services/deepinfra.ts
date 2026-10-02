@@ -13,6 +13,7 @@ import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmFromWav, pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
+import { providerError } from "@/server/services/provider-errors";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
 const CATALOG_TIMEOUT_MS = 15_000;
@@ -67,18 +68,6 @@ function headers(apiKey?: string): Record<string, string> {
     "User-Agent": USER_AGENT,
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   };
-}
-
-async function errorFromResponse(response: Response): Promise<Error> {
-  let detail = "";
-  try {
-    const body = (await response.json()) as { detail?: unknown; error?: { message?: unknown } };
-    const message = typeof body.detail === "string" ? body.detail : body.error?.message;
-    if (typeof message === "string") detail = `: ${message.slice(0, 500)}`;
-  } catch {
-    // Non-JSON error body; the status is enough.
-  }
-  return new Error(`DeepInfra request failed with status ${response.status}${detail}`);
 }
 
 type InputSchema = z.infer<typeof modelDetailSchema>["in_schema"];
@@ -155,7 +144,7 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
     headers: headers(),
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
-  if (!response.ok) throw await errorFromResponse(response);
+  if (!response.ok) throw await providerError("DeepInfra", response);
   const entries = z
     .array(z.unknown())
     .parse(await response.json())
@@ -249,7 +238,7 @@ function pcmFormatOf(apiKey: string, model: string, voice: string): Promise<PcmF
     format = (async () => {
       const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
       const response = await requestSpeech(apiKey, model, voice, PROBE_TEXT, "wav", signal);
-      if (!response.ok || !response.body) throw await errorFromResponse(response);
+      if (!response.ok || !response.body) throw await providerError("DeepInfra", response);
       const { sampleRate, channels, data } = await pcmFromWav(response.body);
       await data.cancel();
       return { sampleRate, channels };
@@ -292,6 +281,6 @@ export async function deepInfraSpeech(
     await response.body?.cancel();
     throw error;
   }
-  if (!response.ok || !response.body) throw await errorFromResponse(response);
+  if (!response.ok || !response.body) throw await providerError("DeepInfra", response);
   return pcmOrWav(response.body, format);
 }

@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
+import { providerError } from "@/server/services/provider-errors";
 
 /** Overridable for tests, like the SDKs' `GROQ_BASE_URL`. */
 function apiUrl(): string {
@@ -64,23 +65,12 @@ function headers(apiKey: string): Record<string, string> {
   return { "User-Agent": USER_AGENT, "xi-api-key": apiKey };
 }
 
-async function errorFromResponse(response: Response): Promise<Error> {
-  let detail = "";
-  try {
-    const body = (await response.json()) as { detail?: unknown };
-    if (typeof body.detail === "string") detail = `: ${body.detail.slice(0, 500)}`;
-  } catch {
-    // Non-JSON error body; the status is enough.
-  }
-  return new Error(`BreezeBlue request failed with status ${response.status}${detail}`);
-}
-
 async function getJson(apiKey: string, path: string): Promise<unknown> {
   const response = await fetch(`${apiUrl()}${path}`, {
     headers: headers(apiKey),
     signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
   });
-  if (!response.ok) throw await errorFromResponse(response);
+  if (!response.ok) throw await providerError("BreezeBlue", response);
   return response.json();
 }
 
@@ -184,6 +174,6 @@ export async function breezeBlueSpeech(
       body: JSON.stringify({ text, model_id: model }),
     }
   );
-  if (!response.ok || !response.body) throw await errorFromResponse(response);
+  if (!response.ok || !response.body) throw await providerError("BreezeBlue", response);
   return pcmOrWav(response.body, PCM_FORMAT);
 }
