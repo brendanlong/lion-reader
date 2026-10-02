@@ -32,17 +32,14 @@ import {
 } from "@/lib/narration/media-session";
 import { useMediaSession } from "./useMediaSession";
 import { trackNarrationPlaybackStarted } from "@/lib/telemetry";
-import { getPiperTTSProvider } from "@/lib/narration/piper-tts-provider";
-import {
+import type {
   MediaSourcePlayer,
-  splitIntoSentenceChunks,
-  splitIntoSpeechChunks,
-  type PlaybackPosition,
-  type PlaybackStatus,
-  type PlayerCallbacks,
+  PlaybackPosition,
+  PlaybackStatus,
+  PlayerCallbacks,
 } from "@/lib/narration/media-source-player";
-import { base64ToBytes, decodeToPcm, withTrailingSilence } from "@/lib/narration/audio-encoding";
-import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
+import { createCloudSpeechPlayer } from "@/lib/narration/cloud-speech";
+import { createPiperSpeechPlayer } from "@/lib/narration/piper-speech";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
   htmlToClientNarration,
@@ -122,7 +119,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   // tRPC mutation for generating narration
   const generateMutation = trpc.narration.generate.useMutation();
-  const trpcUtils = trpc.useUtils();
 
   // The players outlive renders, so they read the current voice settings here.
   const voiceRef = useRef({
@@ -234,20 +230,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   const getOrCreatePiperPlayer = useCallback((): MediaSourcePlayer => {
     if (!piperPlayerRef.current) {
-      piperPlayerRef.current = new MediaSourcePlayer({
-        synthesize: async (text) => {
-          const { voice, sentenceGapSeconds } = voiceRef.current;
-          if (!voice) throw new Error("No enhanced voice selected");
-          const wav = await getPiperTTSProvider().synthesize(text, voice);
-          const audio = await decodeToPcm(new Uint8Array(await wav.arrayBuffer()));
-          return withTrailingSilence(audio, sentenceGapSeconds);
-        },
-        chunkParagraphs: splitIntoSentenceChunks,
-        // One WASM model on the device's CPU: one sentence at a time.
-        maxConcurrentSyntheses: 1,
-        // Free apart from battery, but a locked phone may synthesize slowly.
-        bufferAheadSeconds: 30,
-      });
+      piperPlayerRef.current = createPiperSpeechPlayer(() => ({
+        voice: voiceRef.current.voice,
+        sentenceGapSeconds: voiceRef.current.sentenceGapSeconds,
+      }));
       piperPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
     return piperPlayerRef.current;
@@ -255,26 +241,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   const getOrCreateCloudPlayer = useCallback((): MediaSourcePlayer => {
     if (!cloudPlayerRef.current) {
-      cloudPlayerRef.current = new MediaSourcePlayer({
-        synthesize: async (text) => {
-          const { model, voice } = voiceRef.current;
-          const result = await trpcUtils.client.narration.synthesize.mutate(
-            { model, voice, text },
-            { context: { skipBatch: true } }
-          );
-          return decodeToPcm(base64ToBytes(result.audio));
-        },
-        chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, MAX_CLOUD_SPEECH_CHARS),
-        maxConcurrentSyntheses: 4,
-        // Paid per character, so running ahead only wastes what's left
-        // unheard. With the screen locked, nothing recovers playback that
-        // stalls on an empty buffer.
-        bufferAheadSeconds: 60,
-      });
+      cloudPlayerRef.current = createCloudSpeechPlayer(() => ({
+        model: voiceRef.current.model,
+        voice: voiceRef.current.voice,
+      }));
       cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
     return cloudPlayerRef.current;
-  }, [bufferedPlayerCallbacks, trpcUtils]);
+  }, [bufferedPlayerCallbacks]);
 
   /**
    * Start or resume playback.
