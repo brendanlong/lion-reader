@@ -9606,16 +9606,20 @@
                           "voices": {
                             "type": "array",
                             "items": {
-                              "type": "string"
-                            }
-                          },
-                          "voiceNames": {
-                            "type": "object",
-                            "propertyNames": {
-                              "type": "string"
-                            },
-                            "additionalProperties": {
-                              "type": "string"
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "defaultVoice": {
@@ -9631,7 +9635,6 @@
                           "provider",
                           "providerDisplayName",
                           "voices",
-                          "voiceNames",
                           "defaultVoice"
                         ],
                         "additionalProperties": false

@@ -38,7 +38,6 @@ import {
   defaultSpeechModelId,
   defaultVoiceFor,
   listSpeechModels,
-  voiceNamesFor,
   SPEECH_PROVIDERS,
 } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
@@ -415,10 +414,8 @@ export const narrationRouter = createTRPCRouter({
             displayName: z.string(),
             provider: z.enum(SPEECH_PROVIDERS),
             providerDisplayName: z.string(),
-            /** Voice ids, which are what `synthesize` takes. */
-            voices: z.array(z.string()),
-            /** Display names, for the voices whose name isn't their id. */
-            voiceNames: z.record(z.string(), z.string()),
+            /** `id` is what speech requests take; `name` is for showing. */
+            voices: z.array(z.object({ id: z.string(), name: z.string() })),
             defaultVoice: z.string(),
             pricePerMillionCharacters: z.number().optional(),
           })
@@ -431,8 +428,6 @@ export const narrationRouter = createTRPCRouter({
       const { models: speechModels } = await listSpeechModels(keys);
       const models = speechModels.map((model) => ({
         ...model,
-        voices: model.voices.map((voice) => voice.id),
-        voiceNames: voiceNamesFor(model),
         providerDisplayName: AI_PROVIDER_DISPLAY_NAMES[model.provider],
         defaultVoice: defaultVoiceFor(model),
       }));

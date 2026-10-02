@@ -203,13 +203,6 @@ export function defaultSpeechModelId(models: SpeechModel[]): string {
   );
 }
 
-/** Display names for the voices whose name isn't their id, by id. */
-export function voiceNamesFor(model: SpeechModel): Record<string, string> {
-  return Object.fromEntries(
-    model.voices.filter((voice) => voice.name !== voice.id).map((voice) => [voice.id, voice.name])
-  );
-}
-
 function hasVoice(model: SpeechModel, voice: string): boolean {
   return model.voices.some((candidate) => candidate.id === voice);
 }
