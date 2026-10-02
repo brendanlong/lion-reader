@@ -40,7 +40,6 @@ pub struct SpeechEncoder {
     /// A partial interleaved frame (fewer samples than channels) from the last push.
     carry: Vec<i16>,
     frame_samples: usize,
-    delay_samples: usize,
     max_frame_bytes: usize,
     config: Vec<u8>,
     flushed: bool,
@@ -74,7 +73,6 @@ impl SpeechEncoder {
             pending: Vec::new(),
             carry: Vec::new(),
             frame_samples: 0,
-            delay_samples: 0,
             max_frame_bytes: 0,
             config: Vec::new(),
             flushed: false,
@@ -112,7 +110,6 @@ impl SpeechEncoder {
         })?;
         let info = unsafe { info.assume_init() };
         encoder.frame_samples = info.frameLength as usize;
-        encoder.delay_samples = info.nDelay as usize;
         encoder.max_frame_bytes = info.maxOutBufBytes as usize;
         encoder.config = info.confBuf[..info.confSize as usize].to_vec();
         Ok(encoder)
@@ -126,11 +123,6 @@ impl SpeechEncoder {
     /// Samples per access unit (1024 for AAC-LC).
     pub fn frame_samples(&self) -> usize {
         self.frame_samples
-    }
-
-    /// Silent samples the encoder puts before the audio (its priming).
-    pub fn delay_samples(&self) -> usize {
-        self.delay_samples
     }
 
     /// Encodes more interleaved PCM: the access units it completes, in order.
@@ -308,7 +300,6 @@ mod tests {
         // AudioSpecificConfig: object type 2 (LC), rate index 6 (24 kHz), 1 channel.
         assert_eq!(encoder.audio_specific_config(), &[0x13, 0x08]);
         assert_eq!(encoder.frame_samples(), 1024);
-        assert!(encoder.delay_samples() > 0);
     }
 
     #[test]
@@ -325,9 +316,9 @@ mod tests {
             777,
         );
         assert_eq!(whole, pieces);
-        // The audio plus the encoder's delay, in whole frames.
-        let encoder = SpeechEncoder::new(24_000, 1, 48_000).unwrap();
-        let needed = (pcm.len() + encoder.delay_samples()).div_ceil(1024);
+        // The audio, and the encoder's delay (FDK's AAC-LC: 1600 samples)
+        // flushed out after it, in whole frames.
+        let needed = (pcm.len() + 1600).div_ceil(1024);
         assert!(
             whole.len() >= needed,
             "{} frames, need {needed}",
