@@ -118,7 +118,7 @@ export const MAX_CLOUD_SPEECH_CHARS = 1000;
  * and BreezeBlue; the settings slide from none to the max in
  * {@link CLOUD_SPEECH_PAUSE_STEP_SECONDS} steps.
  */
-export const DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS = 1;
+export const DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS = 0.6;
 export const MAX_CLOUD_SPEECH_PAUSE_SECONDS = 2;
 export const CLOUD_SPEECH_PAUSE_STEP_SECONDS = 0.05;
 
