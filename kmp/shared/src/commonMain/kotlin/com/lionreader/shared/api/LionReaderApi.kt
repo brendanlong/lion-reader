@@ -33,10 +33,13 @@ private const val SPEECH_TIMEOUT_MILLIS = 180_000L
 /** Longest the speech stream may go quiet, before the first audio or between parts. */
 private const val SPEECH_STALL_MILLIS = 60_000L
 
+/** The server's limit on ids per `/entries/batch` request. */
+private const val MAX_BATCH_IDS = 100
+
 /**
- * A non-2xx response. `status` 0 means the request never got one (signed out). [serverMessage] is
- * the server's own explanation, when it sent one, fit to show the user; [appErrorCode] its
- * machine-readable reason, for the errors that have one (e.g. `NEEDS_GOOGLE_SIGNIN`).
+ * A non-2xx response, or no response at all when [signedOut]. [serverMessage] is the server's own
+ * explanation, when it sent one, fit to show the user; [appErrorCode] its machine-readable reason,
+ * for the errors that have one (e.g. `NEEDS_GOOGLE_SIGNIN`).
  */
 class ApiException(
     val status: Int,
@@ -54,6 +57,17 @@ class ApiException(
                 status == 404 ||
                 status == 422 ||
                 (appErrorCode != null && status in 400..499 && status != 429)
+
+    /** There's no signed-in account to send the request as; it was never sent. */
+    val signedOut: Boolean
+        get() = status == 0
+
+    /**
+     * The server refused the request: any 4xx but 429 ("try again later"). Broader than
+     * [isPermanent]: it includes answers (401, 403) that can change without the request changing.
+     */
+    val rejected: Boolean
+        get() = status in 400..499 && status != 429
 }
 
 enum class ListFilter {
@@ -91,14 +105,17 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             cursor?.let { parameter("cursor", it) }
         }
 
+    /** In as many requests as the server's limit on ids per request needs. */
     suspend fun getEntries(ids: List<String>): List<FullEntry> =
-        post(
-                GetManyResponse.serializer(),
-                "/entries/batch",
-                GetManyRequest(ids),
-                GetManyRequest.serializer(),
-            )
-            .entries
+        ids.chunked(MAX_BATCH_IDS).flatMap {
+            post(
+                    GetManyResponse.serializer(),
+                    "/entries/batch",
+                    GetManyRequest(it),
+                    GetManyRequest.serializer(),
+                )
+                .entries
+        }
 
     suspend fun markRead(request: MarkReadRequest): BulkStateResponse =
         post(
@@ -142,50 +159,38 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         text: String,
         pauseSeconds: Float,
         onAudio: suspend (ByteArray) -> Unit,
-    ) {
-        var token = auth.accessToken() ?: throw ApiException(0, "Signed out")
-        repeat(2) { attempt ->
-            val retry =
-                http
-                    .prepareRequest {
-                        method = HttpMethod.Post
-                        url("$base/narration/speech")
-                        contentType(ContentType.Application.Json)
-                        setBody(
-                            ApiJson.encodeToString(
-                                SpeechRequest.serializer(),
-                                SpeechRequest(model, voice, text, pauseSeconds),
-                            )
-                        )
-                        bearerAuth(token)
-                        timeout {
-                            requestTimeoutMillis = SPEECH_TIMEOUT_MILLIS
-                            socketTimeoutMillis = SPEECH_STALL_MILLIS
-                        }
-                    }
-                    .execute { response ->
-                        if (response.status == HttpStatusCode.Unauthorized && attempt == 0) {
-                            return@execute true
-                        }
-                        if (!response.status.isSuccess()) decode(JsonObject.serializer(), response)
-                        // A captive portal's page, say.
-                        if (response.contentType()?.match(ContentType.Audio.MP4) != true) {
-                            throw ApiException(response.status.value, "Not audio")
-                        }
-                        val body = response.bodyAsChannel()
-                        val buffer = ByteArray(16 * 1024)
-                        while (true) {
-                            val read = body.readAvailable(buffer, 0, buffer.size)
-                            if (read < 0) break
-                            if (read > 0) onAudio(buffer.copyOf(read))
-                        }
-                        false
-                    }
-            if (!retry) return
-            token =
-                auth.accessToken(forceRefresh = true, rejected = token)
-                    ?: throw ApiException(0, "Signed out")
-        }
+    ) = withToken { token, canRetry ->
+        http
+            .prepareRequest {
+                method = HttpMethod.Post
+                url("$base/narration/speech")
+                contentType(ContentType.Application.Json)
+                setBody(
+                    ApiJson.encodeToString(
+                        SpeechRequest.serializer(),
+                        SpeechRequest(model, voice, text, pauseSeconds),
+                    )
+                )
+                bearerAuth(token)
+                timeout {
+                    requestTimeoutMillis = SPEECH_TIMEOUT_MILLIS
+                    socketTimeoutMillis = SPEECH_STALL_MILLIS
+                }
+            }
+            .execute { response ->
+                check(response, canRetry)
+                // A captive portal's page, say.
+                if (response.contentType()?.match(ContentType.Audio.MP4) != true) {
+                    throw ApiException(response.status.value, "Not audio")
+                }
+                val body = response.bodyAsChannel()
+                val buffer = ByteArray(16 * 1024)
+                while (true) {
+                    val read = body.readAvailable(buffer, 0, buffer.size)
+                    if (read < 0) break
+                    if (read > 0) onAudio(buffer.copyOf(read))
+                }
+            }
     }
 
     /** Saves a link as a saved article (the server fetches it). */
@@ -211,7 +216,11 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             )
             .summary
 
-    suspend fun syncChanges(cursors: SyncCursors?): SyncChanges =
+    /**
+     * Changes since [cursors]. [since] holds the cursors the catch-up they're a page of started
+     * from, which the server classifies entry changes against (`entriesSince`).
+     */
+    suspend fun syncChanges(cursors: SyncCursors?, since: SyncCursors? = null): SyncChanges =
         get(SyncChanges.serializer(), "/sync/changes") {
             cursors?.let {
                 it.entries?.let { v -> parameter("entries", v) }
@@ -220,6 +229,42 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                 it.tags?.let { v -> parameter("tags", v) }
                 it.deletions?.let { v -> parameter("deletions", v) }
             }
+            since?.let {
+                it.entries?.let { v -> parameter("entriesSince", v) }
+                it.entriesAfterId?.let { v -> parameter("entriesSinceAfterId", v) }
+            }
+        }
+
+    /**
+     * Listens to the server's live updates (`/api/v1/events`, server-sent events) until the server
+     * closes the stream: [onOpen] once connected, then [onEvent] with each event's type. Throws on
+     * network/server failure; reconnecting is the caller's.
+     */
+    suspend fun events(onOpen: suspend () -> Unit, onEvent: suspend (String) -> Unit) =
+        withToken { token, canRetry ->
+            http
+                .prepareRequest {
+                    url("$base/events")
+                    bearerAuth(token)
+                    timeout {
+                        requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                        // The server sends a heartbeat every 30s.
+                        socketTimeoutMillis = 75_000
+                    }
+                }
+                .execute { response ->
+                    check(response, canRetry)
+                    // A captive portal's page, say.
+                    if (response.contentType()?.match(ContentType.Text.EventStream) != true) {
+                        throw ApiException(response.status.value, "Not an event stream")
+                    }
+                    onOpen()
+                    val body = response.bodyAsChannel()
+                    while (true) {
+                        val line = body.readLine() ?: break
+                        if (line.startsWith("event:")) onEvent(line.removePrefix("event:").trim())
+                    }
+                }
         }
 
     private suspend fun <T> get(
@@ -227,14 +272,11 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         path: String,
         block: HttpRequestBuilder.() -> Unit,
     ): T =
-        decode(
-            serializer,
-            send {
-                method = HttpMethod.Get
-                url("$base$path")
-                block()
-            },
-        )
+        call(serializer) {
+            method = HttpMethod.Get
+            url("$base$path")
+            block()
+        }
 
     private suspend fun <T, B> post(
         serializer: KSerializer<T>,
@@ -242,88 +284,67 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         body: B,
         bodySerializer: KSerializer<B>,
     ): T =
-        decode(
-            serializer,
-            send {
-                method = HttpMethod.Post
-                url("$base$path")
-                contentType(ContentType.Application.Json)
-                setBody(ApiJson.encodeToString(bodySerializer, body))
-            },
-        )
-
-    /**
-     * Listens to the server's live updates (`/api/v1/events`, server-sent events) until the server
-     * closes the stream: [onOpen] once connected, then [onEvent] with each event's type. Throws on
-     * network/server failure; reconnecting is the caller's.
-     */
-    suspend fun events(onOpen: suspend () -> Unit, onEvent: suspend (String) -> Unit) {
-        var token = auth.accessToken() ?: throw ApiException(0, "Signed out")
-        repeat(2) { attempt ->
-            val retry =
-                http
-                    .prepareRequest {
-                        url("$base/events")
-                        bearerAuth(token)
-                        timeout {
-                            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-                            // The server sends a heartbeat every 30s.
-                            socketTimeoutMillis = 75_000
-                        }
-                    }
-                    .execute { response ->
-                        if (response.status == HttpStatusCode.Unauthorized && attempt == 0) {
-                            return@execute true
-                        }
-                        if (!response.status.isSuccess()) decode(JsonObject.serializer(), response)
-                        // A captive portal's page, say.
-                        if (response.contentType()?.match(ContentType.Text.EventStream) != true) {
-                            throw ApiException(response.status.value, "Not an event stream")
-                        }
-                        onOpen()
-                        val body = response.bodyAsChannel()
-                        while (true) {
-                            val line = body.readLine() ?: break
-                            if (line.startsWith("event:"))
-                                onEvent(line.removePrefix("event:").trim())
-                        }
-                        false
-                    }
-            if (!retry) return
-            token =
-                auth.accessToken(forceRefresh = true, rejected = token)
-                    ?: throw ApiException(0, "Signed out")
+        call(serializer) {
+            method = HttpMethod.Post
+            url("$base$path")
+            contentType(ContentType.Application.Json)
+            setBody(ApiJson.encodeToString(bodySerializer, body))
         }
-    }
 
-    /** Sends with a Bearer token, refreshing and retrying once on a 401. */
-    private suspend fun send(block: HttpRequestBuilder.() -> Unit): HttpResponse {
-        var token = auth.accessToken() ?: throw ApiException(0, "Signed out")
-        var response = http.request {
+    private suspend fun <T> call(
+        serializer: KSerializer<T>,
+        block: HttpRequestBuilder.() -> Unit,
+    ): T = withToken { token, canRetry ->
+        val response = http.request {
             block()
             bearerAuth(token)
         }
-        // A 401 with an app error code is about something else (e.g. the user's
-        // Google account for a private Doc), not this token.
+        check(response, canRetry)
+        ApiJson.decodeFromString(serializer, response.bodyAsText())
+    }
+
+    /**
+     * Runs [request] with a Bearer token, and once more with a refreshed one if [check] finds the
+     * server rejected the token.
+     */
+    private suspend fun <T> withToken(request: suspend (token: String, canRetry: Boolean) -> T): T {
+        val token = auth.accessToken() ?: throw signedOut()
+        try {
+            return request(token, true)
+        } catch (_: TokenRejected) {}
+        val fresh = auth.accessToken(forceRefresh = true, rejected = token) ?: throw signedOut()
+        return request(fresh, false)
+    }
+
+    private fun signedOut() = ApiException(0, "Signed out")
+
+    /** A 401 about the token itself, while a retry with a fresh one is left. */
+    private class TokenRejected : Exception()
+
+    /**
+     * Throws for an error response: [TokenRejected] for a 401 about the token if [canRetry], else
+     * [ApiException]. A 401 with an app error code is about something else (e.g. the user's Google
+     * account for a private Doc), not the token.
+     */
+    private suspend fun check(response: HttpResponse, canRetry: Boolean) {
+        if (response.status.isSuccess()) return
+        // Read once: a streamed response's body can't be read again.
+        val text = response.bodyAsText()
+        val error = errorBody(text)
         if (
-            response.status == HttpStatusCode.Unauthorized &&
-                errorBody(response).appErrorCode == null
+            canRetry && response.status == HttpStatusCode.Unauthorized && error.appErrorCode == null
         ) {
-            token =
-                auth.accessToken(forceRefresh = true, rejected = token)
-                    ?: throw ApiException(0, "Signed out")
-            response = http.request {
-                block()
-                bearerAuth(token)
-            }
+            throw TokenRejected()
         }
-        return response
+        throw ApiException(
+            response.status.value,
+            "HTTP ${response.status.value}: ${text.take(200)}",
+            error.message,
+            error.appErrorCode,
+        )
     }
 
     private class ErrorBody(val message: String?, val appErrorCode: String?)
-
-    private suspend fun errorBody(response: HttpResponse): ErrorBody =
-        errorBody(response.bodyAsText())
 
     /** What an error response says about itself (its tRPC error shape), if it's JSON. */
     private fun errorBody(text: String): ErrorBody {
@@ -335,20 +356,5 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             json.string("message"),
             (json["data"] as? JsonObject)?.string("appErrorCode"),
         )
-    }
-
-    private suspend fun <T> decode(serializer: KSerializer<T>, response: HttpResponse): T {
-        // Read once: a streamed response's body can't be read again.
-        val text = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            val error = errorBody(text)
-            throw ApiException(
-                response.status.value,
-                "HTTP ${response.status.value}: ${text.take(200)}",
-                error.message,
-                error.appErrorCode,
-            )
-        }
-        return ApiJson.decodeFromString(serializer, text)
     }
 }
