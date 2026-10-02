@@ -111,11 +111,12 @@ export const SERVER_KEY_CLOUD_VOICE_MODELS: string[] = [DEEPINFRA_KOKORO, OPENRO
 export const MAX_CLOUD_SPEECH_CHARS = 1000;
 
 /**
- * Silence the server adds after each chunk of cloud speech. Models leave
- * little or no silence at a clip's ends (BreezeBlue about 40 ms), so without it
- * chunks run together while the sentences inside one pause. The default is
- * what sounded best by ear for both Kokoro and BreezeBlue; the settings slide
- * from none to the max in {@link CLOUD_SPEECH_PAUSE_STEP_SECONDS} steps.
+ * The silence each chunk of cloud speech ends in. Models leave varying silence
+ * at a clip's ends, some next to none, so the server evens each clip's out to
+ * this (`ClipEdges`); without it chunks run together while the sentences
+ * inside one pause. The default is what sounded best by ear for both Kokoro
+ * and BreezeBlue; the settings slide from none to the max in
+ * {@link CLOUD_SPEECH_PAUSE_STEP_SECONDS} steps.
  */
 export const DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS = 1;
 export const MAX_CLOUD_SPEECH_PAUSE_SECONDS = 2;

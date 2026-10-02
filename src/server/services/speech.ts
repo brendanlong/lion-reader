@@ -277,7 +277,7 @@ export function resolveSpeechModel(
 const SPEECH_TIMEOUT_MS = 120_000;
 /**
  * `text` spoken as AAC in fragmented MP4 (see `speech-encoding.ts`), streamed
- * as the provider generates it, then `pauseSeconds` of silence. A null model
+ * as the provider generates it, ending in `pauseSeconds` of silence. A null model
  * or voice means the default. Rejects models the user can't pick in settings,
  * so this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request. A
