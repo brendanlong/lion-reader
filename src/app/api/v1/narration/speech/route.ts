@@ -21,6 +21,11 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
+import {
+  BodyReadTimeoutError,
+  ContentTooLargeError,
+  readRequestBufferWithSizeLimit,
+} from "@/server/http/fetch";
 import { getUserApiKeys } from "@/server/auth/session";
 import { SpeechRequestError, streamSpeech } from "@/server/services/speech";
 import {
@@ -31,8 +36,8 @@ import {
   speechRateLimitCost,
 } from "@/server/rate-limit";
 
-/** Far more than the largest valid body: rejects floods before parsing them. */
-const MAX_BODY_CHARS = 4 * MAX_CLOUD_SPEECH_CHARS + 1024;
+/** Far more than the largest valid body (UTF-8 and JSON escapes included). */
+const MAX_BODY_BYTES = 8 * MAX_CLOUD_SPEECH_CHARS + 1024;
 
 const speechRequestSchema = z.object({
   /** `provider:model` ref; null means the default model. */
@@ -72,13 +77,21 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse(415, "UNSUPPORTED_MEDIA_TYPE", "Expected a JSON body");
   }
 
-  const raw = await req.text();
-  if (raw.length > MAX_BODY_CHARS) {
-    return errorResponse(413, "PAYLOAD_TOO_LARGE", "Request body too large");
+  let raw: Buffer;
+  try {
+    raw = await readRequestBufferWithSizeLimit(req, MAX_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof ContentTooLargeError) {
+      return errorResponse(413, "PAYLOAD_TOO_LARGE", "Request body too large");
+    }
+    if (error instanceof BodyReadTimeoutError) {
+      return errorResponse(408, "REQUEST_TIMEOUT", "Request body took too long");
+    }
+    throw error;
   }
   let json: unknown;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(raw.toString("utf8"));
   } catch {
     return errorResponse(400, "BAD_REQUEST", "Invalid JSON");
   }

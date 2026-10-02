@@ -46,6 +46,9 @@ pub struct SpeechEncoder {
     flushed: bool,
 }
 
+/// `aacEncOpen`'s module bit for the core AAC encoder.
+const AAC_MODULE: u32 = 0x01;
+
 // One thread at a time: callers hold it by `&mut` (napi) or own it.
 unsafe impl Send for SpeechEncoder {}
 
@@ -59,7 +62,11 @@ impl SpeechEncoder {
             ));
         }
         let mut handle: sys::HANDLE_AACENCODER = ptr::null_mut();
-        check("aacEncOpen", unsafe { sys::aacEncOpen(&mut handle, 0, 1) })?;
+        // Just the AAC module: the default (0) allocates SBR, PS, MPEG Surround
+        // and metadata encoders too, several hundred KB we never use.
+        check("aacEncOpen", unsafe {
+            sys::aacEncOpen(&mut handle, AAC_MODULE, 1)
+        })?;
         // Owned from here, so Drop closes it on any error below.
         let mut encoder = SpeechEncoder {
             handle,
@@ -154,8 +161,29 @@ impl SpeechEncoder {
     }
 
     /// Encodes what's left, padding the last frame, and flushes the encoder's
-    /// delay: the final access units.
+    /// delay: the final access units. Frees the encoder (see [`Self::close`]).
     pub fn finish(&mut self) -> Result<Vec<Vec<u8>>, EncodeError> {
+        let units = self.flush();
+        self.close();
+        units
+    }
+
+    /// Frees the encoder now, rather than whenever this is dropped (for the JS
+    /// wrapper, whenever V8 gets round to collecting it). Encoding after this
+    /// fails.
+    pub fn close(&mut self) {
+        if !self.handle.is_null() {
+            unsafe {
+                sys::aacEncClose(&mut self.handle);
+            }
+            self.handle = ptr::null_mut();
+        }
+        self.flushed = true;
+        self.pending = Vec::new();
+        self.carry = Vec::new();
+    }
+
+    fn flush(&mut self) -> Result<Vec<Vec<u8>>, EncodeError> {
         if self.flushed {
             return Ok(Vec::new());
         }
@@ -237,16 +265,16 @@ impl SpeechEncoder {
         if input.is_some() && taken == 0 && out_args.numOutBytes == 0 {
             return Err(EncodeError("AAC encoder made no progress".into()));
         }
-        out.truncate(out_args.numOutBytes as usize);
-        Ok((taken, (!out.is_empty()).then_some(out)))
+        // Copied out at its size: `out` is a worst-case frame, kilobytes for a
+        // unit of a few hundred bytes, and the unit lives on in JS until GC.
+        let unit = &out[..out_args.numOutBytes as usize];
+        Ok((taken, (!unit.is_empty()).then(|| unit.to_vec())))
     }
 }
 
 impl Drop for SpeechEncoder {
     fn drop(&mut self) {
-        unsafe {
-            sys::aacEncClose(&mut self.handle);
-        }
+        self.close();
     }
 }
 
@@ -338,6 +366,16 @@ mod tests {
         let seconds = units.len() as f64 * 1024.0 / 24_000.0;
         let rate = bytes as f64 * 8.0 / seconds;
         assert!((40_000.0..56_000.0).contains(&rate), "{rate} bits/s");
+    }
+
+    #[test]
+    fn closing_early_frees_it_and_stops_encoding() {
+        let mut encoder = SpeechEncoder::new(24_000, 1, 48_000).unwrap();
+        encoder.encode(&tone(0.1, 24_000, 1)).unwrap();
+        encoder.close();
+        encoder.close();
+        assert!(encoder.encode(&[0; 10]).is_err());
+        assert!(encoder.finish().unwrap().is_empty());
     }
 
     #[test]

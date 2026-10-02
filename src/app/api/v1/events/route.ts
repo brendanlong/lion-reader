@@ -111,8 +111,10 @@ function formatSSEHeartbeat(): string {
  */
 export async function GET(req: Request): Promise<Response> {
   // Authenticate the user
+  // Browser sessions, or the first-party app's OAuth token for confirmed users
+  // only (as on the tRPC procedures it can reach).
   const auth = await authenticateRouteRequest(req.headers);
-  if (!auth) {
+  if (!auth || (auth.credential === "app-token" && !auth.confirmed)) {
     return new Response(
       JSON.stringify({
         error: {

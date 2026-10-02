@@ -12,7 +12,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
-import { pcmFromWav, type PcmStream } from "@/server/services/speech-encoding";
+import { pcmFromWav, pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
 const CATALOG_TIMEOUT_MS = 15_000;
@@ -239,8 +239,9 @@ function requestSpeech(
 
 /**
  * `model`'s PCM format, from the header of a WAV of {@link PROBE_TEXT}; asked
- * once per model and kept, unless the probe fails. The probe isn't tied to
- * the request that started it, since others may be waiting on it too.
+ * once per model (the format is the model's, whatever the key or voice) and
+ * kept, unless the probe fails. The probe isn't tied to the request that
+ * started it, since others may be waiting on it too.
  */
 function pcmFormatOf(apiKey: string, model: string, voice: string): Promise<PcmFormat> {
   let format = pcmFormats.get(model);
@@ -276,16 +277,21 @@ export async function deepInfraSpeech(
   input: string,
   signal: AbortSignal
 ): Promise<PcmStream> {
-  const [speech, format] = await Promise.allSettled([
+  const [speech, probed] = await Promise.allSettled([
     requestSpeech(apiKey, model, voice, input, "pcm", signal),
     pcmFormatOf(apiKey, model, voice),
   ]);
   if (speech.status === "rejected") throw speech.reason;
   const response = speech.value;
-  if (format.status === "rejected") {
+  let format: PcmFormat;
+  try {
+    // The probe may have been someone else's, failing for their key: once
+    // more on ours (the failed one is gone from the cache by now).
+    format = probed.status === "fulfilled" ? probed.value : await pcmFormatOf(apiKey, model, voice);
+  } catch (error) {
     await response.body?.cancel();
-    throw format.reason;
+    throw error;
   }
   if (!response.ok || !response.body) throw await errorFromResponse(response);
-  return { ...format.value, data: response.body };
+  return pcmOrWav(response.body, format);
 }

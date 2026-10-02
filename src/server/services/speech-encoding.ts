@@ -86,6 +86,27 @@ export async function pcmFromWav(body: ReadableStream<Uint8Array>): Promise<PcmS
   }
 }
 
+/**
+ * `data`, asked for as bare PCM in `format`: unless it's a WAV after all (some
+ * models ignore the format asked for), whose header then says what it is.
+ */
+export async function pcmOrWav(
+  data: ReadableStream<Uint8Array>,
+  format: { sampleRate: number; channels: number }
+): Promise<PcmStream> {
+  const reader = data.getReader();
+  let head: Uint8Array = new Uint8Array(0);
+  while (head.length < 4) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    head = concat(head, value);
+  }
+  const rest = prepend(head, reader);
+  return new TextDecoder().decode(head.subarray(0, 4)) === "RIFF"
+    ? pcmFromWav(rest)
+    : { ...format, data: rest };
+}
+
 /** `first`, then the rest of `reader`. */
 function prepend(
   first: Uint8Array,
@@ -110,16 +131,29 @@ function prepend(
 }
 
 /**
+ * Longest a whole stream may take, provider and client together: past this a
+ * client that stopped reading (and so blocks the encoder on backpressure)
+ * can't hold an encoder and a provider connection open.
+ */
+const STREAM_DEADLINE_MS = 3 * 60 * 1000;
+/** Fragments queued for a client before encoding waits for it to read. */
+const QUEUED_FRAGMENTS = 8;
+
+/**
  * `pcm` as AAC in fragmented MP4, streamed: fragments come out while the PCM
  * is still arriving. Resolves once the first audio has arrived, so a provider
  * that fails before sending any is still an ordinary error; failures after
- * that error the stream. Cancelling the result stops reading the provider.
+ * that error the stream. Cancelling the result, an error, or the deadline
+ * stops reading the provider and frees the encoder at once.
  */
-export async function encodeSpeech(pcm: PcmStream): Promise<ReadableStream<Uint8Array>> {
+export async function encodeSpeech(
+  pcm: PcmStream,
+  deadlineMs = STREAM_DEADLINE_MS
+): Promise<ReadableStream<Uint8Array>> {
   const reader = pcm.data.getReader();
   const maxBytes = MAX_SECONDS * pcm.sampleRate * 2 * pcm.channels;
 
-  let encoder: SpeechEncoder;
+  let encoder: SpeechEncoder | null = null;
   let first: ReadableStreamReadResult<Uint8Array>;
   try {
     encoder = new SpeechEncoder(pcm.sampleRate, pcm.channels, BITRATE);
@@ -128,31 +162,68 @@ export async function encodeSpeech(pcm: PcmStream): Promise<ReadableStream<Uint8
     } while (!first.done && first.value.length === 0);
     if (first.done) throw new Error("Speech audio was empty");
   } catch (error) {
+    encoder?.close();
     await reader.cancel().catch(() => {});
     throw error;
   }
+  const speech = encoder;
+
+  // A plain stream rather than a TransformStream: backpressure is ours to
+  // wait on, so stopping can always interrupt it.
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let failure: unknown = null;
+  let wake: (() => void) | null = null;
+  const audio = new ReadableStream<Uint8Array>(
+    {
+      start: (c) => {
+        controller = c;
+      },
+      pull: () => {
+        wake?.();
+        wake = null;
+      },
+      cancel: (reason) => stop(reason ?? new Error("Speech stream cancelled"), false),
+    },
+    new CountQueuingStrategy({ highWaterMark: QUEUED_FRAGMENTS })
+  );
+  const deadline = setTimeout(
+    () => stop(new Error("Speech stream took too long"), true),
+    deadlineMs
+  );
 
   const mb = await import("mediabunny");
-  const fragments = new TransformStream<Uint8Array, Uint8Array>();
   const output = new mb.Output({
     format: new mb.Mp4OutputFormat({ fastStart: "fragmented", minimumFragmentDuration: 0.5 }),
     target: new mb.StreamTarget(
       new WritableStream<Mediabunny.StreamTargetChunk>({
         write: async (chunk) => {
-          const writer = fragments.writable.getWriter();
-          try {
-            await writer.write(chunk.data);
-          } finally {
-            writer.releaseLock();
+          if (failure) throw failure;
+          controller.enqueue(chunk.data);
+          while (!failure && (controller.desiredSize ?? 0) <= 0) {
+            await new Promise<void>((resolve) => (wake = resolve));
           }
+          if (failure) throw failure;
         },
       })
     ),
   });
+
+  function stop(error: unknown, tellClient: boolean) {
+    if (failure) return;
+    failure = error;
+    clearTimeout(deadline);
+    wake?.();
+    wake = null;
+    speech.close();
+    void reader.cancel().catch(() => {});
+    void output.cancel().catch(() => {});
+    if (tellClient) controller.error(error);
+  }
+
   const source = new mb.EncodedAudioPacketSource("aac");
   output.addAudioTrack(source);
 
-  const frameSeconds = encoder.frameSamples / pcm.sampleRate;
+  const frameSeconds = speech.frameSamples / pcm.sampleRate;
   let frames = 0;
   const add = async (units: Buffer[]) => {
     for (const unit of units) {
@@ -165,7 +236,7 @@ export async function encodeSpeech(pcm: PcmStream): Promise<ReadableStream<Uint8
                 codec: "mp4a.40.2",
                 sampleRate: pcm.sampleRate,
                 numberOfChannels: 1,
-                description: encoder.audioSpecificConfig,
+                description: speech.audioSpecificConfig,
               },
             }
           : undefined
@@ -181,19 +252,17 @@ export async function encodeSpeech(pcm: PcmStream): Promise<ReadableStream<Uint8
     while (!next.done) {
       total += next.value.length;
       if (total > maxBytes) throw new Error("Speech audio too long");
-      await add(encoder.encode(next.value));
+      await add(speech.encode(next.value));
       next = await reader.read();
     }
-    await add(encoder.finish());
+    await add(speech.finish());
     await output.finalize();
-    await fragments.writable.close();
+    if (failure) return;
+    clearTimeout(deadline);
+    controller.close();
   };
 
-  encode().catch(async (error: unknown) => {
-    await reader.cancel().catch(() => {});
-    await output.cancel().catch(() => {});
-    await fragments.writable.abort(error).catch(() => {});
-  });
+  encode().catch((error: unknown) => stop(error, true));
 
-  return fragments.readable;
+  return audio;
 }

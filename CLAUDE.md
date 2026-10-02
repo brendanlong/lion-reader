@@ -45,7 +45,7 @@ otherwise.
 
 ## Commands
 
-- `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser, markdown). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).
+- `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser, markdown, speech-encoder). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`) and a C++ compiler (speech-encoder builds Fraunhofer FDK AAC from source). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).
 - `pnpm typecheck` - Run before committing (no `any`, no `@ts-ignore`)
 - `pnpm test:unit` - Pure logic tests (fast, no DB)
 - `pnpm test:native` / `pnpm lint:native` / `pnpm format:native` - `cargo test` / `cargo clippy -D warnings` / `cargo fmt` across all the native crates. All three gate CI.

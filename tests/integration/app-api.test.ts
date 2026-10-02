@@ -851,9 +851,14 @@ describe("streamed speech", () => {
     const userId = await createUser();
     await db.update(users).set({ tosAgreedAt: null }).where(eq(users.id, userId));
     const { token } = await createSession(db, { userId });
-    const res = await speech({ cookie: `session=${token}` });
-    expect(res.status).toBe(403);
-    expect((await res.json()).data.appErrorCode).toBe("SIGNUP_CONFIRMATION_REQUIRED");
+    for (const headers of <Record<string, string>[]>[
+      { cookie: `session=${token}` },
+      { authorization: `Bearer ${await appToken(userId)}` },
+    ]) {
+      const res = await speech(headers);
+      expect(res.status).toBe(403);
+      expect((await res.json()).data.appErrorCode).toBe("SIGNUP_CONFIRMATION_REQUIRED");
+    }
   });
 
   it("takes only JSON, so a cross-site form can't post to it", async () => {

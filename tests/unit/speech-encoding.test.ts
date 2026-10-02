@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
-import { encodeSpeech, pcmFromWav } from "@/server/services/speech-encoding";
+import { encodeSpeech, pcmFromWav, pcmOrWav } from "@/server/services/speech-encoding";
 
 function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -78,6 +78,28 @@ describe("pcmFromWav", () => {
   });
 });
 
+describe("pcmOrWav", () => {
+  it("takes bare PCM in the format given", async () => {
+    const pcm = tone(0.1, 24_000);
+    const result = await pcmOrWav(streamOf(pcm.subarray(0, 3), pcm.subarray(3)), {
+      sampleRate: 24_000,
+      channels: 1,
+    });
+    expect(result.sampleRate).toBe(24_000);
+    expect(await readAll(result.data)).toEqual(pcm);
+  });
+
+  it("reads a WAV sent instead from its header", async () => {
+    const pcm = tone(0.1, 22_050, 2);
+    const result = await pcmOrWav(streamOf(wavHeader(22_050, 2), pcm), {
+      sampleRate: 24_000,
+      channels: 1,
+    });
+    expect([result.sampleRate, result.channels]).toEqual([22_050, 2]);
+    expect(await readAll(result.data)).toEqual(pcm);
+  });
+});
+
 describe("encodeSpeech", () => {
   it("is fragmented MP4 holding all of the audio as mono AAC", async () => {
     const pcm = tone(3, 24_000, 2);
@@ -143,6 +165,22 @@ describe("encodeSpeech", () => {
     const audio = await encodeSpeech({ sampleRate: 24_000, channels: 1, data });
     await audio.cancel();
     await expect.poll(() => cancelled).toBe(true);
+  });
+
+  it("gives up on a client that stops reading, and stops reading the provider", async () => {
+    let cancelled = false;
+    const data = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(tone(1, 24_000));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const audio = await encodeSpeech({ sampleRate: 24_000, channels: 1, data }, 200);
+    // Never read: encoding blocks once the queue is full, until the deadline.
+    await expect.poll(() => cancelled, { timeout: 2000 }).toBe(true);
+    await expect(readAll(audio)).rejects.toThrow("too long");
   });
 
   it("cuts off a provider that sends far too much", async () => {

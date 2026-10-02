@@ -16,6 +16,11 @@ export declare class SpeechEncoder {
   readonly frameSamples: number;
   /** Encodes more interleaved PCM bytes (any length): the access units completed. */
   encode(pcm: Uint8Array): Buffer[];
-  /** Encodes what's left and flushes the encoder: the final access units. */
+  /** Encodes what's left and flushes the encoder: the final access units. Frees the encoder. */
   finish(): Buffer[];
+  /**
+   * Frees the encoder now. V8 doesn't see its native memory, so a wrapper can
+   * wait a long time to be collected: call this when giving up on a stream.
+   */
+  close(): void;
 }

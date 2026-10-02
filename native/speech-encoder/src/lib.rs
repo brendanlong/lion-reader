@@ -64,7 +64,15 @@ impl SpeechEncoder {
         Ok(units.into_iter().map(Buffer::from).collect())
     }
 
+    /// Frees the encoder now rather than at garbage collection; encoding after
+    /// this fails. [`finish`](Self::finish) does it too.
+    #[napi]
+    pub fn close(&mut self) {
+        self.inner.close();
+    }
+
     /// Encodes what's left and flushes the encoder: the final access units.
+    /// Frees the encoder.
     #[napi]
     pub fn finish(&mut self) -> Result<Vec<Buffer>> {
         let units = self.inner.finish().map_err(js_error)?;

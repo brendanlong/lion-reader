@@ -13,6 +13,7 @@ import { isAccessTokenActive } from "@/server/oauth/service";
 
 export interface RouteAuth {
   userId: string;
+  credential: "session" | "app-token";
   /** Whether the user has completed signup confirmation (ToS, privacy, EU). */
   confirmed: boolean;
   /** Whether the credential is still valid, for streams that outlive the request. */
@@ -34,10 +35,7 @@ function getCredential(headers: Headers): string | null {
   return cookies.session ?? null;
 }
 
-/**
- * The request's user, or null when it has no valid credential. The app's token
- * counts only for confirmed users, as on the tRPC surface it can reach.
- */
+/** The request's user, or null when it has no valid credential. */
 export async function authenticateRouteRequest(headers: Headers): Promise<RouteAuth | null> {
   const credential = getCredential(headers);
   if (!credential) return null;
@@ -47,17 +45,19 @@ export async function authenticateRouteRequest(headers: Headers): Promise<RouteA
     const sessionId = sessionData.session.id;
     return {
       userId: sessionData.user.id,
+      credential: "session",
       confirmed: isSignupConfirmed(sessionData.user),
       isCredentialActive: () => isSessionActive(sessionId),
     };
   }
 
   const appToken = await validateAppAccessToken(credential);
-  if (!appToken || !isSignupConfirmed(appToken.user)) return null;
+  if (!appToken) return null;
   const tokenId = appToken.tokenId;
   return {
     userId: appToken.userId,
-    confirmed: true,
+    credential: "app-token",
+    confirmed: isSignupConfirmed(appToken.user),
     isCredentialActive: () => isAccessTokenActive(tokenId),
   };
 }
