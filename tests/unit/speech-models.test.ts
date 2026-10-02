@@ -3,7 +3,10 @@ import {
   defaultSpeechModelId,
   defaultVoiceFor,
   resolveSpeechModel,
+  SpeechRequestError,
   voiceNamesFor,
+  type SpeechModel,
+  type SpeechProvider,
   toDeepInfraSpeechModels,
   toSpeechModels,
 } from "@/server/services/speech";
@@ -250,9 +253,14 @@ describe("resolveSpeechModel", () => {
     voices: [{ id: "Vivian", name: "Vivian" }],
   };
 
+  const catalog = (models: SpeechModel[], unavailable: SpeechProvider[] = []) => ({
+    models,
+    unavailable,
+  });
+
   it("uses the default model and voice when nothing is chosen", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
-    expect(resolveSpeechModel([deepInfraKokoro], {}, null, null)).toEqual({
+    expect(resolveSpeechModel(catalog([deepInfraKokoro]), {}, null, null)).toEqual({
       model: deepInfraKokoro,
       voice: "af_heart",
     });
@@ -261,7 +269,9 @@ describe("resolveSpeechModel", () => {
   it("falls back to the default when the chosen model's provider has no key", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
     delete process.env.OPENROUTER_API_KEY;
-    expect(resolveSpeechModel([deepInfraKokoro], {}, OPENROUTER_KOKORO, "bm_george")).toEqual({
+    expect(
+      resolveSpeechModel(catalog([deepInfraKokoro]), {}, OPENROUTER_KOKORO, "bm_george")
+    ).toEqual({
       model: deepInfraKokoro,
       voice: "bm_george",
     });
@@ -269,7 +279,7 @@ describe("resolveSpeechModel", () => {
 
   it("falls back from a model the server's key doesn't allow", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
-    expect(resolveSpeechModel([deepInfraKokoro], {}, qwen.id, "Vivian")).toEqual({
+    expect(resolveSpeechModel(catalog([deepInfraKokoro]), {}, qwen.id, "Vivian")).toEqual({
       model: deepInfraKokoro,
       voice: "af_heart",
     });
@@ -277,14 +287,30 @@ describe("resolveSpeechModel", () => {
 
   it("keeps a model chosen on the user's own key, even if it's no longer listed", () => {
     const keys = { deepinfraApiKey: "d" };
-    expect(resolveSpeechModel([deepInfraKokoro, qwen], keys, qwen.id, null).model).toBe(qwen);
-    expect(() => resolveSpeechModel([deepInfraKokoro], keys, qwen.id, null)).toThrow(
+    expect(resolveSpeechModel(catalog([deepInfraKokoro, qwen]), keys, qwen.id, null).model).toBe(
+      qwen
+    );
+    expect(() => resolveSpeechModel(catalog([deepInfraKokoro]), keys, qwen.id, null)).toThrow(
       "Speech model not available"
     );
   });
 
+  it("fails retryably when the chosen model's provider couldn't be listed", () => {
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    const keys = { openrouterApiKey: "o" };
+    expect(() =>
+      resolveSpeechModel(catalog([deepInfraKokoro], ["openrouter"]), keys, OPENROUTER_KOKORO, null)
+    ).toThrow(Error);
+    expect(() =>
+      resolveSpeechModel(catalog([deepInfraKokoro], ["openrouter"]), keys, OPENROUTER_KOKORO, null)
+    ).not.toThrow(SpeechRequestError);
+    expect(() => resolveSpeechModel(catalog([], ["deepinfra"]), {}, null, null)).not.toThrow(
+      SpeechRequestError
+    );
+  });
+
   it("needs a provider, and names them", () => {
-    expect(() => resolveSpeechModel([], {}, null, null)).toThrow(
+    expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
       "Cloud voices require a DeepInfra or OpenRouter API key"
     );
   });

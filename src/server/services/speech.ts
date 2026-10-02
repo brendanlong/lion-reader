@@ -54,7 +54,10 @@ export interface SpeechModel {
   pricePerMillionCharacters?: number;
 }
 
-/** A cloud voice provider: everything the rest of the app needs from one. */
+/**
+ * A cloud voice provider's catalog and synthesis. A provider is also an
+ * `AiProvider` (`@/lib/ai/model-ref`), which is where its name and key live.
+ */
 interface SpeechProviderAdapter {
   /** The models the user can pick on these keys. */
   listModels(keys: AiProviderKeys | undefined): Promise<SpeechModel[]>;
@@ -77,12 +80,20 @@ function voicesNamedById(ids: string[]): SpeechVoice[] {
   return ids.map((id) => ({ id, name: id }));
 }
 
+export interface SpeechCatalog {
+  /** Models with at least one voice. */
+  models: SpeechModel[];
+  /** Providers with a key whose catalog couldn't be fetched just now. */
+  unavailable: SpeechProvider[];
+}
+
 /**
  * Speech models the user can pick, across the providers that have a key. A
  * provider whose catalog can't be fetched is logged and left out, so the
  * others still show up.
  */
-export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechModel[]> {
+export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechCatalog> {
+  const unavailable: SpeechProvider[] = [];
   const lists = await Promise.all(
     SPEECH_PROVIDERS.filter((provider) => getProviderApiKey(provider, keys)).map(
       async (provider) => {
@@ -93,12 +104,17 @@ export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechMod
             provider,
             error: error instanceof Error ? error.message : String(error),
           });
+          unavailable.push(provider);
           return [];
         }
       }
     )
   );
-  return lists.flat().sort(byDisplayName);
+  const models = lists
+    .flat()
+    .filter((model) => model.voices.length > 0)
+    .sort(byDisplayName);
+  return { models, unavailable };
 }
 
 /**
@@ -203,17 +219,25 @@ export class SpeechRequestError extends Error {}
  * an error if the provider stopped listing it.
  */
 export function resolveSpeechModel(
-  models: SpeechModel[],
+  { models, unavailable }: SpeechCatalog,
   keys: AiProviderKeys,
   requestedModel: string | null,
   requestedVoice: string | null
 ): { model: SpeechModel; voice: string } {
+  const requested = requestedModel ? normalizeModelRef(requestedModel) : null;
+  // Not the user's fault, and likely to pass: worth trying again, not giving up on.
+  const requestedProvider = requested ? parseModelRef(requested).provider : null;
+  if (
+    (models.length === 0 && unavailable.length > 0) ||
+    unavailable.some((provider) => provider === requestedProvider)
+  ) {
+    throw new Error(`Couldn't list ${unavailable.join(", ")} speech models`);
+  }
   if (models.length === 0) {
     const names = SPEECH_PROVIDERS.map((provider) => AI_PROVIDER_DISPLAY_NAMES[provider]);
     const providers = new Intl.ListFormat("en", { type: "disjunction" }).format(names);
     throw new SpeechRequestError(`Cloud voices require a ${providers} API key`);
   }
-  const requested = requestedModel ? normalizeModelRef(requestedModel) : null;
   const modelId =
     requested && isModelAllowed(requested, keys, SERVER_KEY_CLOUD_VOICE_MODELS)
       ? requested

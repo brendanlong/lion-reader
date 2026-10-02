@@ -432,7 +432,7 @@ export const narrationRouter = createTRPCRouter({
     )
     .query(async ({ ctx }) => {
       const keys = await getUserApiKeys(ctx.session.user.id);
-      const speechModels = await listSpeechModels(keys);
+      const { models: speechModels } = await listSpeechModels(keys);
       const models = speechModels.map((model) => ({
         ...model,
         voices: model.voices.map((voice) => voice.id),
