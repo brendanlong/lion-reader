@@ -400,12 +400,15 @@ describe("narration.generate rate limit", () => {
 /**
  * When the model answers but its output is empty or unparseable, the plain-text
  * fallback is served and nothing is cached — but the failure must still be
- * recorded, or every replay of the same article bills another LLM call.
+ * recorded, or every replay of the same article bills another LLM call. The
+ * record is shared by everyone narrating the content, so a failure that isn't
+ * the content's (a busy provider, one user's key or model) isn't recorded.
  */
-describe("narration.generate unusable LLM output", () => {
+describe("narration.generate failure backoff", () => {
   let server: Server;
   let llmRequests = 0;
   let llmContent = "";
+  let llmStatus = 200;
   const previousBaseUrl = process.env.GROQ_BASE_URL;
   const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
 
@@ -417,6 +420,12 @@ describe("narration.generate unusable LLM output", () => {
       req.resume();
       req.on("end", () => {
         llmRequests++;
+        if (llmStatus !== 200) {
+          // Retry-After 0 so the SDK's own retry doesn't slow the test down.
+          res.writeHead(llmStatus, { "Content-Type": "application/json", "Retry-After": "0" });
+          res.end(JSON.stringify({ error: { message: "Not now" } }));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -449,15 +458,14 @@ describe("narration.generate unusable LLM output", () => {
 
   beforeEach(() => {
     llmRequests = 0;
+    llmStatus = 200;
   });
 
-  async function createGroqUser(): Promise<string> {
+  /** A user with their own Groq key, narrating with Groq's default model unless told otherwise. */
+  async function createGroqUser(narrationModel = "groq:openai/gpt-oss-120b"): Promise<string> {
     const userId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(userId);
-    await db
-      .update(users)
-      .set({ narrationModel: "groq:openai/gpt-oss-120b" })
-      .where(eq(users.id, userId));
+    await db.update(users).set({ narrationModel }).where(eq(users.id, userId));
     await db
       .insert(userApiKeys)
       .values({ userId, provider: "groq", encryptedKey: encryptApiKey("gsk-test-key") });
@@ -495,6 +503,43 @@ describe("narration.generate unusable LLM output", () => {
     expect(llmRequests).toBe(1);
     expect(second.source).toBe("fallback");
     expect(second.narration).toBe(first.narration);
+  });
+
+  async function narrateOnce(
+    userId: string
+  ): Promise<{ row: typeof narrationContent.$inferSelect; source: string }> {
+    const contentCleaned = `<p>Not the content's fault ${generateUuidv7()}.</p>`;
+    const contentHash = narrationHash(contentCleaned);
+    createdNarrationHashes.push(contentHash);
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
+    const caller = createCaller(await createAuthContext(userId));
+    const { source } = await caller.narration.generate({ id: entryId });
+    const [row] = await db
+      .select()
+      .from(narrationContent)
+      .where(eq(narrationContent.contentHash, contentHash));
+    return { row, source };
+  }
+
+  it.each([
+    ["busy", 429],
+    ["overloaded", 503],
+    ["refusing the user's key", 401],
+  ])("doesn't back everyone off when the provider is %s", async (_, status) => {
+    llmStatus = status;
+    const { row, source } = await narrateOnce(await createGroqUser());
+    expect(llmRequests).toBeGreaterThan(0);
+    expect(source).toBe("fallback");
+    expect(row.errorAt).toBeNull();
+    expect(row.error).toBeNull();
+  });
+
+  it("doesn't back everyone off when a model the user picked answers with nothing usable", async () => {
+    llmContent = "this is not JSON";
+    const { row, source } = await narrateOnce(await createGroqUser("groq:llama-3.3-70b-versatile"));
+    expect(llmRequests).toBe(1);
+    expect(source).toBe("fallback");
+    expect(row.errorAt).toBeNull();
   });
 
   it("caches a usable response (the fake endpoint reaches the LLM path)", async () => {

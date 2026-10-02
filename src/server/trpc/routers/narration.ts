@@ -25,13 +25,11 @@ import {
   generateNarration,
   isNarrationLlmAvailable,
   getNarrationModelRef,
+  narrationFailureScope,
+  type NarrationFailure,
 } from "@/server/services/narration";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
-import {
-  isModelAllowed,
-  listAllModels,
-  UnreadableApiKeyError,
-} from "@/server/services/ai-providers";
+import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
 import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
@@ -260,14 +258,17 @@ export const narrationRouter = createTRPCRouter({
       // Start timer for LLM generation duration
       const stopTimer = startNarrationGenerationTimer();
 
-      // Record a failed generation so replays within RETRY_AFTER_MS serve the
-      // plain-text fallback instead of paying for another LLM call.
+      // Record a failure the content caused so replays within RETRY_AFTER_MS
+      // serve the plain-text fallback instead of paying for another LLM call.
+      // The row is everyone's, so nothing else is recorded on it.
       const recordId = narrationRecord.id;
-      const recordFailure = (message: string) =>
-        ctx.db
+      const recordFailure = async (failure: NarrationFailure, message: string) => {
+        if (narrationFailureScope(failure) !== "content") return;
+        await ctx.db
           .update(narrationContent)
           .set({ error: message, errorAt: new Date() })
           .where(eq(narrationContent.id, recordId));
+      };
 
       try {
         // Generate via LLM
@@ -280,11 +281,13 @@ export const narrationRouter = createTRPCRouter({
         stopTimer();
 
         // The LLM answered but its output was empty or unusable: don't cache the
-        // fallback as narration, but back off like any other failure — the
-        // tokens were billed, and the same input would likely fail again.
+        // fallback as narration, but back off — the tokens were billed, and
+        // the same input would likely fail again.
         if (result.source === "fallback") {
           trackNarrationGenerationError("empty_response");
-          await recordFailure("LLM returned empty or unparseable output");
+          if (result.failure) {
+            await recordFailure(result.failure, "LLM returned empty or unparseable output");
+          }
           return fallbackResponse(result);
         }
 
@@ -322,11 +325,10 @@ export const narrationRouter = createTRPCRouter({
         // Track the error
         trackNarrationGenerationError("api_error");
 
-        // Store error in narration_content for retry tracking. Not one user's
-        // unreadable key: the row is shared by everyone narrating this content.
-        if (!(error instanceof UnreadableApiKeyError)) {
-          await recordFailure(error instanceof Error ? error.message : "Unknown error");
-        }
+        await recordFailure(
+          { kind: "error", error },
+          error instanceof Error ? error.message : "Unknown error"
+        );
 
         return fallbackResponse();
       }
