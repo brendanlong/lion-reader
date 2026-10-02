@@ -384,11 +384,15 @@ describe("summarization.generate provider failures", () => {
     providerAnswer = PROVIDER_REFUSAL;
   });
 
-  async function setUp(): Promise<{ caller: ReturnType<typeof createCaller>; entryId: string }> {
+  async function setUp(): Promise<{
+    caller: ReturnType<typeof createCaller>;
+    entryId: string;
+    userId: string;
+  }> {
     const userId = await createTestUser({ emailPrefix: "summ" });
     createdUserIds.push(userId);
     const entryId = await createVisibleEntry(userId, `hash-${generateUuidv7()}`);
-    return { caller: createCaller(await createAuthContext(userId)), entryId };
+    return { caller: createCaller(await createAuthContext(userId)), entryId, userId };
   }
 
   async function failure(promise: Promise<unknown>): Promise<TRPCError> {
@@ -461,6 +465,27 @@ describe("summarization.generate provider failures", () => {
     expect(getAppErrorCode(await failure(caller.summarization.generate({ entryId })))).toBe(
       "AI_PROVIDER_REJECTED"
     );
+    expect(providerRequests).toBe(2);
+  });
+
+  it("retries at once, without regenerate, once the user changes the model that failed", async () => {
+    providerAnswer = { status: 404, type: "not_found_error", message: "model: claude-gone" };
+    const { caller, entryId, userId } = await setUp();
+    await caller.users["me.updatePreferences"]({
+      apiKeys: { anthropic: "sk-ant-user-key" },
+      summarizationModel: "anthropic:claude-gone",
+    });
+    // The session carries the user's settings, so each change needs a fresh one.
+    const withSettings = async () => createCaller(await createAuthContext(userId));
+    await failure((await withSettings()).summarization.generate({ entryId }));
+
+    const repeat = await failure((await withSettings()).summarization.generate({ entryId }));
+    expect(getAppErrorCode(repeat)).toBe("SUMMARY_RECENTLY_FAILED");
+    expect(providerRequests).toBe(1);
+
+    await caller.users["me.updatePreferences"]({ summarizationModel: "anthropic:claude-other" });
+    const retried = await failure((await withSettings()).summarization.generate({ entryId }));
+    expect(getAppErrorCode(retried)).toBe("AI_PROVIDER_REJECTED");
     expect(providerRequests).toBe(2);
   });
 

@@ -523,6 +523,36 @@ export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
 }
 
 /**
+ * The providers whose saved key {@link getUserApiKeys} would find unreadable,
+ * for Settings to ask for again. Never throws and reports nothing — that's for
+ * actual use — and finds none when encryption isn't configured, where the
+ * settings page hides keys altogether.
+ */
+export async function getUnreadableApiKeyProviders(userId: string): Promise<AiProvider[]> {
+  try {
+    assertEncryptionConfigured();
+  } catch {
+    return [];
+  }
+  const rows = await db
+    .select({ provider: userApiKeys.provider, encryptedKey: userApiKeys.encryptedKey })
+    .from(userApiKeys)
+    .where(eq(userApiKeys.userId, userId))
+    .orderBy(userApiKeys.provider);
+  return rows
+    .filter(({ encryptedKey }) => {
+      try {
+        decryptApiKey(encryptedKey);
+        return false;
+      } catch {
+        return true;
+      }
+    })
+    .map((row) => row.provider)
+    .filter(isAiProvider);
+}
+
+/**
  * Whether a session is still usable — the same "not revoked, not expired" rule
  * `validateSession` applies, by id and without bumping `last_active_at`: for a
  * caller that captured the session **id** and has no token to re-validate (the

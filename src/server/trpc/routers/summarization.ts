@@ -350,8 +350,8 @@ export const summarizationRouter = createTRPCRouter({
       // against automatic retry loops; an explicit user retry (the error
       // card's "Try again" / the regenerate button both send regenerate:
       // true) always goes through, and so does any request once the model or
-      // key that failed has changed — the app never sends regenerate, and the
-      // user may just have fixed the cause.
+      // key that failed has changed — the Android app never sends
+      // regenerate, and the user may just have fixed the cause.
       const attemptSource = summaryAttemptSource(currentModelId, keys);
       const canRetry =
         input.regenerate ||

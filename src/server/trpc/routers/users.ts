@@ -18,7 +18,7 @@ import { errors } from "../errors";
 import { sessions, users, oauthAccounts, userApiKeys } from "@/server/db/schema";
 import {
   getApiKeyProviders,
-  getUserApiKeys,
+  getUnreadableApiKeyProviders,
   revokeSession,
   revokeOtherUserSessionsOrReport,
   invalidateUserSessionCaches,
@@ -27,7 +27,6 @@ import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
-import { unreadableKeyProviders } from "@/server/services/unreadable-api-key";
 import { revokeUserClientTokens } from "@/server/oauth/service";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
 
@@ -380,9 +379,7 @@ export const usersRouter = createTRPCRouter({
         showSpam: ctx.session.user.showSpam,
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(ctx.session.user.id),
-        unreadableApiKeyProviders: unreadableKeyProviders(
-          await getUserApiKeys(ctx.session.user.id)
-        ),
+        unreadableApiKeyProviders: await getUnreadableApiKeyProviders(ctx.session.user.id),
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
@@ -502,7 +499,7 @@ export const usersRouter = createTRPCRouter({
         showSpam: updatedUser[0]?.showSpam ?? false,
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(userId),
-        unreadableApiKeyProviders: unreadableKeyProviders(await getUserApiKeys(userId)),
+        unreadableApiKeyProviders: await getUnreadableApiKeyProviders(userId),
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,

@@ -176,6 +176,23 @@ describe("a saved key that no longer decrypts", () => {
     expect((await getUserApiKeys(userId)).groq).toBe("gsk-new");
   });
 
+  it("doesn't stop preferences loading when the encryption key is missing or malformed", async () => {
+    // Every page load prefetches preferences; a server-side misconfiguration
+    // must not take the app down with it.
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+
+    delete process.env.API_KEY_ENCRYPTION_KEY;
+    const unset = await caller.users["me.preferences"]();
+    expect(unset.canConfigureApiKeys).toBe(false);
+    expect(unset.apiKeyProviders).toEqual(["groq"]);
+    expect(unset.unreadableApiKeyProviders).toEqual([]);
+
+    process.env.API_KEY_ENCRYPTION_KEY = randomBytes(16).toString("base64");
+    expect((await caller.users["me.preferences"]()).unreadableApiKeyProviders).toEqual([]);
+  });
+
   it("is a loud failure when the encryption key itself is misconfigured", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
