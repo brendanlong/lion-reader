@@ -328,8 +328,8 @@ export const narrationRouter = createTRPCRouter({
   /**
    * Check if AI text processing is available.
    *
-   * Returns true if the configured narration model's provider (Groq,
-   * Cerebras, or OpenRouter) has a user-configured or server-configured API key.
+   * Returns true if the configured narration model's provider has a
+   * user-configured or server-configured API key.
    */
   isAiTextProcessingAvailable: protectedProcedure
     .meta({

@@ -1,8 +1,8 @@
 /**
  * Narration service for LLM-based text preprocessing.
  *
- * Uses an OpenAI-compatible provider (Cerebras, Groq, or OpenRouter; default
- * Cerebras GPT-OSS 120B) to convert article HTML to narration-ready text for
+ * Uses a text provider from the registry (`@/lib/ai/providers`) that supports
+ * JSON-object responses to convert article HTML to narration-ready text for
  * text-to-speech. Falls back to simple HTML stripping when no provider is
  * available.
  */
@@ -50,7 +50,7 @@ const llmOutputSchema = z.object({
 type LLMOutput = z.infer<typeof llmOutputSchema>;
 
 /**
- * System prompt for the Groq LLM to convert article content to narration-ready text.
+ * System prompt for the LLM that converts article content to narration-ready text.
  */
 const NARRATION_SYSTEM_PROMPT = `Convert article paragraphs to narration-ready text for text-to-speech.
 
