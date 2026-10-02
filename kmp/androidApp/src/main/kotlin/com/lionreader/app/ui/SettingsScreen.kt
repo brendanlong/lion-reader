@@ -47,7 +47,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.AppGraph
 import com.lionreader.app.AppSettings
@@ -57,6 +56,7 @@ import com.lionreader.app.ReaderFont
 import com.lionreader.app.TextSize
 import com.lionreader.app.ThemeChoice
 import com.lionreader.app.narration.VoiceOption
+import com.lionreader.app.openWebPage
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
 import kotlin.math.roundToInt
@@ -153,16 +153,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             HorizontalDivider()
             Section("Account") {
                 Text(graph.serverUrl, style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(
-                    onClick = {
-                        context.startActivity(
-                            android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                "${graph.serverUrl}/settings".toUri(),
-                            )
-                        )
-                    }
-                ) {
+                OutlinedButton(onClick = { context.openWebPage("${graph.serverUrl}/settings") }) {
                     Text("Account settings on the web")
                 }
                 SignOutButton(graph::unsentChangesAfterFlush, onSignOut)

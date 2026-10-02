@@ -1,6 +1,5 @@
 package com.lionreader.app.ui
 
-import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.animation.core.snap
@@ -58,7 +57,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +67,7 @@ import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.narration.NarratedArticle
 import com.lionreader.app.narration.NarrationState
+import com.lionreader.app.openWebPage
 import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
@@ -77,6 +76,8 @@ import com.lionreader.app.reader.ReaderPaging
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.reader.readerDocument
+import com.lionreader.app.shareWebPage
+import com.lionreader.app.webUrl
 import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
@@ -232,27 +233,11 @@ fun EntryScreen(
                 tint = actionTint(active = current.starred),
             )
         }
-        current.url?.let { url ->
-            IconButton(
-                onClick = {
-                    context.startActivity(
-                        Intent.createChooser(
-                            Intent(Intent.ACTION_SEND)
-                                .setType("text/plain")
-                                .putExtra(Intent.EXTRA_TEXT, url)
-                                .putExtra(Intent.EXTRA_SUBJECT, current.title),
-                            null,
-                        )
-                    )
-                }
-            ) {
+        webUrl(current.url)?.let { url ->
+            IconButton(onClick = { context.shareWebPage(url, current.title) }) {
                 Icon(painterResource(R.drawable.ic_share), contentDescription = "Share")
             }
-            IconButton(
-                onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
-                }
-            ) {
+            IconButton(onClick = { context.openWebPage(url) }) {
                 Icon(
                     painterResource(R.drawable.ic_open_in_new),
                     contentDescription = "Open original",
