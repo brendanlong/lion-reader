@@ -49,13 +49,13 @@ import {
   narrationParagraphForElement,
   splitNarrationParagraphs,
 } from "@/lib/narration/paragraph-map";
+import type { NarrationStatus } from "@/lib/narration/types";
 import {
   type UseNarrationConfig,
   type UseNarrationReturn,
   type UseNarrationState,
   DEFAULT_NARRATION_STATE,
   getNarrationPhase,
-  mapPlaybackStatus,
 } from "./useNarrationTypes";
 
 function cancelPendingPlay(playRequest: { current: number }): void {
@@ -64,6 +64,11 @@ function cancelPendingPlay(playRequest: { current: number }): void {
 
 // Re-export types for consumers
 export type { UseNarrationConfig, UseNarrationReturn };
+
+/** The state as the players report it; "generating" is the hook's own. */
+interface PlayerState extends Omit<UseNarrationState, "status"> {
+  status: PlaybackStatus;
+}
 
 /**
  * Hook for managing article narration.
@@ -82,8 +87,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const { id, title, feedTitle, artwork, content, showFullContent, showOriginal } = config;
 
   // State
-  const [state, setState] = useState<UseNarrationState>(DEFAULT_NARRATION_STATE);
-  const [isLoading, setIsLoading] = useState(false);
+  const [playerState, setPlayerState] = useState<PlayerState>(DEFAULT_NARRATION_STATE);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [narrationText, setNarrationText] = useState<string | null>(null);
   // Defer browser support check until after hydration to avoid SSR mismatch
   // useSyncExternalStore ensures the check runs after hydration without cascading renders
@@ -103,7 +108,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // Bumped by pause/stop/article changes, so a play() still generating
   // narration when the user moves on doesn't store or start it (see play()).
   const playRequestRef = useRef(0);
-  // Counts narration loads, so only the latest one clears the loading state.
+  // Counts narration loads, so only the latest one clears the generating flag.
   const loadRequestRef = useRef(0);
   // Track if we've already set up playback tracking for this session
   const hasTrackedPlaybackRef = useRef(false);
@@ -157,7 +162,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         const mapping = paragraphMapRef.current[newState.currentParagraph];
         const domElementIndex = mapping ? mapping.o : newState.currentParagraph;
 
-        setState({
+        setPlayerState({
           ...newState,
           currentParagraph: domElementIndex,
           currentNarrationParagraph: newState.currentParagraph,
@@ -204,17 +209,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   const bufferedPlayerCallbacks = useMemo(
     (): PlayerCallbacks => ({
       onStatusChange: (status: PlaybackStatus) => {
-        setState((prev) => ({
-          ...prev,
-          status: mapPlaybackStatus(status),
-        }));
+        setPlayerState((prev) => ({ ...prev, status }));
       },
       onPositionChange: (position: PlaybackPosition, totalParagraphs: number) => {
         // Translate narration paragraph index to DOM element index using the mapping
         const mapping = paragraphMapRef.current[position.paragraph];
         const domElementIndex = mapping ? mapping.o : position.paragraph;
 
-        setState((prev) => ({
+        setPlayerState((prev) => ({
           ...prev,
           currentParagraph: domElementIndex,
           currentNarrationParagraph: position.paragraph,
@@ -224,14 +226,14 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       onError: (error: Error) => {
         console.error("Streaming playback error:", error);
         toast.error("Narration stopped", { description: error.message });
-        setState((prev) => ({ ...prev, status: "idle" }));
+        setPlayerState((prev) => ({ ...prev, status: "idle" }));
       },
       onInterrupted: (error: Error) => {
         // The status change to paused comes separately; play tries again.
         toast.error("Narration paused", { description: error.message });
       },
       onEnd: () => {
-        setState((prev) => ({
+        setPlayerState((prev) => ({
           ...prev,
           status: "idle",
           currentParagraph: 0,
@@ -306,12 +308,11 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     // Generates narration text (client-side, or on the server for LLM
     // normalization), stores it with its paragraph map, then hands it to `start`.
     const loadNarration = async (start: (narration: string) => Promise<void>) => {
-      // Only the latest load owns the loading/idle state, so an abandoned one
+      // Only the latest load owns the generating flag, so an abandoned one
       // finishing late can't flip a newer one's spinner off.
       const load = ++loadRequestRef.current;
       const isLatestLoad = () => loadRequestRef.current === load;
-      setIsLoading(true);
-      setState((prev) => ({ ...prev, status: "loading" }));
+      setIsGenerating(true);
 
       try {
         let narration: string;
@@ -336,7 +337,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
         if (isStale()) {
           releasePrimedAudio();
-          if (isLatestLoad()) setState((prev) => ({ ...prev, status: "idle" }));
           return;
         }
 
@@ -351,11 +351,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         }
       } catch (error) {
         console.error("Failed to generate narration:", error);
-        if (isLatestLoad()) setState((prev) => ({ ...prev, status: "idle" }));
         // Release the media-session audio primed within the play() gesture.
         releasePrimedAudio();
       } finally {
-        if (isLatestLoad()) setIsLoading(false);
+        if (isLatestLoad()) setIsGenerating(false);
       }
     };
 
@@ -381,18 +380,18 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     const narrator = narratorRef.current;
     if (!narrator) return;
 
-    if (state.status === "paused") {
+    if (playerState.status === "paused") {
       narrator.resume();
       return;
     }
-    if (state.status === "playing") return;
+    if (playerState.status === "playing") return;
 
     const startBrowser = () => {
       const voice = settings.voiceId ? findVoiceByUri(settings.voiceId) : null;
       narrator.play(voice ?? undefined, settings.rate, settings.pitch);
       trackNarrationPlaybackStarted(settings.provider);
     };
-    if (narrationText && state.totalParagraphs > 0) {
+    if (narrationText && playerState.totalParagraphs > 0) {
       startBrowser();
       return;
     }
@@ -409,8 +408,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     isSupported,
     usePiper,
     useCloud,
-    state.status,
-    state.totalParagraphs,
+    playerState.status,
+    playerState.totalParagraphs,
     narrationText,
     settings.voiceId,
     settings.rate,
@@ -502,22 +501,24 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     setNarrationText(null);
     // A load still in flight is abandoned (the effect cleanup below cancels
     // it), so end its spinner now rather than when the stale request returns.
-    setIsLoading(false);
-    setState((prev) => (prev.status === "loading" ? { ...prev, status: "idle" } : prev));
+    setIsGenerating(false);
+    setPlayerState(DEFAULT_NARRATION_STATE);
   }
 
   // Reset per-article refs, and stop/clear playback when the article, voice, or
   // displayed content variant changes (or on unmount).
   useEffect(() => {
     hasTrackedPlaybackRef.current = false;
-    // The paragraph map is specific to the previous article/variant
-    paragraphMapRef.current = [];
     return () => {
-      // Stop the Web Speech utterance too, not just the media players: toggling
+      // The paragraph map is specific to this article/variant. Cleared first,
+      // so the narrator's report below doesn't translate through it.
+      paragraphMapRef.current = [];
+      // Unload the Web Speech narrator too, not just the media players: toggling
       // the content variant does not remount this hook (EntryContent is keyed only
       // by the entry id), so without this the browser voice keeps reading the old
-      // variant while the paragraph map is cleared out from under it.
-      narratorRef.current?.stop();
+      // variant. Unloading rather than stopping, so the state it reports holds
+      // none of the old variant's paragraphs.
+      narratorRef.current?.loadArticle("");
       piperPlayerRef.current?.stop();
       piperPlayerRef.current?.clearCache();
       cancelPendingPlay(playRequestRef);
@@ -537,7 +538,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // keys) while narration is active. Works for every provider by driving the
   // provider-agnostic play/pause/skip callbacks above. A session
   // exists once narration text has been generated for this article.
-  const { canSkipBackward, canSkipForward } = getNarrationPhase(state, isLoading);
+  const status: NarrationStatus =
+    isGenerating && playerState.status === "idle" ? "generating" : playerState.status;
+  const state = useMemo(
+    (): UseNarrationState => ({ ...playerState, status }),
+    [playerState, status]
+  );
+  const { canSkipBackward, canSkipForward } = getNarrationPhase(state);
   useMediaSession({
     active: isSupported && narrationText !== null,
     title,
@@ -558,7 +565,6 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   return {
     state,
-    isLoading,
     play,
     pause,
     skipForward,

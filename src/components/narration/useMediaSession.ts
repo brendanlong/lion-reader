@@ -14,7 +14,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { NarrationStatus } from "@/lib/narration/ArticleNarrator";
+import type { NarrationStatus } from "@/lib/narration/types";
 import {
   setupMediaSession,
   updateMediaSessionPlaybackState,

@@ -36,14 +36,14 @@ import {
 /**
  * Possible states for the narration playback.
  */
-export type NarrationStatus = "idle" | "loading" | "playing" | "paused";
+export type NarratorStatus = "idle" | "playing" | "paused";
 
 /**
  * Current state of the narration.
  */
 export interface NarrationState {
   /** Current playback status */
-  status: NarrationStatus;
+  status: NarratorStatus;
   /** Index of the current paragraph (0-based) */
   currentParagraph: number;
   /** Total number of paragraphs in the loaded article */
@@ -72,7 +72,7 @@ export class ArticleNarrator {
   private paragraphs: string[] = [];
   private currentIndex = 0;
   private utterance: SpeechSynthesisUtterance | null = null;
-  private status: NarrationStatus = "idle";
+  private status: NarratorStatus = "idle";
   private selectedVoice: SpeechSynthesisVoice | null = null;
   private rate: number = DEFAULT_RATE;
   private pitch: number = DEFAULT_PITCH;
@@ -389,7 +389,7 @@ export class ArticleNarrator {
   /**
    * Updates the status and notifies listeners.
    */
-  private setStatus(newStatus: NarrationStatus): void {
+  private setStatus(newStatus: NarratorStatus): void {
     if (this.status !== newStatus) {
       this.status = newStatus;
       this.notifyStateChange();

@@ -10,7 +10,7 @@
  * ```tsx
  * const { highlightedParagraphIds } = useNarrationHighlight({
  *   currentParagraphIndex: state.currentParagraph,
- *   isActive: getNarrationPhase(state, isLoading).isActive,
+ *   isActive: getNarrationPhase(state).isActive,
  * });
  * ```
  */

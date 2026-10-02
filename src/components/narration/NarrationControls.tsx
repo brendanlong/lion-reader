@@ -56,13 +56,13 @@ export interface NarrationControlsProps {
  * if the Web Speech API is supported in the current browser.
  */
 export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
-  const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } = narration;
+  const { state, play, pause, skipForward, skipBackward, isSupported } = narration;
+  const phase = getNarrationPhase(state);
 
   // Enable keyboard shortcuts for narration (must be called before early return)
   useNarrationKeyboardShortcuts({
-    state,
+    phase,
     controls: { play, pause, skipForward, skipBackward },
-    isLoading,
     isSupported,
   });
 
@@ -76,22 +76,22 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
   const {
     isPlaying,
     isPaused,
-    isBufferingMidPlayback,
-    isInitialLoading,
+    isBuffering,
+    isGenerating,
     isActive,
     shouldPause,
     canSkipBackward,
     canSkipForward,
-  } = getNarrationPhase(state, isLoading);
+  } = phase;
 
   // Determine the main button label and icon
   let mainButtonLabel: string;
   let mainButtonIcon: React.ReactNode;
 
-  if (isInitialLoading) {
+  if (isGenerating) {
     mainButtonLabel = "Generating...";
     mainButtonIcon = <SpinnerIcon className="h-5 w-5" />;
-  } else if (isBufferingMidPlayback) {
+  } else if (isBuffering) {
     // A chunk is generating, but playback is active — keep the spinner as an
     // activity indicator while letting the button pause.
     mainButtonLabel = "Pause";
@@ -128,7 +128,7 @@ export function NarrationControlsImpl({ narration }: NarrationControlsProps) {
         variant="secondary"
         size="sm"
         onClick={shouldPause ? pause : play}
-        disabled={isInitialLoading}
+        disabled={isGenerating}
         aria-label={mainButtonLabel}
       >
         {mainButtonIcon}

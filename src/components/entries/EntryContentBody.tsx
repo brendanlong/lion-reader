@@ -222,7 +222,7 @@ export function EntryContentBody({
   }, [narrationSettings.enabled]);
 
   const showNarration = !hideNarration && narrationSettings.enabled;
-  const isNarrationActive = getNarrationPhase(narration.state, narration.isLoading).isActive;
+  const isNarrationActive = getNarrationPhase(narration.state).isActive;
 
   const { highlightedParagraphIds } = useNarrationHighlight({
     currentParagraphIndex: narration.state.currentParagraph,
