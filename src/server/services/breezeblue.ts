@@ -3,9 +3,9 @@
  *
  * BreezeBlue has thousands of voices, so we offer a few: the key owner's own
  * (the ones they favorited on BreezeBlue and the ones they made), then the
- * trending English narration voices. A key's own voices are cached per key and
- * never shown to anyone else; the models and trending voices are the same for
- * every key, so they're cached once.
+ * trending English narration voices. Everything is cached per key and never
+ * shown for another: even the models and trending voices are the account's
+ * view (it can rename a voice in its library, and models are per account).
  */
 
 import { createHash } from "node:crypto";
@@ -19,8 +19,9 @@ function apiUrl(): string {
 }
 const CATALOG_TIMEOUT_MS = 15_000;
 /** Short, so a voice favorited on BreezeBlue shows up soon. */
-const OWN_VOICES_CACHE_TTL_MS = 5 * 60 * 1000;
-const SHARED_CACHE_TTL_MS = 60 * 60 * 1000;
+const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+/** A failure is kept briefly too, so an outage doesn't cost every chunk a timeout. */
+const CATALOG_FAILURE_TTL_MS = 30 * 1000;
 const MAX_CACHED_KEYS = 1000;
 const TRENDING_VOICES = 30;
 /** What `output_format=pcm` streams; it's the only rate BreezeBlue offers. */
@@ -109,84 +110,42 @@ async function fetchModels(apiKey: string): Promise<BreezeBlueModel[]> {
     });
 }
 
-async function fetchOwnVoices(apiKey: string): Promise<BreezeBlueVoice[]> {
-  const [favorites, personal] = await Promise.all([
+async function fetchCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
+  const [models, favorites, personal, trending] = await Promise.all([
+    fetchModels(apiKey),
     fetchVoices(apiKey, "favorites_only=true&page_size=100"),
     fetchVoices(apiKey, "voice_type=personal&page_size=100"),
+    fetchVoices(
+      apiKey,
+      `voice_type=default&primary_category_code=narration&language_code=en&sort=trend&page_size=${TRENDING_VOICES}`
+    ),
   ]);
-  return [...favorites, ...personal];
-}
-
-function fetchTrendingVoices(apiKey: string): Promise<BreezeBlueVoice[]> {
-  return fetchVoices(
-    apiKey,
-    `voice_type=default&primary_category_code=narration&language_code=en&sort=trend&page_size=${TRENDING_VOICES}`
-  );
-}
-
-interface CacheEntry<T> {
-  expiresAt: number;
-  value: Promise<T>;
-}
-
-/**
- * `load`, kept for `ttlMs` once it succeeds. Fetched with whichever key asks
- * first; anyone else whose wait ends in that fetch failing (say, on a revoked
- * key) tries again on their own.
- */
-function sharedCache<T>(ttlMs: number, load: (apiKey: string) => Promise<T>) {
-  let entry: CacheEntry<T> | null = null;
-  const start = (apiKey: string): Promise<T> => {
-    const started: CacheEntry<T> = { expiresAt: Date.now() + ttlMs, value: load(apiKey) };
-    entry = started;
-    started.value.catch(() => {
-      if (entry === started) entry = null;
-    });
-    return started.value;
-  };
-  return async (apiKey: string): Promise<T> => {
-    const current = entry && Date.now() < entry.expiresAt ? entry.value : null;
-    if (!current) return start(apiKey);
-    try {
-      return await current;
-    } catch {
-      return start(apiKey);
-    }
-  };
-}
-
-const cachedModels = sharedCache(SHARED_CACHE_TTL_MS, fetchModels);
-const cachedTrendingVoices = sharedCache(SHARED_CACHE_TTL_MS, fetchTrendingVoices);
-
-/** By a hash of the key, so keys aren't kept in memory longer than a request. */
-const ownVoices = new Map<string, CacheEntry<BreezeBlueVoice[]>>();
-
-function cachedOwnVoices(apiKey: string): Promise<BreezeBlueVoice[]> {
-  const id = createHash("sha256").update(apiKey).digest("hex");
-  const now = Date.now();
-  const current = ownVoices.get(id);
-  if (current && now < current.expiresAt) return current.value;
-  for (const [key, entry] of ownVoices) {
-    if (ownVoices.size < MAX_CACHED_KEYS && now < entry.expiresAt) break;
-    ownVoices.delete(key);
-  }
-  const started = { expiresAt: now + OWN_VOICES_CACHE_TTL_MS, value: fetchOwnVoices(apiKey) };
-  ownVoices.set(id, started);
-  started.value.catch(() => {
-    if (ownVoices.get(id) === started) ownVoices.delete(id);
-  });
-  return started.value;
-}
-
-/** The models, and the voices this key can pick from. */
-export async function getBreezeBlueCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
-  const [models, own, trending] = await Promise.all([
-    cachedModels(apiKey),
-    cachedOwnVoices(apiKey),
-    cachedTrendingVoices(apiKey),
-  ]);
+  const own = [...favorites, ...personal];
   const ownIds = new Set(own.map((voice) => voice.id));
   return { models, voices: [...own, ...trending.filter((voice) => !ownIds.has(voice.id))] };
+}
+
+/** By a hash of the key, so keys aren't kept in memory longer than a request. */
+const catalogs = new Map<string, { expiresAt: number; catalog: Promise<BreezeBlueCatalog> }>();
+
+/** The models, and the voices this key can pick from. */
+export function getBreezeBlueCatalog(apiKey: string): Promise<BreezeBlueCatalog> {
+  const id = createHash("sha256").update(apiKey).digest("hex");
+  const now = Date.now();
+  const current = catalogs.get(id);
+  if (current && now < current.expiresAt) return current.catalog;
+  catalogs.delete(id);
+  // Oldest first, since every entry is (re)inserted when fetched.
+  for (const [key, entry] of catalogs) {
+    if (catalogs.size < MAX_CACHED_KEYS && now < entry.expiresAt) break;
+    catalogs.delete(key);
+  }
+  const entry = { expiresAt: now + CATALOG_CACHE_TTL_MS, catalog: fetchCatalog(apiKey) };
+  catalogs.set(id, entry);
+  entry.catalog.catch(() => {
+    entry.expiresAt = Date.now() + CATALOG_FAILURE_TTL_MS;
+  });
+  return entry.catalog;
 }
 
 /** Speech as PCM, streamed as it's generated. */

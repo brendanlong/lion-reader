@@ -40,7 +40,8 @@ beforeAll(async () => {
       if (url.searchParams.get("voice_type") === "personal") {
         return json({ voices: [voice(`mine-${key}`, `Made by ${key}`)] });
       }
-      return json({ voices: [voice("trending", "Elara")] });
+      // An account sees voices it saved under its own alias.
+      return json({ voices: [voice("trending", `Elara, as ${key} calls her`)] });
     }
     if (url.pathname.startsWith("/text-to-speech/")) {
       let body = "";
@@ -80,17 +81,18 @@ describe("BreezeBlue voices", () => {
     expect(await breezeBlueVoices(key)).toEqual([
       { id: `fav-${key}`, name: `Favorite of ${key} (American, female, middle aged)` },
       { id: `mine-${key}`, name: `Made by ${key} (American, female, middle aged)` },
-      { id: "trending", name: "Elara (American, female, middle aged)" },
+      { id: "trending", name: `Elara, as ${key} calls her (American, female, middle aged)` },
     ]);
   });
 
-  it("never shows one key's own voices to another", async () => {
+  it("never shows one key's view of the catalog to another", async () => {
     const first = randomUUID();
     const second = randomUUID();
     await breezeBlueVoices(first);
 
-    const ids = (await breezeBlueVoices(second)).map((v) => v.id);
-    expect(ids).toEqual([`fav-${second}`, `mine-${second}`, "trending"]);
+    const names = (await breezeBlueVoices(second)).map((v) => v.name).join("\n");
+    expect(names).toContain(second);
+    expect(names).not.toContain(first);
   });
 });
 

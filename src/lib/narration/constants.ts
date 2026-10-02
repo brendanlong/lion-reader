@@ -106,7 +106,7 @@ export const SERVER_KEY_CLOUD_VOICE_MODELS: string[] = [DEEPINFRA_KOKORO, OPENRO
 /**
  * Longest text synthesized per request. Paragraphs are split into chunks of
  * at most this size so playback can start (and skip) without waiting for a
- * whole long paragraph.
+ * whole long paragraph. Also BreezeBlue's limit per request.
  */
 export const MAX_CLOUD_SPEECH_CHARS = 1000;
 

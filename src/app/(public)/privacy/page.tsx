@@ -222,6 +222,8 @@ export default function PrivacyPolicyPage() {
                 directly (the default, Kokoro), BreezeBlue directly, or OpenRouter, which forwards
                 it to the company hosting that model (for example DeepInfra or Together). The
                 generated audio is streamed back to your device and not stored on our servers.
+                BreezeBlue keeps the text and audio in the generation history of the account whose
+                key was used: yours if you added one, otherwise ours.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, device voices send the article text to your device&apos;s
