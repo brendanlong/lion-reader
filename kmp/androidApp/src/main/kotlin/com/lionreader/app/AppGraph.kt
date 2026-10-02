@@ -176,19 +176,8 @@ class AppGraph(private val context: Context) {
     /** Serializes account switches. */
     private val accountMutex = Mutex()
 
-    private fun restoreAccount(): AccountSession? {
-        // Delete files from older schema generations (see DB_PREFIX); a
-        // signed-in account is set up again after the next /auth/me.
-        context
-            .databaseList()
-            .filter {
-                it.endsWith(".db") && it.startsWith("account-") && !it.startsWith(DB_PREFIX)
-            }
-            .forEach { context.deleteDatabase(it) }
-        val dbName =
-            prefs.getString(ACCOUNT_DB, null)?.takeIf { it.startsWith(DB_PREFIX) } ?: return null
-        return openAccount(dbName)
-    }
+    private fun restoreAccount(): AccountSession? =
+        prefs.getString(ACCOUNT_DB, null)?.let(::openAccount)
 
     private fun openAccount(dbName: String) =
         AccountSession(context, dbName, _connection.value, { currentSettings.value.retention }) {
@@ -271,7 +260,7 @@ class AppGraph(private val context: Context) {
     }
 }
 
-/** Database file schema generation; bump it on a pre-release schema change (kmp/CLAUDE.md). */
+/** Part of every account's database name: changing it loses the data on the device. */
 private const val DB_PREFIX = "account-v5-"
 
 /** One database file per (server, account); the name doesn't reveal either. */
