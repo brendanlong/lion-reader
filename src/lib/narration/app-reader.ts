@@ -31,7 +31,8 @@ declare global {
   interface Window {
     lionReader?: AppChannel;
     lionNarration?: {
-      highlight(paragraph: number | null, scroll: boolean): void;
+      /** `smooth`: scroll to it smoothly rather than jumping (off when the app's animations are). */
+      highlight(paragraph: number | null, scroll: boolean, smooth?: boolean): void;
       selectedParagraph(): number | null;
     };
   }
@@ -73,7 +74,7 @@ function prepare(): ParagraphMapEntry[] {
 const paragraphMap = prepare();
 
 window.lionNarration = {
-  highlight(paragraph, scroll) {
+  highlight(paragraph, scroll, smooth = true) {
     document
       .querySelectorAll(`.${HIGHLIGHT_CLASS}`)
       .forEach((el) => el.classList.remove(HIGHLIGHT_CLASS));
@@ -85,7 +86,7 @@ window.lionNarration = {
     if (!scroll) return;
     const box = target.getBoundingClientRect();
     if (box.top < 0 || box.bottom > window.innerHeight) {
-      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      target.scrollIntoView({ block: "center", behavior: smooth ? "smooth" : "instant" });
     }
   },
 

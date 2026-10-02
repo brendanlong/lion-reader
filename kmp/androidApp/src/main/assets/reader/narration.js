@@ -507,7 +507,7 @@
   }
   var paragraphMap = prepare();
   window.lionNarration = {
-    highlight(paragraph, scroll) {
+    highlight(paragraph, scroll, smooth = true) {
       document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => el.classList.remove(HIGHLIGHT_CLASS));
       const element = paragraph === null ? void 0 : paragraphMap[paragraph]?.o;
       if (element === void 0 || element < 0) return;
@@ -517,7 +517,7 @@
       if (!scroll) return;
       const box = target.getBoundingClientRect();
       if (box.top < 0 || box.bottom > window.innerHeight) {
-        target.scrollIntoView({ block: "center", behavior: "smooth" });
+        target.scrollIntoView({ block: "center", behavior: smooth ? "smooth" : "instant" });
       }
     },
     /**

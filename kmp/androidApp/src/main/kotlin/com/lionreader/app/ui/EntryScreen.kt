@@ -3,6 +3,8 @@ package com.lionreader.app.ui
 import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -70,6 +73,7 @@ import com.lionreader.app.reader.AppearanceTokens
 import com.lionreader.app.reader.ReaderColors
 import com.lionreader.app.reader.ReaderHeader
 import com.lionreader.app.reader.ReaderNarration
+import com.lionreader.app.reader.ReaderPaging
 import com.lionreader.app.reader.ReaderWebView
 import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.reader.readerDocument
@@ -334,6 +338,13 @@ fun EntryScreen(
                 // the next page's narration (its Listen button) comes from its
                 // WebView having loaded.
                 beyondViewportPageCount = 1,
+                // A fling's snap runs at its own speed, which the app's animation scale doesn't
+                // reach (AppMotion): without animations, it lands at once.
+                flingBehavior =
+                    PagerDefaults.flingBehavior(
+                        pager,
+                        snapAnimationSpec = if (settings.animations) spring() else snap(),
+                    ),
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) { page ->
                 CompositionLocalProvider(LocalViewConfiguration provides pageConfig) {
@@ -360,6 +371,8 @@ fun EntryScreen(
                                     }
                                 },
                             ),
+                        // The volume buttons turn the page on screen, not its neighbours'.
+                        active = page == pager.currentPage,
                     )
                 }
             }
@@ -439,6 +452,7 @@ private fun EntryPage(
     showSummary: Boolean,
     onEntry: (String, EntryDetail?) -> Unit,
     narration: ReaderNarration,
+    active: Boolean,
 ) {
     val context = LocalContext.current
     val entry by
@@ -489,13 +503,27 @@ private fun EntryPage(
                         codeBackground = colors.surfaceContainer.css(),
                     ),
             )
-        ReaderWebView(document, Modifier.fillMaxSize(), narration)
+        ReaderWebView(
+            document,
+            Modifier.fillMaxSize(),
+            narration,
+            ReaderPaging(
+                swipes = settings.pageScrolling,
+                turns = graph.pageTurns.takeIf { active },
+                smoothScroll = settings.animations,
+            ),
+        )
         return
     }
+    val scroll = rememberScrollState()
     Column(
         modifier =
             Modifier.fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .pageSwipes(
+                    rememberPageTurner(scroll, graph.pageTurns, PageLayer.ARTICLE, active),
+                    settings.pageScrolling,
+                )
+                .verticalScroll(scroll, enabled = !settings.pageScrolling)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall)

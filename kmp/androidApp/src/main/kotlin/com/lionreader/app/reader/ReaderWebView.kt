@@ -18,6 +18,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -27,6 +28,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.lionreader.app.ui.PAGE_FRACTION
+import com.lionreader.app.ui.PageLayer
+import com.lionreader.app.ui.PageTurns
 import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
@@ -41,43 +45,53 @@ fun ReaderWebView(
     document: String,
     modifier: Modifier = Modifier,
     narration: ReaderNarration = ReaderNarration(),
+    paging: ReaderPaging = ReaderPaging(),
 ) {
     val current by rememberUpdatedState(narration)
+    val shown = remember { arrayOfNulls<ReaderView>(1) }
+    val turns = paging.turns
+    if (turns != null) {
+        DisposableEffect(turns) {
+            val unregister = turns.register(PageLayer.ARTICLE) { shown[0]?.turnPage(it) ?: false }
+            onDispose { unregister() }
+        }
+    }
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            ReaderView(context).apply {
-                // For our scripts; the CSP keeps anything else from running.
-                @SuppressLint("SetJavaScriptEnabled")
-                settings.javaScriptEnabled = true
-                settings.allowFileAccess = false
-                settings.allowContentAccess = false
-                settings.domStorageEnabled = false
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                // Drawn into its own layer, so the pager moving it shifts a
-                // finished picture: on some devices a WebView that's moved
-                // mid-swipe draws a blank frame.
-                setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-                    WebViewCompat.addWebMessageListener(this, "lionReader", setOf(ASSET_ORIGIN)) {
-                        _,
-                        message,
-                        _,
-                        isMainFrame,
-                        _ ->
-                        if (isMainFrame) onPageMessage(message.data ?: "", current)
+            ReaderView(context)
+                .also { shown[0] = it }
+                .apply {
+                    // For our scripts; the CSP keeps anything else from running.
+                    @SuppressLint("SetJavaScriptEnabled")
+                    settings.javaScriptEnabled = true
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    settings.domStorageEnabled = false
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    // Drawn into its own layer, so the pager moving it shifts a
+                    // finished picture: on some devices a WebView that's moved
+                    // mid-swipe draws a blank frame.
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                        WebViewCompat.addWebMessageListener(
+                            this,
+                            "lionReader",
+                            setOf(ASSET_ORIGIN),
+                        ) { _, message, _, isMainFrame, _ ->
+                            if (isMainFrame) onPageMessage(message.data ?: "", current)
+                        }
                     }
+                    webViewClient =
+                        ReaderWebViewClient(
+                            WebViewAssetLoader.Builder()
+                                .addPathHandler(
+                                    "/assets/",
+                                    WebViewAssetLoader.AssetsPathHandler(context),
+                                )
+                                .build()
+                        )
                 }
-                webViewClient =
-                    ReaderWebViewClient(
-                        WebViewAssetLoader.Builder()
-                            .addPathHandler(
-                                "/assets/",
-                                WebViewAssetLoader.AssetsPathHandler(context),
-                            )
-                            .build()
-                    )
-            }
         },
         update = { view ->
             if (view.tag != document) {
@@ -86,6 +100,8 @@ fun ReaderWebView(
                 view.pageReady = false
                 view.loadDataWithBaseURL("$ASSET_ORIGIN/", document, "text/html", "utf-8", null)
             }
+            view.smoothScroll = paging.smoothScroll
+            view.pageScrolling = paging.swipes
             view.highlight(narration.paragraph, narration.autoScroll)
             view.onListenFrom = narration.onListenFrom
         },
@@ -107,6 +123,18 @@ data class ReaderNarration(
 )
 
 /**
+ * How the page scrolls. With [swipes] (page mode, for e-readers) a swipe up or down moves it
+ * [PAGE_FRACTION] of the screen at once rather than scrolling with the finger; [turns], when given
+ * (the article on screen), has the volume buttons do the same. [smoothScroll]: narration scrolls to
+ * its paragraph smoothly rather than jumping (off with animations).
+ */
+data class ReaderPaging(
+    val swipes: Boolean = false,
+    val turns: PageTurns? = null,
+    val smoothScroll: Boolean = true,
+)
+
+/**
  * Decides, once per gesture and as soon as its direction is clear, whether the article pager may
  * have it, like the web's swipe: only a drag at least [SWIPE_RATIO] times as far sideways as up or
  * down turns the page. Anything steeper stays the WebView's for the whole gesture, so a scroll that
@@ -114,6 +142,8 @@ data class ReaderNarration(
  * wide table or code block (reported by scroll-detect.js) also stays the WebView's while the block
  * can still scroll that way. It has to be decided here, synchronously, before the pager's touch
  * slop is crossed; Compose honors [requestDisallowInterceptTouchEvent] for the rest of the gesture.
+ * In page mode a scroll it keeps becomes a page turn instead ([turnPage]), unless it began as a
+ * long press: dragging after one extends a text selection.
  */
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
@@ -124,6 +154,8 @@ private class ReaderView(context: Context) : WebView(context) {
     private var wanted: Int? = null
     private var shown: Int? = null
     private var scroll = true
+    var smoothScroll = true
+    var pageScrolling = false
 
     fun onPageMessage(data: String, narration: ReaderNarration) {
         if (data.startsWith("[")) {
@@ -201,7 +233,8 @@ private class ReaderView(context: Context) : WebView(context) {
         if (!pageReady || shown == paragraph) return
         shown = paragraph
         evaluateJavascript(
-            "window.lionNarration && lionNarration.highlight(${paragraph ?: "null"}, $autoScroll)",
+            "window.lionNarration && " +
+                "lionNarration.highlight(${paragraph ?: "null"}, $autoScroll, $smoothScroll)",
             null,
         )
     }
@@ -213,6 +246,11 @@ private class ReaderView(context: Context) : WebView(context) {
     private var downY = 0f
     private var touched: SideScroller? = null
     private var deciding = false
+    /** This gesture is a scroll kept from the pager (not a sideways one). */
+    private var scrolling = false
+    /** This gesture is a page turn: the WebView's own handling of it was cancelled. */
+    private var turning = false
+    private val longPress = ViewConfiguration.getLongPressTimeout()
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -226,19 +264,58 @@ private class ReaderView(context: Context) : WebView(context) {
                 val pageY = (event.y + scrollY) / density
                 touched = sideScrollers.find { it.bounds.contains(pageX, pageY) }
                 deciding = true
+                scrolling = false
+                turning = false
             }
             // Two fingers aren't a page turn.
             MotionEvent.ACTION_POINTER_DOWN -> if (deciding) keep()
-            MotionEvent.ACTION_MOVE ->
+            MotionEvent.ACTION_MOVE -> {
                 if (deciding) {
                     val index = event.findPointerIndex(pointerId)
                     if (index >= 0)
                         decide(event.getX(index) - downX, abs(event.getY(index) - downY))
                 }
-            MotionEvent.ACTION_UP,
-            MotionEvent.ACTION_CANCEL -> deciding = false
+                if (
+                    pageScrolling &&
+                        scrolling &&
+                        !turning &&
+                        event.eventTime - event.downTime < longPress
+                ) {
+                    turning = true
+                    val cancel =
+                        MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                    super.onTouchEvent(cancel)
+                    cancel.recycle()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                deciding = false
+                if (turning) {
+                    turning = false
+                    // A finger moving up moves down the page.
+                    val index = event.findPointerIndex(pointerId)
+                    val y = if (index >= 0) event.getY(index) else event.y
+                    turnPage(if (y < downY) 1 else -1)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                deciding = false
+                turning = false
+            }
         }
-        return super.onTouchEvent(event)
+        return turning || super.onTouchEvent(event)
+    }
+
+    /**
+     * Moves the page [PAGE_FRACTION] of the screen down (1) or up (-1), at once; false unlaid out.
+     */
+    fun turnPage(direction: Int): Boolean {
+        if (height == 0) return false
+        val bottom = (computeVerticalScrollRange() - height).coerceAtLeast(0)
+        val step = (height * PAGE_FRACTION).toInt()
+        scrollTo(scrollX, (scrollY + direction * step).coerceIn(0, bottom))
+        return true
     }
 
     /**
@@ -250,7 +327,7 @@ private class ReaderView(context: Context) : WebView(context) {
         val block = touched
         val wanted =
             when {
-                abs(dx) < dy * SWIPE_RATIO -> true
+                abs(dx) < dy * SWIPE_RATIO -> true.also { scrolling = true }
                 // A finger moving left scrolls the block's content right.
                 block != null -> if (dx < 0) block.canScrollRight else block.canScrollLeft
                 else -> false

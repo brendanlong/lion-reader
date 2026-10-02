@@ -75,6 +75,8 @@ private val EpaperColors =
         outline = Color.Black,
         outlineVariant = Color.Black,
         secondaryContainer = Color.White,
+        // Elevated surfaces (the article's bottom bar) are tinted with this: solid white.
+        surfaceTint = Color.White,
     )
 
 fun ThemeChoice.isDark(systemDark: Boolean): Boolean =

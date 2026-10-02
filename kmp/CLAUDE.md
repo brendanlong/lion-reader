@@ -128,6 +128,18 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   first), so a scroll can't turn into a page turn (`ReaderView`). A script reports where
   wide tables and code blocks are, so a sideways drag on one scrolls it
   instead.
+- **E-reader options** (Settings → E-readers). Animations go off app-wide, not one
+  by one: the window's recomposer gets the app's own animation scale (`AppMotion`,
+  zero when off), so every Compose animation jumps to its end. Only what that
+  scale doesn't reach needs its own switch: the screen transitions (predictive
+  back follows the finger), the article pager's fling snap, and the reader's
+  scroll to the narrated paragraph. Page mode turns pages rather than scrolling
+  (`pageSwipes`; `ReaderView` for the article, leaving a long press's drag to the
+  text selection), and the volume buttons turn the page of the top `PageTurns`
+  target. A known e-reader maker (`isEinkDevice`; Android can't report an
+  e-ink screen) starts on the E-paper theme without animations: those are the
+  device's defaults (two separate settings), which anything the user sets
+  overrides.
 - **Appearance tokens** (`androidApp/src/main/assets/reader/appearance.json`)
   are generated from the web's `src/lib/appearance/config.ts` by
   `pnpm app:appearance` (a unit test fails when stale). Fonts are OFL Google

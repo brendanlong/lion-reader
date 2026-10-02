@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -25,6 +26,7 @@ import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
 import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -43,6 +46,7 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import com.lionreader.app.ui.AppMotion
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
 import com.lionreader.app.ui.HomeViewModel
@@ -57,6 +61,9 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var signInError by mutableStateOf<String?>(null)
+    private val motion by lazy { AppMotion(applicationContext) }
+    /** The volume button whose press turned a page: its repeats and release are ours too. */
+    private var pagingKey: Int? = null
 
     /**
      * Sign-in in an Auth Tab: the browser hands the redirect straight back here, so no other app
@@ -81,8 +88,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleSignInCallback(intent)
-        setContent {
+        // The window's recomposer, but with the app's animation speed (AppMotion) rather than
+        // only the system's.
+        val recomposer = window.decorView.createLifecycleAwareWindowRecomposer(motion, lifecycle)
+        setContent(parent = recomposer) {
             val settings by graph.currentSettings.collectAsStateWithLifecycle()
+            SideEffect { motion.enabled = settings.animations }
             // System bar icons follow the app's theme, which may differ from the system's.
             val dark = settings.theme.isDark(isSystemInDarkTheme())
             LaunchedEffect(dark) {
@@ -94,6 +105,42 @@ class MainActivity : ComponentActivity() {
             LionReaderTheme(settings.theme) { App() }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        motion.refresh()
+    }
+
+    /**
+     * The volume buttons turn pages ([AppGraph.pageTurns]) when the settings say so, except while
+     * narration plays; otherwise, and with nothing to page on screen, they set the volume.
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val direction = pageDirection(keyCode) ?: return super.onKeyDown(keyCode, event)
+        if (event.repeatCount == 0) {
+            pagingKey = keyCode.takeIf {
+                graph.currentSettings.value.volumeKeyPaging &&
+                    !graph.narrating &&
+                    graph.pageTurns.turn(direction)
+            }
+        }
+        return pagingKey == keyCode || super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (pageDirection(keyCode) == null || pagingKey != keyCode) {
+            return super.onKeyUp(keyCode, event)
+        }
+        pagingKey = null
+        return true
+    }
+
+    private fun pageDirection(keyCode: Int): Int? =
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN -> 1
+            KeyEvent.KEYCODE_VOLUME_UP -> -1
+            else -> null
+        }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -191,7 +238,7 @@ class MainActivity : ComponentActivity() {
         val backStack = rememberNavBackStack(HomeKey)
         val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
-        val transitions = remember(settings.theme) { ScreenTransitions(settings.theme) }
+        val transitions = remember(settings.animations) { ScreenTransitions(settings.animations) }
         // Side by side where there's room (tablets, foldables, landscape).
         // Back closes the article beside the list, as it does full screen.
         val listDetail =
@@ -237,6 +284,8 @@ class MainActivity : ComponentActivity() {
                                 backStack.add(EntryKey.openedFrom(id, home.shownIds()))
                             },
                             onSettings = { backStack.add(SettingsKey) },
+                            pageScrolling = settings.pageScrolling,
+                            pageTurns = graph.pageTurns,
                         )
                     }
                     // Keyed by id alone: the default key is the whole key's

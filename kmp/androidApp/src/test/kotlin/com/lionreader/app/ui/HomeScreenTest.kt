@@ -21,14 +21,17 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
@@ -119,17 +122,56 @@ class HomeScreenTest {
         return composeRule.onNodeWithText(text)
     }
 
-    private fun show(showSelection: Boolean = false) {
+    private var syncs = 0
+
+    private fun show(
+        showSelection: Boolean = false,
+        pageScrolling: Boolean = false,
+        pageTurns: PageTurns = PageTurns(),
+    ) {
         model =
             HomeViewModel(
                 reader,
                 settings,
                 { settings.value = it(settings.value) },
-                sync = {},
+                sync = { syncs++ },
             )
         composeRule.setContent {
-            HomeScreen(model, onOpen = {}, onSettings = {}, showSelection = showSelection)
+            HomeScreen(
+                model,
+                onOpen = {},
+                onSettings = {},
+                pageTurns = pageTurns,
+                pageScrolling = pageScrolling,
+                showSelection = showSelection,
+            )
         }
+    }
+
+    @Test
+    fun inPageModeSwipesAndTheVolumeButtonsTurnTheListsPages() {
+        // Newest first: Entry 59 at the top.
+        repeat(60) { seed("e$it", "Entry $it", read = false, sortAt = it.toLong()) }
+        val turns = PageTurns()
+        show(pageScrolling = true, pageTurns = turns)
+        composeRule.onNodeWithText("Entry 59").assertIsDisplayed()
+
+        composeRule.onRoot().performTouchInput {
+            swipeUp(startY = centerY + 100, endY = centerY - 100)
+        }
+        // Most of the list's height on: Entry 59 has gone, Entry 55 has come.
+        composeRule.onNodeWithText("Entry 59").assertIsNotDisplayed()
+        composeRule.onNodeWithText("Entry 55").assertIsDisplayed()
+
+        composeRule.runOnIdle { turns.turn(-1) }
+        composeRule.onNodeWithText("Entry 59").assertIsDisplayed()
+
+        // Back at the top, a long swipe down refreshes, as pulling would.
+        val before = syncs
+        composeRule.onRoot().performTouchInput { swipeDown(startY = top + 100, endY = bottom - 20) }
+        composeRule.waitForIdle()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(before + 1, syncs)
     }
 
     @Test

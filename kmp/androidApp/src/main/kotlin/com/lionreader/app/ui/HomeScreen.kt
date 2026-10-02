@@ -99,6 +99,10 @@ fun HomeScreen(
     /** Whether to highlight the open article: only beside it, where both are on screen. */
     showSelection: Boolean = false,
     onSettings: () -> Unit,
+    /** What the volume buttons page through ([rememberPageTurner]). */
+    pageTurns: PageTurns,
+    /** Swipes move the list a page at a time ([pageSwipes]). */
+    pageScrolling: Boolean = false,
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val coroutines = rememberCoroutineScope()
@@ -245,6 +249,19 @@ fun HomeScreen(
                         onToggleRead = model::toggleRead,
                         onToggleStar = model::toggleStar,
                         onLoadMore = { if (text == null) model.loadMore() },
+                        modifier =
+                            Modifier.pageSwipes(
+                                rememberPageTurner(
+                                    if (text != null) searchList else timelineList,
+                                    pageTurns,
+                                    PageLayer.LIST,
+                                    // Not the list behind the open drawer.
+                                    active = drawer.isClosed,
+                                    onPastTop = model::pullToRefresh,
+                                ),
+                                enabled = pageScrolling,
+                            ),
+                        pageScrolling = pageScrolling,
                     )
                 }
             }
@@ -592,6 +609,9 @@ private fun EntryList(
     onToggleRead: (TimelineItem) -> Unit,
     onToggleStar: (TimelineItem) -> Unit,
     onLoadMore: () -> Unit,
+    pageScrolling: Boolean,
+    /** The list's page turning ([pageSwipes]). */
+    modifier: Modifier = Modifier,
 ) {
     if (items == null) return
     if (items.isEmpty()) {
@@ -610,7 +630,11 @@ private fun EntryList(
             }
         }
     LaunchedEffect(nearEnd) { if (nearEnd) onLoadMore() }
-    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        state = listState,
+        modifier = modifier.fillMaxSize(),
+        userScrollEnabled = !pageScrolling,
+    ) {
         items(items, key = { it.id }) { item ->
             SwipeToToggle(item, onToggleRead, onToggleStar) {
                 EntryRow(
