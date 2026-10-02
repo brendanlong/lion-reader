@@ -182,10 +182,10 @@ describe("voicesFromSchema", () => {
 });
 
 describe("canNarrate", () => {
-  const formats = { TtsResponseFormat: { enum: ["mp3", "wav"] } };
+  const formats = { TtsResponseFormat: { enum: ["mp3", "wav", "pcm"] } };
   const responseFormat = { $ref: "#/definitions/TtsResponseFormat" };
 
-  it("accepts a model that takes a full chunk and returns MP3", () => {
+  it("accepts a model that takes a full chunk and returns PCM and WAV", () => {
     expect(
       canNarrate({
         properties: { text: { maxLength: 10000 }, output_format: responseFormat },
@@ -203,10 +203,13 @@ describe("canNarrate", () => {
     ).toBe(false);
   });
 
-  it("rejects a model that can't return MP3", () => {
-    expect(
-      canNarrate({ properties: { input: { maxLength: 1500 }, response_format: { const: "pcm" } } })
-    ).toBe(false);
+  it("rejects a model that can't stream PCM or say what format it's in", () => {
+    // PCM alone has no header to learn its rate from; WAV alone doesn't stream.
+    for (const only of ["pcm", "wav"]) {
+      expect(
+        canNarrate({ properties: { input: { maxLength: 1500 }, response_format: { const: only } } })
+      ).toBe(false);
+    }
     expect(canNarrate({ properties: { text: { maxLength: 1000 } } })).toBe(false);
   });
 });

@@ -114,14 +114,14 @@ export function voicesFromSchema(schema: InputSchema): string[] {
 
 /**
  * Whether a model can read a narration chunk: it takes MAX_CLOUD_SPEECH_CHARS
- * of text and can return WAV, whose header says the PCM's format (bare PCM
- * doesn't). Some can't (Orpheus caps input at 300 characters).
+ * of text and can return PCM, and WAV to learn the PCM's format (see
+ * {@link deepInfraSpeech}). Some can't (Orpheus caps input at 300 characters).
  */
 export function canNarrate(schema: InputSchema): boolean {
   const input = propertyOf(schema, "input") ?? propertyOf(schema, "text");
   if (!input || (input.maxLength ?? Infinity) < MAX_CLOUD_SPEECH_CHARS) return false;
   const formats = enumOf(schema, "response_format") ?? enumOf(schema, "output_format");
-  return formats?.includes("wav") ?? false;
+  return (formats?.includes("pcm") && formats.includes("wav")) ?? false;
 }
 
 let cached: { expiresAt: number; models: DeepInfraSpeechModel[] } | null = null;
@@ -202,7 +202,15 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
   return models.filter((model): model is DeepInfraSpeechModel => model !== null);
 }
 
-/** Speech as PCM, from a WAV streamed as it's generated. */
+/** Each model's PCM format, learned from its first WAV. */
+const pcmFormats = new Map<string, { sampleRate: number; channels: number }>();
+
+/**
+ * Speech as PCM, streamed as it's generated. Only PCM streams (a WAV's header
+ * gives its length, so DeepInfra sends it whole), but it has no header and
+ * DeepInfra ignores a requested rate, so a model's first request is a WAV, to
+ * learn the format it speaks in.
+ */
 export async function deepInfraSpeech(
   apiKey: string,
   model: string,
@@ -210,6 +218,7 @@ export async function deepInfraSpeech(
   input: string,
   signal: AbortSignal
 ): Promise<PcmStream> {
+  const format = pcmFormats.get(model);
   const response = await fetch(`${DEEPINFRA_API_URL}/v1/audio/speech`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
@@ -218,12 +227,16 @@ export async function deepInfraSpeech(
       model,
       voice,
       input,
-      response_format: "wav",
+      response_format: format ? "pcm" : "wav",
+      stream: true,
       service_tier: "priority",
     }),
   });
   if (!response.ok || !response.body) {
     throw await errorFromResponse(response);
   }
-  return pcmFromWav(response.body);
+  if (format) return { ...format, data: response.body };
+  const pcm = await pcmFromWav(response.body);
+  pcmFormats.set(model, { sampleRate: pcm.sampleRate, channels: pcm.channels });
+  return pcm;
 }

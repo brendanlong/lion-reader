@@ -206,6 +206,8 @@ export async function openRouterSpeech(
       voice,
       input,
       response_format: "pcm",
+      // Otherwise it's sent once it's all generated.
+      stream: true,
       provider: { sort: "latency" },
     }),
   });
