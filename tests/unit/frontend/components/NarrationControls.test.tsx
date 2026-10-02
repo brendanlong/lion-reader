@@ -453,6 +453,8 @@ describe("narration that finishes generating after the user moved on", () => {
         static isTypeSupported = () => true;
       }
     );
+    // Speech that never arrives.
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
 
     // The first generate (A) waits for release(); later ones answer at once.
     const first = deferredGenerate();
@@ -463,7 +465,6 @@ describe("narration that finishes generating after the user moved on", () => {
           generateCalls++ === 0
             ? first.handler()
             : { narration: "Newer narration.", cached: false, source: "llm", paragraphMap: [] },
-        "narration.synthesize": () => new Promise(() => {}),
       },
       wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
     });

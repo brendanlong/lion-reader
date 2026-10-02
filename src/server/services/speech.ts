@@ -21,6 +21,7 @@ import {
   isModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
+import { encodeSpeech, type PcmStream } from "@/server/services/speech-encoding";
 import {
   deepInfraSpeech,
   listDeepInfraSpeechModels,
@@ -61,18 +62,27 @@ export interface SpeechModel {
 interface SpeechProviderAdapter {
   /** The models the user can pick on these keys. */
   listModels(keys: AiProviderKeys | undefined): Promise<SpeechModel[]>;
-  /** `text` spoken by `voice` of `model` (provider-native ids), as MP3. */
-  synthesize(apiKey: string, model: string, voice: string, text: string): Promise<Uint8Array>;
+  /**
+   * `text` spoken by `voice` of `model` (provider-native ids), as PCM streamed
+   * as it's generated. Rejects when the provider refuses.
+   */
+  speak(
+    apiKey: string,
+    model: string,
+    voice: string,
+    text: string,
+    signal: AbortSignal
+  ): Promise<PcmStream>;
 }
 
 const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = {
   deepinfra: {
     listModels: async (keys) => toDeepInfraSpeechModels(await listDeepInfraSpeechModels(), keys),
-    synthesize: deepInfraSpeech,
+    speak: deepInfraSpeech,
   },
   openrouter: {
     listModels: async (keys) => toSpeechModels(await listOpenRouterModels("speech"), keys),
-    synthesize: openRouterSpeech,
+    speak: openRouterSpeech,
   },
 };
 
@@ -253,15 +263,19 @@ export function resolveSpeechModel(
   return { model, voice };
 }
 
+/** Longest a provider gets to finish a chunk. */
+const SPEECH_TIMEOUT_MS = 120_000;
 /**
- * Synthesizes `text` as MP3. A null model or voice means the default. Rejects
- * models the user can't pick in settings, so this can't be used to run
- * arbitrary (or arbitrarily expensive) models.
+ * `text` spoken as AAC in fragmented MP4 (see `speech-encoding.ts`), streamed
+ * as the provider generates it. A null model or voice means the default. Rejects models the user can't pick in settings, so
+ * this can't be used to run arbitrary (or arbitrarily expensive) models.
+ * Aborting `signal` (the client went away) stops the provider's request.
  */
-export async function synthesizeSpeech(
+export async function streamSpeech(
   keys: AiProviderKeys,
-  options: { model: string | null; voice: string | null; text: string }
-): Promise<Uint8Array> {
+  options: { model: string | null; voice: string | null; text: string },
+  signal?: AbortSignal
+): Promise<ReadableStream<Uint8Array>> {
   const { model, voice } = resolveSpeechModel(
     await listSpeechModels(keys),
     keys,
@@ -273,10 +287,21 @@ export async function synthesizeSpeech(
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
   const providerModel = parseModelRef(model.id).model;
-  return SPEECH_PROVIDER_ADAPTERS[model.provider].synthesize(
+  const timeout = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
+  const pcm = await SPEECH_PROVIDER_ADAPTERS[model.provider].speak(
     apiKey,
     providerModel,
     voice,
-    options.text
+    options.text,
+    signal ? AbortSignal.any([signal, timeout]) : timeout
   );
+  return encodeSpeech(pcm);
+}
+
+/** {@link streamSpeech}, read whole: for `narration.synthesize`, which installed apps still call. */
+export async function synthesizeSpeech(
+  keys: AiProviderKeys,
+  options: { model: string | null; voice: string | null; text: string }
+): Promise<Uint8Array> {
+  return new Uint8Array(await new Response(await streamSpeech(keys, options)).arrayBuffer());
 }

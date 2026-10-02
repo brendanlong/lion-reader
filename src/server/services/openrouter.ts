@@ -9,13 +9,12 @@ import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { appUrl } from "@/server/config/env";
 import type { ChatCompletionOptions } from "@/server/services/ai-providers";
+import type { PcmStream } from "@/server/services/speech-encoding";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 const MODEL_CACHE_RETRY_MS = 60 * 1000;
-/** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
-const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
 const openRouterModelSchema = z.object({
   id: z.string(),
@@ -188,34 +187,41 @@ async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouter
 }
 
 /**
- * Synthesizes speech as MP3 via the OpenAI-compatible speech endpoint.
+ * Speech as PCM via the OpenAI-compatible speech endpoint, streamed as it's
+ * generated. Its format is in the content type (`audio/pcm;rate=24000;channels=1`).
  */
 export async function openRouterSpeech(
   apiKey: string,
   model: string,
   voice: string,
-  input: string
-): Promise<Uint8Array> {
+  input: string,
+  signal: AbortSignal
+): Promise<PcmStream> {
   const response = await fetch(`${OPENROUTER_API_URL}/audio/speech`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal,
     body: JSON.stringify({
       model,
       voice,
       input,
-      response_format: "mp3",
+      response_format: "pcm",
+      // Otherwise it's sent once it's all generated.
+      stream: true,
       provider: { sort: "latency" },
     }),
   });
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw await errorFromResponse(response);
   }
-  const audio = new Uint8Array(await response.arrayBuffer());
-  if (audio.byteLength > MAX_SPEECH_BYTES) {
-    throw new Error(`OpenRouter speech response too large (${audio.byteLength} bytes)`);
+  const contentType = response.headers.get("content-type") ?? "";
+  const param = (name: string) => Number(new RegExp(`${name}=(\\d+)`).exec(contentType)?.[1]);
+  const sampleRate = param("rate");
+  if (!contentType.startsWith("audio/pcm") || !sampleRate) {
+    await response.body.cancel();
+    throw new Error(`OpenRouter speech in an unknown format: ${contentType}`);
   }
-  return audio;
+  return { sampleRate, channels: param("channels") || 1, data: response.body };
 }
 
 /**

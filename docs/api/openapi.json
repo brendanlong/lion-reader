@@ -9753,7 +9753,7 @@
                     },
                     "mimeType": {
                       "type": "string",
-                      "const": "audio/mpeg"
+                      "const": "audio/mp4"
                     }
                   },
                   "required": [

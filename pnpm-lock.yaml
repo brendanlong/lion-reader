@@ -49,6 +49,9 @@ importers:
       '@lion-reader/sanitizer':
         specifier: workspace:*
         version: link:native/sanitizer
+      '@lion-reader/speech-encoder':
+        specifier: workspace:*
+        version: link:native/speech-encoder
       '@mediabunny/aac-encoder':
         specifier: 1.57.0
         version: 1.57.0(mediabunny@1.57.0)
@@ -271,6 +274,8 @@ importers:
   native/readability: {}
 
   native/sanitizer: {}
+
+  native/speech-encoder: {}
 
 packages:
 

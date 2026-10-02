@@ -444,9 +444,10 @@ export const narrationRouter = createTRPCRouter({
     }),
 
   /**
-   * Synthesize one chunk of narration text with a cloud voice. Returns base64
-   * MP3; the client splits articles into chunks of at most
-   * MAX_CLOUD_SPEECH_CHARS and plays them in order.
+   * One chunk of narration with a cloud voice, as base64 AAC in MP4: what
+   * `/api/v1/narration/speech` streams, read whole, for app versions from
+   * before that. (They play it whatever the type says: ExoPlayer goes by the
+   * bytes.)
    */
   synthesize: speechScopedProtectedProcedure(
     OAUTH_SCOPES.READER_FULL_ACCESS,
@@ -466,12 +467,12 @@ export const narrationRouter = createTRPCRouter({
         summary: "Synthesize narration audio with a cloud voice",
       },
     })
-    .output(z.object({ audio: z.string(), mimeType: z.literal("audio/mpeg") }))
+    .output(z.object({ audio: z.string(), mimeType: z.literal("audio/mp4") }))
     .mutation(async ({ ctx, input }) => {
       const keys = await getUserApiKeys(ctx.session.user.id);
       try {
         const audio = await synthesizeSpeech(keys, input);
-        return { audio: Buffer.from(audio).toString("base64"), mimeType: "audio/mpeg" as const };
+        return { audio: Buffer.from(audio).toString("base64"), mimeType: "audio/mp4" as const };
       } catch (error) {
         if (error instanceof SpeechRequestError) {
           throw errors.validation(error.message);

@@ -33,6 +33,7 @@ COPY native/sanitizer/package.json ./native/sanitizer/package.json
 COPY native/readability/package.json ./native/readability/package.json
 COPY native/feed-parser/package.json ./native/feed-parser/package.json
 COPY native/markdown/package.json ./native/markdown/package.json
+COPY native/speech-encoder/package.json ./native/speech-encoder/package.json
 
 # Install all dependencies (including devDependencies for building)
 # Use --ignore-scripts because postinstall needs files not yet copied
@@ -75,6 +76,9 @@ RUN pinned="$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)" &
 # builds (build.mjs copies each artifact out of target/ to <crate>.node).
 FROM rust-base AS native-builder
 
+# speech-encoder compiles Fraunhofer FDK AAC, which is C++.
+RUN apk add --no-cache g++
+
 # .dockerignore excludes native/*/target/ and native/*/*.node so local build
 # artifacts can't leak into (or bust the cache of) this layer.
 COPY native ./native
@@ -84,7 +88,8 @@ RUN --mount=type=cache,id=cargo-registry,target=/root/.cargo/registry \
     --mount=type=cache,id=cargo-target-readability,target=/app/native/readability/target \
     --mount=type=cache,id=cargo-target-feed-parser,target=/app/native/feed-parser/target \
     --mount=type=cache,id=cargo-target-markdown,target=/app/native/markdown/target \
-    for crate in sanitizer readability feed-parser markdown; do \
+    --mount=type=cache,id=cargo-target-speech-encoder,target=/app/native/speech-encoder/target \
+    for crate in sanitizer readability feed-parser markdown speech-encoder; do \
       node native/build.mjs "$crate" || exit 1; \
     done
 
@@ -113,6 +118,7 @@ COPY --from=native-builder /app/native/sanitizer/sanitizer.node ./native/sanitiz
 COPY --from=native-builder /app/native/readability/readability.node ./native/readability/readability.node
 COPY --from=native-builder /app/native/feed-parser/feed-parser.node ./native/feed-parser/feed-parser.node
 COPY --from=native-builder /app/native/markdown/markdown.node ./native/markdown/markdown.node
+COPY --from=native-builder /app/native/speech-encoder/speech-encoder.node ./native/speech-encoder/speech-encoder.node
 
 # Copy source code
 COPY . .
@@ -221,7 +227,7 @@ COPY --from=builder /app/package.json ./package.json
 # traced; fixup-standalone copies it in.
 COPY --from=builder /standalone/node_modules ./node_modules
 
-# The native modules: node_modules/@lion-reader/{sanitizer,readability,feed-parser,markdown}
+# The native modules: node_modules/@lion-reader/{sanitizer,readability,feed-parser,markdown,speech-encoder}
 # are pnpm workspace symlinks into these directories, so they must exist in the
 # runner.
 COPY --from=builder /app/native/sanitizer/package.json ./native/sanitizer/package.json
@@ -240,6 +246,10 @@ COPY --from=builder /app/native/markdown/package.json ./native/markdown/package.
 COPY --from=builder /app/native/markdown/index.js ./native/markdown/index.js
 COPY --from=builder /app/native/markdown/index.d.ts ./native/markdown/index.d.ts
 COPY --from=builder /app/native/markdown/markdown.node ./native/markdown/markdown.node
+COPY --from=builder /app/native/speech-encoder/package.json ./native/speech-encoder/package.json
+COPY --from=builder /app/native/speech-encoder/index.js ./native/speech-encoder/index.js
+COPY --from=builder /app/native/speech-encoder/index.d.ts ./native/speech-encoder/index.d.ts
+COPY --from=builder /app/native/speech-encoder/speech-encoder.node ./native/speech-encoder/speech-encoder.node
 
 # Copy built Next.js app
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next

@@ -1,5 +1,9 @@
 package com.lionreader.app.narration
 
+import android.net.Uri
+import androidx.media3.common.C
+import androidx.media3.datasource.DataSpec
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
@@ -11,10 +15,16 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.cancel
+import io.ktor.utils.io.writeFully
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.IOException
 import java.nio.file.Files
-import java.util.Base64
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -23,24 +33,36 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 
+@RunWith(AndroidJUnit4::class)
+// The real Application schedules WorkManager, which these tests don't need.
+@Config(application = android.app.Application::class)
 class CloudVoicesTest {
     private val audio = byteArrayOf(1, 2, 3)
-    private var responses = ArrayDeque<Pair<HttpStatusCode, String>>()
+
+    /** An answer: speech, an error's status and JSON, or a stream the test writes itself. */
+    private sealed interface Answer {
+        class Speech(val audio: ByteArray) : Answer
+
+        class Error(val status: HttpStatusCode, val json: String = "{}") : Answer
+
+        class Stream(val channel: ByteChannel) : Answer
+    }
+
+    private var responses = ArrayDeque<Answer>()
     /** How to answer requests whose body has this text, ahead of [responses]. */
-    private var forText: Map<String, suspend () -> Pair<HttpStatusCode, String>> = emptyMap()
+    private var forText: Map<String, suspend () -> Answer> = emptyMap()
     private var requests = 0
     private val cache = Files.createTempDirectory("cloud").toFile()
     private val dir = Files.createTempDirectory("narration").toFile()
 
-    private fun response(audio: ByteArray) =
-        HttpStatusCode.OK to
-            """{"audio":"${Base64.getEncoder().encodeToString(audio)}","mimeType":"audio/mpeg"}"""
-
-    private val ok = response(audio)
+    private val ok = Answer.Speech(audio)
 
     private fun TestScope.engine(cacheBytes: Long = 5): CloudVoices {
         val http =
@@ -48,11 +70,21 @@ class CloudVoicesTest {
                 MockEngine { request ->
                     requests++
                     val sent = (request.body as? TextContent)?.text.orEmpty()
-                    val (status, body) =
+                    val answer =
                         forText.entries.firstOrNull { it.key in sent }?.value?.invoke()
                             ?: responses.removeFirstOrNull()
                             ?: ok
-                    respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+                    val mp4 = headersOf(HttpHeaders.ContentType, "audio/mp4")
+                    when (answer) {
+                        is Answer.Speech -> respond(answer.audio, HttpStatusCode.OK, mp4)
+                        is Answer.Stream -> respond(answer.channel, HttpStatusCode.OK, mp4)
+                        is Answer.Error ->
+                            respond(
+                                answer.json,
+                                answer.status,
+                                headersOf(HttpHeaders.ContentType, "application/json"),
+                            )
+                    }
                 }
             )
         val tokens =
@@ -77,45 +109,102 @@ class CloudVoicesTest {
         )
     }
 
+    /** Longer than one network read, so it arrives in parts. */
+    private val speech = ByteArray(5_000) { it.toByte() }
+
+    /** Everything the player would read from [uri], once it's all arrived. */
+    private suspend fun played(uri: Uri): ByteArray =
+        withContext(Dispatchers.IO) {
+            val source = NarrationDataSource()
+            source.open(DataSpec(uri))
+            try {
+                val out = ByteArrayOutputStream()
+                val buffer = ByteArray(4096)
+                while (true) {
+                    val read = source.read(buffer, 0, buffer.size)
+                    if (read == C.RESULT_END_OF_INPUT) break
+                    out.write(buffer, 0, read)
+                }
+                out.toByteArray()
+            } finally {
+                source.close()
+            }
+        }
+
+    private fun cached(): List<File> =
+        cache.listFiles { file -> file.extension == "mp4" }!!.toList()
+
     @Test
-    fun realSpeechIsStoredAndServedWithoutItsSeekHeader() = runTest {
-        val speech = javaClass.getResourceAsStream("/two-sentences.mp3")!!.use { it.readBytes() }
-        responses += response(speech)
+    fun playbackStartsBeforeTheSpeechHasAllArrived() = runTest {
+        val channel = ByteChannel(autoFlush = true)
+        responses += Answer.Stream(channel)
         val engine = engine(cacheBytes = 1_000_000)
 
-        val stored = engine.synthesize("Two sentences.", dir, "0")
-        assertArrayEquals(withoutSeekHeader(speech), stored.readBytes())
+        val split = 2_000
+        val writing = launch(Dispatchers.IO) { channel.writeFully(speech, 0, split) }
+        val uri = engine.synthesize("Two sentences.", dir, "0")
+        writing.join()
+        // Answered with only the start in, and nothing cached yet.
+        assertEquals(StreamedAudio.SCHEME, uri.scheme)
+        assertEquals(emptyList<File>(), cached())
 
-        // One cached before the fix is fixed when it's next used.
-        stored.writeBytes(speech)
-        assertEquals(stored, engine.synthesize("Two sentences.", dir, "1"))
-        assertArrayEquals(withoutSeekHeader(speech), stored.readBytes())
+        launch(Dispatchers.IO) {
+            channel.writeFully(speech, split, speech.size)
+            channel.flushAndClose()
+        }
+        assertArrayEquals(speech, played(uri))
+        assertArrayEquals(speech, cached().single().readBytes())
+    }
+
+    @Test
+    fun speechThatStopsPartwayIsBrokenForThePlayerAndAskedForAfresh() = runTest {
+        val channel = ByteChannel(autoFlush = true)
+        responses += Answer.Stream(channel)
+        val engine = engine(cacheBytes = 1_000_000)
+
+        launch(Dispatchers.IO) { channel.writeFully(speech, 0, 2_000) }
+        val broken = engine.synthesize("Two sentences.", dir, "0")
+        channel.cancel(IOException("Connection reset"))
+        val error = runCatching { played(broken) }.exceptionOrNull()
+        assertEquals(SpeechStreamBroken::class, error!!::class)
+
+        // Nothing half-written is kept, and the next try is a new request.
+        responses += Answer.Speech(speech)
+        assertArrayEquals(
+            speech,
+            played(engine.synthesize("Two sentences.", dir, "1")),
+        )
+        assertEquals(2, requests)
+        assertEquals(1, cached().size)
     }
 
     @Test
     fun speechIsCachedByText() = runTest {
         val engine = engine()
         val first = engine.synthesize("Hello.", dir, "0")
-        assertArrayEquals(audio, first.readBytes())
-        assertEquals(first, engine.synthesize("Hello.", dir, "1"))
+        assertArrayEquals(audio, played(first))
+        val again = engine.synthesize("Hello.", dir, "1")
+        assertArrayEquals(audio, played(again))
         assertEquals(1, requests)
         // Outside the narrator's directory, which it clears.
-        assertEquals(cache, first.parentFile)
+        assertEquals(cache, File(again.path!!).parentFile)
     }
 
     @Test
     fun serverTroubleIsRetried() = runTest {
-        responses.addLast(HttpStatusCode.ServiceUnavailable to "{}")
-        responses.addLast(HttpStatusCode.TooManyRequests to "{}")
-        assertArrayEquals(audio, engine().synthesize("Hello.", dir, "0").readBytes())
+        responses.addLast(Answer.Error(HttpStatusCode.ServiceUnavailable))
+        responses.addLast(Answer.Error(HttpStatusCode.TooManyRequests))
+        assertArrayEquals(audio, played(engine().synthesize("Hello.", dir, "0")))
         assertEquals(3, requests)
     }
 
     @Test
     fun aRejectionStopsNarrationWithTheServersReason() = runTest {
         responses.addLast(
-            HttpStatusCode.BadRequest to
-                """{"message":"Cloud voices require a DeepInfra or OpenRouter API key"}"""
+            Answer.Error(
+                HttpStatusCode.BadRequest,
+                """{"message":"Cloud voices require a DeepInfra or OpenRouter API key"}""",
+            )
         )
         val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
         assertEquals(SpeechUnavailable::class, error!!::class)
@@ -124,7 +213,7 @@ class CloudVoicesTest {
 
     @Test
     fun persistentTroubleIsAnInterruptionNotTheEnd() = runTest {
-        repeat(10) { responses.addLast(HttpStatusCode.BadGateway to "{}") }
+        repeat(10) { responses.addLast(Answer.Error(HttpStatusCode.BadGateway)) }
         val error = runCatching { engine().synthesize("Hello.", dir, "0") }.exceptionOrNull()
         assertEquals(SpeechInterrupted::class, error!!::class)
     }
@@ -140,7 +229,7 @@ class CloudVoicesTest {
                 "Bad." to
                     {
                         if (!badTried.complete(Unit)) goodAnswered.await()
-                        HttpStatusCode.InternalServerError to "{}"
+                        Answer.Error(HttpStatusCode.InternalServerError)
                     },
                 "Good." to
                     {
@@ -179,7 +268,7 @@ class CloudVoicesTest {
         testScheduler.runCurrent()
         waiting.cancel()
         testScheduler.advanceUntilIdle()
-        engine.synthesize("Skipped.", dir, "1")
+        played(engine.synthesize("Skipped.", dir, "1"))
         assertEquals(1, requests)
     }
 
@@ -187,10 +276,14 @@ class CloudVoicesTest {
     fun theCacheIsTrimmedOldestFirst() = runTest {
         // Three bytes each, against a five-byte cache.
         val engine = engine()
-        val first = engine.synthesize("One.", dir, "0")
+        played(engine.synthesize("One.", dir, "0"))
+        val first = cached().single()
         first.setLastModified(1_000)
-        val second = engine.synthesize("Two.", dir, "1")
+        val leftover = File(cache, "old.mp3").apply { writeBytes(audio) }
+        played(engine.synthesize("Two.", dir, "1"))
         assertEquals(false, first.exists())
-        assertEquals(true, second.exists())
+        assertEquals(1, cached().size)
+        // From before speech came as MP4.
+        assertEquals(false, leftover.exists())
     }
 }

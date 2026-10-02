@@ -19,14 +19,19 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readAvailable
 import io.ktor.utils.io.readLine
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+
+/** Longest a chunk of cloud speech may take to arrive; a slow provider's long chunk is ~20s. */
+private const val SPEECH_TIMEOUT_MILLIS = 180_000L
+
+/** Longest the speech stream may go quiet, before the first audio or between parts. */
+private const val SPEECH_STALL_MILLIS = 60_000L
 
 /**
  * A non-2xx response. `status` 0 means the request never got one (signed out). [serverMessage] is
@@ -126,18 +131,61 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
     suspend fun voiceModels(): VoiceModels =
         get(VoiceModels.serializer(), "/narration/voice-models") {}
 
-    /** Speaks [text] (at most [MAX_CLOUD_SPEECH_CHARS]) with a cloud voice. MP3 bytes. */
-    @OptIn(ExperimentalEncodingApi::class)
-    suspend fun synthesizeSpeech(model: String, voice: String, text: String): ByteArray =
-        Base64.decode(
-            post(
-                    SynthesizedSpeech.serializer(),
-                    "/narration/synthesize",
-                    SpeechRequest(model, voice, text),
-                    SpeechRequest.serializer(),
-                )
-                .audio
-        )
+    /**
+     * Speaks [text] (at most [MAX_CLOUD_SPEECH_CHARS]) with a cloud voice, handing [onAudio] the
+     * audio (AAC in fragmented MP4) as the server streams it. Throws [ApiException] for an error
+     * answer; a failure once audio has started throws from reading it.
+     */
+    suspend fun streamSpeech(
+        model: String,
+        voice: String,
+        text: String,
+        onAudio: suspend (ByteArray) -> Unit,
+    ) {
+        var token = auth.accessToken() ?: throw ApiException(0, "Signed out")
+        repeat(2) { attempt ->
+            val retry =
+                http
+                    .prepareRequest {
+                        method = HttpMethod.Post
+                        url("$base/narration/speech")
+                        contentType(ContentType.Application.Json)
+                        setBody(
+                            ApiJson.encodeToString(
+                                SpeechRequest.serializer(),
+                                SpeechRequest(model, voice, text),
+                            )
+                        )
+                        bearerAuth(token)
+                        timeout {
+                            requestTimeoutMillis = SPEECH_TIMEOUT_MILLIS
+                            socketTimeoutMillis = SPEECH_STALL_MILLIS
+                        }
+                    }
+                    .execute { response ->
+                        if (response.status == HttpStatusCode.Unauthorized && attempt == 0) {
+                            return@execute true
+                        }
+                        if (!response.status.isSuccess()) decode(JsonObject.serializer(), response)
+                        // A captive portal's page, say.
+                        if (response.contentType()?.match(ContentType.Audio.MP4) != true) {
+                            throw ApiException(response.status.value, "Not audio")
+                        }
+                        val body = response.bodyAsChannel()
+                        val buffer = ByteArray(16 * 1024)
+                        while (true) {
+                            val read = body.readAvailable(buffer, 0, buffer.size)
+                            if (read < 0) break
+                            if (read > 0) onAudio(buffer.copyOf(read))
+                        }
+                        false
+                    }
+            if (!retry) return
+            token =
+                auth.accessToken(forceRefresh = true, rejected = token)
+                    ?: throw ApiException(0, "Signed out")
+        }
+    }
 
     /** Saves a link as a saved article (the server fetches it). */
     suspend fun saveArticle(url: String): SavedArticle =
@@ -273,10 +321,13 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     private class ErrorBody(val message: String?, val appErrorCode: String?)
 
+    private suspend fun errorBody(response: HttpResponse): ErrorBody =
+        errorBody(response.bodyAsText())
+
     /** What an error response says about itself (its tRPC error shape), if it's JSON. */
-    private suspend fun errorBody(response: HttpResponse): ErrorBody {
+    private fun errorBody(text: String): ErrorBody {
         val json =
-            runCatching { ApiJson.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
+            runCatching { ApiJson.parseToJsonElement(text).jsonObject }.getOrNull()
                 ?: return ErrorBody(null, null)
         fun JsonObject.string(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
         return ErrorBody(
@@ -286,9 +337,10 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
     }
 
     private suspend fun <T> decode(serializer: KSerializer<T>, response: HttpResponse): T {
+        // Read once: a streamed response's body can't be read again.
         val text = response.bodyAsText()
         if (!response.status.isSuccess()) {
-            val error = errorBody(response)
+            val error = errorBody(text)
             throw ApiException(
                 response.status.value,
                 "HTTP ${response.status.value}: ${text.take(200)}",

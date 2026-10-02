@@ -203,8 +203,10 @@ Entry bodies, saved articles, and AI summaries are rendered with
 - The consent POST re-validates scopes/redirect/client server-side — **never trust
   the form's scope field.** OAuth access tokens are accepted **only** by the
   resource their audience names: `/api/mcp` for MCP clients, and the main
-  tRPC/REST/SSE surface (`/api/v1` audience) for the first-party native app's
-  client alone (`src/server/oauth/app-client.ts`, `src/server/auth/app-token.ts`).
+  tRPC/REST surface plus the streaming routes (SSE and speech, through
+  `src/server/auth/route-auth.ts`; `/api/v1` audience) for the first-party
+  native app's client alone (`src/server/oauth/app-client.ts`,
+  `src/server/auth/app-token.ts`).
   **Only that pinned client may be minted the `/api/v1` audience** — dynamic
   registration lets any client request any scope, so the audience is the gate.
 - The signing keys published in `/.well-known/assetlinks.json`

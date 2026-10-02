@@ -12,14 +12,12 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
+import { pcmFromWav, pcmOrWav, type PcmStream } from "@/server/services/speech-encoding";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
-const REQUEST_TIMEOUT_MS = 120_000;
 const CATALOG_TIMEOUT_MS = 15_000;
 const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
 const CATALOG_CACHE_RETRY_MS = 60 * 1000;
-/** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
-const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 /** What `service_tier: "priority"` costs over the catalog's listed price. */
 const PRIORITY_PRICE_MULTIPLIER = 1.5;
 
@@ -116,14 +114,14 @@ export function voicesFromSchema(schema: InputSchema): string[] {
 
 /**
  * Whether a model can read a narration chunk: it takes MAX_CLOUD_SPEECH_CHARS
- * of text and can return MP3. Some can't (Orpheus caps input at 300
- * characters; HiggsAudio only returns PCM).
+ * of text and can return PCM, and WAV to learn the PCM's format (see
+ * {@link deepInfraSpeech}). Some can't (Orpheus caps input at 300 characters).
  */
 export function canNarrate(schema: InputSchema): boolean {
   const input = propertyOf(schema, "input") ?? propertyOf(schema, "text");
   if (!input || (input.maxLength ?? Infinity) < MAX_CLOUD_SPEECH_CHARS) return false;
   const formats = enumOf(schema, "response_format") ?? enumOf(schema, "output_format");
-  return formats?.includes("mp3") ?? false;
+  return (formats?.includes("pcm") && formats.includes("wav")) ?? false;
 }
 
 let cached: { expiresAt: number; models: DeepInfraSpeechModel[] } | null = null;
@@ -204,47 +202,96 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
   return models.filter((model): model is DeepInfraSpeechModel => model !== null);
 }
 
-/**
- * Some models (MiMo) ignore `response_format` and send WAV, still labelled
- * `audio/mpeg`, so check the bytes: an ID3 tag or an MPEG frame sync.
- */
-export function isMp3(audio: Uint8Array): boolean {
-  const isId3 = audio[0] === 0x49 && audio[1] === 0x44 && audio[2] === 0x33;
-  const isFrameSync = audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0;
-  return isId3 || isFrameSync;
+interface PcmFormat {
+  sampleRate: number;
+  channels: number;
+}
+
+/** Each model's PCM format, once a probe has asked (see {@link deepInfraSpeech}). */
+const pcmFormats = new Map<string, Promise<PcmFormat>>();
+
+/** A word for the probe to say: its WAV's header is all it's for. */
+const PROBE_TEXT = "Hi.";
+const PROBE_TIMEOUT_MS = 30_000;
+
+function requestSpeech(
+  apiKey: string,
+  model: string,
+  voice: string,
+  input: string,
+  format: "pcm" | "wav",
+  signal: AbortSignal
+): Promise<Response> {
+  return fetch(`${DEEPINFRA_API_URL}/v1/audio/speech`, {
+    method: "POST",
+    headers: { ...headers(apiKey), "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify({
+      model,
+      voice,
+      input,
+      response_format: format,
+      stream: true,
+      service_tier: "priority",
+    }),
+  });
 }
 
 /**
- * Synthesizes speech as MP3. The response streams as it's generated, but it's
- * read whole: clients get one clip per request.
+ * `model`'s PCM format, from the header of a WAV of {@link PROBE_TEXT}; asked
+ * once per model (the format is the model's, whatever the key or voice) and
+ * kept, unless the probe fails. The probe isn't tied to the request that
+ * started it, since others may be waiting on it too.
+ */
+function pcmFormatOf(apiKey: string, model: string, voice: string): Promise<PcmFormat> {
+  let format = pcmFormats.get(model);
+  if (!format) {
+    format = (async () => {
+      const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+      const response = await requestSpeech(apiKey, model, voice, PROBE_TEXT, "wav", signal);
+      if (!response.ok || !response.body) throw await errorFromResponse(response);
+      const { sampleRate, channels, data } = await pcmFromWav(response.body);
+      await data.cancel();
+      return { sampleRate, channels };
+    })();
+    pcmFormats.set(model, format);
+    const probe = format;
+    probe.catch(() => {
+      if (pcmFormats.get(model) === probe) pcmFormats.delete(model);
+    });
+  }
+  return format;
+}
+
+/**
+ * Speech as PCM, streamed as it's generated. Only PCM streams (a WAV's header
+ * gives its length, so DeepInfra sends it whole), but it has no header and
+ * DeepInfra ignores a requested rate, so the format comes from a probe: a WAV
+ * of a word, asked alongside the first request for each model, which answers
+ * before the speech does.
  */
 export async function deepInfraSpeech(
   apiKey: string,
   model: string,
   voice: string,
-  input: string
-): Promise<Uint8Array> {
-  const response = await fetch(`${DEEPINFRA_API_URL}/v1/audio/speech`, {
-    method: "POST",
-    headers: { ...headers(apiKey), "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    body: JSON.stringify({
-      model,
-      voice,
-      input,
-      response_format: "mp3",
-      service_tier: "priority",
-    }),
-  });
-  if (!response.ok) {
-    throw await errorFromResponse(response);
+  input: string,
+  signal: AbortSignal
+): Promise<PcmStream> {
+  const [speech, probed] = await Promise.allSettled([
+    requestSpeech(apiKey, model, voice, input, "pcm", signal),
+    pcmFormatOf(apiKey, model, voice),
+  ]);
+  if (speech.status === "rejected") throw speech.reason;
+  const response = speech.value;
+  let format: PcmFormat;
+  try {
+    // The probe may have been someone else's, failing for their key: once
+    // more on ours (the failed one is gone from the cache by now).
+    format = probed.status === "fulfilled" ? probed.value : await pcmFormatOf(apiKey, model, voice);
+  } catch (error) {
+    await response.body?.cancel();
+    throw error;
   }
-  const audio = new Uint8Array(await response.arrayBuffer());
-  if (audio.byteLength > MAX_SPEECH_BYTES) {
-    throw new Error(`DeepInfra speech response too large (${audio.byteLength} bytes)`);
-  }
-  if (!isMp3(audio)) {
-    throw new Error(`DeepInfra model ${model} returned audio that isn't MP3`);
-  }
-  return audio;
+  if (!response.ok || !response.body) throw await errorFromResponse(response);
+  return pcmOrWav(response.body, format);
 }

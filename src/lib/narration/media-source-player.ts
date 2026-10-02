@@ -7,11 +7,16 @@
  * hands the browser a fresh, often short, clip each time with a gap our
  * script has to bridge, and Chrome on Android treats clips under ~5 seconds as
  * sound effects rather than playback; narration played that way stopped a
- * while after the screen locked. Here each chunk is encoded as a
- * self-contained fragmented MP4 (see `./audio-encoding`) and appended to a
- * single `SourceBuffer` in `sequence` mode, so the element sees one long,
- * never-ending track. No separate silent-audio element is needed — and there
- * must not be one: iOS pauses one media element when another starts.
+ * while after the screen locked. Here each chunk's audio is a self-contained
+ * fragmented MP4, appended to a single `SourceBuffer` in `sequence` mode, so
+ * the element sees one long, never-ending track. No separate silent-audio
+ * element is needed — and there must not be one: iOS pauses one media element
+ * when another starts.
+ *
+ * A chunk's synthesis may deliver its MP4 in several pieces (cloud voices
+ * stream it; see `./cloud-speech`), each appended as it arrives — MSE takes
+ * a box split across appends — so a chunk is playable up to what has arrived
+ * and its place on the timeline grows.
  *
  * The buffer holds one *run*: consecutive chunks laid end to end from where
  * playback started. Skipping to a chunk already in the run seeks; anything
@@ -22,12 +27,7 @@
  */
 
 import { splitIntoSentences } from "./sentence-splitter";
-import {
-  getMediaSourceClass,
-  loadSegmentEncoder,
-  type PcmAudio,
-  type SegmentEncoder,
-} from "./audio-encoding";
+import { getMediaSourceClass } from "./audio-encoding";
 
 /** Rough speaking speed at 1×, for sizing chunks that aren't synthesized yet. */
 const ESTIMATED_CHARS_PER_SECOND = 15;
@@ -35,8 +35,14 @@ const ESTIMATED_CHARS_PER_SECOND = 15;
 const KEEP_BEHIND_CHUNKS = 5;
 /** Slack when comparing our segment times to the buffered ranges. */
 const TIME_EPSILON = 0.01;
+/**
+ * Times a chunk whose audio stopped arriving partway is synthesized again
+ * before narration gives up on it.
+ */
+const MAX_STREAM_RETRIES = 2;
 
-const UNSUPPORTED_MESSAGE = "This browser can't stream narration audio";
+/** For browsers without Media Source Extensions, or the audio format a voice needs. */
+export const UNSUPPORTED_MESSAGE = "This browser can't stream narration audio";
 
 export type PlaybackStatus = "idle" | "playing" | "paused" | "buffering";
 
@@ -100,8 +106,30 @@ export function splitIntoSpeechChunks(paragraphs: string[], maxChars: number): S
   });
 }
 
+/**
+ * Thrown by a synthesis whose audio stopped arriving partway (a dropped
+ * connection). The player throws away what that chunk had and synthesizes it
+ * again, rather than playing a chunk with its end missing.
+ */
+export class StreamInterruptedError extends Error {
+  constructor() {
+    super("Lost the connection while narrating");
+  }
+}
+
 export interface MediaSourcePlayerOptions {
-  synthesize: (text: string) => Promise<PcmAudio>;
+  /**
+   * Speaks one chunk as a complete fragmented MP4 of type {@link loadMimeType},
+   * delivered as consecutive pieces of its bytes; each is played as soon as it
+   * arrives. Stop when `signal` aborts.
+   */
+  synthesize: (text: string, signal: AbortSignal) => AsyncIterable<Uint8Array>;
+  /**
+   * The MIME type (with codec) of what `synthesize` produces. Rejects, with a
+   * message for the listener, when this browser can't play it; nothing is
+   * synthesized then.
+   */
+  loadMimeType: () => Promise<string>;
   chunkParagraphs: (paragraphs: string[]) => SpeechChunk[];
   /** Syntheses allowed to run at once; the nearest chunk still needed always goes first. */
   maxConcurrentSyntheses: number;
@@ -113,7 +141,6 @@ export interface MediaSourcePlayerOptions {
   bufferAheadSeconds: number;
   /** Duration at 1× of a chunk not synthesized yet. */
   estimateSeconds?: (text: string) => number;
-  loadEncoder?: () => Promise<SegmentEncoder | null>;
   createAudio?: () => HTMLAudioElement;
   /** Returns null when the browser has no MSE. */
   createMediaSource?: () => MediaSource | null;
@@ -121,18 +148,89 @@ export interface MediaSourcePlayerOptions {
   attach?: (audio: HTMLAudioElement, source: MediaSource) => () => void;
 }
 
-/** A queued synthesis dropped because playback moved away from its chunk. */
+/** A synthesis dropped because playback moved away from its chunk. */
 class SkippedSynthesis extends Error {
   constructor() {
     super("Synthesis skipped");
   }
 }
 
+/** A chunk whose stream dropped and is to be synthesized again. */
+class RetriedSynthesis extends Error {
+  constructor() {
+    super("Synthesis interrupted");
+  }
+}
+
+/** One chunk's MP4 bytes, in order, as its synthesis produces them. */
+class ChunkAudio {
+  private readonly pieces: Uint8Array[] = [];
+  private done = false;
+  private failure: Error | null = null;
+  private readonly controller = new AbortController();
+  private waiters: (() => void)[] = [];
+
+  get signal(): AbortSignal {
+    return this.controller.signal;
+  }
+
+  get finished(): boolean {
+    return this.done || this.failure !== null;
+  }
+
+  /**
+   * Waits for pieces past the first `from`, and returns all that have arrived;
+   * null once the chunk ended without more.
+   */
+  async piecesFrom(from: number): Promise<Uint8Array[] | null> {
+    for (;;) {
+      if (this.failure) throw this.failure;
+      if (from < this.pieces.length) return this.pieces.slice(from);
+      if (this.done) return null;
+      await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
+  }
+
+  add(piece: Uint8Array): void {
+    if (this.finished) return;
+    this.pieces.push(piece);
+    this.wake();
+  }
+
+  end(): void {
+    if (this.finished) return;
+    this.done = true;
+    this.wake();
+  }
+
+  fail(error: Error): void {
+    if (this.finished) return;
+    this.failure = error;
+    this.wake();
+  }
+
+  /** Stops synthesis; anyone waiting sees a skip. */
+  abort(): void {
+    this.fail(new SkippedSynthesis());
+    this.controller.abort();
+  }
+
+  private wake(): void {
+    for (const wake of this.waiters.splice(0)) wake();
+  }
+}
+
 /** A chunk's place on the element's timeline. */
-interface PlacedSegment {
+interface PlacedChunk {
   chunk: number;
   start: number;
+  /** Grows as pieces are appended, until `complete`. */
   end: number;
+  /** The audio the appended pieces came from. */
+  audio: ChunkAudio;
+  /** Pieces of `audio` appended so far. */
+  appended: number;
+  complete: boolean;
 }
 
 interface Stream {
@@ -142,11 +240,6 @@ interface Stream {
   buffer: SourceBuffer | null;
   /** SourceBuffer operations must never overlap. */
   queue: Promise<void>;
-}
-
-function defaultLoadEncoder(): Promise<SegmentEncoder | null> {
-  const mediaSource = getMediaSourceClass();
-  return mediaSource ? loadSegmentEncoder(mediaSource) : Promise.resolve(null);
 }
 
 function defaultCreateMediaSource(): MediaSource | null {
@@ -193,17 +286,28 @@ function update(buffer: SourceBuffer, start: () => void): Promise<void> {
   });
 }
 
+function concat(pieces: Uint8Array[]): Uint8Array {
+  if (pieces.length === 1) return pieces[0];
+  const bytes = new Uint8Array(pieces.reduce((sum, piece) => sum + piece.length, 0));
+  let offset = 0;
+  for (const piece of pieces) {
+    bytes.set(piece, offset);
+    offset += piece.length;
+  }
+  return bytes;
+}
+
 function bufferedEnd(buffer: SourceBuffer): number {
   const ranges = buffer.buffered;
   return ranges.length ? ranges.end(ranges.length - 1) : 0;
 }
 
-function isBuffered(buffer: SourceBuffer, segment: PlacedSegment): boolean {
+function isBuffered(buffer: SourceBuffer, placed: PlacedChunk): boolean {
   const ranges = buffer.buffered;
   for (let i = 0; i < ranges.length; i++) {
     if (
-      ranges.start(i) <= segment.start + TIME_EPSILON &&
-      ranges.end(i) >= segment.end - TIME_EPSILON
+      ranges.start(i) <= placed.start + TIME_EPSILON &&
+      ranges.end(i) >= placed.end - TIME_EPSILON
     ) {
       return true;
     }
@@ -222,12 +326,12 @@ function rangeEndFrom(buffer: SourceBuffer, start: number): number {
 
 export class MediaSourcePlayer {
   private readonly audio: HTMLAudioElement;
-  private readonly synthesize: (text: string) => Promise<PcmAudio>;
+  private readonly synthesize: (text: string, signal: AbortSignal) => AsyncIterable<Uint8Array>;
+  private readonly loadMimeType: () => Promise<string>;
   private readonly chunkParagraphs: (paragraphs: string[]) => SpeechChunk[];
   private readonly maxConcurrentSyntheses: number;
   private readonly bufferAheadSeconds: number;
   private readonly estimateSeconds: (text: string) => number;
-  private readonly loadEncoder: () => Promise<SegmentEncoder | null>;
   private readonly createMediaSource: () => MediaSource | null;
   private readonly attach: (audio: HTMLAudioElement, source: MediaSource) => () => void;
 
@@ -238,15 +342,18 @@ export class MediaSourcePlayer {
   private status: PlaybackStatus = "idle";
   private callbacks: PlayerCallbacks = {};
   private rate = 1;
-  private encoder: Promise<SegmentEncoder | null> | null = null;
-  /** In-flight or finished encoded segments per chunk index. */
-  private segments = new Map<number, Promise<Uint8Array>>();
-  /** Bumped by clearCache, so synthesis finishing afterwards isn't cached. */
+  private mimeType: Promise<string> | null = null;
+  /** Synthesizing or synthesized audio per chunk index. */
+  private chunkAudio = new Map<number, ChunkAudio>();
+  /** Streams that dropped partway, per chunk, since it last finished. */
+  private streamRetries = new Map<number, number>();
+  /** Bumped by clearCache, so synthesis queued before it doesn't start. */
   private cacheEpoch = 0;
   private runningSyntheses = 0;
   private queuedSyntheses: {
     chunk: number;
     epoch: number;
+    audio: ChunkAudio;
     start: () => void;
     skip: () => void;
   }[] = [];
@@ -259,9 +366,16 @@ export class MediaSourcePlayer {
   private run = 0;
   /** Where the current run begins on the element's timeline. */
   private runStart = 0;
+  /**
+   * Where to seek once the current run's first audio is buffered. Not
+   * before: Chromium ignores a seek into a range just removed (seen when
+   * replaying a chunk), apparently because only buffered time is seekable
+   * while the stream's length is open-ended.
+   */
+  private seekOnAppend: number | null = null;
   /** The current run's chunks, in order. */
-  private placed: PlacedSegment[] = [];
-  /** Next chunk to append to the current run. */
+  private placed: PlacedChunk[] = [];
+  /** Next chunk to finish appending to the current run. */
   private nextAppend = 0;
   /** The run whose pump loop is going, if any. */
   private pumpingRun = -1;
@@ -275,13 +389,15 @@ export class MediaSourcePlayer {
     this.bufferAheadSeconds = options.bufferAheadSeconds;
     this.estimateSeconds =
       options.estimateSeconds ?? ((text) => text.length / ESTIMATED_CHARS_PER_SECOND);
-    this.loadEncoder = options.loadEncoder ?? defaultLoadEncoder;
+    this.loadMimeType = options.loadMimeType;
     this.createMediaSource = options.createMediaSource ?? defaultCreateMediaSource;
     this.attach = options.attach ?? defaultAttach;
     this.audio = (options.createAudio ?? (() => new Audio()))();
     this.audio.preload = "auto";
 
     this.audio.addEventListener("timeupdate", () => this.onTimeUpdate());
+    // Also how catching up with a chunk that's still arriving shows: the
+    // element waits for more, then plays on.
     this.audio.addEventListener("waiting", () => {
       if (this.status === "playing") this.setStatus("buffering");
     });
@@ -407,6 +523,7 @@ export class MediaSourcePlayer {
 
   stop(): void {
     for (const queued of this.queuedSyntheses.splice(0)) queued.skip();
+    this.abortSyntheses(() => true);
     this.run++;
     this.playRequest++;
     this.audio.pause();
@@ -420,7 +537,9 @@ export class MediaSourcePlayer {
   }
 
   clearCache(): void {
-    this.segments.clear();
+    for (const audio of this.chunkAudio.values()) audio.abort();
+    this.chunkAudio.clear();
+    this.streamRetries.clear();
     this.cacheEpoch++;
   }
 
@@ -456,6 +575,9 @@ export class MediaSourcePlayer {
   }
 
   private moveTo(index: number): void {
+    // Chunks left behind are only worth finishing if they're nearly done,
+    // and there's no telling; a paid stream for audio nobody hears is waste.
+    this.abortSyntheses((chunk) => chunk < index);
     if (!this.isActive()) {
       // Stay put; the next play() starts a new run here. Retire the current
       // run so its pump doesn't prefetch (paid) chunks around the new index.
@@ -465,12 +587,12 @@ export class MediaSourcePlayer {
       this.emitPosition();
       return;
     }
-    const segment = this.placed.find((placed) => placed.chunk === index);
+    const placed = this.placed.find((candidate) => candidate.chunk === index);
     const buffer = this.stream?.buffer;
-    if (segment && buffer && isBuffered(buffer, segment)) {
+    if (placed && buffer && isBuffered(buffer, placed)) {
       this.index = index;
       this.emitPosition();
-      this.audio.currentTime = segment.start;
+      this.audio.currentTime = placed.start;
       void this.pump();
       return;
     }
@@ -491,16 +613,20 @@ export class MediaSourcePlayer {
   }
 
   /**
-   * Starts a new run that keeps the `keep` segments and continues with chunk
+   * Starts a new run that keeps the `keep` chunks and continues with chunk
    * `index` at time `at` (the playhead when null), removing anything buffered
-   * from there on.
+   * from there on. `seek` moves the playhead to `at` too, for when the audio
+   * under it is being replaced.
    */
-  private restartRun(index: number, keep: PlacedSegment[], at: number | null): void {
+  private restartRun(index: number, keep: PlacedChunk[], at: number | null, seek = false): void {
     const run = ++this.run;
     this.placed = keep;
     this.nextAppend = index;
     this.enqueue(async (buffer) => {
       if (run !== this.run) return;
+      // The run being replaced may have stopped partway through an MP4 box;
+      // the next append is a new file. Once ended, nothing is left partway.
+      if (this.stream?.source.readyState === "open") buffer.abort();
       const end = bufferedEnd(buffer);
       const removeFrom = at ?? 0;
       if (end > removeFrom) await update(buffer, () => buffer.remove(removeFrom, end));
@@ -509,7 +635,7 @@ export class MediaSourcePlayer {
       buffer.timestampOffset = start;
       // Seeking flushes audio the decoder already read from the removed
       // range, which would otherwise play on and swallow the new run's start.
-      if (at === null) this.audio.currentTime = start;
+      this.seekOnAppend = at === null || seek ? start : null;
     }).catch((error: unknown) => {
       if (run === this.run) this.fail(error);
     });
@@ -517,9 +643,28 @@ export class MediaSourcePlayer {
   }
 
   /**
+   * Plays a chunk from its start again with freshly synthesized audio, after
+   * its stream dropped partway. Synthesis may not repeat itself sample for
+   * sample, so resuming the new audio where the old one stopped could repeat
+   * or skip words; replaying the chunk can't.
+   */
+  private replayChunk(placed: PlacedChunk): void {
+    const at = this.placed.indexOf(placed);
+    if (at === -1) return;
+    const reached = this.audio.currentTime >= placed.start - TIME_EPSILON;
+    if (reached) {
+      this.index = placed.chunk;
+      this.emitPosition();
+      if (this.status === "playing") this.setStatus("buffering");
+    }
+    this.restartRun(placed.chunk, this.placed.slice(0, at), placed.start, reached);
+  }
+
+  /**
    * Synthesizes, encodes and appends the current run's chunks in order, up to
-   * {@link lastWantedChunk}. One loop per run: a loop still waiting on a slow
-   * chunk from an abandoned run must not hold up the new one.
+   * {@link lastWantedChunk}, each piece as soon as it arrives. One loop per
+   * run: a loop still waiting on a slow chunk from an abandoned run must not
+   * hold up the new one.
    */
   private async pump(): Promise<void> {
     const run = this.run;
@@ -536,39 +681,96 @@ export class MediaSourcePlayer {
           });
           return;
         }
-        const lastWanted = this.lastWantedChunk();
-        if (chunk > lastWanted) return;
-        const pending = this.segment(chunk);
-        for (let ahead = chunk + 1; ahead <= lastWanted; ahead++) {
-          this.segment(ahead).catch(() => {});
-        }
-
-        let bytes: Uint8Array;
-        try {
-          bytes = await pending;
-        } catch (error) {
-          // A skipped chunk is requested again once playback gets near it.
-          if (run === this.run && !(error instanceof SkippedSynthesis)) this.fail(error);
+        const last = this.placed.at(-1);
+        const placed = last?.chunk === chunk ? last : null;
+        // A chunk that's started playing is always finished, whatever the lookahead.
+        if (!placed && chunk > this.lastWantedChunk()) return;
+        const audio = this.audioFor(chunk);
+        this.prefetch();
+        if (placed && placed.audio !== audio) {
+          // Its stream dropped while this loop wasn't watching.
+          this.replayChunk(placed);
           return;
         }
 
+        let pieces: Uint8Array[] | null;
+        try {
+          pieces = await audio.piecesFrom(placed?.appended ?? 0);
+        } catch (error) {
+          if (run !== this.run) return;
+          if (error instanceof RetriedSynthesis) {
+            if (placed) {
+              this.replayChunk(placed);
+              return;
+            }
+            continue;
+          }
+          // A skipped chunk is requested again once playback gets near it.
+          if (!(error instanceof SkippedSynthesis)) this.fail(error);
+          return;
+        }
+        if (run !== this.run) return;
+
+        if (pieces === null) {
+          // Queued, so a chunk with no audio at all is placed after the run has started.
+          await this.enqueue(() => {
+            if (run !== this.run) return;
+            if (placed) placed.complete = true;
+            else {
+              const start = this.placed.at(-1)?.end ?? this.runStart;
+              this.placed.push({ chunk, start, end: start, audio, appended: 0, complete: true });
+            }
+            this.nextAppend = chunk + 1;
+          });
+          // The stream went away first.
+          if (run === this.run && this.nextAppend === chunk) return;
+          continue;
+        }
+
+        const appendedBefore = placed?.appended ?? 0;
+        const arrived = pieces;
+        const bytes = concat(arrived);
         await this.enqueue(async (buffer) => {
           if (run !== this.run) return;
-          const start = this.placed.at(-1)?.end ?? this.runStart;
+          const start = placed?.start ?? this.placed.at(-1)?.end ?? this.runStart;
           await update(buffer, () => buffer.appendBuffer(bytes as BufferSource));
           if (run !== this.run) return;
-          this.placed.push({ chunk, start, end: rangeEndFrom(buffer, start) });
-          this.nextAppend = chunk + 1;
-          if (chunk === this.index && this.status === "buffering") this.setStatus("playing");
+          const end = rangeEndFrom(buffer, start);
+          if (placed) {
+            placed.end = end;
+            placed.appended += arrived.length;
+          } else {
+            this.placed.push({
+              chunk,
+              start,
+              end,
+              audio,
+              appended: arrived.length,
+              complete: false,
+            });
+          }
+          if (this.seekOnAppend !== null && end > this.seekOnAppend) {
+            this.audio.currentTime = this.seekOnAppend;
+            this.seekOnAppend = null;
+          }
+          if (this.status === "buffering" && this.isPlayheadBuffered()) this.setStatus("playing");
         });
         // The stream went away mid-append.
-        if (run === this.run && this.nextAppend === chunk) return;
+        const now = this.placed.at(-1);
+        if (run === this.run && (now?.chunk !== chunk || now.appended === appendedBefore)) return;
       }
     } catch (error) {
       if (run === this.run) this.fail(error);
     } finally {
       if (this.pumpingRun === run) this.pumpingRun = -1;
     }
+  }
+
+  /** Starts synthesizing the chunks from the one being appended on, as far as wanted. */
+  private prefetch(): void {
+    if (!this.stream || this.status === "idle" || this.jumpPending) return;
+    const lastWanted = this.lastWantedChunk();
+    for (let ahead = this.nextAppend; ahead <= lastWanted; ahead++) this.audioFor(ahead);
   }
 
   private enqueue(op: (buffer: SourceBuffer) => Promise<void> | void): Promise<void> {
@@ -585,9 +787,9 @@ export class MediaSourcePlayer {
 
   private async sourceBufferFor(stream: Stream): Promise<SourceBuffer | null> {
     if (stream.buffer) return stream.buffer;
-    const [encoder] = await Promise.all([this.getEncoder(), stream.opened]);
-    if (!encoder || this.stream !== stream) return null;
-    const buffer = stream.source.addSourceBuffer(encoder.mimeType);
+    const [mimeType] = await Promise.all([this.getMimeType(), stream.opened]);
+    if (this.stream !== stream) return null;
+    const buffer = stream.source.addSourceBuffer(mimeType);
     buffer.mode = "sequence";
     // ManagedMediaSource may evict buffered audio to save memory.
     buffer.addEventListener("bufferedchange", () => this.recoverEvictions());
@@ -595,46 +797,79 @@ export class MediaSourcePlayer {
     return buffer;
   }
 
-  private getEncoder(): Promise<SegmentEncoder | null> {
-    this.encoder ??= this.loadEncoder().catch((error: unknown) => {
-      this.encoder = null;
+  private getMimeType(): Promise<string> {
+    this.mimeType ??= this.loadMimeType().catch((error: unknown) => {
+      this.mimeType = null;
       throw error;
     });
-    return this.encoder;
+    return this.mimeType;
   }
 
-  private segment(chunk: number): Promise<Uint8Array> {
-    let promise = this.segments.get(chunk);
-    if (!promise) {
-      const epoch = this.cacheEpoch;
-      const text = this.chunks[chunk].text;
-      promise = this.getEncoder().then(async (encoder) => {
-        if (!encoder) throw new Error(UNSUPPORTED_MESSAGE);
-        const audio = await this.scheduleSynthesis(chunk, epoch, () => this.synthesize(text));
-        const bytes = await encoder.encode(audio);
-        if (epoch !== this.cacheEpoch) throw new Error("Narration changed during synthesis");
-        return bytes;
-      });
-      // Let a failed chunk be retried on the next attempt (unless the entry
-      // has since been replaced, e.g. after clearCache).
-      const settled = promise;
-      promise.catch(() => {
-        if (this.segments.get(chunk) === settled) this.segments.delete(chunk);
-      });
-      this.segments.set(chunk, promise);
+  /** The chunk's audio, starting its synthesis unless it's already under way or done. */
+  private audioFor(chunk: number): ChunkAudio {
+    const cached = this.chunkAudio.get(chunk);
+    if (cached) return cached;
+    const audio = new ChunkAudio();
+    this.chunkAudio.set(chunk, audio);
+    const epoch = this.cacheEpoch;
+    const text = this.chunks[chunk].text;
+    this.getMimeType()
+      .then(() =>
+        this.scheduleSynthesis(chunk, epoch, audio, async () => {
+          for await (const piece of this.synthesize(text, audio.signal)) {
+            if (audio.finished) return;
+            audio.add(piece);
+          }
+        })
+      )
+      .then(
+        () => {
+          this.streamRetries.delete(chunk);
+          audio.end();
+        },
+        (error: unknown) => {
+          // Let a failed chunk be requested again (unless the entry has
+          // since been replaced, e.g. after clearCache).
+          if (this.chunkAudio.get(chunk) === audio) this.chunkAudio.delete(chunk);
+          audio.fail(this.synthesisFailure(chunk, audio, error));
+        }
+      );
+    return audio;
+  }
+
+  private synthesisFailure(chunk: number, audio: ChunkAudio, error: unknown): Error {
+    if (audio.signal.aborted || error instanceof SkippedSynthesis) return new SkippedSynthesis();
+    if (error instanceof StreamInterruptedError) {
+      const retries = (this.streamRetries.get(chunk) ?? 0) + 1;
+      if (retries <= MAX_STREAM_RETRIES) {
+        this.streamRetries.set(chunk, retries);
+        return new RetriedSynthesis();
+      }
     }
-    return promise;
+    return error instanceof Error ? error : new Error(String(error));
+  }
+
+  /** Stops the unfinished syntheses of the chunks `drop` picks, and forgets them. */
+  private abortSyntheses(drop: (chunk: number) => boolean): void {
+    for (const [chunk, audio] of this.chunkAudio) {
+      if (!audio.finished && drop(chunk)) {
+        audio.abort();
+        this.chunkAudio.delete(chunk);
+      }
+    }
   }
 
   private scheduleSynthesis(
     chunk: number,
     epoch: number,
-    synthesize: () => Promise<PcmAudio>
-  ): Promise<PcmAudio> {
+    audio: ChunkAudio,
+    synthesize: () => Promise<void>
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       this.queuedSyntheses.push({
         chunk,
         epoch,
+        audio,
         start: () => {
           this.runningSyntheses++;
           synthesize()
@@ -657,6 +892,7 @@ export class MediaSourcePlayer {
       // Chunk numbers from before clearCache belong to different text.
       const wanted =
         next.epoch === this.cacheEpoch &&
+        !next.audio.finished &&
         this.status !== "idle" &&
         next.chunk >= this.index &&
         next.chunk <= this.lastWantedChunk();
@@ -678,9 +914,15 @@ export class MediaSourcePlayer {
     for (; chunk < this.chunks.length - 1; chunk++) {
       // The run's placed chunks are consecutive, so index straight in.
       const placed = this.placed[chunk - firstPlaced];
-      seconds += placed
-        ? Math.max(0, placed.end - Math.max(placed.start, time))
-        : this.estimateSeconds(this.chunks[chunk].text);
+      if (placed) {
+        // A chunk still arriving is at least as long as what's arrived.
+        const end = placed.complete
+          ? placed.end
+          : Math.max(placed.end, placed.start + this.estimateSeconds(this.chunks[chunk].text));
+        seconds += Math.max(0, end - Math.max(placed.start, time));
+      } else {
+        seconds += this.estimateSeconds(this.chunks[chunk].text);
+      }
       if (seconds / this.rate >= this.bufferAheadSeconds) break;
     }
     return Math.min(Math.max(chunk, this.index + 1), this.chunks.length - 1);
@@ -688,20 +930,24 @@ export class MediaSourcePlayer {
 
   private onTimeUpdate(): void {
     const time = this.audio.currentTime;
-    const segment = this.placed.find((placed) => time >= placed.start && time < placed.end);
-    if (segment && segment.chunk !== this.index) {
-      this.index = segment.chunk;
+    const placed = this.placed.find((candidate) => time >= candidate.start && time < candidate.end);
+    if (placed && placed.chunk !== this.index) {
+      this.index = placed.chunk;
       this.emitPosition();
       this.evictBehind();
     }
     // The playhead moving shrinks what's buffered ahead of it.
+    this.prefetch();
     void this.pump();
   }
 
   private evictBehind(): void {
     const keepFrom = this.index - KEEP_BEHIND_CHUNKS;
-    for (const chunk of this.segments.keys()) {
-      if (chunk < keepFrom) this.segments.delete(chunk);
+    for (const [chunk, audio] of this.chunkAudio) {
+      if (chunk < keepFrom) {
+        audio.abort();
+        this.chunkAudio.delete(chunk);
+      }
     }
     const firstKept = this.placed.findIndex((placed) => placed.chunk >= keepFrom);
     if (firstKept <= 0) return;

@@ -12,7 +12,6 @@ import {
 } from "@/server/services/speech";
 import {
   canNarrate,
-  isMp3,
   voicesFromSchema,
   type DeepInfraSpeechModel,
 } from "@/server/services/deepinfra";
@@ -183,10 +182,10 @@ describe("voicesFromSchema", () => {
 });
 
 describe("canNarrate", () => {
-  const formats = { TtsResponseFormat: { enum: ["mp3", "wav"] } };
+  const formats = { TtsResponseFormat: { enum: ["mp3", "wav", "pcm"] } };
   const responseFormat = { $ref: "#/definitions/TtsResponseFormat" };
 
-  it("accepts a model that takes a full chunk and returns MP3", () => {
+  it("accepts a model that takes a full chunk and returns PCM and WAV", () => {
     expect(
       canNarrate({
         properties: { text: { maxLength: 10000 }, output_format: responseFormat },
@@ -204,23 +203,14 @@ describe("canNarrate", () => {
     ).toBe(false);
   });
 
-  it("rejects a model that can't return MP3", () => {
-    expect(
-      canNarrate({ properties: { input: { maxLength: 1500 }, response_format: { const: "pcm" } } })
-    ).toBe(false);
+  it("rejects a model that can't stream PCM or say what format it's in", () => {
+    // PCM alone has no header to learn its rate from; WAV alone doesn't stream.
+    for (const only of ["pcm", "wav"]) {
+      expect(
+        canNarrate({ properties: { input: { maxLength: 1500 }, response_format: { const: only } } })
+      ).toBe(false);
+    }
     expect(canNarrate({ properties: { text: { maxLength: 1000 } } })).toBe(false);
-  });
-});
-
-describe("isMp3", () => {
-  it("recognizes an ID3 tag or an MPEG frame", () => {
-    expect(isMp3(new Uint8Array([0x49, 0x44, 0x33, 0x04]))).toBe(true);
-    expect(isMp3(new Uint8Array([0xff, 0xf3, 0x84, 0xc4]))).toBe(true);
-  });
-
-  it("rejects WAV", () => {
-    expect(isMp3(new TextEncoder().encode("RIFF\0\0\0\0WAVE"))).toBe(false);
-    expect(isMp3(new Uint8Array())).toBe(false);
   });
 });
 

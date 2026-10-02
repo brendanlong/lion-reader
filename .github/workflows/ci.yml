@@ -145,6 +145,7 @@ jobs:
             native/markdown
             native/readability
             native/sanitizer
+            native/speech-encoder
 
       # First because it compiles nothing: a misformatted PR fails in seconds
       # rather than after the test and clippy builds. The husky pre-commit hook

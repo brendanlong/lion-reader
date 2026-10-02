@@ -27,11 +27,7 @@
 
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
-import { isSessionActive, validateSession } from "@/server/auth/session";
-import { validateAppAccessToken } from "@/server/auth/app-token";
-import { isAccessTokenActive } from "@/server/oauth/service";
-import { isSignupConfirmed } from "@/server/auth/confirmation";
-import { extractBearerToken } from "@/server/auth/bearer";
+import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
@@ -65,34 +61,6 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Extracts session token from request headers.
- * Supports both cookie-based and Authorization header authentication.
- */
-function getSessionToken(headers: Headers): string | null {
-  // Check Authorization header first (for API clients)
-  const bearerToken = extractBearerToken(headers.get("authorization"));
-  if (bearerToken) {
-    return bearerToken;
-  }
-
-  // Check cookie (for browser clients)
-  const cookieHeader = headers.get("cookie");
-  if (cookieHeader) {
-    const cookies = Object.fromEntries(
-      cookieHeader.split("; ").map((c) => {
-        const [key, ...value] = c.split("=");
-        return [key, value.join("=")];
-      })
-    );
-    if (cookies.session) {
-      return cookies.session;
-    }
-  }
-
-  return null;
-}
 
 /**
  * Gets a mapping of feedId -> subscriptionId for a user's active subscriptions.
@@ -143,29 +111,10 @@ function formatSSEHeartbeat(): string {
  */
 export async function GET(req: Request): Promise<Response> {
   // Authenticate the user
-  const token = getSessionToken(req.headers);
-  if (!token) {
-    return new Response(
-      JSON.stringify({
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Authentication required",
-        },
-      }),
-      {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-
-  // Browser sessions, or the first-party app's OAuth token (confirmed users
-  // only, like the scoped tRPC procedures it can reach).
-  const sessionData = await validateSession(token);
-  const appToken = sessionData ? null : await validateAppAccessToken(token);
-  const authenticatedUserId =
-    sessionData?.user.id ?? (appToken && isSignupConfirmed(appToken.user) ? appToken.userId : null);
-  if (!authenticatedUserId) {
+  // Browser sessions, or the first-party app's OAuth token for confirmed users
+  // only (as on the tRPC procedures it can reach).
+  const auth = await authenticateRouteRequest(req.headers);
+  if (!auth || (auth.credential === "app-token" && !auth.confirmed)) {
     return new Response(
       JSON.stringify({
         error: {
@@ -180,15 +129,8 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  const userId: string = authenticatedUserId;
-  const sessionId = sessionData?.session.id;
-  const appTokenId = appToken?.tokenId;
-  const isCredentialActive = (): Promise<boolean> =>
-    sessionId
-      ? isSessionActive(sessionId)
-      : appTokenId
-        ? isAccessTokenActive(appTokenId)
-        : Promise.resolve(false);
+  const userId: string = auth.userId;
+  const isCredentialActive = auth.isCredentialActive;
 
   // Check Redis health before establishing SSE connection
   const redisHealthy = await checkRedisHealth();

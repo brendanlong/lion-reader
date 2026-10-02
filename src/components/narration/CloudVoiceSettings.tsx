@@ -8,10 +8,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/settings/ModelPicker";
-import { trpc } from "@/lib/trpc/client";
 import { AI_PROVIDER_DISPLAY_NAMES, normalizeModelRef, type AiProvider } from "@/lib/ai/model-ref";
-import { base64ToBytes } from "@/lib/narration/audio-encoding";
-import { PreviewAudio } from "@/lib/narration/preview-audio";
+import { createCloudSpeechPlayer } from "@/lib/narration/cloud-speech";
+import type { MediaSourcePlayer } from "@/lib/narration/media-source-player";
 import { PREVIEW_TEXT, SUGGESTED_CLOUD_VOICE_MODELS } from "@/lib/narration/constants";
 import type { NarrationSettings, SetNarrationSettings } from "@/lib/narration/settings";
 
@@ -51,41 +50,44 @@ export function CloudVoiceSettings({
       ? settings.voiceId
       : model?.defaultVoice;
 
-  const synthesize = trpc.narration.synthesize.useMutation();
-  const previewRef = useRef<PreviewAudio | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
+  const previewRef = useRef<MediaSourcePlayer | null>(null);
+  const [preview, setPreview] = useState<"idle" | "loading" | "playing">("idle");
 
   const stopPreview = useCallback(() => {
     previewRef.current?.stop();
     previewRef.current = null;
-    setIsPreviewing(false);
+    setPreview("idle");
   }, []);
 
   useEffect(() => stopPreview, [stopPreview]);
 
+  // Plays the way narration does, so what you hear is what narration sounds like.
   const handlePreview = () => {
     stopPreview();
-    const preview = new PreviewAudio();
-    previewRef.current = preview;
-    synthesize.mutate(
-      { model: modelId, voice: voice ?? null, text: PREVIEW_TEXT },
-      {
-        onSuccess: (result) => {
-          // Superseded by another preview, a stop, or a voice/model change.
-          if (previewRef.current !== preview) return;
-          const clip = new Blob([base64ToBytes(result.audio)], { type: result.mimeType });
-          setIsPreviewing(true);
-          preview.play(clip, settings.rate, (error) => {
-            stopPreview();
-            if (error) toast.error("Voice preview failed");
-          });
-        },
-        onError: (error) => {
-          if (previewRef.current === preview) stopPreview();
-          toast.error("Voice preview failed", { description: error.message });
-        },
-      }
-    );
+    const player = createCloudSpeechPlayer(() => ({ model: modelId, voice: voice ?? null }));
+    previewRef.current = player;
+    // Callbacks only count while this is still the preview playing; a stop,
+    // a newer preview, or a voice/model change supersedes it.
+    const isCurrent = () => previewRef.current === player;
+    player.setCallbacks({
+      onStatusChange: (status) => {
+        if (isCurrent() && status === "playing") setPreview("playing");
+      },
+      onEnd: () => {
+        if (isCurrent()) stopPreview();
+      },
+      onError: (error) => {
+        if (!isCurrent()) return;
+        stopPreview();
+        toast.error("Voice preview failed", { description: error.message });
+      },
+    });
+    player.setRate(settings.rate);
+    // Inside the tap: only a gesture may start playback, and the audio arrives later.
+    player.prime();
+    player.load([PREVIEW_TEXT]);
+    setPreview("loading");
+    void player.play();
   };
 
   return (
@@ -151,11 +153,11 @@ export function CloudVoiceSettings({
           <Button
             type="button"
             variant="secondary"
-            onClick={isPreviewing ? stopPreview : handlePreview}
-            loading={synthesize.isPending}
+            onClick={preview === "idle" ? handlePreview : stopPreview}
+            loading={preview === "loading"}
             disabled={!model}
           >
-            {isPreviewing ? "Stop" : "Preview"}
+            {preview === "playing" ? "Stop" : "Preview"}
           </Button>
         </div>
       </div>

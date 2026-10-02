@@ -27,5 +27,6 @@ await buildBundle({
     "@lion-reader/readability",
     "@lion-reader/feed-parser",
     "@lion-reader/markdown",
+    "@lion-reader/speech-encoder",
   ],
 });

@@ -3,9 +3,9 @@ import {
   MediaSourcePlayer,
   splitIntoSentenceChunks,
   splitIntoSpeechChunks,
+  StreamInterruptedError,
   type PlaybackStatus,
 } from "@/lib/narration/media-source-player";
-import type { PcmAudio, SegmentEncoder } from "@/lib/narration/audio-encoding";
 
 describe("splitIntoSpeechChunks", () => {
   it("keeps short paragraphs whole and skips empty ones without renumbering", () => {
@@ -44,7 +44,7 @@ describe("splitIntoSentenceChunks", () => {
   });
 });
 
-/** The fake encoder writes one byte per millisecond of audio. */
+/** The fake audio is one byte per millisecond. */
 const SAMPLE_RATE = 1000;
 
 class FakeTimeRanges {
@@ -71,6 +71,7 @@ class FakeSourceBuffer extends EventTarget {
   ranges: [number, number][] = [];
   appended: { at: number; seconds: number }[] = [];
   removals: [number, number][] = [];
+  aborts = 0;
   /** Evicts this range while the next append is still updating. */
   evictDuringNextAppend: [number, number] | null = null;
 
@@ -90,6 +91,11 @@ class FakeSourceBuffer extends EventTarget {
       this.evictDuringNextAppend = null;
       this.evict(start, end);
     }
+  }
+  /** Resets the parser, dropping any box an earlier append left unfinished. */
+  abort(): void {
+    if (this.updating) throw new Error("Aborting an update isn't modeled");
+    this.aborts++;
   }
   remove(start: number, end: number): void {
     this.removals.push([start, end]);
@@ -159,7 +165,12 @@ class FakeMediaSource extends EventTarget {
 class FakeAudio extends EventTarget {
   paused = true;
   ended = false;
-  currentTime = 0;
+  private time = 0;
+  /**
+   * Like an MSE stream of unknown duration in Chromium, only buffered time is
+   * seekable; a seek anywhere else is ignored.
+   */
+  isSeekable: (time: number) => boolean = () => true;
   preload = "";
   playbackRate = 1;
   defaultPlaybackRate = 1;
@@ -176,9 +187,15 @@ class FakeAudio extends EventTarget {
   pause(): void {
     this.paused = true;
   }
+  get currentTime(): number {
+    return this.time;
+  }
+  set currentTime(time: number) {
+    if (this.isSeekable(time)) this.time = time;
+  }
   /** Playback reaching `time`. */
   advanceTo(time: number): void {
-    this.currentTime = time;
+    this.time = time;
     this.dispatchEvent(new Event("timeupdate"));
   }
   /** The OS pausing the element (phone call, unplugged headphones). */
@@ -204,14 +221,55 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/**
+ * One chunk's synthesis, fed by the test: pieces of audio, then an end or a
+ * failure. Aborting it fails the stream the way an aborted fetch does.
+ */
+class FakeSynthesis {
+  readonly pieces: Uint8Array[] = [];
+  private done = false;
+  private error: Error | null = null;
+  private waiters: (() => void)[] = [];
+
+  constructor(readonly signal: AbortSignal) {
+    signal.addEventListener("abort", () => this.wake());
+  }
+
+  get aborted(): boolean {
+    return this.signal.aborted;
+  }
+  /** `seconds` more audio arriving. */
+  push(seconds: number): void {
+    this.pieces.push(new Uint8Array(Math.round(seconds * SAMPLE_RATE)));
+    this.wake();
+  }
+  end(): void {
+    this.done = true;
+    this.wake();
+  }
+  fail(error: Error): void {
+    this.error = error;
+    this.wake();
+  }
+  async *stream(): AsyncGenerator<Uint8Array> {
+    for (let next = 0; ;) {
+      if (this.aborted) throw new DOMException("Aborted", "AbortError");
+      if (next < this.pieces.length) yield this.pieces[next++];
+      else if (this.error) throw this.error;
+      else if (this.done) return;
+      else await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
+  }
+  private wake(): void {
+    for (const wake of this.waiters.splice(0)) wake();
+  }
+}
+
 const flush = async () => {
   for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-const fakeEncoder: SegmentEncoder = {
-  mimeType: 'audio/mp4; codecs="mp4a.40.2"',
-  encode: async (audio) => new Uint8Array(audio.samples.length),
-};
+const MIME_TYPE = 'audio/mp4; codecs="mp4a.40.2"';
 
 function setup(
   paragraphs: string[],
@@ -219,38 +277,35 @@ function setup(
     maxChars = 1000,
     maxConcurrentSyntheses = 4,
     bufferAheadSeconds = 4,
-    encoder = fakeEncoder as SegmentEncoder | null,
-    encoderLoaded = Promise.resolve(),
+    mimeType = Promise.resolve(MIME_TYPE),
     supportsMse = true,
   }: {
     maxChars?: number;
     maxConcurrentSyntheses?: number;
     bufferAheadSeconds?: number;
-    encoder?: SegmentEncoder | null;
-    encoderLoaded?: Promise<void>;
+    mimeType?: Promise<string>;
     supportsMse?: boolean;
   } = {}
 ) {
   const audio = new FakeAudio();
   const sources: FakeMediaSource[] = [];
-  const requests = new Map<string, ReturnType<typeof deferred<PcmAudio>>>();
+  audio.isSeekable = (time) =>
+    sources[0]?.buffers[0]?.ranges.some(([start, end]) => start <= time && time < end) ?? false;
+  const requests = new Map<string, FakeSynthesis>();
   const calls: string[] = [];
   const player = new MediaSourcePlayer({
-    synthesize: (text) => {
-      const request = deferred<PcmAudio>();
+    synthesize: (text, signal) => {
+      const request = new FakeSynthesis(signal);
       calls.push(text);
       requests.set(text, request);
-      return request.promise;
+      return request.stream();
     },
     chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, maxChars),
     maxConcurrentSyntheses,
     bufferAheadSeconds,
     // `respond` defaults to one second of audio per chunk.
     estimateSeconds: () => 1,
-    loadEncoder: async () => {
-      await encoderLoaded;
-      return encoder;
-    },
+    loadMimeType: () => mimeType,
     createAudio: () => audio as unknown as HTMLAudioElement,
     createMediaSource: () => {
       if (!supportsMse) return null;
@@ -273,13 +328,22 @@ function setup(
     onError: (error) => events.errors.push(error),
   });
   player.load(paragraphs);
-  /** Synthesis of `text` finishing with `seconds` of audio. */
+  /** Synthesis of `text` finishing with (another) `seconds` of audio. */
   const respond = async (text: string, seconds = 1) => {
+    await stream(text, seconds);
+    requests.get(text)!.end();
     await flush();
-    requests.get(text)!.resolve({
-      samples: new Float32Array(Math.round(seconds * SAMPLE_RATE)),
-      sampleRate: SAMPLE_RATE,
-    });
+  };
+  /** `seconds` more of `text`'s audio arriving, with more to come. */
+  const stream = async (text: string, seconds: number) => {
+    await flush();
+    requests.get(text)!.push(seconds);
+    await flush();
+  };
+  /** `text`'s synthesis failing after whatever it has delivered. */
+  const failSynthesis = async (text: string, error: Error) => {
+    await flush();
+    requests.get(text)!.fail(error);
     await flush();
   };
   const buffer = () => sources[0].buffer;
@@ -294,6 +358,8 @@ function setup(
     paragraphsSeen,
     events,
     respond,
+    stream,
+    failSynthesis,
   };
 }
 
@@ -311,7 +377,7 @@ describe("MediaSourcePlayer", () => {
 
     await respond("A.", 2);
     expect(player.getStatus()).toBe("playing");
-    expect(sources[0].mimeTypes).toEqual([fakeEncoder.mimeType]);
+    expect(sources[0].mimeTypes).toEqual([MIME_TYPE]);
     expect(buffer().mode).toBe("sequence");
 
     await respond("B.", 3);
@@ -408,18 +474,18 @@ describe("MediaSourcePlayer", () => {
     expect(calls).toEqual(["0.", "1.", "10.", "11."]);
   });
 
-  it("doesn't synthesize text from before clearCache that was waiting on the encoder", async () => {
-    const encoderLoad = deferred<void>();
+  it("doesn't synthesize text from before clearCache that was waiting on the format", async () => {
+    const encoderLoad = deferred<string>();
     const { calls, player, respond } = setup(["Old 1.", "Old 2."], {
       maxConcurrentSyntheses: 1,
-      encoderLoaded: encoderLoad.promise,
+      mimeType: encoderLoad.promise,
     });
     void player.play();
     player.stop();
     player.clearCache();
     player.load(["New 1.", "New 2."]);
     void player.play();
-    encoderLoad.resolve();
+    encoderLoad.resolve(MIME_TYPE);
     await respond("New 1.");
 
     expect(calls).toEqual(["New 1.", "New 2."]);
@@ -528,7 +594,7 @@ describe("MediaSourcePlayer", () => {
 
   it("remembers a skip made while paused and starts there on play", async () => {
     const paragraphs = Array.from({ length: 50 }, (_, i) => `${i}.`);
-    const { calls, player, paragraphsSeen, respond } = setup(paragraphs);
+    const { calls, requests, player, paragraphsSeen, respond } = setup(paragraphs);
     void player.play();
     await respond("0.");
     player.pause();
@@ -543,9 +609,12 @@ describe("MediaSourcePlayer", () => {
     void player.play();
     await respond("40.");
     expect(player.getStatus()).toBe("playing");
-    // Syntheses already running from before the skip still hold their slots.
-    expect(calls.slice(4)).toEqual(["40.", "41.", "42."]);
-    await respond("2.");
+    // The skip stopped the syntheses it left behind, freeing their slots.
+    expect(["1.", "2.", "3."].map((text) => requests.get(text)!.aborted)).toEqual([
+      true,
+      true,
+      true,
+    ]);
     expect(calls.slice(4)).toEqual(["40.", "41.", "42.", "43."]);
   });
 
@@ -561,7 +630,7 @@ describe("MediaSourcePlayer", () => {
     const { requests, player, events } = setup(["A."]);
     void player.play();
     await flush();
-    requests.get("A.")!.reject(new Error("boom"));
+    requests.get("A.")!.fail(new Error("boom"));
     await flush();
     expect(player.getStatus()).toBe("idle");
     expect(events.errors.map((error) => error.message)).toEqual(["boom"]);
@@ -571,7 +640,7 @@ describe("MediaSourcePlayer", () => {
     const { requests, player, respond } = setup(["A."]);
     void player.play();
     await flush();
-    requests.get("A.")!.reject(new Error("boom"));
+    requests.get("A.")!.fail(new Error("boom"));
     await flush();
     void player.play();
     await flush();
@@ -612,7 +681,8 @@ describe("MediaSourcePlayer", () => {
     player.clearCache();
     void player.play();
     await flush();
-    stale.resolve({ samples: new Float32Array(1), sampleRate: SAMPLE_RATE });
+    stale.push(1);
+    stale.end();
     await flush();
     await respond("A.");
     expect(calls).toEqual(["A.", "A."]);
@@ -674,11 +744,13 @@ describe("MediaSourcePlayer", () => {
     const audio = new FakeAudio();
     const errors: string[] = [];
     const player = new MediaSourcePlayer({
-      synthesize: async () => ({ samples: new Float32Array(1000), sampleRate: SAMPLE_RATE }),
+      synthesize: async function* () {
+        yield new Uint8Array(1000);
+      },
       chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, 1000),
       maxConcurrentSyntheses: 4,
       bufferAheadSeconds: 4,
-      loadEncoder: async () => fakeEncoder,
+      loadMimeType: async () => MIME_TYPE,
       createAudio: () => audio as unknown as HTMLAudioElement,
       createMediaSource: () => new FakeMediaSource() as unknown as MediaSource,
       attach: () => {
@@ -707,14 +779,195 @@ describe("MediaSourcePlayer", () => {
     expect(calls).toEqual([]);
   });
 
-  it("reports a missing encoder without paying for synthesis", async () => {
-    const { calls, player, events } = setup(["A.", "B."], { encoder: null });
+  it("reports a format the browser can't play without paying for synthesis", async () => {
+    const { calls, player, events } = setup(["A.", "B."], {
+      mimeType: Promise.reject(new Error("No AAC here")),
+    });
     void player.play();
     await flush();
-    expect(events.errors.map((error) => error.message)).toEqual([
-      "This browser can't stream narration audio",
-    ]);
+    expect(events.errors.map((error) => error.message)).toEqual(["No AAC here"]);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("MediaSourcePlayer with streamed audio", () => {
+  it("plays a chunk's pieces as they arrive, its place on the timeline growing", async () => {
+    const { audio, sources, buffer, player, paragraphsSeen, stream, respond, requests } = setup([
+      "A.",
+      "B.",
+    ]);
+    void player.play();
+    await stream("A.", 1);
+    expect(player.getStatus()).toBe("playing");
+    expect(buffer().ranges).toEqual([[0, 1]]);
+
+    await stream("A.", 2);
+    expect(buffer().ranges).toEqual([[0, 3]]);
+    audio.advanceTo(2.5);
+    expect(paragraphsSeen).toEqual([0]);
+
+    // The next chunk waits its turn, then follows the whole of the first.
+    await respond("B.", 1);
+    expect(buffer().ranges).toEqual([[0, 3]]);
+    requests.get("A.")!.end();
+    await flush();
+    expect(buffer().ranges).toEqual([[0, 4]]);
+    expect(sources[0].endOfStreamCalls).toBe(1);
+
+    audio.advanceTo(3.5);
+    expect(paragraphsSeen).toEqual([0, 1]);
+  });
+
+  it("waits for more of a chunk when playback catches up, then plays on", async () => {
+    const { audio, sources, player, events, stream, requests } = setup(["A."]);
+    void player.play();
+    await stream("A.", 1);
+    audio.advanceTo(1);
+    audio.dispatchEvent(new Event("waiting"));
+    expect(player.getStatus()).toBe("buffering");
+    expect(sources[0].endOfStreamCalls).toBe(0);
+
+    await stream("A.", 1);
+    expect(player.getStatus()).toBe("playing");
+    requests.get("A.")!.end();
+    await flush();
+    expect(sources[0].endOfStreamCalls).toBe(1);
+    expect(events.ended).toBe(0);
+  });
+
+  it("seeks into and back out of a chunk that's still arriving", async () => {
+    const { audio, buffer, calls, player, paragraphsSeen, stream, respond } = setup(["A.", "B."]);
+    void player.play();
+    await respond("A.", 2);
+    await stream("B.", 1);
+
+    await player.skipForward();
+    expect(audio.currentTime).toBe(2);
+    expect(paragraphsSeen.at(-1)).toBe(1);
+    await player.skipBackward();
+    expect(audio.currentTime).toBe(0);
+
+    await stream("B.", 1);
+    expect(buffer().ranges).toEqual([[0, 4]]);
+    expect(buffer().removals).toEqual([]);
+    expect(calls).toEqual(["A.", "B."]);
+  });
+
+  it("counts a chunk still arriving as at least its estimated length when looking ahead", async () => {
+    const paragraphs = Array.from({ length: 10 }, (_, i) => `${i}.`);
+    const { calls, player, stream, requests } = setup(paragraphs, {
+      maxConcurrentSyntheses: 20,
+    });
+    void player.play();
+    await stream("0.", 0.25);
+    expect(calls).toEqual(["0.", "1.", "2.", "3."]);
+
+    // Only once it's over does it turn out short.
+    requests.get("0.")!.end();
+    await flush();
+    expect(calls).toEqual(["0.", "1.", "2.", "3.", "4."]);
+  });
+
+  it("stops the synthesis of chunks a skip leaves behind", async () => {
+    const paragraphs = Array.from({ length: 10 }, (_, i) => `${i}.`);
+    const { calls, requests, player, events, stream, respond } = setup(paragraphs);
+    void player.play();
+    await stream("0.", 1);
+    await respond("1.");
+
+    await player.skipTo(5);
+    await flush();
+    expect(requests.get("0.")!.aborted).toBe(true);
+    expect(requests.get("1.")!.aborted).toBe(false); // already finished
+    expect(requests.get("2.")!.aborted).toBe(true);
+    expect(requests.get("3.")!.aborted).toBe(true);
+    expect(calls.slice(4)).toEqual(["5.", "6.", "7.", "8."]);
+    await respond("5.");
+    expect(player.getStatus()).toBe("playing");
+    expect(events.errors).toEqual([]);
+  });
+
+  it("stops every unfinished synthesis on stop", async () => {
+    const { requests, player, stream, events } = setup(["A.", "B."]);
+    void player.play();
+    await stream("A.", 1);
+    player.stop();
+    await flush();
+    expect(requests.get("A.")!.aborted).toBe(true);
+    expect(requests.get("B.")!.aborted).toBe(true);
+    expect(events.errors).toEqual([]);
+  });
+
+  it("synthesizes a chunk again when its stream drops before it plays", async () => {
+    const { buffer, calls, player, stream, respond, failSynthesis } = setup(["A.", "B."]);
+    void player.play();
+    await stream("A.", 1);
+    await stream("B.", 1);
+    await failSynthesis("B.", new StreamInterruptedError());
+    await respond("A.", 1);
+
+    expect(calls).toEqual(["A.", "B.", "B."]);
+    await respond("B.", 3);
+    expect(buffer().ranges).toEqual([[0, 5]]);
+    expect(player.getStatus()).toBe("playing");
+  });
+
+  it("replays a chunk from its start, without duplicating it, when its stream drops partway", async () => {
+    const {
+      audio,
+      buffer,
+      calls,
+      player,
+      paragraphsSeen,
+      statuses,
+      stream,
+      respond,
+      failSynthesis,
+    } = setup(["A.", "B."]);
+    void player.play();
+    await respond("A.", 1);
+    await stream("B.", 1);
+    await stream("B.", 1);
+    audio.advanceTo(2.5);
+    expect(paragraphsSeen).toEqual([0, 1]);
+
+    await failSynthesis("B.", new StreamInterruptedError());
+    expect(player.getStatus()).toBe("buffering");
+    expect(buffer().removals).toEqual([[1, 3]]);
+    // The dropped stream may have stopped mid-box; the retry is a new file.
+    expect(buffer().aborts).toBe(2);
+    expect(calls).toEqual(["A.", "B.", "B."]);
+
+    await respond("B.", 1.5);
+    // Back to the chunk's start, once there's audio there to seek to.
+    expect(audio.currentTime).toBe(1);
+    expect(buffer().ranges).toEqual([[0, 2.5]]);
+    expect(buffer().appended.at(-1)).toEqual({ at: 1, seconds: 1.5 });
+    expect(player.getStatus()).toBe("playing");
+    expect(statuses.at(-1)).toBe("playing");
+  });
+
+  it("gives up on a chunk whose stream keeps dropping", async () => {
+    const { calls, player, events, stream, failSynthesis } = setup(["A."]);
+    void player.play();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await stream("A.", 1);
+      await failSynthesis("A.", new StreamInterruptedError());
+    }
+    expect(calls).toEqual(["A.", "A.", "A."]);
+    expect(player.getStatus()).toBe("idle");
+    expect(events.errors.map((error) => error.message)).toEqual([
+      new StreamInterruptedError().message,
+    ]);
+  });
+
+  it("reports a failure that isn't a dropped stream without retrying", async () => {
+    const { calls, player, events, stream, failSynthesis } = setup(["A."]);
+    void player.play();
+    await stream("A.", 1);
+    await failSynthesis("A.", new Error("Couldn't decode"));
+    expect(calls).toEqual(["A."]);
+    expect(events.errors.map((error) => error.message)).toEqual(["Couldn't decode"]);
   });
 });
 

@@ -4,13 +4,16 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.lionreader.app.AppSettings
@@ -109,8 +112,16 @@ class Narrator(
      */
     private val reached = MutableStateFlow(0L)
 
-    val player: ExoPlayer by lazy {
+    val player: ExoPlayer by lazy { buildPlayer() }
+
+    @OptIn(UnstableApi::class)
+    private fun buildPlayer(): ExoPlayer =
         ExoPlayer.Builder(context)
+            // Reads streamed chunks as they arrive (StreamedAudio), and files.
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(NarrationDataSource.Factory())
+                    .setLoadErrorHandlingPolicy(NarrationLoadErrorPolicy())
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -121,7 +132,6 @@ class Narrator(
             .setHandleAudioBecomingNoisy(true)
             .build()
             .also { it.addListener(listener) }
-    }
 
     /** What the narrator has of the article it's on; replaced whole when it moves on. */
     private var current: Current = Current.Awaiting
@@ -175,6 +185,8 @@ class Narrator(
         /** Whether it has synthesized everything it's going to, and the last chunk it added. */
         var fed = false
         var lastAdded: Int? = null
+        /** Times each chunk has been said again after stopping partway (see [replay]). */
+        val replays = mutableMapOf<Int, Int>()
     }
 
     /** The article narration is on, once its text is supplied. */
@@ -411,7 +423,7 @@ class Narrator(
     ) = coroutineScope {
         val engine = prepared.engine
         val chunks = prepared.chunks
-        val inFlight = ArrayDeque<Pair<Int, Deferred<File?>>>()
+        val inFlight = ArrayDeque<Pair<Int, Deferred<Uri?>>>()
         var next = from
         while (next < chunks.size || inFlight.isNotEmpty()) {
             while (
@@ -427,8 +439,8 @@ class Narrator(
                 continue
             }
             val (index, result) = inFlight.removeFirst()
-            val file = result.await() ?: continue
-            player.addMediaItem(item(article, index, file))
+            val audio = result.await() ?: continue
+            player.addMediaItem(item(article, index, audio))
             feed.lastAdded = index
             when (player.playbackState) {
                 Player.STATE_IDLE -> player.prepare()
@@ -449,7 +461,7 @@ class Narrator(
      * engine can't be reached, what's queued plays on and this tries again ([reaching]): a dropped
      * connection in the background doesn't end narration mid-word.
      */
-    private suspend fun synthesizeOrSkip(feed: Feed, prepared: Prepared, index: Int): File? {
+    private suspend fun synthesizeOrSkip(feed: Feed, prepared: Prepared, index: Int): Uri? {
         return try {
             reaching(feed.starved) {
                 prepared.engine.synthesize(prepared.chunks[index].text, dir, "$index")
@@ -525,10 +537,10 @@ class Narrator(
         }
     }
 
-    private fun item(article: NarratedArticle, chunk: Int, file: File) =
+    private fun item(article: NarratedArticle, chunk: Int, audio: Uri) =
         MediaItem.Builder()
             .setMediaId("$chunk")
-            .setUri(Uri.fromFile(file))
+            .setUri(audio)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(article.title)
@@ -592,9 +604,14 @@ class Narrator(
                 stopIfFinished()
             }
 
-            // A file the player can't play (an odd one from some engine): move
-            // past it rather than sit on it.
             override fun onPlayerError(error: PlaybackException) {
+                val chunk = player.currentMediaItem?.mediaId?.toIntOrNull()
+                if (chunk != null && error.causes().any { it is SpeechStreamBroken }) {
+                    replay(chunk)
+                    return
+                }
+                // A file the player can't play (an odd one from some engine): move
+                // past it rather than sit on it.
                 if (player.hasNextMediaItem()) {
                     player.seekToNextMediaItem()
                     player.prepare()
@@ -604,8 +621,50 @@ class Narrator(
             }
         }
 
+    /**
+     * [chunk]'s audio stopped partway ([SpeechStreamBroken]): synthesizes it again and plays it
+     * from its start, or moves past it if it can't be said or has stopped partway too often. The
+     * player waits, idle, meanwhile.
+     */
+    private fun replay(chunk: Int) {
+        val audio = onArticle ?: return
+        val prepared = audio.prepared ?: return
+        val feed = audio.feed ?: return
+        // Each is paid for: one that keeps breaking is skipped, as the web does.
+        val replays = feed.replays.merge(chunk, 1, Int::plus)!!
+        scope.launch {
+            val again =
+                try {
+                    if (replays > MAX_REPLAYS) null else synthesizeOrSkip(feed, prepared, chunk)
+                } catch (e: SpeechUnavailable) {
+                    if (onArticle?.feed === feed) fail(e.message)
+                    return@launch
+                }
+            // Not if a seek or another article replaced this feed meanwhile.
+            if (onArticle?.feed !== feed) return@launch
+            val index =
+                (0 until player.mediaItemCount).firstOrNull {
+                    player.getMediaItemAt(it).mediaId == "$chunk"
+                } ?: return@launch
+            if (again == null) {
+                player.removeMediaItem(index)
+                if (index >= player.mediaItemCount) {
+                    if (feed.fed) stopIfFinished()
+                    return@launch
+                }
+            } else {
+                player.replaceMediaItem(index, item(audio.article, chunk, again))
+            }
+            player.seekTo(index, 0)
+            player.prepare()
+        }
+    }
+
+    private fun Throwable.causes(): Sequence<Throwable> = generateSequence(this) { it.cause }
+
     private companion object {
         const val KEEP_BEHIND = 5
+        const val MAX_REPLAYS = 2
         const val RETRY_FIRST_MILLIS = 2_000L
         const val RETRY_MAX_MILLIS = 30_000L
     }

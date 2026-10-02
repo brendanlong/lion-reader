@@ -1,6 +1,8 @@
 /**
- * Turns synthesized speech into self-contained fragmented-MP4 segments that
- * {@link MediaSourcePlayer} appends to one Media Source Extensions stream.
+ * Turns speech synthesized in the browser (Piper) into self-contained
+ * fragmented-MP4 segments that {@link MediaSourcePlayer} appends to one Media
+ * Source Extensions stream. Cloud voices arrive from the server already in
+ * that form, as AAC.
  *
  * AAC in MP4 is the only format every MSE implementation accepts — iOS's
  * `ManagedMediaSource` refuses MP3 and Opus-in-MP4. We prefer the browser's
@@ -32,7 +34,7 @@ export interface SegmentEncoder {
 /** Plenty for mono speech; keeps an hour of narration around 20 MB. */
 const BITRATE = 48_000;
 
-/** Kokoro's native rate, and an AAC rate every encoder we've seen accepts. */
+/** An AAC rate every encoder we've seen accepts. */
 const DECODE_SAMPLE_RATE = 24_000;
 
 interface Candidate {
@@ -44,9 +46,12 @@ interface Candidate {
   sampleRates: number[];
 }
 
+/** AAC-LC in MP4: what every MSE implementation plays, and what the server sends. */
+export const AAC_MIME_TYPE = 'audio/mp4; codecs="mp4a.40.2"';
+
 const AAC: Candidate = {
   codec: "aac",
-  mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+  mimeType: AAC_MIME_TYPE,
   fullCodecString: "mp4a.40.2",
   sampleRates: [24_000, 48_000],
 };
@@ -141,7 +146,7 @@ function createEncoder(
 }
 
 /**
- * Decodes a compressed clip (e.g. a cloud voice's MP3) to mono samples with
+ * Decodes a compressed clip (Piper's WAV) to mono samples with
  * the browser's own decoder. An `OfflineAudioContext` needs no user gesture,
  * unlike a realtime `AudioContext`.
  */
@@ -160,8 +165,4 @@ export function withTrailingSilence(audio: PcmAudio, seconds: number): PcmAudio 
   const samples = new Float32Array(audio.samples.length + Math.round(seconds * audio.sampleRate));
   samples.set(audio.samples);
   return { samples, sampleRate: audio.sampleRate };
-}
-
-export function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
-  return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 }

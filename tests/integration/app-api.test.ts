@@ -28,6 +28,8 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
+import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route";
+import { MAX_CLOUD_SPEECH_CHARS } from "../../src/lib/narration/constants";
 import { createSession, revokeSession } from "../../src/server/auth/session";
 import {
   createTokens,
@@ -779,5 +781,119 @@ describe("cloud voices", () => {
       (await rest(token, "POST", "/narration/synthesize", { model: null, voice: null, text: "Hi" }))
         .status
     ).toBe(403);
+  });
+});
+
+describe("streamed speech", () => {
+  // No provider key, so a valid request reaches the provider check and stops
+  // there: these test the route's gates, not a provider.
+  const savedKeys = new Map<string, string | undefined>();
+  beforeAll(() => {
+    for (const name of Object.values(AI_PROVIDER_ENV_KEYS)) {
+      savedKeys.set(name, process.env[name]);
+      delete process.env[name];
+    }
+  });
+  afterAll(() => {
+    for (const [name, value] of savedKeys) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  function speech(
+    headers: Record<string, string>,
+    body: unknown = { model: null, voice: null, text: "Hello." }
+  ) {
+    return speechPost(
+      new Request(`${API}/narration/speech`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      })
+    );
+  }
+
+  it("takes the app's token and the web's session", async () => {
+    const userId = await createUser();
+    const { token } = await createSession(db, { userId });
+    for (const headers of <Record<string, string>[]>[
+      { authorization: `Bearer ${await appToken(userId)}` },
+      { cookie: `session=${token}` },
+    ]) {
+      const res = await speech(headers);
+      // Past the gates: rejected for the missing provider key.
+      expect(res.status).toBe(400);
+      expect((await res.json()).message).toContain("OpenRouter API key");
+    }
+  });
+
+  it("charges the speech bucket the tRPC endpoint uses", async () => {
+    const userId = await createUser();
+    await speech({ authorization: `Bearer ${await appToken(userId)}` });
+    const redis = new Redis(process.env.REDIS_URL!);
+    try {
+      const left = Number(await redis.hget(`rate_limit:speech:user:${userId}`, "tokens"));
+      expect(left).toBeCloseTo(RATE_LIMIT_CONFIGS.speech.capacity - 200, -2);
+    } finally {
+      await redis.quit();
+    }
+  });
+
+  it("refuses requests without a credential, or with another client's token", async () => {
+    const userId = await createUser();
+    const { token: mcpToken } = await createApiToken(userId, ["mcp"]);
+    expect((await speech({})).status).toBe(401);
+    expect((await speech({ authorization: `Bearer ${mcpToken}` })).status).toBe(401);
+  });
+
+  it("refuses users who haven't confirmed signup", async () => {
+    const userId = await createUser();
+    await db.update(users).set({ tosAgreedAt: null }).where(eq(users.id, userId));
+    const { token } = await createSession(db, { userId });
+    for (const headers of <Record<string, string>[]>[
+      { cookie: `session=${token}` },
+      { authorization: `Bearer ${await appToken(userId)}` },
+    ]) {
+      const res = await speech(headers);
+      expect(res.status).toBe(403);
+      expect((await res.json()).data.appErrorCode).toBe("SIGNUP_CONFIRMATION_REQUIRED");
+    }
+  });
+
+  it("takes only JSON, so a cross-site form can't post to it", async () => {
+    const userId = await createUser();
+    const { token } = await createSession(db, { userId });
+    const res = await speech(
+      { cookie: `session=${token}`, "content-type": "application/x-www-form-urlencoded" },
+      "text=Hello"
+    );
+    expect(res.status).toBe(415);
+  });
+
+  it("validates the request", async () => {
+    const auth = { authorization: `Bearer ${await appToken(await createUser())}` };
+    expect((await speech(auth, "{")).status).toBe(400);
+    expect((await speech(auth, { model: null, voice: null, text: "" })).status).toBe(400);
+    expect(
+      (
+        await speech(auth, {
+          model: null,
+          voice: null,
+          text: "x".repeat(MAX_CLOUD_SPEECH_CHARS + 1),
+        })
+      ).status
+    ).toBe(400);
+  });
+
+  it("is rate limited by characters", async () => {
+    const auth = { authorization: `Bearer ${await appToken(await createUser())}` };
+    const text = "x".repeat(MAX_CLOUD_SPEECH_CHARS);
+    const requests = RATE_LIMIT_CONFIGS.speech.capacity / MAX_CLOUD_SPEECH_CHARS + 1;
+    let last: Response | null = null;
+    for (let i = 0; i < requests; i++)
+      last = await speech(auth, { model: null, voice: null, text });
+    expect(last?.status).toBe(429);
+    expect(last?.headers.get("retry-after")).not.toBeNull();
   });
 });
