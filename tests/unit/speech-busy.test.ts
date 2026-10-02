@@ -43,11 +43,17 @@ describe("speakWhenFree", () => {
     expect(calls).toBe(1);
 
     const controller = new AbortController();
+    let asked!: () => void;
+    const busyOnce = new Promise<void>((resolve) => (asked = resolve));
     const waiting = speakWhenFree(async () => {
+      asked();
       throw new ProviderBusyError("busy", 1);
     }, controller.signal);
-    controller.abort(new Error("gone"));
-    await expect(waiting).rejects.toThrow("gone");
+    // While it waits to ask again.
+    await busyOnce;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
   });
 });
 

@@ -127,6 +127,7 @@ export async function POST(req: Request): Promise<Response> {
     });
   } catch (error) {
     if (error instanceof ProviderBusyError) {
+      logger.warn("Speech provider busy", { model: input.model, error: error.message });
       return errorResponse(
         503,
         "SERVICE_UNAVAILABLE",

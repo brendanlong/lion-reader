@@ -18,6 +18,7 @@ import {
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { encodeSpeech, type PcmStream } from "@/server/services/speech-encoding";
+import { setTimeout } from "node:timers/promises";
 import { ProviderBusyError } from "@/server/services/provider-errors";
 import {
   deepInfraSpeech,
@@ -339,25 +340,13 @@ export async function speakWhenFree<T>(
     } catch (error) {
       if (!(error instanceof ProviderBusyError)) throw error;
       const asked = error.retryAfterSeconds === null ? wait : error.retryAfterSeconds * 1000;
-      const delay = Math.min(Math.max(asked, BUSY_FIRST_WAIT_MS), BUSY_MAX_WAIT_MS);
+      // Jittered, so listeners turned away together don't all come back together.
+      const delay =
+        Math.min(Math.max(asked, BUSY_FIRST_WAIT_MS), BUSY_MAX_WAIT_MS) *
+        (0.8 + 0.4 * Math.random());
       if (Date.now() + delay > deadline) throw error;
-      await sleep(delay, signal);
+      await setTimeout(delay, undefined, { signal });
       wait = Math.min(wait * 2, BUSY_MAX_WAIT_MS);
     }
   }
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) return reject(signal.reason);
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    }, ms);
-    const abort = () => {
-      clearTimeout(timer);
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
 }

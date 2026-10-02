@@ -64,7 +64,7 @@ export async function fetchWhenFree(
       return response;
     }
     const asked = Number(response.headers.get("Retry-After")) * 1000;
-    await response.body?.cancel();
+    await response.body?.cancel().catch(() => {});
     await wait(
       Math.min(Number.isFinite(asked) && asked > 0 ? asked : backoff, BUSY_MAX_WAIT_MS),
       signal
@@ -152,9 +152,10 @@ export function createCloudSpeechPlayer(voice: () => CloudVoice): MediaSourcePla
     synthesize: (text, signal) => streamCloudSpeech(voice(), text, signal),
     loadMimeType: loadCloudMimeType,
     chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, MAX_CLOUD_SPEECH_CHARS),
-    // Each streams faster than it plays, and providers limit concurrent
-    // requests per key, which several listeners share on the server's.
-    maxConcurrentSyntheses: 1,
+    // One streaming while the next waits for its first audio, and no more:
+    // providers limit concurrent requests per key, which several listeners
+    // share on the server's.
+    maxConcurrentSyntheses: 2,
     // Paid per character, so running ahead only wastes what's left unheard.
     // With the screen locked, nothing recovers playback that stalls on an
     // empty buffer.
