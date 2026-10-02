@@ -55,15 +55,9 @@ class LionReaderApiTest {
     }
 
     @Test
-    fun signedOutAndRejected() {
+    fun signedOut() {
         assertTrue(ApiException(0, "Signed out").signedOut)
         assertFalse(ApiException(401, "no").signedOut)
-        for (status in listOf(400, 401, 403, 404, 409, 422)) {
-            assertTrue(ApiException(status, "no").rejected, "$status")
-        }
-        for (status in listOf(0, 429, 500, 503)) {
-            assertFalse(ApiException(status, "no").rejected, "$status")
-        }
     }
 
     @Test

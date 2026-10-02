@@ -15,7 +15,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **API.** `/api/v1` REST, whose contract is `docs/api/openapi.json` (CI fails
   on breaking changes). Wire models (`api/Models.kt`) list only the fields the
   app uses and ignore unknown ones; sync events are parsed one by one so an
-  event type newer than the app is skipped (`parseSyncEvent`). Never use the
+  event type newer than the app is skipped (`parseSyncEvent`). A known event
+  that doesn't parse stops sync rather than be lost, so a new value in an enum
+  an event carries (a feed type, say) breaks installed apps: add it as an
+  optional field, or ship the app first. Never use the
   tRPC wire format (superjson) or the Google Reader API.
 - **Auth.** OAuth 2.1 + PKCE against the server's built-in `lion-reader-app`
   client, in an Auth Tab (which hands the redirect straight back to the app

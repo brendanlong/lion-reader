@@ -61,13 +61,6 @@ class ApiException(
     /** There's no signed-in account to send the request as; it was never sent. */
     val signedOut: Boolean
         get() = status == 0
-
-    /**
-     * The server refused the request: any 4xx but 429 ("try again later"). Broader than
-     * [isPermanent]: it includes answers (401, 403) that can change without the request changing.
-     */
-    val rejected: Boolean
-        get() = status in 400..499 && status != 429
 }
 
 enum class ListFilter {
@@ -178,7 +171,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                 }
             }
             .execute { response ->
-                check(response, canRetry)
+                checkAnswer(response, canRetry)
                 // A captive portal's page, say.
                 if (response.contentType()?.match(ContentType.Audio.MP4) != true) {
                     throw ApiException(response.status.value, "Not audio")
@@ -253,7 +246,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                     }
                 }
                 .execute { response ->
-                    check(response, canRetry)
+                    checkAnswer(response, canRetry)
                     // A captive portal's page, say.
                     if (response.contentType()?.match(ContentType.Text.EventStream) != true) {
                         throw ApiException(response.status.value, "Not an event stream")
@@ -299,7 +292,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
             block()
             bearerAuth(token)
         }
-        check(response, canRetry)
+        checkAnswer(response, canRetry)
         ApiJson.decodeFromString(serializer, response.bodyAsText())
     }
 
@@ -326,7 +319,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
      * [ApiException]. A 401 with an app error code is about something else (e.g. the user's Google
      * account for a private Doc), not the token.
      */
-    private suspend fun check(response: HttpResponse, canRetry: Boolean) {
+    private suspend fun checkAnswer(response: HttpResponse, canRetry: Boolean) {
         if (response.status.isSuccess()) return
         // Read once: a streamed response's body can't be read again.
         val text = response.bodyAsText()

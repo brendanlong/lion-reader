@@ -266,6 +266,8 @@ class SyncEngine(
         }
         // Spam comes without its data, so that clients leave it out as the
         // server's lists do: a new entry without it, or an unread one changed.
+        // (So with "show spam" on, spam arrives with the first download but
+        // not from later syncs: the events don't say the user wants it.)
         val spam =
             events
                 .mapNotNull {
