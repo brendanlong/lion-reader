@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
         val recomposer = window.decorView.createLifecycleAwareWindowRecomposer(motion, lifecycle)
         setContent(parent = recomposer) {
             val settings by graph.currentSettings.collectAsStateWithLifecycle()
-            SideEffect { motion.enabled = settings.animates }
+            SideEffect { motion.enabled = settings.animations }
             // System bar icons follow the app's theme, which may differ from the system's.
             val dark = settings.theme.isDark(isSystemInDarkTheme())
             LaunchedEffect(dark) {
@@ -238,7 +238,7 @@ class MainActivity : ComponentActivity() {
         val backStack = rememberNavBackStack(HomeKey)
         val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
-        val transitions = remember(settings.animates) { ScreenTransitions(settings.animates) }
+        val transitions = remember(settings.animations) { ScreenTransitions(settings.animations) }
         // Side by side where there's room (tablets, foldables, landscape).
         // Back closes the article beside the list, as it does full screen.
         val listDetail =

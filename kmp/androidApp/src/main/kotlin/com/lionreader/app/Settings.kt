@@ -57,7 +57,7 @@ data class AppSettings(
     val expandedTags: Set<String> = emptySet(),
     /** Leave feeds and tags with nothing unread out of the drawer. */
     val hideEmptyLists: Boolean = false,
-    /** Off for e-readers, where animation only smears; always off with the E-paper theme. */
+    /** Off for e-readers, where animation only smears. */
     val animations: Boolean = true,
     /** Swipes move lists and articles a page at a time (for e-readers), rather than scrolling. */
     val pageScrolling: Boolean = false,
@@ -77,9 +77,6 @@ data class AppSettings(
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)
-
-    val animates: Boolean
-        get() = animations && theme != ThemeChoice.EPAPER
 }
 
 private val Context.settingsStore by preferencesDataStore("settings")

@@ -1,7 +1,10 @@
 package com.lionreader.app.ui
 
-/** How far a page turn moves: some of the last page stays in view, to read on from. */
-const val PAGE_FRACTION = 2f / 3
+/**
+ * How far a page turn moves: as browsers' Page Down (Chromium's is 0.875), so the last couple of
+ * lines stay in view to read on from.
+ */
+const val PAGE_FRACTION = 0.875f
 
 /** Which page turners win: an article's, over the list it was opened from (beside it, too). */
 enum class PageLayer {

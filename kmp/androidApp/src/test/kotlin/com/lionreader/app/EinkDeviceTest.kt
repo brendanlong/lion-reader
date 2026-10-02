@@ -23,14 +23,14 @@ class EinkDeviceTest {
         val defaults = deviceDefaults(eink = true)
         val unchanged = mutablePreferencesOf()
         assertEquals(ThemeChoice.EPAPER, unchanged.toSettings(defaults).theme)
-        assertFalse(unchanged.toSettings(defaults).animates)
+        assertFalse(unchanged.toSettings(defaults).animations)
 
         // A theme picked on the device; animations stay off unless turned on too.
         val themed = mutablePreferencesOf(stringPreferencesKey("theme") to "DARK")
         assertEquals(ThemeChoice.DARK, themed.toSettings(defaults).theme)
-        assertFalse(themed.toSettings(defaults).animates)
+        assertFalse(themed.toSettings(defaults).animations)
         themed[booleanPreferencesKey("animations")] = true
-        assertTrue(themed.toSettings(defaults).animates)
+        assertTrue(themed.toSettings(defaults).animations)
     }
 
     @Test

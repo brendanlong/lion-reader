@@ -118,13 +118,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             }
             HorizontalDivider()
             Section("E-readers") {
-                val epaper = settings.theme == ThemeChoice.EPAPER
-                SettingSwitch(
-                    "Animations",
-                    settings.animates,
-                    note = "Always off with the E-paper theme".takeIf { epaper },
-                    enabled = !epaper,
-                ) { value ->
+                SettingSwitch("Animations", settings.animations) { value ->
                     update { it.copy(animations = value) }
                 }
                 SettingSwitch(
@@ -409,7 +403,6 @@ private fun SettingSwitch(
     label: String,
     checked: Boolean,
     note: String? = null,
-    enabled: Boolean = true,
     onChange: (Boolean) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -423,7 +416,7 @@ private fun SettingSwitch(
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

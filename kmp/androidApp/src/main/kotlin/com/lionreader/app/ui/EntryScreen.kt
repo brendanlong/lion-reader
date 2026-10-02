@@ -343,7 +343,7 @@ fun EntryScreen(
                 flingBehavior =
                     PagerDefaults.flingBehavior(
                         pager,
-                        snapAnimationSpec = if (settings.animates) spring() else snap(),
+                        snapAnimationSpec = if (settings.animations) spring() else snap(),
                     ),
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) { page ->
@@ -510,7 +510,7 @@ private fun EntryPage(
             ReaderPaging(
                 swipes = settings.pageScrolling,
                 turns = graph.pageTurns.takeIf { active },
-                smoothScroll = settings.animates,
+                smoothScroll = settings.animations,
             ),
         )
         return

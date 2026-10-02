@@ -159,7 +159,7 @@ class HomeScreenTest {
         composeRule.onRoot().performTouchInput {
             swipeUp(startY = centerY + 100, endY = centerY - 100)
         }
-        // Two thirds of the list's height on: Entry 59 has gone, Entry 55 has come.
+        // Most of the list's height on: Entry 59 has gone, Entry 55 has come.
         composeRule.onNodeWithText("Entry 59").assertIsNotDisplayed()
         composeRule.onNodeWithText("Entry 55").assertIsDisplayed()
 

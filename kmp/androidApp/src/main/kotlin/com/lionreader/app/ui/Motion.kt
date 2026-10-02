@@ -6,7 +6,7 @@ import androidx.compose.ui.MotionDurationScale
 
 /**
  * How fast every Compose animation in the app runs: the system's animation scale, or none at all
- * when the settings turn animations off ([com.lionreader.app.AppSettings.animates]). Given to the
+ * when the settings turn animations off ([com.lionreader.app.AppSettings.animations]). Given to the
  * window's recomposer (MainActivity), which otherwise reads the system's scale itself; with no
  * animations, each one jumps straight to its end.
  */
