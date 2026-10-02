@@ -24,6 +24,11 @@ import {
   type DeepInfraSpeechModel,
 } from "@/server/services/deepinfra";
 import {
+  breezeBlueSpeech,
+  getBreezeBlueCatalog,
+  type BreezeBlueCatalog,
+} from "@/server/services/breezeblue";
+import {
   listOpenRouterModels,
   openRouterSpeech,
   pricePerMillionUnits,
@@ -52,8 +57,8 @@ export interface SpeechModel {
  * `AiProvider` (`@/lib/ai/model-ref`), which is where its name and key live.
  */
 interface SpeechProviderAdapter {
-  /** The models the user can pick on these keys. */
-  listModels(keys: AiProviderKeys | undefined): Promise<SpeechModel[]>;
+  /** The models the user can pick on these keys; `apiKey` is this provider's. */
+  listModels(keys: AiProviderKeys | undefined, apiKey: string): Promise<SpeechModel[]>;
   /**
    * `text` spoken by `voice` of `model` (provider-native ids), as PCM streamed
    * as it's generated. Rejects when the provider refuses.
@@ -76,6 +81,11 @@ const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = 
     listModels: async (keys) => toSpeechModels(await listOpenRouterModels("speech"), keys),
     speak: openRouterSpeech,
   },
+  breezeblue: {
+    listModels: async (_keys, apiKey) =>
+      toBreezeBlueSpeechModels(await getBreezeBlueCatalog(apiKey)),
+    speak: breezeBlueSpeech,
+  },
 };
 
 function voicesNamedById(ids: string[]): SpeechVoice[] {
@@ -97,20 +107,21 @@ export interface SpeechCatalog {
 export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechCatalog> {
   const unavailable: SpeechProvider[] = [];
   const lists = await Promise.all(
-    SPEECH_PROVIDERS.filter((provider) => getProviderApiKey(provider, keys)).map(
-      async (provider) => {
-        try {
-          return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys);
-        } catch (error) {
-          logger.error("Failed to list speech models", {
-            provider,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          unavailable.push(provider);
-          return [];
-        }
+    SPEECH_PROVIDERS.flatMap((provider) => {
+      const apiKey = getProviderApiKey(provider, keys);
+      return apiKey ? [{ provider, apiKey }] : [];
+    }).map(async ({ provider, apiKey }) => {
+      try {
+        return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys, apiKey);
+      } catch (error) {
+        logger.error("Failed to list speech models", {
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        unavailable.push(provider);
+        return [];
       }
-    )
+    })
   );
   const models = lists
     .flat()
@@ -171,6 +182,18 @@ export function toDeepInfraSpeechModels(
         },
       ];
     })
+    .sort(byDisplayName);
+}
+
+/** BreezeBlue's models, each with the voices this key can pick from. */
+function toBreezeBlueSpeechModels(catalog: BreezeBlueCatalog): SpeechModel[] {
+  return catalog.models
+    .map((model): SpeechModel => ({
+      id: formatModelRef("breezeblue", model.id),
+      displayName: model.name,
+      provider: "breezeblue",
+      voices: catalog.voices,
+    }))
     .sort(byDisplayName);
 }
 

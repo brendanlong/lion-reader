@@ -114,7 +114,7 @@ describe("without server keys", () => {
     expect((await caller.narration.isAiTextProcessingAvailable()).available).toBe(true);
   });
 
-  it("has no cloud voices without a DeepInfra or OpenRouter key", async () => {
+  it("has no cloud voices without a cloud voice provider key", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
 

@@ -3912,7 +3912,8 @@
                           "groq",
                           "cerebras",
                           "deepinfra",
-                          "openrouter"
+                          "openrouter",
+                          "breezeblue"
                         ]
                       }
                     },
@@ -4038,7 +4039,8 @@
                         "groq",
                         "cerebras",
                         "deepinfra",
-                        "openrouter"
+                        "openrouter",
+                        "breezeblue"
                       ]
                     },
                     "additionalProperties": {
@@ -4103,7 +4105,8 @@
                           "groq",
                           "cerebras",
                           "deepinfra",
-                          "openrouter"
+                          "openrouter",
+                          "breezeblue"
                         ]
                       }
                     },
@@ -9587,7 +9590,8 @@
                             "type": "string",
                             "enum": [
                               "deepinfra",
-                              "openrouter"
+                              "openrouter",
+                              "breezeblue"
                             ]
                           },
                           "providerDisplayName": {

@@ -66,6 +66,14 @@ export const AI_PROVIDER_INFO = {
     speech: true,
     serverKeyAllowlist: true,
   },
+  breezeblue: {
+    displayName: "BreezeBlue",
+    keyUrl: "https://breezeblue.ai/app/developer/api-keys",
+    keyPlaceholder: "Your BreezeBlue API key",
+    text: false,
+    speech: true,
+    serverKeyAllowlist: false,
+  },
 } as const satisfies Record<string, AiProviderInfo>;
 
 export type AiProvider = keyof typeof AI_PROVIDER_INFO;

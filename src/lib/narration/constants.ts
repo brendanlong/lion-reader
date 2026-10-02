@@ -61,8 +61,9 @@ export const SUGGESTED_NARRATION_MODELS: string[] = [
 export const DEFAULT_NARRATION_MODEL = DEFAULT_NARRATION_MODELS.cerebras;
 
 /**
- * Cloud voices (server-side TTS through DeepInfra or OpenRouter). Kokoro is the
- * default: good quality at about a cent per long article.
+ * Cloud voices (server-side TTS through the speech providers in
+ * `@/lib/ai/providers`). Kokoro is the default: good quality at about a cent
+ * per long article.
  */
 export const DEEPINFRA_KOKORO = "deepinfra:hexgrad/Kokoro-82M";
 export const OPENROUTER_KOKORO = "openrouter:hexgrad/kokoro-82m";
@@ -93,6 +94,7 @@ export const SUGGESTED_CLOUD_VOICE_MODELS: string[] = [
   ...DEFAULT_CLOUD_VOICE_MODELS,
   "openrouter:mistralai/voxtral-mini-tts-2603",
   "openrouter:deepgram/aura-2",
+  "breezeblue:breeze-tts-2",
 ];
 
 /**
@@ -104,7 +106,7 @@ export const SERVER_KEY_CLOUD_VOICE_MODELS: string[] = [DEEPINFRA_KOKORO, OPENRO
 /**
  * Longest text synthesized per request. Paragraphs are split into chunks of
  * at most this size so playback can start (and skip) without waiting for a
- * whole long paragraph.
+ * whole long paragraph. Also BreezeBlue's limit per request.
  */
 export const MAX_CLOUD_SPEECH_CHARS = 1000;
 
