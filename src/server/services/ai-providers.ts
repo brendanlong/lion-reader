@@ -3,11 +3,9 @@
  *
  * Wraps the Anthropic, Groq, and Cerebras SDKs and the OpenRouter HTTP API
  * behind one interface so features (summarization, narration preprocessing)
- * can run on any configured provider. Per-user API keys override the
- * server-wide env keys (`ANTHROPIC_API_KEY`, `GROQ_API_KEY`,
- * `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`, `DEEPINFRA_API_KEY`); a provider
- * is "available" when either is set. DeepInfra is only used for cloud voices
- * (`services/speech.ts`), so the text features skip it.
+ * can run on any configured text provider (see `@/lib/ai/providers`). A
+ * user's own key for a provider overrides the server's (`<PROVIDER>_API_KEY`);
+ * a provider is "available" when either is set.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -15,14 +13,20 @@ import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
 import {
-  TEXT_AI_PROVIDERS,
   formatModelRef,
   normalizeModelRef,
   parseModelRef,
-  type AiProvider,
   type ModelRef,
-  type TextAiProvider,
 } from "@/lib/ai/model-ref";
+import {
+  AI_PROVIDER_INFO,
+  AI_PROVIDERS,
+  aiProviderName,
+  isTextAiProvider,
+  TEXT_AI_PROVIDERS,
+  type AiProvider,
+  type TextAiProvider,
+} from "@/lib/ai/providers";
 import {
   listOpenRouterModels,
   openRouterChatCompletion,
@@ -31,38 +35,18 @@ import {
 } from "@/server/services/openrouter";
 
 /**
- * Per-user provider API keys, matching the shape returned by
- * `getUserApiKeys`. Null/undefined entries fall back to the server env key.
+ * Per-user provider API keys, as `getUserApiKeys` returns them. A missing or
+ * null entry falls back to the server's key.
  */
-export interface AiProviderKeys {
-  anthropicApiKey?: string | null;
-  groqApiKey?: string | null;
-  cerebrasApiKey?: string | null;
-  openrouterApiKey?: string | null;
-  deepinfraApiKey?: string | null;
-}
+export type AiProviderKeys = Partial<Record<AiProvider, string | null>>;
 
-export const AI_PROVIDER_ENV_KEYS: Record<AiProvider, string> = {
-  anthropic: "ANTHROPIC_API_KEY",
-  groq: "GROQ_API_KEY",
-  cerebras: "CEREBRAS_API_KEY",
-  openrouter: "OPENROUTER_API_KEY",
-  deepinfra: "DEEPINFRA_API_KEY",
-};
+/** Each provider's server key: `<PROVIDER>_API_KEY`. */
+export const AI_PROVIDER_ENV_KEYS = Object.fromEntries(
+  AI_PROVIDERS.map((provider) => [provider, `${provider.toUpperCase()}_API_KEY`])
+) as Record<AiProvider, string>;
 
 function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null {
-  switch (provider) {
-    case "anthropic":
-      return keys?.anthropicApiKey ?? null;
-    case "groq":
-      return keys?.groqApiKey ?? null;
-    case "cerebras":
-      return keys?.cerebrasApiKey ?? null;
-    case "openrouter":
-      return keys?.openrouterApiKey ?? null;
-    case "deepinfra":
-      return keys?.deepinfraApiKey ?? null;
-  }
+  return keys?.[provider] ?? null;
 }
 
 /** The user's key for the provider, else the server's, else null. */
@@ -92,7 +76,7 @@ export function isModelAllowed(
 ): boolean {
   const { provider } = parseModelRef(modelRef);
   if (!isProviderAvailable(provider, keys)) return false;
-  if ((provider !== "openrouter" && provider !== "deepinfra") || userKeyFor(provider, keys)) {
+  if (!AI_PROVIDER_INFO[provider].serverKeyAllowlist || userKeyFor(provider, keys)) {
     return true;
   }
   return allowedWithServerKey.includes(normalizeModelRef(modelRef));
@@ -195,7 +179,11 @@ export async function generateChatCompletion(
   keys: AiProviderKeys | undefined,
   options: ChatCompletionOptions
 ): Promise<string> {
-  switch (ref.provider) {
+  const provider = ref.provider;
+  if (!isTextAiProvider(provider)) {
+    throw new Error(`${aiProviderName(provider)} is only used for cloud voices`);
+  }
+  switch (provider) {
     case "anthropic": {
       if (options.jsonObject) {
         throw new Error("JSON-object responses are not supported for Anthropic models");
@@ -270,8 +258,6 @@ export async function generateChatCompletion(
         reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
       });
     }
-    case "deepinfra":
-      throw new Error("DeepInfra is only used for cloud voices");
   }
 }
 

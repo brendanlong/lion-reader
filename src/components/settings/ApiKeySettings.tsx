@@ -1,9 +1,9 @@
 /**
  * API Key Settings Components
  *
- * Settings sections for user-configured AI provider API keys (Anthropic,
- * Groq, Cerebras, OpenRouter, DeepInfra) and the model settings that build on them. User keys
- * override the server's global API keys when set.
+ * Settings sections for user-configured AI provider API keys and the model
+ * settings that build on them. User keys override the server's global API
+ * keys when set.
  */
 
 "use client";
@@ -16,68 +16,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TextLink } from "@/components/ui/text-link";
 import { InlineCode } from "@/components/ui/inline-code";
-import { AI_PROVIDER_DISPLAY_NAMES, normalizeModelRef, type AiProvider } from "@/lib/ai/model-ref";
+import { normalizeModelRef } from "@/lib/ai/model-ref";
+import {
+  AI_PROVIDER_INFO,
+  AI_PROVIDERS,
+  aiProviderNames,
+  SPEECH_PROVIDERS,
+  TEXT_AI_PROVIDERS,
+  type AiProvider,
+} from "@/lib/ai/providers";
 import {
   DEFAULT_SUMMARIZATION_MODEL,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
   SUGGESTED_SUMMARIZATION_MODELS,
 } from "@/lib/summarization/constants";
-import { DEFAULT_NARRATION_MODEL, SUGGESTED_NARRATION_MODELS } from "@/lib/narration/constants";
+import {
+  DEFAULT_NARRATION_MODEL,
+  NARRATION_PROVIDERS,
+  SUGGESTED_NARRATION_MODELS,
+} from "@/lib/narration/constants";
 import type { PickerModel } from "@/lib/ai/model-picker";
 import { ModelPicker } from "./ModelPicker";
 import { SettingsSection } from "./SettingsSection";
-
-interface ProviderKeyConfig {
-  field:
-    "anthropicApiKey" | "groqApiKey" | "cerebrasApiKey" | "openrouterApiKey" | "deepinfraApiKey";
-  hasKeyField:
-    | "hasAnthropicApiKey"
-    | "hasGroqApiKey"
-    | "hasCerebrasApiKey"
-    | "hasOpenrouterApiKey"
-    | "hasDeepinfraApiKey";
-  provider: AiProvider;
-  placeholder: string;
-  keyUrl: string;
-}
-
-const PROVIDER_KEY_CONFIGS: ProviderKeyConfig[] = [
-  {
-    field: "anthropicApiKey",
-    hasKeyField: "hasAnthropicApiKey",
-    provider: "anthropic",
-    placeholder: "sk-ant-...",
-    keyUrl: "https://console.anthropic.com/settings/keys",
-  },
-  {
-    field: "groqApiKey",
-    hasKeyField: "hasGroqApiKey",
-    provider: "groq",
-    placeholder: "gsk_...",
-    keyUrl: "https://console.groq.com/keys",
-  },
-  {
-    field: "cerebrasApiKey",
-    hasKeyField: "hasCerebrasApiKey",
-    provider: "cerebras",
-    placeholder: "csk-...",
-    keyUrl: "https://cloud.cerebras.ai/",
-  },
-  {
-    field: "openrouterApiKey",
-    hasKeyField: "hasOpenrouterApiKey",
-    provider: "openrouter",
-    placeholder: "sk-or-...",
-    keyUrl: "https://openrouter.ai/settings/keys",
-  },
-  {
-    field: "deepinfraApiKey",
-    hasKeyField: "hasDeepinfraApiKey",
-    provider: "deepinfra",
-    placeholder: "Your DeepInfra API key",
-    keyUrl: "https://deepinfra.com/dash/api_keys",
-  },
-];
 
 type UpdatePreferencesMutation = ReturnType<
   (typeof trpc.users)["me.updatePreferences"]["useMutation"]
@@ -127,7 +87,7 @@ function SaveCancelButtons({
 /**
  * Add/change/remove control for a single provider's API key.
  */
-function ProviderKeyRow({ config }: { config: ProviderKeyConfig }) {
+function ProviderKeyRow({ provider }: { provider: AiProvider }) {
   const utils = trpc.useUtils();
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const updatePreferences = trpc.users["me.updatePreferences"].useMutation({
@@ -144,13 +104,14 @@ function ProviderKeyRow({ config }: { config: ProviderKeyConfig }) {
   const [apiKey, setApiKey] = useState("");
   const [isEditing, setIsEditing] = useState(false);
 
-  const providerName = AI_PROVIDER_DISPLAY_NAMES[config.provider];
-  const hasKey = preferencesQuery.data?.[config.hasKeyField] ?? false;
+  const { displayName: providerName, keyUrl, keyPlaceholder } = AI_PROVIDER_INFO[provider];
+  const hasKey = preferencesQuery.data?.apiKeyProviders.includes(provider) ?? false;
+  const inputId = `${provider}-api-key-input`;
 
   const handleSave = useCallback(() => {
     updateWithToast(
       updatePreferences,
-      { [config.field]: apiKey },
+      { apiKeys: { [provider]: apiKey } },
       `${providerName} API key saved`,
       "Failed to save API key",
       () => {
@@ -158,34 +119,31 @@ function ProviderKeyRow({ config }: { config: ProviderKeyConfig }) {
         setIsEditing(false);
       }
     );
-  }, [apiKey, config.field, providerName, updatePreferences]);
+  }, [apiKey, provider, providerName, updatePreferences]);
 
   const handleRemove = useCallback(() => {
     updateWithToast(
       updatePreferences,
-      { [config.field]: "" },
+      { apiKeys: { [provider]: "" } },
       `${providerName} API key removed`,
       "Failed to remove API key",
       () => setIsEditing(false)
     );
-  }, [config.field, providerName, updatePreferences]);
+  }, [provider, providerName, updatePreferences]);
 
   return (
     <div>
-      <label
-        htmlFor={`${config.field}-input`}
-        className="ui-text-sm text-body mb-1.5 block font-medium"
-      >
-        <TextLink href={config.keyUrl} external>
+      <label htmlFor={inputId} className="ui-text-sm text-body mb-1.5 block font-medium">
+        <TextLink href={keyUrl} external>
           {providerName}
         </TextLink>
       </label>
       {isEditing ? (
         <div className="space-y-3">
           <Input
-            id={`${config.field}-input`}
+            id={inputId}
             type="password"
-            placeholder={config.placeholder}
+            placeholder={keyPlaceholder}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             disabled={updatePreferences.isPending}
@@ -235,24 +193,26 @@ function ProviderKeyRow({ config }: { config: ProviderKeyConfig }) {
 /**
  * AI provider API keys, shared by summaries and narration text processing.
  */
+const ALLOWLISTED_PROVIDERS = AI_PROVIDERS.filter((p) => AI_PROVIDER_INFO[p].serverKeyAllowlist);
+
 export function AiProviderKeySettings() {
   return (
     <SettingsSection
       title="AI Provider API Keys"
       description={
-        <>
-          Add an API key for one or more AI providers to enable AI features: article summaries
-          (Anthropic, Groq, Cerebras, or OpenRouter), narration text processing (Groq, Cerebras, or
-          OpenRouter), and cloud voices (DeepInfra or OpenRouter). OpenRouter gives access to
-          hundreds of models from many labs with one key. Without your own OpenRouter or DeepInfra
-          key, only the suggested models from that provider are available. Keys are stored encrypted
-          and override the server&apos;s keys when set.
-        </>
+        `Add an API key for one or more AI providers to enable AI features: ` +
+        `article summaries (${aiProviderNames(TEXT_AI_PROVIDERS)}), ` +
+        `narration text processing (${aiProviderNames(NARRATION_PROVIDERS)}), ` +
+        `and cloud voices (${aiProviderNames(SPEECH_PROVIDERS)}). ` +
+        `OpenRouter gives access to hundreds of models from many labs with one key. ` +
+        `Without your own ${aiProviderNames(ALLOWLISTED_PROVIDERS)} key, only the suggested ` +
+        `models from that provider are available. ` +
+        `Keys are stored encrypted and override the server's keys when set.`
       }
     >
       <div className="space-y-4">
-        {PROVIDER_KEY_CONFIGS.map((config) => (
-          <ProviderKeyRow key={config.field} config={config} />
+        {AI_PROVIDERS.map((provider) => (
+          <ProviderKeyRow key={provider} provider={provider} />
         ))}
       </div>
     </SettingsSection>
@@ -591,8 +551,8 @@ export function NarrationAiSettings() {
       description={
         <>
           AI-powered text processing for narration. This improves narration quality by expanding
-          abbreviations and formatting content for text-to-speech. Requires a Groq, Cerebras, or
-          OpenRouter API key (configured above).
+          abbreviations and formatting content for text-to-speech. Requires an API key from{" "}
+          {aiProviderNames(NARRATION_PROVIDERS)} (configured above).
         </>
       }
     >

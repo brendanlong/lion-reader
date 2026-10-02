@@ -802,7 +802,7 @@ describe("streamed speech", () => {
       const res = await speech(headers);
       // Past the gates: rejected for the missing provider key.
       expect(res.status).toBe(400);
-      expect((await res.json()).message).toContain("OpenRouter API key");
+      expect((await res.json()).message).toContain("API key from OpenRouter");
     }
   });
 

@@ -3903,20 +3903,18 @@
                     "canConfigureApiKeys": {
                       "type": "boolean"
                     },
-                    "hasGroqApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasAnthropicApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasCerebrasApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasOpenrouterApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasDeepinfraApiKey": {
-                      "type": "boolean"
+                    "apiKeyProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "anthropic",
+                          "groq",
+                          "cerebras",
+                          "openrouter",
+                          "deepinfra"
+                        ]
+                      }
                     },
                     "summarizationModel": {
                       "type": [
@@ -3946,11 +3944,7 @@
                   "required": [
                     "showSpam",
                     "canConfigureApiKeys",
-                    "hasGroqApiKey",
-                    "hasAnthropicApiKey",
-                    "hasCerebrasApiKey",
-                    "hasOpenrouterApiKey",
-                    "hasDeepinfraApiKey",
+                    "apiKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -4035,20 +4029,22 @@
                   "showSpam": {
                     "type": "boolean"
                   },
-                  "groqApiKey": {
-                    "type": "string"
-                  },
-                  "anthropicApiKey": {
-                    "type": "string"
-                  },
-                  "cerebrasApiKey": {
-                    "type": "string"
-                  },
-                  "openrouterApiKey": {
-                    "type": "string"
-                  },
-                  "deepinfraApiKey": {
-                    "type": "string"
+                  "apiKeys": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "anthropic",
+                        "groq",
+                        "cerebras",
+                        "openrouter",
+                        "deepinfra"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 1000
+                    }
                   },
                   "summarizationModel": {
                     "type": "string"
@@ -4098,20 +4094,18 @@
                     "canConfigureApiKeys": {
                       "type": "boolean"
                     },
-                    "hasGroqApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasAnthropicApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasCerebrasApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasOpenrouterApiKey": {
-                      "type": "boolean"
-                    },
-                    "hasDeepinfraApiKey": {
-                      "type": "boolean"
+                    "apiKeyProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "anthropic",
+                          "groq",
+                          "cerebras",
+                          "openrouter",
+                          "deepinfra"
+                        ]
+                      }
                     },
                     "summarizationModel": {
                       "type": [
@@ -4141,11 +4135,7 @@
                   "required": [
                     "showSpam",
                     "canConfigureApiKeys",
-                    "hasGroqApiKey",
-                    "hasAnthropicApiKey",
-                    "hasCerebrasApiKey",
-                    "hasOpenrouterApiKey",
-                    "hasDeepinfraApiKey",
+                    "apiKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -9596,8 +9586,8 @@
                           "provider": {
                             "type": "string",
                             "enum": [
-                              "deepinfra",
-                              "openrouter"
+                              "openrouter",
+                              "deepinfra"
                             ]
                           },
                           "providerDisplayName": {

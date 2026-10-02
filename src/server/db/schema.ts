@@ -92,12 +92,7 @@ export const users = pgTable(
     // Preferences
     showSpam: boolean("show_spam").notNull().default(false), // Show spam entries from email feeds
 
-    // User-configured API keys (override server defaults when set)
-    groqApiKey: text("groq_api_key"), // Groq: narration LLM preprocessing + summaries
-    anthropicApiKey: text("anthropic_api_key"), // Anthropic: AI summarization
-    cerebrasApiKey: text("cerebras_api_key"), // Cerebras: narration LLM preprocessing + summaries
-    openrouterApiKey: text("openrouter_api_key"), // OpenRouter: narration LLM preprocessing + summaries
-    deepinfraApiKey: text("deepinfra_api_key"), // DeepInfra: cloud voices
+    // AI settings (API keys are in user_api_keys)
     summarizationModel: text("summarization_model"), // provider:model ref for summaries (legacy: bare Anthropic ID)
     summarizationMaxWords: integer("summarization_max_words"), // Override SUMMARIZATION_MAX_WORDS
     summarizationPrompt: text("summarization_prompt"), // Custom summarization prompt
@@ -146,6 +141,23 @@ export const users = pgTable(
       .on(table.id)
       .where(sql`getting_started_at IS NULL`),
   ]
+);
+
+/**
+ * A user's own API key for an AI provider (see `@/lib/ai/providers`), which
+ * overrides the server's. Encrypted with `encryptApiKey`; never cached.
+ */
+export const userApiKeys = pgTable(
+  "user_api_keys",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    encryptedKey: text("encrypted_key").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.provider] })]
 );
 
 /**

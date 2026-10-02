@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { TEXT_AI_PROVIDERS } from "@/lib/ai/model-ref";
+import { TEXT_AI_PROVIDERS } from "@/lib/ai/providers";
 
 // ============================================================================
 // ID Schemas

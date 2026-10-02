@@ -28,7 +28,8 @@ import {
 } from "@/server/services/narration";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
-import { AI_PROVIDER_DISPLAY_NAMES, formatModelRef } from "@/lib/ai/model-ref";
+import { formatModelRef } from "@/lib/ai/model-ref";
+import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
 import {
   NARRATION_FORMAT_VERSION,
   NARRATION_PROVIDERS,
@@ -39,7 +40,6 @@ import {
   defaultVoiceFor,
   listSpeechModels,
   voiceNamesFor,
-  SPEECH_PROVIDERS,
 } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getUserApiKeys } from "@/server/auth/session";
@@ -351,17 +351,9 @@ export const narrationRouter = createTRPCRouter({
     })
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
-    .query(({ ctx }) => {
-      // The session only carries has-key booleans (never the keys); the
-      // placeholder values below are only tested for truthiness.
-      const sessionKeys = {
-        groqApiKey: ctx.session.hasGroqApiKey ? "configured" : null,
-        cerebrasApiKey: ctx.session.hasCerebrasApiKey ? "configured" : null,
-        openrouterApiKey: ctx.session.hasOpenrouterApiKey ? "configured" : null,
-      };
-      return {
-        available: isNarrationLlmAvailable(sessionKeys, ctx.session.user.narrationModel),
-      };
+    .query(async ({ ctx }) => {
+      const keys = await getUserApiKeys(ctx.session.user.id);
+      return { available: isNarrationLlmAvailable(keys, ctx.session.user.narrationModel) };
     }),
 
   /**
@@ -433,7 +425,7 @@ export const narrationRouter = createTRPCRouter({
         ...model,
         voices: model.voices.map((voice) => voice.id),
         voiceNames: voiceNamesFor(model),
-        providerDisplayName: AI_PROVIDER_DISPLAY_NAMES[model.provider],
+        providerDisplayName: aiProviderName(model.provider),
         defaultVoice: defaultVoiceFor(model),
       }));
       return { models, defaultModelId: defaultSpeechModelId(speechModels) };

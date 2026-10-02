@@ -11,35 +11,7 @@
  * Shared between server services and the settings UI.
  */
 
-/**
- * Supported AI providers.
- */
-export const AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter", "deepinfra"] as const;
-
-export type AiProvider = (typeof AI_PROVIDERS)[number];
-
-/**
- * Providers used for text generation (summaries, narration preprocessing).
- * DeepInfra is only used for cloud voices.
- */
-export const TEXT_AI_PROVIDERS = ["anthropic", "groq", "cerebras", "openrouter"] as const;
-
-export type TextAiProvider = (typeof TEXT_AI_PROVIDERS)[number];
-
-export function isTextAiProvider(provider: AiProvider): provider is TextAiProvider {
-  return (TEXT_AI_PROVIDERS as readonly string[]).includes(provider);
-}
-
-/**
- * Human-readable provider names for the settings UI.
- */
-export const AI_PROVIDER_DISPLAY_NAMES: Record<AiProvider, string> = {
-  anthropic: "Anthropic",
-  groq: "Groq",
-  cerebras: "Cerebras",
-  openrouter: "OpenRouter",
-  deepinfra: "DeepInfra",
-};
+import { isAiProvider, type AiProvider } from "./providers";
 
 /**
  * A model reference resolved to its provider and provider-native model ID.
@@ -48,10 +20,6 @@ export interface ModelRef {
   provider: AiProvider;
   /** The provider-native model ID (no provider prefix). */
   model: string;
-}
-
-function isAiProvider(value: string): value is AiProvider {
-  return (AI_PROVIDERS as readonly string[]).includes(value);
 }
 
 /**

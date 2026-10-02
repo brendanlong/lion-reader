@@ -491,6 +491,13 @@ CREATE TABLE public.tags (
     greader_sortid bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL
 );
 
+CREATE TABLE public.user_api_keys (
+    user_id uuid NOT NULL,
+    provider text NOT NULL,
+    encrypted_key text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE public.user_entries (
     user_id uuid CONSTRAINT user_entry_states_user_id_not_null NOT NULL,
     entry_id uuid CONSTRAINT user_entry_states_entry_id_not_null NOT NULL,
@@ -744,6 +751,9 @@ ALTER TABLE ONLY public.subscriptions
 ALTER TABLE ONLY public.websub_subscriptions
     ADD CONSTRAINT uq_websub_subscriptions_feed_hub UNIQUE (feed_id, hub_url);
 
+ALTER TABLE ONLY public.user_api_keys
+    ADD CONSTRAINT user_api_keys_pkey PRIMARY KEY (user_id, provider);
+
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_entry_id_pk PRIMARY KEY (user_id, entry_id);
 
@@ -959,6 +969,9 @@ ALTER TABLE ONLY public.subscriptions
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.user_api_keys
+    ADD CONSTRAINT user_api_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entries_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE SET NULL;

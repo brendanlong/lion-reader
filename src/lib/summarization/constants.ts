@@ -4,7 +4,7 @@
  * These are used by both the server service and frontend settings UI.
  */
 
-import type { TextAiProvider } from "@/lib/ai/model-ref";
+import { type TextAiProvider } from "@/lib/ai/providers";
 
 /**
  * Default summarization model per provider, as `provider:model` references.

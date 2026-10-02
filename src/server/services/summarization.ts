@@ -12,7 +12,8 @@ import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { markdownToHtmlAsync } from "@/server/markdown";
 import { parseFragment, serialize } from "parse5";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
-import { isTextAiProvider, parseModelRef } from "@/lib/ai/model-ref";
+import { parseModelRef } from "@/lib/ai/model-ref";
+import { isTextAiProvider } from "@/lib/ai/providers";
 import {
   generateChatCompletion,
   getAvailableProviders,
