@@ -12,6 +12,7 @@ import com.lionreader.shared.db.LionReaderDatabase
 private const val CURSORS_KEY = "sync_cursors"
 private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
 private const val CATCH_UP_KEY = "catch_up_in_progress"
+private const val RECENTLY_READ_KEY = "recently_read_seen"
 
 internal fun FeedType.wire(): String =
     when (this) {
@@ -34,6 +35,17 @@ internal class LocalStore(val db: LionReaderDatabase) {
     var bootstrapCursors: SyncCursors?
         get() = readCursors(BOOTSTRAP_CURSORS_KEY)
         set(value) = writeCursors(BOOTSTRAP_CURSORS_KEY, value)
+
+    /**
+     * The newest read time in the server's Recently Read when the device last fetched it (see
+     * SyncEngine.refreshRecentlyRead); null before the first fetch.
+     */
+    var recentlyReadSeen: Long?
+        get() = meta.selectValue(RECENTLY_READ_KEY).executeAsOneOrNull()?.toLong()
+        set(value) {
+            if (value != null) meta.upsert(RECENTLY_READ_KEY, "$value")
+            else meta.delete(RECENTLY_READ_KEY)
+        }
 
     /** Whether the last pulled page said more pages follow (see SyncEngine.fetchPage). */
     var catchUpInProgress: Boolean
@@ -70,6 +82,8 @@ internal class LocalStore(val db: LionReaderDatabase) {
         fetchedAt: String,
         read: Boolean,
         starred: Boolean,
+        /** Null leaves what's stored: the server sends it only on some paths. */
+        readChangedAt: String?,
     ) {
         val published = publishedAt?.let(::parseMillis)
         val fetched = parseMillis(fetchedAt)
@@ -97,6 +111,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
             sort_at = published ?: fetched,
             read = read.toLong(),
             starred = starred.toLong(),
+            value_ = readChangedAt?.let(::parseMillis),
             id = id,
         )
     }
@@ -117,6 +132,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
             item.fetchedAt,
             item.read,
             item.starred,
+            item.readChangedAt,
         )
 
     fun entryExists(id: String): Boolean = entries.exists(id).executeAsOne() > 0

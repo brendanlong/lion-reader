@@ -147,6 +147,66 @@ class SyncEngineTest {
     }
 
     @Test
+    fun recentlyReadIsTheServersOrderWithUnsentChangesOnTop() = runTest {
+        // Recently read on the server, but older than its window: still shown.
+        serve(
+            entry("old", ageDays = 400, read = true).copy(readChangedAt = minutesAgo(10)),
+            entry("a", read = true).copy(readChangedAt = minutesAgo(30)),
+            entry("b", read = true).copy(readChangedAt = minutesAgo(20)),
+            entry("c"),
+        )
+        engine.sync()
+        assertEquals(listOf("old", "b", "a"), timeline(ListScope.RecentlyRead))
+
+        // Offline: the device's own changes are newer than anything the server said.
+        clock = NOW + 1_000
+        reader.setRead(listOf("c"), true)
+        clock = NOW + 2_000
+        reader.setRead(listOf("a"), false)
+        assertEquals(listOf("a", "c", "old", "b"), timeline(ListScope.RecentlyRead))
+
+        // Sent, the order holds: the server's acknowledgement records the times.
+        engine.flushOutbox()
+        assertEquals(listOf("a", "c", "old", "b"), timeline(ListScope.RecentlyRead))
+    }
+
+    @Test
+    fun recentlyReadPagesBackThroughTheWindowThenUntilWhatItSawLastTime() = runTest {
+        repeat(150) {
+            serve(
+                entry("r%03d".format(it), ageDays = 400, read = true)
+                    .copy(readChangedAt = minutesAgo(it))
+            )
+        }
+        val longAgo = Instant.fromEpochMilliseconds(NOW - 400 * DAY).toString()
+        serve(entry("before", ageDays = 400, read = true).copy(readChangedAt = longAgo))
+        fun limits() =
+            server.requests
+                .filter { it.url.parameters["sortBy"] == "readChanged" }
+                .map { it.url.parameters["limit"] }
+
+        engine.sync(downloadContent = false)
+        // Read before the window: retention would drop it.
+        val all = (0 until 150).map { "r%03d".format(it) }
+        assertEquals(all, timeline(ListScope.RecentlyRead))
+        assertEquals(listOf("20", "100", "100"), limits())
+
+        // Read again elsewhere, which isn't a change to sync: the refresh brings them.
+        val reread = (149 downTo 120).map { "r%03d".format(it) }
+        reread.forEachIndexed { i, id ->
+            server.entries[id] =
+                server.entries.getValue(id).copy(readChangedAt = minutesAgo(-30 + i))
+        }
+        engine.sync(downloadContent = false)
+        assertEquals(reread + all.take(120), timeline(ListScope.RecentlyRead))
+        assertEquals(listOf("20", "100", "100", "20", "100"), limits())
+
+        // Nothing new: one short page.
+        engine.sync(downloadContent = false)
+        assertEquals(listOf("20", "100", "100", "20", "100", "20"), limits())
+    }
+
+    @Test
     fun unreadCountsAreTheDevicesOwnIncludingUnsentChanges() = runTest {
         server.subscriptions += Subscription("sub-1", FeedType.WEB)
         serve(entry("a"), entry("b"))

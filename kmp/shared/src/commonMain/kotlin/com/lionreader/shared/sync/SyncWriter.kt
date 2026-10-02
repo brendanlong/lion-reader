@@ -67,6 +67,23 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         items.forEach(store::upsertEntry)
     }
 
+    var recentlyReadSeen: Long?
+        get() = store.recentlyReadSeen
+        set(value) {
+            store.recentlyReadSeen = value
+        }
+
+    /**
+     * Saves a page of the server's Recently Read, like any list page, keeping only entries read
+     * since [windowStart] (retention would drop the rest).
+     */
+    fun saveRecentlyRead(items: List<EntryListItem>, windowStart: Long) = db.transaction {
+        val recent = items.filter { item ->
+            item.readChangedAt?.let { parseMillis(it) >= windowStart } == true
+        }
+        recent.forEach(store::upsertEntry)
+    }
+
     fun finishBootstrap(start: SyncCursors) = db.transaction {
         store.cursors = start
         store.bootstrapCursors = null
@@ -101,6 +118,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 entry.fetchedAt,
                 entry.read,
                 entry.starred,
+                entry.readChangedAt,
             )
             // The fetched body is current: it replaces the old one and wins
             // over any download already in flight. A summary goes unless the
@@ -140,6 +158,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         it.fetchedAt,
                         it.read ?: false,
                         it.starred ?: false,
+                        it.readChangedAt,
                     )
                 }
             }
@@ -169,6 +188,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         db.entryQueries.updateServerState(
                             if (event.read) 1 else 0,
                             if (event.starred) 1 else 0,
+                            event.readChangedAt?.let(::parseMillis),
                             event.entryId,
                         )
                     entry != null && event.feedType != null ->
@@ -187,6 +207,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                             entry.fetchedAt,
                             event.read,
                             event.starred,
+                            event.readChangedAt,
                         )
                 }
             }
@@ -239,6 +260,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                     db.entryQueries.updateServerState(
                         if (state.read) 1 else 0,
                         if (state.starred) 1 else 0,
+                        state.readChangedAt?.let(::parseMillis),
                         state.id,
                     )
                 }

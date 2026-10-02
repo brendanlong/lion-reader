@@ -240,6 +240,7 @@ export function createDemoStore(): DemoStore {
       fetchedAt: entry.fetchedAt,
       read: state.read,
       starred: state.starred,
+      readChangedAt: state.readChangedAt,
       updatedAt: state.updatedAt,
       feedTitle: sub?.title ?? entry.feedTitle,
       siteName: entry.siteName,
@@ -406,6 +407,7 @@ export function createDemoStore(): DemoStore {
           starred: state.starred,
           type: state.entry.type,
           updatedAt: state.updatedAt,
+          readChangedAt: state.readChangedAt,
         });
       }
       return {

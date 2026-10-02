@@ -11,7 +11,9 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
@@ -22,6 +24,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
@@ -93,6 +96,7 @@ class HomeScreenTest {
             sortAt,
             if (read) 1 else 0,
             starredFlag,
+            null,
             id,
         )
     }
@@ -106,6 +110,14 @@ class HomeScreenTest {
         fetchSemanticsNode().config.getOrElseNullable(SemanticsProperties.StateDescription) {
             null
         } == state
+
+    /** A drawer row, scrolled into view: the drawer can be taller than the test's screen. */
+    private fun drawerRow(text: String): SemanticsNodeInteraction {
+        composeRule
+            .onNode(hasScrollToNodeAction() and hasAnyDescendant(hasText("Recently read")))
+            .performScrollToNode(hasText(text))
+        return composeRule.onNodeWithText(text)
+    }
 
     private fun show(showSelection: Boolean = false) {
         model =
@@ -268,7 +280,7 @@ class HomeScreenTest {
 
         composeRule.onNodeWithContentDescription("Expand News").performClick()
         composeRule.waitUntil { "tag" in settings.value.expandedTags }
-        composeRule.onNodeWithText("Nested Feed").assertIsDisplayed()
+        drawerRow("Nested Feed").assertIsDisplayed()
         // Expanding doesn't also open the tag's list.
         assertEquals(ListScope.All, model.scope.value)
 
@@ -514,7 +526,7 @@ class HomeScreenTest {
         composeRule.onNodeWithText("Loose Feed").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Expand Uncategorized").performClick()
         composeRule.waitUntil { "uncategorized" in settings.value.expandedTags }
-        composeRule.onNodeWithText("Loose Feed").assertIsDisplayed()
+        drawerRow("Loose Feed").assertIsDisplayed()
         composeRule.onNodeWithText("Tagged Feed").assertDoesNotExist()
 
         composeRule.onNodeWithText("Uncategorized").performClick()

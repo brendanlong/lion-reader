@@ -21,8 +21,11 @@ CREATE TABLE entry (
   last_opened_at INTEGER,
   -- From body_version_seq: new on insert and whenever the server reports the
   -- entry edited, so a body downloaded before an edit, or before the entry
-  -- was deleted and added again, can't be stored after it (see Body.sq).
-  body_version INTEGER NOT NULL
+    -- was deleted and added again, can't be stored after it (see Body.sq).
+  body_version INTEGER NOT NULL,
+  -- When read state last changed, as the server last reported it (Recently
+  -- Read's order); null if it never has. Last, as the migration adds it (1.sqm).
+  read_changed_at INTEGER
 );
 
 -- Never reset (not even by clearSynced or clearAll), so no entry gets back a
@@ -40,7 +43,13 @@ CREATE VIEW entry_view AS
 SELECT
   e.*,
   COALESCE(r.value, e.read) AS effective_read,
-  COALESCE(s.value, e.starred) AS effective_starred
+  COALESCE(s.value, e.starred) AS effective_starred,
+  -- An unsent read change counts once it's later than the server's.
+  CASE
+    WHEN r.changed_at IS NOT NULL AND (e.read_changed_at IS NULL OR r.changed_at > e.read_changed_at)
+    THEN r.changed_at
+    ELSE e.read_changed_at
+  END AS effective_read_changed_at
 FROM entry e
 LEFT JOIN outbox_state r ON r.entry_id = e.id AND r.field = 'read'
 LEFT JOIN outbox_state s ON s.entry_id = e.id AND s.field = 'starred';
@@ -56,8 +65,8 @@ insertIgnore {
 updateAll:
 UPDATE entry SET
   subscription_id = ?, feed_id = COALESCE(?, feed_id), type = ?, url = ?, title = ?, author = ?,
-  summary = ?, site_name = ?, feed_title = ?, published_at = ?, fetched_at = ?, sort_at = ?,
-  read = ?, starred = ?
+    summary = ?, site_name = ?, feed_title = ?, published_at = ?, fetched_at = ?, sort_at = ?,
+  read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at)
 WHERE id = ?;
 
 updateMetadata:
@@ -66,7 +75,7 @@ UPDATE entry SET title = ?, author = ?, summary = ?, url = ?, published_at = ?,
 WHERE id = ?;
 
 updateServerState:
-UPDATE entry SET read = ?, starred = ? WHERE id = ?;
+UPDATE entry SET read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at) WHERE id = ?;
 
 updateServerRead:
 UPDATE entry SET read = ? WHERE id = ?;
@@ -118,6 +127,16 @@ bumpBodyVersion {
   UPDATE entry SET body_version = (SELECT value FROM body_version_seq) WHERE id = :id;
 }
 
+-- Recently Read: entries whose read state changed, latest change first (the
+-- web's order), whichever side made it.
+selectRecentlyRead:
+SELECT id, subscription_id, type, url, title, author, summary, site_name, feed_title,
+  sort_at, effective_read, effective_starred
+FROM entry_view
+WHERE effective_read_changed_at IS NOT NULL
+ORDER BY effective_read_changed_at DESC, id DESC
+LIMIT :limit;
+
 bodyVersion:
 SELECT body_version FROM entry WHERE id = ?;
 
@@ -132,6 +151,7 @@ LIMIT ?;
 unreadIdsInScope:
 SELECT id FROM entry_view
 WHERE effective_read = 0
+  AND (:recentlyReadOnly = 0 OR effective_read_changed_at IS NOT NULL)
   AND (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
   AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1)
@@ -159,22 +179,24 @@ JOIN subscription_tag st ON st.subscription_id = v.subscription_id
 WHERE v.effective_read = 0
 GROUP BY st.tag_id;
 
--- Retention: drop entries outside the window unless starred, saved, or with an
--- unsent change.
+-- Retention: drop entries outside the window unless starred, saved, read (or
+-- unread) within it (Recently Read), or with an unsent change.
 evictOutsideWindow:
 DELETE FROM entry
-WHERE sort_at < ?
+WHERE sort_at < :windowStart
   AND type != 'saved'
   AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1)
+  AND id NOT IN (SELECT id FROM entry_view WHERE effective_read_changed_at >= :windowStart)
   AND id NOT IN (SELECT entry_id FROM outbox_state);
 
--- Retention: keep at most N read entries, newest first (same exemptions).
+-- Retention: keep at most N read entries, newest (published or read) first
+-- (same exemptions).
 evictBeyondCount:
 DELETE FROM entry
 WHERE id IN (
   SELECT id FROM entry_view
   WHERE type != 'saved' AND effective_starred = 0 AND effective_read = 1
     AND id NOT IN (SELECT entry_id FROM outbox_state)
-  ORDER BY sort_at DESC
+  ORDER BY MAX(sort_at, COALESCE(effective_read_changed_at, 0)) DESC
   LIMIT -1 OFFSET ?
 );

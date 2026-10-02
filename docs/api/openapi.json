@@ -5911,6 +5911,12 @@
                           "starred": {
                             "type": "boolean"
                           },
+                          "readChangedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "updatedAt": {
                             "type": "string"
                           },
@@ -5940,6 +5946,7 @@
                           "fetchedAt",
                           "read",
                           "starred",
+                          "readChangedAt",
                           "updatedAt",
                           "feedTitle",
                           "siteName"
@@ -6304,6 +6311,12 @@
                         "starred": {
                           "type": "boolean"
                         },
+                        "readChangedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "updatedAt": {
                           "type": "string"
                         },
@@ -6374,6 +6387,7 @@
                         "fetchedAt",
                         "read",
                         "starred",
+                        "readChangedAt",
                         "updatedAt",
                         "feedTitle",
                         "feedUrl",
@@ -6571,6 +6585,12 @@
                           "starred": {
                             "type": "boolean"
                           },
+                          "readChangedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "updatedAt": {
                             "type": "string"
                           },
@@ -6641,6 +6661,7 @@
                           "fetchedAt",
                           "read",
                           "starred",
+                          "readChangedAt",
                           "updatedAt",
                           "feedTitle",
                           "feedUrl",
@@ -6807,6 +6828,12 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "readChangedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -6815,7 +6842,8 @@
                           "read",
                           "starred",
                           "type",
-                          "updatedAt"
+                          "updatedAt",
+                          "readChangedAt"
                         ],
                         "additionalProperties": false
                       }
@@ -7425,6 +7453,12 @@
                           },
                           "updatedAt": {
                             "type": "string"
+                          },
+                          "readChangedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -7433,7 +7467,8 @@
                           "read",
                           "starred",
                           "type",
-                          "updatedAt"
+                          "updatedAt",
+                          "readChangedAt"
                         ],
                         "additionalProperties": false
                       }
@@ -7700,6 +7735,12 @@
                         "starred": {
                           "type": "boolean"
                         },
+                        "readChangedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "updatedAt": {
                           "type": "string"
                         },
@@ -7770,6 +7811,7 @@
                         "fetchedAt",
                         "read",
                         "starred",
+                        "readChangedAt",
                         "updatedAt",
                         "feedTitle",
                         "feedUrl",
@@ -11855,6 +11897,12 @@
                                   },
                                   "starred": {
                                     "type": "boolean"
+                                  },
+                                  "readChangedAt": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -11971,6 +12019,12 @@
                               },
                               "starred": {
                                 "type": "boolean"
+                              },
+                              "readChangedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "counts": {
                                 "type": "object",
@@ -12146,6 +12200,12 @@
                                   },
                                   "starred": {
                                     "type": "boolean"
+                                  },
+                                  "readChangedAt": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
                                   }
                                 },
                                 "required": [

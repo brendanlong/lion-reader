@@ -226,6 +226,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))
                 "/entries" ->
                     list(
+                        params["sortBy"] == "readChanged",
                         params["starredOnly"] == "true",
                         params["type"],
                         params["subscriptionId"],
@@ -296,6 +297,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.id,
                                 e.read,
                                 e.starred,
+                                e.readChangedAt?.let { e.time(it) },
                                 e.subscriptionId,
                                 "feed",
                                 e.type,
@@ -327,6 +329,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     }
 
     private fun list(
+        recentlyRead: Boolean,
         starredOnly: Boolean,
         type: String?,
         subscriptionId: String?,
@@ -338,7 +341,11 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .filter { !starredOnly || it.starred }
                 .filter { type != "saved" || it.type == FeedType.SAVED }
                 .filter { subscriptionId == null || it.subscriptionId == subscriptionId }
-                .sortedWith(compareByDescending<Entry> { it.published }.thenByDescending { it.id })
+                .filter { !recentlyRead || it.readChangedAt != null }
+                .sortedWith(
+                    if (recentlyRead) recentlyReadOrder
+                    else compareByDescending<Entry> { it.published }.thenByDescending { it.id }
+                )
         val offset = cursor?.toInt() ?: 0
         val size = limit?.toInt() ?: 100
         val page = matching.drop(offset).take(size)
@@ -364,7 +371,15 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val states =
             changes
                 .mapNotNull { c -> visible.find { it.id == c.id } }
-                .map { EntryState(it.id, it.subscriptionId, it.read, it.starred) }
+                .map {
+                    EntryState(
+                        it.id,
+                        it.subscriptionId,
+                        it.read,
+                        it.starred,
+                        it.readChangedAt?.let { t -> it.time(t) },
+                    )
+                }
         return encode(
             BulkStateResponse.serializer(),
             BulkStateResponse(states),
@@ -380,6 +395,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             fetchedAt = time(published),
             read = read,
             starred = starred,
+            readChangedAt = readChangedAt?.let { time(it) },
         )
 
     private fun Entry.listItem() =
@@ -393,6 +409,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             fetchedAt = time(published),
             read = read,
             starred = starred,
+            readChangedAt = readChangedAt?.let { time(it) },
         )
 
     private fun Entry.full() =
@@ -407,6 +424,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             read = read,
             starred = starred,
             contentCleaned = content,
+            readChangedAt = readChangedAt?.let { time(it) },
         )
 
     private fun <T> encode(serializer: KSerializer<T>, value: T) =
@@ -416,6 +434,13 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         ApiJson.decodeFromString(serializer, (request.body as TextContent).text)
 
     private val json = headersOf(HttpHeaders.ContentType, "application/json")
+
+    /** The server's Recently Read: entries whose read state changed, latest first. */
+    fun recentlyRead(): List<String> =
+        visible.filter { it.readChangedAt != null }.sortedWith(recentlyReadOrder).map { it.id }
+
+    private val recentlyReadOrder =
+        compareByDescending<Entry> { it.readChangedAt }.thenByDescending { it.id }
 
     private companion object {
         val WRITES = setOf("/entries/mark-read", "/entries/starred")

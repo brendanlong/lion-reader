@@ -79,7 +79,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -426,8 +425,8 @@ internal fun MarkReadOnArrival(reader: Reader, entryId: String, onShown: (String
         if (marked == entryId) return@LaunchedEffect
         marked = entryId
         reader.markOpened(entryId)
-        val shown = reader.entry(entryId).first() ?: return@LaunchedEffect
-        if (!shown.read) reader.setRead(listOf(entryId), true)
+        // Even if it's read already, like the web, so it's at the top of Recently Read.
+        reader.setRead(listOf(entryId), true)
     }
 }
 

@@ -121,6 +121,7 @@ const entryListItemSchema = z.object({
   fetchedAt: z.date(),
   read: z.boolean(),
   starred: z.boolean(),
+  readChangedAt: z.date().nullable(), // When read state last changed (Recently Read's order)
   updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
   feedTitle: z.string().nullable(),
   siteName: z.string().nullable(),
@@ -144,6 +145,7 @@ const entryFullSchema = z.object({
   fetchedAt: z.date(),
   read: z.boolean(),
   starred: z.boolean(),
+  readChangedAt: z.date().nullable(), // When read state last changed (Recently Read's order)
   updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
@@ -214,6 +216,7 @@ const bulkStateChangeOutputSchema = z.object({
       starred: z.boolean(), // For updating starred unread count
       type: feedTypeSchema, // For updating saved/email counts
       updatedAt: z.date(), // For cache freshness comparison
+      readChangedAt: z.date().nullable(), // The read time the server kept
     })
   ),
   // Absolute counts for all affected lists. Absent when no value actually

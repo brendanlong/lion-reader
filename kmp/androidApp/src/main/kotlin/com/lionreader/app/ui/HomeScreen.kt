@@ -405,6 +405,7 @@ private fun title(scope: ListScope, navigation: Navigation?): String =
         ListScope.All -> "All"
         ListScope.Starred -> "Starred"
         ListScope.Saved -> "Saved"
+        ListScope.RecentlyRead -> "Recently read"
         ListScope.Uncategorized -> "Uncategorized"
         is ListScope.Tag -> navigation?.tags?.firstOrNull { it.id == scope.id }?.name ?: "Tag"
         is ListScope.Subscription ->
@@ -455,6 +456,11 @@ private fun Drawer(
         item {
             DrawerRow("Saved", navigation?.savedUnread, selected == ListScope.Saved) {
                 onSelect(ListScope.Saved)
+            }
+        }
+        item {
+            DrawerRow("Recently read", null, selected == ListScope.RecentlyRead) {
+                onSelect(ListScope.RecentlyRead)
             }
         }
         navigation?.let { nav ->

@@ -161,8 +161,10 @@ class FakeServer {
                 respond("{}", HttpStatusCode.ServiceUnavailable, jsonHeaders)
             path == "/entries" -> {
                 val params = request.url.parameters
+                val recentlyRead = params["sortBy"] == "readChanged"
                 val matching =
                     entries.values
+                        .filter { !recentlyRead || it.readChangedAt != null }
                         .filter { params["starredOnly"] != "true" || it.starred }
                         .filter {
                             params["type"] == null || it.type.name.lowercase() == params["type"]
@@ -171,7 +173,9 @@ class FakeServer {
                             params["subscriptionId"] == null ||
                                 it.subscriptionId == params["subscriptionId"]
                         }
-                        .sortedByDescending { it.publishedAt ?: it.fetchedAt }
+                        .sortedByDescending {
+                            if (recentlyRead) it.readChangedAt else it.publishedAt ?: it.fetchedAt
+                        }
                 // Newest first, paged like the server (the cursor is an offset here).
                 val offset = params["cursor"]?.toInt() ?: 0
                 val limit = params["limit"]?.toInt() ?: 100
@@ -216,7 +220,10 @@ class FakeServer {
             path == "/entries/mark-read" -> {
                 val body = body(request, MarkReadRequest.serializer())
                 markReadRequests += body
-                stateWrite(body.entries.map { it.id }) { it.copy(read = body.read) }
+                val times = body.entries.associate { it.id to it.changedAt }
+                stateWrite(body.entries.map { it.id }) {
+                    it.copy(read = body.read, readChangedAt = times[it.id])
+                }
             }
             path == "/entries/starred" -> {
                 val body = body(request, SetStarredRequest.serializer())
@@ -243,7 +250,15 @@ class FakeServer {
                 ids.forEach { id -> entries[id]?.let { entries[id] = change(it) } }
                 val states =
                     ids.mapNotNull { entries[it] }
-                        .map { EntryState(it.id, it.subscriptionId, it.read, it.starred) }
+                        .map {
+                            EntryState(
+                                it.id,
+                                it.subscriptionId,
+                                it.read,
+                                it.starred,
+                                it.readChangedAt,
+                            )
+                        }
                 json(BulkStateResponse.serializer(), BulkStateResponse(states))
             }
 
@@ -272,4 +287,5 @@ fun FullEntry.listItem() =
         starred = starred,
         feedTitle = feedTitle,
         siteName = siteName,
+        readChangedAt = readChangedAt,
     )

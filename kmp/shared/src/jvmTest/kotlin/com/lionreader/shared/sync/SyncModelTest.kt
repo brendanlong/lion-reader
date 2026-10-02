@@ -209,6 +209,12 @@ class SyncModelTest {
         val pending = db.outboxQueries.countStates().executeAsOne()
         if (pending != 0L) return "$pending changes still unsent"
 
+        val recentlyRead =
+            reader.timeline(ListScope.RecentlyRead, false, emptySet(), 10_000).first().map { it.id }
+        if (recentlyRead != server.recentlyRead()) {
+            return "recently read: device $recentlyRead, server ${server.recentlyRead()}"
+        }
+
         for ((key, change) in lastLocal) {
             val (id, field) = key
             if (id !in remote) continue

@@ -18,6 +18,8 @@ import kotlinx.coroutines.sync.withLock
 private const val FLUSH_BATCH = 1000
 private const val CONTENT_BATCH = 50
 private const val ENSURE_ATTEMPTS = 3
+private const val RECENTLY_READ_PAGE = 100
+private const val RECENTLY_READ_REFRESH = 20
 
 /**
  * Keeps the local store in step with the server: sends the outbox, pulls changes (or the initial
@@ -56,6 +58,7 @@ class SyncEngine(
             flush()
             if (writer.cursors == null) bootstrap()
             pull()
+            refreshRecentlyRead(policy())
             writer.evict(policy(), now())
         }
         if (downloadContent) {
@@ -179,6 +182,38 @@ class SyncEngine(
         }
 
         writer.finishBootstrap(start)
+    }
+
+    /**
+     * The server's Recently Read. The web marks an entry read again whenever it's opened, which
+     * moves it there without counting as a change to sync (#1118), so every sync pages through it
+     * until what it had seen last time: the first sync, back through the retention window. Never
+     * more than retention keeps.
+     */
+    private suspend fun refreshRecentlyRead(policy: RetentionPolicy) {
+        val windowStart = now() - policy.windowMillis
+        val until = maxOf(writer.recentlyReadSeen ?: Long.MIN_VALUE, windowStart)
+        var newest: Long? = null
+        var fetched = 0
+        var cursor: String? = null
+        do {
+            val limit = if (fetched == 0) RECENTLY_READ_REFRESH else RECENTLY_READ_PAGE
+            val page = api.listRecentlyRead(cursor, limit)
+            val times =
+                page.items.map { item ->
+                    // A server too old to send read times: try again once it does.
+                    parseMillis(item.readChangedAt ?: return)
+                }
+            writer.saveRecentlyRead(page.items, windowStart)
+            newest = newest ?: times.firstOrNull()
+            fetched += page.items.size
+            cursor = page.nextCursor
+        } while (
+            cursor != null &&
+                (times.lastOrNull() ?: until) > until &&
+                fetched < policy.maxReadEntries
+        )
+        newest?.let { writer.recentlyReadSeen = it }
     }
 
     private suspend fun pull() {

@@ -35,6 +35,7 @@ function makeListItem(overrides: Partial<EntryListItem> = {}): EntryListItem {
     updatedAt: new Date("2026-01-02T00:00:00Z"),
     read: false,
     starred: false,
+    readChangedAt: null,
     feedTitle: null,
     siteName: null,
     ...overrides,

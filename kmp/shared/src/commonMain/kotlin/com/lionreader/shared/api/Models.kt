@@ -32,6 +32,8 @@ data class EntryListItem(
     val starred: Boolean,
     val feedTitle: String? = null,
     val siteName: String? = null,
+    /** When read state last changed; null if it never has (or from an older server). */
+    val readChangedAt: String? = null,
 )
 
 @Serializable
@@ -58,6 +60,7 @@ data class FullEntry(
     val fullContentCleaned: String? = null,
     val fullContentOriginal: String? = null,
     val fetchFullContent: Boolean = false,
+    val readChangedAt: String? = null,
 ) {
     /** The body the web reader shows by default for this entry. */
     val displayContent: String?
@@ -94,6 +97,7 @@ data class EntryState(
     val subscriptionId: String? = null,
     val read: Boolean,
     val starred: Boolean,
+    val readChangedAt: String? = null,
 )
 
 @Serializable data class BulkStateResponse(val entries: List<EntryState>)
@@ -151,6 +155,7 @@ data class EventEntry(
     val feedTitle: String? = null,
     val read: Boolean? = null,
     val starred: Boolean? = null,
+    val readChangedAt: String? = null,
 )
 
 @Serializable
@@ -203,6 +208,7 @@ sealed interface SyncEvent {
         val entryId: String,
         val read: Boolean,
         val starred: Boolean,
+        val readChangedAt: String? = null,
         val subscriptionId: String? = null,
         val feedId: String? = null,
         val feedType: FeedType? = null,

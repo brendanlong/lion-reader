@@ -115,6 +115,8 @@ export interface EntryListItem {
   updatedAt: Date;
   read: boolean;
   starred: boolean;
+  /** When read state last changed (Recently Read's order); null if it never has. */
+  readChangedAt: Date | null;
   feedTitle: string | null;
   siteName: string | null;
 }
@@ -178,6 +180,7 @@ export interface MarkReadEntryState {
   starred: boolean;
   type: "web" | "email" | "saved";
   updatedAt: Date;
+  readChangedAt: Date | null;
 }
 
 // ============================================================================
@@ -215,6 +218,7 @@ interface EntryListRow {
   updatedAt: Date;
   read: boolean;
   starred: boolean;
+  readChangedAt: Date | null;
   siteName: string | null;
   feedTitle: string | null;
 }
@@ -239,6 +243,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     fetchedAt: row.fetchedAt,
     read: row.read,
     starred: row.starred,
+    readChangedAt: row.readChangedAt,
     updatedAt: row.updatedAt,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
@@ -291,6 +296,7 @@ const entryListSelectFields = {
   fetchedAt: visibleEntries.fetchedAt,
   read: visibleEntries.read,
   starred: visibleEntries.starred,
+  readChangedAt: visibleEntries.readChangedAt,
   updatedAt: visibleEntries.updatedAt,
   subscriptionId: visibleEntries.subscriptionId,
   siteName: visibleEntries.siteName,
@@ -344,6 +350,7 @@ const fullEntrySelectFields = {
   fullContentError: visibleEntries.fullContentError,
   contentHash: visibleEntries.contentHash,
   fetchFullContent: subscriptions.fetchFullContent,
+  readChangedAt: visibleEntries.readChangedAt,
 };
 
 /**
@@ -624,7 +631,6 @@ export async function listEntries(
     .select({
       ...entryListSelectFields,
       feedTitle: feeds.title,
-      readChangedAt: visibleEntries.readChangedAt,
       sortTs: sortTsInstant,
     })
     .from(visibleEntries)
@@ -977,6 +983,7 @@ export async function markEntriesRead(
       starred: visibleEntries.starred,
       type: visibleEntries.type,
       updatedAt: visibleEntries.updatedAt,
+      readChangedAt: visibleEntries.readChangedAt,
     })
     .from(visibleEntries)
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
@@ -1224,6 +1231,7 @@ async function selectStarredEntryStates(
       updatedAt: sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`.mapWith(
         userEntries.updatedAt
       ),
+      readChangedAt: userEntries.readChangedAt,
     })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))
