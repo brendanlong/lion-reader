@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 import * as argon2 from "argon2";
-import { eq, and, isNull, gt, desc } from "drizzle-orm";
+import { eq, and, isNull, gt, desc, sql } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -60,6 +60,15 @@ const preferencesOutputSchema = z.object({
   summarizationPrompt: z.string().nullable(),
   narrationModel: z.string().nullable(),
 });
+
+/** Providers with a users.<provider>_api_key column, until a release drops them. */
+const LEGACY_KEY_COLUMNS: ReadonlySet<AiProvider> = new Set([
+  "anthropic",
+  "groq",
+  "cerebras",
+  "openrouter",
+  "deepinfra",
+]);
 
 // ============================================================================
 // Router
@@ -458,6 +467,15 @@ export const usersRouter = createTRPCRouter({
       await ctx.db.transaction(async (tx) => {
         await tx.update(users).set(updateData).where(eq(users.id, userId));
         for (const [provider, key] of apiKeys) {
+          if (LEGACY_KEY_COLUMNS.has(provider)) {
+            // The previous release still reads users.<provider>_api_key; clear
+            // it so a key replaced or removed here can't be used by that
+            // release, and so the column-dropping migration's final copy only
+            // carries keys the previous release set after 0116.
+            await tx.execute(
+              sql`UPDATE users SET ${sql.identifier(`${provider}_api_key`)} = NULL WHERE id = ${userId}`
+            );
+          }
           if (key) {
             const encryptedKey = encryptApiKey(key);
             await tx

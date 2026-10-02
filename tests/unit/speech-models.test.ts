@@ -301,7 +301,7 @@ describe("resolveSpeechModel", () => {
 
   it("needs a provider, and names them", () => {
     expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
-      "Cloud voices require an API key from OpenRouter or DeepInfra"
+      "Cloud voices require an API key from DeepInfra or OpenRouter"
     );
   });
 });

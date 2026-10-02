@@ -6,11 +6,12 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { userApiKeys } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import { getUserApiKeys } from "../../src/server/auth/session";
+import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { createAuthContext, createTestUser } from "./helpers";
 
 const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
@@ -66,6 +67,19 @@ describe.each(["openrouter", "deepinfra"] as const)("%s API key", (provider) => 
   });
 });
 
+it("clears the previous release's column for a key it changes", async () => {
+  const userId = await createTestUser();
+  await db.execute(sql`UPDATE users SET groq_api_key = 'stale' WHERE id = ${userId}`);
+  const caller = createCaller(await createAuthContext(userId));
+
+  await caller.users["me.updatePreferences"]({ apiKeys: { groq: "" } });
+
+  const result = await db.execute<{ groq_api_key: string | null }>(
+    sql`SELECT groq_api_key FROM users WHERE id = ${userId}`
+  );
+  expect(result.rows[0].groq_api_key).toBeNull();
+});
+
 it("leaves other providers' keys alone", async () => {
   const userId = await createTestUser();
   const caller = createCaller(await createAuthContext(userId));
@@ -76,8 +90,8 @@ it("leaves other providers' keys alone", async () => {
   expect(await getUserApiKeys(userId)).toEqual({ openrouter: "sk-b" });
 });
 
-describe("cloud voices", () => {
-  const serverKeys = ["OPENROUTER_API_KEY", "DEEPINFRA_API_KEY"] as const;
+describe("without server keys", () => {
+  const serverKeys = Object.values(AI_PROVIDER_ENV_KEYS);
   const previous = Object.fromEntries(serverKeys.map((name) => [name, process.env[name]]));
   beforeAll(() => {
     for (const name of serverKeys) delete process.env[name];
@@ -88,7 +102,19 @@ describe("cloud voices", () => {
     }
   });
 
-  it("are unavailable without an OpenRouter or DeepInfra key", async () => {
+  it("makes AI features available with only a user key", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    expect((await caller.summarization.isAvailable()).available).toBe(false);
+    expect((await caller.narration.isAiTextProcessingAvailable()).available).toBe(false);
+
+    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-a" } });
+
+    expect((await caller.summarization.isAvailable()).available).toBe(true);
+    expect((await caller.narration.isAiTextProcessingAvailable()).available).toBe(true);
+  });
+
+  it("has no cloud voices without a DeepInfra or OpenRouter key", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
 

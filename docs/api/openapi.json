@@ -3911,8 +3911,8 @@
                           "anthropic",
                           "groq",
                           "cerebras",
-                          "openrouter",
-                          "deepinfra"
+                          "deepinfra",
+                          "openrouter"
                         ]
                       }
                     },
@@ -4037,8 +4037,8 @@
                         "anthropic",
                         "groq",
                         "cerebras",
-                        "openrouter",
-                        "deepinfra"
+                        "deepinfra",
+                        "openrouter"
                       ]
                     },
                     "additionalProperties": {
@@ -4102,8 +4102,8 @@
                           "anthropic",
                           "groq",
                           "cerebras",
-                          "openrouter",
-                          "deepinfra"
+                          "deepinfra",
+                          "openrouter"
                         ]
                       }
                     },
@@ -9586,8 +9586,8 @@
                           "provider": {
                             "type": "string",
                             "enum": [
-                              "openrouter",
-                              "deepinfra"
+                              "deepinfra",
+                              "openrouter"
                             ]
                           },
                           "providerDisplayName": {

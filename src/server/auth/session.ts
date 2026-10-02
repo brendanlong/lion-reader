@@ -45,15 +45,15 @@ const SESSION_CACHE_TTL_SECONDS = 300;
 /**
  * Redis key prefix for session cache.
  *
- * The version suffix (`v2`) namespaces the cached payload format. Bump it
- * whenever a change to {@link CachedSession} is security-relevant — e.g. adding
- * the `scopes` field — so old-format entries written by a previous release are
- * never read by new code during a rolling deploy. A missing field would
- * otherwise deserialize to a default (`scopes` → `null` → full access), which
- * for a scoped session would be a fail-open. Old-format entries under the
- * previous prefix are simply left to expire via TTL.
+ * The version suffix namespaces the cached payload format; releases share
+ * Redis during a rolling deploy. Bump it whenever a change to
+ * {@link CachedSession} is security-relevant — e.g. adding the `scopes` field,
+ * where a missing field would deserialize to a default (`scopes` → `null` →
+ * full access), a fail-open for a scoped session — or removes a field the
+ * previous release needs. Old-format entries under the previous prefix are
+ * simply left to expire via TTL.
  */
-const SESSION_CACHE_PREFIX = "session:v2:";
+const SESSION_CACHE_PREFIX = "session:v3:";
 
 // ============================================================================
 // Types
@@ -478,7 +478,8 @@ export async function getApiKeyProviders(userId: string): Promise<AiProvider[]> 
   const rows = await db
     .select({ provider: userApiKeys.provider })
     .from(userApiKeys)
-    .where(eq(userApiKeys.userId, userId));
+    .where(eq(userApiKeys.userId, userId))
+    .orderBy(userApiKeys.provider);
   return rows.map((row) => row.provider).filter(isAiProvider);
 }
 

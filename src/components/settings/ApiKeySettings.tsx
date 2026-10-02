@@ -190,11 +190,11 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
   );
 }
 
-/**
- * AI provider API keys, shared by summaries and narration text processing.
- */
 const ALLOWLISTED_PROVIDERS = AI_PROVIDERS.filter((p) => AI_PROVIDER_INFO[p].serverKeyAllowlist);
 
+/**
+ * AI provider API keys, shared by summaries, narration and cloud voices.
+ */
 export function AiProviderKeySettings() {
   return (
     <SettingsSection

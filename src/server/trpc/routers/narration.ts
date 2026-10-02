@@ -42,7 +42,7 @@ import {
   voiceNamesFor,
 } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
-import { getUserApiKeys } from "@/server/auth/session";
+import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
@@ -352,7 +352,9 @@ export const narrationRouter = createTRPCRouter({
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
     .query(async ({ ctx }) => {
-      const keys = await getUserApiKeys(ctx.session.user.id);
+      // Availability only needs to know which keys exist, not decrypt them.
+      const providers = await getApiKeyProviders(ctx.session.user.id);
+      const keys = Object.fromEntries(providers.map((provider) => [provider, "configured"]));
       return { available: isNarrationLlmAvailable(keys, ctx.session.user.narrationModel) };
     }),
 

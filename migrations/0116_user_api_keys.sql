@@ -1,6 +1,9 @@
 -- Users' own AI provider keys, one row per provider, so adding a provider
 -- needs no column. The old per-provider columns on users are copied here and
--- dropped in a later release, once nothing reads them.
+-- dropped in a later release, once nothing reads them. Until then, setting or
+-- removing a key nulls its old column, so the dropping migration must first
+-- copy any column that is still non-null over the table's row: only the
+-- previous release can have set one after this migration.
 CREATE TABLE IF NOT EXISTS user_api_keys (
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   provider text NOT NULL,

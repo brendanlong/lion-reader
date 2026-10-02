@@ -1,9 +1,10 @@
 /**
  * The AI providers, and what the rest of the app needs to know about each.
  * Adding one is an entry here plus its implementation on the server: text in
- * `src/server/services/ai-providers.ts`, cloud voices in
- * `src/server/services/speech.ts`. Keys, settings and availability follow
- * from the entry.
+ * `src/server/services/ai-providers.ts` (and `NARRATION_PROVIDERS` if it can
+ * do narration's JSON preprocessing), cloud voices in
+ * `src/server/services/speech.ts`. Key storage, the settings page and
+ * availability follow from the entry; the privacy policy needs updating too.
  *
  * Shared between server services and the settings UI.
  */
@@ -49,19 +50,19 @@ export const AI_PROVIDER_INFO = {
     speech: false,
     serverKeyAllowlist: false,
   },
-  openrouter: {
-    displayName: "OpenRouter",
-    keyUrl: "https://openrouter.ai/settings/keys",
-    keyPlaceholder: "sk-or-...",
-    text: true,
-    speech: true,
-    serverKeyAllowlist: true,
-  },
   deepinfra: {
     displayName: "DeepInfra",
     keyUrl: "https://deepinfra.com/dash/api_keys",
     keyPlaceholder: "Your DeepInfra API key",
     text: false,
+    speech: true,
+    serverKeyAllowlist: true,
+  },
+  openrouter: {
+    displayName: "OpenRouter",
+    keyUrl: "https://openrouter.ai/settings/keys",
+    keyPlaceholder: "sk-or-...",
+    text: true,
     speech: true,
     serverKeyAllowlist: true,
   },
