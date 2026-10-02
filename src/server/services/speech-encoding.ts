@@ -144,11 +144,15 @@ const QUEUED_FRAGMENTS = 8;
  * is still arriving. Resolves once the first audio has arrived, so a provider
  * that fails before sending any is still an ordinary error; failures after
  * that error the stream. Cancelling the result, an error, or the deadline
- * stops reading the provider and frees the encoder at once.
+ * stops reading the provider and frees the encoder at once. `pauseSeconds` of
+ * silence follow the speech.
  */
 export async function encodeSpeech(
   pcm: PcmStream,
-  deadlineMs = STREAM_DEADLINE_MS
+  {
+    pauseSeconds = 0,
+    deadlineMs = STREAM_DEADLINE_MS,
+  }: { pauseSeconds?: number; deadlineMs?: number } = {}
 ): Promise<ReadableStream<Uint8Array>> {
   const reader = pcm.data.getReader();
   const maxBytes = MAX_SECONDS * pcm.sampleRate * 2 * pcm.channels;
@@ -255,6 +259,8 @@ export async function encodeSpeech(
       await add(speech.encode(next.value));
       next = await reader.read();
     }
+    const silentFrames = Math.round(pauseSeconds * pcm.sampleRate);
+    if (silentFrames > 0) await add(speech.encode(new Uint8Array(silentFrames * 2 * pcm.channels)));
     await add(speech.finish());
     await output.finalize();
     if (failure) return;

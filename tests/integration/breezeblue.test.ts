@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
+import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import { listSpeechModels, streamSpeech } from "../../src/server/services/speech";
 
 let server: Server;
@@ -117,5 +118,23 @@ describe("BreezeBlue speech", () => {
       key,
       body: { text: "Hello.", model_id: "breeze-tts-2" },
     });
+  });
+
+  it("ends with the pause asked for", async () => {
+    const key = randomUUID();
+    const duration = async (pauseSeconds: number) => {
+      const stream = await streamSpeech(
+        { breezeblue: key },
+        { model: "breezeblue:breeze-tts-2", voice: null, text: "Hello.", pauseSeconds }
+      );
+      const audio = new Uint8Array(await new Response(stream).arrayBuffer());
+      return new Input({ source: new BufferSource(audio), formats: ALL_FORMATS }).computeDuration();
+    };
+
+    // The stand-in speaks a quarter second.
+    expect(await duration(0)).toBeLessThan(0.5);
+    const paused = await duration(1);
+    expect(paused).toBeGreaterThanOrEqual(1.25);
+    expect(paused).toBeLessThan(1.5);
   });
 });

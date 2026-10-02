@@ -271,7 +271,14 @@ data class VoiceModel(
 @Serializable data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String)
 
 // Both always sent: the server requires the keys, and ApiJson drops nulls.
-@Serializable data class SpeechRequest(val model: String, val voice: String, val text: String)
+@Serializable
+data class SpeechRequest(
+    val model: String,
+    val voice: String,
+    val text: String,
+    /** Silence the server adds after the speech. */
+    val pauseSeconds: Float,
+)
 
 @Serializable data class SaveArticleRequest(val url: String)
 

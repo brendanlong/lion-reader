@@ -24,6 +24,8 @@ export interface CloudVoice {
   model: string | null;
   /** Null means the model's default voice. */
   voice: string | null;
+  /** Silence after each chunk. */
+  pauseSeconds: number;
 }
 
 const errorBodySchema = z.object({ message: z.string() });
@@ -52,7 +54,12 @@ async function* streamCloudSpeech(
   const response = await fetch(SPEECH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: voice.model, voice: voice.voice, text }),
+    body: JSON.stringify({
+      model: voice.model,
+      voice: voice.voice,
+      text,
+      pauseSeconds: voice.pauseSeconds,
+    }),
     signal,
   });
   if (!response.ok) throw new Error(await errorMessage(response));

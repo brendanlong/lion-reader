@@ -275,13 +275,14 @@ export function resolveSpeechModel(
 const SPEECH_TIMEOUT_MS = 120_000;
 /**
  * `text` spoken as AAC in fragmented MP4 (see `speech-encoding.ts`), streamed
- * as the provider generates it. A null model or voice means the default. Rejects models the user can't pick in settings, so
- * this can't be used to run arbitrary (or arbitrarily expensive) models.
+ * as the provider generates it, then `pauseSeconds` of silence. A null model
+ * or voice means the default. Rejects models the user can't pick in settings,
+ * so this can't be used to run arbitrary (or arbitrarily expensive) models.
  * Aborting `signal` (the client went away) stops the provider's request.
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
-  options: { model: string | null; voice: string | null; text: string },
+  options: { model: string | null; voice: string | null; text: string; pauseSeconds?: number },
   signal?: AbortSignal
 ): Promise<ReadableStream<Uint8Array>> {
   const { model, voice } = resolveSpeechModel(
@@ -303,5 +304,5 @@ export async function streamSpeech(
     options.text,
     signal ? AbortSignal.any([signal, timeout]) : timeout
   );
-  return encodeSpeech(pcm);
+  return encodeSpeech(pcm, { pauseSeconds: options.pauseSeconds });
 }

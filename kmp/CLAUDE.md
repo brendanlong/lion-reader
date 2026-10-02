@@ -85,7 +85,7 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   and seeking don't change per engine. Cloud audio streams: a chunk plays from
   its first bytes while the rest arrives (`StreamedAudio`), and one that stops
   partway is synthesized again and replayed from its start. It's cached on
-  disk by model, voice and text, so listening again is free. Narration, once
+  disk by model, voice, pause and text, so listening again is free. Narration, once
   on, is of the article on screen: swiping silences it at once and moves it to
   the new article, playing or paused as it was, and closing the article view
   stops it (`NarrationFollowsPage`).

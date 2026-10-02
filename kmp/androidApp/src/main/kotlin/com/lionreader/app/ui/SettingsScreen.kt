@@ -254,6 +254,20 @@ private fun NarrationSettings(
                     Picker(model.voiceName(voice), model.voices, { it.name }) { choice ->
                         update { it.copy(cloudVoice = choice.id) }
                     }
+                    Text("Pause between chunks", style = MaterialTheme.typography.labelLarge)
+                    Choices(
+                        CLOUD_VOICE_PAUSES,
+                        settings.cloudVoicePauseSeconds,
+                        ::pauseLabel,
+                    ) { pause ->
+                        update { it.copy(cloudVoicePauseSeconds = pause) }
+                    }
+                    Text(
+                        "Articles are spoken a few sentences at a time. Some voices run those " +
+                            "pieces together; this adds a pause after each one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Text(
                         "Cloud voices send the text being read to ${model.displayName} through " +
                             "${model.providerDisplayName}.",
@@ -275,6 +289,11 @@ private fun NarrationSettings(
         )
     }
 }
+
+private val CLOUD_VOICE_PAUSES = listOf(0f, 0.1f, 0.25f, 0.5f, 0.75f, 1f)
+
+private fun pauseLabel(seconds: Float): String =
+    if (seconds == 0f) "None" else "${shortNumber(seconds)} s"
 
 private val NarrationEngine.label: String
     get() =

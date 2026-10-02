@@ -17,7 +17,7 @@
 
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
+import { MAX_CLOUD_SPEECH_CHARS, MAX_CLOUD_SPEECH_PAUSE_SECONDS } from "@/lib/narration/constants";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import {
   BodyReadTimeoutError,
@@ -43,6 +43,8 @@ const speechRequestSchema = z.object({
   /** Null means the model's default voice. */
   voice: z.string().max(200).nullable(),
   text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
+  /** Silence after the speech, so chunks played back to back pause like sentences do. */
+  pauseSeconds: z.number().min(0).max(MAX_CLOUD_SPEECH_PAUSE_SECONDS).default(0),
 });
 
 function errorResponse(

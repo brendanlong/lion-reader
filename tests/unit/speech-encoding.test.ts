@@ -123,6 +123,19 @@ describe("encodeSpeech", () => {
     expect(duration).toBeLessThan(3.3);
   });
 
+  it("ends with the pause asked for", async () => {
+    const mp4 = await readAll(
+      await encodeSpeech(
+        { sampleRate: 24_000, channels: 2, data: streamOf(tone(1, 24_000, 2)) },
+        { pauseSeconds: 0.5 }
+      )
+    );
+    const input = new Input({ source: new BufferSource(mp4), formats: ALL_FORMATS });
+    const duration = await input.computeDuration();
+    expect(duration).toBeGreaterThanOrEqual(1.5);
+    expect(duration).toBeLessThan(1.8);
+  });
+
   it("puts the first fragments out before the audio has all arrived", async () => {
     let more: ((chunk: Uint8Array | null) => void) | null = null;
     const data = new ReadableStream<Uint8Array>({
@@ -146,6 +159,13 @@ describe("encodeSpeech", () => {
   it("fails before any audio for a provider that sends none", async () => {
     await expect(
       encodeSpeech({ sampleRate: 24_000, channels: 1, data: streamOf(new Uint8Array(0)) })
+    ).rejects.toThrow("empty");
+    // Not hidden by the pause that would follow it.
+    await expect(
+      encodeSpeech(
+        { sampleRate: 24_000, channels: 1, data: streamOf(new Uint8Array(0)) },
+        { pauseSeconds: 0.25 }
+      )
     ).rejects.toThrow("empty");
     await expect(
       encodeSpeech({ sampleRate: 1_234, channels: 1, data: streamOf(tone(1, 24_000)) })
@@ -177,7 +197,10 @@ describe("encodeSpeech", () => {
         cancelled = true;
       },
     });
-    const audio = await encodeSpeech({ sampleRate: 24_000, channels: 1, data }, 200);
+    const audio = await encodeSpeech(
+      { sampleRate: 24_000, channels: 1, data },
+      { deadlineMs: 200 }
+    );
     // Never read: encoding blocks once the queue is full, until the deadline.
     await expect.poll(() => cancelled, { timeout: 2000 }).toBe(true);
     await expect(readAll(audio)).rejects.toThrow("too long");

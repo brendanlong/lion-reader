@@ -400,6 +400,7 @@ describe("useNarrationSettings", () => {
         autoScrollEnabled: false,
         useLlmNormalization: true,
         sentenceGapSeconds: 0.5,
+        cloudPauseSeconds: 1,
       };
 
       const { result, unmount } = renderHook(() => useNarrationSettings());

@@ -28,6 +28,7 @@ class SettingsStorageTest {
             narrationEngine = NarrationEngine.CLOUD,
             cloudVoiceModel = "deepinfra:hexgrad/Kokoro-82M",
             cloudVoice = "af_heart",
+            cloudVoicePauseSeconds = 0.5f,
         )
 
     @Test
@@ -114,6 +115,7 @@ class SettingsStorageTest {
                 "narration_engine",
                 "cloud_voice_model",
                 "cloud_voice",
+                "cloud_voice_pause_seconds",
             ),
             keys,
         )
