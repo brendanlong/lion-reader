@@ -29,6 +29,7 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.lionreader.app.ui.PAGE_FRACTION
+import com.lionreader.app.ui.PageLayer
 import com.lionreader.app.ui.PageTurns
 import kotlin.math.abs
 import org.json.JSONArray
@@ -51,7 +52,7 @@ fun ReaderWebView(
     val turns = paging.turns
     if (turns != null) {
         DisposableEffect(turns) {
-            val unregister = turns.register { shown[0]?.turnPage(it) }
+            val unregister = turns.register(PageLayer.ARTICLE) { shown[0]?.turnPage(it) ?: false }
             onDispose { unregister() }
         }
     }
@@ -292,7 +293,9 @@ private class ReaderView(context: Context) : WebView(context) {
                 if (turning) {
                     turning = false
                     // A finger moving up moves down the page.
-                    turnPage(if (event.y < downY) 1 else -1)
+                    val index = event.findPointerIndex(pointerId)
+                    val y = if (index >= 0) event.getY(index) else event.y
+                    turnPage(if (y < downY) 1 else -1)
                     return true
                 }
             }
@@ -304,11 +307,15 @@ private class ReaderView(context: Context) : WebView(context) {
         return turning || super.onTouchEvent(event)
     }
 
-    /** Moves the page [PAGE_FRACTION] of the screen down (1) or up (-1), at once. */
-    fun turnPage(direction: Int) {
+    /**
+     * Moves the page [PAGE_FRACTION] of the screen down (1) or up (-1), at once; false unlaid out.
+     */
+    fun turnPage(direction: Int): Boolean {
+        if (height == 0) return false
         val bottom = (computeVerticalScrollRange() - height).coerceAtLeast(0)
         val step = (height * PAGE_FRACTION).toInt()
         scrollTo(scrollX, (scrollY + direction * step).coerceIn(0, bottom))
+        return true
     }
 
     /**

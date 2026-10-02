@@ -3,6 +3,8 @@ package com.lionreader.app.ui
 import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -335,6 +338,13 @@ fun EntryScreen(
                 // the next page's narration (its Listen button) comes from its
                 // WebView having loaded.
                 beyondViewportPageCount = 1,
+                // A fling's snap runs at its own speed, which the app's animation scale doesn't
+                // reach (AppMotion): without animations, it lands at once.
+                flingBehavior =
+                    PagerDefaults.flingBehavior(
+                        pager,
+                        snapAnimationSpec = if (settings.animates) spring() else snap(),
+                    ),
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) { page ->
                 CompositionLocalProvider(LocalViewConfiguration provides pageConfig) {
@@ -510,7 +520,7 @@ private fun EntryPage(
         modifier =
             Modifier.fillMaxSize()
                 .pageSwipes(
-                    rememberPageTurner(scroll, graph.pageTurns, active),
+                    rememberPageTurner(scroll, graph.pageTurns, PageLayer.ARTICLE, active),
                     settings.pageScrolling,
                 )
                 .verticalScroll(scroll, enabled = !settings.pageScrolling)

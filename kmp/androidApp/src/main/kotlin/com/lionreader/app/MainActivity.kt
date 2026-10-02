@@ -61,7 +61,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var signInError by mutableStateOf<String?>(null)
-    private val motion by lazy { AppMotion(this) }
+    private val motion by lazy { AppMotion(applicationContext) }
     /** The volume button whose press turned a page: its repeats and release are ours too. */
     private var pagingKey: Int? = null
 

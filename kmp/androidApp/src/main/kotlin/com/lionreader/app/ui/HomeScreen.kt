@@ -99,9 +99,10 @@ fun HomeScreen(
     /** Whether to highlight the open article: only beside it, where both are on screen. */
     showSelection: Boolean = false,
     onSettings: () -> Unit,
-    /** Swipes move the list a page at a time ([pageTurning]). */
+    /** What the volume buttons page through ([rememberPageTurner]). */
+    pageTurns: PageTurns,
+    /** Swipes move the list a page at a time ([pageSwipes]). */
     pageScrolling: Boolean = false,
-    pageTurns: PageTurns = PageTurns(),
 ) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val coroutines = rememberCoroutineScope()
@@ -253,11 +254,12 @@ fun HomeScreen(
                                 rememberPageTurner(
                                     if (text != null) searchList else timelineList,
                                     pageTurns,
+                                    PageLayer.LIST,
                                     // Not the list behind the open drawer.
                                     active = drawer.isClosed,
+                                    onPastTop = model::pullToRefresh,
                                 ),
                                 enabled = pageScrolling,
-                                onPastTop = model::pullToRefresh,
                             ),
                         pageScrolling = pageScrolling,
                     )
