@@ -61,8 +61,9 @@ export const SUGGESTED_NARRATION_MODELS: string[] = [
 export const DEFAULT_NARRATION_MODEL = DEFAULT_NARRATION_MODELS.cerebras;
 
 /**
- * Cloud voices (server-side TTS through DeepInfra or OpenRouter). Kokoro is the
- * default: good quality at about a cent per long article.
+ * Cloud voices (server-side TTS through the speech providers in
+ * `@/lib/ai/providers`). Kokoro is the default: good quality at about a cent
+ * per long article.
  */
 export const DEEPINFRA_KOKORO = "deepinfra:hexgrad/Kokoro-82M";
 export const OPENROUTER_KOKORO = "openrouter:hexgrad/kokoro-82m";
@@ -93,6 +94,7 @@ export const SUGGESTED_CLOUD_VOICE_MODELS: string[] = [
   ...DEFAULT_CLOUD_VOICE_MODELS,
   "openrouter:mistralai/voxtral-mini-tts-2603",
   "openrouter:deepgram/aura-2",
+  "breezeblue:breeze-tts-2",
 ];
 
 /**

@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="September 30, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="October 2, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -202,7 +202,7 @@ export default function PrivacyPolicyPage() {
           </Card>
 
           <Card padding="md">
-            <LegalSubsection title="Audio Narration (Cerebras, Groq, OpenRouter, DeepInfra) — Optional">
+            <LegalSubsection title="Audio Narration (Cerebras, Groq, OpenRouter, DeepInfra, BreezeBlue) — Optional">
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
                 AI text processing in narration settings, article content is sent to the AI provider
@@ -219,9 +219,9 @@ export default function PrivacyPolicyPage() {
                 With browser or enhanced voices, audio is generated entirely on your device. If you
                 choose <strong>Cloud Voices</strong> (off by default), the text being narrated is
                 sent to the provider of the speech model you picked to generate the audio: DeepInfra
-                directly (the default, Kokoro), or OpenRouter, which forwards it to the company
-                hosting that model (for example DeepInfra or Together). The generated audio is
-                streamed back to your device and not stored on our servers.
+                directly (the default, Kokoro), BreezeBlue directly, or OpenRouter, which forwards
+                it to the company hosting that model (for example DeepInfra or Together). The
+                generated audio is streamed back to your device and not stored on our servers.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, device voices send the article text to your device&apos;s
@@ -245,6 +245,13 @@ export default function PrivacyPolicyPage() {
                 </TextLink>
                 <TextLink href="https://deepinfra.com/privacy" external className="ui-text-sm">
                   DeepInfra&apos;s Privacy Policy &rarr;
+                </TextLink>
+                <TextLink
+                  href="https://breezeblue.ai/legal/privacy"
+                  external
+                  className="ui-text-sm"
+                >
+                  BreezeBlue&apos;s Privacy Policy &rarr;
                 </TextLink>
               </p>
             </LegalSubsection>
