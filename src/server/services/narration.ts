@@ -9,17 +9,16 @@
 
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { parseModelRef, type ModelRef } from "@/lib/ai/model-ref";
+import { formatModelRef, parseModelRef, type ModelRef } from "@/lib/ai/model-ref";
 import {
   DEFAULT_NARRATION_MODELS,
   isNarrationProvider,
   NARRATION_PROVIDERS,
-  SUGGESTED_NARRATION_MODELS,
 } from "@/lib/narration/constants";
 import {
   generateChatCompletion,
-  isModelAllowed,
   isProviderAvailable,
+  isTextModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
@@ -109,21 +108,30 @@ Return ONLY valid JSON.`;
 /**
  * Resolves the narration model as a `provider:model` reference.
  * Priority: user setting (if allowed — see `isModelAllowed`) > `NARRATION_MODEL`
- * env var > the default model of the first configured provider, in
- * `NARRATION_PROVIDERS` order.
+ * env var > the default model of the first configured provider whose default
+ * is allowed, in `NARRATION_PROVIDERS` order.
  *
  * Narration preprocessing requires JSON-object responses, which only the
  * OpenAI-compatible providers support — a reference that resolves to another
  * provider (e.g. a legacy bare model ID) falls back to the default model.
  */
-export function getNarrationModelRef(userModel?: string | null, keys?: AiProviderKeys): ModelRef {
+export async function getNarrationModelRef(
+  userModel?: string | null,
+  keys?: AiProviderKeys
+): Promise<ModelRef> {
   const allowedUserModel =
-    userModel && isModelAllowed(userModel, keys, SUGGESTED_NARRATION_MODELS) ? userModel : null;
+    userModel && (await isTextModelAllowed(userModel, keys)) ? userModel : null;
   const explicit = allowedUserModel || process.env.NARRATION_MODEL;
   if (explicit) {
     const ref = parseModelRef(explicit);
     if (isNarrationProvider(ref.provider)) {
       return ref;
+    }
+  }
+  for (const provider of NARRATION_PROVIDERS) {
+    const model = DEFAULT_NARRATION_MODELS[provider];
+    if (isProviderAvailable(provider, keys) && (await isTextModelAllowed(model, keys))) {
+      return parseModelRef(model);
     }
   }
   const provider = NARRATION_PROVIDERS.find((p) => isProviderAvailable(p, keys)) ?? "cerebras";
@@ -194,7 +202,7 @@ export async function generateNarration(
     userModel?: string | null;
   }
 ): Promise<GenerateNarrationResult> {
-  const modelRef = getNarrationModelRef(options?.userModel, options?.keys);
+  const modelRef = await getNarrationModelRef(options?.userModel, options?.keys);
 
   // Convert HTML to structured paragraphs
   const { paragraphs: inputParagraphs } = htmlToNarrationInput(htmlContent);
@@ -293,8 +301,12 @@ export async function generateNarration(
 
 /**
  * Checks if LLM narration preprocessing is available: the configured
- * narration model's provider has a user or server key set.
+ * narration model can be used (see `isModelAllowed`).
  */
-export function isNarrationLlmAvailable(keys?: AiProviderKeys, userModel?: string | null): boolean {
-  return isProviderAvailable(getNarrationModelRef(userModel, keys).provider, keys);
+export async function isNarrationLlmAvailable(
+  keys?: AiProviderKeys,
+  userModel?: string | null
+): Promise<boolean> {
+  const ref = await getNarrationModelRef(userModel, keys);
+  return isTextModelAllowed(formatModelRef(ref.provider, ref.model), keys);
 }

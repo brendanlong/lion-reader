@@ -70,6 +70,15 @@ kill_timeout = 30
 
   FETCHER_CONTACT_EMAIL = "self@brendanlong.com"
 
+  # Models the server's AI keys may run (see .env.example): gpt-oss-120b on
+  # Cerebras or anything cheaper (Cerebras lists it at $0.35/$0.75 per million
+  # tokens), Kokoro or anything cheaper (DeepInfra's priority tier is $0.93 per
+  # million characters), and BreezeBlue's voices. A user's own key can use any.
+  SERVER_KEY_MODELS = "cerebras:gpt-oss-120b,deepinfra:hexgrad/Kokoro-82M,openrouter:hexgrad/kokoro-82m,breezeblue:*"
+  SERVER_KEY_MAX_INPUT_PRICE = "0.35"
+  SERVER_KEY_MAX_OUTPUT_PRICE = "0.75"
+  SERVER_KEY_MAX_SPEECH_PRICE = "1"
+
   WORKER_CONCURRENCY = "1"
 
   # Sign in with Apple

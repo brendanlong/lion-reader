@@ -17,14 +17,13 @@ import { isTextAiProvider } from "@/lib/ai/providers";
 import {
   generateChatCompletion,
   getAvailableProviders,
-  isModelAllowed,
+  isTextModelAllowed,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
   DEFAULT_SUMMARIZATION_MAX_WORDS,
-  SUGGESTED_SUMMARIZATION_MODELS,
 } from "@/lib/summarization/constants";
 
 /**
@@ -205,7 +204,7 @@ export async function generateSummary(
   }
 ): Promise<GenerateSummaryResult> {
   // Priority: user model > environment > default
-  const modelId = getSummarizationModelId(options?.userModel, options?.keys);
+  const modelId = await getSummarizationModelId(options?.userModel, options?.keys);
   const modelRef = parseModelRef(modelId);
 
   try {
@@ -259,14 +258,17 @@ export function isSummarizationAvailable(keys?: AiProviderKeys): boolean {
  * `parseModelRef`).
  *
  * Priority: user setting (if allowed — see `isModelAllowed`) >
- * `SUMMARIZATION_MODEL` env var > the default model
- * of the first configured provider (see SUMMARIZATION_PROVIDER_PRIORITY).
+ * `SUMMARIZATION_MODEL` env var > the default model of the first configured
+ * provider whose default is allowed (see SUMMARIZATION_PROVIDER_PRIORITY).
  */
-export function getSummarizationModelId(userModel?: string | null, keys?: AiProviderKeys): string {
+export async function getSummarizationModelId(
+  userModel?: string | null,
+  keys?: AiProviderKeys
+): Promise<string> {
   if (
     userModel &&
     isTextAiProvider(parseModelRef(userModel).provider) &&
-    isModelAllowed(userModel, keys, SUGGESTED_SUMMARIZATION_MODELS)
+    (await isTextModelAllowed(userModel, keys))
   ) {
     return userModel;
   }
@@ -274,8 +276,13 @@ export function getSummarizationModelId(userModel?: string | null, keys?: AiProv
     return process.env.SUMMARIZATION_MODEL;
   }
   const available = getAvailableProviders(keys);
-  // When nothing is configured summarization is disabled anyway, so the value
-  // is nominal — fall back to the highest-priority provider's default.
+  for (const provider of SUMMARIZATION_PROVIDER_PRIORITY) {
+    const model = DEFAULT_SUMMARIZATION_MODELS[provider];
+    if (available.includes(provider) && (await isTextModelAllowed(model, keys))) {
+      return model;
+    }
+  }
+  // Nothing usable means summarization fails anyway, so the value is nominal.
   const provider =
     SUMMARIZATION_PROVIDER_PRIORITY.find((p) => available.includes(p)) ??
     SUMMARIZATION_PROVIDER_PRIORITY[0];

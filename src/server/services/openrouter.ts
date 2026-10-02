@@ -9,6 +9,7 @@ import { z } from "zod";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { appUrl } from "@/server/config/env";
 import type { ChatCompletionOptions } from "@/server/services/ai-providers";
+import type { ModelPrice } from "@/server/services/server-key-models";
 import type { PcmStream } from "@/server/services/speech-encoding";
 import { providerError } from "@/server/services/provider-errors";
 
@@ -120,6 +121,16 @@ export async function openRouterChatCompletion(
     throw new Error(`OpenRouter request failed: ${parsed.error.message ?? "unknown error"}`);
   }
   return parsed.choices?.[0]?.message?.content ?? "";
+}
+
+/** A text model's price, or none if the catalog can't be fetched or lacks it. */
+export async function openRouterTextModelPrice(model: string): Promise<ModelPrice> {
+  const catalog = await listOpenRouterModels("text").catch(() => []);
+  const entry = catalog.find((candidate) => candidate.id === model);
+  return {
+    inputPricePerMillion: pricePerMillionUnits(entry?.pricing?.prompt),
+    outputPricePerMillion: pricePerMillionUnits(entry?.pricing?.completion),
+  };
 }
 
 const modelCache = new Map<string, { expiresAt: number; models: OpenRouterModel[] }>();

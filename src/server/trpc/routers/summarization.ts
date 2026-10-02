@@ -35,7 +35,6 @@ import {
   isModelAllowed,
   listAllModels,
 } from "@/server/services/ai-providers";
-import { SUGGESTED_SUMMARIZATION_MODELS } from "@/lib/summarization/constants";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
 import { isTextAiProvider } from "@/lib/ai/providers";
@@ -128,7 +127,7 @@ export const summarizationRouter = createTRPCRouter({
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(userId);
 
-      const currentModelId = getSummarizationModelId(userSummarizationModel, keys);
+      const currentModelId = await getSummarizationModelId(userSummarizationModel, keys);
       const currentMaxWords = getMaxWords(userMaxWords);
       const currentPromptHash = hashPrompt(userPrompt);
 
@@ -413,9 +412,9 @@ export const summarizationRouter = createTRPCRouter({
       // Fetch API keys from DB on demand (not cached in session for security)
       const keys = await getUserApiKeys(ctx.session.user.id);
       const models = (await listAllModels(keys)).filter((model) =>
-        isModelAllowed(model.id, keys, SUGGESTED_SUMMARIZATION_MODELS)
+        isModelAllowed(model.id, keys, model)
       );
-      return { models, defaultModelId: getSummarizationModelId(null, keys) };
+      return { models, defaultModelId: await getSummarizationModelId(null, keys) };
     }),
 
   /**

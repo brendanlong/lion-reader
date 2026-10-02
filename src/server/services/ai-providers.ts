@@ -12,14 +12,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
 import { logger } from "@/lib/logger";
+import { formatModelRef, parseModelRef, type ModelRef } from "@/lib/ai/model-ref";
 import {
-  formatModelRef,
-  normalizeModelRef,
-  parseModelRef,
-  type ModelRef,
-} from "@/lib/ai/model-ref";
-import {
-  AI_PROVIDER_INFO,
   AI_PROVIDERS,
   aiProviderName,
   isTextAiProvider,
@@ -30,9 +24,15 @@ import {
 import {
   listOpenRouterModels,
   openRouterChatCompletion,
+  openRouterTextModelPrice,
   pricePerMillionUnits,
   type OpenRouterModel,
 } from "@/server/services/openrouter";
+import {
+  hasServerKeyPriceCaps,
+  isAllowedOnServerKey,
+  type ModelPrice,
+} from "@/server/services/server-key-models";
 
 /**
  * Per-user provider API keys, as `getUserApiKeys` returns them. A missing or
@@ -62,24 +62,35 @@ export function isProviderAvailable(provider: AiProvider, keys?: AiProviderKeys)
 }
 
 /**
- * Whether a user's stored model choice can be used. A model whose provider
- * has no key at all (the user removed theirs and the server has none) isn't,
- * so callers fall back to the default. OpenRouter's and DeepInfra's catalogs
- * include models costing 100x our defaults, so when a request would be billed
- * to the server's key (the user has no key of their own for that provider)
- * only the given models may be listed or used.
+ * Whether a model can be used: its provider has a key, and a request billed to
+ * the server's key (the user has none of their own for that provider) is for
+ * a model allowed there (see `server-key-models.ts`, which may need its price).
  */
 export function isModelAllowed(
   modelRef: string,
   keys: AiProviderKeys | undefined,
-  allowedWithServerKey: readonly string[]
+  price?: ModelPrice
 ): boolean {
   const { provider } = parseModelRef(modelRef);
   if (!isProviderAvailable(provider, keys)) return false;
-  if (!AI_PROVIDER_INFO[provider].serverKeyAllowlist || userKeyFor(provider, keys)) {
-    return true;
+  return !!userKeyFor(provider, keys) || isAllowedOnServerKey(modelRef, price);
+}
+
+/** {@link isModelAllowed} for a text model, looking up its price if that's what decides. */
+export async function isTextModelAllowed(
+  modelRef: string,
+  keys: AiProviderKeys | undefined
+): Promise<boolean> {
+  if (isModelAllowed(modelRef, keys)) return true;
+  const { provider, model } = parseModelRef(modelRef);
+  if (
+    provider !== "openrouter" ||
+    !hasServerKeyPriceCaps() ||
+    !isProviderAvailable(provider, keys)
+  ) {
+    return false;
   }
-  return allowedWithServerKey.includes(normalizeModelRef(modelRef));
+  return isModelAllowed(modelRef, keys, await openRouterTextModelPrice(model));
 }
 
 /**
@@ -172,7 +183,8 @@ export function supportsReasoningEffort(model: string): boolean {
  * response text (empty string if the model produced no text — callers decide
  * how to handle that).
  *
- * @throws Error if the provider is not configured
+ * @throws Error if the provider is not configured, or the model isn't allowed
+ *   on the server's key
  */
 export async function generateChatCompletion(
   ref: ModelRef,
@@ -182,6 +194,10 @@ export async function generateChatCompletion(
   const provider = ref.provider;
   if (!isTextAiProvider(provider)) {
     throw new Error(`${aiProviderName(provider)} is only used for cloud voices`);
+  }
+  const modelRef = formatModelRef(provider, ref.model);
+  if (isProviderAvailable(provider, keys) && !(await isTextModelAllowed(modelRef, keys))) {
+    throw new Error(`${modelRef} isn't allowed on the server's ${aiProviderName(provider)} key`);
   }
   switch (provider) {
     case "anthropic": {

@@ -190,8 +190,6 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
   );
 }
 
-const ALLOWLISTED_PROVIDERS = AI_PROVIDERS.filter((p) => AI_PROVIDER_INFO[p].serverKeyAllowlist);
-
 /**
  * AI provider API keys, shared by summaries, narration and cloud voices.
  */
@@ -205,9 +203,9 @@ export function AiProviderKeySettings() {
         `narration text processing (${aiProviderNames(NARRATION_PROVIDERS)}), ` +
         `and cloud voices (${aiProviderNames(SPEECH_PROVIDERS)}). ` +
         `OpenRouter gives access to hundreds of models from many labs with one key. ` +
-        `Without your own ${aiProviderNames(ALLOWLISTED_PROVIDERS)} key, only the suggested ` +
-        `models from that provider are available. ` +
-        `Keys are stored encrypted and override the server's keys when set.`
+        `Keys are stored encrypted and override the server's keys when set; ` +
+        `the server's keys may be limited to some models, but your own key can use ` +
+        `any model its provider offers.`
       }
     >
       <div className="space-y-4">
