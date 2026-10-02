@@ -14,8 +14,6 @@ export declare class SpeechEncoder {
   readonly audioSpecificConfig: Buffer;
   /** Samples per access unit (1024). */
   readonly frameSamples: number;
-  /** Silent samples the encoder puts before the audio (its priming), for the MP4 edit list. */
-  readonly delaySamples: number;
   /** Encodes more interleaved PCM bytes (any length): the access units completed. */
   encode(pcm: Uint8Array): Buffer[];
   /** Encodes what's left and flushes the encoder: the final access units. Frees the encoder. */

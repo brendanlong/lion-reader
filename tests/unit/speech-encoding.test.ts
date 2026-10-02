@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
 import { encodeSpeech, pcmFromWav, pcmOrWav } from "@/server/services/speech-encoding";
-import { mp4PrimingSeconds } from "@/lib/narration/mp4-priming";
 
 function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -195,26 +194,5 @@ describe("encodeSpeech", () => {
     });
     const audio = await encodeSpeech({ sampleRate: 8_000, channels: 1, data });
     await expect(readAll(audio)).rejects.toThrow("too long");
-  });
-});
-
-describe("mp4PrimingSeconds", () => {
-  it("reads the encoder's priming from the edit list of encoded speech", async () => {
-    const mp4 = await readAll(
-      await encodeSpeech({ sampleRate: 24_000, channels: 1, data: streamOf(tone(1, 24_000)) })
-    );
-    // FDK's AAC-LC delay: 1600 samples.
-    expect(mp4PrimingSeconds(mp4)).toBeCloseTo(1600 / 24_000, 6);
-    // The init segment alone is enough.
-    const firstMoof = new TextDecoder("latin1").decode(mp4).indexOf("moof") - 4;
-    expect(mp4PrimingSeconds(mp4.subarray(0, firstMoof))).toBeCloseTo(1600 / 24_000, 6);
-  });
-
-  it("is 0 without an edit list, or before the init segment has all arrived", async () => {
-    const mp4 = await readAll(
-      await encodeSpeech({ sampleRate: 24_000, channels: 1, data: streamOf(tone(1, 24_000)) })
-    );
-    expect(mp4PrimingSeconds(mp4.subarray(0, 40))).toBe(0);
-    expect(mp4PrimingSeconds(new Uint8Array([0, 0, 0, 8, 0x66, 0x74, 0x79, 0x70]))).toBe(0);
   });
 });

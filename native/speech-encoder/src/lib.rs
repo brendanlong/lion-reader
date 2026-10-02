@@ -45,12 +45,6 @@ impl SpeechEncoder {
         self.inner.frame_samples() as u32
     }
 
-    /// Silent samples the encoder puts before the audio (its priming).
-    #[napi(getter)]
-    pub fn delay_samples(&self) -> u32 {
-        self.inner.delay_samples() as u32
-    }
-
     /// Encodes more PCM bytes (any length): the access units completed.
     #[napi]
     pub fn encode(&mut self, pcm: Buffer) -> Result<Vec<Buffer>> {
