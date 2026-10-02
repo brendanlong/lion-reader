@@ -141,7 +141,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   with the pager waiting for twice the usual touch slop so the reader decides
   first), so a scroll can't turn into a page turn (`ReaderView`). A script reports where
   wide tables and code blocks are, so a sideways drag on one scrolls it
-  instead.
+  instead. A long press on a web link opens its menu (`LinkMenu`: Open, Save,
+  Share, Copy link); saving goes through the share target's `SaveWorker`, so it
+  works offline. Anything else keeps the WebView's own long press.
 - **E-reader options** (Settings → E-readers). Animations go off app-wide, not one
   by one: the window's recomposer gets the app's own animation scale (`AppMotion`,
   zero when off), so every Compose animation jumps to its end. Only what that

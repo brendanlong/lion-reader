@@ -81,7 +81,7 @@ Entry bodies, saved articles, and AI summaries are rendered with
   `lionNarration.selectedParagraph()`, read back as an integer or null), and every navigation leaves
   for the browser. The article header's feed text
   (title, byline) enters the document only through `escapeHtml`, and the title
-  links to the entry's URL only when it's http(s) (`webUrl`, which gates Open original
+  links to the entry's URL only when it's http(s) (`webUrl`, which gates the reader's link menu, Open original
   and Share too), escaped the same way. Loosening any
   of that needs a security review.
 - **The native app's share target** (`ShareActivity`) is exported, so any app
