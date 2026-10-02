@@ -13,7 +13,8 @@ import { aiProviderName, type AiProvider } from "@/lib/ai/providers";
 import { createCloudSpeechPlayer } from "@/lib/narration/cloud-speech";
 import type { MediaSourcePlayer } from "@/lib/narration/media-source-player";
 import {
-  CLOUD_SPEECH_PAUSE_CHOICES,
+  CLOUD_SPEECH_PAUSE_STEP_SECONDS,
+  MAX_CLOUD_SPEECH_PAUSE_SECONDS,
   PREVIEW_TEXT,
   SUGGESTED_CLOUD_VOICE_MODELS,
 } from "@/lib/narration/constants";
@@ -28,11 +29,8 @@ type VoiceModel = {
   pricePerMillionCharacters?: number;
 };
 
-/** The choices, plus a stored value that isn't one of them. */
-function pauseChoices(current: number): number[] {
-  return CLOUD_SPEECH_PAUSE_CHOICES.includes(current)
-    ? CLOUD_SPEECH_PAUSE_CHOICES
-    : [...CLOUD_SPEECH_PAUSE_CHOICES, current].sort((a, b) => a - b);
+function pauseLabel(seconds: number): string {
+  return seconds === 0 ? "None" : `${seconds.toFixed(2)} s`;
 }
 
 export function CloudVoiceSettings({
@@ -180,25 +178,29 @@ export function CloudVoiceSettings({
       <div>
         <label
           htmlFor="cloud-voice-pause"
-          className="ui-text-sm text-body mb-1.5 block font-medium"
+          className="ui-text-sm text-body mb-1.5 block font-medium tabular-nums"
         >
-          Pause between chunks
+          Pause between chunks: {pauseLabel(settings.cloudPauseSeconds)}
         </label>
-        <select
+        <input
           id="cloud-voice-pause"
+          type="range"
+          min="0"
+          max={MAX_CLOUD_SPEECH_PAUSE_SECONDS}
+          step={CLOUD_SPEECH_PAUSE_STEP_SECONDS}
           value={settings.cloudPauseSeconds}
+          aria-valuetext={pauseLabel(settings.cloudPauseSeconds)}
           onChange={(e) => {
             const cloudPauseSeconds = Number(e.target.value);
             setSettings((prev) => ({ ...prev, cloudPauseSeconds }));
           }}
-          className="ui-text-sm bg-surface text-body border-edge-input block rounded-md border px-3 py-2"
-        >
-          {pauseChoices(settings.cloudPauseSeconds).map((seconds) => (
-            <option key={seconds} value={seconds}>
-              {seconds === 0 ? "None" : `${seconds} s`}
-            </option>
-          ))}
-        </select>
+          className="bg-fill-muted h-2 w-full cursor-pointer appearance-none rounded-lg"
+        />
+        <div className="ui-text-xs text-faint mt-1 flex justify-between">
+          <span>None</span>
+          <span>1 s</span>
+          <span>{MAX_CLOUD_SPEECH_PAUSE_SECONDS} s</span>
+        </div>
         <p className="ui-text-xs text-muted mt-1.5">
           Articles are spoken a few sentences at a time. Some voices run those pieces together; this
           adds a pause after each one.
