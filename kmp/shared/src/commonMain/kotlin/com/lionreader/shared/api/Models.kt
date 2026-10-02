@@ -252,18 +252,20 @@ const val MAX_CLOUD_SPEECH_CHARS = 1000
 data class VoiceModel(
     val id: String,
     val displayName: String,
+    /** Ids, which are what synthesis takes. */
     val voices: List<String>,
     val defaultVoice: String,
-    /** `deepinfra` or `openrouter`; absent from older servers. */
+    /** Display names, for the voices whose name isn't their id. */
+    val voiceNames: Map<String, String> = emptyMap(),
+    /** The provider's id (e.g. `deepinfra`); absent from older servers. */
     val provider: String? = null,
+    /** The provider's name, for showing (e.g. `DeepInfra`); absent from older servers. */
+    val providerDisplayName: String? = null,
 ) {
     val providerName: String?
-        get() =
-            when (provider) {
-                "deepinfra" -> "DeepInfra"
-                "openrouter" -> "OpenRouter"
-                else -> provider
-            }
+        get() = providerDisplayName ?: provider
+
+    fun voiceName(id: String): String = voiceNames[id] ?: id
 }
 
 @Serializable data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String)

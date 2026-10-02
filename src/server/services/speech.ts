@@ -1,10 +1,15 @@
 /**
- * Cloud voices: server-side text-to-speech through DeepInfra or OpenRouter.
- * Keys stay on the server, so the browser gets audio from our API rather than
- * calling a provider itself.
+ * Cloud voices: server-side text-to-speech through the providers in
+ * {@link SPEECH_PROVIDER_ADAPTERS}. Keys stay on the server, so the browser
+ * gets audio from our API rather than calling a provider itself.
  */
 
-import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
+import {
+  AI_PROVIDER_DISPLAY_NAMES,
+  formatModelRef,
+  normalizeModelRef,
+  parseModelRef,
+} from "@/lib/ai/model-ref";
 import {
   DEFAULT_CLOUD_VOICE_MODELS,
   DEFAULT_CLOUD_VOICES,
@@ -32,14 +37,44 @@ export const SPEECH_PROVIDERS = ["deepinfra", "openrouter"] as const;
 
 export type SpeechProvider = (typeof SPEECH_PROVIDERS)[number];
 
+export interface SpeechVoice {
+  /** What the provider calls the voice; what's stored and sent. */
+  id: string;
+  /** What the user sees: the id, for providers that don't name voices. */
+  name: string;
+}
+
 export interface SpeechModel {
   /** `provider:model` ref. */
   id: string;
   displayName: string;
   provider: SpeechProvider;
-  voices: string[];
+  voices: SpeechVoice[];
   /** USD per million input characters. */
   pricePerMillionCharacters?: number;
+}
+
+/** A cloud voice provider: everything the rest of the app needs from one. */
+interface SpeechProviderAdapter {
+  /** The models the user can pick on these keys. */
+  listModels(keys: AiProviderKeys | undefined): Promise<SpeechModel[]>;
+  /** `text` spoken by `voice` of `model` (provider-native ids), as MP3. */
+  synthesize(apiKey: string, model: string, voice: string, text: string): Promise<Uint8Array>;
+}
+
+const SPEECH_PROVIDER_ADAPTERS: Record<SpeechProvider, SpeechProviderAdapter> = {
+  deepinfra: {
+    listModels: async (keys) => toDeepInfraSpeechModels(await listDeepInfraSpeechModels(), keys),
+    synthesize: deepInfraSpeech,
+  },
+  openrouter: {
+    listModels: async (keys) => toSpeechModels(await listOpenRouterModels("speech"), keys),
+    synthesize: openRouterSpeech,
+  },
+};
+
+function voicesNamedById(ids: string[]): SpeechVoice[] {
+  return ids.map((id) => ({ id, name: id }));
 }
 
 /**
@@ -52,9 +87,7 @@ export async function listSpeechModels(keys?: AiProviderKeys): Promise<SpeechMod
     SPEECH_PROVIDERS.filter((provider) => getProviderApiKey(provider, keys)).map(
       async (provider) => {
         try {
-          return provider === "deepinfra"
-            ? toDeepInfraSpeechModels(await listDeepInfraSpeechModels(), keys)
-            : toSpeechModels(await listOpenRouterModels("speech"), keys);
+          return await SPEECH_PROVIDER_ADAPTERS[provider].listModels(keys);
         } catch (error) {
           logger.error("Failed to list speech models", {
             provider,
@@ -88,7 +121,7 @@ export function toSpeechModels(
           id,
           displayName: model.name,
           provider: "openrouter",
-          voices,
+          voices: voicesNamedById(voices),
           pricePerMillionCharacters: pricePerMillionCharacters(model),
         },
       ];
@@ -115,7 +148,7 @@ export function toDeepInfraSpeechModels(
           // "hexgrad/Kokoro-82M" → "hexgrad: Kokoro 82M", like OpenRouter's names.
           displayName: model.name.replace("/", ": ").replaceAll("-", " "),
           provider: "deepinfra",
-          voices: model.voices,
+          voices: voicesNamedById(model.voices),
           pricePerMillionCharacters: model.pricePerMillionCharacters,
         },
       ];
@@ -144,9 +177,21 @@ export function defaultSpeechModelId(models: SpeechModel[]): string {
   );
 }
 
+/** Display names for the voices whose name isn't their id, by id. */
+export function voiceNamesFor(model: SpeechModel): Record<string, string> {
+  return Object.fromEntries(
+    model.voices.filter((voice) => voice.name !== voice.id).map((voice) => [voice.id, voice.name])
+  );
+}
+
+function hasVoice(model: SpeechModel, voice: string): boolean {
+  return model.voices.some((candidate) => candidate.id === voice);
+}
+
+/** The id of the voice used when the user hasn't picked one. */
 export function defaultVoiceFor(model: SpeechModel): string {
   const preferred = DEFAULT_CLOUD_VOICES[model.id];
-  return preferred && model.voices.includes(preferred) ? preferred : model.voices[0];
+  return preferred && hasVoice(model, preferred) ? preferred : model.voices[0].id;
 }
 
 export class SpeechRequestError extends Error {}
@@ -164,7 +209,9 @@ export function resolveSpeechModel(
   requestedVoice: string | null
 ): { model: SpeechModel; voice: string } {
   if (models.length === 0) {
-    throw new SpeechRequestError("Cloud voices require a DeepInfra or OpenRouter API key");
+    const names = SPEECH_PROVIDERS.map((provider) => AI_PROVIDER_DISPLAY_NAMES[provider]);
+    const providers = new Intl.ListFormat("en", { type: "disjunction" }).format(names);
+    throw new SpeechRequestError(`Cloud voices require a ${providers} API key`);
   }
   const requested = requestedModel ? normalizeModelRef(requestedModel) : null;
   const modelId =
@@ -178,9 +225,7 @@ export function resolveSpeechModel(
   // A stored voice the model no longer lists falls back to the default, the
   // same voice the settings page shows as selected.
   const voice =
-    requestedVoice && model.voices.includes(requestedVoice)
-      ? requestedVoice
-      : defaultVoiceFor(model);
+    requestedVoice && hasVoice(model, requestedVoice) ? requestedVoice : defaultVoiceFor(model);
   return { model, voice };
 }
 
@@ -204,7 +249,10 @@ export async function synthesizeSpeech(
     throw new SpeechRequestError(`Speech model not available: ${model.id}`);
   }
   const providerModel = parseModelRef(model.id).model;
-  return model.provider === "deepinfra"
-    ? deepInfraSpeech(apiKey, providerModel, voice, options.text)
-    : openRouterSpeech(apiKey, providerModel, voice, options.text);
+  return SPEECH_PROVIDER_ADAPTERS[model.provider].synthesize(
+    apiKey,
+    providerModel,
+    voice,
+    options.text
+  );
 }

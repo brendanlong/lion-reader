@@ -3,6 +3,7 @@ import {
   defaultSpeechModelId,
   defaultVoiceFor,
   resolveSpeechModel,
+  voiceNamesFor,
   toDeepInfraSpeechModels,
   toSpeechModels,
 } from "@/server/services/speech";
@@ -132,6 +133,21 @@ describe("defaultSpeechModelId", () => {
   });
 });
 
+describe("voiceNamesFor", () => {
+  it("names only the voices whose name isn't their id", () => {
+    const model = {
+      id: "deepinfra:example",
+      displayName: "Example",
+      provider: "deepinfra" as const,
+      voices: [
+        { id: "af_heart", name: "af_heart" },
+        { id: "voc_1", name: "Bennett" },
+      ],
+    };
+    expect(voiceNamesFor(model)).toEqual({ voc_1: "Bennett" });
+  });
+});
+
 describe("voicesFromSchema", () => {
   it("reads Kokoro's preset_voice array of an enum definition", () => {
     expect(
@@ -222,13 +238,16 @@ describe("resolveSpeechModel", () => {
     id: DEEPINFRA_KOKORO,
     displayName: "hexgrad: Kokoro 82M",
     provider: "deepinfra" as const,
-    voices: ["af_heart", "bm_george"],
+    voices: [
+      { id: "af_heart", name: "af_heart" },
+      { id: "bm_george", name: "bm_george" },
+    ],
   };
   const qwen = {
     id: "deepinfra:Qwen/Qwen3-TTS",
     displayName: "Qwen: Qwen3 TTS",
     provider: "deepinfra" as const,
-    voices: ["Vivian"],
+    voices: [{ id: "Vivian", name: "Vivian" }],
   };
 
   it("uses the default model and voice when nothing is chosen", () => {
@@ -264,7 +283,9 @@ describe("resolveSpeechModel", () => {
     );
   });
 
-  it("needs a provider", () => {
-    expect(() => resolveSpeechModel([], {}, null, null)).toThrow("require");
+  it("needs a provider, and names them", () => {
+    expect(() => resolveSpeechModel([], {}, null, null)).toThrow(
+      "Cloud voices require a DeepInfra or OpenRouter API key"
+    );
   });
 });

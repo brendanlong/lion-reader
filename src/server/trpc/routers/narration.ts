@@ -29,7 +29,7 @@ import {
 } from "@/server/services/narration";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
 import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
-import { formatModelRef } from "@/lib/ai/model-ref";
+import { AI_PROVIDER_DISPLAY_NAMES, formatModelRef } from "@/lib/ai/model-ref";
 import {
   MAX_CLOUD_SPEECH_CHARS,
   NARRATION_FORMAT_VERSION,
@@ -40,6 +40,7 @@ import {
   defaultSpeechModelId,
   defaultVoiceFor,
   listSpeechModels,
+  voiceNamesFor,
   SPEECH_PROVIDERS,
   SpeechRequestError,
   synthesizeSpeech,
@@ -417,7 +418,11 @@ export const narrationRouter = createTRPCRouter({
             id: z.string(),
             displayName: z.string(),
             provider: z.enum(SPEECH_PROVIDERS),
+            providerDisplayName: z.string(),
+            /** Voice ids, which are what `synthesize` takes. */
             voices: z.array(z.string()),
+            /** Display names, for the voices whose name isn't their id. */
+            voiceNames: z.record(z.string(), z.string()),
             defaultVoice: z.string(),
             pricePerMillionCharacters: z.number().optional(),
           })
@@ -430,6 +435,9 @@ export const narrationRouter = createTRPCRouter({
       const speechModels = await listSpeechModels(keys);
       const models = speechModels.map((model) => ({
         ...model,
+        voices: model.voices.map((voice) => voice.id),
+        voiceNames: voiceNamesFor(model),
+        providerDisplayName: AI_PROVIDER_DISPLAY_NAMES[model.provider],
         defaultVoice: defaultVoiceFor(model),
       }));
       return { models, defaultModelId: defaultSpeechModelId(speechModels) };

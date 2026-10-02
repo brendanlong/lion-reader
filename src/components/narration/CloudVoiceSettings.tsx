@@ -20,6 +20,7 @@ type VoiceModel = {
   displayName: string;
   provider: AiProvider;
   voices: string[];
+  voiceNames: Record<string, string>;
   defaultVoice: string;
   pricePerMillionCharacters?: number;
 };
@@ -137,10 +138,10 @@ export function CloudVoiceSettings({
             className="ui-text-sm bg-surface text-body border-edge-input block flex-1 rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {model ? (
-              model.voices.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                  {name === model.defaultVoice ? " (default)" : ""}
+              model.voices.map((id) => (
+                <option key={id} value={id}>
+                  {model.voiceNames[id] ?? id}
+                  {id === model.defaultVoice ? " (default)" : ""}
                 </option>
               ))
             ) : (

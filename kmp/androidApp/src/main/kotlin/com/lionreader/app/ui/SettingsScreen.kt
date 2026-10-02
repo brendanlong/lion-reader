@@ -217,7 +217,7 @@ private fun NarrationSettings(
                     Text(
                         if (cloud == null) "Loading cloud voices…"
                         else
-                            "Cloud voices need a DeepInfra or OpenRouter key (set on the web) and a connection.",
+                            "Cloud voices need a cloud voice provider's key (set on the web) and a connection.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -252,7 +252,7 @@ private fun NarrationSettings(
                     val voice =
                         settings.cloudVoice?.takeIf { it in model.voices } ?: model.defaultVoice
                     // Only the voice: a model left on the default follows the server's default.
-                    Picker(voice, model.voices, { it }) { choice ->
+                    Picker(model.voiceName(voice), model.voices, model::voiceName) { choice ->
                         update { it.copy(cloudVoice = choice) }
                     }
                     Text(
