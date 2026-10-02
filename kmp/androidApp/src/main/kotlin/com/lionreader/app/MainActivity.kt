@@ -25,6 +25,7 @@ import androidx.compose.material3.adaptive.navigation.BackNavigationBehavior
 import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
 import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -236,7 +237,13 @@ class MainActivity : ComponentActivity() {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { account.followServer() }
         }
         val backStack = rememberNavBackStack(HomeKey)
-        val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
+        val sessions = viewModel<SessionViewModels>()
+        val owner = remember(account) { sessions.ownerFor(account) }
+        // Leaving composition also happens on rotation, when the session goes on.
+        DisposableEffect(account) {
+            onDispose { if (graph.account.value !== account) sessions.ended(account) }
+        }
+        val home = viewModel(viewModelStoreOwner = owner) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
         val transitions = remember(settings.animations) { ScreenTransitions(settings.animations) }
         // Side by side where there's room (tablets, foldables, landscape).
