@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Rect
 import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.ActionMode
 import android.view.Menu
@@ -18,7 +20,13 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -30,16 +38,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.lionreader.app.copyLink
+import com.lionreader.app.openWebPage
+import com.lionreader.app.saveWebPage
+import com.lionreader.app.shareWebPage
 import com.lionreader.app.ui.PAGE_FRACTION
 import com.lionreader.app.ui.PageLayer
 import com.lionreader.app.ui.PageTurns
+import com.lionreader.app.webUrl
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -69,63 +86,123 @@ fun ReaderWebView(
         Box(modifier.padding(16.dp)) { Text("This article couldn't be shown.") }
         return
     }
-    key(losses.generation) {
-        AndroidView(
-            modifier = modifier,
-            factory = { context ->
-                ReaderView(context)
-                    .also { shown[0] = it }
-                    .apply {
-                        // For our scripts; the CSP keeps anything else from running.
-                        @SuppressLint("SetJavaScriptEnabled")
-                        settings.javaScriptEnabled = true
-                        settings.allowFileAccess = false
-                        settings.allowContentAccess = false
-                        settings.domStorageEnabled = false
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        // Drawn into its own layer, so the pager moving it shifts a
-                        // finished picture: on some devices a WebView that's moved
-                        // mid-swipe draws a blank frame.
-                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                        if (
-                            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
-                        ) {
-                            WebViewCompat.addWebMessageListener(
-                                this,
-                                "lionReader",
-                                setOf(ASSET_ORIGIN),
-                            ) { _, message, _, isMainFrame, _ ->
-                                if (isMainFrame) onPageMessage(message.data ?: "", current)
+    var linkPress by remember { mutableStateOf<LinkPress?>(null) }
+    Box(modifier) {
+        key(losses.generation) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
+                    ReaderView(context)
+                        .also { shown[0] = it }
+                        .apply {
+                            onLinkLongPress = { linkPress = it }
+                            // For our scripts; the CSP keeps anything else from running.
+                            @SuppressLint("SetJavaScriptEnabled")
+                            settings.javaScriptEnabled = true
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            settings.domStorageEnabled = false
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            // Drawn into its own layer, so the pager moving it shifts a
+                            // finished picture: on some devices a WebView that's moved
+                            // mid-swipe draws a blank frame.
+                            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                            if (
+                                WebViewFeature.isFeatureSupported(
+                                    WebViewFeature.WEB_MESSAGE_LISTENER
+                                )
+                            ) {
+                                WebViewCompat.addWebMessageListener(
+                                    this,
+                                    "lionReader",
+                                    setOf(ASSET_ORIGIN),
+                                ) { _, message, _, isMainFrame, _ ->
+                                    if (isMainFrame) onPageMessage(message.data ?: "", current)
+                                }
                             }
+                            webViewClient =
+                                ReaderWebViewClient(
+                                    WebViewAssetLoader.Builder()
+                                        .addPathHandler(
+                                            "/assets/",
+                                            WebViewAssetLoader.AssetsPathHandler(context),
+                                        )
+                                        .build(),
+                                    onRendererLost = losses::lost,
+                                )
                         }
-                        webViewClient =
-                            ReaderWebViewClient(
-                                WebViewAssetLoader.Builder()
-                                    .addPathHandler(
-                                        "/assets/",
-                                        WebViewAssetLoader.AssetsPathHandler(context),
-                                    )
-                                    .build(),
-                                onRendererLost = losses::lost,
-                            )
+                },
+                update = { view ->
+                    // It mustn't be used any more; a new one is on its way.
+                    if (view.rendererLost) return@AndroidView
+                    if (view.tag != document) {
+                        view.tag = document
+                        view.sideScrollers = emptyList()
+                        view.pageReady = false
+                        view.loadDataWithBaseURL(
+                            "$ASSET_ORIGIN/",
+                            document,
+                            "text/html",
+                            "utf-8",
+                            null,
+                        )
                     }
-            },
-            update = { view ->
-                // It mustn't be used any more; a new one is on its way.
-                if (view.rendererLost) return@AndroidView
-                if (view.tag != document) {
-                    view.tag = document
-                    view.sideScrollers = emptyList()
-                    view.pageReady = false
-                    view.loadDataWithBaseURL("$ASSET_ORIGIN/", document, "text/html", "utf-8", null)
-                }
-                view.smoothScroll = paging.smoothScroll
-                view.pageScrolling = paging.swipes
-                view.highlight(narration.paragraph, narration.autoScroll)
-                view.onListenFrom = narration.onListenFrom
-            },
-            onRelease = { it.destroy() },
-        )
+                    view.smoothScroll = paging.smoothScroll
+                    view.pageScrolling = paging.swipes
+                    view.highlight(narration.paragraph, narration.autoScroll)
+                    view.onListenFrom = narration.onListenFrom
+                },
+                onRelease = { it.destroy() },
+            )
+        }
+        linkPress?.let { LinkMenu(it) { linkPress = null } }
+    }
+}
+
+/** A long press on a link in the page: its address, and where (the view's pixels). */
+internal data class LinkPress(val url: String, val x: Float, val y: Float)
+
+/**
+ * What a long press on a link offers, where it was pressed: the most common first (Open, as a tap
+ * does), then saving it to Lion Reader, then the system's Share and Copy, as browsers' link menus
+ * end.
+ */
+@Composable
+internal fun LinkMenu(press: LinkPress, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    fun act(action: () -> Unit) {
+        onDismiss()
+        action()
+    }
+    Box(Modifier.offset { IntOffset(press.x.roundToInt(), press.y.roundToInt()) }) {
+        DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+            // Where it goes, before choosing what to do with it.
+            Text(
+                press.url,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier =
+                    Modifier.widthIn(max = 280.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            DropdownMenuItem(
+                text = { Text("Open") },
+                onClick = { act { context.openWebPage(press.url) } },
+            )
+            DropdownMenuItem(
+                text = { Text("Save") },
+                onClick = { act { context.saveWebPage(press.url) } },
+            )
+            DropdownMenuItem(
+                text = { Text("Share") },
+                onClick = { act { context.shareWebPage(press.url, null) } },
+            )
+            DropdownMenuItem(
+                text = { Text("Copy link") },
+                onClick = { act { context.copyLink(press.url) } },
+            )
+        }
     }
 }
 
@@ -195,6 +272,15 @@ data class ReaderPaging(
  * In page mode a scroll it keeps becomes a page turn instead ([turnPage]), unless it began as a
  * long press: dragging after one extends a text selection.
  */
+/**
+ * [href] if it's a web page outside the article (a relative one resolves to the reader's own
+ * origin).
+ */
+internal fun linkTarget(href: String?): String? =
+    webUrl(href)?.takeUnless {
+        it.startsWith("$ASSET_ORIGIN/", ignoreCase = true) || it == ASSET_ORIGIN
+    }
+
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
     var sideScrollers: List<SideScroller> = emptyList()
@@ -208,6 +294,37 @@ private class ReaderView(context: Context) : WebView(context) {
     private var scroll = true
     var smoothScroll = true
     var pageScrolling = false
+
+    /** A long press on a web link; anything else keeps the WebView's own (selecting text). */
+    var onLinkLongPress: ((LinkPress) -> Unit)? = null
+
+    init {
+        setOnLongClickListener { longPressLink() }
+    }
+
+    private fun longPressLink(): Boolean {
+        val report = onLinkLongPress ?: return false
+        val x = downX
+        val y = downY
+        val pressed = { href: String? ->
+            linkTarget(href)?.let { report(LinkPress(it, x, y)) }
+        }
+        val hit = hitTestResult
+        return when (hit.type) {
+            HitTestResult.SRC_ANCHOR_TYPE -> linkTarget(hit.extra)?.also { pressed(it) } != null
+            // A linked image: the hit is the image; the page says where the link goes.
+            HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                val reply =
+                    Handler(Looper.getMainLooper()) { message ->
+                        pressed(message.data.getString("url"))
+                        true
+                    }
+                requestFocusNodeHref(reply.obtainMessage())
+                true
+            }
+            else -> false
+        }
+    }
 
     fun onPageMessage(data: String, narration: ReaderNarration) {
         if (data.startsWith("[")) {
