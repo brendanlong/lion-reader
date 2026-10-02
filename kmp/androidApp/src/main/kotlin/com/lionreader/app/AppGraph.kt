@@ -58,7 +58,7 @@ const val DEFAULT_SERVER_URL = "https://lionreader.com"
 class AppGraph(private val context: Context) {
     private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
 
-    val settings = SettingsRepository(context)
+    val settings = SettingsRepository(context, deviceDefaults())
 
     val serverUrl: String
         get() = prefs.getString(SERVER_URL, null) ?: DEFAULT_SERVER_URL
@@ -75,7 +75,7 @@ class AppGraph(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val currentSettings: StateFlow<AppSettings> =
-        settings.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
+        settings.settings.stateIn(scope, SharingStarted.Eagerly, settings.defaults)
 
     /** The device's text-to-speech engine (voices for Settings, and narration). */
     val systemTts: SystemTts by lazy { SystemTts(context) }

@@ -84,11 +84,12 @@ data class AppSettings(
 
 private val Context.settingsStore by preferencesDataStore("settings")
 
-class SettingsRepository(private val context: Context) {
-    val settings: Flow<AppSettings> = context.settingsStore.data.map { it.toSettings() }
+/** [defaults]: what a setting the user hasn't changed is ([deviceDefaults]). */
+class SettingsRepository(private val context: Context, val defaults: AppSettings) {
+    val settings: Flow<AppSettings> = context.settingsStore.data.map { it.toSettings(defaults) }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
-        context.settingsStore.edit { prefs -> prefs.store(transform(prefs.toSettings())) }
+        context.settingsStore.edit { prefs -> prefs.store(transform(prefs.toSettings(defaults))) }
     }
 }
 
@@ -139,8 +140,8 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         },
     )
 
-internal fun Preferences.toSettings(): AppSettings =
-    STORED_SETTINGS.fold(AppSettings()) { settings, stored -> stored.read(this, settings) }
+internal fun Preferences.toSettings(defaults: AppSettings = AppSettings()): AppSettings =
+    STORED_SETTINGS.fold(defaults) { settings, stored -> stored.read(this, settings) }
 
 internal fun MutablePreferences.store(settings: AppSettings) {
     STORED_SETTINGS.forEach { it.write(this, settings) }

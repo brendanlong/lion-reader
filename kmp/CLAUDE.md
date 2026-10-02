@@ -136,7 +136,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   scroll to the narrated paragraph. Page mode turns pages rather than scrolling
   (`pageSwipes`; `ReaderView` for the article, leaving a long press's drag to the
   text selection), and the volume buttons turn the page of the top `PageTurns`
-  target.
+  target. A known e-reader maker (`isEinkDevice`; Android can't report an
+  e-ink screen) starts on the E-paper theme without animations: those are the
+  device's defaults, which anything the user sets overrides.
 - **Appearance tokens** (`androidApp/src/main/assets/reader/appearance.json`)
   are generated from the web's `src/lib/appearance/config.ts` by
   `pnpm app:appearance` (a unit test fails when stale). Fonts are OFL Google
