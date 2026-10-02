@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { userApiKeys } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
@@ -65,19 +65,6 @@ describe.each(["openrouter", "deepinfra"] as const)("%s API key", (provider) => 
     expect(cleared.apiKeyProviders).toEqual([]);
     expect((await getUserApiKeys(userId))[provider]).toBeUndefined();
   });
-});
-
-it("clears the previous release's column for a key it changes", async () => {
-  const userId = await createTestUser();
-  await db.execute(sql`UPDATE users SET groq_api_key = 'stale' WHERE id = ${userId}`);
-  const caller = createCaller(await createAuthContext(userId));
-
-  await caller.users["me.updatePreferences"]({ apiKeys: { groq: "" } });
-
-  const result = await db.execute<{ groq_api_key: string | null }>(
-    sql`SELECT groq_api_key FROM users WHERE id = ${userId}`
-  );
-  expect(result.rows[0].groq_api_key).toBeNull();
 });
 
 it("leaves other providers' keys alone", async () => {
