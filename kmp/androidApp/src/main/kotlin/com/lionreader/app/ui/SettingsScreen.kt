@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +26,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,19 +35,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.AppGraph
 import com.lionreader.app.AppSettings
@@ -54,6 +58,7 @@ import com.lionreader.app.ReaderFont
 import com.lionreader.app.TextSize
 import com.lionreader.app.ThemeChoice
 import com.lionreader.app.narration.VoiceOption
+import com.lionreader.app.openWebPage
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
 import kotlin.math.roundToInt
@@ -150,23 +155,64 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             HorizontalDivider()
             Section("Account") {
                 Text(graph.serverUrl, style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(
-                    onClick = {
-                        context.startActivity(
-                            android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                "${graph.serverUrl}/settings".toUri(),
-                            )
-                        )
-                    }
-                ) {
+                OutlinedButton(onClick = { context.openWebPage("${graph.serverUrl}/settings") }) {
                     Text("Account settings on the web")
                 }
-                OutlinedButton(onClick = onSignOut) { Text("Sign out") }
+                SignOutButton(graph::unsentChangesAfterFlush, onSignOut)
             }
         }
     }
 }
+
+/**
+ * Signs out once the unsent changes are sent, or, if some can't be, once the user agrees to lose
+ * them.
+ */
+@Composable
+internal fun SignOutButton(unsentAfterFlush: suspend () -> Long, onSignOut: () -> Unit) {
+    val coroutines = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var unsent by rememberSaveable { mutableStateOf<Long?>(null) }
+    OutlinedButton(
+        onClick = {
+            checking = true
+            coroutines.launch {
+                val left =
+                    try {
+                        unsentAfterFlush()
+                    } finally {
+                        checking = false
+                    }
+                if (left == 0L) onSignOut() else unsent = left
+            }
+        },
+        enabled = !checking,
+    ) {
+        Text(if (checking) "Sending changes…" else "Sign out")
+    }
+    unsent?.let { count ->
+        AlertDialog(
+            onDismissRequest = { unsent = null },
+            title = { Text("Sign out?") },
+            text = { Text(unsentChangesWarning(count)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        unsent = null
+                        onSignOut()
+                    }
+                ) {
+                    Text("Sign out")
+                }
+            },
+            dismissButton = { TextButton(onClick = { unsent = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+private fun unsentChangesWarning(count: Long): String =
+    if (count == 1L) "1 change hasn't been sent and will be lost."
+    else "$count changes haven't been sent and will be lost."
 
 @Composable
 private fun NarrationSettings(
@@ -398,14 +444,19 @@ private val ThemeChoice.label: String
             ThemeChoice.EPAPER -> "E-paper"
         }
 
+/** The label and the switch are one control (and one TalkBack stop). */
 @Composable
-private fun SettingSwitch(
+internal fun SettingSwitch(
     label: String,
     checked: Boolean,
     note: String? = null,
     onChange: (Boolean) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(label)
             note?.let {
@@ -416,14 +467,18 @@ private fun SettingSwitch(
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Text(title, style = MaterialTheme.typography.titleSmall)
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.semantics { heading() },
+        )
         content()
     }
 }

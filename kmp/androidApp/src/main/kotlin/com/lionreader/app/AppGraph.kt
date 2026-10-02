@@ -2,6 +2,7 @@ package com.lionreader.app
 
 import android.content.Context
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.lionreader.app.narration.CloudVoices
 import com.lionreader.app.narration.DeviceVoices
@@ -15,6 +16,7 @@ import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.VoiceModels
 import com.lionreader.shared.auth.AppAuth
+import com.lionreader.shared.auth.AuthException
 import com.lionreader.shared.auth.AuthorizationRequest
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
@@ -29,9 +31,11 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +48,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 const val DEFAULT_SERVER_URL = "https://lionreader.com"
 
@@ -55,22 +60,13 @@ const val DEFAULT_SERVER_URL = "https://lionreader.com"
  * its own database file, reader and sync engine. Data of different accounts or servers never shares
  * a database, and signing out deletes the account's file.
  */
-class AppGraph(private val context: Context) {
+class AppGraph(private val context: Context, private val http: HttpClient = appHttpClient()) {
     private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
 
     val settings = SettingsRepository(context, deviceDefaults())
 
     val serverUrl: String
         get() = prefs.getString(SERVER_URL, null) ?: DEFAULT_SERVER_URL
-
-    private val http =
-        HttpClient(OkHttp) {
-            install(UserAgent) { agent = "LionReader-Android/${BuildConfig.VERSION_NAME}" }
-            install(HttpTimeout) {
-                connectTimeoutMillis = 15_000
-                requestTimeoutMillis = 60_000
-            }
-        }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -177,34 +173,44 @@ class AppGraph(private val context: Context) {
     private val accountMutex = Mutex()
 
     private fun restoreAccount(): AccountSession? {
-        // Delete files from older schema generations (see DB_PREFIX); a
-        // signed-in account is set up again after the next /auth/me.
+        val dbName = prefs.getString(ACCOUNT_DB, null)
+        // Any other account's file was left by a sign-out or switch the app
+        // didn't live to finish.
         context
             .databaseList()
-            .filter {
-                it.endsWith(".db") && it.startsWith("account-") && !it.startsWith(DB_PREFIX)
-            }
+            .filter { it.startsWith("account-") && it.endsWith(".db") && it != dbName }
             .forEach { context.deleteDatabase(it) }
-        val dbName =
-            prefs.getString(ACCOUNT_DB, null)?.takeIf { it.startsWith(DB_PREFIX) } ?: return null
-        return openAccount(dbName)
+        val confirmed =
+            _connection.value.auth.signedIn.value && prefs.getBoolean(ACCOUNT_CONFIRMED, true)
+        return dbName?.let { openAccount(it, confirmed) }
     }
 
-    private fun openAccount(dbName: String) =
-        AccountSession(context, dbName, _connection.value, { currentSettings.value.retention }) {
+    private fun openAccount(dbName: String, confirmed: Boolean) =
+        AccountSession(
+            context,
+            dbName,
+            _connection.value,
+            confirmed,
+            { currentSettings.value.retention },
+        ) {
             SyncScheduler.flushSoon(context)
         }
 
     /**
      * After a sign-in: asks the server who this is and switches to that account's database,
-     * deleting the previous account's if it's another one.
+     * deleting the previous account's if it's another one. Whether it opened a session (rather than
+     * finding this account's already open).
      */
-    suspend fun signedIn() = accountMutex.withLock {
+    suspend fun signedIn(): Boolean = accountMutex.withLock {
         val server = _connection.value
         val user = server.api.me()
         val dbName = accountDbName(server.auth.serverUrl, user.id)
         val current = _account.value
-        if (current?.dbName == dbName && current.connection === server) return@withLock
+        if (current?.dbName == dbName && current.connection === server) {
+            prefs.edit(commit = true) { putBoolean(ACCOUNT_CONFIRMED, true) }
+            current.confirm()
+            return@withLock false
+        }
         current?.close()
         // Another account's data goes; the same account's is reopened on
         // the current connection, unsent changes and all.
@@ -212,27 +218,60 @@ class AppGraph(private val context: Context) {
             context.deleteDatabase(current.dbName)
             cloudVoiceCache.deleteRecursively()
         }
-        prefs.edit(commit = true) { putString(ACCOUNT_DB, dbName) }
-        _account.value = openAccount(dbName)
+        prefs.edit(commit = true) {
+            putString(ACCOUNT_DB, dbName)
+            putBoolean(ACCOUNT_CONFIRMED, true)
+        }
+        _account.value = openAccount(dbName, confirmed = true)
+        true
     }
 
     /**
-     * Revokes the session and deletes the account's data. Runs in the app's scope so leaving the
-     * screen can't cancel the revocation.
+     * Before signing out: sends the unsent changes if it can, and says how many are left (which
+     * signing out loses).
+     */
+    suspend fun unsentChangesAfterFlush(): Long {
+        val session = _account.value ?: return 0
+        return try {
+            if (session.unsentChanges() == 0L) return 0
+            withTimeoutOrNull(FLUSH_BEFORE_SIGN_OUT_MS) {
+                try {
+                    withContext(Dispatchers.IO) { session.sync.flushOutbox() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {}
+            }
+            session.unsentChanges()
+        } catch (e: SessionClosed) {
+            throw e
+        } catch (_: Exception) {
+            // A database it can't read holds nothing it could send.
+            0
+        }
+    }
+
+    /**
+     * Deletes the account's data, then the tokens, under the account lock, so a sign-in can't start
+     * in between and see its new database deleted; revoking the session follows, best effort. In
+     * the app's scope, so leaving the screen can't cancel any of it.
      */
     fun signOut() {
         if (narratorInstance.isInitialized()) narrator.stop()
         scope.launch {
             SyncScheduler.cancelAll(context)
-            _connection.value.auth.signOut()
+            val auth = _connection.value.auth
             accountMutex.withLock {
-                _account.value?.let {
-                    it.close()
-                    context.deleteDatabase(it.dbName)
-                }
-                cloudVoiceCache.deleteRecursively()
+                val session = _account.value
                 _account.value = null
+                pendingAuthorization = null
+                // If the app dies before the file goes, the next start deletes it.
                 prefs.edit(commit = true) { remove(ACCOUNT_DB) }
+                session?.close()
+                session?.let { context.deleteDatabase(it.dbName) }
+                cloudVoiceCache.deleteRecursively()
+                // AppAuth.signOut forgets the tokens before it reaches the network.
+                launch(start = CoroutineStart.UNDISPATCHED) { auth.signOut() }
+                auth.signedIn.first { !it }
             }
             SyncScheduler.schedulePeriodic(context)
         }
@@ -242,23 +281,80 @@ class AppGraph(private val context: Context) {
     fun syncInBackground() = SyncScheduler.syncNow(context)
 
     /** Only while signed out: the server is part of the sign-in identity. */
-    fun setServerUrl(url: String) {
-        if (url.trimEnd('/') == serverUrl) return
-        prefs.edit(commit = true) { putString(SERVER_URL, url.trimEnd('/')) }
+    private fun setServerUrl(url: String) {
+        require(parseServerUrl(url, BuildConfig.DEBUG) == ServerUrlInput.Valid(url))
+        if (url == serverUrl) return
+        prefs.edit(commit = true) { putString(SERVER_URL, url) }
         _connection.value = ServerConnection(serverUrl, http, PrefsTokenStore(prefs))
     }
 
+    private val _signInError = MutableStateFlow<String?>(null)
+
+    /** Why the last sign-in failed, until another starts. */
+    val signInError: StateFlow<String?> = _signInError.asStateFlow()
+
+    /**
+     * A sign-in on [serverUrl] (from [parseServerUrl]): the authorization request to open in the
+     * browser, kept until its redirect comes back.
+     */
+    suspend fun startSignIn(serverUrl: String): AuthorizationRequest {
+        setServerUrl(serverUrl)
+        _signInError.value = null
+        return _connection.value.auth.authorizationRequest().also { pendingAuthorization = it }
+    }
+
+    /**
+     * Finishes the sign-in from its [redirect]. In the app's scope, so the token exchange outlives
+     * the Activity (rotation, or the system destroying it behind the browser).
+     */
+    fun completeSignIn(redirect: String) {
+        val pending = pendingAuthorization ?: return
+        // Not this sign-in's redirect (a stale or forged link): leave it waiting for its own.
+        if (redirect.toUri().getQueryParameter("state") != pending.state) return
+        pendingAuthorization = null
+        val auth = _connection.value.auth
+        // An account kept through an involuntary sign-out may not be the one
+        // signing in: nothing shows or syncs it until /auth/me says it is (and
+        // a restart before then remembers that).
+        prefs.edit(commit = true) { putBoolean(ACCOUNT_CONFIRMED, false) }
+        _account.value?.unconfirm()
+        scope.launch {
+            _signInError.value =
+                try {
+                    auth.completeAuthorization(redirect, pending)
+                    null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: AuthException) {
+                    e.message
+                } catch (_: IOException) {
+                    "Couldn't reach the server"
+                } catch (_: Exception) {
+                    "Sign-in failed"
+                }
+            if (_signInError.value != null) return@launch
+            // A new session's list syncs as it opens; the same account's, kept
+            // through an involuntary sign-out, doesn't. Offline, the screen keeps
+            // asking which account this is.
+            try {
+                if (!signedIn()) syncInBackground()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {}
+        }
+    }
+
+    /** The sign-in under way: what to open again in a Custom Tab, and how to check its redirect. */
     var pendingAuthorization: AuthorizationRequest?
-        get() =
-            prefs.getString(PENDING_STATE, null)?.let { state ->
-                AuthorizationRequest(
-                    url = "",
-                    state = state,
-                    codeVerifier = prefs.getString(PENDING_VERIFIER, null) ?: return null,
-                )
-            }
-        set(value) =
+        get() {
+            val url = prefs.getString(PENDING_URL, null) ?: return null
+            val state = prefs.getString(PENDING_STATE, null) ?: return null
+            val verifier = prefs.getString(PENDING_VERIFIER, null) ?: return null
+            return AuthorizationRequest(url, state, verifier)
+        }
+        private set(value) =
             prefs.edit(commit = true) {
+                putString(PENDING_URL, value?.url)
                 putString(PENDING_STATE, value?.state)
                 putString(PENDING_VERIFIER, value?.codeVerifier)
             }
@@ -266,12 +362,16 @@ class AppGraph(private val context: Context) {
     private companion object {
         const val SERVER_URL = "server_url"
         const val ACCOUNT_DB = "account_db"
+        const val ACCOUNT_CONFIRMED = "account_confirmed"
+        const val PENDING_URL = "pending_url"
         const val PENDING_STATE = "pending_state"
         const val PENDING_VERIFIER = "pending_verifier"
     }
 }
 
-/** Database file schema generation; bump it on a pre-release schema change (kmp/CLAUDE.md). */
+private const val FLUSH_BEFORE_SIGN_OUT_MS = 15_000L
+
+/** Part of every account's database name: changing it loses the data on the device. */
 private const val DB_PREFIX = "account-v5-"
 
 /** One database file per (server, account); the name doesn't reveal either. */
@@ -279,6 +379,15 @@ private fun accountDbName(serverUrl: String, userId: String): String {
     val digest = MessageDigest.getInstance("SHA-256").digest("$serverUrl\n$userId".toByteArray())
     return DB_PREFIX + digest.take(12).joinToString("") { "%02x".format(it) } + ".db"
 }
+
+private fun appHttpClient() =
+    HttpClient(OkHttp) {
+        install(UserAgent) { agent = "LionReader-Android/${BuildConfig.VERSION_NAME}" }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 15_000
+            requestTimeoutMillis = 60_000
+        }
+    }
 
 class ServerConnection(serverUrl: String, http: HttpClient, tokens: TokenStore) {
     val auth =
@@ -297,10 +406,28 @@ class AccountSession(
     context: Context,
     val dbName: String,
     val connection: ServerConnection,
+    confirmed: Boolean,
     retention: () -> RetentionPolicy,
     onLocalChange: () -> Unit,
 ) {
-    private val driver = AndroidSqliteDriver(AppSchema, context, dbName)
+    private val _confirmed = MutableStateFlow(confirmed)
+
+    /**
+     * Whether the signed-in tokens are this account's. Not while a sign-in after an involuntary
+     * sign-out hasn't yet asked /auth/me whose they are: until then, showing or syncing this
+     * account could send its changes as someone else.
+     */
+    val confirmed: StateFlow<Boolean> = _confirmed.asStateFlow()
+
+    internal fun confirm() {
+        _confirmed.value = true
+    }
+
+    internal fun unconfirm() {
+        _confirmed.value = false
+    }
+
+    private val driver = SessionDriver(AndroidSqliteDriver(AppSchema, context, dbName))
     private val database = LionReaderDatabase(driver)
     val reader = Reader(database, System::currentTimeMillis, Dispatchers.IO, onLocalChange)
     val sync = SyncEngine(connection.api, database, System::currentTimeMillis, retention)
@@ -326,6 +453,10 @@ class AccountSession(
     /** Pulls whenever the server says something changed, until cancelled (see kmp/CLAUDE.md). */
     suspend fun followServer() =
         withContext(Dispatchers.IO) { followLiveUpdates(connection.api, pull = { sync.sync() }) }
+
+    /** The user's changes not yet on the server. */
+    suspend fun unsentChanges(): Long =
+        withContext(Dispatchers.IO) { database.outboxQueries.countStates().executeAsOne() }
 
     fun close() = driver.close()
 }

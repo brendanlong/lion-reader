@@ -5,25 +5,33 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Rect
 import android.graphics.RectF
+import android.os.SystemClock
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
@@ -49,6 +57,7 @@ fun ReaderWebView(
 ) {
     val current by rememberUpdatedState(narration)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
+    val losses = remember { RendererLosses() }
     val turns = paging.turns
     if (turns != null) {
         DisposableEffect(turns) {
@@ -56,57 +65,98 @@ fun ReaderWebView(
             onDispose { unregister() }
         }
     }
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            ReaderView(context)
-                .also { shown[0] = it }
-                .apply {
-                    // For our scripts; the CSP keeps anything else from running.
-                    @SuppressLint("SetJavaScriptEnabled")
-                    settings.javaScriptEnabled = true
-                    settings.allowFileAccess = false
-                    settings.allowContentAccess = false
-                    settings.domStorageEnabled = false
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    // Drawn into its own layer, so the pager moving it shifts a
-                    // finished picture: on some devices a WebView that's moved
-                    // mid-swipe draws a blank frame.
-                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-                        WebViewCompat.addWebMessageListener(
-                            this,
-                            "lionReader",
-                            setOf(ASSET_ORIGIN),
-                        ) { _, message, _, isMainFrame, _ ->
-                            if (isMainFrame) onPageMessage(message.data ?: "", current)
+    if (losses.gaveUp) {
+        Box(modifier.padding(16.dp)) { Text("This article couldn't be shown.") }
+        return
+    }
+    key(losses.generation) {
+        AndroidView(
+            modifier = modifier,
+            factory = { context ->
+                ReaderView(context)
+                    .also { shown[0] = it }
+                    .apply {
+                        // For our scripts; the CSP keeps anything else from running.
+                        @SuppressLint("SetJavaScriptEnabled")
+                        settings.javaScriptEnabled = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.domStorageEnabled = false
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        // Drawn into its own layer, so the pager moving it shifts a
+                        // finished picture: on some devices a WebView that's moved
+                        // mid-swipe draws a blank frame.
+                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        if (
+                            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+                        ) {
+                            WebViewCompat.addWebMessageListener(
+                                this,
+                                "lionReader",
+                                setOf(ASSET_ORIGIN),
+                            ) { _, message, _, isMainFrame, _ ->
+                                if (isMainFrame) onPageMessage(message.data ?: "", current)
+                            }
                         }
+                        webViewClient =
+                            ReaderWebViewClient(
+                                WebViewAssetLoader.Builder()
+                                    .addPathHandler(
+                                        "/assets/",
+                                        WebViewAssetLoader.AssetsPathHandler(context),
+                                    )
+                                    .build(),
+                                onRendererLost = losses::lost,
+                            )
                     }
-                    webViewClient =
-                        ReaderWebViewClient(
-                            WebViewAssetLoader.Builder()
-                                .addPathHandler(
-                                    "/assets/",
-                                    WebViewAssetLoader.AssetsPathHandler(context),
-                                )
-                                .build()
-                        )
+            },
+            update = { view ->
+                // It mustn't be used any more; a new one is on its way.
+                if (view.rendererLost) return@AndroidView
+                if (view.tag != document) {
+                    view.tag = document
+                    view.sideScrollers = emptyList()
+                    view.pageReady = false
+                    view.loadDataWithBaseURL("$ASSET_ORIGIN/", document, "text/html", "utf-8", null)
                 }
-        },
-        update = { view ->
-            if (view.tag != document) {
-                view.tag = document
-                view.sideScrollers = emptyList()
-                view.pageReady = false
-                view.loadDataWithBaseURL("$ASSET_ORIGIN/", document, "text/html", "utf-8", null)
-            }
-            view.smoothScroll = paging.smoothScroll
-            view.pageScrolling = paging.swipes
-            view.highlight(narration.paragraph, narration.autoScroll)
-            view.onListenFrom = narration.onListenFrom
-        },
-    )
+                view.smoothScroll = paging.smoothScroll
+                view.pageScrolling = paging.swipes
+                view.highlight(narration.paragraph, narration.autoScroll)
+                view.onListenFrom = narration.onListenFrom
+            },
+            onRelease = { it.destroy() },
+        )
+    }
 }
+
+/**
+ * A page whose renderer went away gets a new WebView. The system reclaiming renderers is routine
+ * (low-memory e-readers do it often); a page whose renderer crashes [MAX_RENDERER_CRASHES] times
+ * within [CRASH_WINDOW_MILLIS] is given up on, whether or not it loaded in between, so one that
+ * crashes just after loading doesn't reload for ever.
+ */
+internal class RendererLosses(private val now: () -> Long = SystemClock::elapsedRealtime) {
+    /** Keys the page's WebView: a new one each loss. */
+    var generation by mutableIntStateOf(0)
+        private set
+
+    private val crashes = ArrayDeque<Long>()
+    var gaveUp by mutableStateOf(false)
+        private set
+
+    fun lost(crashed: Boolean) {
+        if (crashed) {
+            val at = now()
+            crashes.addLast(at)
+            while (at - crashes.first() > CRASH_WINDOW_MILLIS) crashes.removeFirst()
+            if (crashes.size >= MAX_RENDERER_CRASHES) gaveUp = true
+        }
+        generation++
+    }
+}
+
+internal const val CRASH_WINDOW_MILLIS = 60_000L
+internal const val MAX_RENDERER_CRASHES = 3
 
 /**
  * The article's narration in the page (the reader's narration.js): [paragraph] is the one to
@@ -151,6 +201,8 @@ private class ReaderView(context: Context) : WebView(context) {
 
     /** Whether the page's narration script has run (it reports the paragraphs when it does). */
     var pageReady = false
+    /** Its renderer is gone, so it can only be destroyed. */
+    var rendererLost = false
     private var wanted: Int? = null
     private var shown: Int? = null
     private var scroll = true
@@ -230,7 +282,7 @@ private class ReaderView(context: Context) : WebView(context) {
     fun highlight(paragraph: Int?, autoScroll: Boolean) {
         wanted = paragraph
         scroll = autoScroll
-        if (!pageReady || shown == paragraph) return
+        if (!pageReady || rendererLost || shown == paragraph) return
         shown = paragraph
         evaluateJavascript(
             "window.lionNarration && " +
@@ -311,7 +363,7 @@ private class ReaderView(context: Context) : WebView(context) {
      * Moves the page [PAGE_FRACTION] of the screen down (1) or up (-1), at once; false unlaid out.
      */
     fun turnPage(direction: Int): Boolean {
-        if (height == 0) return false
+        if (height == 0 || rendererLost) return false
         val bottom = (computeVerticalScrollRange() - height).coerceAtLeast(0)
         val step = (height * PAGE_FRACTION).toInt()
         scrollTo(scrollX, (scrollY + direction * step).coerceIn(0, bottom))
@@ -375,7 +427,10 @@ private fun parseRects(json: String?): List<SideScroller> = runCatching {
 
 // Lint's detector doesn't see the Kotlin override below (it does exist).
 @SuppressLint("MissingOnRenderProcessGone")
-private class ReaderWebViewClient(private val assets: WebViewAssetLoader) : WebViewClient() {
+private class ReaderWebViewClient(
+    private val assets: WebViewAssetLoader,
+    private val onRendererLost: (crashed: Boolean) -> Unit,
+) : WebViewClient() {
     override fun shouldInterceptRequest(
         view: WebView,
         request: WebResourceRequest,
@@ -394,11 +449,11 @@ private class ReaderWebViewClient(private val assets: WebViewAssetLoader) : WebV
     }
 
     // A renderer crash (or the system reclaiming it) would otherwise take the
-    // whole app down; drop this WebView instead. Reopening the entry makes a
-    // new one.
+    // whole app down. Compose owns the view, so it's replaced there
+    // (ReaderWebView), which destroys this one.
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-        (view.parent as? ViewGroup)?.removeView(view)
-        view.destroy()
+        (view as? ReaderView)?.rendererLost = true
+        onRendererLost(detail.didCrash())
         return true
     }
 }

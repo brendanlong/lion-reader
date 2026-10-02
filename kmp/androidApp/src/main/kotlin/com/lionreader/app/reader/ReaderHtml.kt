@@ -3,6 +3,7 @@ package com.lionreader.app.reader
 import android.content.Context
 import com.lionreader.app.AppSettings
 import com.lionreader.app.ReaderFont
+import com.lionreader.app.webUrl
 import org.json.JSONObject
 
 /** Per-font sizing shared with the web (`assets/reader/appearance.json`). */
@@ -73,10 +74,6 @@ private val fontFaces: String =
  * to [url] (the original) when that's a web address.
  */
 data class ReaderHeader(val title: String, val byline: String, val url: String? = null)
-
-/** Only a web address becomes the title's link: the feed controls it. */
-private fun webUrl(url: String?): String? =
-    url?.trim()?.takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) }
 
 /**
  * A complete document for the article: the [header], escaped, the AI [summary] if shown, and the

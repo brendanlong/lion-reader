@@ -1,10 +1,12 @@
 package com.lionreader.app
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -25,6 +27,7 @@ import androidx.compose.material3.adaptive.navigation.BackNavigationBehavior
 import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
 import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -55,12 +58,12 @@ import com.lionreader.app.ui.ScreenTransitions
 import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
 import com.lionreader.app.ui.isDark
-import com.lionreader.shared.auth.AuthException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private const val NO_BROWSER = "Signing in needs a web browser."
+
 class MainActivity : ComponentActivity() {
-    private var signInError by mutableStateOf<String?>(null)
     private val motion by lazy { AppMotion(applicationContext) }
     /** The volume button whose press turned a page: its repeats and release are ours too. */
     private var pagingKey: Int? = null
@@ -75,9 +78,16 @@ class MainActivity : ComponentActivity() {
     private val authTab =
         AuthTabIntent.registerActivityResultLauncher(this) { result ->
             when (result.resultCode) {
-                AuthTabIntent.RESULT_OK -> result.resultUri?.let(::completeSignIn)
+                AuthTabIntent.RESULT_OK -> result.resultUri?.let { graph.completeSignIn("$it") }
                 AuthTabIntent.RESULT_VERIFICATION_FAILED,
-                AuthTabIntent.RESULT_VERIFICATION_TIMED_OUT -> authTabUrl?.let(::openCustomTab)
+                AuthTabIntent.RESULT_VERIFICATION_TIMED_OUT ->
+                    graph.pendingAuthorization?.let {
+                        try {
+                            openCustomTab(it.url.toUri())
+                        } catch (_: ActivityNotFoundException) {
+                            Toast.makeText(this, NO_BROWSER, Toast.LENGTH_LONG).show()
+                        }
+                    }
                 // Closed by the user, or by a Custom Tab's App Link (see above).
                 AuthTabIntent.RESULT_CANCELED,
                 AuthTabIntent.RESULT_UNKNOWN_CODE -> {}
@@ -151,52 +161,27 @@ class MainActivity : ComponentActivity() {
     private fun handleSignInCallback(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.path != BuildConfig.SIGN_IN_CALLBACK_PATH) return
-        completeSignIn(data)
+        graph.completeSignIn(data.toString())
     }
-
-    private fun completeSignIn(data: Uri) {
-        val pending = graph.pendingAuthorization ?: return
-        graph.pendingAuthorization = null
-        lifecycleScope.launch {
-            signInError =
-                try {
-                    graph.connection.value.auth.completeAuthorization(data.toString(), pending)
-                    // Opens this account's own database (another account's
-                    // data is deleted, the same account's kept).
-                    graph.signedIn()
-                    SyncScheduler.syncNow(this@MainActivity)
-                    null
-                } catch (e: AuthException) {
-                    e.message
-                } catch (e: java.io.IOException) {
-                    "Couldn't reach the server"
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    "Sign-in failed"
-                }
-        }
-    }
-
-    /** What the Auth Tab was opened on, to retry in a Custom Tab. */
-    private var authTabUrl: Uri? = null
 
     private fun openCustomTab(url: Uri) = CustomTabsIntent.Builder().build().launchUrl(this, url)
 
     private fun startSignIn(serverUrl: String) {
-        if (serverUrl != graph.serverUrl) graph.setServerUrl(serverUrl)
         lifecycleScope.launch {
-            val request = graph.connection.value.auth.authorizationRequest()
-            graph.pendingAuthorization = request
-            val url = request.url.toUri()
-            // Auth Tabs only return https redirects on the default port (a dev
-            // server is http, a self-hosted one may have a port).
-            if (url.scheme == "https" && url.port == -1) {
-                authTabUrl = url
-                AuthTabIntent.Builder()
-                    .build()
-                    .launch(authTab, url, url.host!!, BuildConfig.SIGN_IN_CALLBACK_PATH)
-            } else {
-                openCustomTab(url)
+            val url = graph.startSignIn(serverUrl).url.toUri()
+            val host = url.host
+            try {
+                // Auth Tabs only return https redirects on the default port (a dev
+                // server is http, a self-hosted one may have a port).
+                if (url.scheme == "https" && url.port == -1 && host != null) {
+                    AuthTabIntent.Builder()
+                        .build()
+                        .launch(authTab, url, host, BuildConfig.SIGN_IN_CALLBACK_PATH)
+                } else {
+                    openCustomTab(url)
+                }
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this@MainActivity, NO_BROWSER, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -208,14 +193,18 @@ class MainActivity : ComponentActivity() {
         val current by graph.account.collectAsStateWithLifecycle()
         val account = current
         if (!signedIn) {
-            SignInScreen(graph.serverUrl, signInError, ::startSignIn)
+            val error by graph.signInError.collectAsStateWithLifecycle()
+            SignInScreen(graph.serverUrl, error, allowHttp = BuildConfig.DEBUG, ::startSignIn)
             return
         }
-        if (account == null || account.connection !== connection) {
+        val confirmed = account?.confirmed?.collectAsStateWithLifecycle()?.value == true
+        if (account == null || account.connection !== connection || !confirmed) {
             // Signed in, but which account isn't settled yet (e.g. the
             // /auth/me call failed offline); keep trying.
             LaunchedEffect(connection) {
-                while (graph.account.value?.connection !== connection) {
+                while (
+                    graph.account.value.let { it?.connection !== connection || !it.confirmed.value }
+                ) {
                     runCatching { graph.signedIn() }
                     delay(5_000)
                 }
@@ -236,7 +225,13 @@ class MainActivity : ComponentActivity() {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { account.followServer() }
         }
         val backStack = rememberNavBackStack(HomeKey)
-        val home = viewModel(key = account.dbName) { HomeViewModel(graph, account) }
+        val sessions = viewModel<SessionViewModels>()
+        val owner = remember(account) { sessions.ownerFor(account) }
+        // Leaving composition also happens on rotation, when the session goes on.
+        DisposableEffect(account) {
+            onDispose { if (graph.account.value !== account) sessions.ended(account) }
+        }
+        val home = viewModel(viewModelStoreOwner = owner) { HomeViewModel(graph, account) }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
         val transitions = remember(settings.animations) { ScreenTransitions(settings.animations) }
         // Side by side where there's room (tablets, foldables, landscape).

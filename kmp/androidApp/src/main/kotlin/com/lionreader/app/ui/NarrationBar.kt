@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -91,9 +92,12 @@ fun NarrationBar(
             onClick = {
                 val next = NARRATION_SPEEDS.firstOrNull { it > speed + 0.01f }
                 onSpeed(next ?: NARRATION_SPEEDS.first())
-            }
+            },
+            // "1×" alone doesn't say what it is.
+            modifier =
+                Modifier.semantics { contentDescription = "Narration speed: ${speedLabel(speed)}" },
         ) {
-            Text(speedLabel(speed))
+            Text(speedLabel(speed), Modifier.clearAndSetSemantics {})
         }
     }
 }

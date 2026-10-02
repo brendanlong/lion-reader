@@ -13,6 +13,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Background sync through WorkManager: a periodic full sync, and a quick flush of the outbox after
@@ -68,12 +70,17 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         val graph = applicationContext.graph
         val account = graph.account.value ?: return Result.success()
-        if (!account.connection.auth.signedIn.value) return Result.success()
+        if (!account.connection.auth.signedIn.value || !account.confirmed.value) {
+            return Result.success()
+        }
         return try {
-            if (inputData.getBoolean(SyncScheduler.FULL_SYNC, true)) {
-                account.sync.sync()
-            } else {
-                account.sync.flushOutbox()
+            // SyncEngine doesn't leave the caller's thread, and it's database work.
+            withContext(Dispatchers.IO) {
+                if (inputData.getBoolean(SyncScheduler.FULL_SYNC, true)) {
+                    account.sync.sync()
+                } else {
+                    account.sync.flushOutbox()
+                }
             }
             Result.success()
         } catch (e: kotlinx.coroutines.CancellationException) {
