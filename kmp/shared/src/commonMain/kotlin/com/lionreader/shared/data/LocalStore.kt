@@ -11,7 +11,7 @@ import com.lionreader.shared.db.LionReaderDatabase
 
 private const val CURSORS_KEY = "sync_cursors"
 private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
-private const val CATCH_UP_KEY = "catch_up_in_progress"
+private const val CATCH_UP_START_KEY = "catch_up_start"
 private const val RECENTLY_READ_KEY = "recently_read_seen"
 
 internal fun FeedType.wire(): String =
@@ -47,12 +47,10 @@ internal class LocalStore(val db: LionReaderDatabase) {
             else meta.delete(RECENTLY_READ_KEY)
         }
 
-    /** Whether the last pulled page said more pages follow (see SyncEngine.fetchPage). */
-    var catchUpInProgress: Boolean
-        get() = meta.selectValue(CATCH_UP_KEY).executeAsOneOrNull() == "1"
-        set(value) {
-            if (value) meta.upsert(CATCH_UP_KEY, "1") else meta.delete(CATCH_UP_KEY)
-        }
+    /** The cursors a catch-up still in progress (more pages follow) started from. */
+    var catchUpStart: SyncCursors?
+        get() = readCursors(CATCH_UP_START_KEY)
+        set(value) = writeCursors(CATCH_UP_START_KEY, value)
 
     private fun readCursors(key: String): SyncCursors? =
         meta.selectValue(key).executeAsOneOrNull()?.let {
@@ -82,7 +80,9 @@ internal class LocalStore(val db: LionReaderDatabase) {
         fetchedAt: String,
         read: Boolean,
         starred: Boolean,
-        /** Null leaves what's stored: the server sends it only on some paths. */
+        /**
+         * Null if read state never changed (the server never clears it, so a stored time stays).
+         */
         readChangedAt: String?,
     ) {
         val published = publishedAt?.let(::parseMillis)
@@ -146,35 +146,21 @@ internal class LocalStore(val db: LionReaderDatabase) {
 
     fun upsertSubscription(
         id: String,
-        feedId: String?,
-        type: FeedType,
         title: String?,
+        originalTitle: String?,
         url: String?,
-        siteUrl: String?,
-        fetchFullContent: Boolean,
         tags: List<TagRef>,
     ) {
-        subs.upsertSubscription(
-            id,
-            feedId,
-            type.wire(),
-            title,
-            url,
-            siteUrl,
-            fetchFullContent.toLong(),
-        )
+        subs.upsertSubscription(id, title, url, originalTitle)
         setSubscriptionTags(id, tags)
     }
 
     fun upsertSubscription(subscription: Subscription) =
         upsertSubscription(
             subscription.id,
-            null,
-            subscription.type,
             subscription.title,
+            subscription.originalTitle,
             subscription.url,
-            subscription.siteUrl,
-            subscription.fetchFullContent,
             subscription.tags,
         )
 
@@ -215,12 +201,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
         subs.deleteAllTags()
         subs.deleteAllSubscriptionTags()
         meta.deleteAll()
-    }
-
-    /** Forgets everything, unsent changes included (sign-out). */
-    fun clearAll() {
-        clearSynced()
-        db.outboxQueries.deleteAllStates()
     }
 }
 

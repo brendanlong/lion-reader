@@ -45,8 +45,9 @@ import kotlinx.serialization.json.jsonObject
  * - read/star writes are last-write-wins on a per-field change time, rebased by the client's clock
  *   offset and capped at now, and respond with the final state of every entry still visible;
  * - `sync.changes` pages entries changed after a cursor in change order (new/updated/state events),
- *   classifying each against the page's own cursor like the real endpoint without `entriesSince`
- *   (#1663), and reports deletions separately.
+ *   classifying each against `entriesSince` (the catch-up's start) or, without it, the page's own
+ *   cursor (#1663), and reports deletions separately;
+ * - requests over the real endpoints' size limits ([ServerLimits]) get a 400.
  *
  * Counts aren't modeled on the wire: the app counts its own entries.
  *
@@ -86,6 +87,10 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     val clientWrites = mutableListOf<ClientWrite>()
     var faultRate = 0.0
     var syncPageSize = 5
+        set(value) {
+            require(value <= ServerLimits.SYNC_PAGE_ENTRIES)
+            field = value
+        }
 
     /** Every request and its outcome, for debugging a failing seed. */
     val requestLog = mutableListOf<String>()
@@ -209,7 +214,11 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val response =
             when (path) {
                 "/sync/changes" ->
-                    changes(params["entries"]?.toLong(), params["deletions"]?.toLong())
+                    changes(
+                        params["entries"]?.toLong(),
+                        params["entriesSince"]?.toLong(),
+                        params["deletions"]?.toLong(),
+                    )
                 "/subscriptions" ->
                     encode(
                         SubscriptionPage.serializer(),
@@ -217,24 +226,29 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                             subscriptions.map { sub ->
                                 Subscription(
                                     sub,
-                                    FeedType.WEB,
                                     title = sub,
+                                    originalTitle = sub,
+                                    tags = emptyList(),
                                 )
                             }
                         ),
                     )
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))
-                "/entries" ->
+                "/entries" -> {
+                    val limit = params["limit"]?.toInt() ?: 100
+                    if (limit !in 1..ServerLimits.LIST_LIMIT) return@run badRequest(request)
                     list(
                         params["sortBy"] == "readChanged",
                         params["starredOnly"] == "true",
                         params["type"],
                         params["subscriptionId"],
                         params["cursor"],
-                        params["limit"],
+                        limit,
                     )
+                }
                 "/entries/batch" -> {
                     val ids = body(request, GetManyRequest.serializer()).ids
+                    if (ids.size !in 1..ServerLimits.BATCH_IDS) return@run badRequest(request)
                     encode(
                         GetManyResponse.serializer(),
                         GetManyResponse(
@@ -244,10 +258,16 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 }
                 "/entries/mark-read" -> {
                     val body = body(request, MarkReadRequest.serializer())
+                    if (body.entries.size !in 1..ServerLimits.STATE_WRITE_ENTRIES) {
+                        return@run badRequest(request)
+                    }
                     stateWrite("read", body.entries, body.read, body.clientSentAt)
                 }
                 "/entries/starred" -> {
                     val body = body(request, SetStarredRequest.serializer())
+                    if (body.entries.size !in 1..ServerLimits.STATE_WRITE_ENTRIES) {
+                        return@run badRequest(request)
+                    }
                     stateWrite("starred", body.entries, body.starred, body.clientSentAt)
                 }
                 else -> error("unexpected request $path")
@@ -260,19 +280,32 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         else respond(response, HttpStatusCode.OK, json)
     }
 
-    private fun changes(entriesCursor: Long?, deletionsCursor: Long?): String {
+    private fun MockRequestHandleScope.badRequest(request: HttpRequestData) = run {
+        requestLog += "${request.method.value} ${request.url.encodedPath} -> 400"
+        respond("{}", HttpStatusCode.BadRequest, json)
+    }
+
+    private fun changes(entriesCursor: Long?, entriesSince: Long?, deletionsCursor: Long?): String {
         if (entriesCursor == null && deletionsCursor == null) {
             return encode(
                 SyncChanges.serializer(),
-                SyncChanges(emptyList(), false, SyncCursors(entries = "$seq", deletions = "$seq")),
+                SyncChanges(
+                    emptyList(),
+                    false,
+                    SyncCursors(entries = "$seq", deletions = "$seq"),
+                    emptyList(),
+                    false,
+                ),
             )
         }
         val after = entriesCursor ?: 0
+        // Like the server, a change after either counts.
+        val since = minOf(after, entriesSince ?: after)
         val changed = visible.filter { it.updatedSeq > after }.sortedBy { it.updatedSeq }
         val page = changed.take(syncPageSize)
         val events = page.flatMap { e ->
             buildList {
-                if (e.createdSeq > after) {
+                if (e.createdSeq > since) {
                     add(
                         SyncEvent.NewEntry(
                             e.id,
@@ -283,7 +316,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                         )
                     )
                 } else {
-                    if (e.metadataSeq > after) {
+                    if (e.metadataSeq > since) {
                         add(
                             SyncEvent.EntryUpdated(
                                 e.id,
@@ -291,7 +324,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                             )
                         )
                     }
-                    if (e.stateSeq > after) {
+                    if (e.stateSeq > since) {
                         add(
                             SyncEvent.EntryStateChanged(
                                 e.id,
@@ -324,6 +357,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                         deletions = "${maxOf(deletedAfter, seq)}",
                     ),
                 deletions = deleted.map { Deletion(it.id, "${it.deletedSeq}") },
+                resyncRequired = false,
             ),
         )
     }
@@ -334,7 +368,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         type: String?,
         subscriptionId: String?,
         cursor: String?,
-        limit: String?,
+        limit: Int,
     ): String {
         val matching =
             visible
@@ -347,9 +381,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                     else compareByDescending<Entry> { it.published }.thenByDescending { it.id }
                 )
         val offset = cursor?.toInt() ?: 0
-        val size = limit?.toInt() ?: 100
-        val page = matching.drop(offset).take(size)
-        val next = (offset + size).takeIf { it < matching.size }?.toString()
+        val page = matching.drop(offset).take(limit)
+        val next = (offset + limit).takeIf { it < matching.size }?.toString()
         return encode(EntryListPage.serializer(), EntryListPage(page.map { it.listItem() }, next))
     }
 
@@ -424,6 +457,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             read = read,
             starred = starred,
             contentCleaned = content,
+            fetchFullContent = false,
             readChangedAt = readChangedAt?.let { time(it) },
         )
 

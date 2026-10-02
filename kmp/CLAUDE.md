@@ -15,7 +15,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
 - **API.** `/api/v1` REST, whose contract is `docs/api/openapi.json` (CI fails
   on breaking changes). Wire models (`api/Models.kt`) list only the fields the
   app uses and ignore unknown ones; sync events are parsed one by one so an
-  event type newer than the app is skipped (`parseSyncEvent`). Never use the
+  event type newer than the app is skipped (`parseSyncEvent`). A known event
+  that doesn't parse stops sync rather than be lost, so a new value in an enum
+  an event carries (a feed type, say) breaks installed apps: add it as an
+  optional field, or ship the app first. Never use the
   tRPC wire format (superjson) or the Google Reader API.
 - **Auth.** OAuth 2.1 + PKCE against the server's built-in `lion-reader-app`
   client, in an Auth Tab (which hands the redirect straight back to the app
@@ -53,17 +56,17 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   of data a later request was meant to bring. The first download saves
   subscriptions, tags and the entry lists (newest first) page by page, and
   resumes from its start cursors if interrupted; then `sync.changes` deltas,
-  each page committing with its next cursors. Entries an event mentions but the
-  device lacks are fetched whole. So are ones it has when the event calls them
-  new: a bootstrap listed them, and they may have been edited since (#1680).
-  Past the first page of a catch-up, every one it has is fetched too: the app
-  doesn't send `entriesSince`, so the server classifies changes against each
-  page's own cursor and can report a new entry as updated or drop an edit
-  (#1663).
-  `deletions` drop entries.
+  each page committing with its next cursors. Every page of a catch-up also
+  sends the cursors the catch-up started from (`entriesSince`, kept until its
+  last page), which the server classifies changes against (#1663). Entries an
+  event mentions but the device lacks are fetched whole, and so are ones it has
+  when the event calls them new: a bootstrap listed them, and they may have
+  been edited since (#1680). Spam isn't fetched: the server sends it without
+  its data so that clients leave it out, as its lists do. `deletions` drop
+  entries.
   `resyncRequired` re-bootstraps, keeping the outbox. Read/starred state comes
   only from deltas, fetched entries and flush responses. A flush is followed by
-  a pull.
+  a pull, even when it fails.
 - **Article bodies** live in `entry_body`, written only by `storeBodies`, and
   download after the lists, newest first, outside the sync lock, so refreshes and flushes never wait for them. Background
   downloads take turns under their own lock; opening an entry fetches its body
@@ -198,7 +201,10 @@ Run from `kmp/`:
   server's sync semantics, checked for convergence, no lost changes, correct
   counts and current bodies. `SYNC_MODEL_SEEDS=20000` runs more;
   `SYNC_MODEL_SEED=N` replays one failure and prints its requests. When the
-  server's sync behavior changes, change `ModelServer` to match.
+  server's sync behavior changes, change `ModelServer` to match. Both it and
+  `FakeServer` reject requests over the real endpoints' size limits
+  (`ServerLimits`): keep those current too, or a fake hides a request the
+  server would refuse.
 - Real-server test: with a server running on the same database,
   `LION_READER_TEST_FIXTURE="$(NEXT_PUBLIC_APP_URL=<server url> pnpm -s app:test-fixture)" ./gradlew :shared:jvmTest`
   (repo root for the fixture; CI's `app-real-server-tests` job does exactly

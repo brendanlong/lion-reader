@@ -19,10 +19,11 @@ internal class PulledPage(
     val deletedIds: List<String>,
     val cursors: SyncCursors,
     val hasMore: Boolean,
+    /** The cursors the catch-up this page is part of started from. */
+    val catchUpStart: SyncCursors,
     /**
      * Entries fetched whole, as the server has them now: ones the events mention that aren't on the
-     * device, and ones that are but whose edits the events may not report (new-entry events, and
-     * every event while a catch-up is past its first page). See [SyncEngine] `fetchPage`.
+     * device, and ones it has that new-entry events mention. See [SyncEngine] `fetchPage`.
      */
     val fetchedEntries: List<FullEntry>,
     /** Older entries of feeds the page resubscribes to (they predate the cursor). */
@@ -47,6 +48,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     val bootstrapCursors: SyncCursors?
         get() = store.bootstrapCursors
+
+    val catchUpStart: SyncCursors?
+        get() = store.catchUpStart
 
     fun entryExists(id: String): Boolean = store.entryExists(id)
 
@@ -133,11 +137,8 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         storeBodiesInTransaction(page.fetchedEntries, texts, emptyList(), versions, now)
         page.resubscribedEntries.forEach(store::upsertEntry)
         store.cursors = page.cursors
-        store.catchUpInProgress = page.hasMore
+        store.catchUpStart = if (page.hasMore) page.catchUpStart else null
     }
-
-    val catchUpInProgress: Boolean
-        get() = store.catchUpInProgress
 
     private fun apply(event: SyncEvent) {
         when (event) {
@@ -215,12 +216,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 with(event) {
                     store.upsertSubscription(
                         subscription.id,
-                        feed.id,
-                        feed.type,
                         subscription.customTitle ?: feed.title,
+                        feed.title,
                         feed.url,
-                        feed.siteUrl,
-                        false,
                         subscription.tags,
                     )
                 }
@@ -267,7 +265,12 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             }
         }
         batch.forEach {
-            db.outboxQueries.deleteStateIfUnchanged(it.entry_id, it.field_, it.changed_at)
+            db.outboxQueries.deleteStateIfUnchanged(
+                it.entry_id,
+                it.field_,
+                it.value_,
+                it.changed_at,
+            )
         }
     }
 
@@ -349,8 +352,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             }
         }
     }
-
-    fun clearAll() = db.transaction { store.clearAll() }
 
     /** Keeps a summary the user asked for, if its entry is still at [bodyVersion]. */
     fun storeSummary(entryId: String, html: String, bodyVersion: Long) =

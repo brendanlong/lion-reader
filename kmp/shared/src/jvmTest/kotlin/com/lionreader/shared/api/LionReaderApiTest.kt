@@ -43,6 +43,24 @@ class LionReaderApiTest {
     }
 
     @Test
+    fun aCoded401OnAStreamIsTheServersAnswerToo() = runTest {
+        server.eventsError =
+            HttpStatusCode.Unauthorized to
+                """{"message":"No.","data":{"httpStatus":401,"appErrorCode":"SOMETHING_ELSE"}}"""
+
+        val error = assertFailsWith<ApiException> { api.events({}, {}) }
+
+        assertEquals("SOMETHING_ELSE", error.appErrorCode)
+        assertEquals(listOf("/api/v1/events"), server.requests.map { it.url.encodedPath })
+    }
+
+    @Test
+    fun signedOut() {
+        assertTrue(ApiException(0, "Signed out").signedOut)
+        assertFalse(ApiException(401, "no").signedOut)
+    }
+
+    @Test
     fun aPlain401StillRefreshesTheToken() = runTest {
         server.saveError = HttpStatusCode.Unauthorized to """{"message":"Unauthorized"}"""
 

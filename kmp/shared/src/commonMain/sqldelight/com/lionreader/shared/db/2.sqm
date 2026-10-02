@@ -1,0 +1,20 @@
+-- Subscriptions keep the feed's own title, for when the custom one is cleared,
+-- and lose the columns nothing read (SQLite 3.18 can't drop a column, so the
+-- table is rebuilt). A stored title may be a custom one; it stands in for the
+-- feed's until a resync lists the subscriptions again.
+CREATE TABLE subscription_new (
+  id TEXT NOT NULL PRIMARY KEY,
+  title TEXT,
+  url TEXT,
+  original_title TEXT
+);
+
+INSERT INTO subscription_new(id, title, url, original_title)
+SELECT id, title, url, title FROM subscription;
+
+DROP TABLE subscription;
+
+ALTER TABLE subscription_new RENAME TO subscription;
+
+-- A catch-up now keeps its start cursors instead.
+DELETE FROM app_metadata WHERE key = 'catch_up_in_progress';

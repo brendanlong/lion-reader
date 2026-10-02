@@ -1,11 +1,10 @@
 CREATE TABLE subscription (
   id TEXT NOT NULL PRIMARY KEY,
-  feed_id TEXT,
-  type TEXT NOT NULL,
+  -- The custom title if there is one, else original_title.
   title TEXT,
   url TEXT,
-  site_url TEXT,
-  fetch_full_content INTEGER NOT NULL
+  -- The feed's own title, which clearing the custom title goes back to.
+  original_title TEXT
 );
 
 CREATE TABLE tag (
@@ -21,11 +20,11 @@ CREATE TABLE subscription_tag (
 );
 
 upsertSubscription:
-INSERT OR REPLACE INTO subscription(id, feed_id, type, title, url, site_url, fetch_full_content)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO subscription(id, title, url, original_title) VALUES (?, ?, ?, ?);
 
+-- A null custom title means there is none.
 updateSubscriptionTitle:
-UPDATE subscription SET title = COALESCE(?, title) WHERE id = ?;
+UPDATE subscription SET title = COALESCE(:customTitle, original_title) WHERE id = :id;
 
 deleteSubscription:
 DELETE FROM subscription WHERE id = ?;
@@ -35,9 +34,6 @@ DELETE FROM subscription;
 
 selectSubscriptions:
 SELECT * FROM subscription ORDER BY title COLLATE NOCASE;
-
-selectSubscription:
-SELECT * FROM subscription WHERE id = ?;
 
 insertTagIgnore:
 INSERT OR IGNORE INTO tag(id, name, color) VALUES (?, ?, ?);
@@ -53,9 +49,6 @@ DELETE FROM tag;
 
 selectTags:
 SELECT * FROM tag ORDER BY name COLLATE NOCASE;
-
-selectTag:
-SELECT * FROM tag WHERE id = ?;
 
 clearSubscriptionTags:
 DELETE FROM subscription_tag WHERE subscription_id = ?;

@@ -76,7 +76,7 @@ suspend fun followLiveUpdates(
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException) {
-            if (e.status == 0) break
+            if (e.signedOut) break
             // The server's Retry-After when its Redis is down.
             if (e.status == 503) wait = 30.seconds
         } catch (_: Exception) {}

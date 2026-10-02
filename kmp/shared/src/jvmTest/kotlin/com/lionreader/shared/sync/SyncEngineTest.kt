@@ -63,7 +63,11 @@ class SyncEngineTest {
             read = read,
             starred = starred,
             contentCleaned = "<p>Body $id</p>",
+            fetchFullContent = false,
         )
+
+    private fun subscription(id: String, title: String? = null, tags: List<TagRef> = emptyList()) =
+        Subscription(id, title = title, originalTitle = title, tags = tags)
 
     private fun serve(vararg entries: FullEntry) {
         entries.forEach { server.entries[it.id] = it }
@@ -77,7 +81,7 @@ class SyncEngineTest {
 
     @Test
     fun bootstrapDownloadsTheWindowAndBodies() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB, title = "Feed")
+        server.subscriptions += subscription("sub-1", title = "Feed")
         serve(
             entry("a", ageDays = 1),
             entry("b", ageDays = 2, read = true),
@@ -124,7 +128,7 @@ class SyncEngineTest {
     fun localChangesShowImmediatelyAndAreSentWithTheirTime() = runTest {
         serve(entry("a"), entry("b"))
         engine.sync()
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
 
         clock = NOW + 5_000
         reader.setRead(listOf("a"), true)
@@ -208,7 +212,7 @@ class SyncEngineTest {
 
     @Test
     fun unreadCountsAreTheDevicesOwnIncludingUnsentChanges() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
         serve(entry("a"), entry("b"))
         engine.sync()
 
@@ -419,6 +423,8 @@ class SyncEngineTest {
                     ),
                 hasMore = false,
                 cursors = server.cursors,
+                deletions = emptyList(),
+                resyncRequired = false,
             )
         )
 
@@ -469,8 +475,8 @@ class SyncEngineTest {
 
     @Test
     fun markAllReadMarksTheEntriesOnTheDeviceAndSendsThem() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
-        server.subscriptions += Subscription("sub-2", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
+        server.subscriptions += subscription("sub-2")
         serve(
             entry("a", ageDays = 1),
             entry("b", ageDays = 2),
@@ -493,9 +499,8 @@ class SyncEngineTest {
 
     @Test
     fun uncategorizedHoldsFeedsWithoutATag() = runTest {
-        server.subscriptions +=
-            Subscription("sub-1", FeedType.WEB, tags = listOf(TagRef("tag-1", "News")))
-        server.subscriptions += Subscription("sub-2", FeedType.WEB)
+        server.subscriptions += subscription("sub-1", tags = listOf(TagRef("tag-1", "News")))
+        server.subscriptions += subscription("sub-2")
         serve(
             entry("tagged"),
             entry("untagged", subscriptionId = "sub-2"),
@@ -509,7 +514,7 @@ class SyncEngineTest {
 
     @Test
     fun openingAnEntryDoesNotWaitForTheBackgroundDownload() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
         serve(entry("a"), entry("b"))
         engine.sync(downloadContent = false)
 
@@ -535,7 +540,7 @@ class SyncEngineTest {
 
     @Test
     fun summariesAreKeptUntilTheArticleChanges() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
         serve(entry("a"))
         server.summaries["a"] = "<p>Short version</p>"
         engine.sync()
@@ -556,7 +561,7 @@ class SyncEngineTest {
 
     @Test
     fun aSummaryRequestedBeforeAnEditIsNotKept() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
         serve(entry("a"))
         server.summaries["a"] = "<p>Of the old text</p>"
         engine.sync()
@@ -574,7 +579,7 @@ class SyncEngineTest {
 
     @Test
     fun unsubscribingTakesTheSummariesWithIt() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
         serve(entry("a"))
         server.summaries["a"] = "<p>Summary</p>"
         engine.sync()
@@ -601,7 +606,7 @@ class SyncEngineTest {
 
     @Test
     fun aFailedSummaryStoresNothing() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
         serve(entry("a"))
         engine.sync()
 
@@ -611,7 +616,7 @@ class SyncEngineTest {
 
     @Test
     fun theBudgetKeepsARecentlyOpenedBody() = runTest {
-        server.subscriptions += Subscription("sub-1", FeedType.WEB)
+        server.subscriptions += subscription("sub-1")
         serve(entry("old", ageDays = 3), entry("new", ageDays = 1))
         engine.sync()
         reader.setRead(listOf("old", "new"), true)
@@ -625,5 +630,195 @@ class SyncEngineTest {
 
         assertEquals("<p>Body old</p>", reader.entry("old").first()?.content)
         assertNull(reader.entry("new").first()?.content)
+    }
+
+    private fun requests(path: String) =
+        server.requests.filter { it.url.encodedPath.endsWith(path) }
+
+    @Test
+    fun aPageMentioningMoreEntriesThanOneBatchFetchTakesSeveral() = runTest {
+        engine.sync()
+        // More than /entries/batch takes at once (the fake, like the server, rejects that).
+        val ids = (0 until 150).map { "m%03d".format(it) }
+        ids.forEach { server.entries[it] = entry(it, read = true, starred = true) }
+        server.queueChanges(
+            events = ids.map { SyncEvent.EntryStateChanged(it, read = true, starred = true) }
+        )
+
+        engine.sync(downloadContent = false)
+
+        assertEquals(ids.toSet(), timeline(ListScope.Starred).toSet())
+        assertEquals(2, requests("/entries/batch").size)
+    }
+
+    @Test
+    fun everyPageOfACatchUpIsSentWhereItStartedEvenAfterAnInterruption() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        val start = server.cursors.entries
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryStateChanged("a", read = true, starred = false)),
+            hasMore = true,
+            entriesCursor = "2026-02-01T00:00:00Z",
+        )
+        // The second page fails once, on fetching the entry it brings.
+        serve(entry("b", read = true, starred = true))
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.EntryStateChanged("a", read = false, starred = true),
+                    SyncEvent.EntryStateChanged("b", read = true, starred = true),
+                ),
+            entriesCursor = "2026-03-01T00:00:00Z",
+            times = 2,
+        )
+        server.batchFailure = HttpStatusCode.ServiceUnavailable
+        val batchesBefore = requests("/entries/batch").size
+
+        assertFailsWith<ApiException> { engine.sync(downloadContent = false) }
+        engine.sync(downloadContent = false)
+        engine.sync(downloadContent = false)
+
+        assertEquals(
+            listOf(
+                start to start,
+                start to start,
+                "2026-02-01T00:00:00Z" to start,
+                "2026-02-01T00:00:00Z" to start,
+                // Caught up: the next pull starts a catch-up of its own.
+                "2026-03-01T00:00:00Z" to "2026-03-01T00:00:00Z",
+            ),
+            requests("/sync/changes")
+                .filter { it.url.parameters["entries"] != null }
+                .map { it.url.parameters["entries"] to it.url.parameters["entriesSince"] },
+        )
+        // Only the entry the device lacked was fetched (twice: the first try failed).
+        assertEquals(2, requests("/entries/batch").size - batchesBefore)
+        assertEquals(setOf("a", "b"), timeline(ListScope.Starred).toSet())
+    }
+
+    @Test
+    fun spamIsLeftOutAsTheServersListsLeaveItOut() = runTest {
+        engine.sync()
+        serve(entry("spam"), entry("spam-changed"))
+        // Without their data: that's how the server marks spam.
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.NewEntry("spam", "sub-1", "feed-1", FeedType.WEB, entry = null),
+                    SyncEvent.EntryStateChanged("spam-changed", read = false, starred = false),
+                )
+        )
+
+        engine.sync(downloadContent = false)
+
+        assertEquals(emptyList(), timeline())
+        assertTrue(requests("/entries/batch").isEmpty())
+    }
+
+    @Test
+    fun aFailedSendStillPullsAndThenFails() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        reader.setRead(listOf("a"), true)
+        server.stateWriteFailure = HttpStatusCode.ServiceUnavailable
+        fun newEntry(id: String) =
+            SyncEvent.NewEntry(
+                id,
+                "sub-1",
+                "feed-1",
+                FeedType.WEB,
+                EventEntry(title = id, fetchedAt = "2026-09-29T11:00:00Z"),
+            )
+
+        server.queueChanges(events = listOf(newEntry("b")))
+        assertFailsWith<ApiException> { engine.flushOutbox() }
+        server.queueChanges(events = listOf(newEntry("c")))
+        assertFailsWith<ApiException> { engine.sync() }
+
+        assertEquals(setOf("a", "b", "c"), timeline().toSet())
+        assertEquals(1, db.outboxQueries.countStates().executeAsOne())
+    }
+
+    @Test
+    fun aKnownEventThatDoesNotParseFailsThePageInsteadOfBeingSkipped() = runTest {
+        engine.sync()
+        server.changes.addLast(
+            com.lionreader.shared.api.SyncChanges(
+                events =
+                    listOf(
+                        kotlinx.serialization.json.buildJsonObject {
+                            put("type", kotlinx.serialization.json.JsonPrimitive("entry_updated"))
+                            put("entryId", kotlinx.serialization.json.JsonPrimitive("a"))
+                        }
+                    ),
+                hasMore = false,
+                cursors = server.cursors.copy(entries = "2026-02-01T00:00:00Z"),
+                deletions = emptyList(),
+                resyncRequired = false,
+            )
+        )
+
+        assertFailsWith<kotlinx.serialization.SerializationException> {
+            engine.sync(downloadContent = false)
+        }
+        engine.sync(downloadContent = false)
+
+        // The cursor didn't move past it.
+        assertEquals(
+            server.cursors.entries,
+            requests("/sync/changes").last().url.parameters["entries"],
+        )
+    }
+
+    @Test
+    fun clearingACustomTitleShowsTheFeedsOwn() = runTest {
+        server.subscriptions +=
+            Subscription("sub-1", title = "Mine", originalTitle = "Theirs", tags = emptyList())
+        engine.sync()
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.SubscriptionCreated(
+                        com.lionreader.shared.api.EventSubscription(
+                            "sub-2",
+                            customTitle = "Also mine",
+                            tags = emptyList(),
+                        ),
+                        com.lionreader.shared.api.EventFeed(title = "Also theirs"),
+                    )
+                )
+        )
+        engine.sync(downloadContent = false)
+        suspend fun titles() = reader.navigation().first().subscriptions.map { it.title }.sorted()
+        assertEquals(listOf("Also mine", "Mine"), titles())
+
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = null),
+                    SyncEvent.SubscriptionUpdated("sub-2", emptyList(), customTitle = null),
+                )
+        )
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("Also theirs", "Theirs"), titles())
+    }
+
+    @Test
+    fun aChangeUndoneAtTheSameMomentAsItsFlushIsKept() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        reader.setRead(listOf("a"), true)
+        // Same clock reading, other value.
+        server.duringStateWrite = {
+            server.duringStateWrite = null
+            reader.setRead(listOf("a"), false)
+        }
+
+        engine.flushOutbox()
+
+        assertEquals(1, db.outboxQueries.countStates().executeAsOne())
+        assertEquals(false, reader.entry("a").first()?.read)
     }
 }

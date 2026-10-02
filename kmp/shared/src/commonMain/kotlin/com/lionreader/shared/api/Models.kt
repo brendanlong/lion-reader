@@ -59,7 +59,7 @@ data class FullEntry(
     val contentCleaned: String? = null,
     val fullContentCleaned: String? = null,
     val fullContentOriginal: String? = null,
-    val fetchFullContent: Boolean = false,
+    val fetchFullContent: Boolean,
     val readChangedAt: String? = null,
 ) {
     /** The body the web reader shows by default for this entry. */
@@ -107,12 +107,12 @@ data class EntryState(
 @Serializable
 data class Subscription(
     val id: String,
-    val type: FeedType,
     val url: String? = null,
+    /** The custom title if there is one, else [originalTitle]. */
     val title: String? = null,
-    val siteUrl: String? = null,
-    val tags: List<TagRef> = emptyList(),
-    val fetchFullContent: Boolean = false,
+    /** The feed's own title. */
+    val originalTitle: String? = null,
+    val tags: List<TagRef>,
 )
 
 @Serializable
@@ -139,8 +139,8 @@ data class SyncChanges(
     val events: List<JsonObject>,
     val hasMore: Boolean,
     val cursors: SyncCursors,
-    val deletions: List<Deletion> = emptyList(),
-    val resyncRequired: Boolean = false,
+    val deletions: List<Deletion>,
+    val resyncRequired: Boolean,
 )
 
 @Serializable
@@ -170,19 +170,11 @@ data class EntryMetadata(
 @Serializable
 data class EventSubscription(
     val id: String,
-    val feedId: String,
     val customTitle: String? = null,
-    val tags: List<TagRef> = emptyList(),
+    val tags: List<TagRef>,
 )
 
-@Serializable
-data class EventFeed(
-    val id: String,
-    val type: FeedType,
-    val url: String? = null,
-    val title: String? = null,
-    val siteUrl: String? = null,
-)
+@Serializable data class EventFeed(val url: String? = null, val title: String? = null)
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
@@ -195,6 +187,7 @@ sealed interface SyncEvent {
         val subscriptionId: String? = null,
         val feedId: String? = null,
         val feedType: FeedType,
+        /** Absent for spam, which the server's lists leave out. */
         val entry: EventEntry? = null,
     ) : SyncEvent
 
@@ -270,7 +263,6 @@ data class VoiceModel(
 
 @Serializable data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String)
 
-// Both always sent: the server requires the keys, and ApiJson drops nulls.
 @Serializable
 data class SpeechRequest(
     val model: String,

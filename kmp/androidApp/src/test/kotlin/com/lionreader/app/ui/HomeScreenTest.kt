@@ -303,12 +303,9 @@ class HomeScreenTest {
     fun tagsStartCollapsedAndExpandOnTap() {
         db.subscriptionQueries.upsertSubscription(
             "sub",
-            "feed",
-            "web",
             "Nested Feed",
             "https://example.com/feed",
-            null,
-            0,
+            "Nested Feed",
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("sub", "tag")
@@ -430,12 +427,9 @@ class HomeScreenTest {
             )) {
             db.subscriptionQueries.upsertSubscription(
                 id,
-                feed,
-                "web",
                 title,
                 "https://e.com/$id",
-                null,
-                0,
+                title,
             )
         }
         seed("a", "An article", read = false, feed = "feed-1", subscription = "busy")
@@ -456,12 +450,9 @@ class HomeScreenTest {
     fun theOpenListStaysInTheDrawerWhenEmpty() {
         db.subscriptionQueries.upsertSubscription(
             "quiet",
-            "feed-2",
-            "web",
             "Quiet Feed",
             "https://e.com/quiet",
-            null,
-            0,
+            "Quiet Feed",
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("quiet", "tag")
@@ -544,21 +535,15 @@ class HomeScreenTest {
     fun feedsWithoutATagGroupUnderUncategorized() {
         db.subscriptionQueries.upsertSubscription(
             "tagged",
-            "feed-1",
-            "web",
             "Tagged Feed",
             "https://example.com/1",
-            null,
-            0,
+            "Tagged Feed",
         )
         db.subscriptionQueries.upsertSubscription(
             "loose",
-            "feed-2",
-            "web",
             "Loose Feed",
             "https://example.com/2",
-            null,
-            0,
+            "Loose Feed",
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("tagged", "tag")
