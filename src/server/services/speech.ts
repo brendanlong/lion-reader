@@ -297,11 +297,3 @@ export async function streamSpeech(
   );
   return encodeSpeech(pcm);
 }
-
-/** {@link streamSpeech}, read whole: for `narration.synthesize`, which installed apps still call. */
-export async function synthesizeSpeech(
-  keys: AiProviderKeys,
-  options: { model: string | null; voice: string | null; text: string }
-): Promise<Uint8Array> {
-  return new Uint8Array(await new Response(await streamSpeech(keys, options)).arrayBuffer());
-}

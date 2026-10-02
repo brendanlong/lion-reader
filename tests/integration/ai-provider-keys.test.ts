@@ -74,8 +74,5 @@ describe("cloud voices", () => {
     const caller = createCaller(await createAuthContext(userId));
 
     expect((await caller.narration.listVoiceModels()).models).toEqual([]);
-    await expect(
-      caller.narration.synthesize({ model: null, voice: null, text: "Hello." })
-    ).rejects.toThrow("Cloud voices require a DeepInfra or OpenRouter API key");
   });
 });

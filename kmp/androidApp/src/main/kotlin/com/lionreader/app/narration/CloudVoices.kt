@@ -192,13 +192,11 @@ class CloudVoices(
 
     private fun trim() {
         val files = cacheDir.listFiles { file -> file.extension == EXTENSION }.orEmpty()
-        // Leftovers of a write the process didn't live to finish, and MP3s from
-        // before speech came as MP4.
+        // Leftovers of a write the process didn't live to finish.
         cacheDir
             .listFiles { file ->
-                file.extension == "mp3" ||
-                    (file.extension == "part" &&
-                        file.lastModified() < System.currentTimeMillis() - 10 * 60_000)
+                file.extension == "part" &&
+                    file.lastModified() < System.currentTimeMillis() - 10 * 60_000
             }
             ?.forEach { it.delete() }
         var size = files.sumOf { it.length() }

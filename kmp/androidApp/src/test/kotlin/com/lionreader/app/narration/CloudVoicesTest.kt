@@ -279,11 +279,8 @@ class CloudVoicesTest {
         played(engine.synthesize("One.", dir, "0"))
         val first = cached().single()
         first.setLastModified(1_000)
-        val leftover = File(cache, "old.mp3").apply { writeBytes(audio) }
         played(engine.synthesize("Two.", dir, "1"))
         assertEquals(false, first.exists())
         assertEquals(1, cached().size)
-        // From before speech came as MP4.
-        assertEquals(false, leftover.exists())
     }
 }
