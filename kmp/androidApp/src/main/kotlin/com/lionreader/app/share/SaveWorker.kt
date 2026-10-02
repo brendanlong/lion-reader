@@ -13,6 +13,7 @@ import androidx.work.workDataOf
 import com.lionreader.app.SyncScheduler
 import com.lionreader.app.graph
 import com.lionreader.shared.api.ApiException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 
@@ -65,7 +66,8 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
          */
         fun workName(url: String) = "save:$url"
 
-        fun enqueue(context: Context, url: String) {
+        /** Returns the job's id, to follow it by. */
+        fun enqueue(context: Context, url: String): UUID {
             val request =
                 OneTimeWorkRequestBuilder<SaveWorker>()
                     .setConstraints(
@@ -76,6 +78,7 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     .build()
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(workName(url), ExistingWorkPolicy.REPLACE, request)
+            return request.id
         }
     }
 }

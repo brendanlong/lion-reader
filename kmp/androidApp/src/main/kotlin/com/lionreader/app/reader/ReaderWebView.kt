@@ -86,7 +86,7 @@ fun ReaderWebView(
         Box(modifier.padding(16.dp)) { Text("This article couldn't be shown.") }
         return
     }
-    var linkPress by remember { mutableStateOf<LinkPress?>(null) }
+    var linkPress by remember(document) { mutableStateOf<LinkPress?>(null) }
     Box(modifier) {
         key(losses.generation) {
             AndroidView(
@@ -272,15 +272,6 @@ data class ReaderPaging(
  * In page mode a scroll it keeps becomes a page turn instead ([turnPage]), unless it began as a
  * long press: dragging after one extends a text selection.
  */
-/**
- * [href] if it's a web page outside the article (a relative one resolves to the reader's own
- * origin).
- */
-internal fun linkTarget(href: String?): String? =
-    webUrl(href)?.takeUnless {
-        it.startsWith("$ASSET_ORIGIN/", ignoreCase = true) || it == ASSET_ORIGIN
-    }
-
 @SuppressLint("ViewConstructor")
 private class ReaderView(context: Context) : WebView(context) {
     var sideScrollers: List<SideScroller> = emptyList()
@@ -310,20 +301,26 @@ private class ReaderView(context: Context) : WebView(context) {
             linkTarget(href)?.let { report(LinkPress(it, x, y)) }
         }
         val hit = hitTestResult
-        return when (hit.type) {
-            HitTestResult.SRC_ANCHOR_TYPE -> linkTarget(hit.extra)?.also { pressed(it) } != null
-            // A linked image: the hit is the image; the page says where the link goes.
-            HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
-                val reply =
-                    Handler(Looper.getMainLooper()) { message ->
-                        pressed(message.data.getString("url"))
-                        true
-                    }
-                requestFocusNodeHref(reply.obtainMessage())
-                true
+        val handled =
+            when (hit.type) {
+                HitTestResult.SRC_ANCHOR_TYPE -> linkTarget(hit.extra)?.also { pressed(it) } != null
+                // A linked image: the hit is the image; the page says where the link goes. That
+                // answer comes after the press is taken, so a linked image whose link isn't a web
+                // page gets no menu, and not the WebView's own long press either.
+                HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                    val reply =
+                        Handler(Looper.getMainLooper()) { message ->
+                            pressed(message.data.getString("url"))
+                            true
+                        }
+                    requestFocusNodeHref(reply.obtainMessage())
+                    true
+                }
+                else -> false
             }
-            else -> false
-        }
+        // The rest of the gesture is the menu's: a drag after it mustn't turn the article.
+        if (handled) keep()
+        return handled
     }
 
     fun onPageMessage(data: String, narration: ReaderNarration) {
@@ -588,3 +585,13 @@ fun pagerViewConfiguration(): androidx.compose.ui.platform.ViewConfiguration {
         }
     }
 }
+
+/**
+ * [href] if it's a web page outside the article (a relative one resolves to the reader's own
+ * origin).
+ */
+internal fun linkTarget(href: String?): String? =
+    webUrl(href)?.takeUnless {
+        it.startsWith("$ASSET_ORIGIN/", ignoreCase = true) ||
+            it.equals(ASSET_ORIGIN, ignoreCase = true)
+    }

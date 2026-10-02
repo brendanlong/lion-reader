@@ -7,6 +7,9 @@ import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 import androidx.core.net.toUri
+import androidx.lifecycle.Observer
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.lionreader.app.share.MAX_LINK_LENGTH
 import com.lionreader.app.share.SaveWorker
 
@@ -28,14 +31,38 @@ fun Context.shareWebPage(url: String, title: String?) =
         )
     )
 
-/** Saves a web page to Lion Reader, as sharing it to the app does: in the background, retrying. */
+/**
+ * Saves a web page to Lion Reader, as sharing it to the app does: in the background, retrying, and
+ * saying how it went (as the share dialog does) once it's done.
+ */
 fun Context.saveWebPage(url: String) {
-    if (url.length > MAX_LINK_LENGTH) {
-        Toast.makeText(this, "That link is too long to save", Toast.LENGTH_SHORT).show()
-        return
-    }
-    SaveWorker.enqueue(this, url)
-    Toast.makeText(this, "Saving to Lion Reader", Toast.LENGTH_SHORT).show()
+    val app = applicationContext
+    fun say(text: String) = Toast.makeText(app, text, Toast.LENGTH_SHORT).show()
+    // Signed out, the job fails saying so.
+    if (url.length > MAX_LINK_LENGTH) return say("That link is too long to save")
+    val work = WorkManager.getInstance(app).getWorkInfoByIdLiveData(SaveWorker.enqueue(app, url))
+    say("Saving…")
+    work.observeForever(
+        object : Observer<WorkInfo?> {
+            override fun onChanged(value: WorkInfo?) {
+                when (value?.state) {
+                    WorkInfo.State.SUCCEEDED ->
+                        say(
+                            value.outputData.getString(SaveWorker.TITLE)?.let { "Saved “$it”" }
+                                ?: "Saved"
+                        )
+                    WorkInfo.State.FAILED ->
+                        say(
+                            value.outputData.getString(SaveWorker.ERROR)
+                                ?: "Lion Reader couldn't save this link"
+                        )
+                    WorkInfo.State.CANCELLED -> {}
+                    else -> return
+                }
+                work.removeObserver(this)
+            }
+        }
+    )
 }
 
 fun Context.copyLink(url: String) {

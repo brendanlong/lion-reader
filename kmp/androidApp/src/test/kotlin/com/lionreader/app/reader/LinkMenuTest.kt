@@ -48,7 +48,7 @@ class LinkMenuTest {
         val tops = labels.map {
             composeRule.onAllNodesWithText(it).fetchSemanticsNodes().single().boundsInRoot.top
         }
-        assertEquals(tops.sorted(), tops)
+        assertTrue("in this order", tops.zipWithNext().all { (a, b) -> a < b })
     }
 
     @Test
@@ -82,6 +82,8 @@ class LinkTargetTest {
         assertNull(linkTarget("javascript:alert(1)"))
         // A relative link resolves against the reader's own origin.
         assertNull(linkTarget("$ASSET_ORIGIN/notes#1"))
+        assertNull(linkTarget(ASSET_ORIGIN))
+        assertNull(linkTarget("HTTPS://APPASSETS.ANDROIDPLATFORM.NET/notes"))
         assertNull(linkTarget(null))
     }
 }
