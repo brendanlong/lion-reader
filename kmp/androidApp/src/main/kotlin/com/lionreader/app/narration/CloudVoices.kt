@@ -125,9 +125,11 @@ class CloudVoices(
         }
 
         fun fail(cause: Throwable) {
+            // Failed before the file goes, so a reader opening it now is told
+            // the stream broke rather than that there's no file.
+            audio.fail(cause as? Exception ?: IOException(cause))
             out.close()
             partial.delete()
-            audio.fail(cause as? Exception ?: IOException(cause))
         }
     }
 
