@@ -17,6 +17,7 @@ import type { AiProviderKeys } from "@/server/services/ai-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
 import { decryptApiKey } from "@/lib/encryption";
+import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
 import { errors } from "@/server/trpc/errors";
 
@@ -489,6 +490,10 @@ export async function getApiKeyProviders(userId: string): Promise<AiProvider[]> 
  * API keys are intentionally not cached in the Redis session cache to prevent
  * exposure if Redis is compromised. This function should be called only when
  * the actual key values are needed (e.g., narration, summarization endpoints).
+ *
+ * A key that no longer decrypts (e.g. after `API_KEY_ENCRYPTION_KEY` was
+ * rotated) is skipped, so that provider falls back to the server's key rather
+ * than every AI feature failing for the user.
  */
 export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
   const rows = await db
@@ -496,9 +501,19 @@ export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
     .from(userApiKeys)
     .where(eq(userApiKeys.userId, userId));
   return Object.fromEntries(
-    rows.flatMap(({ provider, encryptedKey }) =>
-      isAiProvider(provider) ? [[provider, decryptApiKey(encryptedKey)]] : []
-    )
+    rows.flatMap(({ provider, encryptedKey }) => {
+      if (!isAiProvider(provider)) return [];
+      try {
+        return [[provider, decryptApiKey(encryptedKey)]];
+      } catch (err) {
+        logger.error("Failed to decrypt a stored API key", {
+          userId,
+          provider,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return [];
+      }
+    })
   );
 }
 

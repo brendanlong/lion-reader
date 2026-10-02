@@ -401,9 +401,9 @@ export const usersRouter = createTRPCRouter({
       z.object({
         showSpam: z.boolean().optional(),
         // API keys by provider: empty string clears the key, non-empty sets it
-        apiKeys: z.partialRecord(z.enum(AI_PROVIDERS), z.string().max(1000)).optional(),
-        summarizationModel: z.string().optional(),
-        narrationModel: z.string().optional(),
+        apiKeys: z.partialRecord(z.enum(AI_PROVIDERS), z.string().trim().max(1000)).optional(),
+        summarizationModel: z.string().max(200).optional(),
+        narrationModel: z.string().max(200).optional(),
         // Summarization settings: null clears (reverts to default)
         summarizationMaxWords: z.number().int().min(1).max(10000).nullable().optional(),
         summarizationPrompt: z.string().max(10000).nullable().optional(),

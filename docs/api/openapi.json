@@ -4049,10 +4049,12 @@
                     }
                   },
                   "summarizationModel": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                   },
                   "narrationModel": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                   },
                   "summarizationMaxWords": {
                     "anyOf": [

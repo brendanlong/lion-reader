@@ -108,3 +108,54 @@ describe("without server keys", () => {
     expect((await caller.narration.listVoiceModels()).models).toEqual([]);
   });
 });
+
+describe("key input", () => {
+  it("trims a pasted key", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+
+    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "  gsk-padded\n" } });
+
+    expect((await getUserApiKeys(userId)).groq).toBe("gsk-padded");
+  });
+
+  it("clears the key when given only whitespace", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-a" } });
+
+    const cleared = await caller.users["me.updatePreferences"]({ apiKeys: { groq: "  \n" } });
+
+    expect(cleared.apiKeyProviders).toEqual([]);
+    expect((await getUserApiKeys(userId)).groq).toBeUndefined();
+  });
+
+  it("rejects an overlong model id", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+    const model = `groq:${"x".repeat(200)}`;
+
+    await expect(
+      caller.users["me.updatePreferences"]({ summarizationModel: model })
+    ).rejects.toThrow();
+    await expect(caller.users["me.updatePreferences"]({ narrationModel: model })).rejects.toThrow();
+  });
+});
+
+it("skips a key that no longer decrypts and keeps the rest", async () => {
+  // E.g. after API_KEY_ENCRYPTION_KEY is rotated: one unreadable key must not
+  // take every AI feature down for the user.
+  const userId = await createTestUser();
+  const caller = createCaller(await createAuthContext(userId));
+  await caller.users["me.updatePreferences"]({ apiKeys: { groq: "gsk-old" } });
+
+  const rotatedFrom = process.env.API_KEY_ENCRYPTION_KEY;
+  process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+  try {
+    await caller.users["me.updatePreferences"]({ apiKeys: { openrouter: "sk-new" } });
+
+    expect(await getUserApiKeys(userId)).toEqual({ openrouter: "sk-new" });
+  } finally {
+    process.env.API_KEY_ENCRYPTION_KEY = rotatedFrom;
+  }
+});
