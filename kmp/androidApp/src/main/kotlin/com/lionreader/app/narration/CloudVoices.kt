@@ -25,6 +25,28 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
+ * What every [CloudVoices] shares, however many there have been: the cloud voices' requests run on,
+ * filling the cache, after the narrator has moved to another article (and another engine).
+ */
+class CloudSpeechRequests {
+    /**
+     * Requests streaming at once, two as on the web: the next chunk's wait for its first audio
+     * overlaps the one before's download, and no more, since providers limit concurrent requests
+     * per key and several listeners share the server's.
+     */
+    internal val streams = Semaphore(2)
+
+    /**
+     * Streams by cache key, from the request until the audio is all in, so the same text twice is
+     * one request. Each completes once its audio starts.
+     */
+    internal val inFlight = ConcurrentHashMap<String, Deferred<StreamedAudio>>()
+
+    /** Times the server has started answering with speech (not cache hits). */
+    internal val answered = AtomicLong()
+}
+
+/**
  * Cloud voices (Kokoro and friends through the server's `/narration/speech`, on the user's or the
  * server's provider key). Each chunk streams: [synthesize] answers as soon as the first audio is
  * in, and the player reads the rest as it arrives ([StreamedAudio]). Audio is cached on disk by
@@ -41,30 +63,17 @@ class CloudVoices(
     private val pauseSeconds: Float,
     private val cacheDir: File,
     private val scope: CoroutineScope,
+    /** App-wide: an engine is made per article, while requests outlive it. */
+    private val requests: CloudSpeechRequests,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val cacheBytes: Long = 50L * 1024 * 1024,
 ) : SpeechEngine {
-    /** Times the server has started answering with speech (not cache hits). */
-    private val answered = AtomicLong()
-
-    /**
-     * Streams by cache key, from the request until the audio is all in, so the same text twice is
-     * one request. Each completes once its audio starts.
-     */
-    private val inFlight = ConcurrentHashMap<String, Deferred<StreamedAudio>>()
-
     override val maxChunkChars = MAX_CLOUD_SPEECH_CHARS
     // Requests take anywhere from under a second to many, so a minute ahead. One is started at a
-    // time, once the one before has started playing; see [streams] for how many run at once.
+    // time, once the one before has started playing; see [CloudSpeechRequests.streams] for how many
+    // run at once.
     override val lookaheadChars = 900
     override val parallelism = 1
-
-    /**
-     * Requests streaming at once, two as on the web: the next chunk's wait for its first audio
-     * overlaps the one before's download, and no more, since providers limit concurrent requests
-     * per key and several listeners share the server's.
-     */
-    private val streams = Semaphore(2)
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri {
         val key = key(text)
@@ -75,15 +84,15 @@ class CloudVoices(
         }
         val started = CompletableDeferred<StreamedAudio>()
         val stream = stream(key, text, cached, started)
-        val running = inFlight.putIfAbsent(key, started)
+        val running = requests.inFlight.putIfAbsent(key, started)
         if (running == null) stream.start() else stream.cancel()
         return (running ?: started).await().uri
     }
 
     /**
      * Requests [text] and writes it into [cached] as it arrives, completing [started] once there's
-     * audio to play (or with why there won't be). Lazy: started once it's in [inFlight], which it
-     * leaves when done.
+     * audio to play (or with why there won't be). Lazy: started once it's in
+     * [CloudSpeechRequests.inFlight], which it leaves when done.
      */
     private fun stream(
         key: String,
@@ -94,7 +103,7 @@ class CloudVoices(
         scope.launch(io, CoroutineStart.LAZY) {
             var writer: CacheWriter? = null
             try {
-                streams.withPermit {
+                requests.streams.withPermit {
                     request(text) { bytes ->
                         val into = writer ?: CacheWriter(cached).also { writer = it }
                         into.write(bytes)
@@ -103,11 +112,11 @@ class CloudVoices(
                 }
                 val done = writer ?: throw IOException("The cloud voice sent no audio")
                 started.complete(done.finish())
-                inFlight.remove(key, started)
+                requests.inFlight.remove(key, started)
                 trim()
             } catch (e: Throwable) {
                 // First, so the narrator's retry makes a new request rather than get this one.
-                inFlight.remove(key, started)
+                requests.inFlight.remove(key, started)
                 writer?.fail(e)
                 started.completeExceptionally(e)
                 if (e is CancellationException) throw e
@@ -152,7 +161,7 @@ class CloudVoices(
      * player's to handle ([SpeechStreamBroken]), so it's thrown as is.
      */
     private suspend fun request(text: String, onAudio: suspend (ByteArray) -> Unit) {
-        val answeredBefore = answered.get()
+        val answeredBefore = requests.answered.get()
         var wait = 1_000L
         var serverTrouble = false
         var busy = false
@@ -160,7 +169,7 @@ class CloudVoices(
             var started = false
             try {
                 api.streamSpeech(model, voice, text, pauseSeconds) { bytes ->
-                    if (!started) answered.incrementAndGet()
+                    if (!started) requests.answered.incrementAndGet()
                     started = true
                     onAudio(bytes)
                 }
@@ -171,7 +180,12 @@ class CloudVoices(
                 if (started) throw e
                 if (e is ApiException) {
                     if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
-                    if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
+                    // Refused (a provider turning down the key is a 422 saying so), except a
+                    // timeout or our rate limit.
+                    if (
+                        e.isPermanent ||
+                            (e.status in 400..499 && e.status != 408 && e.status != 429)
+                    ) {
                         throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
                     }
                     // 503: the server's provider is busy, which isn't this text's fault.
@@ -190,7 +204,7 @@ class CloudVoices(
         }
         // It answers other requests but keeps failing this one: it's this text, so the narrator
         // skips just this chunk (any exception but a SpeechException).
-        if (serverTrouble && answered.get() > answeredBefore) {
+        if (serverTrouble && requests.answered.get() > answeredBefore) {
             throw IOException("The cloud voice couldn't say this part.")
         }
         throw SpeechInterrupted(

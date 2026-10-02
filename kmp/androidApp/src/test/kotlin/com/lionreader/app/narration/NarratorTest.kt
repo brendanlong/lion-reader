@@ -2,6 +2,7 @@ package com.lionreader.app.narration
 
 import android.net.Uri
 import android.os.Looper
+import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.app.AppSettings
@@ -176,10 +177,83 @@ class NarratorTest {
         narrator.supply(article("b", "One.", "Two.", "Three."))
         narrator.skipParagraphs(1)
         assertEquals(0, state?.paragraph)
+        narrator.skipParagraphs(-1)
+        assertEquals(0, state?.paragraph)
         narrator.skipParagraphs(1)
-        assertEquals(1, state?.paragraph)
-        narrator.skipParagraphs(5)
+        narrator.skipParagraphs(1)
         assertEquals(2, state?.paragraph)
+        assertFalse(narrator.canSkipParagraphs(1))
+        narrator.skipParagraphs(1)
+        assertEquals(2, state?.paragraph)
+    }
+
+    @Test
+    fun skippingPastEitherEndDoesNothing() {
+        narrator.narrate(article("a", "One.", "", "Three."))
+        idle()
+        assertFalse(narrator.canSkipParagraphs(-1))
+        assertTrue(narrator.canSkipParagraphs(1))
+        val playing = narrator.player.currentMediaItem
+        narrator.skipParagraphs(-1)
+        idle()
+        // Not even the paragraph started over: the player wasn't touched.
+        assertEquals(playing, narrator.player.currentMediaItem)
+        assertEquals(0, state?.paragraph)
+
+        // The blank paragraph has nothing to say, so it's skipped over.
+        narrator.skipParagraphs(1)
+        idle()
+        assertEquals(2, state?.paragraph)
+        assertFalse(narrator.canSkipParagraphs(1))
+        narrator.skipParagraphs(1)
+        idle()
+        assertEquals(2, state?.paragraph)
+        assertTrue(state!!.playing)
+    }
+
+    @Test
+    fun mediaControlsMoveByParagraphAndOfferOnlyWhereThereIsOne() {
+        narrator.narrate(article("a", "One.", "Two."))
+        idle()
+        val player = SessionPlayer(narrator)
+        val heard = mutableListOf<Player.Commands>()
+        val playing = mutableListOf<Boolean>()
+        player.addListener(
+            object : Player.Listener {
+                override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
+                    heard += availableCommands
+                }
+
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    playing += playWhenReady
+                }
+            }
+        )
+        // The player's own events still come through.
+        narrator.togglePlaying()
+        narrator.togglePlaying()
+        idle()
+        assertEquals(listOf(false, true), playing)
+
+        assertFalse(player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS))
+        assertTrue(player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT))
+
+        player.seekToNext()
+        idle()
+        assertEquals(1, state?.paragraph)
+        player.skipsChanged()
+        assertTrue(player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM))
+        assertFalse(player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
+        assertTrue(heard.last().contains(Player.COMMAND_SEEK_TO_PREVIOUS))
+        assertFalse(heard.last().contains(Player.COMMAND_SEEK_TO_NEXT))
+
+        player.seekToNextMediaItem()
+        idle()
+        assertEquals(1, state?.paragraph)
+        player.seekToPrevious()
+        idle()
+        assertEquals(0, state?.paragraph)
+        player.detach()
     }
 
     @Test

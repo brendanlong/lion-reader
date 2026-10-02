@@ -230,8 +230,14 @@ private fun NarrationSettings(
     val cloud by
         produceState<VoiceModels?>(null, account) {
             value =
-                runCatching { account?.connection?.api?.voiceModels() }.getOrNull()
-                    ?: VoiceModels(emptyList(), "")
+                // The picked voice is listed even if the provider no longer offers it.
+                runCatching {
+                    account
+                        ?.connection
+                        ?.api
+                        ?.voiceModels(settings.cloudVoiceModel, settings.cloudVoice)
+                }
+                    .getOrNull() ?: VoiceModels(emptyList(), "")
         }
     Section("Narration voices") {
         val engines =

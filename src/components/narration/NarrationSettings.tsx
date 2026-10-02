@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
+import { keepPreviousData } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { CardSection } from "@/components/ui/card";
 import { AlertIcon, InfoCircleIcon } from "@/components/ui/icons";
@@ -61,8 +62,16 @@ export function NarrationSettings() {
   const { data: aiAvailability } = trpc.narration.isAiTextProcessingAvailable.useQuery();
   const isAiTextProcessingAvailable = aiAvailability?.available ?? false;
 
-  const voiceModelsQuery = trpc.narration.listVoiceModels.useQuery(undefined, {
+  // With the picked voice, which the server lists while its provider has it,
+  // even once the provider stops offering it.
+  const pickedCloudVoice =
+    settings.provider === "cloud"
+      ? { model: settings.cloudModelId ?? undefined, voice: settings.voiceId ?? undefined }
+      : undefined;
+  const voiceModelsQuery = trpc.narration.listVoiceModels.useQuery(pickedCloudVoice, {
     staleTime: 5 * 60 * 1000,
+    // Picking another voice asks again; the list stays up meanwhile.
+    placeholderData: keepPreviousData,
   });
   const cloudVoiceModels = voiceModelsQuery.data?.models ?? [];
 

@@ -46,9 +46,11 @@ fun shortNumber(value: Float): String =
 fun NarrationBar(
     state: NarrationState,
     speed: Float,
-    onPrevious: () -> Unit,
+    /** Null when there's no paragraph before, which disables the button. */
+    onPrevious: (() -> Unit)?,
     onToggle: () -> Unit,
-    onNext: () -> Unit,
+    /** Null when there's no paragraph after. */
+    onNext: (() -> Unit)?,
     onSpeed: (Float) -> Unit,
 ) {
     Row(
@@ -56,7 +58,7 @@ fun NarrationBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        IconButton(onClick = onPrevious) {
+        IconButton(onClick = { onPrevious?.invoke() }, enabled = onPrevious != null) {
             Icon(painterResource(R.drawable.ic_skip_previous), "Previous paragraph")
         }
         // Only waits long enough to notice: every seek buffers for a moment.
@@ -85,7 +87,7 @@ fun NarrationBar(
                 )
             }
         }
-        IconButton(onClick = onNext) {
+        IconButton(onClick = { onNext?.invoke() }, enabled = onNext != null) {
             Icon(painterResource(R.drawable.ic_skip_next), "Next paragraph")
         }
         TextButton(

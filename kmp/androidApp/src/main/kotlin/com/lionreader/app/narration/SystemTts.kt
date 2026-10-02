@@ -14,6 +14,7 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** A voice of the device's text-to-speech engine. */
 data class VoiceOption(val name: String, val label: String, val online: Boolean)
@@ -45,6 +46,9 @@ class SystemTts(context: Context) {
                 override fun onError(utteranceId: String) = failed(utteranceId)
 
                 override fun onError(utteranceId: String, errorCode: Int) = failed(utteranceId)
+
+                // Stopped before it finished: by us (nothing's waiting then), or by the engine.
+                override fun onStop(utteranceId: String, interrupted: Boolean) = failed(utteranceId)
             }
         )
     }
@@ -75,13 +79,23 @@ class SystemTts(context: Context) {
                 )
             }
 
-    /** Speaks [text] into [file] (WAV) with the voice named [voice], or the engine's default. */
+    /**
+     * Speaks [text] into [file] (WAV) with the voice named [voice], or the engine's default. Fails
+     * (so the narrator skips the chunk) if the engine doesn't finish in time: one whose service
+     * died may never call back.
+     */
     suspend fun synthesize(text: String, voice: String?, file: File) {
         val tts = ready.await()
         // A voice that's gone (uninstalled) falls back to the default too.
         val wanted = voice?.let(::voiceNamed) ?: tts.defaultVoice
         if (wanted != null && tts.voice?.name != wanted.name) tts.voice = wanted
-        suspendCancellableCoroutine { continuation ->
+        withTimeoutOrNull(TIMEOUT_MILLIS + text.length * TIMEOUT_MILLIS_PER_CHAR) {
+            synthesizeToFile(tts, text, file)
+        } ?: throw IOException("Speech synthesis timed out")
+    }
+
+    private suspend fun synthesizeToFile(tts: TextToSpeech, text: String, file: File) =
+        suspendCancellableCoroutine<Unit> { continuation ->
             val id = UUID.randomUUID().toString()
             pending[id] = continuation
             continuation.invokeOnCancellation {
@@ -94,5 +108,10 @@ class SystemTts(context: Context) {
                 continuation.resumeWithException(IOException("Speech synthesis failed"))
             }
         }
+
+    private companion object {
+        /** A synthesis gets this long and [TIMEOUT_MILLIS_PER_CHAR] more per character. */
+        const val TIMEOUT_MILLIS = 30_000L
+        const val TIMEOUT_MILLIS_PER_CHAR = 100L
     }
 }

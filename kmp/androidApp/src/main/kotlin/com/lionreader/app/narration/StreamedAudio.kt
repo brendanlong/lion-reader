@@ -45,15 +45,13 @@ class StreamedAudio(file: File) {
 
     /**
      * All of it is written: moves it to [to] (readers already open read on), or leaves it where it
-     * is if it can't. Whether it moved.
+     * is if it can't.
      */
-    fun finish(to: File): Boolean =
+    fun finish(to: File) =
         synchronized(lock) {
-            val moved = file.renameTo(to)
-            if (moved) file = to
+            if (file.renameTo(to)) file = to
             finished = true
             lock.notifyAll()
-            moved
         }
 
     /** It won't arrive: readers past what's written get [SpeechStreamBroken]. */

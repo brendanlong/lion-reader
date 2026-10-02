@@ -137,9 +137,15 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
     /** The account this token belongs to. */
     suspend fun me(): AccountUser = get(Me.serializer(), "/auth/me") {}.user
 
-    /** The cloud voices this user can use (none without a speech provider key on either side). */
-    suspend fun voiceModels(): VoiceModels =
-        get(VoiceModels.serializer(), "/narration/voice-models") {}
+    /**
+     * The cloud voices this user can use (none without a speech provider key on either side), with
+     * the picked [voice] of [model] among them while its provider still has it.
+     */
+    suspend fun voiceModels(model: String? = null, voice: String? = null): VoiceModels =
+        get(VoiceModels.serializer(), "/narration/voice-models") {
+            model?.let { parameter("model", it) }
+            voice?.let { parameter("voice", it) }
+        }
 
     /**
      * Speaks [text] (at most [MAX_CLOUD_SPEECH_CHARS]) with a cloud voice, handing [onAudio] the
