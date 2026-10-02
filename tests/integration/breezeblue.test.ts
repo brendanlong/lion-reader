@@ -63,8 +63,10 @@ beforeAll(async () => {
       req.on("end", () => {
         speechRequests.push({ path: req.url ?? "", key, body: JSON.parse(body) });
         res.writeHead(200, { "Content-Type": "audio/pcm" });
-        // A quarter second of silence at 24 kHz mono.
-        res.end(Buffer.alloc(24_000 / 2));
+        // A quarter second of sound at 24 kHz mono.
+        const speech = Buffer.alloc(24_000 / 2);
+        for (let at = 0; at < speech.length; at += 2) speech.writeInt16LE(8000, at);
+        res.end(speech);
       });
       return;
     }
