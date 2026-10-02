@@ -27,6 +27,17 @@ fun withoutSeekHeader(audio: ByteArray): ByteArray {
 }
 
 /**
+ * Whether [head], the start of an MP3 still arriving, says where its seek header is (if it has
+ * one): it reaches past the first frame's tag positions, or [HEAD_BYTES] in without finding a
+ * frame.
+ */
+fun seekHeaderSettled(head: ByteArray): Boolean {
+    if (head.size >= HEAD_BYTES) return true
+    val frame = firstFrame(head) ?: return false
+    return head.size >= frame + SEEK_TAG_OFFSETS.max() + 4
+}
+
+/**
  * [withoutSeekHeader], in place: rewrites only the tag's 4 bytes, never the rest of the file, so a
  * player already reading it is unaffected.
  */

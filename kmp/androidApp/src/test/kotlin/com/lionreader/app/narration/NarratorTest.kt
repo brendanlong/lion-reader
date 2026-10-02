@@ -1,10 +1,12 @@
 package com.lionreader.app.narration
 
+import android.net.Uri
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lionreader.app.AppSettings
 import java.io.File
+import java.io.IOException
 import java.time.Duration
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -25,6 +27,9 @@ class NarratorTest {
     private var unreachableFor = 0
     /** Getting the engine fails as unreachable while this is set. */
     private var engineUnreachable = false
+    /** Texts whose next synthesis streams half its audio and waits: see [streamed]. */
+    private val streamHalf = mutableSetOf<String>()
+    private val streamed = mutableListOf<StreamedAudio>()
 
     private val engine =
         object : SpeechEngine {
@@ -32,14 +37,18 @@ class NarratorTest {
             override val lookaheadChars = 1200
             override val parallelism = 1
 
-            override suspend fun synthesize(text: String, dir: File, name: String): File {
+            override suspend fun synthesize(text: String, dir: File, name: String): Uri {
 
                 if (unreachableFor != 0) {
                     if (unreachableFor > 0) unreachableFor--
                     throw SpeechInterrupted("Couldn't reach the cloud voice.")
                 }
                 synthesized += text
-                return File(dir, "$name.wav").apply { writeBytes(SILENCE) }
+                if (streamHalf.remove(text)) {
+                    val file = File(dir, "$name.part").apply { writeBytes(SILENCE.copyOf(HALF)) }
+                    return StreamedAudio(file).also { it.appended(HALF) }.also(streamed::add).uri
+                }
+                return Uri.fromFile(File(dir, "$name.wav").apply { writeBytes(SILENCE) })
             }
         }
 
@@ -239,6 +248,25 @@ class NarratorTest {
     }
 
     @Test
+    fun speechThatStopsPartwayIsSaidAgainFromTheStartOfItsChunk() {
+        streamHalf += "One."
+        narrator.narrate(article("a", "One.", "Two."))
+        idle()
+        streamed.single().fail(IOException("Connection reset"))
+
+        // The player reports it from its own thread.
+        repeat(100) {
+            if (synthesized.count { it == "One." } == 2) return@repeat
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+            Thread.sleep(10)
+        }
+        assertEquals(2, synthesized.count { it == "One." })
+        assertEquals("a", state?.entryId)
+        assertTrue(state!!.playing)
+        assertEquals(0, state?.paragraph)
+    }
+
+    @Test
     fun followingDoesNothingWhileNarrationIsOff() {
         narrator.follow("b", "Title b")
         narrator.supply(article("b", "Two."))
@@ -268,3 +296,5 @@ private val SILENCE: ByteArray by lazy {
         }
         .array()
 }
+
+private val HALF = SILENCE.size / 2

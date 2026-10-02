@@ -1,28 +1,35 @@
 package com.lionreader.app.narration
 
+import android.net.Uri
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MAX_CLOUD_SPEECH_CHARS
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Cloud voices (Kokoro and friends through the server's `narration.synthesize`, on the user's or
- * the server's provider key). Audio is cached on disk by model, voice and text, so listening again
- * doesn't pay again; the cache is trimmed to [cacheBytes], least recently used first. Requests run
- * in [scope], not the caller's: every request is paid for, so one the narrator stops waiting for
- * (the user skipped past it) still finishes into the cache.
+ * Cloud voices (Kokoro and friends through the server's `/narration/speech`, on the user's or the
+ * server's provider key). Each chunk streams: [synthesize] answers as soon as the first audio is
+ * in, and the player reads the rest as it arrives ([StreamedAudio]). Audio is cached on disk by
+ * model, voice and text, so listening again doesn't pay again; the cache is trimmed to
+ * [cacheBytes], least recently used first. Requests run in [scope], not the caller's: every request
+ * is paid for, so one the narrator stops waiting for (the user skipped past it) still finishes into
+ * the cache.
  */
 class CloudVoices(
     private val api: LionReaderApi,
@@ -33,11 +40,14 @@ class CloudVoices(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val cacheBytes: Long = 50L * 1024 * 1024,
 ) : SpeechEngine {
-    /** Times the server has answered with speech (not cache hits). */
+    /** Times the server has started answering with speech (not cache hits). */
     private val answered = AtomicLong()
 
-    /** Requests in flight by cache key, so the same text twice is one request. */
-    private val inFlight = ConcurrentHashMap<String, Deferred<File>>()
+    /**
+     * Streams by cache key, from the request until the audio is all in, so the same text twice is
+     * one request. Each completes once its audio starts.
+     */
+    private val inFlight = ConcurrentHashMap<String, Deferred<StreamedAudio>>()
 
     override val maxChunkChars = MAX_CLOUD_SPEECH_CHARS
     // Requests take anywhere from under a second to many, so a minute ahead,
@@ -45,7 +55,7 @@ class CloudVoices(
     override val lookaheadChars = 900
     override val parallelism = 3
 
-    override suspend fun synthesize(text: String, dir: File, name: String): File {
+    override suspend fun synthesize(text: String, dir: File, name: String): Uri {
         val key = key(text)
         val cached = File(cacheDir, "$key.mp3")
         if (cached.exists()) {
@@ -54,55 +64,130 @@ class CloudVoices(
                 // Cached before seek headers were blanked (see withoutSeekHeader).
                 blankSeekHeader(cached)
             }
-            return cached
+            return Uri.fromFile(cached)
         }
-        return inFlight
-            .computeIfAbsent(key) {
-                scope.async(io) {
-                    try {
-                        store(request(text), cached)
-                    } finally {
-                        inFlight.remove(key)
-                    }
+        val started = CompletableDeferred<StreamedAudio>()
+        val stream = stream(key, text, cached, started)
+        val running = inFlight.putIfAbsent(key, started)
+        if (running == null) stream.start() else stream.cancel()
+        return (running ?: started).await().uri
+    }
+
+    /**
+     * Requests [text] and writes it into [cached] as it arrives, completing [started] once there's
+     * audio to play (or with why there won't be). Lazy: started once it's in [inFlight], which it
+     * leaves when done.
+     */
+    private fun stream(
+        key: String,
+        text: String,
+        cached: File,
+        started: CompletableDeferred<StreamedAudio>,
+    ): Job =
+        scope.launch(io, CoroutineStart.LAZY) {
+            var writer: CacheWriter? = null
+            try {
+                request(text) { bytes ->
+                    val into = writer ?: CacheWriter(cached).also { writer = it }
+                    into.write(bytes)
+                    into.audio?.let(started::complete)
                 }
+                val done = writer ?: throw IOException("The cloud voice sent no audio")
+                started.complete(done.finish())
+                inFlight.remove(key, started)
+                trim()
+            } catch (e: Throwable) {
+                // First, so the narrator's retry makes a new request rather than get this one.
+                inFlight.remove(key, started)
+                writer?.fail(e)
+                started.completeExceptionally(e)
+                if (e is CancellationException) throw e
             }
-            .await()
-    }
-
-    private fun store(audio: ByteArray, cached: File): File {
-        cacheDir.mkdirs()
-        val partial = File.createTempFile(cached.nameWithoutExtension, ".part", cacheDir)
-        partial.writeBytes(withoutSeekHeader(audio))
-        if (!partial.renameTo(cached)) {
-            partial.delete()
-            throw IOException("Couldn't cache speech")
         }
-        trim()
-        return cached
+
+    /**
+     * Writes a stream into the cache: its start held back until its seek header can be blanked (see
+     * [withoutSeekHeader]), then each part handed to the player as it comes.
+     */
+    private inner class CacheWriter(private val cached: File) {
+        private val partial =
+            cacheDir.mkdirs().let {
+                File.createTempFile(cached.nameWithoutExtension, ".part", cacheDir)
+            }
+        private val out = FileOutputStream(partial)
+        private var head: ByteArray? = ByteArray(0)
+
+        /** Once the start is in: what the player reads. */
+        var audio: StreamedAudio? = null
+            private set
+
+        fun write(bytes: ByteArray) {
+            val pending = head
+            if (pending == null) {
+                out.write(bytes)
+                audio!!.appended(bytes.size)
+            } else if (seekHeaderSettled(pending + bytes)) {
+                publish(pending + bytes)
+            } else {
+                head = pending + bytes
+            }
+        }
+
+        private fun publish(start: ByteArray) {
+            head = null
+            out.write(withoutSeekHeader(start))
+            audio = StreamedAudio(partial).also { it.appended(start.size) }
+        }
+
+        fun finish(): StreamedAudio {
+            head?.let(::publish)
+            out.close()
+            if (!partial.renameTo(cached)) throw IOException("Couldn't cache speech")
+            return audio!!.also { it.finish(cached) }
+        }
+
+        fun fail(cause: Throwable) {
+            out.close()
+            partial.delete()
+            audio?.fail(cause as? Exception ?: IOException(cause))
+        }
     }
 
-    /** On IO (the caller's [scope] dispatcher): the audio arrives as a large base64 JSON body. */
-    private suspend fun request(text: String): ByteArray {
+    /**
+     * Streams [text] to [onAudio] (on IO: the caller's [scope] dispatcher). Until audio starts,
+     * trouble is retried and sorted into the [SpeechEngine] failures; once it has, a failure is the
+     * player's to handle ([SpeechStreamBroken]), so it's thrown as is.
+     */
+    private suspend fun request(text: String, onAudio: suspend (ByteArray) -> Unit) {
         val answeredBefore = answered.get()
         var wait = 1_000L
         var serverTrouble = false
         var busy = false
         for (attempt in 1..ATTEMPTS) {
+            var started = false
             try {
-                return api.synthesizeSpeech(model, voice, text).also { answered.incrementAndGet() }
+                api.streamSpeech(model, voice, text) { bytes ->
+                    if (!started) answered.incrementAndGet()
+                    started = true
+                    onAudio(bytes)
+                }
+                return
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: ApiException) {
-                if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
-                if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
-                    throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
+            } catch (e: Exception) {
+                if (started) throw e
+                if (e is ApiException) {
+                    if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
+                    if (e.isPermanent || (e.status in 400..499 && e.status != 429)) {
+                        throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
+                    }
+                    serverTrouble = e.status >= 500
+                    busy = e.status == 429
+                } else {
+                    // Network: try again below.
+                    serverTrouble = false
+                    busy = false
                 }
-                serverTrouble = e.status >= 500
-                busy = e.status == 429
-            } catch (_: Exception) {
-                // Network: try again below.
-                serverTrouble = false
-                busy = false
             }
             if (attempt < ATTEMPTS) {
                 delay(wait)
@@ -131,7 +216,7 @@ class CloudVoices(
         cacheDir
             .listFiles { file ->
                 file.extension == "part" &&
-                    file.lastModified() < System.currentTimeMillis() - 60_000
+                    file.lastModified() < System.currentTimeMillis() - 10 * 60_000
             }
             ?.forEach { it.delete() }
         var size = files.sumOf { it.length() }

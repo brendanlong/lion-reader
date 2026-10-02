@@ -78,11 +78,13 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   test fails when stale), so the app numbers, speaks and highlights an article
   exactly as the web does, offline included. `Narrator` has a `SpeechEngine`
   (the device's text-to-speech, or cloud voices through the server) synthesize
-  it a little ahead into files and plays them through one ExoPlayer, which
+  it a little ahead and plays the chunks through one ExoPlayer, which
   `NarrationService` puts in a media session (notification, lock screen,
-  headset buttons, background playback). Engines are only sources of audio
-  files, each with its chunk size, lookahead and parallelism; playback,
-  highlighting and seeking don't change per engine. Cloud audio is cached on
+  headset buttons, background playback). Engines are only sources of audio,
+  each with its chunk size, lookahead and parallelism; playback, highlighting
+  and seeking don't change per engine. Cloud audio streams: a chunk plays from
+  its first bytes while the rest arrives (`StreamedAudio`), and one that stops
+  partway is synthesized again and replayed from its start. It's cached on
   disk by model, voice and text, so listening again is free. Narration, once
   on, is of the article on screen: swiping silences it at once and moves it to
   the new article, playing or paused as it was, and closing the article view
