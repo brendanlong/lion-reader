@@ -4,7 +4,6 @@ import {
   defaultVoiceFor,
   resolveSpeechModel,
   SpeechRequestError,
-  voiceNamesFor,
   type SpeechModel,
   type SpeechProvider,
   toDeepInfraSpeechModels,
@@ -132,21 +131,6 @@ describe("defaultSpeechModelId", () => {
 
   it("gives DeepInfra's Kokoro its curated default voice too", () => {
     expect(defaultVoiceFor(deepInfra[0])).toBe("af_heart");
-  });
-});
-
-describe("voiceNamesFor", () => {
-  it("names only the voices whose name isn't their id", () => {
-    const model = {
-      id: "deepinfra:example",
-      displayName: "Example",
-      provider: "deepinfra" as const,
-      voices: [
-        { id: "af_heart", name: "af_heart" },
-        { id: "voc_1", name: "Bennett" },
-      ],
-    };
-    expect(voiceNamesFor(model)).toEqual({ voc_1: "Bennett" });
   });
 });
 

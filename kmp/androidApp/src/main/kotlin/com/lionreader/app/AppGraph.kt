@@ -134,7 +134,7 @@ class AppGraph(private val context: Context) {
                 ?: available.models.firstOrNull { it.id == available.defaultModelId }
                 ?: available.models.firstOrNull()
                 ?: throw SpeechUnavailable("Cloud voices aren't set up for your account.")
-        val voice = settings.cloudVoice?.takeIf { it in model.voices } ?: model.defaultVoice
+        val voice = settings.cloudVoice?.takeIf(model::hasVoice) ?: model.defaultVoice
         return model.id to voice
     }
 
