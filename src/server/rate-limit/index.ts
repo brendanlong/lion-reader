@@ -231,6 +231,19 @@ export function getAccountRateLimitIdentifier(email: string): string {
 }
 
 /**
+ * The least a speech request is charged, so the character-counted limit still
+ * bounds request volume (each call is a DB lookup and an outbound request,
+ * often on the server's shared OpenRouter key). A run of one-line paragraphs
+ * at 2× costs about 260 chars/s at this floor, under the limit's refill.
+ */
+const MIN_SPEECH_CHARGE = 200;
+
+/** What synthesizing `text` costs on the `speech` limit: its length, at least {@link MIN_SPEECH_CHARGE}. */
+export function speechRateLimitCost(text: string): number {
+  return Math.max(text.length, MIN_SPEECH_CHARGE);
+}
+
+/**
  * Extracts a client identifier from request headers.
  * Uses user ID if authenticated, otherwise falls back to IP address.
  *

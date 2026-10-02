@@ -14,8 +14,6 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 const MODEL_CACHE_RETRY_MS = 60 * 1000;
-/** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
-const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
 const openRouterModelSchema = z.object({
   id: z.string(),
@@ -187,19 +185,18 @@ async function fetchOpenRouterModels(outputModality: string): Promise<OpenRouter
   });
 }
 
-/**
- * Synthesizes speech as MP3 via the OpenAI-compatible speech endpoint.
- */
+/** Speech as MP3 via the OpenAI-compatible speech endpoint, streamed as it's generated. */
 export async function openRouterSpeech(
   apiKey: string,
   model: string,
   voice: string,
-  input: string
-): Promise<Uint8Array> {
+  input: string,
+  signal: AbortSignal
+): Promise<ReadableStream<Uint8Array>> {
   const response = await fetch(`${OPENROUTER_API_URL}/audio/speech`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal,
     body: JSON.stringify({
       model,
       voice,
@@ -208,14 +205,10 @@ export async function openRouterSpeech(
       provider: { sort: "latency" },
     }),
   });
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw await errorFromResponse(response);
   }
-  const audio = new Uint8Array(await response.arrayBuffer());
-  if (audio.byteLength > MAX_SPEECH_BYTES) {
-    throw new Error(`OpenRouter speech response too large (${audio.byteLength} bytes)`);
-  }
-  return audio;
+  return response.body;
 }
 
 /**

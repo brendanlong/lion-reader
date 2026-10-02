@@ -14,12 +14,9 @@ import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { USER_AGENT } from "@/server/http/user-agent";
 
 const DEEPINFRA_API_URL = "https://api.deepinfra.com";
-const REQUEST_TIMEOUT_MS = 120_000;
 const CATALOG_TIMEOUT_MS = 15_000;
 const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
 const CATALOG_CACHE_RETRY_MS = 60 * 1000;
-/** ~15 minutes of 64 kbps MP3; a 1000-character chunk is about a minute. */
-const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 /** What `service_tier: "priority"` costs over the catalog's listed price. */
 const PRIORITY_PRICE_MULTIPLIER = 1.5;
 
@@ -204,30 +201,18 @@ async function fetchSpeechModels(): Promise<DeepInfraSpeechModel[]> {
   return models.filter((model): model is DeepInfraSpeechModel => model !== null);
 }
 
-/**
- * Some models (MiMo) ignore `response_format` and send WAV, still labelled
- * `audio/mpeg`, so check the bytes: an ID3 tag or an MPEG frame sync.
- */
-export function isMp3(audio: Uint8Array): boolean {
-  const isId3 = audio[0] === 0x49 && audio[1] === 0x44 && audio[2] === 0x33;
-  const isFrameSync = audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0;
-  return isId3 || isFrameSync;
-}
-
-/**
- * Synthesizes speech as MP3. The response streams as it's generated, but it's
- * read whole: clients get one clip per request.
- */
+/** Speech as MP3 (or so DeepInfra says: see `services/speech.ts`), streamed as it's generated. */
 export async function deepInfraSpeech(
   apiKey: string,
   model: string,
   voice: string,
-  input: string
-): Promise<Uint8Array> {
+  input: string,
+  signal: AbortSignal
+): Promise<ReadableStream<Uint8Array>> {
   const response = await fetch(`${DEEPINFRA_API_URL}/v1/audio/speech`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal,
     body: JSON.stringify({
       model,
       voice,
@@ -236,15 +221,8 @@ export async function deepInfraSpeech(
       service_tier: "priority",
     }),
   });
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw await errorFromResponse(response);
   }
-  const audio = new Uint8Array(await response.arrayBuffer());
-  if (audio.byteLength > MAX_SPEECH_BYTES) {
-    throw new Error(`DeepInfra speech response too large (${audio.byteLength} bytes)`);
-  }
-  if (!isMp3(audio)) {
-    throw new Error(`DeepInfra model ${model} returned audio that isn't MP3`);
-  }
-  return audio;
+  return response.body;
 }

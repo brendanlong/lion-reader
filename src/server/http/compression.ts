@@ -153,6 +153,10 @@ export function maybeCompressResponse(req: IncomingMessage, res: ServerResponse)
     // Skip non-streaming responses (Fly.io handles these)
     if (getHeader(res, "content-length", explicitHeaders) != null) return;
 
+    // Skip media that's compressed already (streamed narration audio).
+    const contentType = String(getHeader(res, "content-type", explicitHeaders) ?? "");
+    if (/^(audio|image|video)\//i.test(contentType)) return;
+
     // Create compression stream
     compressor = createCompressor(encoding);
 
