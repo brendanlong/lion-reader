@@ -107,7 +107,7 @@ describe("BreezeBlue speech", () => {
 
     expect(audio.subarray(4, 8).toString()).toBe("ftyp");
     expect(speechRequests.at(-1)).toEqual({
-      path: `/text-to-speech/fav-${key}/stream?output_format=pcm`,
+      path: `/text-to-speech/fav-${key}/stream?output_format=pcm&enable_logging=false`,
       key,
       body: { text: "Hello.", model_id: "breeze-tts-2" },
     });

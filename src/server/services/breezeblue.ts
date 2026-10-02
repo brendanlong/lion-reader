@@ -148,7 +148,11 @@ export function getBreezeBlueCatalog(apiKey: string): Promise<BreezeBlueCatalog>
   return entry.catalog;
 }
 
-/** Speech as PCM, streamed as it's generated. */
+/**
+ * Speech as PCM, streamed as it's generated. `enable_logging=false` keeps it
+ * out of the key owner's generation history; it's documented only for
+ * realtime sessions, but this endpoint honours it too.
+ */
 export async function breezeBlueSpeech(
   apiKey: string,
   model: string,
@@ -157,7 +161,7 @@ export async function breezeBlueSpeech(
   signal: AbortSignal
 ): Promise<PcmStream> {
   const response = await fetch(
-    `${apiUrl()}/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=pcm`,
+    `${apiUrl()}/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=pcm&enable_logging=false`,
     {
       method: "POST",
       headers: { ...headers(apiKey), "Content-Type": "application/json" },

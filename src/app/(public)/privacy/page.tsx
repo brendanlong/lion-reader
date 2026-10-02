@@ -221,9 +221,9 @@ export default function PrivacyPolicyPage() {
                 sent to the provider of the speech model you picked to generate the audio: DeepInfra
                 directly (the default, Kokoro), BreezeBlue directly, or OpenRouter, which forwards
                 it to the company hosting that model (for example DeepInfra or Together). The
-                generated audio is streamed back to your device and not stored on our servers.
-                BreezeBlue keeps the text and audio in the generation history of the account whose
-                key was used: yours if you added one, otherwise ours.
+                generated audio is streamed back to your device and not stored on our servers. We
+                ask BreezeBlue not to save the text or audio in the generation history of the
+                account whose key was used.
               </LegalParagraph>
               <LegalParagraph>
                 In the Android app, device voices send the article text to your device&apos;s
