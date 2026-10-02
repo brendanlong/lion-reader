@@ -15,6 +15,7 @@ import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.VoiceModels
 import com.lionreader.shared.auth.AppAuth
+import com.lionreader.shared.auth.AuthException
 import com.lionreader.shared.auth.AuthorizationRequest
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
@@ -29,6 +30,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -186,14 +188,15 @@ class AppGraph(private val context: Context) {
 
     /**
      * After a sign-in: asks the server who this is and switches to that account's database,
-     * deleting the previous account's if it's another one.
+     * deleting the previous account's if it's another one. Whether it opened a session (rather than
+     * finding this account's already open).
      */
-    suspend fun signedIn() = accountMutex.withLock {
+    suspend fun signedIn(): Boolean = accountMutex.withLock {
         val server = _connection.value
         val user = server.api.me()
         val dbName = accountDbName(server.auth.serverUrl, user.id)
         val current = _account.value
-        if (current?.dbName == dbName && current.connection === server) return@withLock
+        if (current?.dbName == dbName && current.connection === server) return@withLock false
         current?.close()
         // Another account's data goes; the same account's is reopened on
         // the current connection, unsent changes and all.
@@ -203,6 +206,7 @@ class AppGraph(private val context: Context) {
         }
         prefs.edit(commit = true) { putString(ACCOUNT_DB, dbName) }
         _account.value = openAccount(dbName)
+        true
     }
 
     /**
@@ -231,23 +235,73 @@ class AppGraph(private val context: Context) {
     fun syncInBackground() = SyncScheduler.syncNow(context)
 
     /** Only while signed out: the server is part of the sign-in identity. */
-    fun setServerUrl(url: String) {
-        if (url.trimEnd('/') == serverUrl) return
-        prefs.edit(commit = true) { putString(SERVER_URL, url.trimEnd('/')) }
+    private fun setServerUrl(url: String) {
+        require(parseServerUrl(url, BuildConfig.DEBUG) == ServerUrlInput.Valid(url))
+        if (url == serverUrl) return
+        prefs.edit(commit = true) { putString(SERVER_URL, url) }
         _connection.value = ServerConnection(serverUrl, http, PrefsTokenStore(prefs))
     }
 
+    private val _signInError = MutableStateFlow<String?>(null)
+
+    /** Why the last sign-in failed, until another starts. */
+    val signInError: StateFlow<String?> = _signInError.asStateFlow()
+
+    /**
+     * A sign-in on [serverUrl] (from [parseServerUrl]): the authorization request to open in the
+     * browser, kept until its redirect comes back.
+     */
+    suspend fun startSignIn(serverUrl: String): AuthorizationRequest {
+        setServerUrl(serverUrl)
+        _signInError.value = null
+        return _connection.value.auth.authorizationRequest().also { pendingAuthorization = it }
+    }
+
+    /**
+     * Finishes the sign-in from its [redirect]. In the app's scope, so the token exchange outlives
+     * the Activity (rotation, or the system destroying it behind the browser).
+     */
+    fun completeSignIn(redirect: String) {
+        val pending = pendingAuthorization ?: return
+        pendingAuthorization = null
+        val auth = _connection.value.auth
+        scope.launch {
+            _signInError.value =
+                try {
+                    auth.completeAuthorization(redirect, pending)
+                    null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: AuthException) {
+                    e.message
+                } catch (_: IOException) {
+                    "Couldn't reach the server"
+                } catch (_: Exception) {
+                    "Sign-in failed"
+                }
+            if (_signInError.value != null) return@launch
+            // A new session's list syncs as it opens; the same account's, kept
+            // through an involuntary sign-out, doesn't. Offline, the screen keeps
+            // asking which account this is.
+            try {
+                if (!signedIn()) syncInBackground()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {}
+        }
+    }
+
+    /** The sign-in under way: what to open again in a Custom Tab, and how to check its redirect. */
     var pendingAuthorization: AuthorizationRequest?
-        get() =
-            prefs.getString(PENDING_STATE, null)?.let { state ->
-                AuthorizationRequest(
-                    url = "",
-                    state = state,
-                    codeVerifier = prefs.getString(PENDING_VERIFIER, null) ?: return null,
-                )
-            }
-        set(value) =
+        get() {
+            val url = prefs.getString(PENDING_URL, null) ?: return null
+            val state = prefs.getString(PENDING_STATE, null) ?: return null
+            val verifier = prefs.getString(PENDING_VERIFIER, null) ?: return null
+            return AuthorizationRequest(url, state, verifier)
+        }
+        private set(value) =
             prefs.edit(commit = true) {
+                putString(PENDING_URL, value?.url)
                 putString(PENDING_STATE, value?.state)
                 putString(PENDING_VERIFIER, value?.codeVerifier)
             }
@@ -255,6 +309,7 @@ class AppGraph(private val context: Context) {
     private companion object {
         const val SERVER_URL = "server_url"
         const val ACCOUNT_DB = "account_db"
+        const val PENDING_URL = "pending_url"
         const val PENDING_STATE = "pending_state"
         const val PENDING_VERIFIER = "pending_verifier"
     }

@@ -30,7 +30,10 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   (`AppAuth`'s mutex; the UI, WorkManager and the callback share one
   `AppGraph` and so one `AppAuth` — a new one is made only when a signed-out
   user picks another server) and the new pair is committed before use. Only
-  400/401 from the token endpoint sign the user out.
+  400/401 from the token endpoint sign the user out. The pending request is
+  kept on disk and the code exchange runs in `AppGraph`'s scope, so a sign-in
+  survives the Activity going away behind the browser. Only debug builds take
+  an http server (`parseServerUrl`), for dev servers on localhost.
 - **One database per account.** `AppGraph` holds the server connection (auth,
   API) and the signed-in account's `AccountSession` (database, reader, sync),
   whose file is named for the server and the user id from `GET /auth/me`.
