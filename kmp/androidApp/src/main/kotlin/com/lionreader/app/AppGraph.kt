@@ -34,6 +34,7 @@ import java.io.IOException
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 const val DEFAULT_SERVER_URL = "https://lionreader.com"
 
@@ -210,22 +212,42 @@ class AppGraph(private val context: Context) {
     }
 
     /**
-     * Revokes the session and deletes the account's data. Runs in the app's scope so leaving the
-     * screen can't cancel the revocation.
+     * Before signing out: sends the unsent changes if it can, and says how many are left (which
+     * signing out loses).
+     */
+    suspend fun unsentChangesAfterFlush(): Long {
+        val session = _account.value ?: return 0
+        if (session.unsentChanges() == 0L) return 0
+        withTimeoutOrNull(FLUSH_BEFORE_SIGN_OUT_MS) {
+            try {
+                withContext(Dispatchers.IO) { session.sync.flushOutbox() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {}
+        }
+        return session.unsentChanges()
+    }
+
+    /**
+     * Deletes the account's data, then the tokens, under the account lock, so a sign-in can't start
+     * in between and see its new database deleted; revoking the session follows, best effort. In
+     * the app's scope, so leaving the screen can't cancel any of it.
      */
     fun signOut() {
         if (narratorInstance.isInitialized()) narrator.stop()
         scope.launch {
             SyncScheduler.cancelAll(context)
-            _connection.value.auth.signOut()
+            val auth = _connection.value.auth
             accountMutex.withLock {
-                _account.value?.let {
-                    it.close()
-                    context.deleteDatabase(it.dbName)
-                }
-                cloudVoiceCache.deleteRecursively()
+                val session = _account.value
                 _account.value = null
                 prefs.edit(commit = true) { remove(ACCOUNT_DB) }
+                session?.close()
+                session?.let { context.deleteDatabase(it.dbName) }
+                cloudVoiceCache.deleteRecursively()
+                // AppAuth.signOut forgets the tokens before it reaches the network.
+                launch(start = CoroutineStart.UNDISPATCHED) { auth.signOut() }
+                auth.signedIn.first { !it }
             }
             SyncScheduler.schedulePeriodic(context)
         }
@@ -315,6 +337,8 @@ class AppGraph(private val context: Context) {
     }
 }
 
+private const val FLUSH_BEFORE_SIGN_OUT_MS = 15_000L
+
 /** Part of every account's database name: changing it loses the data on the device. */
 private const val DB_PREFIX = "account-v5-"
 
@@ -370,6 +394,10 @@ class AccountSession(
     /** Pulls whenever the server says something changed, until cancelled (see kmp/CLAUDE.md). */
     suspend fun followServer() =
         withContext(Dispatchers.IO) { followLiveUpdates(connection.api, pull = { sync.sync() }) }
+
+    /** The user's changes not yet on the server. */
+    suspend fun unsentChanges(): Long =
+        withContext(Dispatchers.IO) { database.outboxQueries.countStates().executeAsOne() }
 
     fun close() = driver.close()
 }

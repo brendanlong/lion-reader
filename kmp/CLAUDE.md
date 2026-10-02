@@ -39,7 +39,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   whose file is named for the server and the user id from `GET /auth/me`.
   Signing in to the same account keeps its data and unsent changes (an
   involuntary sign-out doesn't touch them); another account gets a fresh file
-  and the previous one is deleted; signing out deletes it.
+  and the previous one is deleted; signing out deletes it (after trying to
+  send the unsent changes, and asking before losing any), and then the
+  tokens, before revoking them.
 - **Local state vs. unsent changes.** `entry.read`/`starred` hold the last
   server state; the user's changes live in `outbox_state` (one row per entry
   and field, device timestamp) and win on display through `entry_view`. A
