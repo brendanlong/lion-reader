@@ -93,11 +93,9 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
   const updatePreferences = trpc.users["me.updatePreferences"].useMutation({
     onSuccess: () => {
       utils.users["me.preferences"].invalidate();
-      // A key change affects availability and the model lists of both features
-      utils.summarization.isAvailable.invalidate();
-      utils.summarization.listModels.invalidate();
-      utils.narration.isAiTextProcessingAvailable.invalidate();
-      utils.narration.listModels.invalidate();
+      // A key change affects availability and every model and voice list
+      utils.summarization.invalidate();
+      utils.narration.invalidate();
     },
   });
 
