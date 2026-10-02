@@ -9,7 +9,7 @@
 
 import type { TtsSession } from "@mintplex-labs/piper-tts-web";
 import { findEnhancedVoice } from "./enhanced-voices";
-import { getMediaSourceClass } from "./audio-encoding";
+import { getMediaSourceClass } from "./media-source-player";
 
 /**
  * Dynamically imports the piper-tts-web module.

@@ -16,7 +16,7 @@ import { AlertIcon, InfoCircleIcon } from "@/components/ui/icons";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { getNarrationSupportInfo, isFirefox } from "@/lib/narration/feature-detection";
-import { getMediaSourceClass } from "@/lib/narration/audio-encoding";
+import { getMediaSourceClass } from "@/lib/narration/media-source-player";
 import { waitForVoices, rankVoices, findVoiceByUri } from "@/lib/narration/voices";
 import type { TTSProviderId } from "@/lib/narration/types";
 import { DEFAULT_CLOUD_VOICE_MODEL, PREVIEW_TEXT } from "@/lib/narration/constants";

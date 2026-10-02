@@ -19,6 +19,7 @@ import {
   setupMediaSession,
   updateMediaSessionPlaybackState,
   clearMediaSession,
+  setMediaSessionSkips,
   type MediaSessionControls,
 } from "@/lib/narration/media-session";
 
@@ -44,6 +45,9 @@ export interface UseMediaSessionParams {
   controls: MediaSessionControls;
   /** Whether narration plays through its own media element (Piper and cloud voices). */
   ownsMediaElement: boolean;
+  /** Whether there's a paragraph before / after this one (else the OS button greys out). */
+  canSkipBackward: boolean;
+  canSkipForward: boolean;
 }
 
 /**
@@ -61,6 +65,8 @@ export function useMediaSession({
   status,
   controls,
   ownsMediaElement,
+  canSkipBackward,
+  canSkipForward,
 }: UseMediaSessionParams): void {
   // Keep the latest controls in a ref so the action handlers registered with the
   // OS always call current callbacks without needing to re-register. Updated in
@@ -109,6 +115,18 @@ export function useMediaSession({
       clearMediaSession();
     };
   }, [active, title, feedTitle, artwork]);
+
+  // After the setup above (which offers both), and again whenever it re-runs.
+  useEffect(() => {
+    if (!active) return;
+    setMediaSessionSkips(
+      {
+        previousTrack: () => controlsRef.current.previousTrack(),
+        nextTrack: () => controlsRef.current.nextTrack(),
+      },
+      { previous: canSkipBackward, next: canSkipForward }
+    );
+  }, [active, title, feedTitle, artwork, canSkipBackward, canSkipForward]);
 
   // Mirror playback status onto the OS controls (and drive the silent-audio
   // element that keeps them visible).

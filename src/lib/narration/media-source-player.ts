@@ -27,7 +27,25 @@
  */
 
 import { splitIntoSentences } from "./sentence-splitter";
-import { getMediaSourceClass } from "./audio-encoding";
+
+/** AAC-LC in MP4: what every MSE implementation plays, and what the server sends. */
+export const AAC_MIME_TYPE = 'audio/mp4; codecs="mp4a.40.2"';
+
+interface ManagedMediaSourceGlobal {
+  ManagedMediaSource?: typeof MediaSource;
+}
+
+/**
+ * The MSE implementation to use: iPhone Safari only has `ManagedMediaSource`
+ * (17.1+); everything else has `MediaSource`. Null when neither exists.
+ */
+export function getMediaSourceClass(): typeof MediaSource | null {
+  if (typeof window === "undefined") return null;
+  return (
+    (window as ManagedMediaSourceGlobal).ManagedMediaSource ??
+    (typeof MediaSource === "undefined" ? null : MediaSource)
+  );
+}
 
 /** Rough speaking speed at 1×, for sizing chunks that aren't synthesized yet. */
 const ESTIMATED_CHARS_PER_SECOND = 15;
@@ -40,6 +58,11 @@ const TIME_EPSILON = 0.01;
  * before narration gives up on it.
  */
 const MAX_STREAM_RETRIES = 2;
+/**
+ * The waits before trying a chunk again after a transient failure. Each try
+ * may be paid for (and is rate-limited), so a few, spaced out.
+ */
+const RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 
 /** For browsers without Media Source Extensions, or the audio format a voice needs. */
 export const UNSUPPORTED_MESSAGE = "This browser can't stream narration audio";
@@ -55,7 +78,10 @@ export interface PlaybackPosition {
 export interface PlayerCallbacks {
   onStatusChange?: (status: PlaybackStatus) => void;
   onPositionChange?: (position: PlaybackPosition, totalParagraphs: number) => void;
+  /** Narration stopped. */
   onError?: (error: Error) => void;
+  /** Narration paused where it ran out of audio it couldn't get ({@link TransientSynthesisError}). */
+  onInterrupted?: (error: Error) => void;
   onEnd?: () => void;
 }
 
@@ -107,11 +133,19 @@ export function splitIntoSpeechChunks(paragraphs: string[], maxChars: number): S
 }
 
 /**
+ * A synthesis failure that may well pass (no connection, the server in
+ * trouble). The chunk is tried again a few times, waiting longer each time;
+ * if it still fails, playback pauses where it ran out, for play to try again.
+ * Any other failure stops narration.
+ */
+export class TransientSynthesisError extends Error {}
+
+/**
  * Thrown by a synthesis whose audio stopped arriving partway (a dropped
  * connection). The player throws away what that chunk had and synthesizes it
  * again, rather than playing a chunk with its end missing.
  */
-export class StreamInterruptedError extends Error {
+export class StreamInterruptedError extends TransientSynthesisError {
   constructor() {
     super("Lost the connection while narrating");
   }
@@ -141,6 +175,8 @@ export interface MediaSourcePlayerOptions {
   bufferAheadSeconds: number;
   /** Duration at 1× of a chunk not synthesized yet. */
   estimateSeconds?: (text: string) => number;
+  /** The waits before each new try of a chunk after a {@link TransientSynthesisError}. */
+  retryDelaysMs?: number[];
   createAudio?: () => HTMLAudioElement;
   /** Returns null when the browser has no MSE. */
   createMediaSource?: () => MediaSource | null;
@@ -162,6 +198,13 @@ class RetriedSynthesis extends Error {
   }
 }
 
+/** A chunk that failed for now, to be synthesized again in `delayMs`. */
+class RetryLater extends Error {
+  constructor(readonly delayMs: number) {
+    super("Synthesis failed; trying again shortly");
+  }
+}
+
 /** One chunk's MP4 bytes, in order, as its synthesis produces them. */
 class ChunkAudio {
   private readonly pieces: Uint8Array[] = [];
@@ -169,6 +212,8 @@ class ChunkAudio {
   private failure: Error | null = null;
   private readonly controller = new AbortController();
   private waiters: (() => void)[] = [];
+  /** Failed with {@link RetryLater}, and that time has come. */
+  retryDue = false;
 
   get signal(): AbortSignal {
     return this.controller.signal;
@@ -176,6 +221,10 @@ class ChunkAudio {
 
   get finished(): boolean {
     return this.done || this.failure !== null;
+  }
+
+  get failed(): boolean {
+    return this.failure !== null;
   }
 
   /**
@@ -332,6 +381,7 @@ export class MediaSourcePlayer {
   private readonly maxConcurrentSyntheses: number;
   private readonly bufferAheadSeconds: number;
   private readonly estimateSeconds: (text: string) => number;
+  private readonly retryDelaysMs: number[];
   private readonly createMediaSource: () => MediaSource | null;
   private readonly attach: (audio: HTMLAudioElement, source: MediaSource) => () => void;
 
@@ -347,6 +397,13 @@ export class MediaSourcePlayer {
   private chunkAudio = new Map<number, ChunkAudio>();
   /** Streams that dropped partway, per chunk, since it last finished. */
   private streamRetries = new Map<number, number>();
+  /** Transient failures per chunk since it last finished. */
+  private transientFailures = new Map<number, number>();
+  /**
+   * The current run can't go on past a chunk that keeps failing transiently:
+   * playback pauses once it has played what's buffered.
+   */
+  private blocked: { run: number; error: Error } | null = null;
   /** Bumped by clearCache, so synthesis queued before it doesn't start. */
   private cacheEpoch = 0;
   private runningSyntheses = 0;
@@ -389,6 +446,7 @@ export class MediaSourcePlayer {
     this.bufferAheadSeconds = options.bufferAheadSeconds;
     this.estimateSeconds =
       options.estimateSeconds ?? ((text) => text.length / ESTIMATED_CHARS_PER_SECOND);
+    this.retryDelaysMs = options.retryDelaysMs ?? RETRY_DELAYS_MS;
     this.loadMimeType = options.loadMimeType;
     this.createMediaSource = options.createMediaSource ?? defaultCreateMediaSource;
     this.attach = options.attach ?? defaultAttach;
@@ -400,6 +458,7 @@ export class MediaSourcePlayer {
     // element waits for more, then plays on.
     this.audio.addEventListener("waiting", () => {
       if (this.status === "playing") this.setStatus("buffering");
+      this.pauseIfBlocked();
     });
     this.audio.addEventListener("playing", () => {
       if (this.status === "buffering") this.setStatus("playing");
@@ -480,6 +539,8 @@ export class MediaSourcePlayer {
     const request = ++this.playRequest;
     if (this.status === "paused" && !this.jumpPending) {
       this.setStatus(this.isPlayheadBuffered() ? "playing" : "buffering");
+      // It may have paused where synthesis ran out (see interrupt).
+      void this.pump();
     } else {
       this.startRun(this.index);
       if (!this.isActive()) return;
@@ -498,22 +559,19 @@ export class MediaSourcePlayer {
     this.setStatus("paused");
   }
 
+  /** The next paragraph; nothing on the last (the controls offer none there). */
   async skipForward(): Promise<void> {
     const current = this.chunks[this.index]?.paragraph ?? 0;
     const next = this.chunks.findIndex((chunk) => chunk.paragraph > current);
-    if (next === -1) {
-      this.finish();
-      return;
-    }
-    this.moveTo(next);
+    if (next !== -1) this.moveTo(next);
   }
 
+  /** The previous paragraph; nothing on the first. */
   async skipBackward(): Promise<void> {
     const current = this.chunks[this.index]?.paragraph ?? 0;
     const previous = this.chunks.findLast((chunk) => chunk.paragraph < current)?.paragraph;
-    this.moveTo(
-      previous === undefined ? 0 : this.chunks.findIndex((chunk) => chunk.paragraph === previous)
-    );
+    if (previous === undefined) return;
+    this.moveTo(this.chunks.findIndex((chunk) => chunk.paragraph === previous));
   }
 
   async skipTo(paragraph: number): Promise<void> {
@@ -524,6 +582,12 @@ export class MediaSourcePlayer {
   stop(): void {
     for (const queued of this.queuedSyntheses.splice(0)) queued.skip();
     this.abortSyntheses(() => true);
+    // Failures are kept so look-ahead doesn't ask again; playing again does.
+    for (const [chunk, audio] of this.chunkAudio) {
+      if (audio.failed) this.chunkAudio.delete(chunk);
+    }
+    this.transientFailures.clear();
+    this.blocked = null;
     this.run++;
     this.playRequest++;
     this.audio.pause();
@@ -540,6 +604,7 @@ export class MediaSourcePlayer {
     for (const audio of this.chunkAudio.values()) audio.abort();
     this.chunkAudio.clear();
     this.streamRetries.clear();
+    this.transientFailures.clear();
     this.cacheEpoch++;
   }
 
@@ -705,6 +770,25 @@ export class MediaSourcePlayer {
             }
             continue;
           }
+          if (error instanceof RetryLater || error instanceof TransientSynthesisError) {
+            // Retried meanwhile (it was due, or play is trying again).
+            if (this.chunkAudio.get(chunk) !== audio) continue;
+          }
+          // Tried again when it's due, which wakes this loop again. Part of
+          // a chunk is never played: it's dropped, to be heard whole.
+          if (error instanceof RetryLater) {
+            if (placed) this.replayChunk(placed);
+            return;
+          }
+          if (error instanceof TransientSynthesisError) {
+            if (placed) {
+              this.replayChunk(placed);
+              return;
+            }
+            this.blocked = { run, error };
+            this.pauseIfBlocked();
+            return;
+          }
           // A skipped chunk is requested again once playback gets near it.
           if (!(error instanceof SkippedSynthesis)) this.fail(error);
           return;
@@ -805,10 +889,13 @@ export class MediaSourcePlayer {
     return this.mimeType;
   }
 
-  /** The chunk's audio, starting its synthesis unless it's already under way or done. */
+  /**
+   * The chunk's audio, starting its synthesis unless it's under way, done, or
+   * failed (and not due to be tried again).
+   */
   private audioFor(chunk: number): ChunkAudio {
     const cached = this.chunkAudio.get(chunk);
-    if (cached) return cached;
+    if (cached && !cached.retryDue) return cached;
     const audio = new ChunkAudio();
     this.chunkAudio.set(chunk, audio);
     const epoch = this.cacheEpoch;
@@ -825,13 +912,24 @@ export class MediaSourcePlayer {
       .then(
         () => {
           this.streamRetries.delete(chunk);
+          this.transientFailures.delete(chunk);
           audio.end();
         },
         (error: unknown) => {
-          // Let a failed chunk be requested again (unless the entry has
-          // since been replaced, e.g. after clearCache).
-          if (this.chunkAudio.get(chunk) === audio) this.chunkAudio.delete(chunk);
-          audio.fail(this.synthesisFailure(chunk, audio, error));
+          const failure = this.synthesisFailure(chunk, audio, error);
+          // Skipped or dropped chunks are requested again (unless the entry
+          // has since been replaced, e.g. after clearCache). Failed ones stay,
+          // so look-ahead doesn't ask again on every time update.
+          const asked = failure instanceof SkippedSynthesis || failure instanceof RetriedSynthesis;
+          if (asked && this.chunkAudio.get(chunk) === audio) this.chunkAudio.delete(chunk);
+          audio.fail(failure);
+          if (failure instanceof RetryLater) {
+            setTimeout(() => {
+              audio.retryDue = true;
+              this.prefetch();
+              void this.pump();
+            }, failure.delayMs);
+          }
         }
       );
     return audio;
@@ -845,8 +943,36 @@ export class MediaSourcePlayer {
         this.streamRetries.set(chunk, retries);
         return new RetriedSynthesis();
       }
+      // A stream that keeps dropping has been asked for enough.
+      return error;
+    }
+    if (error instanceof TransientSynthesisError) {
+      const failures = this.transientFailures.get(chunk) ?? 0;
+      if (failures < this.retryDelaysMs.length) {
+        this.transientFailures.set(chunk, failures + 1);
+        return new RetryLater(this.retryDelaysMs[failures]);
+      }
     }
     return error instanceof Error ? error : new Error(String(error));
+  }
+
+  /**
+   * Pauses where the run can't go on ({@link blocked}), once the playhead has
+   * caught up with it, so what's buffered still plays. Playing again tries
+   * the chunk afresh.
+   */
+  private pauseIfBlocked(): void {
+    const blocked = this.blocked;
+    if (!blocked || blocked.run !== this.run) return;
+    if (this.status !== "buffering" || this.isPlayheadBuffered()) return;
+    this.blocked = null;
+    const chunk = this.nextAppend;
+    const audio = this.chunkAudio.get(chunk);
+    if (audio?.failed) this.chunkAudio.delete(chunk);
+    this.streamRetries.delete(chunk);
+    this.transientFailures.delete(chunk);
+    this.pause();
+    this.callbacks.onInterrupted?.(blocked.error);
   }
 
   /** Stops the unfinished syntheses of the chunks `drop` picks, and forgets them. */

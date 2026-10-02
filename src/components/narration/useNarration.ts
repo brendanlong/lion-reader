@@ -45,13 +45,16 @@ import {
   htmlToClientNarration,
   type ParagraphMapEntry,
 } from "@/lib/narration/client-paragraph-ids";
-import { narrationParagraphForElement } from "@/lib/narration/paragraph-map";
+import {
+  narrationParagraphForElement,
+  splitNarrationParagraphs,
+} from "@/lib/narration/paragraph-map";
 import {
   type UseNarrationConfig,
   type UseNarrationReturn,
   type UseNarrationState,
   DEFAULT_NARRATION_STATE,
-  splitIntoParagraphs,
+  getNarrationPhase,
   mapPlaybackStatus,
 } from "./useNarrationTypes";
 
@@ -223,6 +226,10 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
         toast.error("Narration stopped", { description: error.message });
         setState((prev) => ({ ...prev, status: "idle" }));
       },
+      onInterrupted: (error: Error) => {
+        // The status change to paused comes separately; play tries again.
+        toast.error("Narration paused", { description: error.message });
+      },
       onEnd: () => {
         setState((prev) => ({
           ...prev,
@@ -359,7 +366,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       if (playerStatus !== "idle") return;
 
       const start = async (narration: string) => {
-        player.load(splitIntoParagraphs(narration));
+        player.load(splitNarrationParagraphs(narration));
         if (!hasTrackedPlaybackRef.current) {
           trackNarrationPlaybackStarted(settings.provider);
           hasTrackedPlaybackRef.current = true;
@@ -530,6 +537,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // keys) while narration is active. Works for every provider by driving the
   // provider-agnostic play/pause/skip callbacks above. A session
   // exists once narration text has been generated for this article.
+  const { canSkipBackward, canSkipForward } = getNarrationPhase(state, isLoading);
   useMediaSession({
     active: isSupported && narrationText !== null,
     title,
@@ -537,6 +545,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     artwork,
     status: state.status,
     ownsMediaElement: usesBufferedPlayer,
+    canSkipBackward,
+    canSkipForward,
     controls: {
       play,
       pause,

@@ -9,7 +9,16 @@
 
 import { useSyncExternalStore } from "react";
 import { TTS_PROVIDER_IDS, type TTSProviderId } from "./types";
-import { DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS, MAX_CLOUD_SPEECH_PAUSE_SECONDS } from "./constants";
+import {
+  DEFAULT_CLOUD_SPEECH_PAUSE_SECONDS,
+  DEFAULT_PITCH,
+  DEFAULT_RATE,
+  MAX_CLOUD_SPEECH_PAUSE_SECONDS,
+  MAX_PITCH,
+  MAX_RATE,
+  MIN_PITCH,
+  MIN_RATE,
+} from "./constants";
 
 /**
  * User preferences for narration playback.
@@ -45,14 +54,10 @@ export interface NarrationSettings {
    */
   voiceId: string | null;
 
-  /**
-   * Playback rate multiplier (0.5 - 2.0, default 1.0).
-   */
+  /** Playback rate multiplier, {@link MIN_RATE} to {@link MAX_RATE}. */
   rate: number;
 
-  /**
-   * Voice pitch multiplier (0.5 - 2.0, default 1.0).
-   */
+  /** Voice pitch multiplier, {@link MIN_PITCH} to {@link MAX_PITCH}. */
   pitch: number;
 
   /**
@@ -77,12 +82,7 @@ export interface NarrationSettings {
    */
   useLlmNormalization: boolean;
 
-  /**
-   * Silence gap between sentences in seconds when using Piper TTS.
-   * This affects how long the pause is between sentences within a paragraph.
-   * Range: 0.0 - 1.0 seconds
-   * Default: 0.3 seconds
-   */
+  /** Silence between sentences with Piper voices, in seconds (0 to 1). */
   sentenceGapSeconds: number;
 
   /** Silence after each chunk of cloud speech, in seconds. */
@@ -97,8 +97,8 @@ export const DEFAULT_NARRATION_SETTINGS: NarrationSettings = {
   provider: "browser",
   cloudModelId: null,
   voiceId: null,
-  rate: 1.0,
-  pitch: 1.0,
+  rate: DEFAULT_RATE,
+  pitch: DEFAULT_PITCH,
   highlightEnabled: true,
   autoScrollEnabled: true,
   useLlmNormalization: false,
@@ -156,11 +156,11 @@ export function loadNarrationSettings(): NarrationSettings {
       cloudModelId: typeof parsed.cloudModelId === "string" ? parsed.cloudModelId : null,
       voiceId,
       rate:
-        typeof parsed.rate === "number" && parsed.rate >= 0.5 && parsed.rate <= 2.0
+        typeof parsed.rate === "number" && parsed.rate >= MIN_RATE && parsed.rate <= MAX_RATE
           ? parsed.rate
           : DEFAULT_NARRATION_SETTINGS.rate,
       pitch:
-        typeof parsed.pitch === "number" && parsed.pitch >= 0.5 && parsed.pitch <= 2.0
+        typeof parsed.pitch === "number" && parsed.pitch >= MIN_PITCH && parsed.pitch <= MAX_PITCH
           ? parsed.pitch
           : DEFAULT_NARRATION_SETTINGS.pitch,
       highlightEnabled:
@@ -201,12 +201,7 @@ export function loadNarrationSettings(): NarrationSettings {
  *
  * @example
  * ```ts
- * saveNarrationSettings({
- *   enabled: true,
- *   voiceId: "com.apple.voice.compact.en-US.Samantha",
- *   rate: 1.25,
- *   pitch: 1.0,
- * });
+ * saveNarrationSettings({ ...loadNarrationSettings(), rate: 1.25 });
  * ```
  */
 export function saveNarrationSettings(settings: NarrationSettings): void {

@@ -17,6 +17,7 @@
  */
 
 import type { AudioCodec } from "mediabunny";
+import { AAC_MIME_TYPE } from "./media-source-player";
 
 /** Mono speech samples in [-1, 1]. */
 export interface PcmAudio {
@@ -46,9 +47,6 @@ interface Candidate {
   sampleRates: number[];
 }
 
-/** AAC-LC in MP4: what every MSE implementation plays, and what the server sends. */
-export const AAC_MIME_TYPE = 'audio/mp4; codecs="mp4a.40.2"';
-
 const AAC: Candidate = {
   codec: "aac",
   mimeType: AAC_MIME_TYPE,
@@ -60,22 +58,6 @@ const OPUS: Candidate = {
   mimeType: 'audio/mp4; codecs="opus"',
   sampleRates: [48_000],
 };
-
-interface ManagedMediaSourceGlobal {
-  ManagedMediaSource?: typeof MediaSource;
-}
-
-/**
- * The MSE implementation to use: iPhone Safari only has `ManagedMediaSource`
- * (17.1+); everything else has `MediaSource`. Null when neither exists.
- */
-export function getMediaSourceClass(): typeof MediaSource | null {
-  if (typeof window === "undefined") return null;
-  return (
-    (window as ManagedMediaSourceGlobal).ManagedMediaSource ??
-    (typeof MediaSource === "undefined" ? null : MediaSource)
-  );
-}
 
 /**
  * Picks the best format this browser can both encode and play through MSE.

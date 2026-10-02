@@ -113,6 +113,24 @@ describe("setupMediaSession", () => {
   });
 });
 
+describe("setMediaSessionSkips", () => {
+  it("offers previous and next only where there's a paragraph to go to", async () => {
+    const { setupMediaSession, setMediaSessionSkips } = await loadModule();
+    const controls = makeControls();
+    setupMediaSession({ articleTitle: "T", feedTitle: "F" }, controls);
+
+    setMediaSessionSkips(controls, { previous: false, next: true });
+    expect(actionHandlers.previoustrack).toBeNull();
+    actionHandlers.nexttrack?.();
+    expect(controls.nextTrack).toHaveBeenCalledTimes(1);
+
+    setMediaSessionSkips(controls, { previous: true, next: false });
+    expect(actionHandlers.nexttrack).toBeNull();
+    actionHandlers.previoustrack?.();
+    expect(controls.previousTrack).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("updateMediaSessionPlaybackState", () => {
   it("starts the silent audio and reports playing while active", async () => {
     const { updateMediaSessionPlaybackState } = await loadModule();

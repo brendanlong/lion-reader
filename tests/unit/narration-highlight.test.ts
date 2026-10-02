@@ -1,98 +1,32 @@
 /**
- * Unit tests for narration paragraph highlighting.
- *
- * Tests the pure logic of determining which paragraphs should be highlighted
- * during narration playback. With 1:1 mapping, this is straightforward:
- * narration paragraph N always highlights original paragraph N.
+ * Unit tests for which paragraph narration highlights.
  */
 
 import { describe, it, expect } from "vitest";
 import { computeHighlightedParagraphs } from "../../src/components/narration/useNarrationHighlight";
+import {
+  DEFAULT_NARRATION_STATE,
+  getNarrationPhase,
+} from "../../src/components/narration/useNarrationTypes";
 
 describe("computeHighlightedParagraphs", () => {
-  describe("when not playing", () => {
-    it("returns empty set when isPlaying is false", () => {
-      const result = computeHighlightedParagraphs(0, false);
-      expect(result.size).toBe(0);
-    });
-
-    it("returns empty set when paused at any index", () => {
-      expect(computeHighlightedParagraphs(0, false).size).toBe(0);
-      expect(computeHighlightedParagraphs(5, false).size).toBe(0);
-      expect(computeHighlightedParagraphs(100, false).size).toBe(0);
-    });
+  it("highlights the paragraph being narrated", () => {
+    expect(computeHighlightedParagraphs(0, true)).toEqual(new Set([0]));
+    expect(computeHighlightedParagraphs(7, true)).toEqual(new Set([7]));
   });
 
-  describe("when playing", () => {
-    it("returns set with current index for paragraph 0", () => {
-      const result = computeHighlightedParagraphs(0, true);
-      expect(result).toEqual(new Set([0]));
-    });
-
-    it("returns set with current index for paragraph 1", () => {
-      const result = computeHighlightedParagraphs(1, true);
-      expect(result).toEqual(new Set([1]));
-    });
-
-    it("returns set with current index for paragraph 5", () => {
-      const result = computeHighlightedParagraphs(5, true);
-      expect(result).toEqual(new Set([5]));
-    });
-
-    it("handles large indices", () => {
-      const result = computeHighlightedParagraphs(999, true);
-      expect(result).toEqual(new Set([999]));
-    });
+  it("highlights nothing while narration is off, or without a position", () => {
+    expect(computeHighlightedParagraphs(3, false).size).toBe(0);
+    expect(computeHighlightedParagraphs(-1, true).size).toBe(0);
   });
 
-  describe("edge cases", () => {
-    it("returns empty set for negative index", () => {
-      const result = computeHighlightedParagraphs(-1, true);
-      expect(result.size).toBe(0);
-    });
-
-    it("returns empty set for negative index when not playing", () => {
-      const result = computeHighlightedParagraphs(-1, false);
-      expect(result.size).toBe(0);
-    });
-  });
-
-  describe("state transitions", () => {
-    it("produces different results as index changes", () => {
-      expect(computeHighlightedParagraphs(0, true)).toEqual(new Set([0]));
-      expect(computeHighlightedParagraphs(1, true)).toEqual(new Set([1]));
-      expect(computeHighlightedParagraphs(2, true)).toEqual(new Set([2]));
-    });
-
-    it("clears highlighting when playback stops", () => {
-      // Playing - should highlight
-      expect(computeHighlightedParagraphs(1, true)).toEqual(new Set([1]));
-
-      // Not playing - should not highlight
-      expect(computeHighlightedParagraphs(1, false).size).toBe(0);
-    });
-
-    it("restores highlighting when playback resumes", () => {
-      // Not playing - no highlight
-      expect(computeHighlightedParagraphs(1, false).size).toBe(0);
-
-      // Playing - should highlight
-      expect(computeHighlightedParagraphs(1, true)).toEqual(new Set([1]));
-    });
-  });
-
-  describe("realistic scenarios", () => {
-    it("handles sequential playback through article", () => {
-      expect(computeHighlightedParagraphs(0, true)).toEqual(new Set([0]));
-      expect(computeHighlightedParagraphs(1, true)).toEqual(new Set([1]));
-      expect(computeHighlightedParagraphs(2, true)).toEqual(new Set([2]));
-      expect(computeHighlightedParagraphs(3, true)).toEqual(new Set([3]));
-      expect(computeHighlightedParagraphs(4, true)).toEqual(new Set([4]));
-    });
-
-    it("handles skipping to a later paragraph", () => {
-      expect(computeHighlightedParagraphs(0, true)).toEqual(new Set([0]));
-      expect(computeHighlightedParagraphs(10, true)).toEqual(new Set([10]));
-    });
+  it("keeps the highlight while paused or buffering, as narration is still on", () => {
+    const at = { ...DEFAULT_NARRATION_STATE, currentParagraph: 4, totalParagraphs: 10 };
+    for (const status of ["playing", "paused", "loading"] as const) {
+      const { isActive } = getNarrationPhase({ ...at, status }, false);
+      expect(computeHighlightedParagraphs(at.currentParagraph, isActive)).toEqual(new Set([4]));
+    }
+    const { isActive } = getNarrationPhase({ ...at, status: "idle" }, false);
+    expect(computeHighlightedParagraphs(at.currentParagraph, isActive).size).toBe(0);
   });
 });
