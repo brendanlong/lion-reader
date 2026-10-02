@@ -1131,11 +1131,10 @@ export const entrySummaries = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     generatedAt: timestamp("generated_at", { withTimezone: true }), // when summary was generated
 
-    // Error tracking for retry logic
+    // Unused: a failed summary records nothing. Left for a contract migration
+    // to drop.
     error: text("error"),
     errorAt: timestamp("error_at", { withTimezone: true }),
-    // The model and key the failed attempt ran on (`summaryAttemptSource`)
-    errorSource: text("error_source"),
   },
   (table) => [
     // Index for finding stale summaries

@@ -58,9 +58,6 @@ const errorCodeToTRPCCode = {
   // choice is the problem, not our server.
   AI_PROVIDER_REJECTED: "BAD_REQUEST",
   AI_PROVIDER_KEY_UNREADABLE: "BAD_REQUEST",
-  // The error backoff turned the request away; the failure itself was reported
-  // when it happened.
-  SUMMARY_RECENTLY_FAILED: "TOO_MANY_REQUESTS",
 } as const satisfies Record<string, TRPCError["code"]>;
 
 type ErrorCode = keyof typeof errorCodeToTRPCCode;
@@ -181,12 +178,6 @@ export const errors = {
 
   /** The user's saved key for the provider doesn't decrypt; they have to enter it again. */
   aiProviderKeyUnreadable: (message: string) => createError("AI_PROVIDER_KEY_UNREADABLE", message),
-
-  summaryRecentlyFailed: (previousError: string) =>
-    createError(
-      "SUMMARY_RECENTLY_FAILED",
-      `Summarizing this article failed recently, so it wasn't retried. Try again later. Previous error: ${previousError}`
-    ),
 
   feedFetchError: (url: string, reason: string) =>
     createError("FEED_FETCH_ERROR", `Failed to fetch feed: ${reason}`, {

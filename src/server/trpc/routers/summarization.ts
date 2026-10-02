@@ -29,7 +29,6 @@ import {
   hashPrompt,
   DEFAULT_SUMMARIZATION_PROMPT,
   sanitizeSummaryHtml,
-  summaryAttemptSource,
 } from "@/server/services/summarization";
 import {
   isModelAllowed,
@@ -50,55 +49,42 @@ import * as Sentry from "@sentry/nextjs";
 // ============================================================================
 
 /**
- * Time to wait before retrying after an error (1 hour in milliseconds).
+ * The error to answer a failed generation with, and whether it's ours to look
+ * into (reported to Sentry, with the provider's error, which the client never
+ * sees). The provider's own message is shown only when the user's key made the
+ * call — on the server's key it may describe the operator's account.
  */
-const RETRY_AFTER_MS = 60 * 60 * 1000;
-
-/**
- * The error to answer a failed generation with; whether it's worth recording
- * as the backoff; and whether it's ours to look into (reported to Sentry,
- * with the provider's error, which the client never sees).
- *
- * A busy provider isn't backed off: the next tap should simply try again. Nor
- * is an unreadable saved key, which costs no provider call. The provider's own
- * message is shown only when the user's key made the call — on the server's
- * key it may describe the operator's account.
- */
-function summaryFailure(error: unknown): { error: TRPCError; backoff: boolean; report: boolean } {
+function summaryFailure(error: unknown): { error: TRPCError; report: boolean } {
   if (error instanceof UnreadableApiKeyError) {
     // Reported when the key failed to decrypt.
-    return { error: errors.aiProviderKeyUnreadable(error.message), backoff: false, report: false };
+    return { error: errors.aiProviderKeyUnreadable(error.message), report: false };
   }
   if (!(error instanceof TextGenerationError)) {
     // Our own (e.g. no key configured, an empty response).
     const message = error instanceof Error ? error.message : "Unknown error";
     return {
       error: errors.internal(`Failed to generate summary: ${message}`),
-      backoff: true,
       report: true,
     };
   }
   const provider = aiProviderName(error.provider);
   if (error.failure === "busy") {
-    return { error: errors.aiProviderBusy(provider), backoff: false, report: false };
+    return { error: errors.aiProviderBusy(provider), report: false };
   }
   if (!error.usedUserKey) {
     return {
       error: errors.internal("Failed to generate summary. Please try again later."),
-      backoff: true,
       report: true,
     };
   }
   if (error.failure === "rejected") {
     return {
       error: errors.aiProviderRejected(provider, error.providerMessage),
-      backoff: true,
       report: false,
     };
   }
   return {
     error: errors.internal(`Failed to generate summary: ${error.providerMessage}`),
-    backoff: true,
     report: true,
   };
 }
@@ -157,9 +143,8 @@ export const summarizationRouter = createTRPCRouter({
    * @returns Summary text, whether it was cached, model ID, and generation time
    */
   // Rate-limited (10 burst, 1/sec): makes an outbound LLM call, potentially on
-  // the server-wide API key, and explicit regenerate bypasses the error
-  // backoff below. The native app may call it (and `isAvailable`); model and
-  // prompt settings stay session-only.
+  // the server-wide API key. The native app may call it (and `isAvailable`);
+  // model and prompt settings stay session-only.
   generate: expensiveScopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({
       openapi: {
@@ -301,70 +286,22 @@ export const summarizationRouter = createTRPCRouter({
         throw errors.validation("Entry has no content to summarize");
       }
 
-      // Look up existing summary by user + content hash
-      let summaryRecord = cachedFeedSummary
+      const summaryRecord = cachedFeedSummary
         ? cachedFeedSummary.record
         : await selectSummary(contentHash);
 
-      // Create the placeholder row if there isn't one yet. Two requests for the
-      // same (user, content) at once — a double-click, or the web client and
-      // MCP together — both miss the SELECT above and race here, so let the
-      // `(user_id, content_hash)` unique constraint arbitrate and re-read the
-      // winner's row rather than surfacing a raw unique-violation 500.
-      if (!summaryRecord) {
-        const inserted = await ctx.db
-          .insert(entrySummaries)
-          .values({
-            id: generateUuidv7(),
-            userId,
-            contentHash,
-            promptVersion: CURRENT_PROMPT_VERSION,
-            createdAt: new Date(),
-          })
-          .onConflictDoNothing({
-            target: [entrySummaries.userId, entrySummaries.contentHash],
-          })
-          .returning();
-        summaryRecord = inserted[0] ?? (await selectSummary(contentHash));
+      // Serve the stored summary unless a built-in prompt change made it stale
+      // or the caller asked to regenerate.
+      if (
+        summaryRecord?.summaryText &&
+        summaryRecord.promptVersion === CURRENT_PROMPT_VERSION &&
+        !input.regenerate
+      ) {
+        return toCachedResult(summaryRecord, isSettingsChanged(summaryRecord));
       }
 
-      if (!summaryRecord) {
-        // Only reachable if the conflicting row was deleted between the insert
-        // and the re-read; there is nothing to record the generation against.
-        throw errors.internal("Failed to create summary record");
-      }
-
-      // Check if settings have changed since this summary was generated.
-      // promptVersionChanged also gates cache reuse below (a built-in prompt
-      // bump invalidates the cache), so it stays a separate variable.
-      const promptVersionChanged = summaryRecord.promptVersion !== CURRENT_PROMPT_VERSION;
-      const settingsChanged = isSettingsChanged(summaryRecord);
-
-      // Return cached summary if available and not stale (prompt version unchanged),
-      // unless the user explicitly requested regeneration
-      if (summaryRecord.summaryText && !promptVersionChanged && !input.regenerate) {
-        return toCachedResult(summaryRecord, settingsChanged);
-      }
-
-      // Check if we should retry after a previous error. The backoff guards
-      // against automatic retry loops; an explicit user retry (the error
-      // card's "Try again" / the regenerate button both send regenerate:
-      // true) always goes through, and so does any request once the model or
-      // key that failed has changed — the Android app never sends
-      // regenerate, and the user may just have fixed the cause.
-      const attemptSource = summaryAttemptSource(currentModelId, keys);
-      const canRetry =
-        input.regenerate ||
-        !summaryRecord.errorAt ||
-        summaryRecord.errorSource !== attemptSource ||
-        Date.now() - summaryRecord.errorAt.getTime() > RETRY_AFTER_MS;
-
-      if (!canRetry) {
-        // Note this echoes the stored error from the *previous* attempt — no
-        // new request was made (the settings may have changed since).
-        throw errors.summaryRecentlyFailed(summaryRecord.error ?? "unknown error");
-      }
-
+      // A failure stores nothing: summaries are only generated when the user
+      // asks (and this is rate-limited), so asking again simply tries again.
       try {
         // Prepare content for summarization (convert to plain text, truncate if needed)
         const preparedContent = prepareContentForSummarization(sourceContent);
@@ -377,21 +314,24 @@ export const summarizationRouter = createTRPCRouter({
           userPrompt: userPrompt,
         });
 
-        // Cache in entry_summaries table, clear any previous error
+        const summary = {
+          summaryText: result.summary,
+          modelId: result.modelId,
+          promptVersion: CURRENT_PROMPT_VERSION,
+          maxWords: currentMaxWords,
+          promptHash: currentPromptHash,
+          generatedAt: new Date(),
+        };
+        // Two requests for the same (user, content) at once — a double-click,
+        // or the web client and MCP together — both get here; the
+        // `(user_id, content_hash)` unique constraint keeps one row.
         await ctx.db
-          .update(entrySummaries)
-          .set({
-            summaryText: result.summary,
-            modelId: result.modelId,
-            promptVersion: CURRENT_PROMPT_VERSION,
-            maxWords: currentMaxWords,
-            promptHash: currentPromptHash,
-            generatedAt: new Date(),
-            error: null,
-            errorAt: null,
-            errorSource: null,
-          })
-          .where(eq(entrySummaries.id, summaryRecord.id));
+          .insert(entrySummaries)
+          .values({ id: generateUuidv7(), userId, contentHash, createdAt: new Date(), ...summary })
+          .onConflictDoUpdate({
+            target: [entrySummaries.userId, entrySummaries.contentHash],
+            set: summary,
+          });
 
         return {
           summary: result.summary,
@@ -413,14 +353,6 @@ export const summarizationRouter = createTRPCRouter({
             tags: { source: "summarization" },
             extra: { userId, modelId: currentModelId },
           });
-        }
-        if (failure.backoff) {
-          // What the user was told, not the raw error: this is echoed back by
-          // the backoff above.
-          await ctx.db
-            .update(entrySummaries)
-            .set({ error: failure.error.message, errorAt: new Date(), errorSource: attemptSource })
-            .where(eq(entrySummaries.id, summaryRecord.id));
         }
         throw failure.error;
       }

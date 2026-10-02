@@ -12,7 +12,7 @@ import { sanitizeEntryHtml } from "@/server/html/sanitize";
 import { markdownToHtmlAsync } from "@/server/markdown";
 import { parseFragment, serialize } from "parse5";
 import { htmlToPlainText } from "@/lib/narration/html-to-narration-input";
-import { normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
+import { parseModelRef } from "@/lib/ai/model-ref";
 import { isTextAiProvider } from "@/lib/ai/providers";
 import {
   generateChatCompletion,
@@ -291,23 +291,6 @@ export async function getSummarizationModelId(
     SUMMARIZATION_PROVIDER_PRIORITY.find((p) => available.includes(p)) ??
     SUMMARIZATION_PROVIDER_PRIORITY[0];
   return DEFAULT_SUMMARIZATION_MODELS[provider];
-}
-
-/**
- * Which model, on which key, a summary attempt runs on — the key by a short
- * hash, never the key — so a recorded failure's backoff can tell when the
- * user has since changed either.
- */
-export function summaryAttemptSource(modelId: string, keys: AiProviderKeys | undefined): string {
-  const ref = normalizeModelRef(modelId);
-  const userKey = keys?.[parseModelRef(ref).provider];
-  const key =
-    typeof userKey === "string" && userKey
-      ? `user:${createHash("sha256").update(userKey).digest("base64url").slice(0, 16)}`
-      : userKey
-        ? "user:unreadable"
-        : "server";
-  return `${ref} ${key}`;
 }
 
 /**

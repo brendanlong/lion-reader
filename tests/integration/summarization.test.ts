@@ -104,7 +104,10 @@ const PROVIDER_ENV = [
 ] as const;
 const previousEnv = Object.fromEntries(PROVIDER_ENV.map((name) => [name, process.env[name]]));
 
-/** What the stand-in for Anthropic answers every request with, unless a test says otherwise. */
+/**
+ * What the stand-in for Anthropic answers every request with, unless a test
+ * says otherwise: an error, or for a 200, a summary of `message`.
+ */
 const PROVIDER_REFUSAL = { status: 400, type: "invalid_request_error", message: "stub refused" };
 let providerAnswer = PROVIDER_REFUSAL;
 let providerRequests = 0;
@@ -134,10 +137,22 @@ beforeAll(async () => {
         "x-should-retry": "false",
       });
       res.end(
-        JSON.stringify({
-          type: "error",
-          error: { type: providerAnswer.type, message: providerAnswer.message },
-        })
+        JSON.stringify(
+          providerAnswer.status === 200
+            ? {
+                id: "msg_stub",
+                type: "message",
+                role: "assistant",
+                model: "claude-test",
+                content: [{ type: "text", text: `<summary>${providerAnswer.message}</summary>` }],
+                stop_reason: "end_turn",
+                usage: { input_tokens: 1, output_tokens: 1 },
+              }
+            : {
+                type: "error",
+                error: { type: providerAnswer.type, message: providerAnswer.message },
+              }
+        )
       );
     });
   });
@@ -302,15 +317,12 @@ describe("summarization.generate regenerate bypasses the cache", () => {
 
     await expectProviderFailure(caller.summarization.generate({ entryId, regenerate: true }));
 
-    // The generation attempt is recorded on the cached row, so the request
-    // really reached the LLM call rather than short-circuiting on the cache.
+    // The failed regeneration leaves the stored summary for the next read.
     const [row] = await db
       .select()
       .from(entrySummaries)
       .where(eq(entrySummaries.userId, userId))
       .limit(1);
-    expect(row.errorAt).not.toBeNull();
-    // The stored summary is left alone for the next non-regenerate read.
     expect(row.summaryText).toContain("Cached feed summary");
   });
 
@@ -335,21 +347,16 @@ describe("summarization.generate regenerate bypasses the cache", () => {
 /**
  * `entry_summaries` is unique on `(user_id, content_hash)`, so two requests for
  * the same entry from one user at the same time (a double-click, or the web
- * client and an MCP client together) both miss the cache lookup and both try to
- * insert the placeholder row. The loser must get the winner's row, not a
- * unique-violation 500.
- *
- * The stand-in provider refuses the requests, so each fails past the
- * placeholder insert: at the provider, or — if the other already recorded its
- * failure — at the backoff. A duplicate-key error would have neither code.
- *
- * Nothing here forces the two requests to interleave *inside* the insert
- * window, so this asserts that concurrent requests converge on one row; the
- * narration test of the same shape is the one that reliably reproduces the
- * constraint violation (its cache key is global, so two users collide).
+ * client and an MCP client together) both generate and both write. They must
+ * converge on one row, not fail on a unique violation.
  */
-describe("summarization.generate concurrent placeholder creation", () => {
-  it("survives two concurrent requests for the same entry", async () => {
+describe("summarization.generate concurrent requests", () => {
+  afterEach(() => {
+    providerAnswer = PROVIDER_REFUSAL;
+  });
+
+  it("both succeed and leave one summary", async () => {
+    providerAnswer = { status: 200, type: "", message: "Concurrent summary" };
     const userId = await createTestUser({ emailPrefix: "summ" });
     createdUserIds.push(userId);
     const contentHash = `hash-${generateUuidv7()}`;
@@ -359,18 +366,17 @@ describe("summarization.generate concurrent placeholder creation", () => {
       createAuthContext(userId).then(createCaller),
     ]);
 
-    const results = await Promise.allSettled(
+    const results = await Promise.all(
       callers.map((caller) => caller.summarization.generate({ entryId }))
     );
 
     for (const result of results) {
-      expect(result.status).toBe("rejected");
-      expect(["INTERNAL_ERROR", "SUMMARY_RECENTLY_FAILED"]).toContain(
-        getAppErrorCode((result as PromiseRejectedResult).reason)
-      );
+      expect(result.cached).toBe(false);
+      expect(result.summary).toContain("Concurrent summary");
     }
     const rows = await db.select().from(entrySummaries).where(eq(entrySummaries.userId, userId));
     expect(rows).toHaveLength(1);
+    expect(rows[0].summaryText).toContain("Concurrent summary");
   });
 });
 
@@ -412,7 +418,7 @@ describe("summarization.generate provider failures", () => {
     expect(error.code).toBe("TOO_MANY_REQUESTS");
     expect(getAppErrorCode(error)).toBe("AI_PROVIDER_BUSY");
 
-    // No backoff: the app's plain retry (no `regenerate`) reaches the provider.
+    // The app's plain retry (no `regenerate`) reaches the provider.
     await failure(caller.summarization.generate({ entryId }));
     expect(providerRequests).toBe(2);
   });
@@ -427,14 +433,7 @@ describe("summarization.generate provider failures", () => {
 
     const error = await failure(caller.summarization.generate({ entryId }));
     expect(error.code).toBe("INTERNAL_SERVER_ERROR");
-    expect(error.message).not.toContain("acct-1234");
-
-    // A real failure still backs off, and echoes only what the user was told.
-    const repeat = await failure(caller.summarization.generate({ entryId }));
-    expect(getAppErrorCode(repeat)).toBe("SUMMARY_RECENTLY_FAILED");
-    expect(repeat.code).toBe("TOO_MANY_REQUESTS");
-    expect(repeat.message).not.toContain("acct-1234");
-    expect(providerRequests).toBe(1);
+    expect(error.message).toBe("Failed to generate summary. Please try again later.");
   });
 
   it("passes the provider's message on when the user's own key was rejected", async () => {
@@ -448,45 +447,24 @@ describe("summarization.generate provider failures", () => {
     expect(error.message).toBe("Anthropic rejected the request: invalid x-api-key");
   });
 
-  it("retries at once, without regenerate, once the user changes the key that failed", async () => {
+  it("records nothing, so the next request tries again and can succeed", async () => {
     providerAnswer = { status: 401, type: "authentication_error", message: "invalid x-api-key" };
-    const { caller, entryId } = await setUp();
-    await caller.users["me.updatePreferences"]({ apiKeys: { anthropic: "sk-ant-old" } });
-    await failure(caller.summarization.generate({ entryId }));
-
-    // Same key: the backoff holds.
-    expect(getAppErrorCode(await failure(caller.summarization.generate({ entryId })))).toBe(
-      "SUMMARY_RECENTLY_FAILED"
-    );
-    expect(providerRequests).toBe(1);
-
-    // A new key is a new attempt.
-    await caller.users["me.updatePreferences"]({ apiKeys: { anthropic: "sk-ant-new" } });
-    expect(getAppErrorCode(await failure(caller.summarization.generate({ entryId })))).toBe(
-      "AI_PROVIDER_REJECTED"
-    );
-    expect(providerRequests).toBe(2);
-  });
-
-  it("retries at once, without regenerate, once the user changes the model that failed", async () => {
-    providerAnswer = { status: 404, type: "not_found_error", message: "model: claude-gone" };
     const { caller, entryId, userId } = await setUp();
-    await caller.users["me.updatePreferences"]({
-      apiKeys: { anthropic: "sk-ant-user-key" },
-      summarizationModel: "anthropic:claude-gone",
-    });
-    // The session carries the user's settings, so each change needs a fresh one.
-    const withSettings = async () => createCaller(await createAuthContext(userId));
-    await failure((await withSettings()).summarization.generate({ entryId }));
 
-    const repeat = await failure((await withSettings()).summarization.generate({ entryId }));
-    expect(getAppErrorCode(repeat)).toBe("SUMMARY_RECENTLY_FAILED");
-    expect(providerRequests).toBe(1);
+    await failure(caller.summarization.generate({ entryId }));
+    expect(await db.select().from(entrySummaries).where(eq(entrySummaries.userId, userId))).toEqual(
+      []
+    );
 
-    await caller.users["me.updatePreferences"]({ summarizationModel: "anthropic:claude-other" });
-    const retried = await failure((await withSettings()).summarization.generate({ entryId }));
-    expect(getAppErrorCode(retried)).toBe("AI_PROVIDER_REJECTED");
+    // The same plain request, straight away: no backoff turns it away.
+    await failure(caller.summarization.generate({ entryId }));
     expect(providerRequests).toBe(2);
+
+    providerAnswer = { status: 200, type: "", message: "It worked this time" };
+    const result = await caller.summarization.generate({ entryId });
+    expect(result.cached).toBe(false);
+    expect(result.summary).toContain("It worked this time");
+    expect(providerRequests).toBe(3);
   });
 
   it("says so, without calling anyone, when the user's saved key can't be read", async () => {

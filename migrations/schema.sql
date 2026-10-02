@@ -257,8 +257,7 @@ CREATE TABLE public.entry_summaries (
     error_at timestamp with time zone,
     user_id uuid,
     max_words integer,
-    prompt_hash text,
-    error_source text
+    prompt_hash text
 );
 ALTER TABLE ONLY public.entry_summaries ALTER COLUMN summary_text SET COMPRESSION lz4;
 

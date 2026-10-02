@@ -827,13 +827,6 @@
       "when": 1782955020000,
       "tag": "0118_drop_legacy_api_key_columns",
       "breakpoints": true
-    },
-    {
-      "idx": 118,
-      "version": "7",
-      "when": 1782955080000,
-      "tag": "0119_entry_summary_error_source",
-      "breakpoints": true
     }
   ]
 }

@@ -24,11 +24,7 @@ import {
   OpenRouterChatError,
 } from "@/server/services/openrouter";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
-import {
-  getSummarizationModelId,
-  isSummarizationAvailable,
-  summaryAttemptSource,
-} from "@/server/services/summarization";
+import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
 import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
   DEFAULT_SUMMARIZATION_MODELS,
@@ -695,25 +691,5 @@ describe("TextGenerationError.providerMessage", () => {
     expect(
       new TextGenerationError("groq", "failed", true, new Error("socket hang up")).providerMessage
     ).toBe("socket hang up");
-  });
-});
-
-describe("summaryAttemptSource", () => {
-  it("tells models and keys apart without containing the key", () => {
-    const source = summaryAttemptSource("anthropic:claude-x", { anthropic: "sk-ant-secret" });
-    expect(source).not.toContain("sk-ant-secret");
-    expect(source).toBe(summaryAttemptSource("anthropic:claude-x", { anthropic: "sk-ant-secret" }));
-    expect(source).not.toBe(summaryAttemptSource("anthropic:claude-x", { anthropic: "sk-ant-2" }));
-    expect(source).not.toBe(
-      summaryAttemptSource("anthropic:claude-y", { anthropic: "sk-ant-secret" })
-    );
-    expect(source).not.toBe(summaryAttemptSource("anthropic:claude-x", {}));
-    // Another provider's key doesn't matter.
-    expect(summaryAttemptSource("anthropic:claude-x", { groq: "gsk" })).toBe(
-      summaryAttemptSource("anthropic:claude-x", {})
-    );
-    expect(summaryAttemptSource("anthropic:claude-x", { anthropic: UNREADABLE_API_KEY })).not.toBe(
-      summaryAttemptSource("anthropic:claude-x", {})
-    );
   });
 });
