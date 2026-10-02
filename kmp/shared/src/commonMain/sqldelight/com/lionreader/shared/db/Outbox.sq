@@ -17,14 +17,11 @@ SELECT * FROM outbox_state ORDER BY changed_at;
 
 -- Removes a flushed change only if the user hasn't changed it again since.
 deleteStateIfUnchanged:
-DELETE FROM outbox_state WHERE entry_id = ? AND field = ? AND changed_at = ?;
+DELETE FROM outbox_state WHERE entry_id = ? AND field = ? AND value = ? AND changed_at = ?;
 
 deleteStatesForEntry:
 DELETE FROM outbox_state WHERE entry_id = ?;
 
 countStates:
 SELECT count(*) FROM outbox_state;
-
-deleteAllStates:
-DELETE FROM outbox_state;
 

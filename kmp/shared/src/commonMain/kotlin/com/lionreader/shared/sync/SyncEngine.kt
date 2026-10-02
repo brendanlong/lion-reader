@@ -7,11 +7,13 @@ import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.api.SyncChanges
+import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.parseSyncEvent
 import com.lionreader.shared.data.formatMillis
 import com.lionreader.shared.data.parseMillis
 import com.lionreader.shared.db.LionReaderDatabase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -51,15 +53,16 @@ class SyncEngine(
 
     /**
      * A full sync: send, pull, then (if [downloadContent]) article bodies. Throws on network/server
-     * failure; retry later.
+     * failure (a failed send only once the rest is done); retry later.
      */
     suspend fun sync(downloadContent: Boolean = true) {
-        mutex.withLock {
-            flush()
-            if (writer.cursors == null) bootstrap()
-            pull()
-            refreshRecentlyRead(policy())
-            writer.evict(policy(), now())
+        val flushFailure = mutex.withLock {
+            tryFlush().also {
+                if (writer.cursors == null) bootstrap()
+                pull()
+                refreshRecentlyRead(policy())
+                writer.evict(policy(), now())
+            }
         }
         if (downloadContent) {
             contentMutex.withLock {
@@ -67,15 +70,17 @@ class SyncEngine(
                 mutex.withLock { writer.evict(policy(), now()) }
             }
         }
+        flushFailure?.let { throw it }
     }
 
     /**
      * Sends unsent changes (quick, after the user acts), then pulls what changed elsewhere
-     * meanwhile.
+     * meanwhile. Throws if either fails, pulling even when the send did.
      */
     suspend fun flushOutbox() = mutex.withLock {
-        flush()
+        val flushFailure = tryFlush()
         pull()
+        flushFailure?.let { throw it }
     }
 
     /**
@@ -107,10 +112,21 @@ class SyncEngine(
         writer.storeSummary(entryId, summary, version)
     }
 
-    /** Forgets all synced data and unsent changes. */
-    suspend fun reset() = mutex.withLock { writer.clearAll() }
-
     // ---- Outbox ----------------------------------------------------------
+
+    /**
+     * [flush]'s failure, returned rather than thrown: changes that can't be sent yet mustn't stop
+     * the device from receiving everyone else's.
+     */
+    private suspend fun tryFlush(): Exception? =
+        try {
+            flush()
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e
+        }
 
     private suspend fun flush() {
         val ops = outboxQueries.selectStates().executeAsList()
@@ -215,14 +231,19 @@ class SyncEngine(
     private suspend fun pull() {
         while (true) {
             val cursors = writer.cursors ?: return
-            val changes = api.syncChanges(cursors)
+            // Every page of a catch-up is sent where it started, which the
+            // server classifies changes against: pages are ordered by an
+            // entry's latest change, so against a later page's own cursor its
+            // creation or an edit would go unreported (#1663).
+            val start = writer.catchUpStart ?: cursors
+            val changes = api.syncChanges(cursors, start)
             if (changes.resyncRequired) {
                 writer.forgetCursors()
                 bootstrap()
                 continue
             }
             writer.commitPage(
-                fetchPage(changes.events.mapNotNull(::parseSyncEvent), changes),
+                fetchPage(changes.events.mapNotNull(::parseSyncEvent), changes, start),
                 now(),
             )
             if (!changes.hasMore) return
@@ -230,7 +251,11 @@ class SyncEngine(
     }
 
     /** Everything a page needs beyond its events, fetched before it commits. */
-    private suspend fun fetchPage(events: List<SyncEvent>, changes: SyncChanges): PulledPage {
+    private suspend fun fetchPage(
+        events: List<SyncEvent>,
+        changes: SyncChanges,
+        start: SyncCursors,
+    ): PulledPage {
         val mentioned = events.mapNotNull {
             when (it) {
                 is SyncEvent.NewEntry -> it.entryId
@@ -239,14 +264,19 @@ class SyncEngine(
                 else -> null
             }
         }
-        // The server classifies an entry's changes against each page's own
-        // cursor, but pages are ordered by an entry's latest change. So past
-        // the first page of a catch-up, an entry edited and then changed again
-        // can arrive as a state change only, and one created and then changed
-        // as an update rather than new. Fetching whole every entry the device
-        // lacks — and, on those later pages, every one it has — keeps it
-        // exact.
-        val refetch = writer.catchUpInProgress
+        // Spam comes without its data, so that clients leave it out as the
+        // server's lists do: a new entry without it, or an unread one changed.
+        val spam =
+            events
+                .mapNotNull {
+                    when {
+                        it is SyncEvent.NewEntry && it.entry == null -> it.entryId
+                        it is SyncEvent.EntryStateChanged && !it.read && it.entry == null ->
+                            it.entryId
+                        else -> null
+                    }
+                }
+                .toSet()
         // A new-entry event with its data is complete for an entry the device
         // lacks. One it already has was listed by a bootstrap that began
         // before the entry was created, and may have been edited since its
@@ -259,14 +289,15 @@ class SyncEngine(
                 .map { it.entryId }
         val ids =
             mentioned.distinct().filter {
-                it !in complete && (refetch || it in newIds || !writer.entryExists(it))
+                it !in spam && it !in complete && (it in newIds || !writer.entryExists(it))
             }
         return PulledPage(
             events = events,
             deletedIds = changes.deletions.map { it.entryId },
             cursors = changes.cursors,
             hasMore = changes.hasMore,
-            fetchedEntries = if (ids.isEmpty()) emptyList() else api.getEntries(ids),
+            catchUpStart = start,
+            fetchedEntries = api.getEntries(ids),
             resubscribedEntries =
                 events.filterIsInstance<SyncEvent.SubscriptionCreated>().flatMap {
                     api.listEntries(ListFilter.ALL, null, it.subscription.id).items

@@ -28,7 +28,7 @@ CREATE TABLE entry (
   read_changed_at INTEGER
 );
 
--- Never reset (not even by clearSynced or clearAll), so no entry gets back a
+-- Never reset (not even by clearSynced), so no entry gets back a
 -- version an in-flight download started at.
 CREATE TABLE body_version_seq (
   value INTEGER NOT NULL
@@ -76,12 +76,6 @@ WHERE id = ?;
 
 updateServerState:
 UPDATE entry SET read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at) WHERE id = ?;
-
-updateServerRead:
-UPDATE entry SET read = ? WHERE id = ?;
-
-updateServerStarred:
-UPDATE entry SET starred = ? WHERE id = ?;
 
 markOpened:
 UPDATE entry SET last_opened_at = ? WHERE id = ?;

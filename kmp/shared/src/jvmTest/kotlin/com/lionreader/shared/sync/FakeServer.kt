@@ -45,7 +45,8 @@ import kotlinx.serialization.json.jsonObject
 
 /**
  * An in-memory stand-in for the server's `/api/v1`, at the HTTP boundary: the code under test
- * builds real requests and parses real JSON.
+ * builds real requests and parses real JSON, and gets the real endpoints' 400 for more items than
+ * they accept ([ServerLimits]).
  */
 class FakeServer {
     val entries = linkedMapOf<String, FullEntry>()
@@ -65,6 +66,9 @@ class FakeServer {
 
     /** Queued `sync.changes` responses; empty means "no changes". */
     val changes = ArrayDeque<SyncChanges>()
+
+    /** Status and body to answer `/events` with, instead of [eventStreams]. */
+    var eventsError: Pair<HttpStatusCode, String>? = null
     val requests = mutableListOf<HttpRequestData>()
     val markReadRequests = mutableListOf<MarkReadRequest>()
     val starRequests = mutableListOf<SetStarredRequest>()
@@ -122,7 +126,21 @@ class FakeServer {
         times: Int = 1,
         deletions: List<String> = emptyList(),
         resyncRequired: Boolean = false,
-    ) =
+        hasMore: Boolean = false,
+        /** The page's next entries cursor. */
+        entriesCursor: String = "2026-02-01T00:00:00Z",
+    ) {
+        val entryIds = events.mapNotNull {
+            when (it) {
+                is SyncEvent.NewEntry -> it.entryId
+                is SyncEvent.EntryUpdated -> it.entryId
+                is SyncEvent.EntryStateChanged -> it.entryId
+                else -> null
+            }
+        }
+        require(entryIds.distinct().size <= ServerLimits.SYNC_PAGE_ENTRIES) {
+            "a sync.changes page holds at most ${ServerLimits.SYNC_PAGE_ENTRIES} entries"
+        }
         repeat(times) {
             changes.addLast(
                 SyncChanges(
@@ -130,18 +148,21 @@ class FakeServer {
                         events.map {
                             ApiJson.encodeToJsonElement(SyncEvent.serializer(), it).jsonObject
                         },
-                    hasMore = false,
-                    cursors = cursors.copy(entries = "2026-02-01T00:00:00Z"),
+                    hasMore = hasMore,
+                    cursors = cursors.copy(entries = entriesCursor),
                     deletions = deletions.map { Deletion(it, "2026-02-01T00:00:00Z") },
                     resyncRequired = resyncRequired,
                 )
             )
         }
+    }
 
     private suspend fun MockRequestHandleScope.handle(request: HttpRequestData) = run {
         requests += request
         val path = request.url.encodedPath.removePrefix("/api/v1")
         when {
+            path == "/events" && eventsError != null ->
+                respond(eventsError!!.second, eventsError!!.first, jsonHeaders)
             path == "/events" ->
                 if (eventStreams.isEmpty()) awaitCancellation()
                 else
@@ -155,8 +176,12 @@ class FakeServer {
             path == "/sync/changes" ->
                 json(
                     SyncChanges.serializer(),
-                    changes.removeFirstOrNull() ?: SyncChanges(emptyList(), false, cursors),
+                    changes.removeFirstOrNull()
+                        ?: SyncChanges(emptyList(), false, cursors, emptyList(), false),
                 )
+            path == "/entries" &&
+                (request.url.parameters["limit"]?.toInt() ?: 0) > ServerLimits.LIST_LIMIT ->
+                respond("{}", HttpStatusCode.BadRequest, jsonHeaders)
             path == "/entries" && entryPageFailures.remove(++entryPageRequests) ->
                 respond("{}", HttpStatusCode.ServiceUnavailable, jsonHeaders)
             path == "/entries" -> {
@@ -190,8 +215,15 @@ class FakeServer {
             }
             path == "/entries/batch" -> {
                 val ids = body(request, GetManyRequest.serializer()).ids
-                duringBatch?.invoke(ids)
-                json(GetManyResponse.serializer(), GetManyResponse(ids.mapNotNull { entries[it] }))
+                if (ids.size !in 1..ServerLimits.BATCH_IDS) {
+                    respond("{}", HttpStatusCode.BadRequest, jsonHeaders)
+                } else {
+                    duringBatch?.invoke(ids)
+                    json(
+                        GetManyResponse.serializer(),
+                        GetManyResponse(ids.mapNotNull { entries[it] }),
+                    )
+                }
             }
             path == "/summarization/available" ->
                 json(
@@ -241,7 +273,9 @@ class FakeServer {
         ids: List<String>,
         change: (FullEntry) -> FullEntry,
     ) =
-        stateWriteFailure?.let { respond("{}", it, jsonHeaders) }
+        (if (ids.size !in 1..ServerLimits.STATE_WRITE_ENTRIES) HttpStatusCode.BadRequest else null)
+            ?.let { respond("{}", it, jsonHeaders) }
+            ?: stateWriteFailure?.let { respond("{}", it, jsonHeaders) }
             ?: duringStateWrite?.let {
                 it()
                 null
@@ -269,6 +303,18 @@ class FakeServer {
         respond(ApiJson.encodeToString(serializer, value), HttpStatusCode.OK, jsonHeaders)
 
     private val jsonHeaders = headersOf(HttpHeaders.ContentType, "application/json")
+}
+
+/** What the real endpoints accept per request (src/server/trpc/routers/entries.ts, sync.ts). */
+object ServerLimits {
+    /** `/entries/batch` ids. */
+    const val BATCH_IDS = 100
+    /** `/entries` `limit`. */
+    const val LIST_LIMIT = 100
+    /** `/entries/mark-read` and `/entries/starred` entries. */
+    const val STATE_WRITE_ENTRIES = 1000
+    /** Entries in one `sync.changes` page. */
+    const val SYNC_PAGE_ENTRIES = 500
 }
 
 fun FullEntry.listItem() =
