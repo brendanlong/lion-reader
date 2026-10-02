@@ -127,7 +127,8 @@ export async function openRouterChatCompletion(
     ),
   });
   if (!response.ok) {
-    throw await providerError("OpenRouter", response);
+    // The status is what the caller classifies the failure by.
+    throw Object.assign(await providerError("OpenRouter", response), { status: response.status });
   }
   const parsed = chatCompletionResponseSchema.parse(await response.json());
   if (parsed.error) {

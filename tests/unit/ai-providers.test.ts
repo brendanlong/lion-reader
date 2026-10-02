@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
+import Anthropic from "@anthropic-ai/sdk";
+import Cerebras from "@cerebras/cerebras_cloud_sdk";
+import Groq from "groq-sdk";
 import {
+  classifyTextGenerationError,
   filterToLatestClaudeGeneration,
   generateChatCompletion,
   getAvailableProviders,
@@ -12,6 +16,7 @@ import {
 import { getNarrationModelRef, isNarrationLlmAvailable } from "@/server/services/narration";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import { buildChatCompletionBody } from "@/server/services/openrouter";
+import { ProviderBusyError } from "@/server/services/provider-errors";
 import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
 import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
@@ -551,5 +556,54 @@ describe("buildChatCompletionBody (OpenRouter)", () => {
       buildChatCompletionBody("m", options, [], { maxInputPrice: 0.35, maxOutputPrice: 0.75 })
     ).toMatchObject({ provider: { max_price: { prompt: 0.35, completion: 0.75 } } });
     expect(buildChatCompletionBody("m", options, []).provider).not.toHaveProperty("max_price");
+  });
+});
+
+describe("classifyTextGenerationError", () => {
+  const headers = new Headers();
+
+  it("treats rate limiting and overload as busy", () => {
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(429, undefined, "slow", headers))
+    ).toBe("busy");
+    // Anthropic's "overloaded"
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(529, undefined, "busy", headers))
+    ).toBe("busy");
+    expect(
+      classifyTextGenerationError(Groq.APIError.generate(503, undefined, "busy", headers))
+    ).toBe("busy");
+    // OpenRouter's 429
+    expect(classifyTextGenerationError(new ProviderBusyError("OpenRouter busy", null))).toBe(
+      "busy"
+    );
+  });
+
+  it("treats an unreachable provider as busy", () => {
+    expect(classifyTextGenerationError(new Anthropic.APIConnectionError({}))).toBe("busy");
+    expect(classifyTextGenerationError(new Cerebras.APIConnectionTimeoutError())).toBe("busy");
+    expect(classifyTextGenerationError(new TypeError("fetch failed"))).toBe("busy");
+    expect(classifyTextGenerationError(new DOMException("timed out", "TimeoutError"))).toBe("busy");
+  });
+
+  it("treats other 4xx answers as rejections", () => {
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(401, undefined, "bad key", headers))
+    ).toBe("rejected");
+    expect(
+      classifyTextGenerationError(Cerebras.APIError.generate(400, undefined, "bad model", {}))
+    ).toBe("rejected");
+    // OpenRouter's errors carry the status they were answered with.
+    expect(
+      classifyTextGenerationError(Object.assign(new Error("no credit"), { status: 402 }))
+    ).toBe("rejected");
+  });
+
+  it("treats anything else as a failure", () => {
+    expect(
+      classifyTextGenerationError(Anthropic.APIError.generate(500, undefined, "oops", headers))
+    ).toBe("failed");
+    expect(classifyTextGenerationError(new Error("something else"))).toBe("failed");
+    expect(classifyTextGenerationError("not even an error")).toBe("failed");
   });
 });

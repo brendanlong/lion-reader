@@ -53,6 +53,13 @@ const errorCodeToTRPCCode = {
   SITE_BLOCKED: "BAD_GATEWAY",
   UPSTREAM_RATE_LIMITED: "TOO_MANY_REQUESTS",
   SERVER_BUSY: "TOO_MANY_REQUESTS",
+  AI_PROVIDER_BUSY: "TOO_MANY_REQUESTS",
+  // Only for a call made with the user's own key: their key, credit, or model
+  // choice is the problem, not our server.
+  AI_PROVIDER_REJECTED: "BAD_REQUEST",
+  // The error backoff turned the request away; the failure itself was reported
+  // when it happened.
+  SUMMARY_RECENTLY_FAILED: "TOO_MANY_REQUESTS",
 } as const satisfies Record<string, TRPCError["code"]>;
 
 type ErrorCode = keyof typeof errorCodeToTRPCCode;
@@ -164,6 +171,18 @@ export const errors = {
 
   serverBusy: (work: string) =>
     createError("SERVER_BUSY", `Too many ${work} in progress. Please try again shortly.`),
+
+  aiProviderBusy: (provider: string) =>
+    createError("AI_PROVIDER_BUSY", `${provider} is busy right now. Please try again shortly.`),
+
+  aiProviderRejected: (provider: string, reason: string) =>
+    createError("AI_PROVIDER_REJECTED", `${provider} rejected the request: ${reason}`),
+
+  summaryRecentlyFailed: (previousError: string) =>
+    createError(
+      "SUMMARY_RECENTLY_FAILED",
+      `Summarizing this article failed recently, so it wasn't retried. Try again later. Previous error: ${previousError}`
+    ),
 
   feedFetchError: (url: string, reason: string) =>
     createError("FEED_FETCH_ERROR", `Failed to fetch feed: ${reason}`, {

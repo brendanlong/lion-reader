@@ -1,8 +1,8 @@
 /**
  * Summarization Router
  *
- * Handles AI-powered article summarization.
- * Uses the user's configured AI provider (Anthropic, Groq, Cerebras, or OpenRouter).
+ * Handles AI-powered article summarization, on any text provider in the
+ * registry (`@/lib/ai/providers`) the user or server has a key for.
  */
 
 import { z } from "zod";
@@ -30,11 +30,13 @@ import {
   DEFAULT_SUMMARIZATION_PROMPT,
   sanitizeSummaryHtml,
 } from "@/server/services/summarization";
-import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
+import { isModelAllowed, listAllModels, TextGenerationError } from "@/server/services/ai-providers";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
+import { aiProviderName } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
+import type { TRPCError } from "@trpc/server";
 
 // ============================================================================
 // Constants
@@ -44,6 +46,38 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
  * Time to wait before retrying after an error (1 hour in milliseconds).
  */
 const RETRY_AFTER_MS = 60 * 60 * 1000;
+
+/**
+ * The error to answer a failed generation with, and whether it's worth
+ * recording as the backoff. A busy provider isn't: the next tap should simply
+ * try again. The provider's own message is shown only when the user's key made
+ * the call — on the server's key it may describe the operator's account, so it
+ * stays in the logs.
+ */
+function summaryFailure(error: unknown): { error: TRPCError; backoff: boolean } {
+  if (!(error instanceof TextGenerationError)) {
+    // Our own (e.g. no key configured, an empty response).
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return { error: errors.internal(`Failed to generate summary: ${message}`), backoff: true };
+  }
+  const provider = aiProviderName(error.provider);
+  if (error.failure === "busy") {
+    return { error: errors.aiProviderBusy(provider), backoff: false };
+  }
+  if (!error.usedUserKey) {
+    return {
+      error: errors.internal("Failed to generate summary. Please try again later."),
+      backoff: true,
+    };
+  }
+  return {
+    error:
+      error.failure === "rejected"
+        ? errors.aiProviderRejected(provider, error.message)
+        : errors.internal(`Failed to generate summary: ${error.message}`),
+    backoff: true,
+  };
+}
 
 // ============================================================================
 // Validation Schemas
@@ -301,9 +335,7 @@ export const summarizationRouter = createTRPCRouter({
       if (!canRetry) {
         // Note this echoes the stored error from the *previous* attempt — no
         // new request was made (the settings may have changed since).
-        throw errors.internal(
-          `Summarization failed recently and this request was not retried. Use Regenerate to retry now, or try again later. Previous error: ${summaryRecord.error}`
-        );
+        throw errors.summaryRecentlyFailed(summaryRecord.error ?? "unknown error");
       }
 
       try {
@@ -341,32 +373,29 @@ export const summarizationRouter = createTRPCRouter({
           settingsChanged: false,
         };
       } catch (error) {
-        // Log the error
         logger.error("Summary generation failed", {
           contentHash,
           error: error instanceof Error ? error.message : String(error),
         });
 
-        // Store error in entry_summaries for retry tracking
-        await ctx.db
-          .update(entrySummaries)
-          .set({
-            error: error instanceof Error ? error.message : "Unknown error",
-            errorAt: new Date(),
-          })
-          .where(eq(entrySummaries.id, summaryRecord.id));
-
-        throw errors.internal(
-          `Failed to generate summary: ${error instanceof Error ? error.message : "Unknown error"}`
-        );
+        const failure = summaryFailure(error);
+        if (failure.backoff) {
+          // What the user was told, not the raw error: this is echoed back by
+          // the backoff above.
+          await ctx.db
+            .update(entrySummaries)
+            .set({ error: failure.error.message, errorAt: new Date() })
+            .where(eq(entrySummaries.id, summaryRecord.id));
+        }
+        throw failure.error;
       }
     }),
 
   /**
    * Check if AI summarization is available.
    *
-   * Returns true if any provider (Anthropic, Groq, Cerebras, OpenRouter) has a
-   * user-configured or server-configured API key.
+   * Returns true if any text provider has a user-configured or
+   * server-configured API key.
    */
   isAvailable: scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS)
     .meta({

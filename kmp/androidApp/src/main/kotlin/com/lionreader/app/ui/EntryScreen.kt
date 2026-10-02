@@ -78,6 +78,7 @@ import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.reader.readerDocument
 import com.lionreader.app.shareWebPage
 import com.lionreader.app.webUrl
+import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
@@ -180,11 +181,17 @@ fun EntryScreen(
                             withContext(Dispatchers.IO) { account.sync.summarize(id) }
                         } catch (e: CancellationException) {
                             throw e
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
+                            // A 4xx says why (the provider is busy, or rejected the
+                            // user's own key); a 5xx's message isn't for the user.
+                            val reason =
+                                (e as? ApiException)
+                                    ?.takeIf { it.status in 400..499 }
+                                    ?.serverMessage
                             Toast.makeText(
                                     context,
-                                    "Couldn't summarize this article",
-                                    Toast.LENGTH_SHORT,
+                                    reason ?: "Couldn't summarize this article",
+                                    if (reason != null) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
                                 )
                                 .show()
                         } finally {

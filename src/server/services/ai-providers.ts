@@ -34,6 +34,7 @@ import {
   serverKeyTokenPriceCaps,
   type ModelPrice,
 } from "@/server/services/server-key-models";
+import { ProviderBusyError } from "@/server/services/provider-errors";
 
 /**
  * Per-user provider API keys, as `getUserApiKeys` returns them. A missing or
@@ -101,6 +102,12 @@ export function getAvailableProviders(keys?: AiProviderKeys): TextAiProvider[] {
   return TEXT_AI_PROVIDERS.filter((provider) => isProviderAvailable(provider, keys));
 }
 
+/**
+ * Per-attempt timeout for the provider SDKs, matching OpenRouter's. Anthropic's
+ * default is 10 minutes, far longer than anyone waits for a summary.
+ */
+const TEXT_REQUEST_TIMEOUT_MS = 120_000;
+
 // Global clients for the server-wide env keys, created lazily. Clients for
 // per-user keys are always created fresh (never cached).
 let globalAnthropicClient: Anthropic | null = null;
@@ -110,36 +117,45 @@ let globalCerebrasClient: Cerebras | null = null;
 function getAnthropicClient(keys?: AiProviderKeys): Anthropic | null {
   const userKey = userKeyFor("anthropic", keys);
   if (userKey) {
-    return new Anthropic({ apiKey: userKey });
+    return new Anthropic({ apiKey: userKey, timeout: TEXT_REQUEST_TIMEOUT_MS });
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     return null;
   }
-  globalAnthropicClient ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  globalAnthropicClient ??= new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: TEXT_REQUEST_TIMEOUT_MS,
+  });
   return globalAnthropicClient;
 }
 
 function getGroqClient(keys?: AiProviderKeys): Groq | null {
   const userKey = userKeyFor("groq", keys);
   if (userKey) {
-    return new Groq({ apiKey: userKey });
+    return new Groq({ apiKey: userKey, timeout: TEXT_REQUEST_TIMEOUT_MS });
   }
   if (!process.env.GROQ_API_KEY) {
     return null;
   }
-  globalGroqClient ??= new Groq({ apiKey: process.env.GROQ_API_KEY });
+  globalGroqClient ??= new Groq({
+    apiKey: process.env.GROQ_API_KEY,
+    timeout: TEXT_REQUEST_TIMEOUT_MS,
+  });
   return globalGroqClient;
 }
 
 function getCerebrasClient(keys?: AiProviderKeys): Cerebras | null {
   const userKey = userKeyFor("cerebras", keys);
   if (userKey) {
-    return new Cerebras({ apiKey: userKey });
+    return new Cerebras({ apiKey: userKey, timeout: TEXT_REQUEST_TIMEOUT_MS });
   }
   if (!process.env.CEREBRAS_API_KEY) {
     return null;
   }
-  globalCerebrasClient ??= new Cerebras({ apiKey: process.env.CEREBRAS_API_KEY });
+  globalCerebrasClient ??= new Cerebras({
+    apiKey: process.env.CEREBRAS_API_KEY,
+    timeout: TEXT_REQUEST_TIMEOUT_MS,
+  });
   return globalCerebrasClient;
 }
 
@@ -180,12 +196,68 @@ export function supportsReasoningEffort(model: string): boolean {
 }
 
 /**
+ * How a provider call failed, as far as the caller should care:
+ * - `busy`: rate limited, overloaded, or unreachable — worth trying again shortly.
+ * - `rejected`: the provider refused the request (bad key, no credit, a model
+ *   or request it won't serve) — retrying unchanged won't help.
+ * - `failed`: anything else.
+ */
+export type TextGenerationFailure = "busy" | "rejected" | "failed";
+
+/** A failed {@link generateChatCompletion}; the provider's error is the `cause`. */
+export class TextGenerationError extends Error {
+  constructor(
+    readonly provider: TextAiProvider,
+    readonly failure: TextGenerationFailure,
+    /**
+     * Whether the user's own key made the call. When it didn't, the message
+     * may describe the operator's account and must not reach the user.
+     */
+    readonly usedUserKey: boolean,
+    cause: unknown
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+  }
+}
+
+/** HTTP statuses meaning "not right now" (529 is Anthropic's "overloaded"). */
+const BUSY_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504, 529]);
+
+const SDKS = [Anthropic, Groq, Cerebras];
+
+function isConnectionError(error: unknown): boolean {
+  if (SDKS.some((sdk) => error instanceof sdk.APIConnectionError)) return true;
+  // OpenRouter is plain fetch: a network failure is a TypeError, a timeout a
+  // TimeoutError DOMException.
+  return (
+    (error instanceof TypeError && error.message === "fetch failed") ||
+    (error instanceof DOMException && error.name === "TimeoutError")
+  );
+}
+
+/** The HTTP status a provider answered a failed request with, if it answered. */
+function providerStatusOf(error: unknown): number | undefined {
+  const status =
+    error !== null && typeof error === "object" && "status" in error ? error.status : undefined;
+  return typeof status === "number" ? status : undefined;
+}
+
+export function classifyTextGenerationError(error: unknown): TextGenerationFailure {
+  if (error instanceof ProviderBusyError || isConnectionError(error)) return "busy";
+  const status = providerStatusOf(error);
+  if (status === undefined) return "failed";
+  if (BUSY_STATUSES.has(status)) return "busy";
+  return status >= 400 && status < 500 ? "rejected" : "failed";
+}
+
+/**
  * Runs a single-turn chat completion on the referenced model and returns the
  * response text (empty string if the model produced no text — callers decide
  * how to handle that).
  *
  * @throws Error if the provider is not configured, or the model isn't allowed
  *   on the server's key
+ * @throws TextGenerationError if the provider call fails
  */
 export async function generateChatCompletion(
   ref: ModelRef,
@@ -196,15 +268,36 @@ export async function generateChatCompletion(
   if (!isTextAiProvider(provider)) {
     throw new Error(`${aiProviderName(provider)} is only used for cloud voices`);
   }
+  if (!isProviderAvailable(provider, keys)) {
+    throw new Error(`${aiProviderName(provider)} API key not configured`);
+  }
   const modelRef = formatModelRef(provider, ref.model);
-  if (isProviderAvailable(provider, keys) && !(await isTextModelAllowed(modelRef, keys))) {
+  if (!(await isTextModelAllowed(modelRef, keys))) {
     throw new Error(`${modelRef} isn't allowed on the server's ${aiProviderName(provider)} key`);
   }
+  if (options.jsonObject && provider === "anthropic") {
+    throw new Error("JSON-object responses are not supported for Anthropic models");
+  }
+  try {
+    return await runChatCompletion(provider, ref, keys, options);
+  } catch (error) {
+    throw new TextGenerationError(
+      provider,
+      classifyTextGenerationError(error),
+      !!userKeyFor(provider, keys),
+      error
+    );
+  }
+}
+
+async function runChatCompletion(
+  provider: TextAiProvider,
+  ref: ModelRef,
+  keys: AiProviderKeys | undefined,
+  options: ChatCompletionOptions
+): Promise<string> {
   switch (provider) {
     case "anthropic": {
-      if (options.jsonObject) {
-        throw new Error("JSON-object responses are not supported for Anthropic models");
-      }
       const client = getAnthropicClient(keys);
       if (!client) {
         throw new Error("Anthropic API key not configured");
@@ -277,7 +370,9 @@ export async function generateChatCompletion(
           ...options,
           reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
         },
-        userKeyFor("openrouter", keys) ? null : serverKeyTokenPriceCaps(modelRef)
+        userKeyFor("openrouter", keys)
+          ? null
+          : serverKeyTokenPriceCaps(formatModelRef(provider, ref.model))
       );
     }
   }

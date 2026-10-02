@@ -9,14 +9,17 @@
  * that in so the sanitize-on-read guarantee can't be silently dropped.
  */
 
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
+import { randomBytes } from "node:crypto";
+import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, userEntries, entrySummaries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
+import { getAppErrorCode } from "../../src/server/trpc/errors";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { DEFAULT_SUMMARIZATION_MODELS } from "../../src/lib/summarization/constants";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
@@ -97,28 +100,43 @@ const PROVIDER_ENV = [
   "SERVER_KEY_MAX_OUTPUT_PRICE",
   "SERVER_KEY_MAX_SPEECH_PRICE",
   "ANTHROPIC_BASE_URL",
+  "API_KEY_ENCRYPTION_KEY",
 ] as const;
 const previousEnv = Object.fromEntries(PROVIDER_ENV.map((name) => [name, process.env[name]]));
 
-/** What the stand-in for Anthropic answers every request with. */
-const PROVIDER_REFUSAL = "stub provider refused";
+/** What the stand-in for Anthropic answers every request with, unless a test says otherwise. */
+const PROVIDER_REFUSAL = { status: 400, type: "invalid_request_error", message: "stub refused" };
+let providerAnswer = PROVIDER_REFUSAL;
+let providerRequests = 0;
 let providerStub: Server;
+
+/** Expects `promise` to fail after the router sent the stand-in a request. */
+async function expectProviderFailure(promise: Promise<unknown>): Promise<void> {
+  const before = providerRequests;
+  await expect(promise).rejects.toThrow("Failed to generate summary");
+  expect(providerRequests).toBe(before + 1);
+}
 
 beforeAll(async () => {
   // Make summarization "available" via the server key so the router reaches the
   // cached read path. Nothing else is configured, so a developer's own keys
   // can't turn a failing generation into a real call; generation goes to a
-  // local stand-in for Anthropic that refuses it (a 400, which the SDK doesn't
-  // retry). The SDK reads ANTHROPIC_BASE_URL when the server's client is made.
+  // local stand-in for Anthropic that refuses it. The SDK reads
+  // ANTHROPIC_BASE_URL when a client is made.
   for (const name of PROVIDER_ENV) delete process.env[name];
   providerStub = createServer((req, res) => {
+    providerRequests++;
     req.resume();
     req.on("end", () => {
-      res.writeHead(400, { "Content-Type": "application/json" });
+      res.writeHead(providerAnswer.status, {
+        "Content-Type": "application/json",
+        // Otherwise the SDK retries a 429/5xx itself, with backoff.
+        "x-should-retry": "false",
+      });
       res.end(
         JSON.stringify({
           type: "error",
-          error: { type: "invalid_request_error", message: PROVIDER_REFUSAL },
+          error: { type: providerAnswer.type, message: providerAnswer.message },
         })
       );
     });
@@ -126,6 +144,7 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => providerStub.listen(0, "127.0.0.1", resolve));
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(providerStub.address() as AddressInfo).port}`;
   process.env.ANTHROPIC_API_KEY = "sk-ant-test-server-key";
+  process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 });
 
 afterAll(async () => {
@@ -281,9 +300,7 @@ describe("summarization.generate regenerate bypasses the cache", () => {
 
     const caller = createCaller(await createAuthContext(userId));
 
-    await expect(caller.summarization.generate({ entryId, regenerate: true })).rejects.toThrow(
-      PROVIDER_REFUSAL
-    );
+    await expectProviderFailure(caller.summarization.generate({ entryId, regenerate: true }));
 
     // The generation attempt is recorded on the cached row, so the request
     // really reached the LLM call rather than short-circuiting on the cache.
@@ -311,9 +328,7 @@ describe("summarization.generate regenerate bypasses the cache", () => {
     expect(cached.cached).toBe(true);
     expect(cached.summary).toContain("Cached full-content summary");
 
-    await expect(caller.summarization.generate({ entryId, regenerate: true })).rejects.toThrow(
-      PROVIDER_REFUSAL
-    );
+    await expectProviderFailure(caller.summarization.generate({ entryId, regenerate: true }));
   });
 });
 
@@ -324,8 +339,8 @@ describe("summarization.generate regenerate bypasses the cache", () => {
  * insert the placeholder row. The loser must get the winner's row, not a
  * unique-violation 500.
  *
- * The stand-in provider refuses both requests, so they fail deterministically
- * past the placeholder insert, with no network call.
+ * The stand-in provider refuses the requests, so they fail deterministically
+ * past the placeholder insert (the second may instead meet the first's backoff).
  *
  * Nothing here forces the two requests to interleave *inside* the insert
  * window, so this asserts that concurrent requests converge on one row; the
@@ -350,9 +365,82 @@ describe("summarization.generate concurrent placeholder creation", () => {
     // Both got as far as the LLM call rather than a duplicate-key error.
     for (const result of results) {
       expect(result.status).toBe("rejected");
-      expect(String((result as PromiseRejectedResult).reason)).toContain(PROVIDER_REFUSAL);
+      expect(String((result as PromiseRejectedResult).reason)).toContain(
+        "Failed to generate summary"
+      );
     }
     const rows = await db.select().from(entrySummaries).where(eq(entrySummaries.userId, userId));
     expect(rows).toHaveLength(1);
+  });
+});
+
+/** Provider failures, answered by the stand-in with the status each test sets. */
+describe("summarization.generate provider failures", () => {
+  beforeEach(() => {
+    providerRequests = 0;
+  });
+
+  afterEach(() => {
+    providerAnswer = PROVIDER_REFUSAL;
+  });
+
+  async function setUp(): Promise<{ caller: ReturnType<typeof createCaller>; entryId: string }> {
+    const userId = await createTestUser({ emailPrefix: "summ" });
+    createdUserIds.push(userId);
+    const entryId = await createVisibleEntry(userId, `hash-${generateUuidv7()}`);
+    return { caller: createCaller(await createAuthContext(userId)), entryId };
+  }
+
+  async function failure(promise: Promise<unknown>): Promise<TRPCError> {
+    const error = await promise.then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect(error).toBeInstanceOf(TRPCError);
+    return error as TRPCError;
+  }
+
+  it("answers a busy provider as retryable and tries again on the next request", async () => {
+    providerAnswer = { status: 529, type: "overloaded_error", message: "Overloaded" };
+    const { caller, entryId } = await setUp();
+
+    const error = await failure(caller.summarization.generate({ entryId }));
+    expect(error.code).toBe("TOO_MANY_REQUESTS");
+    expect(getAppErrorCode(error)).toBe("AI_PROVIDER_BUSY");
+
+    // No backoff: the app's plain retry (no `regenerate`) reaches the provider.
+    await failure(caller.summarization.generate({ entryId }));
+    expect(providerRequests).toBe(2);
+  });
+
+  it("keeps the provider's message to itself on the server's key", async () => {
+    providerAnswer = {
+      status: 401,
+      type: "authentication_error",
+      message: "Key for operator account acct-1234 was revoked",
+    };
+    const { caller, entryId } = await setUp();
+
+    const error = await failure(caller.summarization.generate({ entryId }));
+    expect(error.code).toBe("INTERNAL_SERVER_ERROR");
+    expect(error.message).not.toContain("acct-1234");
+
+    // A real failure still backs off, and echoes only what the user was told.
+    const repeat = await failure(caller.summarization.generate({ entryId }));
+    expect(getAppErrorCode(repeat)).toBe("SUMMARY_RECENTLY_FAILED");
+    expect(repeat.code).toBe("TOO_MANY_REQUESTS");
+    expect(repeat.message).not.toContain("acct-1234");
+    expect(providerRequests).toBe(1);
+  });
+
+  it("passes the provider's message on when the user's own key was rejected", async () => {
+    providerAnswer = { status: 401, type: "authentication_error", message: "invalid x-api-key" };
+    const { caller, entryId } = await setUp();
+    await caller.users["me.updatePreferences"]({ apiKeys: { anthropic: "sk-ant-user-key" } });
+
+    const error = await failure(caller.summarization.generate({ entryId }));
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(getAppErrorCode(error)).toBe("AI_PROVIDER_REJECTED");
+    expect(error.message).toContain("invalid x-api-key");
   });
 });
