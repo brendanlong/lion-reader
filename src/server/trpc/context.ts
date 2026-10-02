@@ -122,19 +122,7 @@ function syntheticSession(
       userAgent: null,
       ipAddress: null,
     },
-    user: {
-      ...user,
-      groqApiKey: null, // Not cached for security; use getUserApiKeys() when needed
-      anthropicApiKey: null,
-      cerebrasApiKey: null,
-      openrouterApiKey: null,
-      deepinfraApiKey: null,
-    },
-    hasGroqApiKey: !!user.groqApiKey,
-    hasAnthropicApiKey: !!user.anthropicApiKey,
-    hasCerebrasApiKey: !!user.cerebrasApiKey,
-    hasOpenrouterApiKey: !!user.openrouterApiKey,
-    hasDeepinfraApiKey: !!user.deepinfraApiKey,
+    user,
   };
 }
 

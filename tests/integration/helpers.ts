@@ -283,22 +283,7 @@ export async function createAuthContext(userId: string): Promise<Context> {
         revokedAt: null,
         lastActiveAt: now,
       },
-      // validateSession never puts the key material in the session (both the
-      // Redis and DB paths null it out and expose only the booleans), so
-      // neither do we — otherwise a test could read a key off `ctx.session.user`
-      // that is always null in production.
-      user: {
-        ...user,
-        groqApiKey: null,
-        anthropicApiKey: null,
-        cerebrasApiKey: null,
-        openrouterApiKey: null,
-      },
-      hasGroqApiKey: !!user.groqApiKey,
-      hasAnthropicApiKey: !!user.anthropicApiKey,
-      hasCerebrasApiKey: !!user.cerebrasApiKey,
-      hasOpenrouterApiKey: !!user.openrouterApiKey,
-      hasDeepinfraApiKey: !!user.deepinfraApiKey,
+      user,
     },
     apiToken: null,
     authType: "session",

@@ -2,7 +2,7 @@
  * Search, grouping, and labels for the settings model picker.
  */
 
-import { AI_PROVIDER_DISPLAY_NAMES, AI_PROVIDERS, type AiProvider } from "@/lib/ai/model-ref";
+import { aiProviderName, AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 
 export interface PickerModel {
   id: string;
@@ -23,7 +23,7 @@ export interface PickerSection {
 /** Every whitespace-separated term must appear in the name, ID, or provider. */
 export function matchesModelQuery(model: PickerModel, query: string): boolean {
   const haystack =
-    `${model.displayName} ${model.id} ${AI_PROVIDER_DISPLAY_NAMES[model.provider]}`.toLowerCase();
+    `${model.displayName} ${model.id} ${aiProviderName(model.provider)}`.toLowerCase();
   return query
     .toLowerCase()
     .split(/\s+/)
@@ -43,7 +43,7 @@ export function buildModelPickerSections(
   const query = options.query.trim();
   const byProvider = (candidates: PickerModel[]): PickerSection[] =>
     AI_PROVIDERS.map((provider) => ({
-      label: AI_PROVIDER_DISPLAY_NAMES[provider],
+      label: aiProviderName(provider),
       models: candidates.filter((model) => model.provider === provider),
     })).filter((section) => section.models.length > 0);
 
@@ -83,12 +83,12 @@ function formatPrice(usd: number): string {
  * same model can be listed by more than one provider.
  */
 export function formatModelName(model: PickerModel): string {
-  return `${model.displayName} · ${AI_PROVIDER_DISPLAY_NAMES[model.provider]}`;
+  return `${model.displayName} · ${aiProviderName(model.provider)}`;
 }
 
 /** e.g. "OpenRouter · 131K context · $0.15 in / $0.60 out per 1M tokens". */
 export function formatModelDetails(model: PickerModel): string {
-  const parts: string[] = [AI_PROVIDER_DISPLAY_NAMES[model.provider]];
+  const parts: string[] = [aiProviderName(model.provider)];
   if (model.contextLength !== undefined) {
     parts.push(`${formatTokenCount(model.contextLength)} context`);
   }

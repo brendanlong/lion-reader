@@ -22,7 +22,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { db } from "../../src/server/db";
-import { users, userEntries, narrationContent } from "../../src/server/db/schema";
+import { users, userEntries, narrationContent, userApiKeys } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
@@ -456,11 +456,11 @@ describe("narration.generate unusable LLM output", () => {
     createdUserIds.push(userId);
     await db
       .update(users)
-      .set({
-        groqApiKey: encryptApiKey("gsk-test-key"),
-        narrationModel: "groq:openai/gpt-oss-120b",
-      })
+      .set({ narrationModel: "groq:openai/gpt-oss-120b" })
       .where(eq(users.id, userId));
+    await db
+      .insert(userApiKeys)
+      .values({ userId, provider: "groq", encryptedKey: encryptApiKey("gsk-test-key") });
     return userId;
   }
 

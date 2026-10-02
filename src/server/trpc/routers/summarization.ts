@@ -37,7 +37,8 @@ import {
 } from "@/server/services/ai-providers";
 import { SUGGESTED_SUMMARIZATION_MODELS } from "@/lib/summarization/constants";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
-import { getUserApiKeys } from "@/server/auth/session";
+import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
+import { isTextAiProvider } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
@@ -384,13 +385,9 @@ export const summarizationRouter = createTRPCRouter({
     })
     .input(z.void())
     .output(z.object({ available: z.boolean() }))
-    .query(({ ctx }) => {
-      const available =
-        ctx.session.hasAnthropicApiKey ||
-        ctx.session.hasGroqApiKey ||
-        ctx.session.hasCerebrasApiKey ||
-        ctx.session.hasOpenrouterApiKey ||
-        getAvailableProviders().length > 0;
+    .query(async ({ ctx }) => {
+      const userProviders = await getApiKeyProviders(ctx.session.user.id);
+      const available = userProviders.some(isTextAiProvider) || getAvailableProviders().length > 0;
       return { available };
     }),
 

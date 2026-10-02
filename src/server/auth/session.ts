@@ -11,7 +11,9 @@
 
 import { eq, and, isNull, ne, gt, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
-import { sessions, users, type User, type Session } from "@/server/db/schema";
+import { sessions, userApiKeys, users, type User, type Session } from "@/server/db/schema";
+import { isAiProvider, type AiProvider } from "@/lib/ai/providers";
+import type { AiProviderKeys } from "@/server/services/ai-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
 import { decryptApiKey } from "@/lib/encryption";
@@ -43,15 +45,15 @@ const SESSION_CACHE_TTL_SECONDS = 300;
 /**
  * Redis key prefix for session cache.
  *
- * The version suffix (`v2`) namespaces the cached payload format. Bump it
- * whenever a change to {@link CachedSession} is security-relevant — e.g. adding
- * the `scopes` field — so old-format entries written by a previous release are
- * never read by new code during a rolling deploy. A missing field would
- * otherwise deserialize to a default (`scopes` → `null` → full access), which
- * for a scoped session would be a fail-open. Old-format entries under the
- * previous prefix are simply left to expire via TTL.
+ * The version suffix namespaces the cached payload format; releases share
+ * Redis during a rolling deploy. Bump it whenever a change to
+ * {@link CachedSession} is security-relevant — e.g. adding the `scopes` field,
+ * where a missing field would deserialize to a default (`scopes` → `null` →
+ * full access), a fail-open for a scoped session — or removes a field the
+ * previous release needs. Old-format entries under the previous prefix are
+ * simply left to expire via TTL.
  */
-const SESSION_CACHE_PREFIX = "session:v2:";
+const SESSION_CACHE_PREFIX = "session:v3:";
 
 // ============================================================================
 // Types
@@ -68,15 +70,6 @@ export interface SessionData {
   // DB. gettingStartedAt is an onboarding bookkeeping marker with no request-path
   // reader at all, so caching it would only mean stale data to invalidate.
   user: Omit<User, "greaderUserId" | "gettingStartedAt">;
-  /** Whether user has a Groq API key configured (actual key not cached for security) */
-  hasGroqApiKey: boolean;
-  /** Whether user has an Anthropic API key configured (actual key not cached for security) */
-  hasAnthropicApiKey: boolean;
-  /** Whether user has a Cerebras API key configured (actual key not cached for security) */
-  hasCerebrasApiKey: boolean;
-  /** Whether user has an OpenRouter API key configured (actual key not cached for security) */
-  hasOpenrouterApiKey: boolean;
-  hasDeepinfraApiKey: boolean;
 }
 
 /**
@@ -98,11 +91,6 @@ interface CachedSession {
   userEmailVerifiedAt: string | null;
   userInviteId: string | null;
   userShowSpam: boolean;
-  userHasGroqApiKey: boolean;
-  userHasAnthropicApiKey: boolean;
-  userHasCerebrasApiKey: boolean;
-  userHasOpenrouterApiKey: boolean;
-  userHasDeepinfraApiKey: boolean;
   userSummarizationModel: string | null;
   userSummarizationMaxWords: number | null;
   userSummarizationPrompt: string | null;
@@ -249,11 +237,6 @@ function serializeForCache(data: SessionData): string {
     userEmailVerifiedAt: data.user.emailVerifiedAt?.toISOString() ?? null,
     userInviteId: data.user.inviteId ?? null,
     userShowSpam: data.user.showSpam,
-    userHasGroqApiKey: data.hasGroqApiKey,
-    userHasAnthropicApiKey: data.hasAnthropicApiKey,
-    userHasCerebrasApiKey: data.hasCerebrasApiKey,
-    userHasOpenrouterApiKey: data.hasOpenrouterApiKey,
-    userHasDeepinfraApiKey: data.hasDeepinfraApiKey,
     userSummarizationModel: data.user.summarizationModel ?? null,
     userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
     userSummarizationPrompt: data.user.summarizationPrompt ?? null,
@@ -292,11 +275,6 @@ function deserializeFromCache(data: string): SessionData {
       passwordHash: null, // Not cached in Redis for security; query DB when needed
       inviteId: cached.userInviteId,
       showSpam: cached.userShowSpam,
-      groqApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
-      anthropicApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
-      cerebrasApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
-      openrouterApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
-      deepinfraApiKey: null, // Not cached in Redis for security; use getUserApiKeys() when needed
       summarizationModel: cached.userSummarizationModel,
       summarizationMaxWords: cached.userSummarizationMaxWords,
       summarizationPrompt: cached.userSummarizationPrompt,
@@ -313,13 +291,6 @@ function deserializeFromCache(data: string): SessionData {
       savedUnreadCount: 0,
       starredUnreadCount: 0,
     },
-    hasGroqApiKey: cached.userHasGroqApiKey,
-    hasAnthropicApiKey: cached.userHasAnthropicApiKey,
-    hasCerebrasApiKey: cached.userHasCerebrasApiKey,
-    // Fallback for entries written by a release predating the field (#1416,
-    // 2026-09-27) during a rollback/roll-forward window.
-    hasOpenrouterApiKey: cached.userHasOpenrouterApiKey ?? false,
-    hasDeepinfraApiKey: cached.userHasDeepinfraApiKey ?? false,
   };
 }
 
@@ -409,22 +380,9 @@ export async function validateSession(
 
   const dbResult = result[0];
 
-  // Build SessionData with boolean flags; don't include decrypted API keys
   const sessionData: SessionData = {
     session: dbResult.session,
-    user: {
-      ...dbResult.user,
-      groqApiKey: null, // Not cached for security; use getUserApiKeys() when needed
-      anthropicApiKey: null, // Not cached for security; use getUserApiKeys() when needed
-      cerebrasApiKey: null, // Not cached for security; use getUserApiKeys() when needed
-      openrouterApiKey: null, // Not cached for security; use getUserApiKeys() when needed
-      deepinfraApiKey: null, // Not cached for security; use getUserApiKeys() when needed
-    },
-    hasGroqApiKey: !!dbResult.user.groqApiKey,
-    hasAnthropicApiKey: !!dbResult.user.anthropicApiKey,
-    hasCerebrasApiKey: !!dbResult.user.cerebrasApiKey,
-    hasOpenrouterApiKey: !!dbResult.user.openrouterApiKey,
-    hasDeepinfraApiKey: !!dbResult.user.deepinfraApiKey,
+    user: dbResult.user,
   };
 
   // Cache the result in Redis (if available). We cache before applying the
@@ -515,15 +473,14 @@ async function updateLastActiveAt(
 // API Key Retrieval
 // ============================================================================
 
-/**
- * API keys fetched from the database on demand.
- */
-export interface UserApiKeys {
-  groqApiKey: string | null;
-  anthropicApiKey: string | null;
-  cerebrasApiKey: string | null;
-  openrouterApiKey: string | null;
-  deepinfraApiKey: string | null;
+/** The providers `userId` has their own API key for (not the keys). */
+export async function getApiKeyProviders(userId: string): Promise<AiProvider[]> {
+  const rows = await db
+    .select({ provider: userApiKeys.provider })
+    .from(userApiKeys)
+    .where(eq(userApiKeys.userId, userId))
+    .orderBy(userApiKeys.provider);
+  return rows.map((row) => row.provider).filter(isAiProvider);
 }
 
 /**
@@ -533,39 +490,16 @@ export interface UserApiKeys {
  * exposure if Redis is compromised. This function should be called only when
  * the actual key values are needed (e.g., narration, summarization endpoints).
  */
-export async function getUserApiKeys(userId: string): Promise<UserApiKeys> {
-  const result = await db
-    .select({
-      groqApiKey: users.groqApiKey,
-      anthropicApiKey: users.anthropicApiKey,
-      cerebrasApiKey: users.cerebrasApiKey,
-      openrouterApiKey: users.openrouterApiKey,
-      deepinfraApiKey: users.deepinfraApiKey,
-    })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  if (result.length === 0) {
-    return {
-      groqApiKey: null,
-      anthropicApiKey: null,
-      cerebrasApiKey: null,
-      openrouterApiKey: null,
-      deepinfraApiKey: null,
-    };
-  }
-
-  const { groqApiKey, anthropicApiKey, cerebrasApiKey, openrouterApiKey, deepinfraApiKey } =
-    result[0];
-
-  return {
-    groqApiKey: groqApiKey ? decryptApiKey(groqApiKey) : null,
-    anthropicApiKey: anthropicApiKey ? decryptApiKey(anthropicApiKey) : null,
-    cerebrasApiKey: cerebrasApiKey ? decryptApiKey(cerebrasApiKey) : null,
-    openrouterApiKey: openrouterApiKey ? decryptApiKey(openrouterApiKey) : null,
-    deepinfraApiKey: deepinfraApiKey ? decryptApiKey(deepinfraApiKey) : null,
-  };
+export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
+  const rows = await db
+    .select({ provider: userApiKeys.provider, encryptedKey: userApiKeys.encryptedKey })
+    .from(userApiKeys)
+    .where(eq(userApiKeys.userId, userId));
+  return Object.fromEntries(
+    rows.flatMap(({ provider, encryptedKey }) =>
+      isAiProvider(provider) ? [[provider, decryptApiKey(encryptedKey)]] : []
+    )
+  );
 }
 
 /**

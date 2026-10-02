@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 import * as argon2 from "argon2";
-import { eq, and, isNull, gt, desc } from "drizzle-orm";
+import { eq, and, isNull, gt, desc, sql } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -15,14 +15,16 @@ import {
   expensiveConfirmedProtectedProcedure,
 } from "../trpc";
 import { errors } from "../errors";
-import { sessions, users, oauthAccounts } from "@/server/db/schema";
+import { sessions, users, oauthAccounts, userApiKeys } from "@/server/db/schema";
 import {
+  getApiKeyProviders,
   revokeSession,
   revokeOtherUserSessionsOrReport,
   invalidateUserSessionCaches,
 } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
+import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
 import { revokeUserClientTokens } from "@/server/oauth/service";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
@@ -51,16 +53,22 @@ const sessionOutputSchema = z.object({
 const preferencesOutputSchema = z.object({
   showSpam: z.boolean(),
   canConfigureApiKeys: z.boolean(),
-  hasGroqApiKey: z.boolean(),
-  hasAnthropicApiKey: z.boolean(),
-  hasCerebrasApiKey: z.boolean(),
-  hasOpenrouterApiKey: z.boolean(),
-  hasDeepinfraApiKey: z.boolean(),
+  /** The providers the user has set their own API key for. */
+  apiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
   summarizationModel: z.string().nullable(),
   summarizationMaxWords: z.number().nullable(),
   summarizationPrompt: z.string().nullable(),
   narrationModel: z.string().nullable(),
 });
+
+/** Providers with a users.<provider>_api_key column, until a release drops them. */
+const LEGACY_KEY_COLUMNS: ReadonlySet<AiProvider> = new Set([
+  "anthropic",
+  "groq",
+  "cerebras",
+  "openrouter",
+  "deepinfra",
+]);
 
 // ============================================================================
 // Router
@@ -373,16 +381,10 @@ export const usersRouter = createTRPCRouter({
     .input(z.object({}).optional())
     .output(preferencesOutputSchema)
     .query(async ({ ctx }) => {
-      // Return preferences from session (cached from database)
-      // Never expose raw API keys — only whether they are set
       return {
         showSpam: ctx.session.user.showSpam,
         canConfigureApiKeys: isEncryptionConfigured(),
-        hasGroqApiKey: ctx.session.hasGroqApiKey,
-        hasAnthropicApiKey: ctx.session.hasAnthropicApiKey,
-        hasCerebrasApiKey: ctx.session.hasCerebrasApiKey,
-        hasOpenrouterApiKey: ctx.session.hasOpenrouterApiKey,
-        hasDeepinfraApiKey: ctx.session.hasDeepinfraApiKey,
+        apiKeyProviders: await getApiKeyProviders(ctx.session.user.id),
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
@@ -407,12 +409,8 @@ export const usersRouter = createTRPCRouter({
     .input(
       z.object({
         showSpam: z.boolean().optional(),
-        // API keys: empty string clears the key, non-empty sets it
-        groqApiKey: z.string().optional(),
-        anthropicApiKey: z.string().optional(),
-        cerebrasApiKey: z.string().optional(),
-        openrouterApiKey: z.string().optional(),
-        deepinfraApiKey: z.string().optional(),
+        // API keys by provider: empty string clears the key, non-empty sets it
+        apiKeys: z.partialRecord(z.enum(AI_PROVIDERS), z.string().max(1000)).optional(),
         summarizationModel: z.string().optional(),
         narrationModel: z.string().optional(),
         // Summarization settings: null clears (reverts to default)
@@ -425,13 +423,10 @@ export const usersRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       // Reject API key storage if encryption is not configured
-      const settingApiKey =
-        (input.groqApiKey !== undefined && input.groqApiKey !== "") ||
-        (input.anthropicApiKey !== undefined && input.anthropicApiKey !== "") ||
-        (input.cerebrasApiKey !== undefined && input.cerebrasApiKey !== "") ||
-        (input.openrouterApiKey !== undefined && input.openrouterApiKey !== "") ||
-        (input.deepinfraApiKey !== undefined && input.deepinfraApiKey !== "");
-      if (settingApiKey && !isEncryptionConfigured()) {
+      const apiKeys = Object.entries(input.apiKeys ?? {}).filter(
+        (entry): entry is [AiProvider, string] => entry[1] !== undefined
+      );
+      if (apiKeys.some(([, key]) => key !== "") && !isEncryptionConfigured()) {
         throw errors.validation(
           "API key encryption is not configured on this server. Contact your administrator."
         );
@@ -440,11 +435,6 @@ export const usersRouter = createTRPCRouter({
       // Build update object with only provided fields
       const updateData: {
         showSpam?: boolean;
-        groqApiKey?: string | null;
-        anthropicApiKey?: string | null;
-        cerebrasApiKey?: string | null;
-        openrouterApiKey?: string | null;
-        deepinfraApiKey?: string | null;
         summarizationModel?: string | null;
         summarizationMaxWords?: number | null;
         summarizationPrompt?: string | null;
@@ -456,34 +446,6 @@ export const usersRouter = createTRPCRouter({
 
       if (input.showSpam !== undefined) {
         updateData.showSpam = input.showSpam;
-      }
-
-      if (input.groqApiKey !== undefined) {
-        // empty string → null (clear key), otherwise encrypt
-        updateData.groqApiKey = input.groqApiKey ? encryptApiKey(input.groqApiKey) : null;
-      }
-
-      if (input.anthropicApiKey !== undefined) {
-        updateData.anthropicApiKey = input.anthropicApiKey
-          ? encryptApiKey(input.anthropicApiKey)
-          : null;
-      }
-
-      if (input.cerebrasApiKey !== undefined) {
-        updateData.cerebrasApiKey = input.cerebrasApiKey
-          ? encryptApiKey(input.cerebrasApiKey)
-          : null;
-      }
-
-      if (input.openrouterApiKey !== undefined) {
-        updateData.openrouterApiKey = input.openrouterApiKey
-          ? encryptApiKey(input.openrouterApiKey)
-          : null;
-      }
-      if (input.deepinfraApiKey !== undefined) {
-        updateData.deepinfraApiKey = input.deepinfraApiKey
-          ? encryptApiKey(input.deepinfraApiKey)
-          : null;
       }
 
       if (input.summarizationModel !== undefined) {
@@ -502,8 +464,34 @@ export const usersRouter = createTRPCRouter({
         updateData.summarizationPrompt = input.summarizationPrompt;
       }
 
-      // Update user preferences in database
-      await ctx.db.update(users).set(updateData).where(eq(users.id, userId));
+      await ctx.db.transaction(async (tx) => {
+        await tx.update(users).set(updateData).where(eq(users.id, userId));
+        for (const [provider, key] of apiKeys) {
+          if (LEGACY_KEY_COLUMNS.has(provider)) {
+            // The previous release still reads users.<provider>_api_key; clear
+            // it so a key replaced or removed here can't be used by that
+            // release, and so the column-dropping migration's final copy only
+            // carries keys the previous release set after 0116.
+            await tx.execute(
+              sql`UPDATE users SET ${sql.identifier(`${provider}_api_key`)} = NULL WHERE id = ${userId}`
+            );
+          }
+          if (key) {
+            const encryptedKey = encryptApiKey(key);
+            await tx
+              .insert(userApiKeys)
+              .values({ userId, provider, encryptedKey })
+              .onConflictDoUpdate({
+                target: [userApiKeys.userId, userApiKeys.provider],
+                set: { encryptedKey, updatedAt: new Date() },
+              });
+          } else {
+            await tx
+              .delete(userApiKeys)
+              .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.provider, provider)));
+          }
+        }
+      });
 
       // Invalidate all session caches for this user so they get fresh data
       await invalidateUserSessionCaches(userId);
@@ -512,11 +500,6 @@ export const usersRouter = createTRPCRouter({
       const updatedUser = await ctx.db
         .select({
           showSpam: users.showSpam,
-          groqApiKey: users.groqApiKey,
-          anthropicApiKey: users.anthropicApiKey,
-          cerebrasApiKey: users.cerebrasApiKey,
-          openrouterApiKey: users.openrouterApiKey,
-          deepinfraApiKey: users.deepinfraApiKey,
           summarizationModel: users.summarizationModel,
           summarizationMaxWords: users.summarizationMaxWords,
           summarizationPrompt: users.summarizationPrompt,
@@ -529,11 +512,7 @@ export const usersRouter = createTRPCRouter({
       return {
         showSpam: updatedUser[0]?.showSpam ?? false,
         canConfigureApiKeys: isEncryptionConfigured(),
-        hasGroqApiKey: !!updatedUser[0]?.groqApiKey,
-        hasAnthropicApiKey: !!updatedUser[0]?.anthropicApiKey,
-        hasCerebrasApiKey: !!updatedUser[0]?.cerebrasApiKey,
-        hasOpenrouterApiKey: !!updatedUser[0]?.openrouterApiKey,
-        hasDeepinfraApiKey: !!updatedUser[0]?.deepinfraApiKey,
+        apiKeyProviders: await getApiKeyProviders(userId),
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,

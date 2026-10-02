@@ -5,10 +5,10 @@ import {
   resolveSpeechModel,
   SpeechRequestError,
   type SpeechModel,
-  type SpeechProvider,
   toDeepInfraSpeechModels,
   toSpeechModels,
 } from "@/server/services/speech";
+import type { SpeechProvider } from "@/lib/ai/providers";
 import {
   canNarrate,
   voicesFromSchema,
@@ -47,7 +47,7 @@ afterEach(() => {
 
 describe("toSpeechModels", () => {
   it("lists every model with voices on the user's own key, priced per character", () => {
-    const models = toSpeechModels(catalog, { openrouterApiKey: "o" });
+    const models = toSpeechModels(catalog, { openrouter: "o" });
     expect(models.map((model) => model.id)).toEqual([
       "openrouter:google/gemini-3.8-flash-tts",
       "openrouter:hexgrad/kokoro-82m",
@@ -57,7 +57,7 @@ describe("toSpeechModels", () => {
   });
 
   it("omits the per-character price for models that also bill generated audio", () => {
-    const [gemini] = toSpeechModels(catalog, { openrouterApiKey: "o" });
+    const [gemini] = toSpeechModels(catalog, { openrouter: "o" });
     expect(gemini.pricePerMillionCharacters).toBeUndefined();
   });
 
@@ -71,7 +71,7 @@ describe("toSpeechModels", () => {
 
 describe("defaultVoiceFor", () => {
   it("prefers the curated default voice, else the first listed", () => {
-    const [, kokoro, minimax] = toSpeechModels(catalog, { openrouterApiKey: "o" });
+    const [, kokoro, minimax] = toSpeechModels(catalog, { openrouter: "o" });
     expect(defaultVoiceFor(kokoro)).toBe("af_heart");
     expect(defaultVoiceFor(minimax)).toBe("English_expressive_narrator");
   });
@@ -94,7 +94,7 @@ describe("toDeepInfraSpeechModels", () => {
   });
 
   it("lists every model on the user's own key, named like OpenRouter's", () => {
-    const models = toDeepInfraSpeechModels(deepInfraCatalog, { deepinfraApiKey: "d" });
+    const models = toDeepInfraSpeechModels(deepInfraCatalog, { deepinfra: "d" });
     expect(models.map((model) => [model.id, model.displayName, model.provider])).toEqual([
       ["deepinfra:hexgrad/Kokoro-82M", "hexgrad: Kokoro 82M", "deepinfra"],
       ["deepinfra:inworld-ai/realtime-tts-2", "inworld ai: realtime tts 2", "deepinfra"],
@@ -111,13 +111,13 @@ describe("toDeepInfraSpeechModels", () => {
 
   it("isn't limited by an OpenRouter key", () => {
     process.env.DEEPINFRA_API_KEY = "server";
-    expect(toDeepInfraSpeechModels(deepInfraCatalog, { openrouterApiKey: "o" })).toHaveLength(1);
+    expect(toDeepInfraSpeechModels(deepInfraCatalog, { openrouter: "o" })).toHaveLength(1);
   });
 });
 
 describe("defaultSpeechModelId", () => {
-  const openRouter = toSpeechModels(catalog, { openrouterApiKey: "o" });
-  const deepInfra = toDeepInfraSpeechModels(deepInfraCatalog, { deepinfraApiKey: "d" });
+  const openRouter = toSpeechModels(catalog, { openrouter: "o" });
+  const deepInfra = toDeepInfraSpeechModels(deepInfraCatalog, { deepinfra: "d" });
 
   it("prefers DeepInfra's Kokoro, then OpenRouter's", () => {
     expect(defaultSpeechModelId([...openRouter, ...deepInfra])).toBe(DEEPINFRA_KOKORO);
@@ -260,7 +260,7 @@ describe("resolveSpeechModel", () => {
   });
 
   it("keeps a model chosen on the user's own key, even if it's no longer listed", () => {
-    const keys = { deepinfraApiKey: "d" };
+    const keys = { deepinfra: "d" };
     expect(resolveSpeechModel(catalog([deepInfraKokoro, qwen]), keys, qwen.id, null).model).toBe(
       qwen
     );
@@ -271,7 +271,7 @@ describe("resolveSpeechModel", () => {
 
   it("fails retryably when the chosen model's provider couldn't be listed", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
-    const keys = { openrouterApiKey: "o" };
+    const keys = { openrouter: "o" };
     expect(() =>
       resolveSpeechModel(catalog([deepInfraKokoro], ["openrouter"]), keys, OPENROUTER_KOKORO, null)
     ).toThrow(Error);
@@ -285,7 +285,7 @@ describe("resolveSpeechModel", () => {
 
   it("needs a provider, and names them", () => {
     expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
-      "Cloud voices require a DeepInfra or OpenRouter API key"
+      "Cloud voices require an API key from DeepInfra or OpenRouter"
     );
   });
 });

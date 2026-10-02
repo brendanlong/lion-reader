@@ -50,9 +50,9 @@ afterEach(() => {
 describe("isProviderAvailable / getAvailableProviders", () => {
   it("uses per-user keys", () => {
     clearEnv();
-    expect(isProviderAvailable("cerebras", { cerebrasApiKey: "csk-test" })).toBe(true);
-    expect(isProviderAvailable("groq", { cerebrasApiKey: "csk-test" })).toBe(false);
-    expect(getAvailableProviders({ groqApiKey: "gsk-test", anthropicApiKey: "sk-test" })).toEqual([
+    expect(isProviderAvailable("cerebras", { cerebras: "csk-test" })).toBe(true);
+    expect(isProviderAvailable("groq", { cerebras: "csk-test" })).toBe(false);
+    expect(getAvailableProviders({ groq: "gsk-test", anthropic: "sk-test" })).toEqual([
       "anthropic",
       "groq",
     ]);
@@ -74,7 +74,7 @@ describe("isProviderAvailable / getAvailableProviders", () => {
     clearEnv();
     process.env.DEEPINFRA_API_KEY = "di-server";
     expect(isProviderAvailable("deepinfra")).toBe(true);
-    expect(getAvailableProviders({ deepinfraApiKey: "d" })).toEqual([]);
+    expect(getAvailableProviders({ deepinfra: "d" })).toEqual([]);
   });
 });
 
@@ -82,7 +82,7 @@ describe("getSummarizationModelId", () => {
   it("prefers the user model", () => {
     clearEnv();
     process.env.SUMMARIZATION_MODEL = "groq:foo";
-    expect(getSummarizationModelId("cerebras:bar", { cerebrasApiKey: "c" })).toBe("cerebras:bar");
+    expect(getSummarizationModelId("cerebras:bar", { cerebras: "c" })).toBe("cerebras:bar");
   });
 
   it("falls back to the env var", () => {
@@ -94,25 +94,25 @@ describe("getSummarizationModelId", () => {
   it("defaults to the first configured provider by priority (Cerebras > Groq > Anthropic > OpenRouter)", () => {
     clearEnv();
     // Cerebras wins over both others when configured.
-    expect(getSummarizationModelId(null, { groqApiKey: "g", cerebrasApiKey: "c" })).toBe(
+    expect(getSummarizationModelId(null, { groq: "g", cerebras: "c" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
-    expect(getSummarizationModelId(null, { anthropicApiKey: "a", cerebrasApiKey: "c" })).toBe(
+    expect(getSummarizationModelId(null, { anthropic: "a", cerebras: "c" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.cerebras
     );
     // Groq wins over Anthropic.
-    expect(getSummarizationModelId(null, { anthropicApiKey: "a", groqApiKey: "g" })).toBe(
+    expect(getSummarizationModelId(null, { anthropic: "a", groq: "g" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.groq
     );
     // A direct Anthropic key wins over the OpenRouter aggregator.
-    expect(getSummarizationModelId(null, { anthropicApiKey: "a", openrouterApiKey: "o" })).toBe(
+    expect(getSummarizationModelId(null, { anthropic: "a", openrouter: "o" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.anthropic
     );
-    expect(getSummarizationModelId(null, { openrouterApiKey: "o" })).toBe(
+    expect(getSummarizationModelId(null, { openrouter: "o" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.openrouter
     );
     // Anthropic only when it's the sole option.
-    expect(getSummarizationModelId(null, { anthropicApiKey: "a" })).toBe(
+    expect(getSummarizationModelId(null, { anthropic: "a" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.anthropic
     );
   });
@@ -138,13 +138,13 @@ describe("getNarrationModelRef", () => {
   it("defaults to the first configured provider (Cerebras before Groq)", () => {
     clearEnv();
     // Only Groq configured → Groq default.
-    expect(getNarrationModelRef(null, { groqApiKey: "g" })).toEqual({
+    expect(getNarrationModelRef(null, { groq: "g" })).toEqual({
       provider: "groq",
       model: "openai/gpt-oss-120b",
     });
     expect(DEFAULT_NARRATION_MODELS.groq).toBe("groq:openai/gpt-oss-120b");
     // Both configured → Cerebras wins (fastest, listed first).
-    expect(getNarrationModelRef(null, { groqApiKey: "g", cerebrasApiKey: "c" })).toEqual({
+    expect(getNarrationModelRef(null, { groq: "g", cerebras: "c" })).toEqual({
       provider: "cerebras",
       model: "gpt-oss-120b",
     });
@@ -153,7 +153,7 @@ describe("getNarrationModelRef", () => {
 
   it("defaults to OpenRouter when it's the only JSON-mode provider configured", () => {
     clearEnv();
-    expect(getNarrationModelRef(null, { openrouterApiKey: "o", anthropicApiKey: "a" })).toEqual({
+    expect(getNarrationModelRef(null, { openrouter: "o", anthropic: "a" })).toEqual({
       provider: "openrouter",
       model: "openai/gpt-oss-120b",
     });
@@ -161,17 +161,17 @@ describe("getNarrationModelRef", () => {
 
   it("accepts OpenRouter model IDs, including ones containing colons", () => {
     clearEnv();
-    expect(
-      getNarrationModelRef("openrouter:openai/gpt-oss-20b:free", { openrouterApiKey: "o" })
-    ).toEqual({
-      provider: "openrouter",
-      model: "openai/gpt-oss-20b:free",
-    });
+    expect(getNarrationModelRef("openrouter:openai/gpt-oss-20b:free", { openrouter: "o" })).toEqual(
+      {
+        provider: "openrouter",
+        model: "openai/gpt-oss-20b:free",
+      }
+    );
   });
 
   it("uses the user model when set", () => {
     clearEnv();
-    expect(getNarrationModelRef("groq:openai/gpt-oss-20b", { groqApiKey: "g" })).toEqual({
+    expect(getNarrationModelRef("groq:openai/gpt-oss-20b", { groq: "g" })).toEqual({
       provider: "groq",
       model: "openai/gpt-oss-20b",
     });
@@ -314,9 +314,7 @@ describe("isModelAllowed", () => {
 
   it("allows any OpenRouter model on the user's own key", () => {
     clearEnv();
-    expect(isModelAllowed("openrouter:openai/o1-pro", { openrouterApiKey: "o" }, allowed)).toBe(
-      true
-    );
+    expect(isModelAllowed("openrouter:openai/o1-pro", { openrouter: "o" }, allowed)).toBe(true);
   });
 
   it("limits DeepInfra models the same way", () => {
@@ -325,7 +323,7 @@ describe("isModelAllowed", () => {
     const speech = ["deepinfra:hexgrad/Kokoro-82M"];
     expect(isModelAllowed("deepinfra:hexgrad/Kokoro-82M", {}, speech)).toBe(true);
     expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", {}, speech)).toBe(false);
-    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfraApiKey: "d" }, speech)).toBe(true);
+    expect(isModelAllowed("deepinfra:Qwen/Qwen3-TTS", { deepinfra: "d" }, speech)).toBe(true);
   });
 
   it("doesn't restrict other providers", () => {
@@ -345,7 +343,7 @@ describe("isModelAllowed", () => {
       provider: "openrouter",
       model: "openai/gpt-oss-120b",
     });
-    expect(getSummarizationModelId("openrouter:openai/o1-pro", { openrouterApiKey: "o" })).toBe(
+    expect(getSummarizationModelId("openrouter:openai/o1-pro", { openrouter: "o" })).toBe(
       "openrouter:openai/o1-pro"
     );
   });
@@ -361,13 +359,13 @@ describe("isModelAllowed", () => {
     expect(getNarrationModelRef("groq:openai/gpt-oss-120b", {})).toEqual(
       parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
     );
-    expect(isModelAllowed("anthropic:claude-opus-5", { anthropicApiKey: "a" }, allowed)).toBe(true);
+    expect(isModelAllowed("anthropic:claude-opus-5", { anthropic: "a" }, allowed)).toBe(true);
   });
 
   it("never summarizes with a speech-only provider", () => {
     clearEnv();
     process.env.GROQ_API_KEY = "gsk-server";
-    expect(getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfraApiKey: "d" })).toBe(
+    expect(getSummarizationModelId("deepinfra:hexgrad/Kokoro-82M", { deepinfra: "d" })).toBe(
       DEFAULT_SUMMARIZATION_MODELS.groq
     );
   });

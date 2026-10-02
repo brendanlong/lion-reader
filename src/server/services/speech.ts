@@ -4,12 +4,8 @@
  * gets audio from our API rather than calling a provider itself.
  */
 
-import {
-  AI_PROVIDER_DISPLAY_NAMES,
-  formatModelRef,
-  normalizeModelRef,
-  parseModelRef,
-} from "@/lib/ai/model-ref";
+import { formatModelRef, normalizeModelRef, parseModelRef } from "@/lib/ai/model-ref";
+import { aiProviderNames, SPEECH_PROVIDERS, type SpeechProvider } from "@/lib/ai/providers";
 import {
   DEFAULT_CLOUD_VOICE_MODELS,
   DEFAULT_CLOUD_VOICES,
@@ -33,10 +29,6 @@ import {
   pricePerMillionUnits,
   type OpenRouterModel,
 } from "@/server/services/openrouter";
-
-export const SPEECH_PROVIDERS = ["deepinfra", "openrouter"] as const;
-
-export type SpeechProvider = (typeof SPEECH_PROVIDERS)[number];
 
 export interface SpeechVoice {
   /** What the provider calls the voice; what's stored and sent. */
@@ -237,9 +229,9 @@ export function resolveSpeechModel(
     throw new Error(`Couldn't list ${unavailable.join(", ")} speech models`);
   }
   if (models.length === 0) {
-    const names = SPEECH_PROVIDERS.map((provider) => AI_PROVIDER_DISPLAY_NAMES[provider]);
-    const providers = new Intl.ListFormat("en", { type: "disjunction" }).format(names);
-    throw new SpeechRequestError(`Cloud voices require a ${providers} API key`);
+    throw new SpeechRequestError(
+      `Cloud voices require an API key from ${aiProviderNames(SPEECH_PROVIDERS)}`
+    );
   }
   const modelId =
     requested && isModelAllowed(requested, keys, SERVER_KEY_CLOUD_VOICE_MODELS)
