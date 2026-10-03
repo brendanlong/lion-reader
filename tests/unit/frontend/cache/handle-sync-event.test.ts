@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { _resetSubscriptionLookupMap, findCachedSubscription } from "@/lib/cache/count-cache";
+import { findCachedSubscription } from "@/lib/cache/count-cache";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   createSeededQueryClient,
@@ -49,10 +49,9 @@ let queryClient: QueryClient;
 let invalidateSpy: MockInstance;
 
 beforeEach(() => {
-  _resetSubscriptionLookupMap();
   queryClient = createSeededQueryClient();
   utils = createRealTrpcUtils(queryClient);
-  seedCacheState(utils);
+  seedCacheState(utils, queryClient);
   // Spy after seeding so only the event-driven invalidations are recorded.
   invalidateSpy = spyOnInvalidate(queryClient);
 });
@@ -427,6 +426,22 @@ describe("handleSyncEvent - entry_updated", () => {
     );
 
     expect(storedEntry("entry-1")?.publishedAt).toBeNull();
+  });
+
+  it("isn't undone by a list page fetched before the update landing after it", () => {
+    handleSyncEvent(utils, queryClient, createEntryUpdatedEvent({ entryId: "entry-1" }));
+
+    // The page's read state is newer than anything stored, its metadata isn't.
+    const entry1 = DEFAULT_ENTRIES.find((e) => e.id === "entry-1");
+    seedList({ limit: 50 }, [
+      { ...entry1, read: true, updatedAt: new Date("2024-06-15T00:00:00.000Z") },
+    ]);
+
+    expect(storedEntry("entry-1")).toMatchObject({
+      title: "Updated Title",
+      summary: "Updated Summary",
+      read: true,
+    });
   });
 
   it("does not crash for non-cached entry", () => {

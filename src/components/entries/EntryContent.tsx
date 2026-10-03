@@ -211,35 +211,34 @@ function EntryContentInner({
     generatedAt: Date | null;
     settingsChanged: boolean;
   };
-  const [feedSummary, setFeedSummary] = useState<SummaryData | null>(null);
-  const [fullContentSummary, setFullContentSummary] = useState<SummaryData | null>(null);
+  const [summaries, setSummaries] = useState<Record<"feed" | "full", SummaryData | null>>({
+    feed: null,
+    full: null,
+  });
   const [showSummary, setShowSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
   // The active summary is whichever matches the currently displayed content version
-  const summary = isShowingFullContent ? fullContentSummary : feedSummary;
+  const summary = summaries[isShowingFullContent ? "full" : "feed"];
 
   // Check if summarization is available
   const summarizationAvailableQuery = trpc.summarization.isAvailable.useQuery();
   const isSummarizationAvailable = summarizationAvailableQuery.data?.available ?? false;
 
-  // Track which content version the current mutation is for
-  const mutationIsForFullContent = useRef(false);
-
-  // Summarization mutation
+  // Summarization mutation. Each result goes to the content version it was
+  // requested for, which may no longer be the one displayed.
   const summarizationMutation = trpc.summarization.generate.useMutation({
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
       const summaryData: SummaryData = {
         text: result.summary,
         modelId: result.modelId,
         generatedAt: result.generatedAt,
         settingsChanged: result.settingsChanged,
       };
-      if (mutationIsForFullContent.current) {
-        setFullContentSummary(summaryData);
-      } else {
-        setFeedSummary(summaryData);
-      }
+      setSummaries((prev) => ({
+        ...prev,
+        [variables.useFullContent ? "full" : "feed"]: summaryData,
+      }));
       setSummaryError(null);
       setShowSummary(true);
     },
@@ -257,7 +256,6 @@ function EntryContentInner({
     } else {
       // Generate new summary for the content version being displayed
       setSummaryError(null);
-      mutationIsForFullContent.current = isShowingFullContent;
       summarizationMutation.mutate({
         entryId,
         useFullContent: isShowingFullContent,
@@ -273,7 +271,6 @@ function EntryContentInner({
   // Handle summary regenerate
   const handleSummaryRegenerate = useCallback(() => {
     setSummaryError(null);
-    mutationIsForFullContent.current = isShowingFullContent;
     summarizationMutation.mutate({
       entryId,
       useFullContent: isShowingFullContent,

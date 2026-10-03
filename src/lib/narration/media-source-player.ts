@@ -301,6 +301,218 @@ interface Stream {
   queue: Promise<void>;
 }
 
+// ============================================================================
+// Policy: what to do on a failure, how far to synthesize ahead, where skips land
+// ============================================================================
+
+/**
+ * What a chunk's failed synthesis becomes, given how often it has failed
+ * that way since it last finished.
+ */
+export type SynthesisFailureDecision =
+  /** Playback moved away (or the chunk was dropped); asked for again if it gets near. */
+  | { type: "skip" }
+  /** Its stream dropped partway: synthesize it again now. */
+  | { type: "resynthesize"; streamRetries: number }
+  /** A transient failure: try again after `delayMs`. */
+  | { type: "retry-later"; delayMs: number; transientFailures: number }
+  /** Tried enough, or not worth trying again: `error` is the chunk's failure. */
+  | { type: "give-up"; error: Error };
+
+export function decideSynthesisFailure(
+  error: unknown,
+  context: {
+    aborted: boolean;
+    streamRetries: number;
+    transientFailures: number;
+    retryDelaysMs: readonly number[];
+  }
+): SynthesisFailureDecision {
+  if (context.aborted || error instanceof SkippedSynthesis) return { type: "skip" };
+  if (error instanceof StreamInterruptedError) {
+    const streamRetries = context.streamRetries + 1;
+    // A stream that keeps dropping has been asked for enough.
+    if (streamRetries > MAX_STREAM_RETRIES) return { type: "give-up", error };
+    return { type: "resynthesize", streamRetries };
+  }
+  if (
+    error instanceof TransientSynthesisError &&
+    error.retryable &&
+    context.transientFailures < context.retryDelaysMs.length
+  ) {
+    return {
+      type: "retry-later",
+      delayMs: context.retryDelaysMs[context.transientFailures],
+      transientFailures: context.transientFailures + 1,
+    };
+  }
+  return { type: "give-up", error: error instanceof Error ? error : new Error(String(error)) };
+}
+
+/** What the append loop does when the chunk it waits on failed. */
+export type AppendFailureDecision =
+  /** Drop what of the chunk is buffered and play it again from its start; stop this loop. */
+  | "replay"
+  /** Ask for the chunk again and keep going. */
+  | "retry"
+  /** Stop this loop; it's woken again when the chunk is due or playback nears it. */
+  | "wait"
+  /** Pause once the playhead reaches the chunk (see `pauseIfBlocked`). */
+  | "block"
+  /** Stop narration. */
+  | "fail";
+
+/** A failed chunk's audio, by what {@link decideSynthesisFailure} decided. */
+export type ChunkFailureKind =
+  | "skipped"
+  | "resynthesize"
+  | "retry-later"
+  /** Gave up on a transient failure: worth trying again when play is pressed. */
+  | "transient"
+  | "fatal";
+
+function chunkFailureKind(failure: Error): ChunkFailureKind {
+  if (failure instanceof SkippedSynthesis) return "skipped";
+  if (failure instanceof RetriedSynthesis) return "resynthesize";
+  if (failure instanceof RetryLater) return "retry-later";
+  if (failure instanceof TransientSynthesisError) return "transient";
+  return "fatal";
+}
+
+/**
+ * @param context.placed - Some of the chunk is already buffered; part of a
+ *   chunk is never played, so it's played again whole
+ * @param context.superseded - The chunk was asked for again meanwhile
+ */
+export function decideAppendFailure(
+  kind: ChunkFailureKind,
+  context: { placed: boolean; superseded: boolean }
+): AppendFailureDecision {
+  switch (kind) {
+    case "resynthesize":
+      return context.placed ? "replay" : "retry";
+    case "retry-later":
+      if (context.superseded) return "retry";
+      return context.placed ? "replay" : "wait";
+    case "transient":
+      if (context.superseded) return "retry";
+      return context.placed ? "replay" : "block";
+    case "skipped":
+      return "wait";
+    case "fatal":
+      return "fail";
+  }
+}
+
+/**
+ * Whether playback should pause where a chunk keeps failing: only once it has
+ * played everything buffered before it, and only for the run that hit it.
+ */
+export function shouldPauseForBlock(context: {
+  blockedRun: number | null;
+  run: number;
+  status: PlaybackStatus;
+  playheadBuffered: boolean;
+}): boolean {
+  return (
+    context.blockedRun === context.run &&
+    context.status === "buffering" &&
+    !context.playheadBuffered
+  );
+}
+
+/** A chunk's span on the element's timeline. */
+export interface ChunkSpan {
+  chunk: number;
+  start: number;
+  end: number;
+  complete: boolean;
+}
+
+/**
+ * The furthest chunk worth having synthesized: enough to cover
+ * `bufferAheadSeconds` of playback (at `rate`) past the playhead, and always
+ * at least the next chunk. Buffered chunks count what's left of them; the
+ * rest are estimated from their text.
+ *
+ * @param placed - The current run's chunks, consecutive and in order
+ */
+export function lastWantedChunk(context: {
+  index: number;
+  chunks: readonly SpeechChunk[];
+  placed: readonly ChunkSpan[];
+  time: number;
+  rate: number;
+  bufferAheadSeconds: number;
+  estimateSeconds: (text: string) => number;
+}): number {
+  const { index, chunks, placed, time, estimateSeconds } = context;
+  const firstPlaced = placed[0]?.chunk ?? Infinity;
+  let seconds = 0;
+  let chunk = index;
+  for (; chunk < chunks.length - 1; chunk++) {
+    const span = placed[chunk - firstPlaced];
+    if (span) {
+      // A chunk still arriving is at least as long as what's arrived.
+      const end = span.complete
+        ? span.end
+        : Math.max(span.end, span.start + estimateSeconds(chunks[chunk].text));
+      seconds += Math.max(0, end - Math.max(span.start, time));
+    } else {
+      seconds += estimateSeconds(chunks[chunk].text);
+    }
+    if (seconds / context.rate >= context.bufferAheadSeconds) break;
+  }
+  return Math.min(Math.max(chunk, index + 1), chunks.length - 1);
+}
+
+/**
+ * Whether a queued synthesis should start now, or be skipped: it must be for
+ * the current text (`epoch`), not already done, and between the playing
+ * chunk and the last one wanted.
+ */
+export function shouldStartSynthesis(context: {
+  chunk: number;
+  epoch: number;
+  cacheEpoch: number;
+  finished: boolean;
+  status: PlaybackStatus;
+  index: number;
+  lastWanted: number;
+}): boolean {
+  return (
+    context.epoch === context.cacheEpoch &&
+    !context.finished &&
+    context.status !== "idle" &&
+    context.chunk >= context.index &&
+    context.chunk <= context.lastWanted
+  );
+}
+
+/** The first chunk of the paragraph after `index`'s; null on the last. */
+export function nextParagraphChunk(chunks: readonly SpeechChunk[], index: number): number | null {
+  const current = chunks[index]?.paragraph ?? 0;
+  const next = chunks.findIndex((chunk) => chunk.paragraph > current);
+  return next === -1 ? null : next;
+}
+
+/** The first chunk of the paragraph before `index`'s; null on the first. */
+export function previousParagraphChunk(
+  chunks: readonly SpeechChunk[],
+  index: number
+): number | null {
+  const current = chunks[index]?.paragraph ?? 0;
+  const previous = chunks.findLast((chunk) => chunk.paragraph < current)?.paragraph;
+  if (previous === undefined) return null;
+  return chunks.findIndex((chunk) => chunk.paragraph === previous);
+}
+
+/** The first chunk of `paragraph`, or of the next one with something to say; null past the end. */
+export function paragraphChunk(chunks: readonly SpeechChunk[], paragraph: number): number | null {
+  const index = chunks.findIndex((chunk) => chunk.paragraph >= paragraph);
+  return index === -1 ? null : index;
+}
+
 function defaultCreateMediaSource(): MediaSource | null {
   const mediaSource = getMediaSourceClass();
   return mediaSource ? new mediaSource() : null;
@@ -574,22 +786,19 @@ export class MediaSourcePlayer {
 
   /** The next paragraph; nothing on the last (the controls offer none there). */
   async skipForward(): Promise<void> {
-    const current = this.chunks[this.index]?.paragraph ?? 0;
-    const next = this.chunks.findIndex((chunk) => chunk.paragraph > current);
-    if (next !== -1) this.moveTo(next);
+    const next = nextParagraphChunk(this.chunks, this.index);
+    if (next !== null) this.moveTo(next);
   }
 
   /** The previous paragraph; nothing on the first. */
   async skipBackward(): Promise<void> {
-    const current = this.chunks[this.index]?.paragraph ?? 0;
-    const previous = this.chunks.findLast((chunk) => chunk.paragraph < current)?.paragraph;
-    if (previous === undefined) return;
-    this.moveTo(this.chunks.findIndex((chunk) => chunk.paragraph === previous));
+    const previous = previousParagraphChunk(this.chunks, this.index);
+    if (previous !== null) this.moveTo(previous);
   }
 
   async skipTo(paragraph: number): Promise<void> {
-    const index = this.chunks.findIndex((chunk) => chunk.paragraph >= paragraph);
-    if (index !== -1) this.moveTo(index);
+    const index = paragraphChunk(this.chunks, paragraph);
+    if (index !== null) this.moveTo(index);
   }
 
   stop(): void {
@@ -771,35 +980,28 @@ export class MediaSourcePlayer {
           pieces = await audio.piecesFrom(placed?.appended ?? 0);
         } catch (error) {
           if (run !== this.run) return;
-          if (error instanceof RetriedSynthesis) {
-            if (placed) {
-              this.replayChunk(placed);
-              return;
-            }
-            continue;
-          }
-          if (error instanceof RetryLater || error instanceof TransientSynthesisError) {
+          const failure = error instanceof Error ? error : new Error(String(error));
+          const decision = decideAppendFailure(chunkFailureKind(failure), {
+            placed: placed !== null,
             // Retried meanwhile (it was due, or play is trying again).
-            if (this.chunkAudio.get(chunk) !== audio) continue;
-          }
-          // Tried again when it's due, which wakes this loop again. Part of
-          // a chunk is never played: it's dropped, to be heard whole.
-          if (error instanceof RetryLater) {
-            if (placed) this.replayChunk(placed);
-            return;
-          }
-          if (error instanceof TransientSynthesisError) {
-            if (placed) {
-              this.replayChunk(placed);
+            superseded: this.chunkAudio.get(chunk) !== audio,
+          });
+          switch (decision) {
+            case "replay":
+              this.replayChunk(placed!);
               return;
-            }
-            this.blocked = { run, error };
-            this.pauseIfBlocked();
-            return;
+            case "retry":
+              continue;
+            case "wait":
+              return;
+            case "block":
+              this.blocked = { run, error: failure };
+              this.pauseIfBlocked();
+              return;
+            case "fail":
+              this.fail(failure);
+              return;
           }
-          // A skipped chunk is requested again once playback gets near it.
-          if (!(error instanceof SkippedSynthesis)) this.fail(error);
-          return;
         }
         if (run !== this.run) return;
 
@@ -944,24 +1146,24 @@ export class MediaSourcePlayer {
   }
 
   private synthesisFailure(chunk: number, audio: ChunkAudio, error: unknown): Error {
-    if (audio.signal.aborted || error instanceof SkippedSynthesis) return new SkippedSynthesis();
-    if (error instanceof StreamInterruptedError) {
-      const retries = (this.streamRetries.get(chunk) ?? 0) + 1;
-      if (retries <= MAX_STREAM_RETRIES) {
-        this.streamRetries.set(chunk, retries);
+    const decision = decideSynthesisFailure(error, {
+      aborted: audio.signal.aborted,
+      streamRetries: this.streamRetries.get(chunk) ?? 0,
+      transientFailures: this.transientFailures.get(chunk) ?? 0,
+      retryDelaysMs: this.retryDelaysMs,
+    });
+    switch (decision.type) {
+      case "skip":
+        return new SkippedSynthesis();
+      case "resynthesize":
+        this.streamRetries.set(chunk, decision.streamRetries);
         return new RetriedSynthesis();
-      }
-      // A stream that keeps dropping has been asked for enough.
-      return error;
+      case "retry-later":
+        this.transientFailures.set(chunk, decision.transientFailures);
+        return new RetryLater(decision.delayMs);
+      case "give-up":
+        return decision.error;
     }
-    if (error instanceof TransientSynthesisError && error.retryable) {
-      const failures = this.transientFailures.get(chunk) ?? 0;
-      if (failures < this.retryDelaysMs.length) {
-        this.transientFailures.set(chunk, failures + 1);
-        return new RetryLater(this.retryDelaysMs[failures]);
-      }
-    }
-    return error instanceof Error ? error : new Error(String(error));
   }
 
   /**
@@ -971,8 +1173,13 @@ export class MediaSourcePlayer {
    */
   private pauseIfBlocked(): void {
     const blocked = this.blocked;
-    if (!blocked || blocked.run !== this.run) return;
-    if (this.status !== "buffering" || this.isPlayheadBuffered()) return;
+    const pause = shouldPauseForBlock({
+      blockedRun: blocked?.run ?? null,
+      run: this.run,
+      status: this.status,
+      playheadBuffered: this.isPlayheadBuffered(),
+    });
+    if (!blocked || !pause) return;
     this.blocked = null;
     this.pause();
     this.callbacks.onInterrupted?.(blocked.error);
@@ -1032,43 +1239,30 @@ export class MediaSourcePlayer {
     this.queuedSyntheses.sort((a, b) => a.chunk - b.chunk);
     while (this.runningSyntheses < this.maxConcurrentSyntheses && this.queuedSyntheses.length) {
       const next = this.queuedSyntheses.shift()!;
-      // Chunk numbers from before clearCache belong to different text.
-      const wanted =
-        next.epoch === this.cacheEpoch &&
-        !next.audio.finished &&
-        this.status !== "idle" &&
-        next.chunk >= this.index &&
-        next.chunk <= this.lastWantedChunk();
+      const wanted = shouldStartSynthesis({
+        chunk: next.chunk,
+        epoch: next.epoch,
+        cacheEpoch: this.cacheEpoch,
+        finished: next.audio.finished,
+        status: this.status,
+        index: this.index,
+        lastWanted: this.lastWantedChunk(),
+      });
       if (wanted) next.start();
       else next.skip();
     }
   }
 
-  /**
-   * The furthest chunk worth having synthesized: enough to cover
-   * {@link MediaSourcePlayerOptions.bufferAheadSeconds} past the playhead,
-   * and always at least the next chunk.
-   */
   private lastWantedChunk(): number {
-    const time = this.audio.currentTime;
-    const firstPlaced = this.placed[0]?.chunk ?? Infinity;
-    let seconds = 0;
-    let chunk = this.index;
-    for (; chunk < this.chunks.length - 1; chunk++) {
-      // The run's placed chunks are consecutive, so index straight in.
-      const placed = this.placed[chunk - firstPlaced];
-      if (placed) {
-        // A chunk still arriving is at least as long as what's arrived.
-        const end = placed.complete
-          ? placed.end
-          : Math.max(placed.end, placed.start + this.estimateSeconds(this.chunks[chunk].text));
-        seconds += Math.max(0, end - Math.max(placed.start, time));
-      } else {
-        seconds += this.estimateSeconds(this.chunks[chunk].text);
-      }
-      if (seconds / this.rate >= this.bufferAheadSeconds) break;
-    }
-    return Math.min(Math.max(chunk, this.index + 1), this.chunks.length - 1);
+    return lastWantedChunk({
+      index: this.index,
+      chunks: this.chunks,
+      placed: this.placed,
+      time: this.audio.currentTime,
+      rate: this.rate,
+      bufferAheadSeconds: this.bufferAheadSeconds,
+      estimateSeconds: this.estimateSeconds,
+    });
   }
 
   private onTimeUpdate(): void {

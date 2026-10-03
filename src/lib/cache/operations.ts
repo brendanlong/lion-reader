@@ -155,7 +155,7 @@ export function removeSubscriptionFromCaches(
   subscriptionId: string,
   queryClient: QueryClient
 ): void {
-  removeSubscriptionFromCache(subscriptionId);
+  removeSubscriptionFromCache(queryClient, subscriptionId);
   removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
 }
 
@@ -207,7 +207,7 @@ export function handleSubscriptionCreated(
   // idempotent, but the structural list refresh should only run once (#680).
   const alreadyExists = findCachedSubscription(queryClient, subscription.id) !== undefined;
 
-  addSubscriptionToCache(subscription);
+  addSubscriptionToCache(queryClient, subscription);
 
   // Skip the structural list refresh if the subscription was already cached.
   if (alreadyExists) return;

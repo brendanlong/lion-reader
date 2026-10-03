@@ -19,22 +19,7 @@
 
 import { useHotkeys } from "react-hotkeys-hook";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
-
-/**
- * Narration state for determining shortcut behavior.
- */
-interface NarrationShortcutState {
-  /** Current playback status */
-  status: "idle" | "loading" | "playing" | "paused";
-  /**
-   * Current paragraph index (0-based) in the player's own space — the one
-   * `totalParagraphs` counts. Not the DOM element index (`currentParagraph`),
-   * which highlighting uses and which does not share these bounds.
-   */
-  currentNarrationParagraph: number;
-  /** Total number of paragraphs */
-  totalParagraphs: number;
-}
+import type { NarrationPhase } from "@/components/narration/useNarrationTypes";
 
 /**
  * Narration control functions.
@@ -54,12 +39,10 @@ interface NarrationShortcutControls {
  * Configuration options for narration keyboard shortcuts.
  */
 export interface UseNarrationKeyboardShortcutsOptions {
-  /** Current narration state */
-  state: NarrationShortcutState;
+  /** What the narration controls currently offer (`getNarrationPhase`) */
+  phase: NarrationPhase;
   /** Narration control functions */
   controls: NarrationShortcutControls;
-  /** Whether narration is loading */
-  isLoading: boolean;
   /** Whether narration is supported in this browser */
   isSupported: boolean;
 }
@@ -68,9 +51,10 @@ export interface UseNarrationKeyboardShortcutsOptions {
  * Hook for narration keyboard shortcuts.
  *
  * Integrates with the existing keyboard shortcuts system and provides
- * playback controls via keyboard.
+ * playback controls via keyboard, offering exactly what the on-screen
+ * controls offer.
  *
- * @param options - Narration state and controls
+ * @param options - Narration phase and controls
  *
  * @example
  * ```tsx
@@ -78,14 +62,13 @@ export interface UseNarrationKeyboardShortcutsOptions {
  *   const narration = useNarration({ id, type, title, feedTitle });
  *
  *   useNarrationKeyboardShortcuts({
- *     state: narration.state,
+ *     phase: getNarrationPhase(narration.state),
  *     controls: {
  *       play: narration.play,
  *       pause: narration.pause,
  *       skipForward: narration.skipForward,
  *       skipBackward: narration.skipBackward,
  *     },
- *     isLoading: narration.isLoading,
  *     isSupported: narration.isSupported,
  *   });
  *
@@ -94,19 +77,11 @@ export interface UseNarrationKeyboardShortcutsOptions {
  * ```
  */
 export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShortcutsOptions): void {
-  const { state, controls, isLoading, isSupported } = options;
+  const { phase, controls, isSupported } = options;
   const { enabled: keyboardShortcutsEnabled, isModalOpen } = useKeyboardShortcutsContext();
 
-  const { status, currentNarrationParagraph, totalParagraphs } = state;
+  const { isGenerating, shouldPause, canSkipForward, canSkipBackward } = phase;
   const { play, pause, skipForward, skipBackward } = controls;
-
-  const isPlaying = status === "playing";
-  const isPaused = status === "paused";
-  // "loading" with paragraphs already loaded means a chunk is generating
-  // mid-playback; controls stay live so the user can pause/skip while it does.
-  const isBufferingMidPlayback = status === "loading" && totalParagraphs > 0;
-  // The narration is controllable (not doing the initial pre-playback generation).
-  const isControllable = isPlaying || isPaused || isBufferingMidPlayback;
 
   // Base enabled condition: shortcuts enabled, modal not open, narration supported
   const baseEnabled = keyboardShortcutsEnabled && !isModalOpen && isSupported;
@@ -116,17 +91,17 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     "p",
     (e) => {
       e.preventDefault();
-      if (isPlaying || isBufferingMidPlayback) {
+      if (shouldPause) {
         pause();
       } else {
         play();
       }
     },
     {
-      enabled: baseEnabled && !isLoading,
+      enabled: baseEnabled && !isGenerating,
       enableOnFormTags: false,
     },
-    [isPlaying, isBufferingMidPlayback, isLoading, play, pause, baseEnabled]
+    [shouldPause, isGenerating, play, pause, baseEnabled]
   );
 
   // Shift+N - Skip to next paragraph
@@ -137,21 +112,10 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
       skipForward();
     },
     {
-      enabled:
-        baseEnabled &&
-        !isLoading &&
-        isControllable &&
-        currentNarrationParagraph < totalParagraphs - 1,
+      enabled: baseEnabled && canSkipForward,
       enableOnFormTags: false,
     },
-    [
-      skipForward,
-      isLoading,
-      isControllable,
-      currentNarrationParagraph,
-      totalParagraphs,
-      baseEnabled,
-    ]
+    [skipForward, canSkipForward, baseEnabled]
   );
 
   // Shift+P - Skip to previous paragraph
@@ -162,9 +126,9 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
       skipBackward();
     },
     {
-      enabled: baseEnabled && !isLoading && isControllable && currentNarrationParagraph > 0,
+      enabled: baseEnabled && canSkipBackward,
       enableOnFormTags: false,
     },
-    [skipBackward, isLoading, isControllable, currentNarrationParagraph, baseEnabled]
+    [skipBackward, canSkipBackward, baseEnabled]
   );
 }

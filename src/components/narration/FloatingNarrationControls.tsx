@@ -20,15 +20,9 @@ const buttonClass =
   "text-muted hover:bg-surface-muted flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full transition-colors disabled:opacity-40 disabled:hover:bg-transparent";
 
 export function FloatingNarrationControls({ narration }: { narration: UseNarrationReturn }) {
-  const { state, isLoading, play, pause, skipForward, skipBackward, isSupported } = narration;
-  const {
-    isPlaying,
-    isBufferingMidPlayback,
-    isActive,
-    shouldPause,
-    canSkipBackward,
-    canSkipForward,
-  } = getNarrationPhase(state, isLoading);
+  const { state, play, pause, skipForward, skipBackward, isSupported } = narration;
+  const { isPlaying, isBuffering, isActive, shouldPause, canSkipBackward, canSkipForward } =
+    getNarrationPhase(state);
 
   if (!isSupported || !isActive) return null;
 
@@ -50,7 +44,7 @@ export function FloatingNarrationControls({ narration }: { narration: UseNarrati
         className={`${buttonClass} text-body`}
         aria-label={shouldPause ? "Pause" : "Resume"}
       >
-        {isBufferingMidPlayback ? (
+        {isBuffering ? (
           <SpinnerIcon className="h-5 w-5" />
         ) : isPlaying ? (
           <PauseIcon className="h-5 w-5" />

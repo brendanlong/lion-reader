@@ -109,10 +109,15 @@ export function handleSyncEvent(
       break;
 
     case "entry_updated":
-      patchServerEntryMetadata(db.entries, event.entryId, {
-        ...event.metadata,
-        publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
-      });
+      patchServerEntryMetadata(
+        db.entries,
+        event.entryId,
+        {
+          ...event.metadata,
+          publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
+        },
+        new Date(event.updatedAt)
+      );
       break;
 
     case "entry_state_changed": {
@@ -204,7 +209,7 @@ export function handleSyncEvent(
         }
         // If not cached, the invalidation below will correct it
       }
-      updateSubscriptionInCache(utils, event.subscriptionId, subUpdates);
+      updateSubscriptionInCache(utils, queryClient, event.subscriptionId, subUpdates);
       utils.tags.list.invalidate();
       utils.subscriptions.list.invalidate();
       break;

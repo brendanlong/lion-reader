@@ -160,13 +160,18 @@ describe("EntryContent", () => {
     await screen.findByRole("link", { name: "The Great Article" });
 
     act(() => {
-      patchServerEntryMetadata(getLocalDb(queryClient).entries, "entry-1", {
-        title: "Renamed Article",
-        author: "Jane Doe",
-        summary: null,
-        url: "https://example.com/article",
-        publishedAt: new Date("2024-06-15T10:00:00Z"),
-      });
+      patchServerEntryMetadata(
+        getLocalDb(queryClient).entries,
+        "entry-1",
+        {
+          title: "Renamed Article",
+          author: "Jane Doe",
+          summary: null,
+          url: "https://example.com/article",
+          publishedAt: new Date("2024-06-15T10:00:00Z"),
+        },
+        new Date("2024-06-15T12:00:00Z")
+      );
     });
 
     expect(await screen.findByRole("link", { name: "Renamed Article" })).toBeInTheDocument();
@@ -197,6 +202,65 @@ describe("EntryContent", () => {
     );
 
     expect(await screen.findByText("Failed to load entry")).toBeInTheDocument();
+  });
+});
+
+describe("EntryContent summaries", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubMemoryLocalStorage();
+  });
+
+  /** An entry whose full content is fetched, so the toggle switches versions at once. */
+  function summaryHandlers() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handlers = baseHandlers({
+      "entries.get": () => ({
+        entry: createEntry({
+          fullContentCleaned: "<p>Full body content here.</p>",
+          fullContentFetchedAt: new Date("2024-06-15T11:30:00Z"),
+        }),
+      }),
+      "summarization.isAvailable": () => ({ available: true }),
+      "summarization.generate": async (input) => {
+        await gate;
+        const full = (input as { useFullContent?: boolean }).useFullContent;
+        return {
+          summary: `<p>${full ? "Full" : "Feed"} summary.</p>`,
+          modelId: "test-model",
+          generatedAt: null,
+          settingsChanged: false,
+        };
+      },
+      "subscriptions.update": () => ({}),
+    });
+    return { handlers, release };
+  }
+
+  it("files a summary under the version it was requested for, not the one now shown", async () => {
+    const { handlers, release } = summaryHandlers();
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, handlers);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Generate AI summary" }));
+    await waitFor(() => expect(callsFor("summarization.generate")).toHaveLength(1));
+    expect(callsFor("summarization.generate")[0].input).toMatchObject({ useFullContent: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fetch and display full article content" }));
+    expect(await screen.findByText("Full body content here.")).toBeInTheDocument();
+
+    await act(async () => {
+      release();
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Generate AI summary" })).toBeEnabled()
+    );
+    expect(screen.queryByText("Feed summary.")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to feed content" }));
+    expect(await screen.findByText("Feed summary.")).toBeInTheDocument();
   });
 });
 

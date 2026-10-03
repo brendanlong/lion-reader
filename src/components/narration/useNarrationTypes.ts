@@ -5,7 +5,7 @@
  */
 
 import type { NarrationState } from "@/lib/narration/ArticleNarrator";
-import type { PlaybackStatus } from "@/lib/narration/media-source-player";
+import type { NarrationStatus } from "@/lib/narration/types";
 
 // ============================================================================
 // Configuration Types
@@ -54,7 +54,8 @@ export interface UseNarrationConfig {
  * "X of Y" readout) must use `currentNarrationParagraph`; only highlighting uses
  * `currentParagraph`.
  */
-export interface UseNarrationState extends NarrationState {
+export interface UseNarrationState extends Omit<NarrationState, "status"> {
+  status: NarrationStatus;
   /** Index of the current paragraph in the player's own (narration) space. */
   currentNarrationParagraph: number;
 }
@@ -65,8 +66,6 @@ export interface UseNarrationState extends NarrationState {
 export interface UseNarrationReturn {
   /** Current narration state */
   state: UseNarrationState;
-  /** Whether narration text is being generated */
-  isLoading: boolean;
   /** Start or resume playback */
   play: () => void;
   /** Pause playback */
@@ -95,7 +94,7 @@ export interface UseNarrationReturn {
 /**
  * Default narration state when no article is loaded.
  */
-export const DEFAULT_NARRATION_STATE: UseNarrationState = {
+export const DEFAULT_NARRATION_STATE: UseNarrationState & { status: "idle" } = {
   status: "idle",
   currentParagraph: 0,
   currentNarrationParagraph: 0,
@@ -114,43 +113,25 @@ export const DEFAULT_NARRATION_STATE: UseNarrationState = {
  * bounds and the "X of Y" readout are relative to `totalParagraphs`, which
  * counts narration paragraphs (see `UseNarrationState`).
  */
-export function getNarrationPhase(state: UseNarrationState, isLoading: boolean) {
+export function getNarrationPhase(state: UseNarrationState) {
   const { status, currentNarrationParagraph, totalParagraphs } = state;
   const isPlaying = status === "playing";
   const isPaused = status === "paused";
-  // "loading" once we already have paragraphs means we're generating the next
-  // chunk mid-playback. The controls stay live here so the user can pause or
-  // skip while a chunk generates. Before any paragraphs exist we're still doing
-  // the initial narration generation, where there's nothing yet to control.
-  const isBufferingMidPlayback = status === "loading" && totalParagraphs > 0;
-  const isInitialLoading = (isLoading || status === "loading") && !isBufferingMidPlayback;
-  const isActive = isPlaying || isPaused || isBufferingMidPlayback;
+  // Buffering keeps the controls live so the user can pause or skip while a
+  // chunk synthesizes; generating has nothing to control yet.
+  const isBuffering = status === "buffering";
+  const isActive = isPlaying || isPaused || isBuffering;
   return {
     isPlaying,
     isPaused,
-    isBufferingMidPlayback,
-    isInitialLoading,
+    isBuffering,
+    isGenerating: status === "generating",
     isActive,
     /** Whether the play/pause toggle should pause (it pauses while buffering too) */
-    shouldPause: isPlaying || isBufferingMidPlayback,
-    canSkipBackward: currentNarrationParagraph > 0,
-    canSkipForward: currentNarrationParagraph < totalParagraphs - 1,
+    shouldPause: isPlaying || isBuffering,
+    canSkipBackward: isActive && currentNarrationParagraph > 0,
+    canSkipForward: isActive && currentNarrationParagraph < totalParagraphs - 1,
   };
 }
 
-/**
- * Maps MediaSourcePlayer status to NarrationState status.
- */
-export function mapPlaybackStatus(status: PlaybackStatus): NarrationState["status"] {
-  switch (status) {
-    case "playing":
-      return "playing";
-    case "paused":
-      return "paused";
-    case "buffering":
-      return "loading";
-    case "idle":
-    default:
-      return "idle";
-  }
-}
+export type NarrationPhase = ReturnType<typeof getNarrationPhase>;

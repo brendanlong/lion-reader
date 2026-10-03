@@ -8,13 +8,13 @@ React Query (via tRPC) is the network layer for everything. Entries additionally
 live in a **local normalized store** (TanStack DB, `src/lib/local-db/`), which is
 what entry lists, the reader, and the loading fallbacks render from:
 
-| Data                    | Lives in                                   | Updated by                                                          |
-| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
-| Entry list-item fields  | Local store: one row per entry             | Ingested fetches, mutation responses, SSE — newest `updatedAt` wins |
-| Entry list membership   | Local store: `{ listKey, entryId, order }` | Ingested fetches; live inserts of new/newly-unread entries          |
-| Entry content           | React Query `entries.get`                  | Fetch; `fetchFullContent` response                                  |
-| Subscription/tag counts | React Query (absolute values)              | Direct update from responses and events                             |
-| Subscription list       | React Query (sidebar `subscriptions.list`) | Direct update (add/remove)                                          |
+| Data                    | Lives in                                   | Updated by                                                                           |
+| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Entry list-item fields  | Local store: one row per entry             | Ingested fetches, mutation responses, SSE — newest `updatedAt` wins, per field group |
+| Entry list membership   | Local store: `{ listKey, entryId, order }` | Ingested fetches; live inserts of new/newly-unread entries                           |
+| Entry content           | React Query `entries.get`                  | Fetch; `fetchFullContent` response                                                   |
+| Subscription/tag counts | React Query (absolute values)              | Direct update from responses and events                                              |
+| Subscription list       | React Query (sidebar `subscriptions.list`) | Direct update (add/remove)                                                           |
 
 **Ingestion.** `getLocalDb(queryClient)` (one store per QueryClient — never
 module-global, since the server has one QueryClient per request) subscribes to
@@ -50,18 +50,21 @@ refreshes the list (read entries stay visible under the reader). The sidebar
 calls the same `refreshEntryLists` when a link matching the current pathname
 is clicked, so clicking the current list acts as an explicit refresh.
 
-A next-page fetch can't clobber a mid-fetch read/starred change (#1081):
-state lives in the entry store, and a page fetched before the change carries an
-older `updatedAt`, so it is skipped for that entry.
+A next-page fetch can't clobber a mid-fetch change (#1081): entries live in the
+store, which tracks freshness separately for read/starred **state** and for the
+entry's **metadata** (title, summary, …), since writes like `entry_updated` or a
+mark-read response carry only one of them. A page fetched before a change
+carries an older `updatedAt` than the change, so that group is skipped for the
+entry while the other still applies (`mergeServerEntry`).
 
 ## Local Store (`src/lib/local-db/`)
 
-| File                   | Role                                                                                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes) |
-| `entries.ts`           | Entry rows and the `updatedAt`-guarded server writes: `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata`                        |
-| `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (filter targeting, pagination window), `entryListKey`                              |
-| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion), `insertEntryIntoLists` / `addServerEntryToLists`                                         |
+| File                   | Role                                                                                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes)                      |
+| `entries.ts`           | Entry rows and their server writes, all through `mergeServerEntry` (per-group `updatedAt` guard): `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata` |
+| `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (filter targeting, pagination window), `entryListKey`                                                   |
+| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion), `insertEntryIntoLists` / `addServerEntryToLists`                                                              |
 
 Components read it through `src/lib/hooks/useLocalEntries.ts`:
 `useEntryListEntries(input)` (a list, in order), `useLocalEntry(id)`, and
@@ -123,17 +126,17 @@ Tag mutations (`tags.create/update/delete`) invalidate/patch via their component
 
 **Key principle:** SSE events write the local store and caches directly and must NOT trigger `entries.*` refetches (enforced by e2e tests via `recordTrpcProcedures`). Counts are always set to absolute server-provided values (idempotent — duplicate SSE/sync delivery can't drift them). The **one deliberate exception** is `mark_all_read`: mark-all-read is unbounded, so patching every entry (or shipping every id) isn't worth it, and the event invalidates `entries.list` instead — refetching a list the user just cleared is an acceptable rare cost.
 
-**Catch-up sync after (re)connect (#1081):** on SSE `open`, `useRealtimeUpdates` runs a catch-up sync against `sync.events` from the current cursors. Two invariants keep it from losing changes made while disconnected:
+**Catch-up sync after (re)connect (#1081):** on SSE `open`, `useRealtimeUpdates` runs a catch-up sync against `sync.events` from the current cursors. Its decisions live in the pure reducer `reduceSyncSession` (`src/lib/events/sync-session.ts`), which upholds these invariants so it can't lose changes made while disconnected:
 
-- **Retry on failure.** A failed catch-up sync is retried with exponential backoff (2s→30s) even in the `connected` phase (the `polling` phase already retries every 30s). A single failure used to be swallowed as "done", stranding the gap forever on an idle view.
-- **Cursor freeze until caught up.** Live SSE events patch the cache immediately but do **not** advance the persisted sync cursor until the connection's catch-up sync has fully succeeded (`caughtUpRef`). Otherwise a live event would push the cursor past the not-yet-synced gap, making the pending/retrying catch-up query skip the gap's rows. The catch-up sync itself always advances the cursor (it drains the authoritative server sequence). Any stream error (including the browser's silent EventSource auto-reconnect) re-freezes the cursor so the next catch-up re-covers whatever was missed.
+- **Retry on failure.** A failed catch-up sync is retried with exponential backoff (2s→30s) even in the `connected` phase (the `polling` phase already retries every 30s). Without the retry, one failure would strand the gap on an idle view.
+- **Cursor freeze until caught up.** Live SSE events patch the cache immediately but do **not** advance the persisted sync cursor until the connection's catch-up sync has fully succeeded (`caughtUp`). Otherwise a live event would push the cursor past the not-yet-synced gap, making the pending/retrying catch-up query skip the gap's rows. The catch-up sync itself always advances the cursor (it drains the authoritative server sequence). Any stream error (including the browser's silent EventSource auto-reconnect) re-freezes the cursor so the next catch-up re-covers whatever was missed.
 - **Hold the catch-up's start (#1663).** Every page of a catch-up sends where it started as `entriesSince`, so an entry pushed onto a later page by a newer change still gets its earlier `new_entry`/`entry_updated`. The start is cleared only when a page reports no more — deliberately kept through failures and reconnects, since an older start only re-reports changes (harmless) while a newer one loses them.
 
 | SSE Event              | Cache Updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `new_entry`            | Direct: absolute counts via `setEntryRelatedCounts`; stores the event's `entry` payload and inserts it into matching loaded lists via `addServerEntryToLists` (tag/uncategorized membership from the cached subscription — conservatively skipped when uncached; skips search/unknown-filter lists and entries beyond the loaded pagination window). Spam entries carry no payload. The catch-up sync path sets `read`/`starred` for entries that changed state on another device; the live path omits them. Idempotent (absolute counts, insert deduped by ID). |
-| `entry_updated`        | Direct: the stored entry's metadata (title, author, summary, url, publishedAt), which the reader renders too. No invalidation — avoids a race when the entry is open.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `entry_state_changed`  | Direct: the stored entry's read/starred (skipped when older than the stored `updatedAt`); absolute counts via `setEntryRelatedCounts`. Entries becoming unread are inserted into the lists missing them: events for unread flips carry a list-item payload (like `new_entry`; omitted for spam) — so the entry appears even when the store doesn't hold it (marked unread on another device/MCP, issue #1237); payload-less events (older servers, star/unstar of an unread entry) fall back to the stored row.                                                  |
+| `entry_updated`        | Direct: the stored entry's metadata (title, author, summary, url, publishedAt; skipped when older than the stored metadata), which the reader renders too. No invalidation — avoids a race when the entry is open.                                                                                                                                                                                                                                                                                                                                               |
+| `entry_state_changed`  | Direct: the stored entry's read/starred (skipped when older than the stored state); absolute counts via `setEntryRelatedCounts`. Entries becoming unread are inserted into the lists missing them: events for unread flips carry a list-item payload (like `new_entry`; omitted for spam) — so the entry appears even when the store doesn't hold it (marked unread on another device/MCP, issue #1237); payload-less events (older servers, star/unstar of an unread entry) fall back to the stored row.                                                        |
 | `mark_all_read`        | A `markAllRead` happened on another tab/device. Invalidate `entries.list`, `entries.count`, `tags.list`, `subscriptions.list` — the same thing the acting tab does on success. This is the **one** deliberate `entries.list` refetch (see Key principle above). Advances the entries cursor so a reconnect catch-up doesn't re-deliver every marked entry.                                                                                                                                                                                                       |
 | `subscription_created` | Add to `subscriptions.list`; absolute counts from server `counts` (live path). The sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                                                                                                                                                                                                                                                                                                                                    |
 | `subscription_updated` | Patch subscription in lookup map/list caches; invalidate `tags.list` + `subscriptions.list` (tag membership may have changed).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -170,7 +173,7 @@ TanStack DB transaction on the shared entry store:
    mutation is just sent).
 2. The mutation function sends the request and writes the response to the
    store's **synced layer** through `setServerEntryState`, which skips a
-   response older than the stored `updatedAt`
+   response older than the stored state's `updatedAt`
    (`GREATEST(entry.updated_at, user_entry.updated_at)`). Out-of-order
    responses therefore resolve to the newest server state, as do fetches and
    SSE events that land mid-flight.
@@ -226,8 +229,9 @@ Re-asserts likewise don't churn delta sync — see "Row Written vs. Value Flippe
 | `src/lib/cache/*` (see table above)                | Count/subscription/tag cache operations, SSE event dispatch         |
 | `src/lib/hooks/useEntryMutations.ts`               | Entry mutations: TanStack DB transactions on the entry store        |
 | `src/lib/hooks/useEntryListRefreshOnNavigate.ts`   | Navigation-triggered entry list invalidation (pathname change)      |
-| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine                     |
+| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine and sync session    |
 | `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback)  |
+| `src/lib/events/sync-session.ts`                   | Pure catch-up sync session (cursor freeze, retry, catch-up start)   |
 | `src/lib/events/cursors.ts`                        | Pure sync-cursor bookkeeping                                        |
 | `src/components/entries/EntryListContainer.tsx`    | Stateful entry list container (query, pagination, keyboard nav)     |
 | `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination                   |

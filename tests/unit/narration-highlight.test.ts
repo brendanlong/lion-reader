@@ -22,11 +22,13 @@ describe("computeHighlightedParagraphs", () => {
 
   it("keeps the highlight while paused or buffering, as narration is still on", () => {
     const at = { ...DEFAULT_NARRATION_STATE, currentParagraph: 4, totalParagraphs: 10 };
-    for (const status of ["playing", "paused", "loading"] as const) {
-      const { isActive } = getNarrationPhase({ ...at, status }, false);
+    for (const status of ["playing", "paused", "buffering"] as const) {
+      const { isActive } = getNarrationPhase({ ...at, status });
       expect(computeHighlightedParagraphs(at.currentParagraph, isActive)).toEqual(new Set([4]));
     }
-    const { isActive } = getNarrationPhase({ ...at, status: "idle" }, false);
-    expect(computeHighlightedParagraphs(at.currentParagraph, isActive).size).toBe(0);
+    for (const status of ["idle", "generating"] as const) {
+      const { isActive } = getNarrationPhase({ ...at, status });
+      expect(computeHighlightedParagraphs(at.currentParagraph, isActive).size).toBe(0);
+    }
   });
 });

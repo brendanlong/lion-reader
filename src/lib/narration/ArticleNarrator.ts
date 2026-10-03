@@ -36,14 +36,14 @@ import {
 /**
  * Possible states for the narration playback.
  */
-export type NarrationStatus = "idle" | "loading" | "playing" | "paused";
+export type NarratorStatus = "idle" | "playing" | "paused";
 
 /**
  * Current state of the narration.
  */
 export interface NarrationState {
   /** Current playback status */
-  status: NarrationStatus;
+  status: NarratorStatus;
   /** Index of the current paragraph (0-based) */
   currentParagraph: number;
   /** Total number of paragraphs in the loaded article */
@@ -72,19 +72,11 @@ export class ArticleNarrator {
   private paragraphs: string[] = [];
   private currentIndex = 0;
   private utterance: SpeechSynthesisUtterance | null = null;
-  private status: NarrationStatus = "idle";
+  private status: NarratorStatus = "idle";
   private selectedVoice: SpeechSynthesisVoice | null = null;
   private rate: number = DEFAULT_RATE;
   private pitch: number = DEFAULT_PITCH;
   private stateChangeListeners: Set<StateChangeCallback> = new Set();
-
-  /**
-   * Flag to prevent handleUtteranceEnd from auto-advancing during skip operations.
-   * This is needed because speechSynthesis.cancel() may fire onend asynchronously
-   * after we've already set status back to "playing".
-   */
-  private isSkipping = false;
-  private skipGuardTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Cached Firefox detection result.
@@ -96,10 +88,6 @@ export class ArticleNarrator {
    * Creates a new ArticleNarrator instance.
    */
   constructor() {
-    // Bind methods to ensure correct 'this' context when used as callbacks
-    this.handleUtteranceEnd = this.handleUtteranceEnd.bind(this);
-    this.handleUtteranceError = this.handleUtteranceError.bind(this);
-
     // Cache Firefox detection (checked once at construction)
     this.isFirefoxBrowser = isFirefox();
   }
@@ -184,8 +172,7 @@ export class ArticleNarrator {
       if (this.isFirefoxBrowser) {
         // Firefox workaround: cancel instead of pause
         // We'll restart from the current paragraph on resume
-        speechSynthesis.cancel();
-        this.utterance = null;
+        this.cancelUtterance();
       } else {
         speechSynthesis.pause();
       }
@@ -225,8 +212,7 @@ export class ArticleNarrator {
 
     // Set status BEFORE cancel to prevent handleUtteranceEnd from auto-advancing
     this.setStatus("idle");
-    speechSynthesis.cancel();
-    this.utterance = null;
+    this.cancelUtterance();
     this.currentIndex = 0;
   }
 
@@ -322,23 +308,22 @@ export class ArticleNarrator {
    * Cancels the current utterance so a skip can speak another paragraph.
    */
   private cancelForSkip(): void {
-    // Hold off handleUtteranceEnd's auto-advance: cancel() may fire onend
-    // asynchronously. Restart the window on every skip, or an earlier skip's
-    // timer can clear it while a later skip's stale onend is still pending.
-    this.isSkipping = true;
-    if (this.skipGuardTimer) clearTimeout(this.skipGuardTimer);
-    this.skipGuardTimer = setTimeout(() => {
-      this.isSkipping = false;
-      this.skipGuardTimer = null;
-    }, 50);
-
     // Engines can stay paused across cancel(), silently queueing the next
     // utterance (Firefox never paused the engine; see pause()).
     if (this.status === "paused" && !this.isFirefoxBrowser) {
       speechSynthesis.resume();
     }
-    speechSynthesis.cancel();
+    this.cancelUtterance();
+  }
+
+  /**
+   * Cancels the current utterance. Its reference is dropped first: engines
+   * deliver the cancelled utterance's end/error events late or from inside
+   * cancel() itself, and either way they must find it no longer current.
+   */
+  private cancelUtterance(): void {
     this.utterance = null;
+    speechSynthesis.cancel();
   }
 
   /**
@@ -350,33 +335,32 @@ export class ArticleNarrator {
       return;
     }
 
-    const text = this.paragraphs[this.currentIndex];
-    this.utterance = new SpeechSynthesisUtterance(text);
-
-    // Configure utterance settings
+    const utterance = new SpeechSynthesisUtterance(this.paragraphs[this.currentIndex]);
     if (this.selectedVoice) {
-      this.utterance.voice = this.selectedVoice;
+      utterance.voice = this.selectedVoice;
     }
-    this.utterance.rate = this.rate;
-    this.utterance.pitch = this.pitch;
+    utterance.rate = this.rate;
+    utterance.pitch = this.pitch;
 
-    // Set up event handlers
-    this.utterance.onend = this.handleUtteranceEnd;
-    this.utterance.onerror = this.handleUtteranceError;
+    // A cancelled utterance's end/error events can arrive after the next one
+    // has started (a skip, or play after a stop or a Firefox pause), so only
+    // the current utterance's events may advance or end the narration.
+    utterance.onend = () => {
+      if (utterance === this.utterance) this.handleUtteranceEnd();
+    };
+    utterance.onerror = (event) => {
+      if (utterance === this.utterance) this.handleUtteranceError(event);
+    };
 
+    this.utterance = utterance;
     this.setStatus("playing");
-    speechSynthesis.speak(this.utterance);
+    speechSynthesis.speak(utterance);
   }
 
   /**
    * Handles the end of an utterance, auto-advancing to next paragraph.
    */
   private handleUtteranceEnd(): void {
-    // Don't auto-advance if we're skipping (skip operation handles index manually)
-    if (this.isSkipping) {
-      return;
-    }
-
     // Don't auto-advance if we're not playing (e.g., paused or stopped)
     if (this.status !== "playing") {
       return;
@@ -411,7 +395,7 @@ export class ArticleNarrator {
   /**
    * Updates the status and notifies listeners.
    */
-  private setStatus(newStatus: NarrationStatus): void {
+  private setStatus(newStatus: NarratorStatus): void {
     if (this.status !== newStatus) {
       this.status = newStatus;
       this.notifyStateChange();

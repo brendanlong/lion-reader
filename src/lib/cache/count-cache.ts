@@ -26,30 +26,19 @@ export type CachedSubscription = NonNullable<
  * - addSubscriptionToCache adds, updateSubscriptionInCache patches (title/tags)
  * - removeSubscriptionFromCache removes (subscription_deleted, unsubscribe)
  *
- * Read through findCachedSubscription().
+ * One map per QueryClient, like the rest of the client's caches, so it goes
+ * with the client (and the user it belongs to). Read through
+ * findCachedSubscription().
  */
-const subscriptionLookupMap = new Map<string, CachedSubscription>();
+const subscriptionLookupMaps = new WeakMap<QueryClient, Map<string, CachedSubscription>>();
 
-/**
- * Clears the subscription lookup map.
- *
- * Must be called on logout: this map is module-level state that outlives a
- * session (it isn't tied to the QueryClient), so without an explicit clear one
- * account's subscription data bleeds into the next login on a shared browser.
- */
-function clearSubscriptionLookupMap(): void {
-  subscriptionLookupMap.clear();
-}
-
-/**
- * Resets the subscription lookup map.
- * Exported for test isolation only - this map is module-level state
- * that persists across tests and must be cleared between them.
- *
- * @testonly
- */
-export function _resetSubscriptionLookupMap(): void {
-  clearSubscriptionLookupMap();
+function subscriptionLookupMap(queryClient: QueryClient): Map<string, CachedSubscription> {
+  let map = subscriptionLookupMaps.get(queryClient);
+  if (!map) {
+    map = new Map();
+    subscriptionLookupMaps.set(queryClient, map);
+  }
+  return map;
 }
 
 /**
@@ -104,7 +93,7 @@ export function findCachedSubscription(
   subscriptionId: string
 ): CachedSubscription | undefined {
   // Check the lookup map first (O(1) lookup)
-  const fromMap = subscriptionLookupMap.get(subscriptionId);
+  const fromMap = subscriptionLookupMap(queryClient).get(subscriptionId);
   if (fromMap) return fromMap;
 
   // Check per-tag infinite queries
@@ -126,8 +115,9 @@ export function findCachedSubscriptionIds(
   predicate: (subscription: CachedSubscription) => boolean
 ): string[] | undefined {
   const matching = new Set<string>();
-  let any = subscriptionLookupMap.size > 0;
-  for (const subscription of subscriptionLookupMap.values()) {
+  const lookupMap = subscriptionLookupMap(queryClient);
+  let any = lookupMap.size > 0;
+  for (const subscription of lookupMap.values()) {
     if (predicate(subscription)) matching.add(subscription.id);
   }
   forEachCachedSubscription(queryClient, (subscription) => {
@@ -144,6 +134,7 @@ export function findCachedSubscriptionIds(
  * @param subscription - The new subscription to add
  */
 export function addSubscriptionToCache(
+  queryClient: QueryClient,
   subscription: CachedSubscription & {
     type: "web" | "email" | "saved";
     url: string | null;
@@ -155,7 +146,7 @@ export function addSubscriptionToCache(
     fetchFullContent: boolean;
   }
 ): void {
-  subscriptionLookupMap.set(subscription.id, subscription);
+  subscriptionLookupMap(queryClient).set(subscription.id, subscription);
 }
 
 /**
@@ -163,18 +154,21 @@ export function addSubscriptionToCache(
  * and subscriptions.get cache.
  *
  * @param utils - tRPC utils for cache access
+ * @param queryClient - React Query client whose lookup map to update
  * @param subscriptionId - ID of the subscription to update
  * @param updates - Properties to update on the subscription
  */
 export function updateSubscriptionInCache(
   utils: TRPCClientUtils,
+  queryClient: QueryClient,
   subscriptionId: string,
   updates: Partial<Pick<CachedSubscription, "tags" | "title">>
 ): void {
   // Update in subscription lookup map
-  const existing = subscriptionLookupMap.get(subscriptionId);
+  const lookupMap = subscriptionLookupMap(queryClient);
+  const existing = lookupMap.get(subscriptionId);
   if (existing) {
-    subscriptionLookupMap.set(subscriptionId, { ...existing, ...updates });
+    lookupMap.set(subscriptionId, { ...existing, ...updates });
   }
 
   // Update in subscriptions.get cache (used by entry list title)
@@ -188,10 +182,14 @@ export function updateSubscriptionInCache(
  * Removes a subscription from the subscription lookup map.
  * Used for optimistic updates when unsubscribing.
  *
+ * @param queryClient - React Query client whose lookup map to update
  * @param subscriptionId - ID of the subscription to remove
  */
-export function removeSubscriptionFromCache(subscriptionId: string): void {
-  subscriptionLookupMap.delete(subscriptionId);
+export function removeSubscriptionFromCache(
+  queryClient: QueryClient,
+  subscriptionId: string
+): void {
+  subscriptionLookupMap(queryClient).delete(subscriptionId);
 }
 
 // ============================================================================

@@ -33,7 +33,7 @@
  */
 
 import { isMediaSessionSupported } from "./feature-detection";
-import type { NarrationStatus } from "./ArticleNarrator";
+import type { NarrationStatus } from "./types";
 import { startSilentAudio, stopSilentAudio } from "./silent-audio";
 
 /**
@@ -72,7 +72,8 @@ export interface MediaSessionMetadataInput {
  * down; the rest keep the silent loop playing so the controls persist.
  */
 const ACTIVE_STATUSES: ReadonlySet<NarrationStatus> = new Set<NarrationStatus>([
-  "loading",
+  "generating",
+  "buffering",
   "playing",
   "paused",
 ]);
@@ -145,12 +146,12 @@ export function setMediaSessionSkips(
  * Synchronizes the OS media session with the current narration status and drives
  * the silent audio element that keeps the controls visible.
  *
- * - `loading` / `playing` / `paused`: keeps the silent loop playing so the OS
- *   session stays active, and reflects play vs. pause on the controls.
  * - `idle`: stops the silent loop, deactivating the OS session.
+ * - anything else: keeps the silent loop playing so the OS session stays
+ *   active, and reflects play vs. pause on the controls.
  *
  * Call this whenever narration status changes. Reachability from a user gesture
- * (or sticky activation) matters for the first `loading`/`playing` transition so
+ * (or sticky activation) matters for the first non-idle transition so
  * autoplay policies allow the silent audio to start.
  *
  * @param status - The current narration status

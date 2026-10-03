@@ -23,7 +23,6 @@ import {
   type SubscriptionData,
 } from "@/lib/cache/operations";
 import {
-  _resetSubscriptionLookupMap,
   addSubscriptionToCache,
   findCachedSubscription,
   type CachedSubscription,
@@ -37,12 +36,15 @@ import {
  * Seeds a subscription into the lookup map (the canonical source for
  * subscription data used by count calculations and event handlers).
  */
-function seedSubscription(sub: {
-  id: string;
-  unreadCount: number;
-  tags: Array<{ id: string; name: string; color: string | null }>;
-}): void {
-  addSubscriptionToCache({
+function seedSubscription(
+  queryClient: QueryClient,
+  sub: {
+    id: string;
+    unreadCount: number;
+    tags: Array<{ id: string; name: string; color: string | null }>;
+  }
+): void {
+  addSubscriptionToCache(queryClient, {
     id: sub.id,
     type: "web",
     url: null,
@@ -76,7 +78,6 @@ describe("handleSubscriptionCreated", () => {
   let invalidateSpy: MockInstance;
 
   beforeEach(() => {
-    _resetSubscriptionLookupMap();
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     utils = createRealTrpcUtils(queryClient);
     invalidateSpy = spyOnInvalidate(queryClient);
@@ -104,6 +105,12 @@ describe("handleSubscriptionCreated", () => {
     handleSubscriptionCreated(utils, subscription, queryClient);
 
     expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
+  });
+
+  it("keeps the lookup map to its own QueryClient (a new client starts empty)", () => {
+    handleSubscriptionCreated(utils, createSubscription(), queryClient);
+
+    expect(findCachedSubscription(new QueryClient(), "sub-1")).toBeUndefined();
   });
 
   it("sets absolute counts directly when the event provides them", () => {
@@ -214,14 +221,13 @@ describe("handleSubscriptionDeleted", () => {
   let invalidateSpy: MockInstance;
 
   beforeEach(() => {
-    _resetSubscriptionLookupMap();
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     utils = createRealTrpcUtils(queryClient);
     invalidateSpy = spyOnInvalidate(queryClient);
   });
 
   it("removes subscription from lookup map", () => {
-    seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
+    seedSubscription(queryClient, { id: "sub-1", unreadCount: 5, tags: [] });
 
     handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
@@ -243,8 +249,8 @@ describe("handleSubscriptionDeleted", () => {
   });
 
   it("removes subscription from lookup map when present", () => {
-    seedSubscription({ id: "sub-1", unreadCount: 5, tags: [] });
-    seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
+    seedSubscription(queryClient, { id: "sub-1", unreadCount: 5, tags: [] });
+    seedSubscription(queryClient, { id: "sub-2", unreadCount: 10, tags: [] });
 
     handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
@@ -253,7 +259,7 @@ describe("handleSubscriptionDeleted", () => {
   });
 
   it("handles deletion of non-existent subscription gracefully", () => {
-    seedSubscription({ id: "sub-2", unreadCount: 10, tags: [] });
+    seedSubscription(queryClient, { id: "sub-2", unreadCount: 10, tags: [] });
 
     // Should not throw
     handleSubscriptionDeleted(utils, "sub-1", queryClient);
@@ -274,7 +280,6 @@ describe("setEntryRelatedCounts saved-count handling", () => {
   let utils: TRPCClientUtils;
 
   beforeEach(() => {
-    _resetSubscriptionLookupMap();
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     utils = createRealTrpcUtils(queryClient);
   });

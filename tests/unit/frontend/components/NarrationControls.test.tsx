@@ -501,4 +501,39 @@ describe("narration that finishes generating after the user moved on", () => {
 
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
+
+  it("shows the new variant as generating, not mid-playback in the old one", async () => {
+    // The first variant narrates at once; the second waits for release().
+    const second = deferredGenerate();
+    let generateCalls = 0;
+    const { callsFor, rerender } = renderWithTrpc(<NarrationHarness content={SKEWED_HTML} />, {
+      handlers: {
+        "narration.generate": () =>
+          generateCalls++ === 0
+            ? {
+                narration: "One.\n\nTwo.\n\nThree.",
+                cached: false,
+                source: "llm",
+                paragraphMap: [],
+              }
+            : second.handler(),
+      },
+      wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
+    });
+    await startNarration();
+    fireEvent.click(nextButton());
+    expect(screen.getByText("2 of 3")).toBeInTheDocument();
+
+    rerender(<NarrationHarness content={SKEWED_HTML} showFullContent={true} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
+    await waitFor(() => expect(callsFor("narration.generate")).toHaveLength(2));
+
+    expect(screen.getByRole("button", { name: "Generating..." })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Next paragraph" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/ of /)).not.toBeInTheDocument();
+
+    await settle(second.release);
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  });
 });

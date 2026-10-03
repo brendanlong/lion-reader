@@ -12,26 +12,26 @@
  * state changes never change membership.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { act, cleanup, waitFor } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
-import { setServerEntryState, type EntryRow } from "@/lib/local-db/entries";
-import { addSubscriptionToCache, _resetSubscriptionLookupMap } from "@/lib/cache/count-cache";
+import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
+import { addSubscriptionToCache } from "@/lib/cache/count-cache";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
-
-beforeEach(() => {
-  _resetSubscriptionLookupMap();
-});
 
 afterEach(() => {
   cleanup();
 });
 
-function seedSubscription(id: string, tags: Array<{ id: string; name: string }> = []): void {
-  addSubscriptionToCache({
+function seedSubscription(
+  queryClient: QueryClient,
+  id: string,
+  tags: Array<{ id: string; name: string }> = []
+): void {
+  addSubscriptionToCache(queryClient, {
     id,
     type: "web",
     url: `https://example.com/${id}.xml`,
@@ -90,7 +90,7 @@ function renderLists(inputs: Record<string, ListInput>) {
   const insert = (entry: EntryRow) =>
     act(() => {
       const db = getLocalDb(rendered.queryClient);
-      db.entries.upsert([entry]);
+      upsertServerEntries(db.entries, [entry]);
       insertEntryIntoLists(db, rendered.queryClient, entry);
     });
   return { ...rendered, ids, insert };
@@ -144,7 +144,7 @@ describe("list ingestion", () => {
     act(() => {
       const db = getLocalDb(rendered.queryClient);
       const live = makeEntry("live", "2024-07-01");
-      db.entries.upsert([live]);
+      upsertServerEntries(db.entries, [live]);
       insertEntryIntoLists(db, rendered.queryClient, live);
     });
     await act(async () => {
@@ -217,7 +217,7 @@ describe("list ingestion", () => {
         act(() => {
           const db = getLocalDb(rendered.queryClient);
           const live = makeEntry("live", "2024-07-01");
-          db.entries.upsert([live]);
+          upsertServerEntries(db.entries, [live]);
           insertEntryIntoLists(db, rendered.queryClient, live);
         });
       const refetch = () => {
@@ -391,8 +391,6 @@ describe("live inserts - filter targeting", () => {
     });
 
   it("targets subscription, tag and uncategorized lists by the cached subscription", async () => {
-    seedSubscription("sub-1", [{ id: "tag-1", name: "Tech" }]);
-    seedSubscription("sub-2");
     const inputs = {
       sub1: { ...ALL, subscriptionId: "sub-1" },
       sub2: { ...ALL, subscriptionId: "sub-2" },
@@ -401,6 +399,8 @@ describe("live inserts - filter targeting", () => {
       uncategorized: { ...ALL, uncategorized: true },
     };
     const { queryClient, ids, insert } = renderLists(inputs);
+    seedSubscription(queryClient, "sub-1", [{ id: "tag-1", name: "Tech" }]);
+    seedSubscription(queryClient, "sub-2");
     seedEmpty(queryClient, inputs);
 
     insert(makeEntry("tagged", "2024-07-01"));
