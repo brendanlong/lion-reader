@@ -12,6 +12,7 @@ import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
+import { listEntryCollectionIds, publishEntryLeftCollections } from "./collections";
 import { recordEntryTombstone } from "./entry-tombstones";
 import { normalizeUrl } from "@/lib/url";
 import {
@@ -1486,10 +1487,12 @@ export async function deleteSavedArticle(
   //
   // The tombstone lets delta-sync clients drop their copy; it commits with the
   // delete so a client can never see one without the other.
+  const collectionIds = await listEntryCollectionIds(db, userId, articleId);
   await db.transaction(async (tx) => {
     await tx.delete(entries).where(and(eq(entries.id, articleId), eq(entries.feedId, savedFeedId)));
     await recordEntryTombstone(tx, userId, articleId);
   });
+  await publishEntryLeftCollections(db, userId, articleId, collectionIds);
 
   return true;
 }

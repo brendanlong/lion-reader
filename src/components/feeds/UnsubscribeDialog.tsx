@@ -28,7 +28,8 @@ export function UnsubscribeDialog({ feedTitle, isCollection, ...props }: Unsubsc
         {...props}
       >
         Delete <span className="text-body font-medium">{feedTitle}</span>? Its articles stay in
-        their feeds and in Saved; only the collection is removed.
+        their feeds and in Saved. Ones from feeds you&apos;ve unsubscribed from disappear unless
+        they&apos;re starred.
       </ConfirmDialog>
     );
   }

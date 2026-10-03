@@ -151,6 +151,20 @@ export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string
   return activeCount;
 }
 
+/**
+ * Locks a subscription row for the rest of the transaction. Call it before
+ * changing the subscription's tags or state, so this transaction takes locks
+ * in the same order as the unread-counter triggers (subscriptions, users,
+ * tags) and can't deadlock against a concurrent read of one of its entries.
+ */
+export async function lockSubscriptionRow(tx: DbOrTx, subscriptionId: string): Promise<void> {
+  await tx
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, subscriptionId))
+    .for("update");
+}
+
 // ============================================================================
 // Service Functions
 // ============================================================================
@@ -726,6 +740,10 @@ export async function setSubscriptionTags(
   // must be one unit, or a crash/concurrent call between them could leave the
   // subscription untagged or with a partial tag set (issue #952).
   const changed = await db.transaction(async (tx) => {
+    // Subscription row first: the counter triggers lock subscriptions, then
+    // users, then tags, and the tag changes below reach users and tags.
+    await lockSubscriptionRow(tx, subscriptionId);
+
     // Delete all existing tags for the subscription. The RETURNING captures
     // the prior tag set race-free (no pre-SELECT TOCTOU window) so we can
     // tell a real change from a re-apply of the identical set (issue #1160).

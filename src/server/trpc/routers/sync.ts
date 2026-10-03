@@ -574,7 +574,7 @@ async function collectSyncEvents(
         ? await getBulkEntryRelatedCounts(
             db,
             userId,
-            newEntries.map((row) => ({ subscriptionId: row.subscriptionId }))
+            newEntries.map((row) => ({ id: row.id, subscriptionId: row.subscriptionId }))
           )
         : undefined;
 

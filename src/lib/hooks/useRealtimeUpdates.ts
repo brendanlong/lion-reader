@@ -176,6 +176,9 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           cursors: action.cursors,
         });
         for (const event of events) handleSyncEvent(utils, queryClient, event);
+        // Membership changes are SSE-only (collection_entries_changed isn't
+        // replayed), so re-check the few entries whose membership is cached.
+        if (events.length > 0) void utils.collections.listForEntry.invalidate();
         result = { type: "sync-result", epoch: action.epoch, ok: true, events, hasMore };
       } catch (error) {
         console.error("Sync failed:", error);

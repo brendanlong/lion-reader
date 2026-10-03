@@ -35,6 +35,7 @@ import {
   buildEntryFilterConditions,
   buildEntriesInSubscriptionsCondition,
   buildTaggedSubscriptionIdsSubquery,
+  verifySubscriptionOwnership,
   buildUncategorizedSubscriptionIdsSubquery,
 } from "./entry-filters";
 
@@ -1207,27 +1208,19 @@ export async function markAllEntriesRead(
     conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
   }
 
-  // Filter by subscriptionId, matching the entry's stamped attribution. The
-  // subscriptions subquery (active-only, user-scoped) validates ownership
-  // inside the statement, so a foreign or unsubscribed subscription id matches
-  // nothing. (The user_feeds view is display-only — scoping checks query the
-  // subscriptions table directly.)
+  // Filter by subscriptionId: a foreign or unsubscribed subscription matches
+  // nothing. (Scoping checks query the subscriptions table, never the
+  // display-only user_feeds view.)
   const columns = { entryId: userEntries.entryId, subscriptionId: userEntries.subscriptionId };
   if (params.subscriptionId) {
+    if (!(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))) {
+      return [];
+    }
     conditions.push(
       await buildEntriesInSubscriptionsCondition(
         db,
         params.userId,
-        db
-          .select({ id: subscriptions.id })
-          .from(subscriptions)
-          .where(
-            and(
-              eq(subscriptions.id, params.subscriptionId),
-              eq(subscriptions.userId, params.userId),
-              isNull(subscriptions.unsubscribedAt)
-            )
-          ),
+        [params.subscriptionId],
         columns
       )
     );

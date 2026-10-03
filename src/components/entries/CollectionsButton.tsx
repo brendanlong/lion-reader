@@ -47,8 +47,11 @@ function CollectionsPicker({
   onDone: () => void;
 }) {
   const [name, setName] = useState("");
-  const collectionsQuery = trpc.subscriptions.list.useQuery({ type: "collection", limit: 100 });
-  const collections = collectionsQuery.data?.items ?? [];
+  const collectionsQuery = trpc.subscriptions.list.useInfiniteQuery(
+    { type: "collection", limit: 100 },
+    { getNextPageParam: (lastPage) => lastPage.nextCursor }
+  );
+  const collections = collectionsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const memberIds = new Set(membership.collectionIds);
 
   const handleCreate = async (e: FormEvent) => {
@@ -93,6 +96,18 @@ function CollectionsPicker({
                 </li>
               );
             })}
+            {collectionsQuery.hasNextPage && (
+              <li>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void collectionsQuery.fetchNextPage()}
+                  loading={collectionsQuery.isFetchingNextPage}
+                >
+                  Show more
+                </Button>
+              </li>
+            )}
           </ul>
         )}
 

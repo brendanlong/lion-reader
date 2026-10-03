@@ -60,8 +60,17 @@ async function counters(subscriptionId: string) {
   return row;
 }
 
+async function tagUnread(tagId: string): Promise<number> {
+  const [row] = await db.select({ unread: tags.unreadCount }).from(tags).where(eq(tags.id, tagId));
+  return row.unread;
+}
+
 async function expectNoDrift(): Promise<void> {
-  expect(await reconcileCounters(db)).toEqual({ subscriptionsFixed: 0, usersFixed: 0 });
+  expect(await reconcileCounters(db)).toEqual({
+    subscriptionsFixed: 0,
+    usersFixed: 0,
+    tagsFixed: 0,
+  });
 }
 
 async function listIds(userId: string, filter: { subscriptionId?: string; tagId?: string }) {
@@ -101,8 +110,8 @@ describe("collections", () => {
     });
 
     it("drops a member's contribution exactly once when its entry is deleted", async () => {
-      // user_entries and collection_entries both cascade from entries; each
-      // counter trigger must see the other table's row only while it exists.
+      // The user_entries delete trigger takes the member's contribution off
+      // before removing the membership, so nothing is counted out twice.
       const { userId, collectionId } = await setup();
       const saved = await uploadArticle(db, userId, { content: "Body", title: "Paper" });
       await addEntriesToCollection(db, userId, collectionId, [saved.id]);
@@ -120,6 +129,43 @@ describe("collections", () => {
       await addEntriesToCollection(db, userId, collectionId, [entryA]);
 
       expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(2);
+    });
+
+    it("moves a tag holding the article's feed and collection by one per read", async () => {
+      const { userId, sourceId, entryA, collectionId } = await setup();
+      const tagId = await createTestTag(userId, { subscriptionIds: [sourceId, collectionId] });
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+      expect(await tagUnread(tagId)).toBe(2);
+
+      const { counts } = await markEntriesRead(db, userId, [{ id: entryA }], true);
+
+      expect(await tagUnread(tagId)).toBe(1);
+      expect(counts?.tags).toEqual([{ id: tagId, unread: 1 }]);
+      await expectNoDrift();
+    });
+
+    it("counts an untagged collection's members once in Uncategorized", async () => {
+      // New collections start untagged, alongside untagged feeds.
+      const { userId, entryA, collectionId } = await setup();
+
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      const [user] = await db
+        .select({ uncategorized: users.uncategorizedUnreadCount })
+        .from(users)
+        .where(eq(users.id, userId));
+      expect(user.uncategorized).toBe(2);
+    });
+
+    it("keeps the counters exact when a user with members is deleted", async () => {
+      const { userId, entryA, collectionId } = await setup();
+      const other = await setup();
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      await db.delete(users).where(eq(users.id, userId));
+
+      expect((await getGlobalUnreadCounts(db, other.userId)).allUnread).toBe(2);
+      await expectNoDrift();
     });
 
     it("returns the collections holding a marked entry among the affected counts", async () => {
@@ -178,6 +224,25 @@ describe("collections", () => {
       expect(await counters(collectionId)).toEqual({ unread: 0, starredUnread: 0 });
       await expectNoDrift();
     });
+  });
+
+  it("never strands a member in a collection deleted while it was being added to", async () => {
+    for (let i = 0; i < 5; i++) {
+      const { userId, entryA, collectionId } = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+
+      await Promise.allSettled([
+        addEntriesToCollection(db, userId, collectionId, [entryA]),
+        caller.subscriptions.delete({ id: collectionId }),
+      ]);
+
+      expect(
+        await db
+          .select()
+          .from(collectionEntries)
+          .where(eq(collectionEntries.subscriptionId, collectionId))
+      ).toEqual([]);
+    }
   });
 
   describe("filters", () => {

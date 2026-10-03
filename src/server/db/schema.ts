@@ -122,6 +122,11 @@ export const users = pgTable(
     // Starred badge directly.
     savedUnreadCount: integer("saved_unread_count").notNull().default(0),
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
+    // Distinct unread, non-spam articles reachable through untagged active
+    // subscriptions, and visible at all (migration 0120 defines both and keeps
+    // them current).
+    uncategorizedUnreadCount: integer("uncategorized_unread_count").notNull().default(0),
+    allUnreadCount: integer("all_unread_count").notNull().default(0),
 
     // Opaque Google Reader user id / userProfileId (issue #1117, migration 0097).
     // Drawn from the shared greader_id_seq; DB-assigned via a sequence default, so
@@ -657,6 +662,9 @@ export const tags = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     color: text("color"), // hex color for UI (e.g., "#ff6b6b")
+    // Distinct unread, non-spam articles reachable through the tag's active
+    // feeds and collections (trigger-maintained; migration 0120).
+    unreadCount: integer("unread_count").notNull().default(0),
 
     // Opaque Google Reader folder sortid (issue #1117, migration 0097). Drawn
     // from the shared greader_id_seq; DB-assigned via a sequence default, so

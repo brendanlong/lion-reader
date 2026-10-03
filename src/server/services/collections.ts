@@ -10,7 +10,7 @@
  */
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { db as dbType, Transaction } from "@/server/db";
+import type { db as dbType, DbOrTx, Transaction } from "@/server/db";
 import {
   collectionEntries,
   feeds,
@@ -132,16 +132,20 @@ export async function createCollection(
 
 /**
  * Throws unless every id is one of the user's active collections, the only
- * kind of subscription articles can be added to.
+ * kind of subscription articles can be added to. With `lock`, holds a share
+ * lock on them until the transaction ends, so a concurrent delete (which
+ * empties the collection) can't run before an add commits and strand a
+ * member in a deleted collection.
  */
 export async function assertOwnedCollections(
-  db: typeof dbType,
+  db: DbOrTx,
   userId: string,
-  subscriptionIds: string[]
+  subscriptionIds: string[],
+  { lock = false }: { lock?: boolean } = {}
 ): Promise<void> {
   const unique = [...new Set(subscriptionIds)];
   if (unique.length === 0) return;
-  const rows = await db
+  const query = db
     .select({ id: subscriptions.id })
     .from(subscriptions)
     .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
@@ -153,6 +157,7 @@ export async function assertOwnedCollections(
         eq(feeds.type, "collection")
       )
     );
+  const rows = lock ? await query.for("share", { of: subscriptions }) : await query;
   if (rows.length !== unique.length) {
     throw errors.subscriptionNotFound();
   }
@@ -176,12 +181,9 @@ export async function addEntriesToCollection(
   subscriptionId: string,
   entryIds: string[]
 ): Promise<CollectionEntriesChangeResult> {
-  await assertOwnedCollections(db, userId, [subscriptionId]);
-  if (entryIds.length === 0) {
-    return { entryIds: [] };
-  }
-
   const added = await db.transaction(async (tx) => {
+    await assertOwnedCollections(tx, userId, [subscriptionId], { lock: true });
+    if (entryIds.length === 0) return [];
     const inserted = await tx
       .insert(collectionEntries)
       .select(
@@ -262,6 +264,37 @@ async function touchUserEntries(
     .update(userEntries)
     .set({ updatedAt: new Date() })
     .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
+}
+
+/**
+ * Tells the user's clients an entry left collections without a membership
+ * call, e.g. because the entry itself was deleted (the trigger removed the
+ * memberships), so their collection badges update.
+ */
+export async function publishEntryLeftCollections(
+  db: typeof dbType,
+  userId: string,
+  entryId: string,
+  collectionIds: string[]
+): Promise<void> {
+  if (collectionIds.length === 0) return;
+  const counts = await getBulkEntryRelatedCounts(
+    db,
+    userId,
+    collectionIds.map((subscriptionId) => ({ subscriptionId }))
+  );
+  for (const subscriptionId of collectionIds) {
+    publishCollectionEntriesChanged(
+      userId,
+      subscriptionId,
+      [entryId],
+      false,
+      new Date(),
+      counts
+    ).catch((err) => {
+      logger.error("Failed to publish collection_entries_changed event", { err, userId });
+    });
+  }
 }
 
 async function finishMembershipChange(

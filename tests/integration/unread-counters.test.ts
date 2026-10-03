@@ -61,7 +61,7 @@ async function userCounters(userId: string) {
 /** Triggers must have kept everything exact: the sweep finds nothing to fix. */
 async function expectNoDrift() {
   const result = await reconcileCounters(db);
-  expect(result).toEqual({ subscriptionsFixed: 0, usersFixed: 0 });
+  expect(result).toEqual({ subscriptionsFixed: 0, usersFixed: 0, tagsFixed: 0 });
 }
 
 async function cleanupTables() {

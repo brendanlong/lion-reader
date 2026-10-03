@@ -38,7 +38,7 @@ A **collection** (#1806) is a subscription to a per-user feed of type `collectio
 
 ## Unread Counts
 
-Badges read four trigger-maintained counter columns (spam excluded); the algebra, including how collections count, is in `services/counts.ts`. A collection's subscription counters count its members, so they're kept by triggers on `collection_entries` as well as `user_entries`. Only the generic filtered counts used by MCP/Wallabag still scan `visible_entries`. The daily `reconcile_counters` job repairs drift and logs each fix at error level — **a fix means a trigger bug to investigate.**
+Every badge reads one trigger-maintained counter (spam excluded; the list is in `services/counts.ts`). Tag, Uncategorized and All count **distinct** articles, since an article can reach them through both its feed and a collection; migration 0120 documents how they're maintained. **All counter maintenance lives in the triggers** — no app path updates a counter, so new write paths get correct counts for free. Transactions that change a subscription's tags or state lock the subscription row first (`lockSubscriptionRow`), matching the triggers' lock order. Only the generic filtered counts used by MCP/Wallabag still scan `visible_entries`; `tests/integration/list-counters-model.test.ts` checks every badge against its list under random operations. The daily `reconcile_counters` job repairs drift and logs each fix at error level — **a fix means a trigger bug to investigate.**
 
 ## Row Written vs. Value Flipped
 

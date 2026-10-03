@@ -1,9 +1,10 @@
 /**
  * Unread-counter reconciliation (issue #1117, step 5a).
  *
- * The four denormalized counters (subscriptions.unread_count /
- * starred_unread_count, users.saved_unread_count / starred_unread_count,
- * migration 0092) are maintained by statement-level triggers on user_entries.
+ * The denormalized unread counters (subscriptions.unread_count /
+ * starred_unread_count, users.saved_unread_count / starred_unread_count from
+ * migration 0092; tags.unread_count, users.uncategorized_unread_count /
+ * all_unread_count from migration 0120) are maintained by triggers.
  * This sweep recomputes them from ground truth and fixes any drift, serving
  * two purposes:
  *
@@ -28,6 +29,7 @@ import { logger } from "@/lib/logger";
 export interface ReconcileCountersResult {
   subscriptionsFixed: number;
   usersFixed: number;
+  tagsFixed: number;
 }
 
 export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCountersResult> {
@@ -75,12 +77,84 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
         OR u2.starred_unread_count IS DISTINCT FROM COALESCE(t.st, 0))
   `);
 
+  // Tag, Uncategorized and All count distinct articles over every route into
+  // them: an active source subscription, a collection, and (All only) being
+  // saved or starred. Written from that definition, not from the trigger
+  // algebra, so it checks the triggers rather than repeating them.
+  const tagsResult = await db.execute(sql`
+    WITH routes AS (
+      SELECT ue.user_id, ue.entry_id, ue.subscription_id AS route
+      FROM user_entries ue
+      JOIN subscriptions s ON s.id = ue.subscription_id AND s.unsubscribed_at IS NULL
+      WHERE NOT ue.read AND NOT ue.is_spam
+      UNION ALL
+      SELECT ce.user_id, ce.entry_id, ce.subscription_id
+      FROM collection_entries ce
+      JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
+      WHERE NOT ue.read AND NOT ue.is_spam
+    ),
+    truth AS (
+      SELECT st.tag_id, count(DISTINCT r.entry_id)::int AS n
+      FROM routes r JOIN subscription_tags st ON st.subscription_id = r.route
+      GROUP BY st.tag_id
+    )
+    UPDATE tags t
+    SET unread_count = COALESCE(truth.n, 0)
+    FROM tags t2
+    LEFT JOIN truth ON truth.tag_id = t2.id
+    WHERE t.id = t2.id AND t2.unread_count IS DISTINCT FROM COALESCE(truth.n, 0)
+  `);
+
+  const listUsersResult = await db.execute(sql`
+    WITH routes AS (
+      SELECT ue.user_id, ue.entry_id, ue.subscription_id AS route
+      FROM user_entries ue
+      JOIN subscriptions s ON s.id = ue.subscription_id AND s.unsubscribed_at IS NULL
+      WHERE NOT ue.read AND NOT ue.is_spam
+      UNION ALL
+      SELECT ce.user_id, ce.entry_id, ce.subscription_id
+      FROM collection_entries ce
+      JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
+      WHERE NOT ue.read AND NOT ue.is_spam
+    ),
+    uncategorized AS (
+      SELECT r.user_id, count(DISTINCT r.entry_id)::int AS n
+      FROM routes r
+      WHERE NOT EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = r.route)
+      GROUP BY r.user_id
+    ),
+    visible AS (
+      SELECT ue.user_id, count(*)::int AS n
+      FROM user_entries ue
+      LEFT JOIN subscriptions s ON s.id = ue.subscription_id
+      WHERE NOT ue.read AND NOT ue.is_spam
+        AND ((s.id IS NOT NULL AND s.unsubscribed_at IS NULL)
+          OR ue.subscription_id IS NULL
+          OR ue.starred
+          OR EXISTS (
+            SELECT 1 FROM collection_entries ce
+            WHERE ce.user_id = ue.user_id AND ce.entry_id = ue.entry_id
+          ))
+      GROUP BY ue.user_id
+    )
+    UPDATE users u
+    SET uncategorized_unread_count = COALESCE(uncategorized.n, 0),
+        all_unread_count = COALESCE(visible.n, 0)
+    FROM users u2
+    LEFT JOIN uncategorized ON uncategorized.user_id = u2.id
+    LEFT JOIN visible ON visible.user_id = u2.id
+    WHERE u.id = u2.id
+      AND (u2.uncategorized_unread_count IS DISTINCT FROM COALESCE(uncategorized.n, 0)
+        OR u2.all_unread_count IS DISTINCT FROM COALESCE(visible.n, 0))
+  `);
+
   const result: ReconcileCountersResult = {
     subscriptionsFixed: subscriptionsResult.rowCount ?? 0,
-    usersFixed: usersResult.rowCount ?? 0,
+    usersFixed: (usersResult.rowCount ?? 0) + (listUsersResult.rowCount ?? 0),
+    tagsFixed: tagsResult.rowCount ?? 0,
   };
 
-  if (result.subscriptionsFixed > 0 || result.usersFixed > 0) {
+  if (result.subscriptionsFixed > 0 || result.usersFixed > 0 || result.tagsFixed > 0) {
     // Error level on purpose: the triggers should keep counters exact, so any
     // fix indicates a trigger bug or an untracked write path. The values are
     // already corrected; this is the signal to investigate.

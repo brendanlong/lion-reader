@@ -286,6 +286,8 @@ function deserializeFromCache(data: string): SessionData {
       // never through the session user.
       savedUnreadCount: 0,
       starredUnreadCount: 0,
+      uncategorizedUnreadCount: 0,
+      allUnreadCount: 0,
     },
   };
 }

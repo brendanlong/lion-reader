@@ -603,6 +603,8 @@ export const subscriptionsRouter = createTRPCRouter({
       // crash can't half-apply the unsubscribe (e.g. tags removed but the
       // subscription still active, or vice versa) (issue #952).
       const formerTagIds = await ctx.db.transaction(async (tx) => {
+        await subscriptionsService.lockSubscriptionRow(tx, input.id);
+
         // 3. Add sender to blocked_senders table (email feeds only)
         if (blockedSenderValues) {
           await tx.insert(blockedSenders).values(blockedSenderValues).onConflictDoNothing(); // Handle case where sender is already blocked
