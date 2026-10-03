@@ -59,7 +59,7 @@ Run from `kmp/`. Gradle provisions its own JDK, so any JDK can launch
 comes from `sdk.dir` in `local.properties` (gitignored) or `ANDROID_HOME`.
 
 - `./gradlew check` — the CI gate: Spotless, `:shared` tests (JVM and Android
-  host) and iOS compilation, `:androidApp` Robolectric tests, Android lint.
+  host), `:androidApp` Robolectric tests, Android lint.
 - `./gradlew assembleDebug` — debug APK (`androidApp/build/outputs/apk/debug/`).
 - `./gradlew spotlessApply` — format.
 - `./gradlew :shared:jvmTest` — the fast loop for shared logic, including

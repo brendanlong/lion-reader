@@ -4,8 +4,9 @@ import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
 
 /**
- * The platform's small durable store (SharedPreferences, NSUserDefaults or the Keychain): what
- * [edit] writes is on disk when it returns.
+ * The platform's small durable store: what [edit] writes is on disk when it returns. It holds the
+ * refresh token ([KeyValueTokenStore]), so it's app-private storage: SharedPreferences on Android,
+ * the Keychain on iOS (never NSUserDefaults).
  */
 interface KeyValueStore {
     fun getString(key: String): String?

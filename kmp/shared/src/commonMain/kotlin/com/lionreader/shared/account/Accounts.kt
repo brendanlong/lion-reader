@@ -14,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -113,9 +112,10 @@ class Accounts(
             )
 
     /**
-     * Counts finished sign-ins, so each asks at once whose it is. The status alone can't say: a
-     * sign-out passes through Confirming (the account goes before the tokens), and a sign-in right
-     * after can leave it there, to the eye of a collector, with the sign-out's attempt backing off.
+     * Counts finished sign-ins, so each asks at once whose it is, whatever backoff the loop below
+     * is in. The status alone can't wake it: a sign-out passes through Confirming (the account goes
+     * before the tokens), and a sign-in right after can leave it there, to the eye of a collector,
+     * with the sign-out's attempt backing off.
      */
     private val signIns = MutableStateFlow(0)
 
@@ -123,20 +123,22 @@ class Accounts(
         // Until /auth/me says whose the tokens are, nothing shows or syncs, so
         // this keeps asking, on screen or not (e.g. a sign-in that finished offline).
         scope.launch {
-            combine(accountStatus, signIns) { status, _ -> status }
-                .collectLatest { status ->
-                    if (status != AccountStatus.Confirming) return@collectLatest
-                    var wait = confirmRetryMillis
-                    while (true) {
-                        try {
-                            signedIn()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (_: Exception) {}
-                        delay(wait)
-                        wait = (wait * 2).coerceAtMost(CONFIRM_RETRY_MAX_MILLIS)
-                    }
+            accountStatus.collectLatest { status ->
+                if (status != AccountStatus.Confirming) return@collectLatest
+                var wait = confirmRetryMillis
+                while (true) {
+                    val seen = signIns.value
+                    try {
+                        signedIn()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {}
+                    val signedInAgain = withTimeoutOrNull(wait) { signIns.first { it != seen } }
+                    wait =
+                        if (signedInAgain != null) confirmRetryMillis
+                        else (wait * 2).coerceAtMost(CONFIRM_RETRY_MAX_MILLIS)
                 }
+            }
         }
     }
 

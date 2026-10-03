@@ -5,9 +5,10 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 
 /**
- * The ViewModels of the signed-in session ([AccountSession]). Held by the Activity, so they survive
- * rotation, but cleared when their session ends: keyed by the account alone, a ViewModel would
- * outlive a sign-out and hand the next session of that account the closed one's database.
+ * The ViewModels of the signed-in session ([com.lionreader.shared.account.AccountSession]). Held by
+ * the Activity, so they survive rotation, but cleared when their session ends: keyed by the account
+ * alone, a ViewModel would outlive a sign-out and hand the next session of that account the closed
+ * one's database.
  */
 internal class SessionViewModels : ViewModel() {
     private var session: Any? = null

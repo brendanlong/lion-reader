@@ -30,8 +30,9 @@ Android's `AppGraph` does: `Accounts` with a Keychain-backed `KeyValueStore`
 `BackgroundSync` on BGTaskScheduler running `runBackgroundSync`; a WKWebView
 serving the reader assets at its own origin for `readerDocument`; and a
 narrator over the platform's player, making the decisions in
-`NarrationRules.kt` and fetching cloud voices with `streamCloudSpeech`. The reader assets (scripts, fonts,
-`appearance.json`) are bundled from `kmp/androidApp/src/main/assets/reader/`.
+`NarrationRules.kt` and fetching cloud voices with `streamCloudSpeech`. The
+reader assets (scripts, fonts, `appearance.json`) are bundled from
+`kmp/androidApp/src/main/assets/reader/`.
 
 ### Share targets
 

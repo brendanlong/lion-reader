@@ -21,6 +21,7 @@ class ServerUrlTest {
         assertEquals("https://lionreader.com", valid("https://lionreader.com:443"))
         assertEquals("http://localhost:42873", valid("http://localhost:42873", allowHttp = true))
         assertEquals("http://[::1]:3000", valid("http://[::1]:3000/", allowHttp = true))
+        assertEquals("https://lionreader.com.", valid("lionreader.com."))
     }
 
     @Test
@@ -59,6 +60,10 @@ class ServerUrlTest {
                 "https://lionreader.com:65536",
                 "https://lion_reader.com",
                 "https://lionreader..com",
+                "https://-lionreader.com",
+                "https://lionreader-.com",
+                "https://${"a".repeat(64)}.com",
+                "http://[::1]3000",
             )
             .forEach { input ->
                 assertTrue(parseServerUrl(input, allowHttp = true) is ServerUrlInput.Invalid, input)
