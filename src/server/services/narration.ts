@@ -22,6 +22,7 @@ import {
 } from "@/lib/narration/constants";
 import {
   generateChatCompletion,
+  isOnUserKey,
   isProviderAvailable,
   isTextModelAllowed,
   TextGenerationError,
@@ -184,8 +185,12 @@ export type NarrationFailure =
   /** It answered, but with nothing usable. */
   | {
       kind: "unusable_output";
-      /** The model was the user's own pick, not one anyone gets by default. */
-      userPickedModel: boolean;
+      /**
+       * It ran on the user's terms: a model they picked rather than one anyone
+       * gets by default, or their own key (whose account settings and limits
+       * are theirs alone).
+       */
+      onCallerTerms: boolean;
     }
   /** The call failed (what `generateNarration` threw). */
   | { kind: "error"; error: unknown };
@@ -195,10 +200,11 @@ export type NarrationFailure =
  * on the `narration_content` row. That row is shared by everyone narrating
  * the same content, so only a failure the content itself causes may back them
  * all off:
- * - `content`: a default model couldn't narrate this content; it would most
- *   likely fail the same way again for anyone.
+ * - `content`: a default model on the server's key couldn't narrate this
+ *   content; it would most likely fail the same way again for anyone.
  * - `caller`: this user's key or model choice (a refusal on their own key, a
- *   key that can't be read, a model they picked).
+ *   key that can't be read, a model they picked, anything their own key
+ *   answered).
  * - `transient`: the provider being busy, down, or refusing the server's key —
  *   nothing to do with the content.
  */
@@ -206,7 +212,7 @@ export type NarrationFailureScope = "content" | "caller" | "transient";
 
 export function narrationFailureScope(failure: NarrationFailure): NarrationFailureScope {
   if (failure.kind === "unusable_output") {
-    return failure.userPickedModel ? "caller" : "content";
+    return failure.onCallerTerms ? "caller" : "content";
   }
   const { error } = failure;
   if (!(error instanceof TextGenerationError)) {
@@ -339,7 +345,11 @@ export async function generateNarration(
     trackNarrationHighlightFallback();
     return {
       ...buildFallbackNarration(inputParagraphs),
-      failure: { kind: "unusable_output", userPickedModel: !isDefaultNarrationModel(modelRef) },
+      failure: {
+        kind: "unusable_output",
+        onCallerTerms:
+          !isDefaultNarrationModel(modelRef) || isOnUserKey(modelRef.provider, options?.keys),
+      },
     };
   } catch (error) {
     // Log the error and re-throw so caller can handle

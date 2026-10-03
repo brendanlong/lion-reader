@@ -90,13 +90,13 @@ describe("narrationFailureScope", () => {
 
   it.each<[string, NarrationFailure, ReturnType<typeof narrationFailureScope>]>([
     [
-      "unusable output from a default model",
-      { kind: "unusable_output", userPickedModel: false },
+      "unusable output from a default model on the server's key",
+      { kind: "unusable_output", onCallerTerms: false },
       "content",
     ],
     [
-      "unusable output from a model the user picked",
-      { kind: "unusable_output", userPickedModel: true },
+      "unusable output from a model the user picked, or on their own key",
+      { kind: "unusable_output", onCallerTerms: true },
       "caller",
     ],
     ["a refusal on the user's own key", callFailure("rejected", true), "caller"],

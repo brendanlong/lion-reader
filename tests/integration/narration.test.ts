@@ -16,7 +16,7 @@
  *     player splits the narration text — length(map) === length(split).
  */
 
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -400,9 +400,10 @@ describe("narration.generate rate limit", () => {
 /**
  * When the model answers but its output is empty or unparseable, the plain-text
  * fallback is served and nothing is cached — but the failure must still be
- * recorded, or every replay of the same article bills another LLM call. The
- * record is shared by everyone narrating the content, so a failure that isn't
- * the content's (a busy provider, one user's key or model) isn't recorded.
+ * recorded, or every replay of the same article bills the server's key for
+ * another LLM call. The record is shared by everyone narrating the content, so
+ * a failure that isn't the content's (a busy provider, anything one user's key
+ * or model answered) isn't recorded.
  */
 describe("narration.generate failure backoff", () => {
   let server: Server;
@@ -411,6 +412,7 @@ describe("narration.generate failure backoff", () => {
   let llmStatus = 200;
   const previousBaseUrl = process.env.GROQ_BASE_URL;
   const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
+  const previousServerKey = process.env.GROQ_API_KEY;
 
   beforeAll(async () => {
     process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -461,6 +463,23 @@ describe("narration.generate failure backoff", () => {
     llmStatus = 200;
   });
 
+  afterEach(() => {
+    if (previousServerKey === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = previousServerKey;
+  });
+
+  /** A user without keys of their own, narrating on the server's Groq key. */
+  async function createServerKeyUser(): Promise<string> {
+    process.env.GROQ_API_KEY = "gsk-server-key";
+    const userId = await createTestUser({ emailPrefix: "narr" });
+    createdUserIds.push(userId);
+    await db
+      .update(users)
+      .set({ narrationModel: "groq:openai/gpt-oss-120b" })
+      .where(eq(users.id, userId));
+    return userId;
+  }
+
   /** A user with their own Groq key, narrating with Groq's default model unless told otherwise. */
   async function createGroqUser(narrationModel = "groq:openai/gpt-oss-120b"): Promise<string> {
     const userId = await createTestUser({ emailPrefix: "narr" });
@@ -477,7 +496,7 @@ describe("narration.generate failure backoff", () => {
     ["unparseable", "this is not JSON"],
   ])("records a failure on %s output and doesn't re-call the LLM on replay", async (_, content) => {
     llmContent = content;
-    const userId = await createGroqUser();
+    const userId = await createServerKeyUser();
     const contentCleaned = `<p>LLM failure body ${generateUuidv7()}.</p>`;
     const contentHash = narrationHash(contentCleaned);
     createdNarrationHashes.push(contentHash);
@@ -532,6 +551,14 @@ describe("narration.generate failure backoff", () => {
     expect(source).toBe("fallback");
     expect(row.errorAt).toBeNull();
     expect(row.error).toBeNull();
+  });
+
+  it("doesn't back everyone off when the user's own key answers with nothing usable", async () => {
+    llmContent = "this is not JSON";
+    const { row, source } = await narrateOnce(await createGroqUser());
+    expect(llmRequests).toBe(1);
+    expect(source).toBe("fallback");
+    expect(row.errorAt).toBeNull();
   });
 
   it("doesn't back everyone off when a model the user picked answers with nothing usable", async () => {
