@@ -13,12 +13,14 @@
  *   - the tag/feed tree renders from the seeded queries,
  *   - expanding a section loads its subscriptions,
  *   - confirming the unsubscribe dialog fires `subscriptions.delete` and
- *     optimistically removes the feed from the sidebar.
+ *     optimistically removes the feed from the sidebar,
+ *   - the open subscription stays listed and only its chosen copy is current.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, within } from "@testing-library/react";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
 import {
   renderWithTrpc,
   stubMemoryLocalStorage,
@@ -34,6 +36,17 @@ const mockPathname = vi.fn(() => "/all");
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname(),
 }));
+
+const TECH_TAG = { id: "tag-1", name: "Tech", color: "#ff0000" };
+const FEED_ONE = {
+  id: "sub-1",
+  type: "web",
+  url: "https://example.com/feed1.xml",
+  title: "Feed One",
+  originalTitle: "Feed One",
+  unreadCount: 5,
+  tags: [TECH_TAG],
+};
 
 /**
  * Handlers for the full Sidebar subtree. The default fixture has a single
@@ -51,20 +64,7 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
       items: [{ id: "tag-1", name: "Tech", color: "#ff0000", feedCount: 1, unreadCount: 5 }],
       uncategorized: { feedCount: 0, unreadCount: 0 },
     }),
-    "subscriptions.list": () => ({
-      items: [
-        {
-          id: "sub-1",
-          type: "web",
-          url: "https://example.com/feed1.xml",
-          title: "Feed One",
-          originalTitle: "Feed One",
-          unreadCount: 5,
-          tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
-        },
-      ],
-      nextCursor: undefined,
-    }),
+    "subscriptions.list": () => ({ items: [FEED_ONE], nextCursor: undefined }),
     "subscriptions.delete": () => ({}),
     ...overrides,
   };
@@ -145,5 +145,70 @@ describe("Sidebar", () => {
 
     expect(callsFor("subscriptions.delete")).toHaveLength(0);
     expect(screen.getByText("Feed One")).toBeInTheDocument();
+  });
+
+  it("keeps the open subscription and its tag listed after they're read", async () => {
+    const readFeed = { ...FEED_ONE, unreadCount: 0 };
+    mockPathname.mockReturnValue("/subscription/sub-1");
+    renderWithTrpc(<Sidebar />, {
+      handlers: baseHandlers({
+        "tags.list": () => ({
+          items: [{ ...TECH_TAG, feedCount: 1, unreadCount: 0 }],
+          uncategorized: { feedCount: 0, unreadCount: 0 },
+        }),
+        // The server's unread-only filter leaves the read feed out.
+        "subscriptions.list": (input) => ({
+          items: (input as { unreadOnly?: boolean }).unreadOnly ? [] : [readFeed],
+          nextCursor: undefined,
+        }),
+        "subscriptions.get": () => readFeed,
+      }),
+    });
+
+    await expandTechTag();
+    expect(await screen.findByRole("link", { name: "Feed One" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+  });
+
+  it("marks only the chosen copy of a subscription listed under two tags", async () => {
+    const newsTag = { id: "tag-2", name: "News", color: null };
+    const twoTagFeed = { ...FEED_ONE, tags: [TECH_TAG, newsTag] };
+    mockPathname.mockReturnValue("/subscription/sub-1");
+    window.history.replaceState(null, "", "/subscription/sub-1");
+    Element.prototype.scrollIntoView = vi.fn();
+    renderWithTrpc(<Sidebar />, {
+      handlers: baseHandlers({
+        "tags.list": () => ({
+          items: [
+            { ...TECH_TAG, feedCount: 1, unreadCount: 5 },
+            { ...newsTag, feedCount: 1, unreadCount: 5 },
+          ],
+          uncategorized: { feedCount: 0, unreadCount: 0 },
+        }),
+        "subscriptions.list": () => ({ items: [twoTagFeed], nextCursor: undefined }),
+        "subscriptions.get": () => twoTagFeed,
+      }),
+    });
+    const newsLink = await screen.findByRole("link", { name: /^News/ });
+    fireEvent.click(within(newsLink.closest("li")!).getByRole("button", { name: "Expand" }));
+    await expandTechTag();
+
+    // Sidebar order: News, Feed One (News), Tech, Feed One (Tech).
+    await vi.waitFor(() =>
+      expect(screen.getAllByRole("link", { name: /Feed One/ })).toHaveLength(2)
+    );
+    const copies = screen.getAllByRole("link", { name: /Feed One/ });
+    // Reached by URL, no copy was chosen, so both are current.
+    for (const copy of copies) expect(copy).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(copies[1]);
+    expect(copies[0]).not.toHaveAttribute("aria-current");
+    expect(copies[1]).toHaveAttribute("aria-current", "page");
+
+    // Shift+K steps back from the chosen (Tech) copy, not the first one.
+    goToSidebarFeed(-1);
+    expect(window.location.pathname).toBe("/tag/tag-1");
   });
 });

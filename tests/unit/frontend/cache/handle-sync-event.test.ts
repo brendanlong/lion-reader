@@ -673,6 +673,8 @@ describe("handleSyncEvent - mark_all_read", () => {
     expect(invalidated).toContain("entries.count");
     expect(invalidated).toContain("tags.list");
     expect(invalidated).toContain("subscriptions.list");
+    // The sidebar keeps listing the open subscription from this.
+    expect(invalidated).toContain("subscriptions.get");
   });
 
   it("does not touch entry read state directly (invalidation handles it)", () => {

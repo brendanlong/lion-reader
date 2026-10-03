@@ -140,7 +140,7 @@ describe("demo reader tree", () => {
     expect(within(row).getByRole("button", { name: "Remove from starred" })).toBeVisible();
   });
 
-  it("Shift+J / Shift+K walk the visible sidebar feeds, continuing past one just marked read", async () => {
+  it("Shift+J / Shift+K walk the visible sidebar feeds, keeping the current one listed once read", async () => {
     mockPathname = "/demo/tag/features";
     window.history.replaceState(null, "", mockPathname);
     const { followNavigation, callsFor } = renderDemo();
@@ -162,15 +162,23 @@ describe("demo reader tree", () => {
     press("J");
     expect(window.location.pathname).toBe("/demo/subscription/feed-types");
 
-    // Marking the feed read drops it from the unread-only sidebar.
+    // The unread-only sidebar keeps the feed being read, with its count gone,
+    // so there's a current link to move on from.
+    const feedTypes = screen.getByRole("link", { name: /^Feed Types/ });
+    expect(within(feedTypes).getByText(/^\(\d+\)$/)).toBeInTheDocument();
     press("A");
     fireEvent.click(await screen.findByRole("button", { name: "Mark All Read" }));
+    await vi.waitFor(() => expect(callsFor("entries.markAllRead")).toHaveLength(1));
     await vi.waitFor(() =>
-      expect(screen.queryByRole("link", { name: /^Feed Types/ })).not.toBeInTheDocument()
+      expect(within(feedTypes).queryByText(/^\(\d+\)$/)).not.toBeInTheDocument()
     );
-    expect(callsFor("entries.markAllRead")).toHaveLength(1);
+    expect(feedTypes).toHaveAttribute("aria-current", "page");
 
     press("J");
     expect(window.location.pathname).toBe("/demo/subscription/reading-experience");
+    // Once you've moved on, the read feed leaves the unread-only sidebar.
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("link", { name: /^Feed Types/ })).not.toBeInTheDocument()
+    );
   });
 });

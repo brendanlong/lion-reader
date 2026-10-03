@@ -27,7 +27,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
 import { useAppHref } from "./useAppLocation";
-import { useSidebarFeedNavigation } from "./useSidebarFeedNavigation";
+import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
 
 /**
  * Entry data needed for keyboard actions.
@@ -359,7 +359,6 @@ export function useKeyboardShortcuts(
 
   // Shift+J / Shift+K - next/previous tag or subscription. Shift+N / Shift+P
   // are Google Reader's keys for the same thing.
-  const goToSidebarFeed = useSidebarFeedNavigation();
   useHotkeys(
     "shift+j, shift+n",
     (e) => {
@@ -367,7 +366,7 @@ export function useKeyboardShortcuts(
       goToSidebarFeed(1);
     },
     { enabled, enableOnFormTags: false },
-    [goToSidebarFeed, enabled]
+    [enabled]
   );
   useHotkeys(
     "shift+k, shift+p",
@@ -376,7 +375,7 @@ export function useKeyboardShortcuts(
       goToSidebarFeed(-1);
     },
     { enabled, enableOnFormTags: false },
-    [goToSidebarFeed, enabled]
+    [enabled]
   );
 
   // o / Enter - open selected entry (only when entry is not open)

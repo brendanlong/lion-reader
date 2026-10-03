@@ -8,14 +8,19 @@
 "use client";
 
 import { Suspense, type ReactNode } from "react";
-import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { trpc } from "@/lib/trpc/client";
 import { useExpandedTags } from "@/lib/hooks/useExpandedTags";
 import { NavLinkWithIcon } from "@/components/ui/nav-link";
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { ColorDot } from "@/components/ui/color-picker";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
-import { SIDEBAR_FEEDS_ATTRIBUTE } from "@/lib/hooks/useSidebarFeedNavigation";
+import { SIDEBAR_FEEDS_ATTRIBUTE } from "./sidebar-feed-navigation";
+import {
+  UNCATEGORIZED_SECTION,
+  isInSidebarSection,
+  isSidebarLinkCurrent,
+  useSidebarSelection,
+} from "@/lib/hooks/useSidebarSelection";
 import { TagSubscriptionList } from "./TagSubscriptionList";
 
 interface TagListProps {
@@ -101,30 +106,39 @@ function TagListContent({
   unreadOnly,
   onPrefetch,
 }: TagListProps) {
-  const pathname = useAppPathname();
+  const selection = useSidebarSelection();
+  const { pathname, subscription: activeSubscription } = selection;
   const [tagsData] = trpc.tags.list.useSuspenseQuery();
   const { isExpanded, toggleExpanded } = useExpandedTags();
 
   const tags = tagsData.items;
   const uncategorized = tagsData.uncategorized;
 
-  // Determine which tag/uncategorized is currently active so we always show it
   const activeTagId = pathname.startsWith("/tag/") ? pathname.slice("/tag/".length) : null;
   const isUncategorizedActive = pathname === "/uncategorized";
+  const holdsActiveSubscription = (section: string) =>
+    !!activeSubscription && isInSidebarSection(activeSubscription, section);
 
   // Visibility is driven by unread state, not feed counts (feedCount is only
   // surfaced in settings now). In unread-only mode a tag/section shows when it
-  // has unread entries (or is the active route); in show-read mode everything
-  // shows, including empty tags/sections.
+  // has unread entries, is the current route, or holds the current
+  // subscription, so what you're reading never drops out of the sidebar; in
+  // show-read mode everything shows, including empty tags/sections.
   const sortedTags = [...(tags ?? [])]
-    .filter((tag) => {
-      if (unreadOnly && tag.unreadCount === 0 && tag.id !== activeTagId) return false;
-      return true;
-    })
+    .filter(
+      (tag) =>
+        !unreadOnly ||
+        tag.unreadCount > 0 ||
+        tag.id === activeTagId ||
+        holdsActiveSubscription(tag.id)
+    )
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const hasUncategorized =
-    !unreadOnly || (uncategorized?.unreadCount ?? 0) > 0 || isUncategorizedActive;
+    !unreadOnly ||
+    (uncategorized?.unreadCount ?? 0) > 0 ||
+    isUncategorizedActive ||
+    holdsActiveSubscription(UNCATEGORIZED_SECTION);
   const hasTags = sortedTags.length > 0 || hasUncategorized;
 
   if (!hasTags) {
@@ -132,7 +146,7 @@ function TagListContent({
   }
 
   const listProps = {
-    pathname,
+    selection,
     onClose: onNavigate,
     onEdit,
     onUnsubscribe,
@@ -146,7 +160,7 @@ function TagListContent({
         <TagSection
           key={tag.id}
           href={`/tag/${tag.id}`}
-          isActive={pathname === `/tag/${tag.id}`}
+          isActive={isSidebarLinkCurrent(selection, `/tag/${tag.id}`)}
           color={tag.color}
           label={tag.name}
           count={tag.unreadCount}
@@ -162,12 +176,12 @@ function TagListContent({
       {hasUncategorized && (
         <TagSection
           href="/uncategorized"
-          isActive={isUncategorizedActive}
+          isActive={isSidebarLinkCurrent(selection, "/uncategorized")}
           color={null}
           label="Uncategorized"
           count={uncategorized?.unreadCount ?? 0}
-          expanded={isExpanded("uncategorized")}
-          onToggleExpanded={() => toggleExpanded("uncategorized")}
+          expanded={isExpanded(UNCATEGORIZED_SECTION)}
+          onToggleExpanded={() => toggleExpanded(UNCATEGORIZED_SECTION)}
           onNavigate={onNavigate}
           onPrefetch={onPrefetch}
         >

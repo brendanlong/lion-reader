@@ -10,6 +10,14 @@
 
 import { useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
+import type { CachedSubscription } from "@/lib/cache/count-cache";
+import {
+  UNCATEGORIZED_SECTION,
+  chooseSidebarSection,
+  isInSidebarSection,
+  isSidebarLinkCurrent,
+  type SidebarSelection,
+} from "@/lib/hooks/useSidebarSelection";
 import { SubscriptionItem } from "./SubscriptionItem";
 
 interface TagSubscriptionListProps {
@@ -17,8 +25,8 @@ interface TagSubscriptionListProps {
   tagId?: string;
   /** Whether to show uncategorized subscriptions (no tags) */
   uncategorized?: boolean;
-  /** Current pathname for active state */
-  pathname: string;
+  /** What the sidebar treats as current */
+  selection: SidebarSelection;
   /** Called with the link href when a subscription link is clicked (closes mobile sidebar) */
   onClose: (href: string) => void;
   /** Callback to edit a subscription */
@@ -36,10 +44,33 @@ interface TagSubscriptionListProps {
   onPrefetch?: (href: string) => void;
 }
 
+/**
+ * Keeps the open subscription listed in its sections after the unread-only
+ * filter drops it (once it's read), in the server's title order. Past the
+ * loaded pages it's left for a later page to bring in.
+ */
+function withCurrentSubscription(
+  loaded: CachedSubscription[],
+  current: CachedSubscription | undefined,
+  section: string,
+  hasNextPage: boolean
+): CachedSubscription[] {
+  if (!current || !isInSidebarSection(current, section)) return loaded;
+  if (loaded.some((sub) => sub.id === current.id)) return loaded;
+  const sortKey = (sub: CachedSubscription) => sub.title ?? "";
+  const index = loaded.findIndex(
+    (sub) =>
+      sortKey(sub).localeCompare(sortKey(current)) > 0 ||
+      (sortKey(sub) === sortKey(current) && sub.id > current.id)
+  );
+  if (index === -1) return hasNextPage ? loaded : [...loaded, current];
+  return [...loaded.slice(0, index), current, ...loaded.slice(index)];
+}
+
 export function TagSubscriptionList({
   tagId,
   uncategorized,
-  pathname,
+  selection,
   onClose,
   onEdit,
   onUnsubscribe,
@@ -55,9 +86,20 @@ export function TagSubscriptionList({
     }
   );
 
-  const allSubscriptions = subscriptionsQuery.data?.pages.flatMap((p) => p.items) ?? [];
-
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = subscriptionsQuery;
+  const section = tagId ?? UNCATEGORIZED_SECTION;
+
+  const allSubscriptions = withCurrentSubscription(
+    subscriptionsQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    selection.subscription,
+    section,
+    hasNextPage
+  );
+
+  const handleClose = (href: string) => {
+    chooseSidebarSection(href, section);
+    onClose(href);
+  };
 
   // Infinite scroll: observe sentinel element to load more
   useEffect(() => {
@@ -101,8 +143,8 @@ export function TagSubscriptionList({
         <SubscriptionItem
           key={sub.id}
           subscription={sub}
-          isActive={pathname === `/subscription/${sub.id}`}
-          onClose={onClose}
+          isActive={isSidebarLinkCurrent(selection, `/subscription/${sub.id}`, section)}
+          onClose={handleClose}
           onEdit={() =>
             onEdit({
               id: sub.id,
