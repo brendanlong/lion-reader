@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -111,23 +112,31 @@ class Accounts(
                 ),
             )
 
+    /**
+     * Counts finished sign-ins, so each asks at once whose it is. The status alone can't say: a
+     * sign-out passes through Confirming (the account goes before the tokens), and a sign-in right
+     * after can leave it there, to the eye of a collector, with the sign-out's attempt backing off.
+     */
+    private val signIns = MutableStateFlow(0)
+
     init {
         // Until /auth/me says whose the tokens are, nothing shows or syncs, so
         // this keeps asking, on screen or not (e.g. a sign-in that finished offline).
         scope.launch {
-            accountStatus.collectLatest { status ->
-                if (status != AccountStatus.Confirming) return@collectLatest
-                var wait = confirmRetryMillis
-                while (true) {
-                    try {
-                        signedIn()
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {}
-                    delay(wait)
-                    wait = (wait * 2).coerceAtMost(CONFIRM_RETRY_MAX_MILLIS)
+            combine(accountStatus, signIns) { status, _ -> status }
+                .collectLatest { status ->
+                    if (status != AccountStatus.Confirming) return@collectLatest
+                    var wait = confirmRetryMillis
+                    while (true) {
+                        try {
+                            signedIn()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {}
+                        delay(wait)
+                        wait = (wait * 2).coerceAtMost(CONFIRM_RETRY_MAX_MILLIS)
+                    }
                 }
-            }
         }
     }
 
@@ -292,6 +301,7 @@ class Accounts(
             _signInError.value =
                 try {
                     auth.completeAuthorization(redirect, pending)
+                    signIns.update { it + 1 }
                     null
                 } catch (e: CancellationException) {
                     throw e

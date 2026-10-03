@@ -244,6 +244,20 @@ class AccountsTest {
         )
     }
 
+    /** Whatever the last attempt to ask is waiting out, a sign-in asks again at once. */
+    @Test
+    fun aSignInAsksWhoItIsAtOnce() {
+        meDown = true
+        val accounts = accounts(confirmRetryMillis = 60_000)
+        accounts.signIn("alice")
+        until { "GET /api/v1/auth/me" in requests }
+        meDown = false
+
+        accounts.signIn("alice")
+
+        until { accounts.accountStatus.value is AccountStatus.Ready }
+    }
+
     @Test
     fun aNewAccountsFirstSyncIsScheduled() {
         accounts().signInAndWait("alice")
