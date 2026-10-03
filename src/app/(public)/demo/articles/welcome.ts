@@ -19,7 +19,7 @@ const article: DemoArticle = {
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Lion Reader brings the sites you follow, your email newsletters, and the articles you save for later into one fast, private reader. It&rsquo;s free to use, open source, and works with the RSS apps and AI assistants you already have.</p>
+    <p>Lion Reader brings the sites you follow, your email newsletters, and the articles you save for later into one fast, private reader. Newsletters arrive at a private address you subscribe with, so it never needs access to your inbox. It&rsquo;s free to use, open source, and works on your phone and computer.</p>
 
     <p>This interactive demo is the real Lion Reader UI, and each article in it covers one feature. Many you can try right here: summarize or listen to any article, switch the theme, or press <kbd>?</kbd> to see the keyboard shortcuts.</p>
 

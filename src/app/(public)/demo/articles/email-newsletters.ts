@@ -19,9 +19,9 @@ const article: DemoArticle = {
 
     <h3>Getting Started</h3>
 
-    <p>Create an address in Settings and use it anywhere a newsletter asks for your email. For newsletters you already get, change your email in your account settings on each newsletter&rsquo;s website. Confirmation emails show up in Lion Reader like any other issue, so you can confirm from there; if the button is missing, press <strong>Show Original</strong>.</p>
+    <p>Create an address in Settings and use it anywhere a newsletter asks for your email. For newsletters you already get, change your email in your account settings on each newsletter&rsquo;s website. Confirmation emails show up in Lion Reader like any other issue, so you can confirm from there; if the button is missing, press <strong>Show Original</strong> at the top of the email. Forwarding from your old inbox doesn&rsquo;t work, since every issue would arrive from you instead of the newsletter.</p>
 
-    <p>You can make more than one address &mdash; label each one so you remember where you used it &mdash; and delete any address that starts attracting spam. Issues you&rsquo;ve already received stay put.</p>
+    <p>You can make more than one address &mdash; label each one so you remember where you used it &mdash; and delete any address that starts attracting spam. Issues you&rsquo;ve already received stay put, and only you can see them (more in <a href="/demo/all?entry=auth-security">Privacy &amp; Security</a>).</p>
 
     <h3>Unsubscribing and Blocking Senders</h3>
 

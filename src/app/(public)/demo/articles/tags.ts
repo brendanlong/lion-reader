@@ -19,11 +19,11 @@ const article: DemoArticle = {
 
     <p>Each tag shows up in the sidebar with its own unread count, so you can read one topic at a time &mdash; &ldquo;Features&rdquo; and &ldquo;About&rdquo; in this demo&rsquo;s sidebar are tags. Subscriptions you haven&rsquo;t tagged appear under &ldquo;Uncategorized,&rdquo; so nothing gets lost.</p>
 
-    <p>To tag a subscription, edit it from the sidebar. If you <a href="/demo/all?entry=opml">import from another reader</a>, your folders become tags automatically.</p>
+    <p>To tag a subscription, click the pencil icon next to it in the sidebar. <a href="/demo/all?entry=save-for-later">Saved articles</a> have their own section instead of tags. If you <a href="/demo/all?entry=opml">import from another reader</a>, your folders become tags automatically.</p>
 
-    <h3>Rename and Resubscribe</h3>
+    <h3>Rename Subscriptions</h3>
 
-    <p>Rename any subscription to whatever you&rsquo;ll recognize &mdash; handy for newsletters with long names or feeds you think of differently. And if you unsubscribe and change your mind later, resubscribing brings back what you&rsquo;d already read and starred.</p>
+    <p>Rename any subscription to whatever you&rsquo;ll recognize &mdash; handy for newsletters with long names or feeds you think of differently.</p>
   `,
 };
 

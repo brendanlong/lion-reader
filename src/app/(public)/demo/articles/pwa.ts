@@ -15,7 +15,7 @@ const article: DemoArticle = {
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Install Lion Reader on your phone, tablet, or computer straight from your browser &mdash; no app store needed. It gets its own icon, opens without the browser&rsquo;s address bar and tabs, and updates itself automatically. It needs a connection to load articles; if you&rsquo;d rather use a native app, Lion Reader also works with <a href="/demo/all?entry=google-reader-api">many RSS apps</a>.</p>
+    <p>Lion Reader works in any browser on your phone, tablet, or computer, and you can install it straight from the browser &mdash; no app store needed. It gets its own icon, opens without the browser&rsquo;s address bar and tabs, and updates itself automatically. It needs a connection to load articles. If you&rsquo;d rather use a native app you already have, Lion Reader also works with <a href="/demo/all?entry=google-reader-api">many RSS apps</a>.</p>
 
     <h3>Save From the Share Menu</h3>
 

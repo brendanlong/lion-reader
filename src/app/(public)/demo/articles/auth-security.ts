@@ -15,11 +15,11 @@ const article: DemoArticle = {
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>What you read says a lot about you, so Lion Reader is built to keep it private. There are no ads, your data is never sold, and there&rsquo;s no third-party tracking script anywhere in the app. Your reading activity, newsletters, and saved articles are used only to run the app for you, like keeping your read and starred articles in sync across your devices.</p>
+    <p>What you read says a lot about you, so Lion Reader is built to keep it private. There are no ads, your data is never sold, and there&rsquo;s no third-party tracking script anywhere in the app. The hosted site counts page views without cookies, recording only the kind of page you opened, never which feed or article. Your reading activity, newsletters, and saved articles are used only to run the app for you, like keeping your read and starred articles in sync across your devices.</p>
 
     <details>
       <summary>About analytics</summary>
-      <p>The hosted site sends a minimal, cookie-free page count to GoatCounter without loading any tracking script, and reports only the <em>kind</em> of page you opened &mdash; an article list, an article, a settings page &mdash; never which feed or article. Self-hosted copies send nothing unless whoever runs them sets up their own analytics.</p>
+      <p>Page counts go to GoatCounter without loading any tracking script, and report only the <em>kind</em> of page &mdash; an article list, an article, a settings page. Self-hosted copies send nothing unless whoever runs them sets up their own analytics.</p>
     </details>
 
     <p>AI features like <a href="/demo/all?entry=ai-summaries">summaries</a> send an article to an AI provider only when you use them. The <a href="/privacy">privacy policy</a> describes the outside services Lion Reader uses and what each one receives.</p>
@@ -32,7 +32,7 @@ const article: DemoArticle = {
 
     <p>When you connect a <a href="/demo/all?entry=browser-extension">browser extension</a>, an <a href="/demo/all?entry=mcp-server">AI assistant</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a>, it gets only the access it needs &mdash; a save button can save articles but can&rsquo;t read your feeds. You can see when each connection was last used and revoke it at any time, and API tokens you create for your own scripts can be set to expire.</p>
 
-    <h3>Safe to Read</h3>
+    <h3>Safe from Harmful Pages</h3>
 
     <p>Articles come from all over the web, so Lion Reader cleans every one before showing it to you. Formatting and images stay, but anything that could run code in your browser is removed.</p>
   `,

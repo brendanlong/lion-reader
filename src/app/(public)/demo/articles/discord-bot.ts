@@ -33,13 +33,19 @@ const article: DemoArticle = {
       </div>
     </div>
 
-    <h3>Setting Up a Server</h3>
+    <h3>Getting Started</h3>
 
-    <p>A server admin adds the bot with the invite link in Lion Reader&rsquo;s Settings, then adds the image labeled <strong>Save</strong> above as a custom emoji named <code>savetolionreader</code>. Direct messages work without the emoji.</p>
+    <p>Sign in to Lion Reader with Discord and the bot already knows who you are. Then react in any server that has the bot, or send it a direct message. Others in the channel can see your reaction, but what you save goes only to your own reading list. If your server doesn&rsquo;t have the bot yet, ask an admin to add it &mdash; or add it to a server of your own and save by direct message.</p>
 
-    <h3>Linking Your Account</h3>
+    <details>
+      <summary>Adding the bot to a server</summary>
+      <p>A server admin adds the bot with the invite link under <strong>Settings &rarr; Integrations</strong>, then adds the image labeled <strong>Save</strong> above as a custom emoji named <code>savetolionreader</code>. Direct messages work without the emoji.</p>
+    </details>
 
-    <p>If you sign in to Lion Reader with Discord, the bot already knows who you are. Otherwise, link your account with the <code>/link</code> command and an API token from Settings &mdash; only you can see the bot&rsquo;s replies, so your token stays private. Everyone in the server who links their account can save with a reaction, and each person&rsquo;s saves go to their own reading list.</p>
+    <details>
+      <summary>Linking an account without Discord sign-in</summary>
+      <p>Run the <code>/link</code> command with an API token from Settings. Only you can see the bot&rsquo;s replies to it, so your token stays private.</p>
+    </details>
   `,
 };
 

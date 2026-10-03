@@ -27,15 +27,16 @@ const article: DemoArticle = {
 
     <h3>Every Tap Takes Effect Immediately</h3>
 
-    <p>Marking an article read or starring it takes effect the moment you tap or press the key, without waiting on the server, and shows up on your other devices right away.</p>
+    <p>Marking an article read or starring it takes effect the moment you tap or press the key, with no waiting.</p>
 
     <h3>Stays Fast as Your Library Grows</h3>
 
-    <p>Lion Reader stays fast no matter how many articles pile up in your account. Typical page loads take under 100ms, even on an inexpensive server.</p>
+    <p>Lion Reader stays fast no matter how many articles pile up in your account. Typical page loads take under 100ms.</p>
 
     <details>
       <summary>How it stays fast</summary>
       <ul>
+        <li>It runs on inexpensive cloud servers.</li>
         <li>Lists are built so that loading the next page takes the same time whether you have a hundred articles or a million.</li>
         <li>Each article is prepared for reading when it&rsquo;s first fetched, so opening it later is quick.</li>
         <li>A feed is fetched once and shared by everyone subscribed to it, while each person&rsquo;s reading stays private.</li>

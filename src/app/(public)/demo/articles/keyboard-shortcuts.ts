@@ -15,7 +15,7 @@ const article: DemoArticle = {
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>If you&rsquo;ve used Gmail or Google Reader, you already know most of these keys. They&rsquo;re the fastest way through a pile of unread articles, and you can try them right here in the demo. Press <kbd>?</kbd> anytime to see the full list.</p>
+    <p>If you&rsquo;ve used Google Reader or Gmail, the core keys &mdash; <kbd>j</kbd>, <kbd>k</kbd>, <kbd>s</kbd>, and friends &mdash; will feel familiar. They&rsquo;re the fastest way through a pile of unread articles, and you can try them right here in the demo. Press <kbd>?</kbd> anytime to see the full list.</p>
 
     <h3>The Essentials</h3>
 

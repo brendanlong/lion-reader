@@ -21,15 +21,15 @@ const article: DemoArticle = {
 
     <h3>What You Can Follow</h3>
 
-    <p>Lion Reader can follow any site that offers a way to follow it. Almost every blog and news site publishes a feed, including newsletters on platforms like Substack, which you can follow here or <a href="/demo/all?entry=email-newsletters">by email</a>. For popular sites like YouTube and Bluesky, <a href="/demo/all?entry=plugins">smart content sources</a> bring in the parts a plain feed leaves out, and when a feed only sends a teaser, Lion Reader can <a href="/demo/all?entry=full-content">fetch the full article</a>. For a single page you don&rsquo;t want to follow, <a href="/demo/all?entry=save-for-later">save it for later</a> instead.</p>
+    <p>Lion Reader follows a site through its feed &mdash; RSS, Atom, or JSON Feed &mdash; which almost every blog and news site publishes, including newsletters on platforms like Substack, which you can follow here or <a href="/demo/all?entry=email-newsletters">by email</a>. For popular sites like YouTube and Bluesky, <a href="/demo/all?entry=plugins">smart content sources</a> bring in the parts a plain feed leaves out, and when a feed only sends a teaser, Lion Reader can <a href="/demo/all?entry=full-content">fetch the full article</a>. A site with no feed at all can&rsquo;t be followed, but you can still <a href="/demo/all?entry=save-for-later">save its pages for later</a>.</p>
 
     <h3>Feeds That Keep Working</h3>
 
-    <p>When a site moves its feed, Lion Reader follows it to the new address. When a site is down, Lion Reader keeps trying until it comes back, and feeds that keep failing are listed in Settings, so a subscription never goes quiet without you knowing why.</p>
+    <p>When a site moves its feed, Lion Reader follows it to the new address. When a site is down, Lion Reader keeps trying until it comes back, and feeds that keep failing are listed in Settings, so a subscription never goes quiet without you knowing why. And if you unsubscribe and change your mind, resubscribing brings back what you&rsquo;d already read and starred.</p>
 
     <details>
       <summary>How Lion Reader checks feeds</summary>
-      <p>Lion Reader reads all the common feed formats &mdash; RSS, Atom, and <a href="https://www.jsonfeed.org/" target="_blank" rel="noopener noreferrer">JSON Feed</a>. It asks each site whether anything has changed before downloading the whole feed, and respects the site&rsquo;s own hints about how often to check. Sites that support instant notifications (<a href="https://www.w3.org/TR/websub/" target="_blank" rel="noopener noreferrer">WebSub</a>) push new posts to Lion Reader as soon as they&rsquo;re published, so they only need an occasional backup check.</p>
+      <p>Lion Reader asks each site whether anything has changed before downloading the whole feed, and respects the site&rsquo;s own hints about how often to check. Sites that support instant notifications (<a href="https://www.w3.org/TR/websub/" target="_blank" rel="noopener noreferrer">WebSub</a>) push new posts to Lion Reader as soon as they&rsquo;re published, so they only need an occasional backup check.</p>
     </details>
   `,
 };

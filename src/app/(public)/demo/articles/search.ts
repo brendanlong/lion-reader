@@ -23,6 +23,8 @@ const article: DemoArticle = {
 
     <p>Search narrows the view you&rsquo;re in instead of replacing it. Searching from inside a single subscription, a <a href="/demo/all?entry=tags">tag</a>, your saved articles, or your starred items keeps that scope, so you can look within one newsletter instead of across everything.</p>
 
+    <p>Try it here: press <kbd>/</kbd> and search for <em>newsletter</em>.</p>
+
     <p>Can&rsquo;t think of the right words? Ask your <a href="/demo/all?entry=mcp-server">AI assistant</a> to &ldquo;find the article I read last month about sourdough starters.&rdquo;</p>
   `,
 };
