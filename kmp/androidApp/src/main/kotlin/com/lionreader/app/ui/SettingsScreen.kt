@@ -147,7 +147,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             HorizontalDivider()
             Section("Keep offline") {
                 Text(
-                    "Articles older than this are removed from the device. Starred and saved articles are always kept.",
+                    "Articles older than this are removed from the device, except starred and saved ones and ones you read or marked unread in that time.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
