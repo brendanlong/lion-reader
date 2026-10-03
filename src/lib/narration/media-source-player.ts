@@ -3,7 +3,8 @@
  * stream on one `<audio>` element.
  *
  * Mobile browsers only keep a backgrounded page (and its OS media controls)
- * alive while it is playing media. Swapping an element's `src` per chunk
+ * alive while it is playing media; Web Speech and Web Audio are suspended
+ * there, so synthesized speech must play through an element. Swapping an element's `src` per chunk
  * hands the browser a fresh, often short, clip each time with a gap our
  * script has to bridge, and Chrome on Android treats clips under ~5 seconds as
  * sound effects rather than playback; narration played that way stopped a
