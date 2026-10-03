@@ -323,9 +323,12 @@ const sentryWebpackPluginOptions = {
 // Wrap with PWA first, then Sentry if configured
 const pwaConfig = withPWAConfig(nextConfig);
 
-// Only wrap with Sentry if DSN is configured
-const exportedConfig = process.env.SENTRY_DSN
-  ? withSentryConfig(pwaConfig, sentryWebpackPluginOptions)
-  : pwaConfig;
+// Only wrap with Sentry if a DSN is configured. On Fly, SENTRY_DSN is a
+// runtime secret absent from the build, so the build arg for the client DSN is
+// what turns on the wrapper (and with it the `/monitoring` tunnel the CSP relies on).
+const exportedConfig =
+  process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN
+    ? withSentryConfig(pwaConfig, sentryWebpackPluginOptions)
+    : pwaConfig;
 
 export default exportedConfig;

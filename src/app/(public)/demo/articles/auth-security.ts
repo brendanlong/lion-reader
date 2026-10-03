@@ -20,7 +20,7 @@ const article: DemoArticle = {
     <details>
       <summary>About analytics</summary>
       <p>Page counts go to GoatCounter without loading any tracking script, and report only the <em>kind</em> of page &mdash; an article list, an article, a settings page. Self-hosted copies send nothing unless whoever runs them sets up their own analytics.</p>
-      <p>To find and fix bugs, the hosted site also sends error reports to Sentry and records a small sample of sessions, plus any session where an error occurs, with all text masked. The page addresses in those reports can show which article was open; the <a href="/privacy">privacy policy</a> has the details.</p>
+      <p>To find and fix bugs, the hosted site also sends error reports to Sentry. The page addresses in those reports can show which article was open; the <a href="/privacy">privacy policy</a> has the details.</p>
     </details>
 
     <p>AI features like <a href="/demo/all?entry=ai-summaries">summaries</a> send an article to an AI provider only when you use them. The <a href="/privacy">privacy policy</a> describes the outside services Lion Reader uses and what each one receives.</p>

@@ -314,31 +314,24 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Error Tracking and Session Replay (Sentry)">
+          <LegalSubsection title="Error Tracking (Sentry)">
             <LegalParagraph tight>
               We use Sentry to find and fix errors and performance problems. When something goes
-              wrong, Sentry receives the error message and where in our code it happened, along with
-              what led up to it: the pages you visited, the requests the app made, the buttons and
-              links you clicked, and messages the app logged. Errors on our servers include your
-              account ID so we can investigate problems affecting a particular account. Sentry also
-              receives timing data for a sample of page loads. We configure both Sentry and our own
-              code not to store your IP address.
+              wrong, in your browser or on our servers, Sentry receives the error message and where
+              in our code it happened, along with what led up to it: the pages you visited, the
+              requests the app made, the buttons and links you clicked, and messages the app logged.
+              Errors on our servers include your account ID so we can investigate problems affecting
+              a particular account. For a sample of page loads, Sentry also receives timing data
+              about the page and the requests it made. We do not record your sessions or screen, and
+              we configure both Sentry and our own code not to store your IP address.
             </LegalParagraph>
             <LegalParagraph tight>
-              <strong>Session Replay:</strong> for a random 10% of browser sessions, and from about
-              a minute before any error through the rest of that session, Sentry also records a
-              replay—the layout of each page, your clicks and scrolling, and the pages you visit—so
-              we can see what led to a problem. Text and anything you type are masked, and images
-              and media are blocked, before the recording leaves your browser, so a replay does not
-              show the words on the page.
-            </LegalParagraph>
-            <LegalParagraph tight>
-              <strong>Sentry can see what you were reading.</strong> Error reports and replays
-              include web addresses: of the pages you visited, of the links on them (such as an
-              article&apos;s original web address), and of the requests the app made. Depending on
-              what you were doing, these can include the address of an article you opened or saved,
-              a feed you previewed, your search terms, and the name of a feed whose button you
-              clicked. We use this only to fix problems, and Sentry keeps it for 30 days.
+              <strong>Sentry can see what you were reading.</strong> Error reports and timing data
+              include web addresses: of the pages you visited and of the requests the app made.
+              Depending on what you were doing, these can include the address of an article you
+              saved, a feed you previewed, your search terms, an internal ID for the article or feed
+              you had open, and the name of a feed whose button you clicked. We use this only to fix
+              problems, and Sentry keeps it for 30 days.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink href="https://sentry.io/privacy/" external className="ui-text-sm">
@@ -501,10 +494,6 @@ export default function PrivacyPolicyPage() {
             read items, sort order), and keyboard shortcut preferences
           </li>
           <li>
-            <strong>sessionStorage:</strong> An identifier Sentry uses for session replay (see Error
-            Tracking and Session Replay above), cleared when you close the tab
-          </li>
-          <li>
             <strong>Origin private file system:</strong> Enhanced narration voices (if you download
             optional high-quality voices using Piper TTS). These voice files are stored locally on
             your device and never sent to our servers.
@@ -566,8 +555,8 @@ export default function PrivacyPolicyPage() {
             avoid repeated processing
           </li>
           <li>
-            <strong>Logs and metrics:</strong> Application logs, error reports, and session replays
-            are retained for 30 days for troubleshooting and performance monitoring
+            <strong>Logs and metrics:</strong> Application logs and error reports are retained for
+            30 days for troubleshooting and performance monitoring
           </li>
         </LegalList>
       </LegalSection>
