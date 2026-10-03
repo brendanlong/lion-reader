@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc/client";
 import { extractParamsFromPathname } from "@/lib/navigation";
 import type { CachedSubscription } from "@/lib/cache/count-cache";
 import { useAppPathname } from "./useAppLocation";
+import { useExpandedTags } from "./useExpandedTags";
 
 /** Section key for subscriptions without tags. */
 export const UNCATEGORIZED_SECTION = "uncategorized";
@@ -42,7 +43,8 @@ export interface SidebarSelection {
   pathname: string;
   /**
    * The section whose copy of the open subscription is current, or null when
-   * none was chosen (deep link, back button): then every copy is current.
+   * no copy shown in the sidebar was chosen for this route (a deep link, or the
+   * chosen tag was collapsed): then every copy is current.
    */
   section: string | null;
   /** The open subscription, so the sidebar keeps listing it once it's read */
@@ -56,6 +58,7 @@ export function useSidebarSelection(): SidebarSelection {
     () => chosen,
     () => null
   );
+  const { isExpanded } = useExpandedTags();
   const { subscriptionId } = extractParamsFromPathname(pathname);
   // The subscription page fetches this too, so it's normally a cache hit.
   const { data: subscription } = trpc.subscriptions.get.useQuery(
@@ -63,10 +66,17 @@ export function useSidebarSelection(): SidebarSelection {
     { enabled: !!subscriptionId }
   );
 
+  const current = subscriptionId ? subscription : undefined;
+  const chosenCopyShown =
+    chosenSection?.href === pathname &&
+    isExpanded(chosenSection.section) &&
+    !!current &&
+    isInSidebarSection(current, chosenSection.section);
+
   return {
     pathname,
-    section: chosenSection?.href === pathname ? chosenSection.section : null,
-    subscription: subscriptionId ? subscription : undefined,
+    section: chosenCopyShown ? chosenSection.section : null,
+    subscription: current,
   };
 }
 

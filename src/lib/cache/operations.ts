@@ -146,6 +146,15 @@ function removeSubscriptionFromInfiniteQueries(
 }
 
 /**
+ * Drops a deleted subscription's `subscriptions.get` data, which the sidebar
+ * would otherwise keep listing while its page is open. Run once the server has
+ * deleted it: the reset refetches (now NOT_FOUND) any open page.
+ */
+export function forgetDeletedSubscription(utils: TRPCClientUtils, subscriptionId: string): void {
+  void utils.subscriptions.get.reset({ id: subscriptionId });
+}
+
+/**
  * Structurally removes a subscription from all caches (the lookup map and any
  * cached infinite-query pages) without touching unread counts. Used for the
  * optimistic unsubscribe in onMutate, where the server-absolute counts are
@@ -271,6 +280,7 @@ export function handleSubscriptionDeleted(
   // list refetch just re-filters), so they run unconditionally regardless of
   // whether the subscription was cached.
   applySubscriptionCounts(utils, counts, queryClient);
+  forgetDeletedSubscription(utils, subscriptionId);
 
   // Always invalidate entries.list - entries from this subscription should be filtered out
   utils.entries.list.invalidate();
@@ -433,6 +443,17 @@ function setBulkSubscriptionUnreadCounts(
         }),
       })),
     });
+  }
+
+  // The open subscription's own copy, which the sidebar lists once the
+  // unread-only filter drops it from subscriptions.list.
+  for (const [queryKey, data] of queryClient.getQueriesData<{ id: string; unreadCount: number }>({
+    queryKey: [["subscriptions", "get"]],
+  })) {
+    const newUnread = data && subscriptionUpdates.get(data.id);
+    if (newUnread !== undefined) {
+      queryClient.setQueryData(queryKey, { ...data, unreadCount: newUnread });
+    }
   }
 }
 

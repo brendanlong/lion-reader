@@ -17,9 +17,9 @@ const isCurrent = (link: HTMLAnchorElement) => link.getAttribute("aria-current")
  * It walks the rendered links rather than the tag/subscription data so it
  * matches exactly what the reader sees: collapsed tags are skipped over, the
  * unread-only filter applies, and per-tag pages not yet loaded aren't
- * reachable. The sidebar keeps the current item listed (and marks only the
- * chosen copy of a multi-tag subscription; see useSidebarSelection), so
- * there's always a current link to step from.
+ * reachable. The sidebar keeps the current item listed and marks only the
+ * chosen copy of a multi-tag subscription (useSidebarSelection), so this steps
+ * from where the reader is, unless its tag is collapsed.
  */
 export function goToSidebarFeed(direction: 1 | -1): void {
   if (isDialogOpen()) return;

@@ -23,7 +23,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { removeSubscriptionFromCaches, setEntryRelatedCounts } from "@/lib/cache/operations";
+import {
+  forgetDeletedSubscription,
+  removeSubscriptionFromCaches,
+  setEntryRelatedCounts,
+} from "@/lib/cache/operations";
 
 export interface UseUnsubscribeMutationOptions {
   /** Extra work after the optimistic cache removal (e.g. close a dialog). */
@@ -45,13 +49,14 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
       removeSubscriptionFromCaches(variables.id, queryClient);
       options?.onMutate?.();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       // Apply the server-absolute counts for the affected lists, and drop the
       // subscription's entries from any cached lists.
       if (data.counts) {
         setEntryRelatedCounts(utils, data.counts, queryClient);
       }
       utils.entries.list.invalidate();
+      forgetDeletedSubscription(utils, variables.id);
       options?.onSuccess?.();
     },
     onError: () => {

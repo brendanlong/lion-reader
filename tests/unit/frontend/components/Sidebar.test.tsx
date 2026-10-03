@@ -19,6 +19,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, within } from "@testing-library/react";
+import { TRPCClientError } from "@trpc/client";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
 import {
@@ -47,6 +48,13 @@ const FEED_ONE = {
   unreadCount: 5,
   tags: [TECH_TAG],
 };
+
+/** A tRPC error carrying `data.code`, as the real client would surface it. */
+function trpcError(code: string, message: string): TRPCClientError<never> {
+  return new TRPCClientError(message, {
+    result: { error: { data: { code } } },
+  } as never);
+}
 
 /**
  * Handlers for the full Sidebar subtree. The default fixture has a single
@@ -133,6 +141,31 @@ describe("Sidebar", () => {
     });
   });
 
+  it("drops the open subscription from the sidebar once it's unsubscribed", async () => {
+    let deleted = false;
+    mockPathname.mockReturnValue("/subscription/sub-1");
+    renderWithTrpc(<Sidebar />, {
+      handlers: baseHandlers({
+        "subscriptions.delete": () => {
+          deleted = true;
+          return {};
+        },
+        "subscriptions.get": () => {
+          if (deleted) throw trpcError("NOT_FOUND", "Subscription not found");
+          return FEED_ONE;
+        },
+      }),
+    });
+
+    await expandTechTag();
+    fireEvent.click(await screen.findByRole("button", { name: "Unsubscribe from Feed One" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Unsubscribe" })
+    );
+
+    await vi.waitFor(() => expect(screen.queryByText("Feed One")).not.toBeInTheDocument());
+  });
+
   it("does not delete when the unsubscribe dialog is cancelled", async () => {
     const { callsFor } = renderWithTrpc(<Sidebar />, { handlers: baseHandlers() });
 
@@ -210,5 +243,14 @@ describe("Sidebar", () => {
     // Shift+K steps back from the chosen (Tech) copy, not the first one.
     goToSidebarFeed(-1);
     expect(window.location.pathname).toBe("/tag/tag-1");
+
+    // With the chosen copy collapsed away, the remaining copy is current again.
+    fireEvent.click(
+      within(screen.getByRole("link", { name: /^Tech/ }).closest("li")!).getByRole("button", {
+        name: "Collapse",
+      })
+    );
+    expect(screen.getByRole("link", { name: /Feed One/ })).toHaveAttribute("aria-current", "page");
+    window.history.replaceState(null, "", "/");
   });
 });
