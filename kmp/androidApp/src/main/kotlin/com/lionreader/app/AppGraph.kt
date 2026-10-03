@@ -143,9 +143,17 @@ private fun cloudVoiceCaches(context: Context) = File(context.cacheDir, "cloud-v
 private fun cloudVoiceCache(context: Context, dbName: String) =
     File(cloudVoiceCaches(context), dbName.removeSuffix(".db"))
 
+/**
+ * The most a query's cursor may hold. Android's default (2 MB) is less than some articles' bodies,
+ * and reading one larger throws; it's a cap, not an allocation. Android 8 ignores it (the article
+ * screen says the article can't be opened instead).
+ */
+private const val MAX_ROW_BYTES = 16L * 1024 * 1024
+
 /** Accounts' databases, and their cloud narration audio in the cache. */
-private class AndroidAccountStorage(private val context: Context) : AccountStorage {
-    override fun openDatabase(name: String) = AndroidSqliteDriver(AppSchema, context, name)
+internal class AndroidAccountStorage(private val context: Context) : AccountStorage {
+    override fun openDatabase(name: String) =
+        AndroidSqliteDriver(AppSchema, context, name, windowSizeBytes = MAX_ROW_BYTES)
 
     override fun delete(name: String) {
         context.deleteDatabase(name)

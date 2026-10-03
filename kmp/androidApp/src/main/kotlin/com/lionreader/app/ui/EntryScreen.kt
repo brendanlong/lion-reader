@@ -74,6 +74,7 @@ import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.shareWebPage
 import com.lionreader.shared.account.AccountSession
 import com.lionreader.shared.api.apiFailure
+import com.lionreader.shared.data.ArticleState
 import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.links.webUrl
@@ -428,10 +429,11 @@ private fun EntryPage(
     active: Boolean,
 ) {
     val context = LocalContext.current
-    val entry by
-        remember(entryId) { account.reader.entry(entryId) }.collectAsStateWithLifecycle(null)
-    // Null once it's gone (e.g. deleted), and when the page leaves: the top
-    // bar shows only what's on a page now.
+    val article by
+        remember(entryId) { account.reader.article(entryId) }.collectAsStateWithLifecycle(null)
+    val entry = (article as? ArticleState.Shown)?.entry
+    // Null once it's gone (e.g. deleted) or can't be read, and when the page
+    // leaves: the top bar shows only what's on a page now.
     LaunchedEffect(entry) { onEntry(entryId, entry) }
     DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
@@ -440,6 +442,13 @@ private fun EntryPage(
             withContext(Dispatchers.IO) { account.sync.ensureContent(entryId) }
         }
 
+    if (article == ArticleState.Unreadable) {
+        Text(
+            "Lion Reader couldn't open this article. It may be too large for this device.",
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+        )
+        return
+    }
     val current = entry ?: return
     val byline =
         listOfNotNull(

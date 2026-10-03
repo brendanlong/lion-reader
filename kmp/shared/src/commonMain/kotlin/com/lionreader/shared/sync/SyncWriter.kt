@@ -127,8 +127,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             // The fetched body is current: it replaces the old one and wins
             // over any download already in flight. A summary goes unless the
             // body is the one it summarized.
-            val old = db.bodyQueries.content(entry.id).executeAsOneOrNull()
-            if (old != (entry.displayContent ?: "")) {
+            if (db.bodyQueries.matches(entry.id, entry.displayContent ?: "").executeAsOne() == 0L) {
                 db.summaryQueries.deleteForEntry(entry.id)
             }
             db.entryQueries.bumpBodyVersion(entry.id)
@@ -334,8 +333,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             it.id to it.body_version
         }
 
-    fun hasBody(entryId: String): Boolean =
-        db.entryQueries.selectById(entryId).executeAsOneOrNull()?.content != null
+    fun hasBody(entryId: String): Boolean = db.bodyQueries.exists(entryId).executeAsOne() > 0
 
     fun evict(policy: RetentionPolicy, now: Long) = db.transaction {
         db.entryQueries.evictOutsideWindow(now - policy.windowMillis)
