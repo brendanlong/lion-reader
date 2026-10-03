@@ -9,7 +9,6 @@ import io.ktor.http.Url
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -232,18 +231,20 @@ class Accounts(
         scope.launch {
             background.cancelAll()
             val auth = _connection.value.auth
-            accountMutex.withLock {
+            val forgotten = accountMutex.withLock {
                 val session = _account.value
                 _account.value = null
                 pendingAuthorization = null
                 // If the app dies before the data goes, the next start deletes it.
                 store.edit { remove(ACCOUNT_DB) }
                 session?.let { endSession(it, deleteData = true) }
-                // AppAuth.signOut forgets the tokens before it reaches the network.
-                launch(start = CoroutineStart.UNDISPATCHED) { auth.signOut() }
-                auth.signedIn.first { !it }
+                // The tokens go under the lock; revoking them needs the network, so it follows.
+                // (Waiting for signedIn to read false instead could miss it: a sign-in right
+                // after makes it true again, and the lock would never be released.)
+                auth.forgetTokens()
             }
             background.schedulePeriodic()
+            forgotten?.let { auth.revoke(it) }
         }
     }
 

@@ -123,8 +123,16 @@ class AppAuth(
             }
         }
 
-    suspend fun signOut() {
-        val tokens = mutex.withLock { store.load().also { persist(null) } } ?: return
+    /**
+     * Signs out on the device: forgets the tokens, returning them so their session can be
+     * [revoke]d.
+     */
+    suspend fun forgetTokens(): StoredTokens? = mutex.withLock {
+        store.load().also { persist(null) }
+    }
+
+    /** Ends [tokens]' session on the server, best effort. */
+    suspend fun revoke(tokens: StoredTokens) {
         runCatching {
             http.submitForm(
                 "$serverUrl/oauth/revoke",
