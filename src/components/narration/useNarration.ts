@@ -38,7 +38,13 @@ import type {
   PlaybackStatus,
   PlayerCallbacks,
 } from "@/lib/narration/media-source-player";
-import { createCloudSpeechPlayer } from "@/lib/narration/cloud-speech";
+import {
+  createCloudSpeechPlayer,
+  createPrerecordedSpeechPlayer,
+} from "@/lib/narration/cloud-speech";
+import { getMediaSourceClass } from "@/lib/narration/media-source-player";
+import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
+import type { NarrationSettings } from "@/lib/narration/settings";
 import { createPiperSpeechPlayer } from "@/lib/narration/piper-speech";
 import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
 import {
@@ -57,6 +63,30 @@ import {
   DEFAULT_NARRATION_STATE,
   getNarrationPhase,
 } from "./useNarrationTypes";
+
+/**
+ * The settings recordings were made with, which the visitor's can't change:
+ * only those that apply at playback (rate, highlighting) are theirs.
+ */
+function withPrerecordedVoice(
+  settings: NarrationSettings,
+  voice: PrerecordedVoice
+): NarrationSettings {
+  return {
+    ...settings,
+    provider: "cloud",
+    cloudModelId: voice.model,
+    voiceId: voice.voice,
+    cloudPauseSeconds: voice.pauseSeconds,
+    // Recorded from the text the client derives itself, not an LLM's script.
+    useLlmNormalization: false,
+  };
+}
+
+/** Recordings are found by a SHA-256 of their text, which needs a secure context. */
+function canPlayPrerecordedSpeech(): boolean {
+  return getMediaSourceClass() !== null && typeof crypto !== "undefined" && !!crypto.subtle;
+}
 
 function cancelPendingPlay(playRequest: { current: number }): void {
   playRequest.current++;
@@ -84,7 +114,16 @@ interface PlayerState extends Omit<UseNarrationState, "status"> {
  * @returns Object with narration state and control functions
  */
 export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
-  const { id, title, feedTitle, artwork, content, showFullContent, showOriginal } = config;
+  const {
+    id,
+    title,
+    feedTitle,
+    artwork,
+    content,
+    showFullContent,
+    showOriginal,
+    prerecordedVoice,
+  } = config;
 
   // State
   const [playerState, setPlayerState] = useState<PlayerState>(DEFAULT_NARRATION_STATE);
@@ -94,7 +133,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // useSyncExternalStore ensures the check runs after hydration without cascading renders
   const isSupported = useSyncExternalStore(
     () => () => {}, // No subscription needed - browser capabilities don't change
-    () => isNarrationSupported(), // Client snapshot
+    () => (prerecordedVoice ? canPlayPrerecordedSpeech() : isNarrationSupported()), // Client snapshot
     () => false // Server snapshot - always false during SSR
   );
   const [processedHtml, setProcessedHtml] = useState<string | null>(null);
@@ -115,8 +154,12 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
   // Paragraph mapping for translating narration indices to DOM element indices
   const paragraphMapRef = useRef<ParagraphMapEntry[]>([]);
 
-  // Get user settings
-  const [settings] = useNarrationSettings();
+  const [storedSettings] = useNarrationSettings();
+  const settings = useMemo(
+    () =>
+      prerecordedVoice ? withPrerecordedVoice(storedSettings, prerecordedVoice) : storedSettings,
+    [storedSettings, prerecordedVoice]
+  );
 
   // Determine if we should use Piper provider
   const usePiper =
@@ -257,15 +300,17 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
   const getOrCreateCloudPlayer = useCallback((): MediaSourcePlayer => {
     if (!cloudPlayerRef.current) {
-      cloudPlayerRef.current = createCloudSpeechPlayer(() => ({
-        model: voiceRef.current.model,
-        voice: voiceRef.current.voice,
-        pauseSeconds: voiceRef.current.cloudPauseSeconds,
-      }));
+      cloudPlayerRef.current = prerecordedVoice
+        ? createPrerecordedSpeechPlayer(prerecordedVoice)
+        : createCloudSpeechPlayer(() => ({
+            model: voiceRef.current.model,
+            voice: voiceRef.current.voice,
+            pauseSeconds: voiceRef.current.cloudPauseSeconds,
+          }));
       cloudPlayerRef.current.setCallbacks(bufferedPlayerCallbacks);
     }
     return cloudPlayerRef.current;
-  }, [bufferedPlayerCallbacks]);
+  }, [bufferedPlayerCallbacks, prerecordedVoice]);
 
   /**
    * Start or resume playback.

@@ -7,3 +7,4 @@
 - Use the PR that implemented a feature as the article URL if possible
 - Use the date the feature was implemented as the article date
 - **No hero illustrations and no per-article social card** — every `/demo/...` page uses the site's default social preview. Imagery inside `contentHtml` is fine (the Discord article embeds the brand emoji from `public/emojis/`).
+- **Changed an article's `contentHtml`? Run `pnpm demo:narration`** (needs `DEEPINFRA_API_KEY` and the bucket's `STORAGE_*` credentials) and commit the updated `../narration-recordings.json`. The demo narrates from recordings, not live synthesis; it records only the chunks whose text changed, and a unit test fails until it's run.

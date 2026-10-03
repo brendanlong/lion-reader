@@ -8,6 +8,7 @@
         "scripts/worker.ts!",
         "scripts/discord-bot.ts!",
         "scripts/migrate.ts!",
+        "scripts/record-demo-narration.ts!",
         "worker/index.ts!",
         "src/server/mcp/bin.ts!",
         "src/lib/narration/app-reader.ts!"

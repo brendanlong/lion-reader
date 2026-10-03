@@ -48,7 +48,7 @@ function renderDemo() {
       handlers: store.handlers,
       wrapper: (children) => (
         <AppLocationProvider basePath="/demo">
-          <EntryContentOptionsProvider value={{ hideNarration: true, renderSlots: demoEntrySlots }}>
+          <EntryContentOptionsProvider value={{ renderSlots: demoEntrySlots }}>
             <AppearanceProvider>
               <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
             </AppearanceProvider>

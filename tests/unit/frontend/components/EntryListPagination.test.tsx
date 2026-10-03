@@ -44,7 +44,7 @@ function renderReader() {
     handlers: store.handlers,
     wrapper: (children) => (
       <AppLocationProvider basePath="/demo">
-        <EntryContentOptionsProvider value={{ hideNarration: true }}>
+        <EntryContentOptionsProvider value={{}}>
           <AppearanceProvider>
             <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
           </AppearanceProvider>

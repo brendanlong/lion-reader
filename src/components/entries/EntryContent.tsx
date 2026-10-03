@@ -77,7 +77,7 @@ function EntryContentInner({
   previousEntryId,
 }: EntryContentProps) {
   const utils = trpc.useUtils();
-  const { hideNarration, ssrDateTimeZone, renderSlots } = useEntryContentOptions();
+  const { prerecordedNarration, ssrDateTimeZone, renderSlots } = useEntryContentOptions();
 
   // False during SSR + first client render. The cache-reading fallback below
   // would mismatch (empty server cache vs. hydrated client cache), so until
@@ -396,7 +396,7 @@ function EntryContentInner({
         onSummarize={handleSummarize}
         onSummaryClose={handleSummaryClose}
         onSummaryRegenerate={handleSummaryRegenerate}
-        hideNarration={hideNarration}
+        prerecordedNarration={prerecordedNarration}
         beforeContent={slots?.beforeContent}
         afterContent={slots?.afterContent}
       />

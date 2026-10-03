@@ -27,6 +27,7 @@ import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
 import { seekTargetElement } from "@/lib/narration/seek-target";
+import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 /**
  * Props for the EntryContentBody component.
@@ -115,8 +116,8 @@ export interface EntryContentBodyProps {
   onSummaryRegenerate?: () => void;
   /** Whether the main content is still loading (for progressive rendering) */
   isContentLoading?: boolean;
-  /** Whether to hide narration controls (see EntryContentOptions) */
-  hideNarration?: boolean;
+  /** See EntryContentOptions */
+  prerecordedNarration?: PrerecordedVoice;
   /** Host-supplied content rendered after the summary card, before the body */
   beforeContent?: ReactNode;
   /** Host-supplied content rendered after the body, before the footer */
@@ -169,8 +170,7 @@ export function EntryContentBody({
   onSummaryRegenerate,
   // Progressive loading
   isContentLoading,
-  // Narration toggle
-  hideNarration,
+  prerecordedNarration,
   beforeContent,
   afterContent,
 }: EntryContentBodyProps) {
@@ -207,6 +207,7 @@ export function EntryContentBody({
     content: contentToDisplay,
     showFullContent,
     showOriginal,
+    prerecordedVoice: prerecordedNarration,
   });
 
   // Get narration settings for auto-scroll preference
@@ -221,7 +222,7 @@ export function EntryContentBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrationSettings.enabled]);
 
-  const showNarration = !hideNarration && narrationSettings.enabled;
+  const showNarration = narrationSettings.enabled;
   const isNarrationActive = getNarrationPhase(narration.state).isActive;
 
   const { highlightedParagraphIds } = useNarrationHighlight({

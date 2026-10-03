@@ -6,6 +6,7 @@
 
 import type { NarrationState } from "@/lib/narration/ArticleNarrator";
 import type { NarrationStatus } from "@/lib/narration/types";
+import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 // ============================================================================
 // Configuration Types
@@ -36,6 +37,8 @@ export interface UseNarrationConfig {
    */
   showFullContent?: boolean;
   showOriginal?: boolean;
+  /** Narrate only with recordings in this voice (see `EntryContentOptions`). */
+  prerecordedVoice?: PrerecordedVoice;
 }
 
 /**

@@ -1,8 +1,9 @@
 /**
  * Cloud voices in the browser: each chunk is streamed from `POST
- * /api/v1/narration/speech` as AAC in fragmented MP4, and its bytes go
- * straight to a {@link MediaSourcePlayer} as they arrive. Narration and the
- * voice preview both play this way.
+ * /api/v1/narration/speech` (or, recorded ahead of time, fetched from
+ * `./prerecorded-speech`) as AAC in fragmented MP4, and its bytes go straight
+ * to a {@link MediaSourcePlayer} as they arrive. Narration and the voice
+ * preview both play this way.
  *
  * @module narration/cloud-speech
  */
@@ -15,9 +16,16 @@ import {
   MediaSourcePlayer,
   splitIntoSpeechChunks,
   StreamInterruptedError,
+  type SpeechChunk,
   TransientSynthesisError,
   UNSUPPORTED_MESSAGE,
 } from "./media-source-player";
+import { splitNarrationParagraphs } from "./paragraph-map";
+import {
+  prerecordedSpeechKey,
+  prerecordedSpeechUrl,
+  type PrerecordedVoice,
+} from "./prerecorded-speech";
 
 const SPEECH_URL = "/api/v1/narration/speech";
 
@@ -105,34 +113,19 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Speaks `text`, yielding the MP4's bytes as they arrive. Throws
- * {@link StreamInterruptedError} if they stop arriving partway, so the player
- * can try the chunk again, and {@link TransientSynthesisError} for trouble
- * that may pass (no connection, a 5xx); the server's 4xx (a provider refusing
- * the key, say) end narration with its message.
+ * The audio `request` answers with, yielding the MP4's bytes as they arrive.
+ * Throws {@link StreamInterruptedError} if they stop arriving partway, so the
+ * player can try the chunk again, and {@link TransientSynthesisError} for
+ * trouble that may pass (no connection, a 5xx); the server's 4xx (a provider
+ * refusing the key, say) end narration with its message.
  */
-async function* streamCloudSpeech(
-  voice: CloudVoice,
-  text: string,
+async function* streamSpeechResponse(
+  request: () => Promise<Response>,
   signal: AbortSignal
 ): AsyncGenerator<Uint8Array> {
   let response: Response;
   try {
-    response = await fetchWhenFree(
-      () =>
-        fetch(SPEECH_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: voice.model,
-            voice: voice.voice,
-            text,
-            pauseSeconds: voice.pauseSeconds,
-          }),
-          signal,
-        }),
-      signal
-    );
+    response = await fetchWhenFree(request, signal);
   } catch (error) {
     if (signal.aborted) throw error;
     throw new TransientSynthesisError("Couldn't reach Lion Reader for the cloud voice");
@@ -178,12 +171,22 @@ async function loadCloudMimeType(): Promise<string> {
   return AAC_MIME_TYPE;
 }
 
-/** A player for cloud voices; `voice` is read for each chunk it synthesizes. */
-export function createCloudSpeechPlayer(voice: () => CloudVoice): MediaSourcePlayer {
+function chunkCloudSpeech(paragraphs: string[]): SpeechChunk[] {
+  return splitIntoSpeechChunks(paragraphs, MAX_CLOUD_SPEECH_CHARS);
+}
+
+/** The texts a cloud voice player asks for, in order, to narrate `narration`. */
+export function cloudSpeechTexts(narration: string): string[] {
+  return chunkCloudSpeech(splitNarrationParagraphs(narration)).map((chunk) => chunk.text);
+}
+
+function createPlayer(
+  synthesize: (text: string, signal: AbortSignal) => AsyncIterable<Uint8Array>
+): MediaSourcePlayer {
   return new MediaSourcePlayer({
-    synthesize: (text, signal) => streamCloudSpeech(voice(), text, signal),
+    synthesize,
     loadMimeType: loadCloudMimeType,
-    chunkParagraphs: (paragraphs) => splitIntoSpeechChunks(paragraphs, MAX_CLOUD_SPEECH_CHARS),
+    chunkParagraphs: chunkCloudSpeech,
     // One streaming while the next waits for its first audio, and no more:
     // providers limit concurrent requests per key, which several listeners
     // share on the server's.
@@ -192,5 +195,33 @@ export function createCloudSpeechPlayer(voice: () => CloudVoice): MediaSourcePla
     // With the screen locked, nothing recovers playback that stalls on an
     // empty buffer.
     bufferAheadSeconds: 60,
+  });
+}
+
+/** A player for cloud voices; `voice` is read for each chunk it synthesizes. */
+export function createCloudSpeechPlayer(voice: () => CloudVoice): MediaSourcePlayer {
+  return createPlayer((text, signal) => {
+    const { model, voice: voiceId, pauseSeconds } = voice();
+    return streamSpeechResponse(
+      () =>
+        fetch(SPEECH_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model, voice: voiceId, text, pauseSeconds }),
+          signal,
+        }),
+      signal
+    );
+  });
+}
+
+/**
+ * A player for a cloud voice's recordings (see `./prerecorded-speech`): it
+ * plays what the cloud voice player would, without synthesizing anything.
+ */
+export function createPrerecordedSpeechPlayer(voice: PrerecordedVoice): MediaSourcePlayer {
+  return createPlayer(async function* (text, signal) {
+    const key = await prerecordedSpeechKey(voice, text);
+    yield* streamSpeechResponse(() => fetch(prerecordedSpeechUrl(key), { signal }), signal);
   });
 }
