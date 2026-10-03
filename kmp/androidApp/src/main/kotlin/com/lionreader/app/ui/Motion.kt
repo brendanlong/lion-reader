@@ -6,10 +6,10 @@ import androidx.compose.ui.MotionDurationScale
 
 /**
  * How fast every Compose animation in the app runs: the system's animation scale, or none at all
- * when the settings turn animations off ([com.lionreader.app.AppSettings.animations]). Given to the
- * window's recomposer (MainActivity), which otherwise reads the system's scale itself; with no
- * animations, each one jumps straight to its end. So animations go off app-wide, not one by one:
- * only what this scale doesn't reach checks the setting itself (the screen transitions, whose
+ * when the settings turn animations off ([com.lionreader.shared.settings.AppSettings.animations]).
+ * Given to the window's recomposer (MainActivity), which otherwise reads the system's scale itself;
+ * with no animations, each one jumps straight to its end. So animations go off app-wide, not one by
+ * one: only what this scale doesn't reach checks the setting itself (the screen transitions, whose
  * predictive back follows the finger; the article pager's fling snap; the reader's scroll to the
  * narrated paragraph).
  */
