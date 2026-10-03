@@ -20,15 +20,15 @@ import { logger } from "@/lib/logger";
 import { processMarkdown as convertMarkdown } from "@/server/markdown";
 import { extractDocxCoreProperties } from "@/server/file/docx-core-props";
 import { convertDocxToHtml } from "@/server/file/docx-to-html";
+import {
+  SUPPORTED_UPLOAD_EXTENSIONS,
+  UPLOAD_FILE_TYPES,
+  type SupportedFileType,
+} from "@/lib/upload-file-types";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Supported file types for upload.
- */
-export type SupportedFileType = "docx" | "html" | "markdown";
 
 /**
  * Raw content produced by converting an uploaded file. Fed to `buildArticleFields`
@@ -67,20 +67,8 @@ export interface ConvertedUpload {
  */
 export function detectFileType(filename: string): SupportedFileType | null {
   const lower = filename.toLowerCase();
-
-  if (lower.endsWith(".docx")) {
-    return "docx";
-  }
-  if (lower.endsWith(".html") || lower.endsWith(".htm")) {
-    return "html";
-  }
-  // Treat both markdown and plain text as markdown - the markdown processor
-  // handles plain text fine (it just renders it as-is, wrapped in paragraphs)
-  if (lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".txt")) {
-    return "markdown";
-  }
-
-  return null;
+  const ext = SUPPORTED_UPLOAD_EXTENSIONS.find((e) => lower.endsWith(e));
+  return ext ? UPLOAD_FILE_TYPES[ext] : null;
 }
 
 /**
@@ -170,7 +158,7 @@ export async function convertUploadedFile(
 
   if (!fileType) {
     throw new Error(
-      `Unsupported file type. Supported types: .docx, .html, .htm, .md, .markdown, .txt`
+      `Unsupported file type. Supported types: ${SUPPORTED_UPLOAD_EXTENSIONS.join(", ")}`
     );
   }
 
