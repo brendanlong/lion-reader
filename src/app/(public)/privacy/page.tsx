@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="October 2, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="October 3, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -42,9 +42,9 @@ export default function PrivacyPolicyPage() {
           <LegalSubsection title="Account Information">
             <LegalParagraph tight>
               When you create an account, we collect your email address and password. Passwords are
-              securely hashed using argon2 (industry-standard). If you sign in with Google or Apple,
-              we receive only your email address and profile ID from those providers—we do not
-              access any other data from your OAuth accounts.
+              securely hashed using argon2 (industry-standard). If you sign in with Google, Apple,
+              or Discord, we store your email address and account ID from that provider, plus the
+              sign-in tokens it issues (see Authentication Providers below).
             </LegalParagraph>
           </LegalSubsection>
           <LegalSubsection title="Session Information">
@@ -122,7 +122,7 @@ export default function PrivacyPolicyPage() {
           <li>
             <strong>User information:</strong> Email addresses, account creation dates, linked
             sign-in providers (e.g., Google, Apple, Discord), number of feed subscriptions, number
-            of entries, and scoring model statistics
+            of entries, and when the account was last active in the app or through the API
           </li>
           <li>
             <strong>Feed health data:</strong> Feed URLs, titles, fetch error details, subscriber
@@ -297,13 +297,47 @@ export default function PrivacyPolicyPage() {
             </LegalParagraph>
           </LegalSubsection>
 
+          <LegalSubsection title="Content Delivery Network (Bunny.net)">
+            <LegalParagraph tight>
+              The app&apos;s static files (code, styles, fonts, and the demo&apos;s pre-recorded
+              audio) are served from Bunny.net&apos;s content delivery network (cdn.lionreader.com),
+              using only servers in the United States. Your browser fetches these files directly
+              from Bunny.net, so Bunny.net sees your IP address and browser user agent, as with any
+              download, and may keep them in its request logs under its own policy. These files are
+              the same for everyone; no account information, reading activity, or article content
+              passes through the CDN.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink href="https://bunny.net/privacy/" external className="ui-text-sm">
+                View Bunny.net&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
+          </LegalSubsection>
+
           <LegalSubsection title="Error Tracking (Sentry)">
             <LegalParagraph tight>
-              We use Sentry to track application errors and performance issues. Sentry may receive
-              error messages, stack traces, and limited context about the operation that failed
-              (e.g., which page you were on). We do not send article content or feed data to Sentry,
-              and we configure both Sentry and our own code not to store your IP address.
+              We use Sentry to find and fix errors and performance problems. When something goes
+              wrong, in your browser or on our servers, Sentry receives the error message and where
+              in our code it happened, along with what led up to it: the pages you visited, the
+              requests the app made, the buttons and links you clicked, and messages the app logged.
+              Errors on our servers include your account ID so we can investigate problems affecting
+              a particular account. For a sample of page loads, Sentry also receives timing data
+              about the page and the requests it made. We do not record your sessions or screen, and
+              we configure both Sentry and our own code not to store your IP address.
             </LegalParagraph>
+            <LegalParagraph tight>
+              <strong>Sentry can see what you were reading.</strong> Error reports and timing data
+              include web addresses: of the pages you visited and of the requests the app made.
+              Depending on what you were doing, these can include the address of an article you
+              saved, a feed you previewed, your search terms, an internal ID for the article or feed
+              you had open, and the name of a feed whose button you clicked. We use this only to fix
+              problems, and Sentry keeps it for 30 days.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink href="https://sentry.io/privacy/" external className="ui-text-sm">
+                View Sentry&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
           </LegalSubsection>
 
           <LegalSubsection title="Monitoring (Grafana Cloud)">
@@ -317,9 +351,34 @@ export default function PrivacyPolicyPage() {
           <LegalSubsection title="Authentication Providers (Google, Apple, Discord)">
             <LegalParagraph tight>
               If you choose to sign in with Google, Apple, or Discord, we use their OAuth services.
-              We only receive your email address and profile ID—we do not access any other data from
-              these providers.
+              We store your email address and account ID from the provider, plus the tokens it
+              issues at sign-in. The providers also share your name (and Google your profile
+              picture, Discord your username and avatar); we do not store these. We use the stored
+              tokens only for Google Docs saving, described below.
             </LegalParagraph>
+          </LegalSubsection>
+
+          <LegalSubsection title="Google Docs Saving (Google) — Optional">
+            <LegalParagraph tight>
+              <strong>Only if you save a Google Doc.</strong> When you save a Google Doc (from the
+              browser extension, the save page, or the bookmarklet) and we don&apos;t yet have
+              access, we ask Google for read-only access to your Google Docs and to{" "}
+              <strong>all files in your Google Drive</strong> (Google describes this as &quot;See
+              and download all your Google Drive files&quot;). Drive access is needed to import
+              uploaded Word documents. We use this access only to download the specific documents
+              you choose to save, including saves made later through the extension or an app
+              connected to your account, and we never modify or delete your files.
+            </LegalParagraph>
+            <LegalParagraph tight>
+              You can revoke this access at any time in your Google account settings. Unlinking
+              Google in Lion Reader&apos;s settings also deletes the stored tokens; if Google is
+              your only way to sign in, set a password or link another sign-in method first.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink href="https://policies.google.com/privacy" external className="ui-text-sm">
+                View Google&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
           </LegalSubsection>
 
           <LegalSubsection title="Discord Bot — Optional">

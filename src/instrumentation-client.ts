@@ -24,17 +24,6 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     // Setting this option to true will print useful information to the console while you're setting up Sentry.
     debug: false,
 
-    // Session Replay. The sample rates below do nothing without this
-    // integration being registered.
-    integrations: [Sentry.replayIntegration()],
-
-    // Enable replay for 10% of sessions
-    replaysSessionSampleRate: 0.1,
-
-    // If you're not already sampling the entire session, change the sample rate to 100%
-    // when sampling sessions where errors occur.
-    replaysOnErrorSampleRate: 1.0,
-
     // Environment tag for filtering
     environment: process.env.NODE_ENV,
 
