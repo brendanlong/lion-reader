@@ -20,7 +20,9 @@ works is in the KDoc of the class doing it.
 - No custom URL scheme for sign-in: any app can register one and finish a
   sign-in under our client id. The redirect is a verified App Link.
 - Token refresh is serialized through `AppAuth`'s mutex (refresh tokens rotate;
-  reuse revokes the family), so the process shares `AppGraph`'s one `AppAuth`.
+  reuse revokes the family), so the process shares `AppGraph`'s one `AppAuth`,
+  and the new pair is on disk before it's used. Only a 400/401 from the token
+  endpoint signs the user out; anything else is transient.
 - SQL targets SQLite 3.18 (minSdk 26's), SQLDelight's default dialect: no
   UPSERT. Use insert-or-ignore + update, not `INSERT OR REPLACE`, which deletes
   the row (and its downloaded body, and gives it a new rowid, which the search
@@ -97,10 +99,8 @@ covers the debug app.
 
 ## Releases
 
-Release builds are signed with the upload key from CI secrets, versioned from
-their `android-vX.Y.Z` tag, and shrunk with R8; CI builds the release variant
-on every pull request. Setup, steps and trying R8 on a device: "Android app
-releases" in `docs/DEPLOYMENT.md`.
+How release builds are signed, versioned and shrunk, how to cut one, and how to
+try R8 on a device: "Android app releases" in `docs/DEPLOYMENT.md`.
 
 ## Running against a dev server
 
