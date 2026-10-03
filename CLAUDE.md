@@ -21,6 +21,17 @@ Docs (this file, per-directory `CLAUDE.md`s, `docs/`) explain **why and where**;
 - **No history** unless it prevents repeating a mistake ("don't do X, it caused bug Y"). Describe the current state, never the change that got us here ("the old A is gone", "B replaced A").
 - **No non-decisions**: don't document things we haven't done or have merely deferred — that reads as a commitment to never do them.
 - Keep docs current **both ways**: when you change code whose docs are stale, or notice bloat/duplication, fix the docs in the same change — pruning is as valuable as adding.
+- **How something works goes in a comment/KDoc on the code doing it**, not in a doc. When a doc paragraph restates code, move any fact the code doesn't already say into a comment there and delete the paragraph.
+- **No per-machine setup** (SDK installs, shared-host paths, `$HOME` overrides): it lives with the machine. Docs say only what the build needs (e.g. "`ANDROID_HOME` or `sdk.dir`").
+- When you rename or remove a doc section, grep for comments pointing at it.
+
+### `CLAUDE.md` files
+
+Every `CLAUDE.md` is loaded into context whenever an agent works in its directory, so each line costs every future session. Keep them to rules:
+
+- A rule goes in the `CLAUDE.md` that auto-loads where it applies (the deepest directory covering all the code it governs); this root file only holds what applies everywhere. Long runbooks needed rarely (ops, scaling) go in `docs/` with a pointer, not in a file that loads on every edit.
+- Write each rule as an instruction, with its reason only when the reason stops a mistake ("no `INSERT OR REPLACE`: it deletes the row"). No architecture tours, file tables, or command output.
+- Before adding a line, check whether the code, a lint rule, or a test already enforces it; if so, don't write it down. Prefer turning a rule into a check (lint, knip, test) over writing it here.
 
 ## Toolchain
 
@@ -52,8 +63,19 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 - **Queries**: Avoid N+1 queries; use joins or batch fetching
 - **UI**: Use optimistic updates for responsive UX
 - **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes
-- Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
+- **Shared constants**: a value that must agree in more than one place (a lifetime, a length cap, a TTL used by both a cookie and Redis) is one exported named constant that every use imports — never an inline literal like `30 * 24 * 60 * 60` repeated elsewhere. If two places must stay equal, make them use the same constant rather than writing a test that they match.
 - Don't create barrel files, prefer direct imports within our code
+
+## Tests (all languages)
+
+- Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
+- **Don't pin tunable constants.** A test that fails only because someone deliberately retuned a value is noise: import the constant (export it if needed) and assert relative to it — the boundary is at `MAX_X`/`MAX_X + 1` — and keep the assertion exact, not weakened to "is positive". Do hardcode values something outside our code depends on (wire/protocol formats, storage/cookie key names) and policy defaults (privacy settings, the 44px touch target).
+- **Every test must be able to catch a bug nobody else catches.** Don't add:
+  - duplicates of a code path and input class already covered (at another level, or in a native crate's own tests — keep the Rust copy); collapse trivial variants into one case or `it.each`
+  - circular tests that write data and read it back without calling app code, or test a pasted copy of production code
+  - assertions on styling classes, snapshots of static tables, prop pass-through, or `instanceof` checks
+- Always keep security tests (sanitizer, SSRF, auth/scopes, cross-user) and issue-referenced regression tests; when deduplicating, move the issue reference to the surviving copy.
+- Concurrent tests assert only what every interleaving guarantees (e.g. "exactly one row", not "both requests missed the cache").
 
 ## Git
 
