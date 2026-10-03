@@ -11,7 +11,7 @@ import { generateKeyPair, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
-import { OAUTH_STATE_TTL_SECONDS } from "../../src/server/auth/oauth/token-exchange";
+import { OAUTH_STATE_TTL_SECONDS } from "../../src/server/auth/oauth/state-cookie";
 
 const GOOGLE_ISSUER = "https://accounts.google.com";
 const GOOGLE_CLIENT_ID = "test-client-id";

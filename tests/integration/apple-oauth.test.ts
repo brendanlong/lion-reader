@@ -16,7 +16,7 @@ import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
-import { OAUTH_STATE_TTL_SECONDS } from "../../src/server/auth/oauth/token-exchange";
+import { OAUTH_STATE_TTL_SECONDS } from "../../src/server/auth/oauth/state-cookie";
 
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";

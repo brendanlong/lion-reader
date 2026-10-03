@@ -18,7 +18,8 @@
 
 const SESSION_COOKIE_NAME = "session";
 
-export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
+/** Lifetime of a session: both its database expiry and the cookie that carries it. */
+export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 function secureSuffix(): string {
   return process.env.NODE_ENV === "production" ? "; Secure" : "";

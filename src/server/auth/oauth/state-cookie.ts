@@ -36,8 +36,11 @@ import type { NextRequest, NextResponse } from "next/server";
 
 export const OAUTH_STATE_COOKIE_NAME = "oauth_state";
 
-/** Matches the 10-minute Redis TTL of the state / PKCE verifier. */
-const OAUTH_STATE_MAX_AGE_SECONDS = 600;
+/**
+ * How long a user has to finish an OAuth flow: both the Redis TTL of the state /
+ * PKCE verifier and the lifetime of this cookie.
+ */
+export const OAUTH_STATE_TTL_SECONDS = 600;
 
 /** `SameSite` policy: `lax` for GET-redirect providers, `none` for Apple's form_post. */
 export type OAuthStateSameSite = "lax" | "none";
@@ -68,7 +71,7 @@ export function setOAuthStateCookie(
   const secureSuffix = secure(sameSite) ? "; Secure" : "";
   resHeaders.append(
     "Set-Cookie",
-    `${OAUTH_STATE_COOKIE_NAME}=${state}; Path=/; Max-Age=${OAUTH_STATE_MAX_AGE_SECONDS}; SameSite=${sameSiteAttr(sameSite)}; HttpOnly${secureSuffix}`
+    `${OAUTH_STATE_COOKIE_NAME}=${state}; Path=/; Max-Age=${OAUTH_STATE_TTL_SECONDS}; SameSite=${sameSiteAttr(sameSite)}; HttpOnly${secureSuffix}`
   );
 }
 

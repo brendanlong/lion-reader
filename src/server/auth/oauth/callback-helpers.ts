@@ -14,6 +14,7 @@ import { createSession, isSessionActive } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { extractClientInfo } from "@/server/http/client-ip";
 import { clearOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
+import { SESSION_MAX_AGE_SECONDS } from "@/server/auth/session-cookie";
 import { linkOAuthAccount } from "@/server/services/oauth-accounts";
 import type { OAuthLinkTarget, OAuthProviderName } from "@/server/auth/oauth/config";
 
@@ -123,12 +124,12 @@ export async function createSessionResponse(
     options?.redirectStatus
   );
 
-  // Set session cookie (30 days). The token is `httpOnly` so it is never exposed
+  // Set session cookie. The token is `httpOnly` so it is never exposed
   // to JS (issue #1088); `secure` in production. See "Sessions" in
   // src/server/auth/CLAUDE.md.
   response.cookies.set("session", token, {
     path: "/",
-    maxAge: 30 * 24 * 60 * 60,
+    maxAge: SESSION_MAX_AGE_SECONDS,
     sameSite: "lax",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
