@@ -29,7 +29,11 @@ import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getFiltersFromPathname } from "@/lib/queries/entries-list-input";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
-import { extractParamsFromPathname } from "@/lib/navigation";
+import {
+  extractParamsFromPathname,
+  isStaticEntryListPathname,
+  type StaticEntryListPathname,
+} from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { findCachedSubscription } from "@/lib/cache/count-cache";
@@ -74,7 +78,7 @@ const UNCATEGORIZED_ROUTE: RouteInfo = {
   markAllReadDescription: "uncategorized feeds",
 };
 
-const STATIC_ROUTES: Record<string, RouteInfo> = {
+const STATIC_ROUTES: Record<StaticEntryListPathname, RouteInfo> = {
   "/all": ALL_ROUTE,
   "/starred": {
     viewId: "starred",
@@ -109,7 +113,7 @@ function useRouteInfo(): RouteInfo {
   const pathname = useAppPathname();
 
   return useMemo(() => {
-    if (Object.hasOwn(STATIC_ROUTES, pathname)) return STATIC_ROUTES[pathname];
+    if (isStaticEntryListPathname(pathname)) return STATIC_ROUTES[pathname];
 
     const { subscriptionId, tagId } = extractParamsFromPathname(pathname);
     if (subscriptionId) {

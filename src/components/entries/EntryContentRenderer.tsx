@@ -10,6 +10,8 @@
 
 import React, { useCallback, useRef } from "react";
 import { useImagePrefetch } from "@/lib/hooks/useImagePrefetch";
+import { useRouteBase } from "@/lib/hooks/useAppLocation";
+import { handleContentLinkClick } from "@/lib/navigation";
 
 interface EntryContentRendererProps {
   /** Sanitized HTML content to render */
@@ -54,13 +56,23 @@ export const EntryContentRenderer = React.memo(function EntryContentRenderer({
 
   useImagePrefetch(internalRef, sanitizedContent);
 
+  // Links between articles (the demo's cross-links) stay inside the SPA.
+  const routeBase = useRouteBase();
+  const handleClick = useCallback(
+    (event: React.MouseEvent) => {
+      onClick?.(event);
+      handleContentLinkClick(event, routeBase);
+    },
+    [onClick, routeBase]
+  );
+
   if (sanitizedContent) {
     return (
       <div
         ref={setContentRef}
         className={`${textSizeClass} reader-prose prose-headings:font-semibold prose-headings:text-zinc-900 dark:prose-headings:text-zinc-100 prose-a:text-accent prose-a:underline-offset-2 prose-img:rounded-lg prose-pre:overflow-x-auto prose-pre:whitespace-pre-wrap prose-pre:break-words prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800 prose-code:text-zinc-800 dark:prose-code:text-zinc-200 prose-code:before:content-none prose-code:after:content-none prose-blockquote:border-l-zinc-300 dark:prose-blockquote:border-l-zinc-600 prose-blockquote:text-zinc-600 dark:prose-blockquote:text-zinc-400 max-w-none`}
         style={textStyle}
-        onClick={onClick}
+        onClick={handleClick}
         dangerouslySetInnerHTML={{ __html: sanitizedContent }}
       />
     );
