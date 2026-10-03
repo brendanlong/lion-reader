@@ -585,7 +585,7 @@ export const subscriptionsRouter = createTRPCRouter({
           method: unsubscribeResult.method,
         });
 
-        // 2. Get the mailto URL used for unsubscribe (for potential retry)
+        // 2. Record the sender's mailto unsubscribe URL on the blocked sender
         const listUnsubscribeMailto = await getLatestUnsubscribeMailto(feed.id);
 
         blockedSenderValues = {
