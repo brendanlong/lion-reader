@@ -5,7 +5,8 @@
  * If no token exists, opens the web auth flow to get one.
  */
 
-import { getApiToken, getServerUrl, getWebAuthUrl } from "./constants.js";
+import { needsWebAuthFlow, saveArticle } from "./api.js";
+import { getApiToken, getWebAuthUrl } from "./constants.js";
 
 // DOM Elements
 const loadingEl = document.getElementById("loading");
@@ -58,50 +59,6 @@ function startCountdown(seconds = 3) {
 }
 
 /**
- * Save the article using the API with Bearer token auth.
- */
-async function saveWithToken(url, title, token) {
-  const serverUrl = await getServerUrl();
-  const apiUrl = `${serverUrl}/api/v1/saved`;
-
-  const body = { url };
-  if (title) body.title = title;
-
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-
-    // Token might be expired or revoked
-    if (response.status === 401) {
-      // Clear the invalid token
-      await chrome.storage.sync.remove(["apiToken"]);
-      throw new Error("TOKEN_EXPIRED");
-    }
-
-    // Extract error message from tRPC response format
-    // trpc-to-openapi returns { message: "...", code: "..." } at top level
-    const errorMessage = data.message || data.error?.message || `HTTP ${response.status}`;
-
-    // Check if site blocked the request (502 Bad Gateway from our server)
-    if (response.status === 502 || errorMessage.includes("blocked the request")) {
-      throw new Error("SITE_BLOCKED");
-    }
-
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
-}
-
-/**
  * Open the web auth flow to get a new token.
  * The background script will detect the callback and store the token.
  */
@@ -142,7 +99,7 @@ async function save() {
 
     // Try to save with the token
     try {
-      const result = await saveWithToken(currentUrl, currentTitle, token);
+      const result = await saveArticle(currentUrl, currentTitle, token);
 
       // Show success
       showState("success");
@@ -155,17 +112,7 @@ async function save() {
 
       startCountdown(3);
     } catch (err) {
-      if (err.message === "TOKEN_EXPIRED") {
-        // Token expired - start web auth flow to get a new one
-        await startWebAuthFlow(currentUrl, currentTitle);
-        return;
-      }
-      if (
-        err.message === "NEEDS_DOCS_PERMISSION" ||
-        err.message === "NEEDS_GOOGLE_SIGNIN" ||
-        err.message === "NEEDS_GOOGLE_REAUTH"
-      ) {
-        // Need Google permission - redirect to web flow to grant it
+      if (needsWebAuthFlow(err)) {
         await startWebAuthFlow(currentUrl, currentTitle);
         return;
       }

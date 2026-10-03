@@ -9,47 +9,14 @@
  * - Badge updates
  */
 
-import { getApiToken, getServerUrl, getWebAuthUrl } from "./constants.js";
+import { needsWebAuthFlow, saveArticle } from "./api.js";
+import { getApiToken, getWebAuthUrl } from "./constants.js";
 
 /**
  * Store the API token.
  */
 async function setApiToken(token) {
   await chrome.storage.sync.set({ apiToken: token });
-}
-
-/**
- * Save an article to Lion Reader using Bearer token auth.
- */
-async function saveArticle(url, title, token) {
-  const serverUrl = await getServerUrl();
-  const apiUrl = `${serverUrl}/api/v1/saved`;
-
-  const body = { url };
-  if (title) body.title = title;
-
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-
-    if (response.status === 401) {
-      // Token expired or revoked
-      await chrome.storage.sync.remove(["apiToken"]);
-      throw new Error("TOKEN_EXPIRED");
-    }
-
-    throw new Error(data.error?.message || `HTTP ${response.status}`);
-  }
-
-  return await response.json();
 }
 
 /**
@@ -74,7 +41,8 @@ async function setBadge(tabId, text, color, clearAfterMs) {
 
 /**
  * Save `url` using the stored token, reporting progress on the tab's badge.
- * Falls back to web auth flow if there is no token or it has expired.
+ * Falls back to the web auth flow if there is no token, it has expired, or
+ * Google permission is needed.
  */
 async function saveWithBadge(tabId, url, title, failureLog) {
   const token = await getApiToken();
@@ -92,7 +60,7 @@ async function saveWithBadge(tabId, url, title, failureLog) {
   } catch (err) {
     console.error(failureLog, err);
 
-    if (err.message === "TOKEN_EXPIRED") {
+    if (needsWebAuthFlow(err)) {
       await openWebAuthFlow(url, title);
       await chrome.action.setBadgeText({ text: "", tabId });
       return;
