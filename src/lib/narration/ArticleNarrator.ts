@@ -172,8 +172,7 @@ export class ArticleNarrator {
       if (this.isFirefoxBrowser) {
         // Firefox workaround: cancel instead of pause
         // We'll restart from the current paragraph on resume
-        speechSynthesis.cancel();
-        this.utterance = null;
+        this.cancelUtterance();
       } else {
         speechSynthesis.pause();
       }
@@ -213,8 +212,7 @@ export class ArticleNarrator {
 
     // Set status BEFORE cancel to prevent handleUtteranceEnd from auto-advancing
     this.setStatus("idle");
-    speechSynthesis.cancel();
-    this.utterance = null;
+    this.cancelUtterance();
     this.currentIndex = 0;
   }
 
@@ -315,8 +313,17 @@ export class ArticleNarrator {
     if (this.status === "paused" && !this.isFirefoxBrowser) {
       speechSynthesis.resume();
     }
-    speechSynthesis.cancel();
+    this.cancelUtterance();
+  }
+
+  /**
+   * Cancels the current utterance. Its reference is dropped first: engines
+   * deliver the cancelled utterance's end/error events late or from inside
+   * cancel() itself, and either way they must find it no longer current.
+   */
+  private cancelUtterance(): void {
     this.utterance = null;
+    speechSynthesis.cancel();
   }
 
   /**
@@ -335,10 +342,9 @@ export class ArticleNarrator {
     utterance.rate = this.rate;
     utterance.pitch = this.pitch;
 
-    // cancel() delivers the cancelled utterance's end/error events
-    // asynchronously, often after the next one has started (a skip, or play
-    // after a stop or a Firefox pause), so only the current utterance's
-    // events may advance or end the narration.
+    // A cancelled utterance's end/error events can arrive after the next one
+    // has started (a skip, or play after a stop or a Firefox pause), so only
+    // the current utterance's events may advance or end the narration.
     utterance.onend = () => {
       if (utterance === this.utterance) this.handleUtteranceEnd();
     };

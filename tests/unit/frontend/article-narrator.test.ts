@@ -5,8 +5,9 @@
 /**
  * `ArticleNarrator` against a fake `speechSynthesis` that, like real engines,
  * delivers a cancelled utterance's `end` event late — after the narrator has
- * already started the next utterance. A stale event must never advance the
- * narration, however late it arrives.
+ * already started the next utterance — or, in `deliverEndsOnCancel` mode, from
+ * inside `cancel()`. A stale event must never advance the narration, whenever
+ * it arrives.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -27,6 +28,8 @@ class FakeUtterance {
 /** Utterances spoken so far, and the cancelled ones whose `end` hasn't been delivered. */
 let spoken: FakeUtterance[];
 let cancelledPendingEnd: FakeUtterance[];
+/** Whether `cancel()` delivers the cancelled utterance's `end` before returning. */
+let deliverEndsOnCancel: boolean;
 
 function speaking(): FakeUtterance | undefined {
   return spoken[spoken.length - 1];
@@ -54,12 +57,14 @@ const ARTICLE = "First.\n\nSecond.\n\nThird.";
 beforeEach(() => {
   spoken = [];
   cancelledPendingEnd = [];
+  deliverEndsOnCancel = false;
   vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
   vi.stubGlobal("speechSynthesis", {
     speak: (utterance: FakeUtterance) => spoken.push(utterance),
     cancel: () => {
       const current = speaking();
       if (current && !cancelledPendingEnd.includes(current)) cancelledPendingEnd.push(current);
+      if (deliverEndsOnCancel) deliverStaleEnds();
     },
     pause: () => {},
     resume: () => {},
@@ -188,6 +193,17 @@ describe("ArticleNarrator", () => {
 
     narrator.play();
     deliverStaleEnds();
+
+    expect(narrator.getState()).toMatchObject({ status: "playing", currentParagraph: 1 });
+    expect(spoken.map((u) => u.text)).toEqual(["First.", "Second."]);
+  });
+
+  it("ignores an end delivered from inside cancel() on a skip", () => {
+    useBrowser(CHROME);
+    deliverEndsOnCancel = true;
+    const narrator = startedNarrator();
+
+    narrator.skipForward();
 
     expect(narrator.getState()).toMatchObject({ status: "playing", currentParagraph: 1 });
     expect(spoken.map((u) => u.text)).toEqual(["First.", "Second."]);
