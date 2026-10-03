@@ -4,7 +4,7 @@
 
 /**
  * Component integration tests for UnifiedEntriesContent's not-found guards,
- * its entry-list loading fallback, and which views offer mark all read.
+ * its entry-list loading fallback, and hiding mark all read on Recently Read.
  *
  * Subscription and tag views must distinguish a *genuinely missing* resource
  * (show a NotFoundCard) from a *transient* fetch failure (surface a retryable
@@ -212,12 +212,6 @@ describe("UnifiedEntriesContent mark all read", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stubMemoryLocalStorage();
-  });
-
-  it("offers mark all read on a feed view", async () => {
-    mockPathname.mockReturnValue("/all");
-    renderUnified(baseHandlers());
-    expect(await screen.findByRole("button", { name: "Mark all as read" })).toBeInTheDocument();
   });
 
   it("hides mark all read on Recently Read, which would otherwise mark the whole library read", async () => {

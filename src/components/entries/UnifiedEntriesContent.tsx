@@ -51,9 +51,9 @@ interface RouteInfo {
   /** Empty message when showing all entries */
   emptyMessageAll: string;
   /**
-   * Description for mark all read dialog; null hides the button where it has no
-   * sensible scope (Recently Read lists entries from every feed, so it would
-   * mark the whole library read).
+   * Description for mark all read dialog; null hides the button on views
+   * entries.markAllRead can't scope to (on Recently Read it would mark the
+   * whole library read).
    */
   markAllReadDescription: string | null;
 }

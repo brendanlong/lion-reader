@@ -1,7 +1,8 @@
 /**
  * EntryPageLayout Component
  *
- * Shared layout component for entry list pages (All, Starred, Saved, Subscription, Tag, Uncategorized).
+ * Shared layout component for entry list pages (All, Starred, Saved, Subscription, Tag,
+ * Uncategorized, Recently Read).
  * Handles the header with title and actions. Entry content and list are passed as slots.
  *
  * The buttons use non-suspending hooks directly, so they render immediately
