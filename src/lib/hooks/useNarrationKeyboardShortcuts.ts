@@ -6,8 +6,8 @@
  *
  * Keyboard shortcuts:
  * - p: Toggle play/pause
- * - Shift+N: Skip to next paragraph
- * - Shift+P: Skip to previous paragraph
+ * - ]: Skip to next paragraph
+ * - [: Skip to previous paragraph
  *
  * These shortcuts only work when:
  * - An article is open (narration controls are rendered)
@@ -20,6 +20,12 @@
 import { useHotkeys } from "react-hotkeys-hook";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import type { NarrationPhase } from "@/components/narration/useNarrationTypes";
+
+// [ and ] need AltGr (or Option) on many non-US layouts, so modifiers are
+// ignored when matching the produced character, but a Ctrl/Cmd chord without
+// AltGr is someone else's shortcut.
+const isBracketChord = (e: KeyboardEvent) =>
+  e.metaKey || (e.ctrlKey && !e.getModifierState("AltGraph"));
 
 /**
  * Narration control functions.
@@ -104,30 +110,36 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     [shouldPause, isGenerating, play, pause, baseEnabled]
   );
 
-  // Shift+N - Skip to next paragraph
+  // ] - Skip to next paragraph
   useHotkeys(
-    "shift+n",
+    "]",
     (e) => {
+      if (isBracketChord(e)) return;
       e.preventDefault();
       skipForward();
     },
     {
       enabled: baseEnabled && canSkipForward,
       enableOnFormTags: false,
+      useKey: true,
+      ignoreModifiers: true,
     },
     [skipForward, canSkipForward, baseEnabled]
   );
 
-  // Shift+P - Skip to previous paragraph
+  // [ - Skip to previous paragraph
   useHotkeys(
-    "shift+p",
+    "[",
     (e) => {
+      if (isBracketChord(e)) return;
       e.preventDefault();
       skipBackward();
     },
     {
       enabled: baseEnabled && canSkipBackward,
       enableOnFormTags: false,
+      useKey: true,
+      ignoreModifiers: true,
     },
     [skipBackward, canSkipBackward, baseEnabled]
   );

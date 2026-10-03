@@ -208,6 +208,8 @@ export function useEntryMutations(): UseEntryMutationsResult {
     onSuccess: (_data, variables) => {
       utils.entries.list.invalidate();
       utils.subscriptions.list.invalidate();
+      // The sidebar keeps listing the open subscription from this once it's read
+      utils.subscriptions.get.invalidate();
       utils.tags.list.invalidate();
 
       // All Articles count is always affected

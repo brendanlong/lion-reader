@@ -26,6 +26,11 @@ export interface DialogProps {
   className?: string;
 }
 
+/** Whether a `Dialog` is open, for page-level shortcuts that must not act behind one. */
+export function isDialogOpen(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null;
+}
+
 /**
  * Dialog container that handles backdrop, focus trap, escape key, and scroll lock.
  *

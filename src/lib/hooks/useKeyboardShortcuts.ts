@@ -6,6 +6,7 @@
  *
  * Features:
  * - j/k navigation (next/previous entry in list, or navigate between entries when viewing)
+ * - Shift+J/Shift+K (or Shift+N/Shift+P) to go to the next/previous sidebar tag or subscription
  * - o/Enter to open selected entry
  * - Escape to close entry or deselect
  * - m to toggle read/unread
@@ -26,6 +27,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
 import { useAppHref } from "./useAppLocation";
+import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
 
 /**
  * Entry data needed for keyboard actions.
@@ -353,6 +355,27 @@ export function useKeyboardShortcuts(
       enableOnFormTags: false,
     },
     [selectPrevious, onNavigatePrevious, isEntryOpen, enabled]
+  );
+
+  // Shift+J / Shift+K - next/previous tag or subscription. Shift+N / Shift+P
+  // are Google Reader's keys for the same thing.
+  useHotkeys(
+    "shift+j, shift+n",
+    (e) => {
+      e.preventDefault();
+      goToSidebarFeed(1);
+    },
+    { enabled, enableOnFormTags: false },
+    [enabled]
+  );
+  useHotkeys(
+    "shift+k, shift+p",
+    (e) => {
+      e.preventDefault();
+      goToSidebarFeed(-1);
+    },
+    { enabled, enableOnFormTags: false },
+    [enabled]
   );
 
   // o / Enter - open selected entry (only when entry is not open)

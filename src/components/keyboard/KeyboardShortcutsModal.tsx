@@ -40,6 +40,8 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { keys: ["o"], description: "Open selected entry" },
       { keys: ["Enter"], description: "Open selected entry" },
       { keys: ["Escape"], description: "Close entry / deselect" },
+      { keys: ["Shift+J"], description: "Next subscription or tag (also Shift+N)" },
+      { keys: ["Shift+K"], description: "Previous subscription or tag (also Shift+P)" },
       { keys: ["g", "a"], description: "Go to All items" },
       { keys: ["g", "s"], description: "Go to Starred items" },
       { keys: ["g", "l"], description: "Go to Saved items" },
@@ -50,6 +52,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
     shortcuts: [
       { keys: ["m"], description: "Toggle read/unread" },
       { keys: ["s"], description: "Toggle star" },
+      { keys: ["Shift+A"], description: "Mark all as read" },
       { keys: ["u"], description: "Toggle show/hide read items" },
       { keys: ["v"], description: "Open original URL in new tab" },
       { keys: ["r"], description: "Refresh current view" },
@@ -60,8 +63,8 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
     title: "Narration",
     shortcuts: [
       { keys: ["p"], description: "Toggle play/pause" },
-      { keys: ["Shift+N"], description: "Skip to next paragraph" },
-      { keys: ["Shift+P"], description: "Skip to previous paragraph" },
+      { keys: ["]"], description: "Skip to next paragraph" },
+      { keys: ["["], description: "Skip to previous paragraph" },
     ],
   },
   {

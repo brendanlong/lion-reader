@@ -218,6 +218,15 @@ describe("handleSubscriptionDeleted", () => {
     expect(findCachedSubscription(queryClient, "sub-2") !== undefined).toBe(true);
   });
 
+  it("drops the deleted subscription's subscriptions.get data", () => {
+    // Otherwise the sidebar keeps listing it while its page is open.
+    setUtilsData(utils.subscriptions.get, { id: "sub-1" }, { id: "sub-1", unreadCount: 5 });
+
+    handleSubscriptionDeleted(utils, "sub-1", queryClient);
+
+    expect(getUtilsData(utils.subscriptions.get, { id: "sub-1" })).toBeUndefined();
+  });
+
   it("handles deletion of non-existent subscription gracefully", () => {
     seedSubscription(queryClient, { id: "sub-2", unreadCount: 10, tags: [] });
 
@@ -259,6 +268,22 @@ describe("setEntryRelatedCounts saved-count handling", () => {
     setEntryRelatedCounts(utils, baseCounts, queryClient);
 
     expect(utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 4 });
+  });
+
+  it("updates the open subscription's subscriptions.get unread count", () => {
+    // The sidebar lists the open subscription from this once it's read.
+    setUtilsData(utils.subscriptions.get, { id: "sub-1" }, { id: "sub-1", unreadCount: 5 });
+
+    setEntryRelatedCounts(
+      utils,
+      { ...baseCounts, subscriptions: [{ id: "sub-1", unread: 2 }] },
+      queryClient
+    );
+
+    expect(getUtilsData(utils.subscriptions.get, { id: "sub-1" })).toEqual({
+      id: "sub-1",
+      unreadCount: 2,
+    });
   });
 
   it("writes the saved count when the event provides one", () => {

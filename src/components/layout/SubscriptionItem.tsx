@@ -51,6 +51,7 @@ export function SubscriptionItem({
         href={subHref}
         onNavigate={onClose}
         onPrefetch={onPrefetch}
+        aria-current={isActive ? "page" : undefined}
         className={`ui-text-sm flex min-h-[44px] min-w-0 flex-1 items-center justify-between rounded-md px-3 py-2 transition-colors ${
           isActive
             ? "control-outline bg-surface-muted text-body"

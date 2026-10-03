@@ -167,6 +167,7 @@ export function handleSyncEvent(
       utils.entries.count.invalidate();
       utils.tags.list.invalidate();
       utils.subscriptions.list.invalidate();
+      utils.subscriptions.get.invalidate();
       break;
 
     case "subscription_created": {

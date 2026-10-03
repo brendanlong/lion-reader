@@ -209,15 +209,15 @@ describe("NarrationControls paragraph position", () => {
     expect(nextButton()).toBeDisabled();
   });
 
-  it("enables Shift+P once a narration paragraph has been played", async () => {
+  it("enables [ once a narration paragraph has been played", async () => {
     renderHarness(SKEWED_HTML);
     await startNarration();
 
-    fireEvent.keyDown(document, { key: "N", code: "KeyN", shiftKey: true });
+    fireEvent.keyDown(document, { key: "]", code: "BracketRight" });
     await waitFor(() => expect(screen.getByText("2 of 7")).toBeInTheDocument());
 
-    // The DOM index is still 0 here, which would leave Shift+P disabled.
-    fireEvent.keyDown(document, { key: "P", code: "KeyP", shiftKey: true });
+    // The DOM index is still 0 here, which would leave [ disabled.
+    fireEvent.keyDown(document, { key: "[", code: "BracketLeft" });
     await waitFor(() => expect(screen.getByText("1 of 7")).toBeInTheDocument());
   });
 });
