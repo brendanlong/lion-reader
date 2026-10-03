@@ -3,6 +3,7 @@
 - `tests/unit/`: pure logic, no DB. `tests/integration/`: real Postgres/Redis. `tests/e2e/`: Playwright against a real app server (port 4983, `E2E_PORT` to override; CI runs it against the production build). Integration and e2e need the docker-compose services, or `pnpm services` + the `:local` scripts.
 - **No mocks of internal code** — structure logic to be pure, or refactor until it is.
 - **Test the live path, not a lookalike.** A test is not a reason for code in `src/` to exist (`pnpm knip:production` fails on it): assert against what production calls and delete the stray helper. Query helpers that only read rows back for assertions belong in the test file.
+- Don't assert pure-styling classes, snapshot static tables, check prop pass-through on native inputs, or bare `instanceof Error`; use `it.each` for trivial variants.
 - Seed integration rows with the factories in `tests/integration/helpers.ts`; extend one rather than writing a local `db.insert`.
 - Assert on Redis pub/sub with `tests/utils/pubsub.ts`. A test whose **setup** mutates through a service or tRPC caller must use `subscribeAndDrain`, never subscribe afterwards — the setup's own event can land inside the window under test (#1427).
 
