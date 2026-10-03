@@ -505,7 +505,8 @@ export async function streamSpeech(
       logger.warn("Speech provider refused", { model: model.id, error: error.message });
       throw speechRejection(model.provider, error, keys);
     }
-    // Unreachable, say: the client is told to come back later, as for a 503.
+    // A provider that couldn't be reached is busy too: the client is told to
+    // come back later, as for a 503.
     if (!(error instanceof ProviderBusyError) && classifyProviderError(error) === "busy") {
       throw new ProviderBusyError(error instanceof Error ? error.message : String(error), null);
     }
