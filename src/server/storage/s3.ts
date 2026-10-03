@@ -105,6 +105,15 @@ function getPublicUrl(key: string): string {
   return `https://${storageConfig.bucket}.s3.${storageConfig.region}.amazonaws.com/${key}`;
 }
 
+/**
+ * The public URL of an object, or null if no bucket is configured. Reading
+ * needs no credentials: the bucket is public.
+ */
+export function getPublicObjectUrl(key: string): string | null {
+  if (!storageConfig.publicUrlBase && !storageConfig.bucket) return null;
+  return getPublicUrl(key);
+}
+
 // ============================================================================
 // Image Upload
 // ============================================================================
@@ -203,25 +212,7 @@ async function uploadImage(
   const key = `${options.prefix}/${options.documentId}/${randomUUID()}.${getExtension(contentType)}`;
 
   try {
-    const response = await client.fetch(getObjectRequestUrl(key), {
-      method: "PUT",
-      headers: {
-        "Content-Type": contentType,
-        // Set cache control for public caching
-        "Cache-Control": "public, max-age=31536000, immutable",
-      },
-      // aws4fetch hashes the body for the SigV4 signature. Node's Buffer is a
-      // Uint8Array subclass, so pass it directly without copying; the cast
-      // narrows the generic's ArrayBufferLike to the ArrayBuffer that BodyInit
-      // requires.
-      body: data as Uint8Array<ArrayBuffer>,
-    });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`S3 PUT failed with status ${response.status}: ${detail.slice(0, 200)}`);
-    }
-
+    await putObject(client, key, data, contentType);
     const url = getPublicUrl(key);
 
     logger.debug("Image uploaded to storage", {
@@ -238,6 +229,52 @@ async function uploadImage(
     });
     return null;
   }
+}
+
+/**
+ * Stores `data` under `key`, to be cached forever: every key we write names
+ * content that never changes.
+ */
+async function putObject(
+  client: AwsClient,
+  key: string,
+  data: Uint8Array,
+  contentType: string
+): Promise<void> {
+  const response = await client.fetch(getObjectRequestUrl(key), {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=31536000, immutable",
+      // Tigris requires it, and Next's fetch can send a typed array chunked.
+      "Content-Length": String(data.byteLength),
+    },
+    // aws4fetch hashes the body for the SigV4 signature. Node's Buffer is a
+    // Uint8Array subclass, so pass it directly without copying; the cast
+    // narrows the generic's ArrayBufferLike to the ArrayBuffer that BodyInit
+    // requires.
+    body: data as Uint8Array<ArrayBuffer>,
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`S3 PUT failed with status ${response.status}: ${detail.slice(0, 200)}`);
+  }
+}
+
+function requireS3Client(): AwsClient {
+  const client = getS3Client();
+  if (!client) throw new Error("Object storage isn't configured (STORAGE_* env vars)");
+  return client;
+}
+
+/** Stores `data` under `key`; throws if storage isn't configured or refuses. */
+export async function uploadObject(
+  key: string,
+  data: Uint8Array,
+  contentType: string
+): Promise<void> {
+  await putObject(requireS3Client(), key, data, contentType);
 }
 
 /**

@@ -55,10 +55,11 @@ import { DEMO_BASE_PATH } from "@/lib/routes";
 import { createDemoStore } from "./store";
 import { buildDemoDehydratedState } from "./seed";
 import { demoEntrySlots } from "./DemoEntrySlots";
+import { DEMO_NARRATION_VOICE } from "./narration";
 
 const ENTRY_CONTENT_OPTIONS: EntryContentOptions = {
-  // Narration generation is a server feature; the demo has no backend.
-  hideNarration: true,
+  // The demo has no server to synthesize speech, so it plays recordings.
+  prerecordedNarration: DEMO_NARRATION_VOICE,
   // A prerendered page can't know the visitor's zone. Formatting the article
   // date in a common one keeps the post-hydration switch to local time a small
   // correction for most visitors rather than a jump from the host's UTC.

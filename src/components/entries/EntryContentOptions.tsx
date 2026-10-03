@@ -9,6 +9,7 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
+import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 export interface EntryContentSlots {
   /** Rendered between the header and the article body (after the summary card). */
@@ -18,8 +19,14 @@ export interface EntryContentSlots {
 }
 
 export interface EntryContentOptions {
-  /** Hide the narration controls (where narration generation isn't available). */
-  hideNarration?: boolean;
+  /**
+   * Narrate only with recordings in this voice
+   * (`@/lib/narration/prerecorded-speech`), for where there's no session to
+   * synthesize speech for. The visitor's settings still
+   * decide what applies at playback: whether narration shows, rate, and
+   * highlighting.
+   */
+  prerecordedNarration?: PrerecordedVoice;
   /**
    * IANA zone the article date is formatted in during a *server* render. A
    * prerendered page can't know the visitor's zone; picking a likely one keeps

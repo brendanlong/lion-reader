@@ -6,14 +6,15 @@ Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserA
 
 Decode fetched (or pushed/uploaded) bodies to text with `decodeBody` (`charset.ts`, precedence documented there) — never `buffer.toString()`, which reads every legacy windows-1252/Latin-1 page or feed as U+FFFD (#1546). `readResponseWithSizeLimit` already does this; callers holding raw bytes must keep the `Content-Type` alongside them.
 
-## CDN (static assets + demo images)
+## CDN (static assets, demo images, recorded narration)
 
 The Bunny pull zone (`ASSET_PREFIX`, set via `[build.args]` in `fly.toml`) wraps the **whole site** as its origin and honors origin `Cache-Control`, so what it actually caches is decided by the headers we send, not by which paths it can reach:
 
 - **`/_next/static`** — content-hashed, served via Next's `assetPrefix` with `immutable`. No purge/deploy coordination; anything `import`ed into the app (images included) lands here and inherits that.
+- **`/api/prerecorded-speech/<key>`** — the demo's recorded narration, which the player fetches through the CDN by `NEXT_PUBLIC_ASSET_PREFIX` (CORS `*`, `immutable`; a key is a hash of what the recording says). Anything else client code wants CDN-cached goes the same way: an absolute CDN URL, a constant CORS header, and `connect-src` (which already allows the CDN).
 - **HTML + RSC** — never CDN-cached. Dynamic pages keep Next's default `private, no-store`. Next stamps `s-maxage=31536000` on the statically-prerendered public pages (issue #1359) and their RSC payloads; `src/proxy.ts` overrides it to `private, no-cache` on the same `isPublicStaticPath` responses where it sets the static CSP. (This works at the source: Next's `sendRenderResult` only stamps its own Cache-Control when none is already set, so the middleware header wins — no custom-server rewrite needed.) That HTML/RSC is build-coupled (hashed chunks vanish on deploy; RSC Flight payloads version-skew), and — since Bunny already keys its cache on `_rsc` and `entry` — an edge-cached copy would also bypass the maintenance gate in `scripts/server.ts` (#1318). `private` keeps it out of shared caches; `no-cache` lets the browser revalidate so a deploy can't leave it booting a stale document (Next doesn't self-heal missing bootstrap chunks on an initial load), and a revalidation during maintenance hits the 503 gate. See docs/DEPLOYMENT.md, "Why HTML and RSC are not CDN-cached".
 
-When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font directives (`img-src` already allows any https, so CDN-served demo images need no CSP change).
+When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font/connect directives (`img-src` already allows any https, so CDN-served demo images need no CSP change).
 
 Our chunks load from the CDN without CORS, and the browser resolves an `import()` in such a script against `about:blank`. So any URL that client code (or a library it configures, like ONNX Runtime's `wasmPaths`) passes to `import()` at runtime must be absolute — `${location.origin}/…` for files in `public/`. A root-relative path works locally and in CI (no `ASSET_PREFIX`) and fails only in production.
 

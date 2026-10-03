@@ -469,7 +469,12 @@ const SPEECH_TIMEOUT_MS = 120_000;
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
-  options: SpeechChoice & { text: string; pauseSeconds?: number },
+  options: SpeechChoice & {
+    text: string;
+    pauseSeconds?: number;
+    /** Refuse rather than fall back to the default model or voice. */
+    exact?: boolean;
+  },
   signal?: AbortSignal
 ): Promise<ReadableStream<Uint8Array>> {
   const catalog = await listSpeechModels(keys, options);
@@ -479,6 +484,12 @@ export async function streamSpeech(
     throw new SpeechUnavailableError(
       `Couldn't check the voice with ${aiProviderName(model.provider)}; try again shortly`
     );
+  }
+  if (
+    options.exact &&
+    (model.id !== normalizeModelRef(options.model ?? "") || voice !== options.voice)
+  ) {
+    throw new SpeechRequestError(`${options.model} voice ${options.voice} isn't available`);
   }
   const apiKey = getProviderApiKey(model.provider, keys);
   if (!apiKey) {

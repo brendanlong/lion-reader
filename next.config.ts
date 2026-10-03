@@ -106,6 +106,9 @@ const nextConfig: NextConfig = {
   // content-hashed and served `immutable`, so the CDN needs no purging or deploy
   // coordination; files in public/ are unaffected (they stay origin-served).
   assetPrefix: process.env.ASSET_PREFIX || undefined,
+  // For client code fetching through the CDN what isn't under /_next/static
+  // (recorded narration: src/lib/narration/prerecorded-speech.ts).
+  env: { NEXT_PUBLIC_ASSET_PREFIX: process.env.ASSET_PREFIX ?? "" },
   // Emit .next/standalone with a traced, minimal node_modules — the production
   // image ships that instead of the full pruned node_modules (issue #1305).
   // Our custom server (dist/server.js) keeps `next` external and resolves it
