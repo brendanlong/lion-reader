@@ -62,7 +62,7 @@ The app, worker, and Discord bot are separate, independently scaled Fly process 
 
 1. **Stateless app servers**: All state in Postgres/Redis, enabling horizontal scaling
 2. **Efficient data sharing**: Feed/entry data deduplicated across users
-3. **Privacy by default**: entry visibility is gated per user at insert time
+3. **Privacy by default**: users never see content from before they subscribed (see Data Model)
 4. **Graceful degradation**: Handle misbehaving feeds, rate limits, and failures
 5. **Observable**: Comprehensive logging, metrics, and error tracking
 
@@ -82,7 +82,7 @@ Canonical `feeds`/`entries` rows are shared across users; `subscriptions` and `u
 
 ## Authentication
 
-Custom auth from established primitives: `openid-client` (Google/Apple/Discord sign-in, each enabled by its env vars), `argon2` (passwords), and token sessions stored in Postgres behind a Redis cache. Tokens are fail-closed: tRPC procedures are session-only unless they opt in to a scope. Details: `src/server/auth/CLAUDE.md`; the OAuth 2.1 server that issues tokens to MCP clients and the native app: `src/server/oauth/CLAUDE.md`.
+Custom auth from established primitives: `openid-client` (Google/Apple/Discord sign-in, each enabled by its env vars), `argon2` (passwords), and token sessions stored in Postgres behind a Redis cache. Details: `src/server/auth/CLAUDE.md`; the OAuth 2.1 server that issues tokens to MCP clients and the native app: `src/server/oauth/CLAUDE.md`.
 
 ---
 
@@ -111,7 +111,7 @@ Workers publish to Redis; each app process forwards events over SSE; the client 
 The same services back several surfaces under `src/app/api/`: the browser tRPC endpoint (`/api/trpc`); a REST API (`/api/v1/*`) generated from tRPC `openapi` meta, spec at `/api/openapi`; the Google Reader and Wallabag compatibility APIs; MCP (`/api/mcp`); and webhooks (Mailgun, WebSub).
 
 - **Pagination** is cursor-based everywhere: `{ cursor?, limit? }` in, `{ items, nextCursor? }` out.
-- **Rate limits** (Redis token buckets) apply only to expensive or abusable operations, and fail open when Redis is down — except the per-account password buckets (`src/server/auth/CLAUDE.md`).
+- **Rate limits** (Redis token buckets) apply only to expensive or abusable operations (failure behavior: `src/server/auth/CLAUDE.md`).
 - **Errors** use tRPC's envelope; `errorFormatter` in `src/server/trpc/trpc.ts` adds an optional app-specific `appErrorCode` and flattened Zod issues.
 
 ---

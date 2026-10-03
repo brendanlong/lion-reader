@@ -75,11 +75,12 @@ export async function GET(request: NextRequest) {
     // Bind the callback to the browser that started the flow (login CSRF, issue #1263):
     // the state cookie set when the auth URL was generated must match the returned state.
     // `extension-save` is exempt because its auth URL is generated in a Server Component
-    // (src/app/extension/save/page.tsx), which Next.js forbids from setting cookies — that
+    // (src/app/(spa)/extension/save/page.tsx), which Next.js forbids from setting cookies — that
     // flow re-authorizes an already-logged-in user's own account rather than logging anyone
     // in, so it isn't the login-CSRF vector. Every other mode is generated on the tRPC path
     // (via setOAuthStateCookie) and is enforced. The `mode` is known only after the Redis
-    // state is consumed above, so this check necessarily runs post-validation.
+    // state is consumed above, so this check necessarily runs post-validation. If that flow
+    // ever moves to a Route Handler (which can set cookies), drop the exemption.
     if (
       mode !== "extension-save" &&
       !oauthStateCookieMatches(readOAuthStateCookie(request), state)

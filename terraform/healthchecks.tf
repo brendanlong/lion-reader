@@ -1,5 +1,5 @@
 # healthchecks.io — the dead-man's-switch monitors. What each one means and which
-# process pings it is in ../docs/DESIGN.md ("Alerting").
+# process pings it is in ../docs/DESIGN.md ("Observability").
 
 # Looked up rather than hardcoded so a recreated channel needs no code change.
 # `kind` alone is a unique-enough selector while there is one integration; on a

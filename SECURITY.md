@@ -33,6 +33,8 @@ fetches user-influenced URLs and must never be usable to reach internal services
   chokepoints.
 - **Never render feed-controlled text (titles, authors, feed names) as HTML.**
 - Any change to the sanitizer's allow-lists or transforms needs a security review.
+- **Keep the defense-in-depth headers** (`securityHeaders` in `next.config.ts`:
+  anti-framing, `nosniff`, `Referrer-Policy`, HSTS in production).
 - **CSP is the backstop** (`src/server/http/csp.ts`, applied in `src/proxy.ts`;
   directive rationale in `csp.ts`). Dynamic routes get a strict per-request nonce
   policy. The statically prerendered `(public)` pages (`isPublicStaticPath`) can't
@@ -66,6 +68,8 @@ fetches user-influenced URLs and must never be usable to reach internal services
 
 - **Every fetch of a user-influenced URL goes through `fetchWithSsrfProtection`**,
   never `fetch`/`undici` directly. No caller can opt out of its per-hop checks.
+- **The guard itself rejects non-http(s) schemes** on the initial URL and every
+  redirect hop (`assertAllowedScheme`), rather than leaving it to the underlying fetch.
 - Content-source plugins that fetch hardcoded public hosts (GitHub, Bluesky, arXiv,
   LessWrong, Google Docs/Drive) use the guard too, so a refactor that makes a host
   user-influenced can't regress into SSRF (#1265). Keep it that way.
