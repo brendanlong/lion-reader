@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { MouseEvent } from "react";
-import { handleClientNav } from "@/lib/navigation";
+import { handleClientNav, handleContentLinkClick } from "@/lib/navigation";
 
 interface FakeEventOptions {
   metaKey?: boolean;
@@ -99,5 +99,68 @@ describe("handleClientNav", () => {
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/start");
+  });
+});
+
+describe("handleContentLinkClick", () => {
+  beforeEach(() => {
+    window.history.pushState(null, "", "/demo/all?entry=welcome");
+    document.body.innerHTML = "";
+  });
+
+  /** Clicks a link rendered inside article content mounted at `basePath`; returns whether the browser was left to handle it. */
+  function clickContentLink(
+    html: string,
+    basePath: string,
+    init: MouseEventInit = {}
+  ): { browserHandled: boolean } {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    container.addEventListener("click", (e) =>
+      handleContentLinkClick(e as unknown as MouseEvent<HTMLElement>, basePath)
+    );
+    const target = container.querySelector("a span") ?? container.querySelector("a")!;
+    const event = new window.MouseEvent("click", { bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    return { browserHandled: !event.defaultPrevented };
+  }
+
+  it("soft-navigates a link to another entry inside the mount, from a nested element", () => {
+    const result = clickContentLink(
+      '<p><a href="/demo/all?entry=opml"><span>imports</span></a></p>',
+      "/demo"
+    );
+
+    expect(result.browserHandled).toBe(false);
+    expect(window.location.pathname + window.location.search).toBe("/demo/all?entry=opml");
+  });
+
+  it("soft-navigates dynamic entry-list routes in the root mount", () => {
+    const result = clickContentLink('<a href="/tag/abc?entry=x">tag</a>', "");
+
+    expect(result.browserHandled).toBe(false);
+    expect(window.location.pathname + window.location.search).toBe("/tag/abc?entry=x");
+  });
+
+  it.each([
+    ["another origin", '<a href="https://example.com/demo/all">x</a>', "/demo"],
+    ["a route outside the mount", '<a href="/all?entry=x">x</a>', "/demo"],
+    ["a standalone page in the root mount", '<a href="/login">x</a>', ""],
+    ["a hash-only change (footnote)", '<a href="#fn1">x</a>', "/demo"],
+    ["target=_blank", '<a href="/demo/all?entry=opml" target="_blank">x</a>', "/demo"],
+  ])("leaves %s to the browser", (_label, html, basePath) => {
+    const result = clickContentLink(html, basePath);
+
+    expect(result.browserHandled).toBe(true);
+    expect(window.location.pathname + window.location.search).toBe("/demo/all?entry=welcome");
+  });
+
+  it("leaves modifier clicks to the browser", () => {
+    const result = clickContentLink('<a href="/demo/all?entry=opml">x</a>', "/demo", {
+      metaKey: true,
+    });
+
+    expect(result.browserHandled).toBe(true);
   });
 });

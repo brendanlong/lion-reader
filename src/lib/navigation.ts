@@ -70,14 +70,38 @@ export function extractParamsFromPathname(pathname: string): {
   return {};
 }
 
+/** App-relative pathnames of the entry-list views without a dynamic segment. */
+const STATIC_ENTRY_LIST_PATHNAMES = new Set([
+  "/all",
+  "/starred",
+  "/saved",
+  "/uncategorized",
+  "/recently-read",
+]);
+
+function isEntryListPathname(pathname: string): boolean {
+  if (STATIC_ENTRY_LIST_PATHNAMES.has(pathname)) return true;
+  const { subscriptionId, tagId } = extractParamsFromPathname(pathname);
+  return subscriptionId !== undefined || tagId !== undefined;
+}
+
 /**
- * Click handler for client-side navigation without SSR.
- *
- * Falls through to the browser's default handling (no preventDefault) for any
- * click the browser would treat specially, so we don't hijack:
+ * Whether a click on `anchor` is one the browser would treat as a plain
+ * same-tab navigation. Anything else falls through to the browser so we don't
+ * hijack:
  * - modifier clicks (cmd/ctrl/shift/alt → new tab / new window / download),
  * - non-primary mouse buttons (middle-click → new tab),
  * - anchors with an explicit `target` (e.g. `_blank`) or `download` attribute.
+ */
+function isPlainNavigationClick(e: MouseEvent, anchor: Element): boolean {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return false;
+  const target = anchor.getAttribute("target");
+  return !(target && target !== "_self") && !anchor.hasAttribute("download");
+}
+
+/**
+ * Click handler for client-side navigation without SSR. Clicks the browser
+ * would treat specially are left alone (see `isPlainNavigationClick`).
  *
  * @example
  * ```tsx
@@ -91,13 +115,35 @@ export function handleClientNav(
   href: string,
   callback?: () => void
 ): void {
-  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-
-  // Respect anchors that intentionally open elsewhere or download.
-  const target = e.currentTarget.getAttribute("target");
-  if ((target && target !== "_self") || e.currentTarget.hasAttribute("download")) return;
+  if (!isPlainNavigationClick(e, e.currentTarget)) return;
 
   e.preventDefault();
   clientPush(href);
   callback?.();
+}
+
+/**
+ * Click handler for a container of rendered HTML (article content): a plain
+ * click on a link to an entry-list view inside the SPA mount at `basePath`
+ * becomes a `pushState` navigation instead of a full page load.
+ *
+ * Every other link is left to the browser: other origins, routes outside the
+ * mount (standalone pages like `/login`, which aren't part of the SPA), and
+ * links that change only the hash (in-page anchors such as footnotes).
+ */
+export function handleContentLinkClick(e: MouseEvent, basePath: string): void {
+  if (e.defaultPrevented || !(e.target instanceof Element)) return;
+  const anchor = e.target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement) || !isPlainNavigationClick(e, anchor)) return;
+
+  const url = new URL(anchor.href);
+  const current = window.location;
+  if (url.origin !== current.origin) return;
+  if (url.hash && url.pathname === current.pathname && url.search === current.search) return;
+
+  if (!url.pathname.startsWith(`${basePath}/`)) return;
+  if (!isEntryListPathname(url.pathname.slice(basePath.length))) return;
+
+  e.preventDefault();
+  clientPush(`${url.pathname}${url.search}${url.hash}`);
 }
