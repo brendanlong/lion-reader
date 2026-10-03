@@ -7,7 +7,6 @@
 
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { createHash } from "node:crypto";
 
 import {
   createTRPCRouter,
@@ -25,14 +24,16 @@ import {
   generateNarration,
   isNarrationLlmAvailable,
   getNarrationModelRef,
+  narrationCacheOwner,
+  narrationContentHash,
   narrationFailureScope,
   type NarrationFailure,
 } from "@/server/services/narration";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
-import { isModelAllowed, listAllModels } from "@/server/services/ai-providers";
+import { isModelAllowed, isTextModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
-import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
+import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { defaultSpeechModelId, defaultVoiceFor, listSpeechModels } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
@@ -159,16 +160,6 @@ export const narrationRouter = createTRPCRouter({
             showOriginal: input.showOriginal,
           })
         )) ?? "";
-      // Key the cache by the exact content being narrated (so variants of one
-      // entry don't collide) and by the narration format: a stored paragraph
-      // map's element numbers only mean anything against the numbering that
-      // produced them, so a format bump has to miss rather than mis-highlight.
-      // In the key rather than a column so the release that wrote a row and the
-      // release that reads it can never disagree — a rollback simply looks
-      // somewhere else instead of overwriting a row it will misread later.
-      const contentHash = createHash("sha256")
-        .update(`${NARRATION_FORMAT_VERSION}\n${sourceContent}`, "utf8")
-        .digest("hex");
 
       // Handle empty content
       if (!sourceContent.trim()) {
@@ -180,6 +171,15 @@ export const narrationRouter = createTRPCRouter({
           paragraphMap: [],
         };
       }
+
+      // The model this request narrates with, resolved once: the cache slot
+      // it reads (see narrationContentHash) and the call that fills it must
+      // agree on whose output it is.
+      const modelRef = await getNarrationModelRef(userNarrationModel, keys);
+      const contentHash = narrationContentHash(
+        sourceContent,
+        narrationCacheOwner(modelRef, userId)
+      );
 
       const selectByContentHash = () =>
         ctx.db
@@ -249,7 +249,7 @@ export const narrationRouter = createTRPCRouter({
       // If user disabled LLM normalization, no provider is configured, or we had a recent error, fall back to plain text
       if (
         !input.useLlmNormalization ||
-        !(await isNarrationLlmAvailable(keys, userNarrationModel)) ||
+        !(await isTextModelAllowed(formatModelRef(modelRef.provider, modelRef.model), keys)) ||
         !canRetryLLM
       ) {
         return fallbackResponse();
@@ -272,10 +272,7 @@ export const narrationRouter = createTRPCRouter({
 
       try {
         // Generate via LLM
-        const result = await generateNarration(sourceContent, {
-          keys,
-          userModel: userNarrationModel,
-        });
+        const result = await generateNarration(sourceContent, { keys, modelRef });
 
         // Stop the timer after generation completes
         stopTimer();

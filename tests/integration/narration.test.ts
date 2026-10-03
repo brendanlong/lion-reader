@@ -27,6 +27,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
+import { narrationContentHash } from "../../src/server/services/narration";
 import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { encryptApiKey } from "../../src/lib/encryption";
@@ -524,11 +525,18 @@ describe("narration.generate failure backoff", () => {
     expect(second.narration).toBe(first.narration);
   });
 
+  /** Narrates fresh content once; `pickedModel` is the user's pick, whose row is theirs. */
   async function narrateOnce(
-    userId: string
+    userId: string,
+    pickedModel?: string
   ): Promise<{ row: typeof narrationContent.$inferSelect; source: string }> {
     const contentCleaned = `<p>Not the content's fault ${generateUuidv7()}.</p>`;
-    const contentHash = narrationHash(contentCleaned);
+    const contentHash = pickedModel
+      ? narrationContentHash(sanitizeEntryHtml(contentCleaned) ?? "", {
+          userId,
+          model: pickedModel,
+        })
+      : narrationHash(contentCleaned);
     createdNarrationHashes.push(contentHash);
     const entryId = await createVisibleEntry(userId, { contentCleaned });
     const caller = createCaller(await createAuthContext(userId));
@@ -563,7 +571,8 @@ describe("narration.generate failure backoff", () => {
 
   it("doesn't back everyone off when a model the user picked answers with nothing usable", async () => {
     llmContent = "this is not JSON";
-    const { row, source } = await narrateOnce(await createGroqUser("groq:llama-3.3-70b-versatile"));
+    const picked = "groq:llama-3.3-70b-versatile";
+    const { row, source } = await narrateOnce(await createGroqUser(picked), picked);
     expect(llmRequests).toBe(1);
     expect(source).toBe("fallback");
     expect(row.errorAt).toBeNull();
@@ -583,5 +592,38 @@ describe("narration.generate failure backoff", () => {
     const second = await caller.narration.generate({ id: entryId });
     expect(second.cached).toBe(true);
     expect(llmRequests).toBe(1);
+  });
+
+  it("keeps a model one user picked to that user, in both directions", async () => {
+    const picked = "groq:llama-3.3-70b-versatile";
+    const userA = await createGroqUser(picked);
+    const userB = await createGroqUser();
+    const contentCleaned = `<p>Shared article ${generateUuidv7()}.</p>`;
+    createdNarrationHashes.push(
+      narrationHash(contentCleaned),
+      narrationContentHash(sanitizeEntryHtml(contentCleaned) ?? "", {
+        userId: userA,
+        model: picked,
+      })
+    );
+    const narrate = async (userId: string) => {
+      const entryId = await createVisibleEntry(userId, { contentCleaned });
+      const caller = createCaller(await createAuthContext(userId));
+      return () => caller.narration.generate({ id: entryId });
+    };
+    const [narrateA, narrateB] = [await narrate(userA), await narrate(userB)];
+    const answer = (text: string) => JSON.stringify({ paragraphs: [{ id: 0, text }] });
+
+    // A narrates first: B gets the default model's narration, not A's.
+    llmContent = answer("What A's model says.");
+    expect(await narrateA()).toMatchObject({ narration: "What A's model says.", cached: false });
+    llmContent = answer("What the default says.");
+    expect(await narrateB()).toMatchObject({ narration: "What the default says.", cached: false });
+
+    // A narrating again reads A's own slot and leaves B's alone.
+    llmContent = answer("Something else entirely.");
+    expect(await narrateA()).toMatchObject({ narration: "What A's model says.", cached: true });
+    expect(await narrateB()).toMatchObject({ narration: "What the default says.", cached: true });
+    expect(llmRequests).toBe(2);
   });
 });

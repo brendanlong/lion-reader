@@ -8,6 +8,7 @@
  */
 
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { logger } from "@/lib/logger";
 import {
   formatModelRef,
@@ -18,6 +19,7 @@ import {
 import {
   DEFAULT_NARRATION_MODELS,
   isNarrationProvider,
+  NARRATION_FORMAT_VERSION,
   NARRATION_PROVIDERS,
 } from "@/lib/narration/constants";
 import {
@@ -234,6 +236,40 @@ function isDefaultNarrationModel(ref: ModelRef): boolean {
 }
 
 /**
+ * Whose narration a `narration_content` row holds: null for everyone's (a
+ * default model, on whichever key), else the user who picked the model.
+ */
+export type NarrationCacheOwner = { userId: string; model: string } | null;
+
+/** The {@link NarrationCacheOwner} of `userId`'s narration with `ref`. */
+export function narrationCacheOwner(ref: ModelRef, userId: string): NarrationCacheOwner {
+  return isDefaultNarrationModel(ref)
+    ? null
+    : { userId, model: formatModelRef(ref.provider, ref.model) };
+}
+
+/**
+ * The `narration_content.content_hash` for narrating `sourceContent`: the
+ * narration format (a stored paragraph map only means anything against the
+ * numbering that produced it, so a bump misses rather than mis-highlights)
+ * and the exact content, plus the owner when it isn't everyone's. All in the
+ * key rather than in columns, so the release that wrote a row and the one
+ * reading it can never disagree: a rollback looks somewhere else instead of
+ * overwriting a row it would misread. A model
+ * someone picked writes what that user's model says, so its output must never
+ * be served to, or overwrite, anyone else's. The owner goes before the
+ * feed-controlled content behind a separator the shared form never has right
+ * after the version (a space, not a newline), so no content can collide with
+ * an owned slot.
+ */
+export function narrationContentHash(sourceContent: string, owner: NarrationCacheOwner): string {
+  const header = owner
+    ? `${NARRATION_FORMAT_VERSION} ${JSON.stringify([owner.userId, owner.model])}`
+    : `${NARRATION_FORMAT_VERSION}`;
+  return createHash("sha256").update(`${header}\n${sourceContent}`, "utf8").digest("hex");
+}
+
+/**
  * The narration in the model's raw JSON answer, or null if there's none to
  * use (empty, not JSON, or not shaped like the request). Each input paragraph
  * takes the model's rewrite of its id, or keeps its own text if the model
@@ -298,9 +334,12 @@ export async function generateNarration(
   options?: {
     keys?: AiProviderKeys;
     userModel?: string | null;
+    /** The model already resolved from `userModel` (see `getNarrationModelRef`). */
+    modelRef?: ModelRef;
   }
 ): Promise<GenerateNarrationResult> {
-  const modelRef = await getNarrationModelRef(options?.userModel, options?.keys);
+  const modelRef =
+    options?.modelRef ?? (await getNarrationModelRef(options?.userModel, options?.keys));
 
   // Convert HTML to structured paragraphs
   const { paragraphs: inputParagraphs } = htmlToNarrationInput(htmlContent);

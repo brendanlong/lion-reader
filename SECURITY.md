@@ -238,7 +238,10 @@ Integer IDs) · **Code:** `src/server/services/`, `migrations/schema.sql` (views
   a deterministic transform of **public** content only. Its failure backoff is
   shared too, so **only a failure the content causes may be recorded on a
   `narration_content` row** — never one a user's own key or model choice
-  produced (`narrationFailureScope`, #1755).
+  produced (`narrationFailureScope`, #1755). Only a default model's narration
+  goes in the shared slot; **a model a user picked is cached under a key bound
+  to that user and model** (`narrationContentHash`), so its output can't be
+  served to or overwrite anyone else's.
 
 ## 8. Companion APIs (Wallabag, Google Reader, MCP, save extensions)
 
