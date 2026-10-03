@@ -12,44 +12,31 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.lionreader.app.SyncScheduler
 import com.lionreader.app.graph
-import com.lionreader.shared.api.ApiFailure
-import com.lionreader.shared.api.apiFailure
+import com.lionreader.shared.account.SaveOutcome
+import com.lionreader.shared.account.saveLink
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CancellationException
 
 /**
- * Saves a shared link in the background, so it survives the share dialog closing and waits for a
- * network when offline, however long that takes. It only gives up when the server rejects the link
- * (or the user signs out); anything else retries, backing off to every few hours. The dialog
- * follows its progress by the unique work name.
+ * Saves a shared link in the background ([saveLink]), so it survives the share dialog closing and
+ * waits for a network when offline, however long that takes; retries back off to every few hours.
+ * The dialog follows its progress by the unique work name.
  */
 class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val url = inputData.getString(URL) ?: return Result.failure()
-        val connection = applicationContext.graph.connection.value
-        if (!connection.auth.signedIn.value) {
-            return failure("Sign in to Lion Reader to save links.")
-        }
-        return try {
-            val saved = connection.api.saveArticle(url)
-            // Bring the new article onto the device.
-            SyncScheduler.syncNow(applicationContext)
-            Result.success(workDataOf(TITLE to saved.title))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            when (val why = e.apiFailure()) {
-                ApiFailure.SignedOut -> failure("Sign in to Lion Reader to save links.")
-                is ApiFailure.Rejected ->
-                    failure(why.message ?: "Lion Reader couldn't save this link.")
-                // Saving a URL twice just updates the article.
-                else -> Result.retry()
+        return when (
+            val outcome = applicationContext.graph.accounts.connection.value.saveLink(url)
+        ) {
+            is SaveOutcome.Saved -> {
+                // Bring the new article onto the device.
+                SyncScheduler.syncNow(applicationContext)
+                Result.success(workDataOf(TITLE to outcome.title))
             }
+            SaveOutcome.Retry -> Result.retry()
+            is SaveOutcome.Failed -> Result.failure(workDataOf(ERROR to outcome.message))
         }
     }
-
-    private fun failure(message: String) = Result.failure(workDataOf(ERROR to message))
 
     companion object {
         const val TITLE = "title"

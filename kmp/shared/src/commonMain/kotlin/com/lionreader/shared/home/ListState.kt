@@ -1,4 +1,4 @@
-package com.lionreader.app.ui
+package com.lionreader.shared.home
 
 import com.lionreader.shared.data.ListScope
 

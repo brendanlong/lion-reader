@@ -5,7 +5,9 @@ import android.os.Looper
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.lionreader.app.AppSettings
+import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.narration.SpeechInterrupted
+import com.lionreader.shared.settings.AppSettings
 import java.io.File
 import java.io.IOException
 import java.time.Duration

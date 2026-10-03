@@ -40,10 +40,11 @@ fetches user-influenced URLs and must never be usable to reach internal services
   policy. The statically prerendered `(public)` pages (`isPublicStaticPath`) can't
   carry a nonce and get a relaxed policy, so **they must render zero
   user-supplied HTML**: anything rendering untrusted HTML lives under `(spa)`.
-- **The native app's reader view** (`kmp/androidApp/.../reader/`) renders the same
+- **The native app's reader view** (`kmp/androidApp/.../reader/`, its document
+  from `kmp/shared/.../reader/ReaderDocument.kt`) renders the same
   sanitized HTML in a WebView beside the app's tokens. **The only scripts in that
   document are our bundled `scroll-detect.js` and `narration.js`**; its CSP
-  (`ReaderHtml.kt`) allows no fetch/XHR/WebSocket, `base`, or form targets.
+  (`ReaderDocument.kt`) allows no fetch/XHR/WebSocket, `base`, or form targets.
   Allow-listed embeds run only in their sandboxed cross-origin frames. No file or
   content access; the one message channel is limited to the asset origin's main
   frame, the app reads only layout, narration text and taps from it, and calls

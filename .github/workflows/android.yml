@@ -47,6 +47,13 @@ jobs:
       # Also validates the wrapper jar. Writes the cache only on master.
       - uses: gradle/actions/setup-gradle@v6.4.0
 
+      # The Kotlin/Native toolchain `check` compiles :shared's iOS targets with
+      # (outside the Gradle user home, so setup-gradle doesn't cache it).
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('kmp/gradle/libs.versions.toml') }}
+
       # The runner image's Android SDK has its licenses accepted, so AGP
       # installs the compile SDK / build tools it needs on first use.
       # The release build (unsigned here) runs R8, so shrinking problems show

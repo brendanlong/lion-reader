@@ -6,9 +6,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.lionreader.app.narration.NarratedArticle
-import com.lionreader.app.narration.NarrationState
 import com.lionreader.shared.data.EntryDetail
+import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.narration.NarrationState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule

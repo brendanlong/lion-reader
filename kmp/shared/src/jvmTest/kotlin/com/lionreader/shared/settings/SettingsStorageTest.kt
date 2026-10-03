@@ -1,4 +1,4 @@
-package com.lionreader.app
+package com.lionreader.shared.settings
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -7,8 +7,8 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import java.lang.reflect.Modifier
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class SettingsStorageTest {
     /** Every field changed from its default. */
@@ -40,7 +40,7 @@ class SettingsStorageTest {
             AppSettings::class.java.declaredFields.count {
                 !Modifier.isStatic(it.modifiers) && !it.isSynthetic
             }
-        assertEquals("a STORED_SETTINGS line per AppSettings field", fields, STORED_SETTINGS.size)
+        assertEquals(fields, STORED_SETTINGS.size, "a STORED_SETTINGS line per AppSettings field")
         // And the test's own list changes them all.
         AppSettings::class
             .java
@@ -125,5 +125,19 @@ class SettingsStorageTest {
             ),
             keys,
         )
+    }
+
+    /** The device's defaults (an e-reader's) hold until the user changes that setting. */
+    @Test
+    fun whatTheUserHasntChangedIsTheDevicesDefault() {
+        val defaults = AppSettings(theme = ThemeChoice.EPAPER, animations = false)
+        val unchanged = mutablePreferencesOf()
+        assertEquals(defaults, unchanged.toSettings(defaults))
+
+        val themed = mutablePreferencesOf(stringPreferencesKey("theme") to "DARK")
+        assertEquals(ThemeChoice.DARK, themed.toSettings(defaults).theme)
+        assertEquals(false, themed.toSettings(defaults).animations)
+        themed[booleanPreferencesKey("animations")] = true
+        assertEquals(true, themed.toSettings(defaults).animations)
     }
 }

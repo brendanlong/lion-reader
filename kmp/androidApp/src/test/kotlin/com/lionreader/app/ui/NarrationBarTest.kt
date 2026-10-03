@@ -7,7 +7,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.lionreader.app.narration.NarrationState
+import com.lionreader.shared.narration.NarrationState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

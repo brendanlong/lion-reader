@@ -8,6 +8,9 @@ import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.StoredTokens
 import com.lionreader.shared.auth.TokenStore
+import com.lionreader.shared.narration.SpeechException
+import com.lionreader.shared.narration.SpeechInterrupted
+import com.lionreader.shared.narration.SpeechUnavailable
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond

@@ -25,7 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.lionreader.app.R
-import com.lionreader.app.narration.NarrationState
+import com.lionreader.shared.narration.NarrationState
 import java.text.NumberFormat
 import kotlinx.coroutines.delay
 

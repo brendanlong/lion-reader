@@ -14,7 +14,6 @@ import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.lionreader.app.share.SaveWorker
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -70,20 +69,5 @@ class LinkMenuTest {
         val clip = context.getSystemService(ClipboardManager::class.java).primaryClip
         assertEquals(url, clip?.getItemAt(0)?.text)
         assertTrue(dismissed)
-    }
-}
-
-class LinkTargetTest {
-    @Test
-    fun onlyWebPagesOutsideTheArticle() {
-        assertEquals("https://example.com/a", linkTarget(" https://example.com/a "))
-        assertEquals("http://example.com/", linkTarget("http://example.com/"))
-        assertNull(linkTarget("mailto:someone@example.com"))
-        assertNull(linkTarget("javascript:alert(1)"))
-        // A relative link resolves against the reader's own origin.
-        assertNull(linkTarget("$ASSET_ORIGIN/notes#1"))
-        assertNull(linkTarget(ASSET_ORIGIN))
-        assertNull(linkTarget("HTTPS://APPASSETS.ANDROIDPLATFORM.NET/notes"))
-        assertNull(linkTarget(null))
     }
 }

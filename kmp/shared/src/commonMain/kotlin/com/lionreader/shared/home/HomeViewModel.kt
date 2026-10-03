@@ -1,10 +1,7 @@
-package com.lionreader.app.ui
+package com.lionreader.shared.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lionreader.app.AccountSession
-import com.lionreader.app.AppGraph
-import com.lionreader.app.AppSettings
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.failure
@@ -12,8 +9,8 @@ import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.data.TimelineItem
+import com.lionreader.shared.settings.AppSettings
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
@@ -30,7 +27,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.io.IOException
 
 private const val SEARCH_LIMIT = 200L
 
@@ -42,6 +39,10 @@ sealed interface SyncStatus {
     data class Failed(val message: String) : SyncStatus
 }
 
+/**
+ * The article lists: which is on screen and its entries, the drawer's lists, search, and syncing
+ * when asked. [sync] is what pulling to refresh waits for.
+ */
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class HomeViewModel(
     private val reader: Reader,
@@ -49,20 +50,6 @@ class HomeViewModel(
     private val updateSettings: suspend ((AppSettings) -> AppSettings) -> Unit,
     private val sync: suspend () -> Unit,
 ) : ViewModel() {
-    constructor(
-        graph: AppGraph,
-        account: AccountSession,
-    ) : this(
-        account.reader,
-        graph.settings.settings,
-        graph.settings::update,
-        {
-            // The lists are what the spinner waits for; bodies follow in the
-            // background.
-            withContext(Dispatchers.IO) { account.sync.sync(downloadContent = false) }
-            graph.syncInBackground()
-        },
-    )
 
     /** Every change to it is one [ListState] step, so a query never sees half of one. */
     private val view = MutableStateFlow(ListState())
@@ -217,9 +204,9 @@ class HomeViewModel(
                         if (e.failure() == ApiFailure.SignedOut) "Signed out"
                         else "Sync failed (${e.status})"
                     )
-                } catch (e: java.io.IOException) {
+                } catch (_: IOException) {
                     SyncStatus.Failed("Offline — showing saved articles")
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Token endpoint 5xx, a captive portal's HTML, a DB error:
                     // report it, never crash the screen.
                     SyncStatus.Failed("Sync failed")

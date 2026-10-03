@@ -1,4 +1,4 @@
-package com.lionreader.app.narration
+package com.lionreader.shared.narration
 
 /** A piece of a paragraph small enough to synthesize quickly; [paragraph] is its index. */
 data class SpeechChunk(val paragraph: Int, val text: String)

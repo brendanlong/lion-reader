@@ -52,16 +52,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lionreader.app.AppGraph
-import com.lionreader.app.AppSettings
-import com.lionreader.app.NarrationEngine
 import com.lionreader.app.R
-import com.lionreader.app.ReaderFont
-import com.lionreader.app.TextSize
-import com.lionreader.app.ThemeChoice
 import com.lionreader.app.narration.VoiceOption
 import com.lionreader.app.openWebPage
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
+import com.lionreader.shared.settings.AppSettings
+import com.lionreader.shared.settings.NarrationEngine
+import com.lionreader.shared.settings.ReaderFont
+import com.lionreader.shared.settings.TextSize
+import com.lionreader.shared.settings.ThemeChoice
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -157,11 +157,13 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             }
             HorizontalDivider()
             Section("Account") {
-                Text(graph.serverUrl, style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(onClick = { context.openWebPage("${graph.serverUrl}/settings") }) {
+                Text(graph.accounts.serverUrl, style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(
+                    onClick = { context.openWebPage("${graph.accounts.serverUrl}/settings") }
+                ) {
                     Text("Account settings on the web")
                 }
-                SignOutButton(graph::unsentChangesAfterFlush, onSignOut)
+                SignOutButton(graph.accounts::unsentChangesAfterFlush, onSignOut)
             }
         }
     }
@@ -229,7 +231,7 @@ private fun NarrationSettings(
         }
     // Null while loading; empty when this account has none (no speech provider
     // key) or the server can't be reached.
-    val account by graph.account.collectAsStateWithLifecycle()
+    val account by graph.accounts.account.collectAsStateWithLifecycle()
     // What narration last heard (it works offline too), until the server answers again.
     val known by
         remember(account) { account?.voiceModels ?: MutableStateFlow(null) }

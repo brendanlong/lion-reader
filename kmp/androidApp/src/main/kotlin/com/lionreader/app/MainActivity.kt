@@ -52,12 +52,14 @@ import androidx.navigation3.ui.NavDisplay
 import com.lionreader.app.ui.AppMotion
 import com.lionreader.app.ui.EntryScreen
 import com.lionreader.app.ui.HomeScreen
-import com.lionreader.app.ui.HomeViewModel
 import com.lionreader.app.ui.LionReaderTheme
 import com.lionreader.app.ui.ScreenTransitions
 import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
 import com.lionreader.app.ui.isDark
+import com.lionreader.shared.account.AccountSession
+import com.lionreader.shared.account.AccountStatus
+import com.lionreader.shared.home.HomeViewModel
 import kotlinx.coroutines.launch
 
 private const val NO_BROWSER = "Signing in needs a web browser."
@@ -77,10 +79,11 @@ class MainActivity : ComponentActivity() {
     private val authTab =
         AuthTabIntent.registerActivityResultLauncher(this) { result ->
             when (result.resultCode) {
-                AuthTabIntent.RESULT_OK -> result.resultUri?.let { graph.completeSignIn("$it") }
+                AuthTabIntent.RESULT_OK ->
+                    result.resultUri?.let { graph.accounts.completeSignIn("$it") }
                 AuthTabIntent.RESULT_VERIFICATION_FAILED,
                 AuthTabIntent.RESULT_VERIFICATION_TIMED_OUT ->
-                    graph.pendingAuthorization?.let {
+                    graph.accounts.pendingAuthorization?.let {
                         try {
                             openCustomTab(it.url.toUri())
                         } catch (_: ActivityNotFoundException) {
@@ -161,14 +164,14 @@ class MainActivity : ComponentActivity() {
     private fun handleSignInCallback(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.path != BuildConfig.SIGN_IN_CALLBACK_PATH) return
-        graph.completeSignIn(data.toString())
+        graph.accounts.completeSignIn(data.toString())
     }
 
     private fun openCustomTab(url: Uri) = CustomTabsIntent.Builder().build().launchUrl(this, url)
 
     private fun startSignIn(serverUrl: String) {
         lifecycleScope.launch {
-            val url = graph.startSignIn(serverUrl).url.toUri()
+            val url = graph.accounts.startSignIn(serverUrl).url.toUri()
             val host = url.host
             try {
                 // Auth Tabs only return https redirects on the default port (a dev
@@ -188,11 +191,16 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun App() {
-        val status by graph.accountStatus.collectAsStateWithLifecycle()
+        val status by graph.accounts.accountStatus.collectAsStateWithLifecycle()
         when (val current = status) {
             AccountStatus.SignedOut -> {
-                val error by graph.signInError.collectAsStateWithLifecycle()
-                SignInScreen(graph.serverUrl, error, allowHttp = BuildConfig.DEBUG, ::startSignIn)
+                val error by graph.accounts.signInError.collectAsStateWithLifecycle()
+                SignInScreen(
+                    graph.accounts.serverUrl,
+                    error,
+                    allowHttp = BuildConfig.DEBUG,
+                    ::startSignIn,
+                )
             }
             AccountStatus.Confirming ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -214,9 +222,16 @@ class MainActivity : ComponentActivity() {
         val owner = remember(account) { sessions.ownerFor(account) }
         // Leaving composition also happens on rotation, when the session goes on.
         DisposableEffect(account) {
-            onDispose { if (graph.account.value !== account) sessions.ended(account) }
+            onDispose { if (graph.accounts.account.value !== account) sessions.ended(account) }
         }
-        val home = viewModel(viewModelStoreOwner = owner) { HomeViewModel(graph, account) }
+        val home =
+            viewModel(viewModelStoreOwner = owner) {
+                HomeViewModel(account.reader, graph.settings.settings, graph.settings::update) {
+                    account.syncLists()
+                    // Bodies follow in the background.
+                    graph.syncInBackground()
+                }
+            }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
         val transitions = remember(settings.animations) { ScreenTransitions(settings.animations) }
         // Side by side where there's room (tablets, foldables, landscape).
@@ -288,7 +303,7 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(
                             graph,
                             onBack = { backStack.removeLastOrNull() },
-                            onSignOut = graph::signOut,
+                            onSignOut = graph.accounts::signOut,
                         )
                     }
                 },
