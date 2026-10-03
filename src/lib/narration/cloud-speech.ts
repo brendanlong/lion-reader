@@ -191,10 +191,6 @@ function createPlayer(
     // providers limit concurrent requests per key, which several listeners
     // share on the server's.
     maxConcurrentSyntheses: 2,
-    // Paid per character, so running ahead only wastes what's left unheard.
-    // With the screen locked, nothing recovers playback that stalls on an
-    // empty buffer.
-    bufferAheadSeconds: 60,
   });
 }
 

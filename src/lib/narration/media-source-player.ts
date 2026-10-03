@@ -65,6 +65,14 @@ const MAX_STREAM_RETRIES = 2;
  * `TransientSynthesisError.retryable`), so the layers don't multiply.
  */
 const RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
+/**
+ * Must outlast the slowest synthesis that still succeeds — the server waits up
+ * to 15 s for a busy provider before streaming starts — because with the screen
+ * locked, nothing recovers playback that stalls on an empty buffer. No more than
+ * that: cloud voices are paid per character, and audio synthesized past where
+ * the listener stops is wasted.
+ */
+const BUFFER_AHEAD_SECONDS = 30;
 
 /** For browsers without Media Source Extensions, or the audio format a voice needs. */
 export const UNSUPPORTED_MESSAGE = "This browser can't stream narration audio";
@@ -182,7 +190,7 @@ export interface MediaSourcePlayerOptions {
    * playhead. Measured for buffered chunks, estimated from text length for the
    * rest, so a run of short chunks doesn't leave the buffer thin.
    */
-  bufferAheadSeconds: number;
+  bufferAheadSeconds?: number;
   /** Duration at 1× of a chunk not synthesized yet. */
   estimateSeconds?: (text: string) => number;
   /** The waits before each new try of a chunk after a {@link TransientSynthesisError}. */
@@ -665,7 +673,7 @@ export class MediaSourcePlayer {
     this.synthesize = options.synthesize;
     this.chunkParagraphs = options.chunkParagraphs;
     this.maxConcurrentSyntheses = options.maxConcurrentSyntheses;
-    this.bufferAheadSeconds = options.bufferAheadSeconds;
+    this.bufferAheadSeconds = options.bufferAheadSeconds ?? BUFFER_AHEAD_SECONDS;
     this.estimateSeconds =
       options.estimateSeconds ?? ((text) => text.length / ESTIMATED_CHARS_PER_SECOND);
     this.retryDelaysMs = options.retryDelaysMs ?? RETRY_DELAYS_MS;
