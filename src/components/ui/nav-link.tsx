@@ -56,6 +56,7 @@ export function NavLink({
       href={href}
       onNavigate={onClick}
       onPrefetch={onPrefetch}
+      aria-current={isActive ? "page" : undefined}
       className={`ui-text-sm flex min-h-[44px] items-center justify-between rounded-md px-3 py-2 font-medium transition-colors ${
         isActive
           ? "control-outline bg-surface-muted text-body"
@@ -109,6 +110,7 @@ export function NavLinkWithIcon({
       href={href}
       onNavigate={onClick}
       onPrefetch={onPrefetch}
+      aria-current={isActive ? "page" : undefined}
       className={`ui-text-sm flex min-h-[44px] flex-1 items-center gap-2 rounded-md px-3 py-2 transition-colors ${
         isActive
           ? "control-outline bg-surface-muted text-body"

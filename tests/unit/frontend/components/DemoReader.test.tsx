@@ -10,7 +10,8 @@
  *   - the welcome article opens from `?entry=` with its demo-only sign-up slot,
  *   - the article auto-marks read through the real mutation and the store,
  *   - starring updates the sidebar count through the real cache updates,
- *   - the entry list links carry the `/demo` prefix.
+ *   - the entry list links carry the `/demo` prefix,
+ *   - the list-level shortcuts (Shift+A, Shift+J/Shift+K) act on this tree.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -129,5 +130,37 @@ describe("demo reader tree", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Add to starred" }));
     expect(await within(starred).findByText(`(${STARRED + 1})`)).toBeVisible();
     expect(within(row).getByRole("button", { name: "Remove from starred" })).toBeVisible();
+  });
+
+  it("Shift+A asks before marking the current list read", async () => {
+    const { callsFor } = renderDemo();
+    await screen.findByRole("link", { name: "Welcome to Lion Reader" });
+
+    fireEvent.keyDown(document, { key: "A", code: "KeyA", shiftKey: true });
+    fireEvent.click(await screen.findByRole("button", { name: "Mark All Read" }));
+
+    await vi.waitFor(() => expect(callsFor("entries.markAllRead")).toHaveLength(1));
+  });
+
+  it("Shift+J / Shift+K step through the sidebar's visible tags and subscriptions", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    mockPathname = "/demo/tag/about";
+    window.history.replaceState(null, "", mockPathname);
+    renderDemo();
+    const about = await screen.findByRole("link", { name: /^About/ });
+    expect(about).toHaveAttribute("aria-current", "page");
+
+    // About is the first entry, so there's nothing before it.
+    fireEvent.keyDown(document, { key: "K", code: "KeyK", shiftKey: true });
+    expect(window.location.pathname).toBe("/demo/tag/about");
+
+    // The collapsed About tag's subscriptions are skipped.
+    fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
+    expect(window.location.pathname).toBe("/demo/tag/features");
+
+    fireEvent.click(within(about.parentElement!).getByRole("button", { name: "Expand" }));
+    await screen.findByRole("link", { name: /^Lion Reader/ });
+    fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
+    expect(window.location.pathname).toBe("/demo/subscription/lion-reader");
   });
 });

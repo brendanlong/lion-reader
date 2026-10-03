@@ -6,8 +6,8 @@
  *
  * Keyboard shortcuts:
  * - p: Toggle play/pause
- * - Shift+N: Skip to next paragraph
- * - Shift+P: Skip to previous paragraph
+ * - ]: Skip to next paragraph
+ * - [: Skip to previous paragraph
  *
  * These shortcuts only work when:
  * - An article is open (narration controls are rendered)
@@ -104,9 +104,9 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     [shouldPause, isGenerating, play, pause, baseEnabled]
   );
 
-  // Shift+N - Skip to next paragraph
+  // ] - Skip to next paragraph
   useHotkeys(
-    "shift+n",
+    "]",
     (e) => {
       e.preventDefault();
       skipForward();
@@ -114,13 +114,15 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     {
       enabled: baseEnabled && canSkipForward,
       enableOnFormTags: false,
+      // Match the produced character: brackets have no layout-independent code.
+      useKey: true,
     },
     [skipForward, canSkipForward, baseEnabled]
   );
 
-  // Shift+P - Skip to previous paragraph
+  // [ - Skip to previous paragraph
   useHotkeys(
-    "shift+p",
+    "[",
     (e) => {
       e.preventDefault();
       skipBackward();
@@ -128,6 +130,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
     {
       enabled: baseEnabled && canSkipBackward,
       enableOnFormTags: false,
+      useKey: true,
     },
     [skipBackward, canSkipBackward, baseEnabled]
   );

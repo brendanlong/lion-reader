@@ -1,13 +1,14 @@
 /**
  * MarkAllReadButton Component
  *
- * Button that opens a confirmation dialog to mark all entries as read.
- * Encapsulates the button, dialog, and state management.
+ * Button (and Shift+A shortcut) that opens a confirmation dialog to mark all
+ * entries as read. Encapsulates the button, dialog, and state management.
  */
 
 "use client";
 
 import { useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { CheckCircleIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -22,14 +23,27 @@ interface MarkAllReadButtonProps {
    * header), where no handler can cross the server/client boundary.
    */
   onConfirm?: () => void;
+  /** Whether Shift+A opens the dialog */
+  shortcutEnabled?: boolean;
 }
 
 export function MarkAllReadButton({
   contextDescription,
   isLoading,
   onConfirm,
+  shortcutEnabled = false,
 }: MarkAllReadButtonProps) {
   const [showDialog, setShowDialog] = useState(false);
+
+  useHotkeys(
+    "shift+a",
+    (e) => {
+      e.preventDefault();
+      setShowDialog(true);
+    },
+    { enabled: shortcutEnabled && !showDialog, enableOnFormTags: false },
+    [shortcutEnabled, showDialog]
+  );
 
   return (
     <>
@@ -37,7 +51,7 @@ export function MarkAllReadButton({
         type="button"
         onClick={() => setShowDialog(true)}
         className="control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors"
-        title="Mark all as read"
+        title="Mark all as read (Shift+A)"
         aria-label="Mark all as read"
       >
         <CheckCircleIcon className="h-5 w-5" />

@@ -156,6 +156,7 @@ export function EntryPageLayout({
                 contextDescription={markAllReadDescription}
                 isLoading={isMarkAllReadPending}
                 onConfirm={() => markAllRead(markAllReadOptions)}
+                shortcutEnabled={keyboardShortcutsEnabled && !openEntryId}
               />
             )}
             {!isSearching && <SortToggle sortOrder={sortOrder} onToggle={toggleSortOrder} />}

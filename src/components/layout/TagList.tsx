@@ -15,6 +15,7 @@ import { NavLinkWithIcon } from "@/components/ui/nav-link";
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { ColorDot } from "@/components/ui/color-picker";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { SIDEBAR_FEEDS_ATTRIBUTE } from "@/lib/hooks/useSidebarFeedNavigation";
 import { TagSubscriptionList } from "./TagSubscriptionList";
 
 interface TagListProps {
@@ -140,7 +141,7 @@ function TagListContent({
   };
 
   return (
-    <ul className="space-y-1">
+    <ul className="space-y-1" {...{ [SIDEBAR_FEEDS_ATTRIBUTE]: "" }}>
       {sortedTags.map((tag) => (
         <TagSection
           key={tag.id}

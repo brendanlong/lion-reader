@@ -8,10 +8,10 @@ const article: DemoArticle = {
   title: "Keyboard Shortcuts",
   author: null,
   summary:
-    "Fly through your reading without touching the mouse: move between articles, star, mark read, search, and control narration from the keyboard.",
+    "Fly through your reading without touching the mouse: move between articles and feeds, star, mark read, search, and control narration from the keyboard.",
   publishedAt: new Date("2025-12-27T14:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader supports Gmail- and Google Reader-style keyboard shortcuts for moving through articles, marking them read, starring, and searching, plus a <strong>g</strong> then letter combination to jump to sections like all articles, starred, or saved for later. Press <strong>?</strong> to see the full list; shortcuts stay disabled while you&rsquo;re typing.</p>`,
+  summaryHtml: `<p>Lion Reader supports Gmail- and Google Reader-style keyboard shortcuts for moving through articles and feeds, marking them read (one at a time or all at once with <strong>Shift+A</strong>), starring, and searching, plus a <strong>g</strong> then letter combination to jump to sections like all articles, starred, or saved for later. Press <strong>?</strong> to see the full list; shortcuts stay disabled while you&rsquo;re typing.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
@@ -23,6 +23,7 @@ const article: DemoArticle = {
       <li><kbd>j</kbd> / <kbd>k</kbd> &mdash; next and previous article, whether you&rsquo;re in the list or reading</li>
       <li><kbd>Enter</kbd> or <kbd>o</kbd> to open, <kbd>Escape</kbd> to close</li>
       <li><kbd>m</kbd> &mdash; mark read or unread</li>
+      <li><kbd>Shift+A</kbd> &mdash; mark everything in the current list read (after a confirmation)</li>
       <li><kbd>s</kbd> &mdash; star</li>
       <li><kbd>v</kbd> &mdash; open the selected article&rsquo;s original page in a new tab</li>
       <li><kbd>u</kbd> &mdash; show or hide articles you&rsquo;ve read</li>
@@ -30,6 +31,8 @@ const article: DemoArticle = {
     </ul>
 
     <h3>Getting Around</h3>
+
+    <p><kbd>Shift+J</kbd> and <kbd>Shift+K</kbd> move to the next and previous subscription or tag in the sidebar, so you can work through your feeds one at a time. Google Reader&rsquo;s <kbd>Shift+N</kbd> and <kbd>Shift+P</kbd> do the same.</p>
 
     <p>From the article list, press <kbd>g</kbd> and then a letter to jump to a section:</p>
 
@@ -39,7 +42,7 @@ const article: DemoArticle = {
       <li><kbd>g</kbd> <kbd>l</kbd> &mdash; <a href="/demo/all?entry=save-for-later">saved for later</a></li>
     </ul>
 
-    <p>While <a href="/demo/all?entry=text-to-speech">listening</a>, press <kbd>p</kbd> to play or pause. Shortcuts stay out of the way while you&rsquo;re typing, so you never trigger one by accident.</p>
+    <p>While <a href="/demo/all?entry=text-to-speech">listening</a>, press <kbd>p</kbd> to play or pause, and <kbd>]</kbd> / <kbd>[</kbd> to skip to the next or previous paragraph. Shortcuts stay out of the way while you&rsquo;re typing, so you never trigger one by accident.</p>
   `,
 };
 
