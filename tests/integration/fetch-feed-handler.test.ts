@@ -9,7 +9,7 @@
  * than testing `processEntries` in isolation.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
@@ -496,6 +496,17 @@ describe("handleFetchFeed", () => {
     const redirectFeedUrl = (status = 301) => {
       routes["/feed.xml"] = { status, headers: { Location: "/moved.xml" } };
     };
+    // Freezes only `Date`, so the handler's clock is pinnable while timers, the
+    // HTTP server and Postgres run normally.
+    const NOW = new Date("2026-06-01T12:00:00Z");
+    const freezeClock = () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(NOW);
+    };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
     it("starts tracking a new permanent redirect without moving the feed", async () => {
       const feed = await createLoopbackFeed();
@@ -510,11 +521,12 @@ describe("handleFetchFeed", () => {
       const after = await readFeed(feed.id);
       expect(after.url).toBe(feed.url);
       expect(after.redirectUrl).toBe(movedTo());
-      expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
+      expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before);
     });
 
     it("keeps waiting while the same redirect is younger than the wait period", async () => {
-      const firstSeen = new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS + 60 * 60 * 1000);
+      freezeClock();
+      const firstSeen = new Date(NOW.getTime() - REDIRECT_WAIT_PERIOD_MS + 1);
       const feed = await createLoopbackFeed({
         redirectUrl: `${baseUrl}/moved.xml`,
         redirectFirstSeenAt: firstSeen,
@@ -537,24 +549,22 @@ describe("handleFetchFeed", () => {
     ])(
       "moves the feed in place once the wait period has passed ($name)",
       async ({ destination }) => {
+        freezeClock();
         const feed = await createLoopbackFeed({
           etag: '"v1"',
           redirectUrl: `${baseUrl}/moved.xml`,
-          redirectFirstSeenAt: new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS),
+          redirectFirstSeenAt: new Date(NOW.getTime() - REDIRECT_WAIT_PERIOD_MS),
         });
         redirectFeedUrl();
         nextResponse = destination();
 
-        const before = Date.now();
         const result = await handleFetchFeed({ feedId: feed.id });
 
         expect(result.success).toBe(true);
         expect(result.metadata).toMatchObject({ redirectApplied: true, newUrl: movedTo() });
         // Refetch straight away from the new URL.
-        expect(result.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
-        expect(result.nextRunAt!.getTime()).toBeGreaterThanOrEqual(before);
+        expect(result.nextRunAt).toEqual(NOW);
         const after = await readFeed(feed.id);
-        expect(after.id).toBe(feed.id);
         expect(after.url).toBe(movedTo());
         expect(after.redirectUrl).toBeNull();
         expect(after.redirectFirstSeenAt).toBeNull();
@@ -574,7 +584,7 @@ describe("handleFetchFeed", () => {
       const after = await readFeed(feed.id);
       expect(after.url).toBe(feed.url);
       expect(after.redirectUrl).toBe(movedTo());
-      expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
+      expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before);
     });
 
     it.each([
