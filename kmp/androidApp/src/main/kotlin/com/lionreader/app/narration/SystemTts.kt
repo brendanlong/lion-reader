@@ -53,22 +53,24 @@ class SystemTts(context: Context) {
         )
     }
 
-    // Looking a voice up asks the engine for all of them (hundreds, over binder).
-    private var voicesByName: Map<String, Voice>? = null
+    /**
+     * The engine's voices as last listed: asking for them is asking for all of them (hundreds, over
+     * binder). Listed again for a voice not in it, which may have been installed since.
+     */
+    @Volatile private var voicesByName: Map<String, Voice> = emptyMap()
 
-    private fun voiceNamed(name: String): Voice? =
-        (voicesByName
-            ?: engine.voices.orEmpty().associateBy { it.name }.also { voicesByName = it })[name]
+    private fun listVoices(tts: TextToSpeech): Collection<Voice> =
+        tts.voices.orEmpty().also { voices -> voicesByName = voices.associateBy { it.name } }
+
+    private fun voiceNamed(tts: TextToSpeech, name: String): Voice? =
+        voicesByName[name] ?: listVoices(tts).firstOrNull { it.name == name }
 
     private fun failed(utteranceId: String) {
         pending.remove(utteranceId)?.resumeWithException(IOException("Speech synthesis failed"))
     }
 
     suspend fun voices(): List<VoiceOption> =
-        ready
-            .await()
-            .voices
-            .orEmpty()
+        listVoices(ready.await())
             .filterNot { TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED in it.features }
             .sortedWith(compareBy({ it.locale.displayName }, { it.name }))
             .map {
@@ -87,7 +89,7 @@ class SystemTts(context: Context) {
     suspend fun synthesize(text: String, voice: String?, file: File) {
         val tts = ready.await()
         // A voice that's gone (uninstalled) falls back to the default too.
-        val wanted = voice?.let(::voiceNamed) ?: tts.defaultVoice
+        val wanted = voice?.let { voiceNamed(tts, it) } ?: tts.defaultVoice
         if (wanted != null && tts.voice?.name != wanted.name) tts.voice = wanted
         withTimeoutOrNull(TIMEOUT_MILLIS + text.length * TIMEOUT_MILLIS_PER_CHAR) {
             synthesizeToFile(tts, text, file)
