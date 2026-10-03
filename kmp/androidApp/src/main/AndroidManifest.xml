@@ -27,10 +27,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- The OAuth redirect, verified against the server's
                  /.well-known/assetlinks.json so only this app receives it. -->
             <intent-filter android:autoVerify="true">
@@ -43,6 +39,28 @@
                     android:path="${appLinkPath}" />
             </intent-filter>
         </activity>
+        <!-- The launcher entry, one per icon; LauncherIcon.kt enables the one
+             for the device's screen. -->
+        <activity-alias
+            android:name=".ColorIcon"
+            android:exported="true"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".EinkIcon"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_eink"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <!-- Apart from the app's task, so sharing doesn't pull the app up. -->
         <activity
             android:name=".share.ShareActivity"

@@ -9,6 +9,7 @@ class LionReaderApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         graph = AppGraph(this)
+        useLauncherIcon()
         SyncScheduler.schedulePeriodic(this)
     }
 }

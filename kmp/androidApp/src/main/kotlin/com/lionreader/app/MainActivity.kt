@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (reopenFromShownIcon()) return
         enableEdgeToEdge()
         handleSignInCallback(intent)
         // The window's recomposer, but with the app's animation speed (AppMotion) rather than
