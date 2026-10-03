@@ -159,6 +159,12 @@ test("the old highlights URL redirects to the starred list", async ({ request })
   expect(response.headers()["location"]).toContain("/demo/starred?entry=welcome");
 });
 
+test("folded-in articles redirect to the article that absorbed them", async ({ request }) => {
+  const response = await request.get("/demo/tag/features?entry=websub", { maxRedirects: 0 });
+  expect(response.status()).toBe(308);
+  expect(response.headers()["location"]).toBe("/demo/tag/features?entry=rss-atom");
+});
+
 test("a direct visit to the internal entry route normalizes to the public URL", async ({
   page,
 }) => {
