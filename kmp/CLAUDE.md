@@ -189,20 +189,23 @@ The Android SDK comes from `sdk.dir` in `kmp/local.properties` (gitignored) or
 tools (not the unrelated Debian `/usr/bin/sdkmanager`):
 
 ```bash
-SDK=/path/outside/the/repo/android-sdk   # e.g. next to the worktree
+SDK=/path/outside/the/repo/android-sdk
 mkdir -p "$SDK/cmdline-tools" && cd "$SDK"
 curl -sSLo tools.zip https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip
 unzip -q tools.zip -d cmdline-tools && mv cmdline-tools/cmdline-tools cmdline-tools/latest && rm tools.zip
-yes | cmdline-tools/latest/bin/sdkmanager --sdk_root="$SDK" \
+yes | HOME="$SDK/.home" cmdline-tools/latest/bin/sdkmanager --sdk_root="$SDK" \
   "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
 echo "sdk.dir=$SDK" > <repo>/kmp/local.properties
 ```
 
-On a shared host, keep tool state out of `$HOME`: `JAVA_TOOL_OPTIONS=-Duser.home=<dir>`
-for `sdkmanager`, and for Gradle `GRADLE_USER_HOME=<dir>` plus
-`ANDROID_PREFS_ROOT=<dir>` (AGP writes `analytics.settings` to `~/.android`
-unless that is set; `ANDROID_USER_HOME` does not cover it, and setting both
-fails the build).
+On a shared host, one SDK and one Gradle home (the default `~/.gradle`) can
+serve every checkout: add SDK versions rather than removing or updating them,
+and never `./gradlew --stop` or kill Gradle by name, since the daemons are
+shared too — kill only your own, by PID. Run `sdkmanager` with `HOME=<dir>`
+(it installs its CLI into `$HOME/.android` regardless of `-Duser.home`), and
+set `ANDROID_PREFS_ROOT=<dir>` for Gradle (AGP writes `analytics.settings` to
+`~/.android` unless that is set; `ANDROID_USER_HOME` does not cover it, and
+setting both fails the build).
 
 ## Commands
 
