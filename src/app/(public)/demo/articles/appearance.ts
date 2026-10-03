@@ -11,11 +11,11 @@ const article: DemoArticle = {
     "Pick your font, text size, and list layout, and choose a theme for daytime, late-night reading, or e-ink screens.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader lets you customize reading comfort: choose <strong>Light</strong>, <strong>Dark</strong>, or <strong>E-paper</strong> themes (or Auto, which follows your device), pick fonts and text size, choose paragraph alignment, and switch between Comfortable and Compact list views to fit more articles on screen.</p>`,
+  summaryHtml: `<p>Lion Reader offers <strong>Light</strong>, <strong>Dark</strong>, and <strong>e-paper</strong> themes, with an Auto option that follows your device&rsquo;s setting and switches to e-paper on e-ink readers. Choose a serif or sans-serif font, adjust text size and alignment, and switch between Comfortable and Compact list views; settings save per device.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-02"),
+  summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Reading comfort is personal, so Lion Reader lets you set things up the way your eyes like them. Changes apply instantly as you adjust them.</p>
+    <p>Pick the theme, font, and text size that suit your eyes. The real settings are at the bottom of this article, so you can try them now and watch this page change as you adjust them.</p>
 
     <h3>Themes for Any Light</h3>
 
@@ -25,15 +25,15 @@ const article: DemoArticle = {
       <li><strong>E-paper</strong> &mdash; for Kindle, Kobo, Boox, and other e-ink screens, with high contrast that stays readable in grayscale.</li>
     </ul>
 
-    <p>Leave it on <strong>Auto</strong> and Lion Reader follows your device&rsquo;s light or dark setting &mdash; and switches to e-paper on its own when it recognizes an e-reader.</p>
+    <p>Leave it on <strong>Auto</strong> and Lion Reader follows your device&rsquo;s light or dark setting &mdash; and switches to e-paper on its own when you open it in an e-reader&rsquo;s web browser. Settings are saved on each device, so your phone can stay dark while your e-reader stays on e-paper.</p>
 
     <h3>Text the Way You Like It</h3>
 
-    <p>Choose from a selection of serif and sans-serif fonts, or use your device&rsquo;s own. Make the text bigger or smaller, and pick left-aligned or justified paragraphs.</p>
+    <p>Choose a serif font like Literata or Merriweather, a sans-serif like Inter, or your device&rsquo;s own. Make the text bigger or smaller, and pick left-aligned or justified paragraphs.</p>
 
     <h3>Roomy or Compact Lists</h3>
 
-    <p>The default <strong>Comfortable</strong> list shows each article as a card with a preview. Switch to <strong>Compact</strong> to fit many more articles on screen at once when you&rsquo;re working through a backlog.</p>
+    <p>The default <strong>Comfortable</strong> list shows each article as a card with a short preview. Switch to <strong>Compact</strong> to fit many more articles on screen at once when you&rsquo;re working through a backlog.</p>
   `,
 };
 
