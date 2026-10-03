@@ -2,7 +2,7 @@
  * FileUploadButton Component
  *
  * Button and dialog for uploading files to save for later reading.
- * Supports .docx, .html, and .md files.
+ * Supports .docx, .html, .md, and .txt files.
  */
 
 "use client";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
+import { SUPPORTED_UPLOAD_EXTENSIONS } from "@/lib/upload-file-types";
 import {
   Dialog,
   DialogHeader,
@@ -27,7 +28,6 @@ import {
 // Constants
 // ============================================================================
 
-const SUPPORTED_EXTENSIONS = [".docx", ".html", ".htm", ".md", ".markdown"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // ============================================================================
@@ -47,7 +47,7 @@ interface FileUploadButtonProps {
 
 function isValidFileType(filename: string): boolean {
   const lower = filename.toLowerCase();
-  return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  return SUPPORTED_UPLOAD_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
 function formatFileSize(bytes: number): string {
@@ -97,7 +97,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
 
   const validateFile = useCallback((file: File): string | null => {
     if (!isValidFileType(file.name)) {
-      return `Unsupported file type. Please upload ${SUPPORTED_EXTENSIONS.join(", ")} files.`;
+      return `Unsupported file type. Please upload ${SUPPORTED_UPLOAD_EXTENSIONS.join(", ")} files.`;
     }
     if (file.size > MAX_FILE_SIZE) {
       return `File is too large (${formatFileSize(file.size)}). Maximum size is ${formatFileSize(MAX_FILE_SIZE)}.`;
@@ -214,7 +214,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
             <input
               type="file"
               aria-label="Choose a file to upload"
-              accept={SUPPORTED_EXTENSIONS.join(",")}
+              accept={SUPPORTED_UPLOAD_EXTENSIONS.join(",")}
               onChange={handleInputChange}
               className={DROP_ZONE_FILE_INPUT_CLASSES}
             />
@@ -232,7 +232,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
               <div className="pointer-events-none flex flex-col items-center">
                 <UploadIcon className="text-faint h-10 w-10" />
                 <p className="text-body mt-2 font-medium">Drop file here or click to browse</p>
-                <p className="ui-text-sm text-muted">.docx, .html, .md up to 10MB</p>
+                <p className="ui-text-sm text-muted">.docx, .html, .md, .txt up to 10MB</p>
               </div>
             )}
           </div>

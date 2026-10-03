@@ -23,11 +23,8 @@ import {
 } from "@/server/http/fetch";
 import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
-import {
-  titleFromFilename,
-  type ConvertedUpload,
-  type SupportedFileType,
-} from "@/server/file/process-upload";
+import { titleFromFilename, type ConvertedUpload } from "@/server/file/process-upload";
+import { type SupportedFileType } from "@/lib/upload-file-types";
 import { usageLimitsConfig } from "@/server/config/env";
 import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";

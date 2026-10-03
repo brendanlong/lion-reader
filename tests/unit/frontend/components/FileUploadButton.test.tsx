@@ -85,6 +85,19 @@ describe("FileUploadButton drop zone accessibility", () => {
     await waitFor(() => expect(callsFor("saved.uploadFile")).toHaveLength(1));
   });
 
+  it("offers and accepts plain text files (#1773)", async () => {
+    renderWithTrpc(<FileUploadButton />, { handlers });
+    openDialog();
+
+    expect(getFileInput().accept.split(",")).toContain(".txt");
+
+    const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+    fireEvent.change(getFileInput(), { target: { files: [file] } });
+
+    expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Upload" })).toBeEnabled());
+  });
+
   it("rejects an unsupported file chosen through the input", async () => {
     renderWithTrpc(<FileUploadButton />, { handlers });
     openDialog();
