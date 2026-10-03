@@ -5,30 +5,32 @@ const article: DemoArticle = {
   subscriptionId: "feed-types",
   type: "web",
   url: null,
-  title: "RSS & Atom Feeds",
+  title: "Follow Any Website",
   author: null,
-  summary: "Subscribe to any RSS 2.0 or Atom feed with automatic detection and efficient polling.",
+  summary:
+    "Paste a link to any blog, news site, or podcast and Lion Reader finds its feed. New posts arrive automatically, often within seconds of publishing.",
   publishedAt: new Date("2025-12-26T12:00:00Z"),
   starred: false,
   summaryHtml: `<p>Lion Reader supports <strong>RSS 2.0 and Atom 1.0</strong> formats with automatic feed discovery. It uses <strong>HTTP conditional requests</strong> and respects Cache-Control headers while polling between once every 10 minutes and once every 7 days. The system handles redirects intelligently and applies exponential backoff for failed fetches.</p>`,
   summaryModelId: "claude-sonnet-4-6",
   summaryGeneratedAt: new Date("2026-02-08"),
   contentHtml: `
-    <h2>Modern Syndication with RSS &amp; Atom</h2>
+    <p>Paste a link to almost any blog, news site, or publication and Lion Reader finds its feed for you &mdash; you don&rsquo;t need to hunt for an RSS button. You&rsquo;ll see the feed&rsquo;s title and a few recent posts before you subscribe, so you know what you&rsquo;re signing up for.</p>
 
-    <p>Lion Reader supports all major web feed formats: <a href="https://www.rssboard.org/rss-specification" target="_blank" rel="noopener noreferrer">RSS 2.0</a>, <a href="https://www.rfc-editor.org/rfc/rfc4287" target="_blank" rel="noopener noreferrer">Atom 1.0</a>, and <a href="/demo/all?entry=json-feed">JSON Feed</a>. RSS (Really Simple Syndication) and Atom are XML-based syndication formats that allow you to subscribe to websites and receive updates automatically. Simply paste any URL and Lion Reader will discover available feeds by checking HTML <code>&lt;link&gt;</code> tags and common feed paths like <code>/feed</code>, <code>/rss</code>, and <code>/atom.xml</code>. You can preview the feed&rsquo;s title, description, and sample entries before subscribing.</p>
+    <p>From then on, new posts show up in your list on their own. Many sites notify Lion Reader the moment they publish, so their posts arrive within seconds; the rest are checked regularly throughout the day.</p>
 
-    <h3>Efficient Polling &amp; Smart Scheduling</h3>
+    <h3>Every Standard Format</h3>
 
-    <p>Lion Reader uses HTTP conditional requests to avoid wasting bandwidth on unchanged content. When checking for updates, it sends <code>If-Modified-Since</code> and <code>If-None-Match</code> headers so servers can respond with a lightweight 304 Not Modified status if nothing has changed. The polling schedule respects <code>Cache-Control</code> headers from the server while enforcing reasonable bounds: feeds are checked between once every 10 minutes (with a server-provided cache hint) and once every 7 days. For feeds that advertise a hub, Lion Reader skips polling entirely and receives <a href="/demo/all?entry=websub">WebSub push notifications</a> the moment new content is published.</p>
+    <p>Lion Reader reads all the common feed formats &mdash; RSS, Atom, and <a href="https://www.jsonfeed.org/" target="_blank" rel="noopener noreferrer">JSON Feed</a> &mdash; and treats them all the same. For sites that don&rsquo;t publish a normal feed, or whose feed leaves out the good parts, <a href="/demo/all?entry=plugins">smart content sources</a> fill in the gaps, and <a href="/demo/all?entry=full-content">full content fetching</a> handles feeds that only send a teaser.</p>
 
-    <h3>Graceful Error Handling</h3>
+    <h3>Feeds That Keep Working</h3>
 
-    <p>Lion Reader handles HTTP redirects intelligently: it tracks 301 permanent redirects and updates the feed URL after a 7-day confirmation period, while following 302 and 307 temporary redirects without updating the stored URL. HTTP-to-HTTPS upgrades are applied immediately. If a feed fails to fetch, exponential backoff is applied with a maximum retry interval of 7 days. This approach ensures Lion Reader is a good citizen of the web while keeping your feeds up to date.</p>
+    <p>When a site moves its feed, Lion Reader follows it to the new address. When a site is down, Lion Reader backs off and tries again later instead of giving up, and the sites you follow are never hammered with requests.</p>
 
-    <h3>Fast &amp; Memory-Efficient Parsing</h3>
-
-    <p>All feeds are parsed using <code>htmlparser2</code> in SAX (streaming) mode, which provides excellent performance and low memory usage even for large feeds. This architectural choice allows Lion Reader to handle feeds of any size efficiently.</p>
+    <details>
+      <summary>How Lion Reader checks feeds</summary>
+      <p>Lion Reader asks each site whether anything has changed before downloading the whole feed, and respects the site&rsquo;s own hints about how often to check. Sites that support <a href="https://www.w3.org/TR/websub/" target="_blank" rel="noopener noreferrer">WebSub</a> push new posts to Lion Reader as soon as they&rsquo;re published, so they don&rsquo;t need to be checked at all.</p>
+    </details>
   `,
 };
 
