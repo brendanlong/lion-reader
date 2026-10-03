@@ -136,7 +136,7 @@ export function findCachedSubscriptionIds(
 export function addSubscriptionToCache(
   queryClient: QueryClient,
   subscription: CachedSubscription & {
-    type: "web" | "email" | "saved";
+    type: "web" | "email" | "saved" | "collection";
     url: string | null;
     title: string | null;
     originalTitle: string | null;

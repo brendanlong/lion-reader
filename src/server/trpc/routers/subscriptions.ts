@@ -74,7 +74,9 @@ const tagOutputSchema = z.object({
  */
 const subscriptionOutputSchema = z.object({
   id: z.string(), // subscription ID (primary key)
-  type: z.enum(["web", "email", "saved"]),
+  // "collection" ships with #1806; accepting it a release early keeps a
+  // rollback or canary on this release from failing on a collection.
+  type: z.enum(["web", "email", "saved", "collection"]),
   url: z.string().nullable(),
   title: z.string().nullable(), // resolved title (custom or original)
   originalTitle: z.string().nullable(), // feed's original title for rename UI
