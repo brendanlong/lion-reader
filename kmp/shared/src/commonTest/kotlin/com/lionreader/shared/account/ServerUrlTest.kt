@@ -1,8 +1,8 @@
-package com.lionreader.app
+package com.lionreader.shared.account
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ServerUrlTest {
     private fun valid(input: String, allowHttp: Boolean = false): String? =
@@ -20,12 +20,20 @@ class ServerUrlTest {
         assertEquals("https://lionreader.com", valid("HTTPS://LionReader.com/"))
         assertEquals("https://lionreader.com", valid("https://lionreader.com:443"))
         assertEquals("http://localhost:42873", valid("http://localhost:42873", allowHttp = true))
+        assertEquals("http://[::1]:3000", valid("http://[::1]:3000/", allowHttp = true))
     }
 
     @Test
     fun anInternationalizedHostIsInPunycode() {
         assertEquals("https://xn--bcher-kva.example", valid("Bücher.example"))
         assertEquals("https://xn--bcher-kva.example:8443", valid("https://bücher.example:8443/"))
+        // RFC 3492's samples, lowercased (Chinese, Arabic, and one past the BMP).
+        assertEquals("https://xn--ihqwcrb4cv8a8dqg056pqjye.example", valid("他们为什么不说中文.example"))
+        assertEquals(
+            "https://xn--egbpdaj6bu4bxfgehfvwxn.example",
+            valid("ليهمابتكلموشعربي؟.example"),
+        )
+        assertEquals("https://xn--ls8h.la", valid("💩.la"))
     }
 
     @Test
@@ -48,9 +56,12 @@ class ServerUrlTest {
                 "https://lionreader.com#top",
                 "https://lion reader.com",
                 "lionreader.com:port",
+                "https://lionreader.com:65536",
+                "https://lion_reader.com",
+                "https://lionreader..com",
             )
             .forEach { input ->
-                assertTrue(input, parseServerUrl(input, allowHttp = true) is ServerUrlInput.Invalid)
+                assertTrue(parseServerUrl(input, allowHttp = true) is ServerUrlInput.Invalid, input)
             }
     }
 }

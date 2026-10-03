@@ -10,14 +10,10 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Observer
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import com.lionreader.app.share.MAX_LINK_LENGTH
 import com.lionreader.app.share.SaveWorker
+import com.lionreader.shared.links.MAX_LINK_LENGTH
 
-/** [url] if it's a web address, the only kind the app opens, shares or links: feeds supply them. */
-fun webUrl(url: String?): String? =
-    url?.trim()?.takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) }
-
-/** Opens a web page ([webUrl]) in the browser. */
+/** Opens a web page ([com.lionreader.shared.links.webUrl]) in the browser. */
 fun Context.openWebPage(url: String) = startOrSay(Intent(Intent.ACTION_VIEW, url.toUri()))
 
 fun Context.shareWebPage(url: String, title: String?) =

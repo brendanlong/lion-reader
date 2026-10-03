@@ -1,12 +1,13 @@
 # Kotlin Multiplatform app
 
-`:shared` is the KMP core (`jvm` + Android targets; iOS later), `:androidApp`
+`:shared` is the KMP core (`jvm`, Android and iOS targets), `:androidApp`
 the Compose app; upcoming work is in `docs/native-app-plan.md`. The app is
 **offline-first**: the UI reads only the local SQLDelight database (`Reader`),
 which `SyncEngine` keeps in step with the server. The UI is native per
-platform; only the article is a WebView (`ReaderWebView`). Each signed-in
-account has **its own database** (`AppGraph`, `AccountSession`). How each part
-works is in the KDoc of the class doing it.
+platform; only the article is a WebView (`ReaderWebView`, showing
+`readerDocument`). Each signed-in account has **its own database**
+(`Accounts`, `AccountSession`). How each part works is in the KDoc of the
+class doing it.
 
 ## Rules
 
@@ -20,7 +21,7 @@ works is in the KDoc of the class doing it.
 - No custom URL scheme for sign-in: any app can register one and finish a
   sign-in under our client id. The redirect is a verified App Link.
 - Token refresh is serialized through `AppAuth`'s mutex (refresh tokens rotate;
-  reuse revokes the family), so the process shares `AppGraph`'s one `AppAuth`,
+  reuse revokes the family), so the process shares `Accounts`' one `AppAuth`,
   and the new pair is on disk before it's used. Only a 400/401 from the token
   endpoint signs the user out; anything else is transient.
 - SQL targets SQLite 3.18 (minSdk 26's), SQLDelight's default dialect: no
@@ -58,7 +59,7 @@ Run from `kmp/`. Gradle provisions its own JDK, so any JDK can launch
 comes from `sdk.dir` in `local.properties` (gitignored) or `ANDROID_HOME`.
 
 - `./gradlew check` — the CI gate: Spotless, `:shared` tests (JVM and Android
-  host), `:androidApp` Robolectric tests, Android lint.
+  host) and iOS compilation, `:androidApp` Robolectric tests, Android lint.
 - `./gradlew assembleDebug` — debug APK (`androidApp/build/outputs/apk/debug/`).
 - `./gradlew spotlessApply` — format.
 - `./gradlew :shared:jvmTest` — the fast loop for shared logic, including
@@ -125,6 +126,14 @@ over (or `adb shell am start -a com.lionreader.app.DEBUG_SIGN_IN_CALLBACK -d
   `generateCommonMainLionReaderDatabaseSchema`); `check` fails unless migrating
   every `.db` matches a fresh database. A migration touching `entry` owes the
   search index what `AppSchema`'s KDoc says.
-- Shared logic goes in `commonMain` with tests in `commonTest`; `jvmTest` is for
-  what needs a JVM-only driver (e.g. SQLDelight's in-memory `JdbcSqliteDriver`).
+- Everything but the platform's UI and services goes in `:shared`'s
+  `commonMain` (accounts, settings, view models, narration's rules, the reader
+  document), so iOS gets the same behavior. What it needs from the platform
+  comes in through an interface the app implements (`KeyValueStore`,
+  `AccountStorage`, `BackgroundSync`) or a parameter (an IO dispatcher, the
+  reader's asset origin), not `expect`/`actual`, unless it's a primitive like
+  `secureRandomBytes`. `check` compiles the iOS targets (linking needs macOS),
+  so JVM-only APIs in `commonMain` fail it.
+- Shared tests go in `commonTest`; `jvmTest` is for what needs a JVM-only
+  driver (e.g. SQLDelight's `JdbcSqliteDriver`) or reflection.
 - Android UI tests run on Robolectric in `androidApp/src/test`, not on a device.

@@ -1,8 +1,8 @@
-package com.lionreader.app.ui
+package com.lionreader.shared.home
 
 import com.lionreader.shared.data.ListScope
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class ListStateTest {
     @Test

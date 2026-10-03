@@ -1,6 +1,8 @@
 package com.lionreader.app
 
 import android.os.Build
+import com.lionreader.shared.settings.AppSettings
+import com.lionreader.shared.settings.ThemeChoice
 
 /**
  * Makers whose Android devices are e-readers with e-ink screens. Android can't tell an app its

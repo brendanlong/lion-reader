@@ -87,6 +87,9 @@ import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.NavSubscription
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.TimelineItem
+import com.lionreader.shared.home.HomeViewModel
+import com.lionreader.shared.home.SyncStatus
+import com.lionreader.shared.home.listTitle
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -122,7 +125,7 @@ fun HomeScreen(
 
     markAllIds?.let { ids ->
         MarkAllReadDialog(
-            listName = title(scope, navigation),
+            listName = listTitle(scope, navigation),
             unread = ids.size,
             onConfirm = {
                 markAllIds = null
@@ -182,7 +185,7 @@ fun HomeScreen(
                     TopAppBar(
                         title = {
                             Text(
-                                title(scope, navigation),
+                                listTitle(scope, navigation),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -416,18 +419,6 @@ private fun MarkAllReadDialog(
 
 /** Uncategorized's key among the expanded tag ids, as on the web. */
 private const val UNCATEGORIZED_KEY = "uncategorized"
-
-private fun title(scope: ListScope, navigation: Navigation?): String =
-    when (scope) {
-        ListScope.All -> "All"
-        ListScope.Starred -> "Starred"
-        ListScope.Saved -> "Saved"
-        ListScope.RecentlyRead -> "Recently read"
-        ListScope.Uncategorized -> "Uncategorized"
-        is ListScope.Tag -> navigation?.tags?.firstOrNull { it.id == scope.id }?.name ?: "Tag"
-        is ListScope.Subscription ->
-            navigation?.subscriptions?.firstOrNull { it.id == scope.id }?.title ?: "Feed"
-    }
 
 @Composable
 private fun Drawer(

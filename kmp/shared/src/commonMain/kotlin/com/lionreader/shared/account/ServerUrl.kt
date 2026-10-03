@@ -1,8 +1,4 @@
-package com.lionreader.app
-
-import java.net.IDN
-import java.net.URI
-import java.net.URISyntaxException
+package com.lionreader.shared.account
 
 /** A server address as typed: the URL to use, or what's wrong with it. */
 sealed interface ServerUrlInput {
@@ -21,42 +17,52 @@ sealed interface ServerUrlInput {
 fun parseServerUrl(input: String, allowHttp: Boolean): ServerUrlInput {
     val text = input.trim()
     if (text.isEmpty()) return ServerUrlInput.Invalid("Enter your server's address.")
-    val uri =
-        try {
-            URI(asciiHost(if ("://" in text) text else "https://$text"))
-        } catch (_: URISyntaxException) {
-            return ServerUrlInput.Invalid(NOT_AN_ADDRESS)
-        } catch (_: IllegalArgumentException) {
-            return ServerUrlInput.Invalid(NOT_AN_ADDRESS)
-        }
-    val scheme = uri.scheme?.lowercase()
-    val host = uri.host?.lowercase()
+    val url = if ("://" in text) text else "https://$text"
+    val scheme = url.substringBefore("://").lowercase()
+    val rest = url.substringAfter("://")
+    val authorityEnd = rest.indexOfAny(charArrayOf('/', '?', '#')).takeIf { it >= 0 } ?: rest.length
+    val authority = rest.substring(0, authorityEnd)
+    val after = rest.substring(authorityEnd)
+    // An IPv6 literal ([::1]) has colons of its own.
+    val hostEnd =
+        if (authority.startsWith('[')) authority.indexOf(']') + 1
+        else authority.indexOf(':').takeIf { it >= 0 } ?: authority.length
+    val host = authority.substring(0, hostEnd).lowercase().let(::asciiHost)
+    val port = authority.substring(hostEnd).removePrefix(":")
     return when {
         scheme == "http" && !allowHttp ->
             ServerUrlInput.Invalid("Use an https:// address: signing in over http isn't safe.")
         scheme != "https" && scheme != "http" -> ServerUrlInput.Invalid(NOT_AN_ADDRESS)
-        host.isNullOrEmpty() -> ServerUrlInput.Invalid(NOT_AN_ADDRESS)
-        uri.rawUserInfo != null ||
-            uri.rawPath.orEmpty().trimEnd('/').isNotEmpty() ||
-            uri.rawQuery != null ||
-            uri.rawFragment != null -> ServerUrlInput.Invalid(NOT_AN_ADDRESS)
+        host == null || !(HOST.matches(host) || IPV6.matches(host)) ->
+            ServerUrlInput.Invalid(NOT_AN_ADDRESS)
+        port.isNotEmpty() && (port.any { it !in '0'..'9' } || port.toIntOrNull() !in 1..65535) ->
+            ServerUrlInput.Invalid(NOT_AN_ADDRESS)
+        // A path, query, fragment or user name: not just the server.
+        after.trimEnd('/').isNotEmpty() || '@' in authority ->
+            ServerUrlInput.Invalid(NOT_AN_ADDRESS)
         else -> {
             val defaultPort = if (scheme == "https") 443 else 80
-            val port = uri.port.takeIf { it != -1 && it != defaultPort }?.let { ":$it" } ?: ""
-            ServerUrlInput.Valid("$scheme://$host$port")
+            val shownPort = port.toIntOrNull()?.takeIf { it != defaultPort }?.let { ":$it" } ?: ""
+            ServerUrlInput.Valid("$scheme://$host$shownPort")
         }
     }
 }
 
-/** [url] with its host in ASCII: [URI] has no host for an internationalized one. */
-private fun asciiHost(url: String): String {
-    val start = url.indexOf("://") + 3
-    val end = url.indexOfAny(charArrayOf('/', '?', '#'), start).takeIf { it >= 0 } ?: url.length
-    val authority = url.substring(start, end)
-    if (authority.all { it.code < 128 }) return url
-    val host = authority.substringBefore(':')
-    val port = authority.substring(host.length)
-    return url.substring(0, start) + IDN.toASCII(host) + port + url.substring(end)
-}
+/** A DNS name or an IPv4 address: labels of letters, digits and hyphens. */
+private val HOST = Regex("""[a-z0-9-]+(\.[a-z0-9-]+)*""")
+
+private val IPV6 = Regex("""\[[0-9a-f:.]+]""")
+
+/** [host] (lowercase) with each non-ASCII label in punycode; null if one can't be encoded. */
+private fun asciiHost(host: String): String? =
+    host
+        .split('.')
+        // Not a DNS name's dots, ASCII ones: those of the Japanese and Chinese full-width forms
+        // count too, as in Java's IDN.
+        .flatMap { it.split('。', '．', '｡') }
+        .map { label ->
+            if (label.all { it.code < 128 }) label else "xn--" + (punycode(label) ?: return null)
+        }
+        .joinToString(".")
 
 private const val NOT_AN_ADDRESS = "Enter just the server's address, like https://lionreader.com."

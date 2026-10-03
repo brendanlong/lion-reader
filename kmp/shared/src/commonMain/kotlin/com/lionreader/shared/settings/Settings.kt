@@ -1,6 +1,6 @@
-package com.lionreader.app
+package com.lionreader.shared.settings
 
-import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -9,7 +9,6 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.lionreader.shared.sync.RetentionPolicy
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -23,7 +22,7 @@ enum class ThemeChoice {
     EPAPER,
 }
 
-/** The web reader's font choices; `key` matches `assets/reader/appearance.json`. */
+/** The web reader's font choices; `key` matches the app's `assets/reader/appearance.json`. */
 enum class ReaderFont(val key: String, val label: String, val cssFamily: String) {
     SYSTEM("system", "System", "sans-serif"),
     MERRIWEATHER("merriweather", "Merriweather", "'Merriweather', Georgia, serif"),
@@ -79,14 +78,12 @@ data class AppSettings(
         get() = RetentionPolicy(windowDays = retentionDays)
 }
 
-private val Context.settingsStore by preferencesDataStore("settings")
-
-/** [defaults]: what a setting the user hasn't changed is ([deviceDefaults]). */
-class SettingsRepository(private val context: Context, val defaults: AppSettings) {
-    val settings: Flow<AppSettings> = context.settingsStore.data.map { it.toSettings(defaults) }
+/** [defaults]: what a setting the user hasn't changed is (the device's, e.g. an e-reader's). */
+class SettingsRepository(private val store: DataStore<Preferences>, val defaults: AppSettings) {
+    val settings: Flow<AppSettings> = store.data.map { it.toSettings(defaults) }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
-        context.settingsStore.edit { prefs -> prefs.store(transform(prefs.toSettings(defaults))) }
+        store.edit { prefs -> prefs.store(transform(prefs.toSettings(defaults))) }
     }
 }
 

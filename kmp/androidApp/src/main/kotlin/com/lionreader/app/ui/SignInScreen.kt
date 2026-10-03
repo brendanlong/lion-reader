@@ -24,8 +24,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.lionreader.app.ServerUrlInput
-import com.lionreader.app.parseServerUrl
+import com.lionreader.shared.account.ServerUrlInput
+import com.lionreader.shared.account.parseServerUrl
 
 /**
  * [onSignIn] gets the server's checked URL ([parseServerUrl]); [allowHttp] for debug builds, whose

@@ -16,7 +16,20 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.lionreader.app.AppSettings
+import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.narration.NarrationState
+import com.lionreader.shared.narration.PlaybackState
+import com.lionreader.shared.narration.PlayerSnapshot
+import com.lionreader.shared.narration.SpeechChunk
+import com.lionreader.shared.narration.SpeechInterrupted
+import com.lionreader.shared.narration.SpeechUnavailable
+import com.lionreader.shared.narration.derive
+import com.lionreader.shared.narration.finished
+import com.lionreader.shared.narration.paragraphAfter
+import com.lionreader.shared.narration.shouldSynthesize
+import com.lionreader.shared.narration.speechChunks
+import com.lionreader.shared.narration.spokenParagraphs
+import com.lionreader.shared.settings.AppSettings
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -37,32 +50,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-
-/** What to narrate: an article's paragraphs, as the reader's narration script extracted them. */
-data class NarratedArticle(
-    val entryId: String,
-    val title: String,
-    val source: String?,
-    val paragraphs: List<String>,
-)
-
-/**
- * Narration is on while there is a state: the article it's on, the paragraph being spoken (null
- * when narration has just followed to an article and has no place in it yet), and whether it's
- * playing or paused. The rest is derived ([derive]). [waiting]: it should be playing but has no
- * audio yet (the article's text hasn't been supplied, the engine is getting ready, or the next
- * chunk is still being synthesized). [canSkipBack] and [canSkipForward]: whether there's a
- * paragraph to skip to that way.
- */
-data class NarrationState(
-    val entryId: String,
-    val title: String,
-    val paragraph: Int?,
-    val playing: Boolean,
-    val waiting: Boolean = false,
-    val canSkipBack: Boolean = false,
-    val canSkipForward: Boolean = false,
-)
 
 /**
  * Narrates one article at a time with the [SpeechEngine] the settings pick: synthesizes it chunk by
@@ -580,7 +567,12 @@ class Narrator(
 
     private fun snapshot() =
         PlayerSnapshot(
-            player.playbackState,
+            when (player.playbackState) {
+                Player.STATE_BUFFERING -> PlaybackState.BUFFERING
+                Player.STATE_READY -> PlaybackState.READY
+                Player.STATE_ENDED -> PlaybackState.ENDED
+                else -> PlaybackState.IDLE
+            },
             player.mediaItemCount,
             player.currentMediaItem?.mediaId?.toIntOrNull(),
         )

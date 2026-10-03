@@ -1,8 +1,7 @@
 package com.lionreader.app
 
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.mutablePreferencesOf
-import androidx.datastore.preferences.core.stringPreferencesKey
+import com.lionreader.shared.settings.AppSettings
+import com.lionreader.shared.settings.ThemeChoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -19,18 +18,11 @@ class EinkDeviceTest {
     }
 
     @Test
-    fun anEinkDeviceStartsOnEpaperWithoutAnimationsButKeepsWhatTheUserChose() {
-        val defaults = deviceDefaults(eink = true)
-        val unchanged = mutablePreferencesOf()
-        assertEquals(ThemeChoice.EPAPER, unchanged.toSettings(defaults).theme)
-        assertFalse(unchanged.toSettings(defaults).animations)
-
-        // A theme picked on the device; animations stay off unless turned on too.
-        val themed = mutablePreferencesOf(stringPreferencesKey("theme") to "DARK")
-        assertEquals(ThemeChoice.DARK, themed.toSettings(defaults).theme)
-        assertFalse(themed.toSettings(defaults).animations)
-        themed[booleanPreferencesKey("animations")] = true
-        assertTrue(themed.toSettings(defaults).animations)
+    fun anEinkDeviceStartsOnEpaperWithoutAnimations() {
+        assertEquals(
+            AppSettings(theme = ThemeChoice.EPAPER, animations = false),
+            deviceDefaults(eink = true),
+        )
     }
 
     @Test

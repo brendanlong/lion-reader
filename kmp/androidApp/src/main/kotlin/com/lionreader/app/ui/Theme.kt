@@ -7,7 +7,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import com.lionreader.app.ThemeChoice
+import com.lionreader.shared.settings.ThemeChoice
 
 // The web's tokens (src/app/globals.css): amber accent, zinc neutrals.
 private val Amber700 = Color(0xFFB45309)

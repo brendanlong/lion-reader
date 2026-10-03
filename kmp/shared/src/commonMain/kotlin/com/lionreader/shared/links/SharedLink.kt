@@ -1,8 +1,11 @@
-package com.lionreader.app.share
+package com.lionreader.shared.links
 
 private val LINK = Regex("""https?://\S+""", RegexOption.IGNORE_CASE)
 
-/** Longer than any real link, and well inside WorkManager's 10 KB of input data. */
+/**
+ * Longer than any real link, and well inside what background jobs can be handed (WorkManager's 10
+ * KB).
+ */
 const val MAX_LINK_LENGTH = 4096
 
 /**

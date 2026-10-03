@@ -62,25 +62,27 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.repeatOnLifecycle
-import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.R
-import com.lionreader.app.narration.NarratedArticle
-import com.lionreader.app.narration.NarrationState
 import com.lionreader.app.openWebPage
-import com.lionreader.app.reader.AppearanceTokens
-import com.lionreader.app.reader.ReaderColors
-import com.lionreader.app.reader.ReaderHeader
+import com.lionreader.app.reader.ASSET_ORIGIN
 import com.lionreader.app.reader.ReaderNarration
 import com.lionreader.app.reader.ReaderPaging
 import com.lionreader.app.reader.ReaderWebView
+import com.lionreader.app.reader.appearanceTokens
 import com.lionreader.app.reader.pagerViewConfiguration
-import com.lionreader.app.reader.readerDocument
 import com.lionreader.app.shareWebPage
-import com.lionreader.app.webUrl
+import com.lionreader.shared.account.AccountSession
 import com.lionreader.shared.api.apiFailure
 import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
+import com.lionreader.shared.links.webUrl
+import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.narration.NarrationState
+import com.lionreader.shared.reader.AppearanceTokens
+import com.lionreader.shared.reader.ReaderColors
+import com.lionreader.shared.reader.ReaderHeader
+import com.lionreader.shared.reader.readerDocument
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -138,7 +140,7 @@ fun EntryScreen(
     val settings by graph.currentSettings.collectAsStateWithLifecycle()
     val entry = articles.entry(pages[pager.targetPage])
     val coroutines = rememberCoroutineScope()
-    val tokens = remember { AppearanceTokens.load(context) }
+    val tokens = remember { appearanceTokens(context) }
     // Null while unknown (e.g. offline): only summaries already on the device show then.
     val summariesAvailable by produceState<Boolean?>(null) { value = account.summariesAvailable() }
 
@@ -155,7 +157,7 @@ fun EntryScreen(
                 onClick = {
                     if (narrating) graph.narrator.stop()
                     else if (paragraphs != null)
-                        graph.narrator.narrate(narratedArticle(current.id, current, paragraphs))
+                        graph.narrator.narrate(NarratedArticle.of(current, paragraphs))
                 }
             ) {
                 Icon(
@@ -178,7 +180,7 @@ fun EntryScreen(
                 } else if (articles.startSummarizing(id)) {
                     coroutines.launch {
                         try {
-                            withContext(Dispatchers.IO) { account.sync.summarize(id) }
+                            account.summarize(id)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -361,11 +363,8 @@ fun EntryScreen(
 private fun listenFrom(graph: AppGraph, articles: ArticlePages, entryId: String, paragraph: Int) {
     val entry = articles.entry(entryId) ?: return
     val paragraphs = articles.paragraphs(entryId) ?: return
-    graph.narrator.listenFrom(narratedArticle(entryId, entry, paragraphs), paragraph)
+    graph.narrator.listenFrom(NarratedArticle.of(entry, paragraphs), paragraph)
 }
-
-private fun narratedArticle(entryId: String, entry: EntryDetail, paragraphs: List<String>) =
-    NarratedArticle(entryId, entry.title ?: "Untitled", entry.source, paragraphs)
 
 /**
  * Narration, while on, is of the article on screen: when the pager moves to another, what's playing
@@ -395,7 +394,7 @@ internal fun NarrationFollowsPage(
         if (!following || paragraphs == null || !started) return@LaunchedEffect
         delay(settle)
         val shown = current ?: return@LaunchedEffect
-        supply(narratedArticle(entryId, shown, paragraphs))
+        supply(NarratedArticle.of(shown, paragraphs))
     }
 }
 
@@ -474,7 +473,15 @@ private fun EntryPage(
         // Not rebuilt on every recomposition (each narration step is one).
         val document =
             remember(header, summary, content, settings, tokens, readerColors) {
-                readerDocument(header, summary, content, settings, tokens, readerColors)
+                readerDocument(
+                    header,
+                    summary,
+                    content,
+                    settings,
+                    tokens,
+                    readerColors,
+                    ASSET_ORIGIN,
+                )
             }
         ReaderWebView(
             document,

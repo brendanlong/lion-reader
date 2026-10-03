@@ -1,16 +1,15 @@
 package com.lionreader.app.narration
 
 import android.net.Uri
-import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MAX_CLOUD_SPEECH_CHARS
-import com.lionreader.shared.api.apiFailure
+import com.lionreader.shared.narration.CloudSpeechAnswers
+import com.lionreader.shared.narration.cloudSpeechCacheKey
+import com.lionreader.shared.narration.streamCloudSpeech
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -19,7 +18,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -43,8 +41,7 @@ class CloudSpeechRequests {
      */
     internal val inFlight = ConcurrentHashMap<String, Deferred<StreamedAudio>>()
 
-    /** Times the server has started answering with speech (not cache hits). */
-    internal val answered = AtomicLong()
+    internal val answers = CloudSpeechAnswers()
 }
 
 /**
@@ -156,61 +153,11 @@ class CloudVoices(
         }
     }
 
-    /**
-     * Streams [text] to [onAudio] (on IO: the caller's [scope] dispatcher). Until audio starts,
-     * trouble is retried and sorted into the [SpeechEngine] failures; once it has, a failure is the
-     * player's to handle ([SpeechStreamBroken]), so it's thrown as is.
-     */
-    private suspend fun request(text: String, onAudio: suspend (ByteArray) -> Unit) {
-        val answeredBefore = requests.answered.get()
-        var wait = 1_000L
-        var serverTrouble = false
-        var busy = false
-        for (attempt in 1..ATTEMPTS) {
-            var started = false
-            try {
-                api.streamSpeech(model, voice, text, pauseSeconds) { bytes ->
-                    if (!started) requests.answered.incrementAndGet()
-                    started = true
-                    onAudio(bytes)
-                }
-                return
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (started) throw e
-                val why = e.apiFailure()
-                when (why) {
-                    ApiFailure.SignedOut -> throw SpeechUnavailable("Sign in to use cloud voices.")
-                    // A provider turning down the key is a 422 saying so.
-                    is ApiFailure.Rejected ->
-                        throw SpeechUnavailable(why.message ?: "Cloud voices aren't available.")
-                    else -> {}
-                }
-                // Busy (the server's provider, or our rate limit) isn't this text's fault.
-                busy = why is ApiFailure.Busy
-                serverTrouble = why == ApiFailure.ServerTrouble
-            }
-            if (attempt < ATTEMPTS) {
-                delay(wait)
-                wait *= 2
-            }
-        }
-        // It answers other requests but keeps failing this one: it's this text, so the narrator
-        // skips just this chunk (any exception but a SpeechException).
-        if (serverTrouble && requests.answered.get() > answeredBefore) {
-            throw IOException("The cloud voice couldn't say this part.")
-        }
-        throw SpeechInterrupted(
-            if (serverTrouble || busy) "The cloud voice isn't working right now."
-            else "Couldn't reach the cloud voice. Check your connection."
-        )
-    }
+    /** Streams [text] to [onAudio] (on IO: the caller's [scope] dispatcher). */
+    private suspend fun request(text: String, onAudio: suspend (ByteArray) -> Unit) =
+        streamCloudSpeech(api, model, voice, text, pauseSeconds, requests.answers, onAudio)
 
-    private fun key(text: String): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest("$model\n$voice\n$pauseSeconds\n$text".toByteArray())
-            .joinToString("") { "%02x".format(it) }
+    private fun key(text: String): String = cloudSpeechCacheKey(model, voice, pauseSeconds, text)
 
     private fun trim() {
         val files = cacheDir.listFiles { file -> file.extension == EXTENSION }.orEmpty()
@@ -230,7 +177,6 @@ class CloudVoices(
     }
 
     private companion object {
-        const val ATTEMPTS = 4
         /** AAC in fragmented MP4, as the server sends it. */
         const val EXTENSION = "mp4"
     }

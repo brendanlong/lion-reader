@@ -1,14 +1,15 @@
-package com.lionreader.app
+package com.lionreader.shared.account
 
-import android.app.Application
-import androidx.test.core.app.ApplicationProvider
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import java.util.Collections
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -20,20 +21,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.annotation.Config
 
-@RunWith(AndroidJUnit4::class)
-@Config(application = Application::class)
 class SessionDriverTest {
     private val driver =
-        SessionDriver(
-            AndroidSqliteDriver(AppSchema, ApplicationProvider.getApplicationContext(), null)
-        )
+        SessionDriver(JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { AppSchema.create(it) })
     private val reader = Reader(LionReaderDatabase(driver), { 0L }, Dispatchers.IO) {}
 
     @Test
@@ -42,10 +33,10 @@ class SessionDriverTest {
 
         driver.close()
 
-        assertThrows(CancellationException::class.java) {
+        assertFailsWith<CancellationException> {
             runBlocking { reader.setStarred("entry", false) }
         }
-        assertThrows(CancellationException::class.java) {
+        assertFailsWith<CancellationException> {
             runBlocking { reader.unreadIds(ListScope.All) }
         }
     }

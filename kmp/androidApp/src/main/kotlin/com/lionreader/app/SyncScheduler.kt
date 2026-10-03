@@ -12,16 +12,14 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.lionreader.shared.api.ApiFailure
-import com.lionreader.shared.api.apiFailure
+import com.lionreader.shared.account.SyncOutcome
+import com.lionreader.shared.account.runBackgroundSync
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
- * Background sync through WorkManager: a periodic full sync, and a quick flush of the outbox after
- * the user acts. Both wait for a network and retry with backoff, so changes made offline go out
- * once the device reconnects.
+ * Background sync ([com.lionreader.shared.account.BackgroundSync]) through WorkManager: a periodic
+ * full sync, and a quick flush of the outbox after the user acts.
  */
 object SyncScheduler {
     private const val PERIODIC = "sync-periodic"
@@ -69,27 +67,15 @@ object SyncScheduler {
 }
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result {
-        val graph = applicationContext.graph
-        val account = graph.account.value ?: return Result.success()
-        if (!account.connection.auth.signedIn.value || !account.confirmed.value) {
-            return Result.success()
+    override suspend fun doWork(): Result =
+        when (
+            applicationContext.graph.accounts.runBackgroundSync(
+                full = inputData.getBoolean(SyncScheduler.FULL_SYNC, true),
+                io = Dispatchers.IO,
+            )
+        ) {
+            SyncOutcome.DONE -> Result.success()
+            SyncOutcome.RETRY -> Result.retry()
+            SyncOutcome.FAILED -> Result.failure()
         }
-        return try {
-            // SyncEngine doesn't leave the caller's thread, and it's database work.
-            withContext(Dispatchers.IO) {
-                if (inputData.getBoolean(SyncScheduler.FULL_SYNC, true)) {
-                    account.sync.sync()
-                } else {
-                    account.sync.flushOutbox()
-                }
-            }
-            Result.success()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Anything but signing out is tried again later: the periodic sync would anyway.
-            if (e.apiFailure() == ApiFailure.SignedOut) Result.failure() else Result.retry()
-        }
-    }
 }

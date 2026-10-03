@@ -22,6 +22,17 @@ work. Each phase below adds the server pieces it needs alongside its client code
 
 ## Decisions for those phases
 
+### iOS
+
+The shared core (`:shared`) already compiles for iOS. The app supplies what
+Android's `AppGraph` does: `Accounts` with a Keychain-backed `KeyValueStore`
+(tokens included), an `AccountStorage` over SQLDelight's native driver, and a
+`BackgroundSync` on BGTaskScheduler running `runBackgroundSync`; a WKWebView
+serving the reader assets at its own origin for `readerDocument`; and a
+narrator over the platform's player, making the decisions in
+`NarrationRules.kt` and fetching cloud voices with `streamCloudSpeech`. The reader assets (scripts, fonts,
+`appearance.json`) are bundled from `kmp/androidApp/src/main/assets/reader/`.
+
 ### Share targets
 
 - Android files: add `ACTION_SEND` filters for `text/markdown`, `text/html`,

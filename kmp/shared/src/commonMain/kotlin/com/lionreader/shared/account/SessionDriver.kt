@@ -1,4 +1,4 @@
-package com.lionreader.app
+package com.lionreader.shared.account
 
 import app.cash.sqldelight.Query
 import app.cash.sqldelight.Transacter
@@ -6,6 +6,7 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -24,7 +25,7 @@ internal class SessionDriver(private val driver: SqlDriver) : SqlDriver {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (closed) throw SessionClosed().apply { initCause(e) } else throw e
+            if (closed) throw SessionClosed(e) else throw e
         }
     }
 
@@ -63,4 +64,5 @@ internal class SessionDriver(private val driver: SqlDriver) : SqlDriver {
     }
 }
 
-internal class SessionClosed : CancellationException("The account's session has ended")
+internal class SessionClosed(override val cause: Throwable? = null) :
+    CancellationException("The account's session has ended")

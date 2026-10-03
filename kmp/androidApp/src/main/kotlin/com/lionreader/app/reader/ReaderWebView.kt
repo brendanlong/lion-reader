@@ -54,7 +54,8 @@ import com.lionreader.app.shareWebPage
 import com.lionreader.app.ui.PAGE_FRACTION
 import com.lionreader.app.ui.PageLayer
 import com.lionreader.app.ui.PageTurns
-import com.lionreader.app.webUrl
+import com.lionreader.shared.reader.AppearanceTokens
+import com.lionreader.shared.reader.linkTarget
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -302,12 +303,13 @@ private class ReaderView(context: Context) : WebView(context) {
         val x = downX
         val y = downY
         val pressed = { href: String? ->
-            linkTarget(href)?.let { report(LinkPress(it, x, y)) }
+            linkTarget(href, ASSET_ORIGIN)?.let { report(LinkPress(it, x, y)) }
         }
         val hit = hitTestResult
         val handled =
             when (hit.type) {
-                HitTestResult.SRC_ANCHOR_TYPE -> linkTarget(hit.extra)?.also { pressed(it) } != null
+                HitTestResult.SRC_ANCHOR_TYPE ->
+                    linkTarget(hit.extra, ASSET_ORIGIN)?.also { pressed(it) } != null
                 // A linked image: the hit is the image; the page says where the link goes. That
                 // answer comes after the press is taken, so a linked image whose link isn't a web
                 // page gets no menu, and not the WebView's own long press either.
@@ -590,12 +592,11 @@ fun pagerViewConfiguration(): androidx.compose.ui.platform.ViewConfiguration {
     }
 }
 
-/**
- * [href] if it's a web page outside the article (a relative one resolves to the reader's own
- * origin).
- */
-internal fun linkTarget(href: String?): String? =
-    webUrl(href)?.takeUnless {
-        it.startsWith("$ASSET_ORIGIN/", ignoreCase = true) ||
-            it.equals(ASSET_ORIGIN, ignoreCase = true)
-    }
+/** Where the bundled fonts and scripts are served from (the WebView's asset loader). */
+const val ASSET_ORIGIN = "https://appassets.androidplatform.net"
+
+/** The reader's sizing shared with the web, from the bundled `reader/appearance.json`. */
+fun appearanceTokens(context: Context): AppearanceTokens =
+    AppearanceTokens.parse(
+        context.assets.open("reader/appearance.json").bufferedReader().use { it.readText() }
+    )

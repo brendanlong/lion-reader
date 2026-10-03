@@ -24,18 +24,6 @@ interface SpeechEngine {
     suspend fun synthesize(text: String, dir: File, name: String): Uri
 }
 
-/** The engine can't narrate (signed out, no key, the voice rejected): stop, and say why. */
-class SpeechUnavailable(message: String) : SpeechException(message)
-
-/**
- * The engine can't be reached for now (no connection, server trouble): the narrator plays what it
- * has and tries again, pausing if it runs out for long.
- */
-class SpeechInterrupted(message: String) : SpeechException(message)
-
-/** Why a chunk couldn't be synthesized, other than the chunk itself (which is just skipped). */
-sealed class SpeechException(message: String) : Exception(message)
-
 /** The device's text-to-speech engine, with the voice named [voice] (null: the default). */
 class DeviceVoices(private val tts: SystemTts, private val voice: String?) : SpeechEngine {
     override val maxChunkChars = 400

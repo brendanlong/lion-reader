@@ -1,10 +1,10 @@
-package com.lionreader.app
+package com.lionreader.shared.links
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
-class WebLinksTest {
+class WebUrlTest {
     @Test
     fun onlyWebAddressesAreOpened() {
         assertEquals("https://example.com/a", webUrl(" https://example.com/a "))
@@ -18,6 +18,6 @@ class WebLinksTest {
                 "content://settings/secure",
                 "example.com",
             )
-            .forEach { assertNull(it, webUrl(it)) }
+            .forEach { assertNull(webUrl(it), it) }
     }
 }

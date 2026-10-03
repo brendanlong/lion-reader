@@ -1,11 +1,10 @@
-package com.lionreader.app.narration
+package com.lionreader.shared.narration
 
-import androidx.media3.common.Player
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class NarrationRulesTest {
     private fun chunk(paragraph: Int) = SpeechChunk(paragraph, "Text.")
@@ -50,7 +49,7 @@ class NarrationRulesTest {
         assertNull(paragraphAfter(listOf(0, 2), null, -1))
     }
 
-    private fun player(state: Int, items: Int = 3, chunk: Int? = 0) =
+    private fun player(state: PlaybackState, items: Int = 3, chunk: Int? = 0) =
         PlayerSnapshot(state, items, chunk)
 
     @Test
@@ -62,15 +61,15 @@ class NarrationRulesTest {
 
     @Test
     fun afterItWaitsForAudioThePlayerHasntGot() {
-        assertFalse(isWaiting(true, false, player(Player.STATE_READY), fed = false))
-        assertTrue(isWaiting(true, false, player(Player.STATE_READY, items = 0), fed = false))
-        assertTrue(isWaiting(true, false, player(Player.STATE_BUFFERING), fed = false))
-        assertTrue(isWaiting(true, false, player(Player.STATE_IDLE), fed = true))
+        assertFalse(isWaiting(true, false, player(PlaybackState.READY), fed = false))
+        assertTrue(isWaiting(true, false, player(PlaybackState.READY, items = 0), fed = false))
+        assertTrue(isWaiting(true, false, player(PlaybackState.BUFFERING), fed = false))
+        assertTrue(isWaiting(true, false, player(PlaybackState.IDLE), fed = true))
         // Caught up with the synthesis, unless that was everything.
-        assertTrue(isWaiting(true, false, player(Player.STATE_ENDED), fed = false))
-        assertFalse(isWaiting(true, false, player(Player.STATE_ENDED), fed = true))
+        assertTrue(isWaiting(true, false, player(PlaybackState.ENDED), fed = false))
+        assertFalse(isWaiting(true, false, player(PlaybackState.ENDED), fed = true))
         // Paused, the player's state still says whether there's audio.
-        assertTrue(isWaiting(false, false, player(Player.STATE_BUFFERING), fed = false))
+        assertTrue(isWaiting(false, false, player(PlaybackState.BUFFERING), fed = false))
     }
 
     @Test
@@ -112,11 +111,11 @@ class NarrationRulesTest {
 
     @Test
     fun itsFinishedOnceTheLastChunkThereWillBeHasPlayed() {
-        assertTrue(finished(player(Player.STATE_ENDED, chunk = 4), fed = true, lastAdded = 4))
+        assertTrue(finished(player(PlaybackState.ENDED, chunk = 4), fed = true, lastAdded = 4))
         // More is still coming.
-        assertFalse(finished(player(Player.STATE_ENDED, chunk = 4), fed = false, lastAdded = 4))
-        assertFalse(finished(player(Player.STATE_READY, chunk = 4), fed = true, lastAdded = 4))
+        assertFalse(finished(player(PlaybackState.ENDED, chunk = 4), fed = false, lastAdded = 4))
+        assertFalse(finished(player(PlaybackState.READY, chunk = 4), fed = true, lastAdded = 4))
         // Ended, but not on the last chunk added.
-        assertFalse(finished(player(Player.STATE_ENDED, chunk = 3), fed = true, lastAdded = 4))
+        assertFalse(finished(player(PlaybackState.ENDED, chunk = 3), fed = true, lastAdded = 4))
     }
 }

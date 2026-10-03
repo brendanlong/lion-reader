@@ -20,6 +20,8 @@ import androidx.work.WorkManager
 import com.lionreader.app.MainActivity
 import com.lionreader.app.graph
 import com.lionreader.app.ui.LionReaderTheme
+import com.lionreader.shared.links.MAX_LINK_LENGTH
+import com.lionreader.shared.links.sharedLink
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 
@@ -38,7 +40,7 @@ class ShareActivity : ComponentActivity() {
                 ?.toString()
                 .let(::sharedLink)
         val tooLong = link != null && link.length > MAX_LINK_LENGTH
-        val signedIn = graph.connection.value.auth.signedIn.value
+        val signedIn = graph.accounts.connection.value.auth.signedIn.value
         // Only once: a recreated dialog (rotation) follows the same work.
         if (savedInstanceState == null && link != null && !tooLong && signedIn) {
             SaveWorker.enqueue(this, link)

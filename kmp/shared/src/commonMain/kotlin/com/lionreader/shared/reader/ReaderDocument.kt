@@ -1,31 +1,29 @@
-package com.lionreader.app.reader
+package com.lionreader.shared.reader
 
-import android.content.Context
-import com.lionreader.app.AppSettings
-import com.lionreader.app.ReaderFont
-import com.lionreader.app.webUrl
-import org.json.JSONObject
+import com.lionreader.shared.links.webUrl
+import com.lionreader.shared.settings.AppSettings
+import com.lionreader.shared.settings.ReaderFont
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
-/** Per-font sizing shared with the web (`assets/reader/appearance.json`). */
-class AppearanceTokens(private val json: JSONObject) {
-    fun sizeAdjust(font: ReaderFont): Double =
-        json.getJSONObject("fonts").getJSONObject(font.key).getDouble("sizeAdjust")
+/** Per-font sizing shared with the web: the app's `assets/reader/appearance.json`, [parse]d. */
+@Serializable
+class AppearanceTokens(
+    private val fonts: Map<String, FontTokens>,
+    private val textSizes: Map<String, Double>,
+) {
+    @Serializable class FontTokens(val sizeAdjust: Double, val lineHeight: Double)
 
-    fun lineHeight(font: ReaderFont): Double =
-        json.getJSONObject("fonts").getJSONObject(font.key).getDouble("lineHeight")
+    fun sizeAdjust(font: ReaderFont): Double = fonts.getValue(font.key).sizeAdjust
 
-    fun textSize(settings: AppSettings): Double =
-        json.getJSONObject("textSizes").getDouble(settings.textSize.key)
+    fun lineHeight(font: ReaderFont): Double = fonts.getValue(font.key).lineHeight
+
+    fun textSize(settings: AppSettings): Double = textSizes.getValue(settings.textSize.key)
 
     companion object {
-        fun load(context: Context) =
-            AppearanceTokens(
-                JSONObject(
-                    context.assets.open("reader/appearance.json").bufferedReader().use {
-                        it.readText()
-                    }
-                )
-            )
+        private val json = Json { ignoreUnknownKeys = true }
+
+        fun parse(text: String): AppearanceTokens = json.decodeFromString(serializer(), text)
     }
 }
 
@@ -38,16 +36,16 @@ data class ReaderColors(
     val codeBackground: String,
 )
 
-/** Where the bundled fonts and script are served from (see ReaderWebView's asset loader). */
-const val ASSET_ORIGIN = "https://appassets.androidplatform.net"
-
-/** The reader view's invariant is in SECURITY.md §1. */
-private const val CONTENT_SECURITY_POLICY =
+/**
+ * The reader view's invariant is in SECURITY.md §1. [assetOrigin]: where the app serves the bundled
+ * fonts and scripts from (`<origin>/assets/reader/…`), and the document's own origin.
+ */
+private fun contentSecurityPolicy(assetOrigin: String) =
     "default-src 'none'; " +
-        "script-src $ASSET_ORIGIN/assets/reader/scroll-detect.js " +
-        "$ASSET_ORIGIN/assets/reader/narration.js; " +
+        "script-src $assetOrigin/assets/reader/scroll-detect.js " +
+        "$assetOrigin/assets/reader/narration.js; " +
         "base-uri 'none'; form-action 'none'; " +
-        "style-src 'unsafe-inline'; font-src $ASSET_ORIGIN; " +
+        "style-src 'unsafe-inline'; font-src $assetOrigin; " +
         "img-src * data:; media-src *; frame-src https:"
 
 private val FONT_FILES =
@@ -58,13 +56,13 @@ private val FONT_FILES =
         "Source Sans 3" to "SourceSans3",
     )
 
-private val fontFaces: String =
+private fun fontFaces(assetOrigin: String): String =
     FONT_FILES.entries.joinToString("\n") { (family, file) ->
         """
         @font-face { font-family: '$family'; font-style: normal; font-weight: 300 800;
-          src: url('$ASSET_ORIGIN/assets/reader/fonts/$file.woff2') format('woff2'); }
+          src: url('$assetOrigin/assets/reader/fonts/$file.woff2') format('woff2'); }
         @font-face { font-family: '$family'; font-style: italic; font-weight: 300 800;
-          src: url('$ASSET_ORIGIN/assets/reader/fonts/$file-Italic.woff2') format('woff2'); }
+          src: url('$assetOrigin/assets/reader/fonts/$file-Italic.woff2') format('woff2'); }
         """
             .trimIndent()
     }
@@ -79,7 +77,8 @@ data class ReaderHeader(val title: String, val byline: String, val url: String? 
  * A complete document for the article: the [header], escaped, the AI [summary] if shown, and the
  * body. The summary and body are the server's sanitized HTML (sanitized on every read); they are
  * inserted verbatim and never re-sanitized here. Our script goes in the head, ahead of it, so no
- * unclosed element in the body can swallow it.
+ * unclosed element in the body can swallow it. The document is loaded at [assetOrigin], where the
+ * app serves its bundled fonts and scripts.
  */
 fun readerDocument(
     header: ReaderHeader,
@@ -88,6 +87,7 @@ fun readerDocument(
     settings: AppSettings,
     tokens: AppearanceTokens,
     colors: ReaderColors,
+    assetOrigin: String,
 ): String {
     val font = settings.font
     val size = tokens.textSize(settings) * tokens.sizeAdjust(font)
@@ -97,11 +97,11 @@ fun readerDocument(
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="referrer" content="no-referrer">
-        <meta http-equiv="Content-Security-Policy" content="$CONTENT_SECURITY_POLICY">
-        <script defer src="$ASSET_ORIGIN/assets/reader/scroll-detect.js"></script>
-        <script defer src="$ASSET_ORIGIN/assets/reader/narration.js"></script>
+        <meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy(assetOrigin)}">
+        <script defer src="$assetOrigin/assets/reader/scroll-detect.js"></script>
+        <script defer src="$assetOrigin/assets/reader/narration.js"></script>
         <style>
-        $fontFaces
+        ${fontFaces(assetOrigin)}
         html { background: ${colors.background}; }
         body {
           /* A readable line on wide screens, as on the web (max-w-3xl). */
@@ -158,6 +158,16 @@ fun readerDocument(
         body +
         "</body></html>"
 }
+
+/**
+ * [href] if it's a web page outside the article: not the reader's own [assetOrigin], which a
+ * relative link resolves to.
+ */
+fun linkTarget(href: String?, assetOrigin: String): String? =
+    webUrl(href)?.takeUnless {
+        it.startsWith("$assetOrigin/", ignoreCase = true) ||
+            it.equals(assetOrigin, ignoreCase = true)
+    }
 
 /** Feed text goes into the document only through here. */
 internal fun escapeHtml(text: String): String =
