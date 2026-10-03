@@ -27,13 +27,18 @@ kotlin {
         }
     }
 
-    // iOS goes here (iosArm64(), iosSimulatorArm64()) once there is a macOS
-    // runner to link on; the default hierarchy template then gives iosMain.
+    // Compiled (not linked: that needs macOS) on every host, so `check` catches
+    // JVM-only code in commonMain.
+    iosArm64()
+    iosSimulatorArm64()
 
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.okio)
+            api(libs.androidx.datastore.preferences.core)
+            api(libs.androidx.lifecycle.viewmodel)
             api(libs.ktor.client.core)
             api(libs.sqldelight.coroutines)
         }
@@ -64,6 +69,10 @@ sqldelight {
             verifyMigrations.set(true)
         }
     }
+}
+
+tasks.named("check") {
+    dependsOn("compileKotlinIosArm64", "compileKotlinIosSimulatorArm64")
 }
 
 // RealServerTest reads its fixture from the environment; make it a task input
