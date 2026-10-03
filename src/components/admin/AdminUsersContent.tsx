@@ -3,7 +3,7 @@
  *
  * Displays a paginated list of all users in the system with search by email.
  * Shows user details including OAuth providers, subscription/entry counts,
- * scoring model info.
+ * and last activity.
  * Uses infinite scroll for pagination and debounced search for filtering.
  */
 
