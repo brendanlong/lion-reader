@@ -23,7 +23,7 @@ const article: DemoArticle = {
 
     <h3>No Lock-In</h3>
 
-    <p>Your subscriptions export to a <a href="/demo/all?entry=opml">standard file</a> any feed reader can import, and Lion Reader works with <a href="/demo/all?entry=google-reader-api">existing RSS apps</a>. If you ever want to leave, you can take everything with you.</p>
+    <p>Your subscriptions export to a <a href="/demo/all?entry=opml">standard file</a> any feed reader can import, and Lion Reader works with <a href="/demo/all?entry=google-reader-api">existing RSS apps</a>. If you ever want to leave, your subscriptions come with you.</p>
 
     <h3>Get Involved</h3>
 

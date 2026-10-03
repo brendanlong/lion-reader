@@ -17,19 +17,19 @@ const article: DemoArticle = {
   contentHtml: `
     <p>Most of Lion Reader&rsquo;s features exist in other readers somewhere. What&rsquo;s harder to find is a reader that treats <em>speed</em> as a feature you can feel. Lion Reader is built so the interface stays out of your way.</p>
 
-    <h3>New articles, without the jank</h3>
+    <h3>New Articles Appear on Their Own</h3>
 
     <p>When a new article is published, it appears in your list automatically &mdash; no refresh, no &ldquo;load more&rdquo; button. It slides into the right spot by date, and the article you&rsquo;re reading stays open. Articles you read or star on another device update the same way, and so do new subscriptions and <a href="/demo/all?entry=opml">imports</a>.</p>
 
-    <h3>Instant navigation</h3>
+    <h3>Instant Navigation</h3>
 
     <p>Anything you&rsquo;ve already opened &mdash; a subscription, a tag, your saved articles &mdash; comes back instantly from what&rsquo;s already loaded, then quietly refreshes in the background. Opening something new loads just that content; the rest of the app, including your place in the current list, stays put.</p>
 
-    <h3>No waiting on the server</h3>
+    <h3>No Waiting on the Server</h3>
 
     <p>Marking an article read or starring it takes effect the moment you press the key. If you make conflicting changes on two devices, Lion Reader keeps the most recent one, so everything stays in sync.</p>
 
-    <h3>Fast on cheap hardware</h3>
+    <h3>Fast on Cheap Hardware</h3>
 
     <p>Typical page loads land under 100ms on inexpensive cloud servers, and stay fast no matter how many articles pile up in your account.</p>
 

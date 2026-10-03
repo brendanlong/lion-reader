@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Save the page you're reading to Lion Reader with one click, a keyboard shortcut, or a right-click, in Firefox and Chrome.",
   publishedAt: new Date("2026-01-10T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>The browser extension saves articles in one click &mdash; via the toolbar, a keyboard shortcut, or right-click &mdash; cleaned up and added to your saved articles. It can fetch the real document for <strong>Google Docs</strong> instead of a sign-in page, and self-hosted users can point it at their own server.</p>`,
+  summaryHtml: `<p>The browser extension saves articles in one click &mdash; via the toolbar, a keyboard shortcut, or right-click &mdash; cleaned up and added to your saved articles. It can fetch the real document for <strong>Google Docs</strong> instead of a sign-in page.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `

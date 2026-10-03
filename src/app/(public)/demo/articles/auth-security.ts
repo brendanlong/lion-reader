@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Your reading habits stay private: no ads, no tracking, and full control over where you're signed in and what can access your account.",
   publishedAt: new Date("2025-12-26T11:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader protects your privacy &mdash; no ads, no data selling, no tracking &mdash; using your reading activity only to <strong>sync read and starred articles</strong> across devices. Sign in with email or Google/Apple, see and sign out your devices, revoke connected apps, and read articles <strong>cleaned of harmful code</strong> before display.</p>`,
+  summaryHtml: `<p>Lion Reader protects your privacy &mdash; no ads, no data selling, no tracking &mdash; using your reading activity only to run the app for you, like <strong>syncing read and starred articles</strong> across devices. Sign in with email or Google/Apple, see and sign out your devices, revoke connected apps, and read articles <strong>cleaned of harmful code</strong> before display.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
@@ -23,7 +23,7 @@ const article: DemoArticle = {
 
     <h3>Controlling What Has Access</h3>
 
-    <p>When you connect a <a href="/demo/all?entry=browser-extension">browser extension</a>, an <a href="/demo/all?entry=mcp-server">AI assistant</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a>, it gets only the access it needs &mdash; a save button can save articles but can&rsquo;t read your feeds. You can see when each connection was last used and revoke it at any time, and tokens you create yourself can be given an expiration date.</p>
+    <p>When you connect a <a href="/demo/all?entry=browser-extension">browser extension</a>, an <a href="/demo/all?entry=mcp-server">AI assistant</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a>, it gets only the access it needs &mdash; a save button can save articles but can&rsquo;t read your feeds. You can see when each connection was last used and revoke it at any time, and access keys you create yourself can be set to expire.</p>
 
     <h3>Safe to Read</h3>
 

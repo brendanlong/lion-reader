@@ -15,7 +15,7 @@ const article: DemoArticle = {
   // resolveWelcomePublishedAt for the full rationale.
   publishedAt: resolveWelcomePublishedAt(process.env.NEXT_PUBLIC_BUILD_TIME),
   starred: true,
-  summaryHtml: `<p>Lion Reader is a <strong>self-hostable feed reader</strong> that brings your feeds, newsletters, and saved articles into one fast interface built to work with AI assistants. Ask an assistant to search or save articles, summarize, and listen in a natural voice. It&rsquo;s free, open source, and never tracks what you read.</p>`,
+  summaryHtml: `<p>Lion Reader is a <strong>self-hostable feed reader</strong> that brings your feeds, newsletters, and saved articles into one fast interface built to work with AI assistants. Ask an AI assistant to search or save articles for you, summarize anything on demand, and listen in a natural voice. It&rsquo;s free, open source, and never tracks what you read.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
