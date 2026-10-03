@@ -117,9 +117,7 @@ describe("handleContentLinkClick", () => {
     const container = document.createElement("div");
     container.innerHTML = html;
     document.body.appendChild(container);
-    container.addEventListener("click", (e) =>
-      handleContentLinkClick(e as unknown as MouseEvent<HTMLElement>, basePath)
-    );
+    container.addEventListener("click", (e) => handleContentLinkClick(e, basePath));
     const target = container.querySelector("a span") ?? container.querySelector("a")!;
     const event = new window.MouseEvent("click", { bubbles: true, cancelable: true, ...init });
     target.dispatchEvent(event);
@@ -156,11 +154,24 @@ describe("handleContentLinkClick", () => {
     expect(window.location.pathname + window.location.search).toBe("/demo/all?entry=welcome");
   });
 
-  it("leaves modifier clicks to the browser", () => {
-    const result = clickContentLink('<a href="/demo/all?entry=opml">x</a>', "/demo", {
-      metaKey: true,
-    });
+  it("leaves a click another handler already claimed alone", () => {
+    const container = document.createElement("div");
+    container.innerHTML = '<a href="/demo/all?entry=opml">x</a>';
+    document.body.appendChild(container);
+    container.querySelector("a")!.addEventListener("click", (e) => e.preventDefault());
+    container.addEventListener("click", (e) => handleContentLinkClick(e, "/demo"));
 
-    expect(result.browserHandled).toBe(true);
+    container.querySelector("a")!.click();
+
+    expect(window.location.pathname + window.location.search).toBe("/demo/all?entry=welcome");
+  });
+
+  it("doesn't push a duplicate history entry for a link to the current page", () => {
+    const lengthBefore = window.history.length;
+
+    const result = clickContentLink('<a href="/demo/all?entry=welcome">x</a>', "/demo");
+
+    expect(result.browserHandled).toBe(false);
+    expect(window.history.length).toBe(lengthBefore);
   });
 });
