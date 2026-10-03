@@ -8,48 +8,32 @@ const article: DemoArticle = {
   title: "Appearance & Themes",
   author: null,
   summary:
-    "Customize fonts, text size, alignment, and list density, and switch between light, a sleep-friendly low-blue-light dark theme, and an e-paper theme for e-ink screens.",
+    "Pick your font, text size, and list layout, and choose a theme for daytime, late-night reading, or e-ink screens.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader offers extensive reading customization: <strong>dark mode</strong> with sleep-friendly warm amber tones to reduce blue light, an <strong>e-paper theme</strong> optimized for e-ink displays, typography controls (font family, size, alignment), list density options, and Progressive Web App support for native-like installation.</p>`,
+  summaryHtml: `<p>Lion Reader lets you customize reading comfort: choose <strong>Light</strong>, <strong>Dark</strong>, or <strong>E-paper</strong> themes (or Auto, which follows your device), pick fonts and text size, choose paragraph alignment, and switch between Comfortable and Compact list views to fit more articles on screen.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-07-14"),
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <p>Reading comfort is personal. What works for one person might strain another&rsquo;s eyes. That&rsquo;s why Lion Reader gives you comprehensive control over how your content appears, letting you create the perfect reading environment for your preferences and lighting conditions.</p>
+    <p>Reading comfort is personal, so Lion Reader lets you set things up the way your eyes like them. Changes apply instantly as you adjust them.</p>
 
-    <h3>Dark Mode</h3>
-
-    <p>Full dark mode support comes powered by <a href="https://github.com/pacocoursey/next-themes" target="_blank" rel="noopener noreferrer">next-themes</a>. You can follow your system&rsquo;s light/dark preference or manually toggle between modes. Every component, from the sidebar to article content, adapts seamlessly to your chosen theme.</p>
-
-    <h3>Sleep-friendly dark mode</h3>
-
-    <p>Lion Reader&rsquo;s dark theme is designed for late-night reading. Rather than the usual blue-accented dark mode, it deliberately minimizes blue light: the accent is a warm <strong>amber</strong> &mdash; the same warm hue used throughout the light theme &mdash; and highlights use neutral grays instead of blue.</p>
-
-    <p>The motivation is simple: blue light in the evening is the wavelength most associated with suppressing melatonin, the hormone that helps you wind down for sleep. By steering the dark theme toward warm and neutral tones, Lion Reader aims to be gentler on your eyes and your circadian rhythm when you&rsquo;re reading in bed with the lights off. This is a design choice to reduce blue light, not a medical claim &mdash; but if you read at night, it&rsquo;s one less thing keeping you awake.</p>
-
-    <h3>E-paper theme</h3>
-
-    <p>Reading on a Kindle, Kobo, or Onyx Boox? The <strong>E-paper</strong> theme is built for e-ink screens: a pure white background, near-black text, and colors chosen so everything stays readable even when the display forces the page to grayscale. Borders and highlights are darker than in the regular light theme because e-ink panels can&rsquo;t render faint grays. When your theme is set to <strong>Auto</strong>, Lion Reader even tries to detect e-reader devices and switches to the e-paper theme automatically.</p>
-
-    <h3>Typography Controls</h3>
-
-    <p>Fine-tune your reading experience with multiple font families to choose from:</p>
+    <h3>Themes for Any Light</h3>
 
     <ul>
-      <li><strong>System</strong> &mdash; Uses your operating system&rsquo;s default font</li>
-      <li><strong>Serif options</strong> &mdash; Merriweather and Literata for traditional book-like reading</li>
-      <li><strong>Sans-serif options</strong> &mdash; Inter and Source Sans for modern, clean typography</li>
+      <li><strong>Light</strong> &mdash; clean and bright for daytime reading.</li>
+      <li><strong>Dark</strong> &mdash; made for reading in bed. It uses warm amber highlights and neutral grays, with no blue, to cut down on blue light late at night.</li>
+      <li><strong>E-paper</strong> &mdash; for Kindle, Kobo, Boox, and other e-ink screens, with high contrast that stays readable in grayscale.</li>
     </ul>
 
-    <p>Text size options range from small to extra-large, with responsive scaling across all screen sizes. Choose left-aligned or justified text alignment based on your preference. All settings save locally and apply instantly as you adjust them.</p>
+    <p>Leave it on <strong>Auto</strong> and Lion Reader follows your device&rsquo;s light or dark setting &mdash; and switches to e-paper on its own when it recognizes an e-reader.</p>
 
-    <h3>List Density</h3>
+    <h3>Text the Way You Like It</h3>
 
-    <p>Choose how much your article list shows at once. <strong>Comfortable</strong>, the default, lays each article out as a roomy card with a preview snippet &mdash; best for relaxed reading. <strong>Compact</strong> switches to a tighter list without previews, so you can scan and triage many more entries at a glance.</p>
+    <p>Choose from a selection of serif and sans-serif fonts, or use your device&rsquo;s own. Make the text bigger or smaller, and pick left-aligned or justified paragraphs.</p>
 
-    <h3>Progressive Web App</h3>
+    <h3>Roomy or Compact Lists</h3>
 
-    <p>Lion Reader is a <a href="/demo/all?entry=pwa">Progressive Web App</a>, which means you can install it on your desktop or mobile device for a native app-like experience. On mobile, the app locks to portrait orientation for optimal reading comfort. The demo page you&rsquo;re viewing right now showcases the reading experience with all these customization options available.</p>
+    <p>The default <strong>Comfortable</strong> list shows each article as a card with a preview. Switch to <strong>Compact</strong> to fit many more articles on screen at once when you&rsquo;re working through a backlog.</p>
   `,
 };
 

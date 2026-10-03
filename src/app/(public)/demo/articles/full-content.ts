@@ -5,26 +5,21 @@ const article: DemoArticle = {
   subscriptionId: "reading-experience",
   type: "web",
   url: "https://github.com/brendanlong/lion-reader/pull/287",
-  title: "Full Content Fetching",
+  title: "Full Articles from Excerpt-Only Feeds",
   author: null,
-  summary: "Read complete articles inside Lion Reader, even when feeds only provide excerpts.",
+  summary:
+    "When a feed only sends a teaser, Lion Reader can fetch the whole article so you can keep reading without leaving the app.",
   publishedAt: new Date("2026-01-15T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader fetches full article content on demand using Mozilla&#39;s Readability algorithm, eliminating the need to leave your reader. Enable automatic fetching per subscription or toggle manually to get clean, distraction-free articles with preserved formatting, images, and code blocks.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-07"),
+  summaryHtml: `<p>Many feeds only publish the first paragraph or two of an article. Lion Reader can fetch the <strong>complete article</strong>, cleaned of ads, right where you&rsquo;re reading &mdash; with images, code, and formatting intact. Turn it on from any article and it sticks for that subscription; summaries and narration cover the whole thing.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <p>Many RSS feeds only provide excerpts or summaries, forcing you to leave your feed reader to read the full article in a web browser. This constant context switching breaks your reading flow and makes it harder to stay focused on what matters.</p>
+    <p>Many feeds only include the first paragraph or two, so you have to leave your reader to finish the article. Lion Reader can fetch the complete article for you and show it right where you&rsquo;re reading &mdash; cleaned up, without the site&rsquo;s ads and navigation, but with its images, code, and formatting intact.</p>
 
-    <p>Lion Reader solves this problem by fetching the full article content on demand. When a feed only includes a summary, you can fetch the complete article with a single button press. The full content appears right in your reading interface, keeping you focused and in the flow.</p>
+    <p>Tap the full-content button on an article to load the complete version. The choice sticks for that subscription, so its new articles arrive complete from then on. Tap it again to go back to the feed&rsquo;s version.</p>
 
-    <h3>How It Works</h3>
-
-    <p>Under the hood, Lion Reader uses <a href="https://github.com/mozilla/readability" target="_blank" rel="noopener noreferrer">Mozilla&rsquo;s Readability algorithm</a> &mdash; the same technology that powers Firefox Reader View &mdash; to extract clean article text from web pages. The algorithm intelligently identifies the main content while stripping away ads, navigation bars, and other distractions.</p>
-
-    <p>You can enable automatic full-content fetching per subscription for feeds that consistently truncate their articles. Or use the manual toggle to switch between feed content and full content whenever you need it. The system preserves images, code blocks, formatting, and document structure so you get an authentic reading experience. If extraction fails for any reason, Lion Reader gracefully falls back to displaying the original feed content. And once you have the complete article, you can generate an <a href="/demo/all?entry=ai-summaries">AI summary</a> of the full text rather than just the excerpt.</p>
-
-    <p>For Markdown-formatted content, Lion Reader converts <a href="https://github.github.com/gfm/" target="_blank" rel="noopener noreferrer">GitHub Flavored Markdown</a> to clean HTML, preserving code blocks, tables, footnotes, and all standard Markdown formatting. Equations written as TeX are rendered as real math your browser displays natively.</p>
+    <p>Once you have the full text, <a href="/demo/all?entry=ai-summaries">summaries</a> and <a href="/demo/all?entry=text-to-speech">narration</a> cover the whole article, not just the teaser.</p>
   `,
 };
 

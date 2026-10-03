@@ -5,32 +5,28 @@ const article: DemoArticle = {
   subscriptionId: "integrations",
   type: "web",
   url: "https://github.com/brendanlong/lion-reader/pull/413",
-  title: "Progressive Web App",
+  title: "Install Lion Reader Like an App",
   author: null,
-  summary: "Install Lion Reader on your phone or desktop for a native app-like experience.",
+  summary:
+    "Add Lion Reader to your home screen or desktop for an app-like experience, and save links and files from your phone's share menu.",
   publishedAt: new Date("2026-01-08T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader is a Progressive Web App (PWA) that can be installed on any device without app stores. Once installed, it acts as a <strong>share target</strong> on mobile, allowing you to save URLs, Markdown, and Word files directly from any app&#39;s native share menu, making it a universal read-it-later inbox.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-08"),
+  summaryHtml: `<p>Install Lion Reader from your browser onto your phone, tablet, or computer &mdash; no app store needed &mdash; with an icon, window, and automatic updates. On Android it appears in the <strong>share menu</strong>, so you can save links and files too. On iPhone and iPad, add it via Safari&rsquo;s Share menu.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <h2>Install Anywhere</h2>
+    <p>Lion Reader can be installed on your phone, tablet, or computer straight from your browser &mdash; no app store needed. It gets its own icon and opens in its own window, like any other app, and updates itself automatically.</p>
 
-    <p>Lion Reader is a full <a href="https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps" target="_blank" rel="noopener noreferrer">Progressive Web App</a> (PWA). This means you can install it on any device &mdash; desktop (Chrome, Edge, Firefox) or mobile (iOS Safari, Android Chrome) &mdash; and get a native app-like experience without downloading anything from an app store. Once installed, Lion Reader runs in its own window with no browser chrome, just like any other app on your device.</p>
+    <h3>Save From the Share Menu</h3>
 
-    <h3>Share Target Integration</h3>
+    <p>Once it&rsquo;s installed on Android, Lion Reader shows up in your phone&rsquo;s share menu. Share a link from your browser or any other app and it&rsquo;s <a href="/demo/all?entry=save-for-later">saved for later</a>. You can share files too &mdash; a Word document, Markdown, or HTML file becomes a <a href="/demo/all?entry=file-upload">saved article</a> you can read right away.</p>
 
-    <p>One of the most powerful PWA features is share target integration. When you install Lion Reader on your phone, it registers as a share target with your operating system. This means you can save articles directly to Lion Reader using your phone&rsquo;s native share menu from any app &mdash; your browser, Twitter, Reddit, or anywhere else.</p>
+    <p>On iPhone and iPad, the <a href="/demo/all?entry=wallabag-api">Wallabag app</a> gives you the same share-menu saving.</p>
 
-    <p>But it goes beyond just URLs. Lion Reader&rsquo;s share target also accepts files, so you can share <a href="/demo/all?entry=file-upload">Markdown documents, HTML files, or even Word documents</a> directly into your <a href="/demo/all?entry=save-for-later">saved articles</a>. The app automatically detects the content type and processes each file appropriately. This makes Lion Reader a universal inbox for anything you want to read later, not just web content.</p>
-
-    <h3>Mobile Optimizations</h3>
-
-    <p>On mobile devices, the app locks to portrait orientation for optimal reading. This prevents the screen from rotating while you&rsquo;re reading long articles, reducing distractions and maintaining a consistent layout. Combined with <a href="/demo/all?entry=real-time">real-time updates</a> via Server-Sent Events, the mobile experience rivals dedicated feed reader apps.</p>
-
-    <h3>Single Codebase</h3>
-
-    <p>Unlike traditional native apps, Lion Reader uses a single codebase for web, desktop, and mobile. This means new features and bug fixes ship everywhere simultaneously. No app store reviews, no separate update cycles &mdash; just install directly from the website and get updates automatically. The PWA approach gives you the best of both worlds: the convenience of native apps with the flexibility and speed of the web.</p>
+    <details>
+      <summary>How to install</summary>
+      <p>On Android or a desktop browser like Chrome or Edge, look for <strong>Install</strong> in the browser menu or address bar. On iPhone and iPad, open Lion Reader in Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+    </details>
   `,
 };
 

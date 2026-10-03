@@ -5,33 +5,23 @@ const article: DemoArticle = {
   subscriptionId: "organization",
   type: "web",
   url: "https://github.com/brendanlong/lion-reader/pull/92",
-  title: "Tags & Folders",
+  title: "Tags",
   author: null,
-  summary: "Organize subscriptions with color-coded tags and browse entries by category.",
+  summary:
+    "Group your subscriptions with color-coded tags, read one topic at a time, and rename anything to suit you.",
   publishedAt: new Date("2025-12-27T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader lets you organize subscriptions with <strong>custom tags</strong> (many-to-many relationships) featuring personalized names and colors. Browse entries by tag with real-time unread counts, rename any subscription, and enjoy soft deletion that preserves your read/starred history across all feed types.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-07"),
+  summaryHtml: `<p>Group subscriptions with <strong>colored tags</strong> like &ldquo;News&rdquo; or &ldquo;Work,&rdquo; and give a subscription as many as you like. Each tag shows its own unread count in the sidebar, and untagged subscriptions appear under &ldquo;Uncategorized.&rdquo; Rename any subscription to something you&rsquo;ll recognize, and resubscribing restores what you&rsquo;d already read and starred.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <h2>Organize Your Way</h2>
+    <p>Group your subscriptions with tags &mdash; &ldquo;News,&rdquo; &ldquo;Friends,&rdquo; &ldquo;Work&rdquo; &mdash; and give each one a color. A subscription can have as many tags as you like, so a blog about cooking and travel can live in both places.</p>
 
-    <p>Lion Reader gives you powerful tools to organize your subscriptions exactly how you want. Create custom tags with names and colors using the built-in color palette, then assign them to any combination of subscriptions. Tags are many-to-many, so a single subscription can belong to multiple categories &mdash; perfect for feeds that span multiple interests.</p>
+    <p>Each tag shows up in the sidebar with its own unread count, so you can read one topic at a time. Subscriptions you haven&rsquo;t tagged appear under &ldquo;Uncategorized,&rdquo; so nothing gets lost. Tags work the same for <a href="/demo/all?entry=rss-atom">feeds</a> and <a href="/demo/all?entry=email-newsletters">newsletters</a>.</p>
 
-    <p>Once you&rsquo;ve tagged your subscriptions, browse entries filtered by tag directly from the sidebar. Each tag shows <a href="/demo/all?entry=real-time">real-time unread counts</a> that update as you read and as new entries arrive. Subscriptions without tags appear in the &ldquo;Uncategorized&rdquo; section, so nothing gets lost. Tags work seamlessly across all feed types: web feeds (<a href="/demo/all?entry=rss-atom">RSS/Atom</a>/<a href="/demo/all?entry=json-feed">JSON</a>), <a href="/demo/all?entry=email-newsletters">email newsletters</a>, and <a href="/demo/all?entry=save-for-later">saved articles</a>.</p>
+    <h3>Your Names, Not Theirs</h3>
 
-    <h3>Custom Titles and Flexible Management</h3>
-
-    <p>Every subscription can be renamed to your preferred label, regardless of the original feed title. This is especially useful for newsletters with overly long names or feeds you want to remember differently. If you unsubscribe from a feed, Lion Reader uses soft deletion to preserve your read and starred state. Resubscribing later restores your full history, so you never lose track of what you&rsquo;ve already read.</p>
-
-    <p>Key features:</p>
-    <ul>
-      <li><strong>Color-coded tags</strong> &mdash; Custom names with color palette</li>
-      <li><strong>Many-to-many</strong> &mdash; One subscription can have multiple tags</li>
-      <li><strong>Real-time counts</strong> &mdash; Unread counts per tag update live</li>
-      <li><strong>Custom subscription titles</strong> &mdash; Rename any subscription to your preference</li>
-      <li><strong>Soft-delete</strong> &mdash; Unsubscribing preserves your reading history</li>
-    </ul>
+    <p>Rename any subscription to whatever you&rsquo;ll recognize &mdash; handy for newsletters with long names or feeds you think of differently. And if you unsubscribe and change your mind later, resubscribing brings back what you&rsquo;d already read and starred.</p>
   `,
 };
 

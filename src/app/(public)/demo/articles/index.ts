@@ -2,7 +2,6 @@ import { type DemoArticle } from "./types";
 
 // Feed Types
 import rssAtom from "./rss-atom";
-import jsonFeed from "./json-feed";
 import emailNewsletters from "./email-newsletters";
 import saveForLater from "./save-for-later";
 import fileUpload from "./file-upload";
@@ -27,9 +26,7 @@ import discordBot from "./discord-bot";
 import browserExtension from "./browser-extension";
 import wallabagApi from "./wallabag-api";
 import plugins from "./plugins";
-import websub from "./websub";
 import pwa from "./pwa";
-import realTime from "./real-time";
 
 // About
 import welcome from "./welcome";
@@ -39,7 +36,6 @@ import authSecurity from "./auth-security";
 export const DEMO_ARTICLES: DemoArticle[] = [
   // Feed Types
   rssAtom,
-  jsonFeed,
   emailNewsletters,
   saveForLater,
   fileUpload,
@@ -61,9 +57,7 @@ export const DEMO_ARTICLES: DemoArticle[] = [
   browserExtension,
   wallabagApi,
   plugins,
-  websub,
   pwa,
-  realTime,
   // About
   welcome,
   openSource,

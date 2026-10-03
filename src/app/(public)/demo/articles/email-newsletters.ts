@@ -7,24 +7,23 @@ const article: DemoArticle = {
   url: "https://github.com/brendanlong/lion-reader/pull/47",
   title: "Email Newsletters",
   author: null,
-  summary: "Read newsletters alongside your feeds with unique ingest email addresses.",
+  summary:
+    "Get a private email address for newsletters, and read them alongside your feeds instead of in your inbox.",
   publishedAt: new Date("2025-12-30T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader generates unique ingest email addresses that convert newsletters into feed entries. Subscribe to Substack, Ghost, or any newsletter using these addresses, and they appear in your unified timeline with full RSS-like features: starring, search, tags, and reading controls. Built-in security includes HMAC verification and sender blocking.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-08"),
+  summaryHtml: `<p>Lion Reader gives you a private email address for newsletters, keeping them next to your feeds instead of your inbox. Each sender becomes its own subscription with <strong>starring, tags, search, summaries, and narration</strong>. Create multiple addresses in Settings, and unsubscribing blocks the sender and, where supported, takes you off the mailing list.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <p>Many exceptional writers and publications distribute content exclusively via email newsletters, not RSS feeds. <a href="https://substack.com/" target="_blank" rel="noopener noreferrer">Substack</a>, <a href="https://ghost.org/" target="_blank" rel="noopener noreferrer">Ghost</a>, <a href="https://buttondown.com/" target="_blank" rel="noopener noreferrer">Buttondown</a>, and countless independent creators have chosen email as their primary distribution channel. Lion Reader solves this problem by generating unique ingest email addresses &mdash; up to 5 per account &mdash; that you can use to subscribe to any newsletter. Each newsletter sender automatically becomes its own subscription in your Lion Reader account, appearing alongside your web feeds in a unified timeline.</p>
+    <p>Lots of great writing only arrives by email. Lion Reader gives you a private address to subscribe with, so newsletters land next to your feeds instead of burying your inbox. Each sender becomes its own subscription automatically, and its issues get everything a feed does: starring, <a href="/demo/all?entry=tags">tags</a>, <a href="/demo/all?entry=search">search</a>, <a href="/demo/all?entry=ai-summaries">summaries</a>, and <a href="/demo/all?entry=text-to-speech">narration</a>.</p>
 
-    <h3>How It Works</h3>
+    <h3>Getting Started</h3>
 
-    <p>When you create an ingest address, you can label it for organization (e.g., &ldquo;Tech Newsletters&rdquo; or &ldquo;Personal&rdquo;). Subscribe to newsletters using this address just like you would with your regular email. When newsletters arrive, Lion Reader processes them via <a href="https://www.mailgun.com/" target="_blank" rel="noopener noreferrer">Mailgun</a> webhook integration, verifies HMAC signatures for security, deduplicates by Message-ID, and converts the content into regular feed entries with a full reading experience. You can star entries, mark them read, and organize them with <a href="/demo/all?entry=tags">tags</a> &mdash; everything you can do with <a href="/demo/all?entry=rss-atom">RSS feeds</a>.</p>
+    <p>Create an address in Settings &mdash; label it if you like, such as &ldquo;Tech&rdquo; or &ldquo;Shopping&rdquo; &mdash; and use it anywhere a newsletter asks for your email. You can make more than one, so you can tell who&rsquo;s sharing your address, and delete any address that starts attracting spam.</p>
 
-    <h3>Security &amp; Spam Protection</h3>
+    <h3>Staying in Control</h3>
 
-    <p>Ingest addresses include built-in security measures: HMAC signature verification ensures emails are genuinely from the mail provider, and Message-ID deduplication prevents duplicates. You can block specific senders at any time, and Lion Reader respects List-Unsubscribe headers for one-click unsubscribe functionality when newsletters support it.</p>
-
-    <p>Email newsletters in Lion Reader are treated as first-class subscriptions &mdash; they appear in your timeline, support all the same reading features as RSS feeds, and can be organized with the same tools. No more switching between your email client and feed reader to keep up with your favorite writers.</p>
+    <p>Unsubscribe from a newsletter and Lion Reader blocks that sender, so their mail stops showing up &mdash; and for newsletters that support one-click unsubscribe, it takes you off the mailing list too, with no hunting for the tiny link at the bottom of the email. Changed your mind? Unblock the sender in Settings.</p>
   `,
 };
 

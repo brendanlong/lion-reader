@@ -5,68 +5,34 @@ const article: DemoArticle = {
   subscriptionId: "lion-reader",
   type: "web",
   url: null,
-  title: "Authentication & Security",
+  title: "Privacy & Security",
   author: null,
-  summary: "Sign in with email, Google, Apple, or Discord. API tokens for extensions and MCP.",
+  summary:
+    "Your reading habits stay private: no ads, no tracking, and full control over where you're signed in and what can access your account.",
   publishedAt: new Date("2025-12-26T11:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader offers <strong>multiple sign-in methods</strong> including email/password and OAuth providers (Google, Apple, Discord), with secure <strong>session management</strong> using SHA-256 hashes and Redis caching. Features include <strong>API tokens</strong> with scoped permissions, rate limiting, webhook verification, and subscription-based entry visibility to protect privacy.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-07"),
+  summaryHtml: `<p>Lion Reader protects your privacy &mdash; no ads, no data selling, no tracking &mdash; using your reading activity only to run the app for you, like <strong>syncing read and starred articles</strong> across devices. Sign in with email or Google/Apple, see and sign out your devices, revoke connected apps, and read articles <strong>cleaned of harmful code</strong> before display.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <p>Lion Reader takes security and privacy seriously. Whether you&rsquo;re signing in with email or OAuth, managing API tokens, or connecting AI assistants, your data is protected with industry-standard security practices.</p>
+    <p>What you read says a lot about you, so Lion Reader is built to keep it private. There are no ads, your data is never sold, and there&rsquo;s no third-party tracking script anywhere in the app. Your reading activity is used only to run the app for you, like keeping your read and starred articles in sync across your devices.</p>
 
-    <h3>Multiple Sign-In Methods</h3>
+    <h3>Signing In</h3>
 
-    <p>Choose the authentication method that works best for you:</p>
+    <p>Sign in with an email and password, or with an account you already have, like Google or Apple. You can see every device you&rsquo;re signed in on &mdash; with its browser and when it was last active &mdash; and sign any of them out instantly.</p>
 
-    <ul>
-      <li><strong>Email and password</strong> &mdash; Traditional authentication with <a href="https://github.com/P-H-C/phc-winner-argon2" target="_blank" rel="noopener noreferrer">Argon2</a> password hashing, one of the most secure hashing algorithms available</li>
-      <li><strong>Google OAuth</strong> &mdash; Sign in with your Google account, with optional Google Docs access for importing documents</li>
-      <li><strong>Apple Sign-In</strong> &mdash; Native Apple authentication with support for private relay email addresses</li>
-      <li><strong>Discord OAuth</strong> &mdash; Connect with your <a href="https://discord.com/" target="_blank" rel="noopener noreferrer">Discord</a> account for quick sign-in</li>
-    </ul>
+    <h3>Controlling What Has Access</h3>
 
-    <p>All OAuth providers are optional and can be enabled or disabled per deployment. Your Lion Reader instance, your choice.</p>
+    <p>When you connect a <a href="/demo/all?entry=browser-extension">browser extension</a>, an <a href="/demo/all?entry=mcp-server">AI assistant</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a>, it gets only the access it needs &mdash; a save button can save articles but can&rsquo;t read your feeds. You can see when each connection was last used and revoke it at any time, and access keys you create yourself can be set to expire.</p>
 
-    <h3>Session Management</h3>
+    <h3>Safe to Read</h3>
 
-    <ul>
-      <li><strong>Secure storage</strong> &mdash; Session tokens are stored as SHA-256 hashes, never in plain text</li>
-      <li><strong>Redis caching</strong> &mdash; Sessions are cached for fast validation with a 5-minute TTL</li>
-      <li><strong>Active session tracking</strong> &mdash; View all your sessions with browser, platform, IP address, and last active timestamp</li>
-      <li><strong>Revocation</strong> &mdash; Revoke any session instantly from the settings page</li>
-    </ul>
+    <p>Articles come from all over the web, so Lion Reader cleans every one before showing it to you, removing anything that could run code in your browser.</p>
 
-    <h3>API Tokens</h3>
-
-    <p>Connect external tools and scripts to your Lion Reader account with API tokens:</p>
-
-    <ul>
-      <li><strong>Scoped permissions</strong> &mdash; Tokens can be limited to specific capabilities like saved:write or mcp</li>
-      <li><strong>Expiration dates</strong> &mdash; Set automatic expiration for temporary access</li>
-      <li><strong>Usage tracking</strong> &mdash; See when each token was last used</li>
-      <li><strong>Perfect for extensions</strong> &mdash; Use API tokens to connect <a href="/demo/all?entry=browser-extension">browser extensions</a>, the <a href="/demo/all?entry=mcp-server">MCP server</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a></li>
-    </ul>
-
-    <h3>Security Features</h3>
-
-    <ul>
-      <li><strong>Rate limiting</strong> &mdash; Per-user rate limiting via Redis token bucket prevents abuse</li>
-      <li><strong>Respectful fetching</strong> &mdash; Feed fetching uses exponential backoff and respects server Cache-Control headers, Retry-After directives, and HTTP 429 responses</li>
-      <li><strong>Webhook verification</strong> &mdash; Email webhooks use HMAC signature verification</li>
-      <li><strong>Content sanitization</strong> &mdash; All feed content is sanitized to prevent XSS attacks</li>
-      <li><strong>Invite-only mode</strong> &mdash; Deploy with invite-only registration to control access</li>
-    </ul>
-
-    <h3>Privacy Protections</h3>
-
-    <ul>
-      <li><strong>Subscription-based visibility</strong> &mdash; You only see entries fetched after you subscribed, preventing access to historical private content</li>
-      <li><strong>Starred entry preservation</strong> &mdash; Entries you&rsquo;ve starred remain visible even after unsubscribing</li>
-      <li><strong>Soft deletes</strong> &mdash; Unsubscribing preserves your read state and preferences for seamless resubscription</li>
-      <li><strong>Your data stays yours</strong> &mdash; No ads, no data selling, and no third-party tracking script anywhere. We count page views ourselves and report only the <em>type</em> of page &mdash; that an article of some kind was opened, never which one. Your reading behavior is used only to sync your read and starred state across devices, and self-hosting gives you full control</li>
-    </ul>
+    <details>
+      <summary>About analytics</summary>
+      <p>The hosted site sends a minimal, cookie-free page count to GoatCounter without loading any tracking script, and reports only the <em>kind</em> of page you opened &mdash; an article list, an article, a settings page &mdash; never which feed or article. Self-hosted copies send nothing at all.</p>
+    </details>
   `,
 };
 

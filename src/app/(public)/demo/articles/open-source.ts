@@ -8,45 +8,26 @@ const article: DemoArticle = {
   title: "Open Source & Self-Hostable",
   author: null,
   summary:
-    "Lion Reader is fully open source. Self-host it, explore the code, or contribute on GitHub.",
+    "Lion Reader is free and open source. Read the code, run your own copy, or help build it on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
-  starred: true,
-  summaryHtml: `<p>Lion Reader is a fully <strong>open source, self-hostable RSS reader</strong> built with modern technologies including Next.js 16, tRPC, PostgreSQL, and Redis. Features include stateless architecture, efficient feed deduplication, AI-powered summaries and narration, and deployment via Fly.io or Docker Compose.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-07"),
+  starred: false,
+  summaryHtml: `<p>Lion Reader is <strong>free and open source</strong> under the MIT license. Use the hosted version, or self-host your own copy with just a database and a cache; optional features like Google sign-in, AI summaries, or newsletters can be enabled individually. Subscriptions export to a standard file, and contributions are welcome.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <p>Lion Reader is fully open source and designed to be self-hosted. Every line of code is available on <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">GitHub</a> for you to inspect, modify, and deploy on your own infrastructure. When you self-host Lion Reader, you own your data completely &mdash; no third-party services, no vendor lock-in, just you and your feeds.</p>
+    <p>Lion Reader is free and <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">open source</a> under the MIT license. You can use the hosted version at lionreader.com, or run your own copy and keep every feed, article, and setting on hardware you control.</p>
 
-    <h3>Modern Tech Stack</h3>
+    <h3>Run Your Own</h3>
 
-    <p>Lion Reader is built with cutting-edge technologies chosen for performance, developer experience, and long-term maintainability:</p>
+    <p>Lion Reader comes with a Dockerfile and needs only a database and a cache alongside it. It runs comfortably on a small, inexpensive server, and grows by adding more servers when you need them. Features that depend on outside services &mdash; like signing in with Google, AI summaries, or receiving newsletters &mdash; are optional, so you can turn on just the ones you want.</p>
 
-    <ul>
-      <li><strong>Frontend</strong> &mdash; <a href="https://nextjs.org/" target="_blank" rel="noopener noreferrer">Next.js</a> 16 with <a href="https://react.dev/" target="_blank" rel="noopener noreferrer">React</a> 19, <a href="https://tailwindcss.com/" target="_blank" rel="noopener noreferrer">Tailwind CSS</a> 4 for styling</li>
-      <li><strong>API</strong> &mdash; <a href="https://trpc.io/" target="_blank" rel="noopener noreferrer">tRPC</a> for end-to-end type-safe APIs with <a href="https://zod.dev/" target="_blank" rel="noopener noreferrer">Zod</a> 4 validation</li>
-      <li><strong>Database</strong> &mdash; <a href="https://www.postgresql.org/" target="_blank" rel="noopener noreferrer">PostgreSQL</a> with <a href="https://orm.drizzle.team/" target="_blank" rel="noopener noreferrer">Drizzle ORM</a> for type-safe queries, UUIDv7 primary keys</li>
-      <li><strong>Caching &amp; Real-time</strong> &mdash; <a href="https://redis.io/" target="_blank" rel="noopener noreferrer">Redis</a> for session caching, rate limiting, and <a href="/demo/all?entry=real-time">SSE pub/sub</a></li>
-      <li><strong>Auth</strong> &mdash; Custom session management with <a href="https://github.com/panva/openid-client" target="_blank" rel="noopener noreferrer">openid-client</a> for OAuth (Google, Apple, Discord), <a href="https://github.com/P-H-C/phc-winner-argon2" target="_blank" rel="noopener noreferrer">Argon2</a> password hashing</li>
-      <li><strong>AI</strong> &mdash; <a href="https://www.anthropic.com/" target="_blank" rel="noopener noreferrer">Anthropic</a> SDK for summaries, <a href="https://huggingface.co/hexgrad/Kokoro-82M" target="_blank" rel="noopener noreferrer">Kokoro</a> and <a href="https://breezeblue.ai/" target="_blank" rel="noopener noreferrer">BreezeBlue</a> for cloud narration voices, <a href="https://openai.com/index/introducing-gpt-oss/" target="_blank" rel="noopener noreferrer">GPT-OSS</a> for optional narration text processing, <a href="https://onnxruntime.ai/" target="_blank" rel="noopener noreferrer">ONNX Runtime</a> for client-side neural TTS voice synthesis, <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">MCP</a> for AI-assistant integration</li>
-      <li><strong>Feed parsing</strong> &mdash; <a href="https://github.com/fb55/htmlparser2" target="_blank" rel="noopener noreferrer">htmlparser2</a> for SAX-style streaming XML/HTML parsing, <a href="https://github.com/NaturalIntelligence/fast-xml-parser" target="_blank" rel="noopener noreferrer">fast-xml-parser</a> for OPML, <a href="https://github.com/mozilla/readability" target="_blank" rel="noopener noreferrer">Mozilla Readability</a> for content extraction</li>
-      <li><strong>Deployment</strong> &mdash; <a href="https://fly.io/" target="_blank" rel="noopener noreferrer">Fly.io</a> with auto-scaling, <a href="https://www.docker.com/" target="_blank" rel="noopener noreferrer">Docker</a> Compose for local development</li>
-      <li><strong>Testing</strong> &mdash; <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> with real database integration tests (no mocks)</li>
-      <li><strong>Observability</strong> &mdash; <a href="https://sentry.io/" target="_blank" rel="noopener noreferrer">Sentry</a> for error tracking, structured JSON logging, <a href="https://prometheus.io/" target="_blank" rel="noopener noreferrer">Prometheus</a> metrics</li>
-    </ul>
+    <h3>No Lock-In</h3>
 
-    <h3>Architecture Highlights</h3>
+    <p>Your subscriptions export to a <a href="/demo/all?entry=opml">standard file</a> any feed reader can import, and Lion Reader works with <a href="/demo/all?entry=google-reader-api">existing RSS apps</a>. If you ever want to leave, your subscriptions come with you.</p>
 
-    <ul>
-      <li><strong>Stateless app servers</strong> &mdash; All state lives in Postgres and Redis, enabling horizontal scaling</li>
-      <li><strong>Services layer</strong> &mdash; Shared business logic between tRPC routers, MCP server, and background jobs</li>
-      <li><strong>Cursor-based pagination</strong> &mdash; Efficient pagination everywhere using UUIDv7 cursors</li>
-      <li><strong>Background job queue</strong> &mdash; Built on Postgres for reliable feed fetching with exponential backoff</li>
-      <li><strong>Efficient data sharing</strong> &mdash; Feed and entry data deduplicated across users with strict privacy boundaries</li>
-    </ul>
+    <h3>Get Involved</h3>
 
-    <h3>Contributing</h3>
-
-    <p>Contributions are welcome! Check out the <a href="https://github.com/brendanlong/lion-reader/issues" target="_blank" rel="noopener noreferrer">open issues</a> to find ways to help, or explore the architecture documentation in the repository to understand how everything fits together. The codebase includes comprehensive design docs, architecture diagrams, and testing guidelines to help you get started.</p>
+    <p>Bug reports, feature ideas, and pull requests are all welcome. Browse the <a href="https://github.com/brendanlong/lion-reader/issues" target="_blank" rel="noopener noreferrer">open issues</a> to find something to work on; the repository includes design docs and diagrams to help you find your way around.</p>
   `,
 };
 

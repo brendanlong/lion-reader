@@ -7,38 +7,35 @@ const article: DemoArticle = {
   url: "https://github.com/brendanlong/lion-reader/pull/57",
   title: "Save for Later",
   author: null,
-  summary: "Save any web page, upload documents, or capture articles for later reading.",
+  summary:
+    "Save any page to read later, from wherever you find it. Lion Reader keeps a clean, readable copy that won't disappear.",
   publishedAt: new Date("2025-12-27T16:00:00Z"),
   starred: true,
-  summaryHtml: `<p>Lion Reader&#39;s Save for Later uses Mozilla&#39;s Readability algorithm to extract clean content from web pages. Save via bookmarklet, PWA share, MCP, API, Discord, or upload Markdown/Word/HTML files directly. Saved articles integrate fully with starring, tagging, and search, preserving content even if original pages disappear.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-08"),
+  summaryHtml: `<p>Save anything you want to read later and get a clean copy that stays readable even if the original page changes or disappears. Save from your browser, phone, a Discord reaction, an AI assistant, or a file &mdash; saved articles work like any other: <strong>star, search, listen, or summarize</strong> them.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <p>Lion Reader&rsquo;s Save for Later feature transforms any web page, document, or article into a clean, distraction-free reading experience. Using Mozilla&rsquo;s battle-tested <a href="https://github.com/mozilla/readability" target="_blank" rel="noopener noreferrer">Readability algorithm</a> &mdash; the same technology behind Firefox Reader View &mdash; Lion Reader extracts the main content from cluttered web pages, removes ads and navigation chrome, and presents you with a beautifully formatted article ready for focused reading.</p>
+    <p>Found something you want to read later? Save it to Lion Reader and you get a clean, readable copy &mdash; no ads, no pop-ups, no sidebar clutter &mdash; waiting next to your feeds. Lion Reader keeps its own copy, so the article stays readable even if the original page changes or disappears.</p>
 
-    <h3>Multiple Ways to Save</h3>
+    <h3>Save From Anywhere</h3>
 
-    <p>Lion Reader offers flexibility in how you capture content for later reading:</p>
+    <p>Saving should take one tap wherever you happen to be reading:</p>
 
     <ul>
-      <li><a href="/demo/all?entry=browser-extension"><strong>Browser extension</strong></a> &mdash; Save from Firefox or Chrome with a click, keyboard shortcut, or context menu</li>
-      <li><strong>Browser bookmarklet</strong> &mdash; One-click saving from any page while browsing</li>
-      <li><a href="/demo/all?entry=pwa"><strong>PWA share target</strong></a> &mdash; Use your phone&rsquo;s native share menu to send articles directly to Lion Reader</li>
-      <li><a href="/demo/all?entry=mcp-server"><strong>MCP integration</strong></a> &mdash; Save articles via AI assistants like Claude</li>
-      <li><strong>tRPC API</strong> &mdash; Programmatic saving for automation and integrations</li>
-      <li><a href="/demo/all?entry=wallabag-api"><strong>Wallabag app</strong></a> &mdash; Use the Wallabag mobile app&rsquo;s share intent to save URLs from any app on your phone</li>
-      <li><a href="/demo/all?entry=discord-bot"><strong>Discord bot</strong></a> &mdash; Save articles shared in Discord channels</li>
-      <li><a href="/demo/all?entry=file-upload"><strong>File upload</strong></a> &mdash; Upload Markdown files, Word documents, and HTML files directly</li>
-      <li><strong>Google Docs import</strong> &mdash; Import Google Docs directly with the optional OAuth scope (powered by <a href="/demo/all?entry=plugins"><strong>smart content sources</strong></a>)</li>
+      <li><strong>In your browser</strong> &mdash; with the <a href="/demo/all?entry=browser-extension">browser extension</a> or a bookmarklet</li>
+      <li><strong>On your phone</strong> &mdash; from the share menu, via the <a href="/demo/all?entry=pwa">installed app</a> or the <a href="/demo/all?entry=wallabag-api">Wallabag app</a></li>
+      <li><strong>In a chat</strong> &mdash; by reacting to a link with the <a href="/demo/all?entry=discord-bot">Discord bot</a></li>
+      <li><strong>By asking</strong> &mdash; tell your <a href="/demo/all?entry=mcp-server">AI assistant</a> to save it for you</li>
+      <li><strong>From a file</strong> &mdash; <a href="/demo/all?entry=file-upload">upload</a> a Word document, Markdown, or HTML file</li>
     </ul>
 
-    <h3>Smart Content Extraction</h3>
+    <h3>Better Copies of Tricky Pages</h3>
 
-    <p>When you save a URL from a supported source &mdash; like arXiv, GitHub, Google Docs, LessWrong, Notion, YouTube, or Bluesky &mdash; Lion Reader&rsquo;s <a href="/demo/all?entry=plugins"><strong>smart content sources</strong></a> pull in cleaner, more complete content than a generic web save. For everything else, Lion Reader still extracts the readable article automatically.</p>
+    <p>Some sites don&rsquo;t save well the usual way &mdash; a video page, a GitHub repository, a paper on arXiv, a Google Doc. Lion Reader recognizes many of these and brings in the real content instead of a stripped-down page. See <a href="/demo/all?entry=plugins">smart content sources</a> for more.</p>
 
-    <h3>Custom Metadata &amp; Organization</h3>
+    <h3>Part of Your Library</h3>
 
-    <p>When saving articles, you can provide a custom title to override automatic extraction. Saved articles appear in a dedicated &ldquo;Saved&rdquo; section in your sidebar, but they&rsquo;re fully integrated with the rest of Lion Reader: star important articles, <a href="/demo/all?entry=tags">tag them</a> for organization, and browse your reading archive chronologically. Unlike traditional bookmarks that rot over time as pages disappear, your saved articles are preserved with full content extraction, ensuring your reading list remains accessible indefinitely.</p>
+    <p>Saved articles get their own section in the sidebar, but they work like everything else: star them, <a href="/demo/all?entry=search">search</a> them, <a href="/demo/all?entry=text-to-speech">listen</a> to them, or <a href="/demo/all?entry=ai-summaries">summarize</a> them.</p>
   `,
 };
 

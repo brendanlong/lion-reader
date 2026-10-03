@@ -72,24 +72,23 @@ const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string; descri
   "feed-types": {
     title: "Feed Types",
     tagId: "features",
-    description: "RSS, Atom, JSON Feed, email newsletters, and saved articles — all in one place.",
+    description: "Websites, newsletters, and anything you save for later — all in one place.",
   },
   "reading-experience": {
     title: "Reading Experience",
     tagId: "features",
-    description:
-      "Full content fetching, customizable themes, text-to-speech narration, AI summaries, keyboard shortcuts, and obsessive performance.",
+    description: "Listen, summarize, and read comfortably — in a reader that never makes you wait.",
   },
   organization: {
     title: "Organization & Search",
     tagId: "features",
-    description: "Tags and OPML import/export for organizing your feeds.",
+    description: "Find anything and keep your subscriptions organized and portable.",
   },
   integrations: {
     title: "Integrations & Sync",
     tagId: "features",
     description:
-      "Google Reader and Wallabag APIs, MCP server for AI assistants, WebSub push, real-time updates, and installable PWA support.",
+      "Use Lion Reader from your AI assistant, your favorite apps, and wherever you find things to read.",
   },
   "lion-reader": {
     title: "Lion Reader",

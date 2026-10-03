@@ -5,39 +5,23 @@ const article: DemoArticle = {
   subscriptionId: "organization",
   type: "web",
   url: "https://github.com/brendanlong/lion-reader/pull/74",
-  title: "OPML Import & Export",
+  title: "Import & Export Your Subscriptions",
   author: null,
   summary:
-    "Migrate to or from Lion Reader with standard OPML files, or back up your subscriptions.",
+    "Bring your subscriptions from another feed reader in one step, and take them with you whenever you like.",
   publishedAt: new Date("2025-12-28T14:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader supports full OPML import and export for migrating feed subscriptions between readers. Import processes run in the background with real-time progress updates, preserving folder/tag structure while validating feeds. Export generates OPML 2.0 with custom titles and complete hierarchy, compatible with any OPML-supporting reader.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-07"),
+  summaryHtml: `<p>Export your subscriptions from another feed reader as an <strong>OPML file</strong> and import them into Lion Reader, with folders carried over as tags. Keep using the app while the import runs, and see which feeds were added, already existed, or couldn&rsquo;t be imported. Export to back up or switch readers.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <h2>Portable Subscriptions</h2>
+    <p>Switching from another feed reader? Export your subscriptions from it as an OPML file &mdash; the standard format nearly every reader supports &mdash; and import it into Lion Reader. Your folders come along as <a href="/demo/all?entry=tags">tags</a>.</p>
 
-    <p>OPML (Outline Processor Markup Language) is the standard format for exchanging feed subscriptions between readers. Lion Reader supports full OPML import and export, making it easy to migrate to or from any other feed reader, or simply back up your subscriptions. The OPML format is documented in the <a href="http://opml.org/spec2.opml" target="_blank" rel="noopener noreferrer">OPML 2.0 specification</a>.</p>
+    <p>You can keep using the app while the import runs and watch it progress. When it&rsquo;s done, you&rsquo;ll see which feeds were added, which you already had, and any that couldn&rsquo;t be imported. Feeds that turn out to be dead show up under Broken Feeds in Settings, so they don&rsquo;t quietly pile up.</p>
 
-    <h3>Import from Anywhere</h3>
+    <h3>Take It With You</h3>
 
-    <p>Upload an OPML file from any feed reader &mdash; <a href="https://feedly.com/" target="_blank" rel="noopener noreferrer">Feedly</a>, <a href="https://www.inoreader.com/" target="_blank" rel="noopener noreferrer">Inoreader</a>, <a href="https://netnewswire.com/" target="_blank" rel="noopener noreferrer">NetNewsWire</a>, or dozens of others. Lion Reader processes imports in the background with <a href="/demo/all?entry=real-time">real-time progress updates</a> delivered via Server-Sent Events. Each feed is validated and fetched during import to ensure it&rsquo;s still active. The importer preserves folder and tag structure from your original reader, translating folder hierarchies into Lion Reader&rsquo;s <a href="/demo/all?entry=tags">tag system</a>.</p>
-
-    <p>The import process is smart: it automatically skips feeds you&rsquo;re already subscribed to and provides detailed per-feed status reports. You&rsquo;ll see which feeds were successfully imported, which were skipped, and which failed with specific error messages.</p>
-
-    <h3>Export Your Library</h3>
-
-    <p>Export all your subscriptions as OPML 2.0 with a single click. The export includes custom titles and your complete tag/folder hierarchy, making it compatible with any OPML-supporting reader. This is perfect for creating backups, migrating between readers, or sharing curated subscription lists with friends.</p>
-
-    <p>OPML features:</p>
-    <ul>
-      <li><strong>Import</strong> &mdash; From any OPML-compatible reader</li>
-      <li><strong>Live progress</strong> &mdash; Background processing with real-time SSE updates</li>
-      <li><strong>Folder preservation</strong> &mdash; Tag structure imported from source reader</li>
-      <li><strong>Per-feed status</strong> &mdash; Imported, skipped, or failed with error details</li>
-      <li><strong>One-click export</strong> &mdash; OPML 2.0 with custom titles and tags</li>
-      <li><strong>Standard format</strong> &mdash; Compatible with any OPML-supporting feed reader</li>
-    </ul>
+    <p>Export all your feeds, with your tags and custom names, in one click. Keep it as a backup, share a list with a friend, or move to another reader &mdash; your subscriptions are never locked in.</p>
   `,
 };
 

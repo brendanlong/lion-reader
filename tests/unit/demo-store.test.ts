@@ -272,7 +272,6 @@ describe("createDemoStore", () => {
       const welcome = DEMO_ENTRIES.find((e) => e.id === "welcome")!;
       const { entry } = procedures["entries.get"]({ id: "welcome" });
       expect(entry.contentCleaned).toBe(welcome.contentHtml);
-      expect(entry.contentCleaned).toContain("This interactive demo is the real Lion Reader UI");
       expect(entry.fetchFullContent).toBe(false);
       expect(entry.fullContentFetchedAt).toBeNull();
 
