@@ -325,12 +325,12 @@ export default function PrivacyPolicyPage() {
               code not to store your IP address.
             </LegalParagraph>
             <LegalParagraph tight>
-              <strong>Session Replay:</strong> for a random 10% of browser sessions, and for the
-              minute or so before any error, Sentry also records a replay—the layout of each page,
-              your clicks and scrolling, and the pages you visit—so we can see what led to a
-              problem. Text and anything you type are masked, and images and media are blocked,
-              before the recording leaves your browser, so a replay does not show the words on the
-              page.
+              <strong>Session Replay:</strong> for a random 10% of browser sessions, and from about
+              a minute before any error through the rest of that session, Sentry also records a
+              replay—the layout of each page, your clicks and scrolling, and the pages you visit—so
+              we can see what led to a problem. Text and anything you type are masked, and images
+              and media are blocked, before the recording leaves your browser, so a replay does not
+              show the words on the page.
             </LegalParagraph>
             <LegalParagraph tight>
               <strong>Sentry can see what you were reading.</strong> Error reports and replays
@@ -379,7 +379,7 @@ export default function PrivacyPolicyPage() {
             <LegalParagraph tight>
               You can revoke this access at any time in your Google account settings. Unlinking
               Google in Lion Reader&apos;s settings also deletes the stored tokens; if Google is
-              your only way to sign in, set a password first.
+              your only way to sign in, set a password or link another sign-in method first.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink href="https://policies.google.com/privacy" external className="ui-text-sm">
@@ -501,9 +501,8 @@ export default function PrivacyPolicyPage() {
             read items, sort order), and keyboard shortcut preferences
           </li>
           <li>
-            <strong>sessionStorage:</strong> An identifier for the current Sentry session replay, if
-            one is being recorded (see Error Tracking and Session Replay above), cleared when you
-            close the tab
+            <strong>sessionStorage:</strong> An identifier Sentry uses for session replay (see Error
+            Tracking and Session Replay above), cleared when you close the tab
           </li>
           <li>
             <strong>Origin private file system:</strong> Enhanced narration voices (if you download
