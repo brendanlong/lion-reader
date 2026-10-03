@@ -11,6 +11,7 @@ import {
   desc,
   asc,
   inArray,
+  gt,
   sql,
   isNull,
   isNotNull,
@@ -519,6 +520,33 @@ export async function getFullEntries(db: typeof dbType, userId: string, entryIds
   );
   const byId = new Map(mapped.map((entry) => [entry.id, entry]));
   return entryIds.flatMap((id) => byId.get(id) ?? []);
+}
+
+/**
+ * One page of the entries an account export keeps (`library-export.ts`): saved
+ * and uploaded articles, newsletter issues, and starred entries of any type —
+ * everything that isn't just a copy of a feed the subscription list re-creates.
+ * Keyset-paged by id; pass the last id of the previous page as `afterId`.
+ */
+export async function listExportableEntries(
+  db: typeof dbType,
+  userId: string,
+  { afterId, limit }: { afterId?: string; limit: number }
+) {
+  const rows = await selectFullEntryRows(
+    db,
+    and(
+      eq(visibleEntries.userId, userId),
+      or(
+        eq(visibleEntries.starred, true),
+        and(inArray(visibleEntries.type, ["saved", "email"]), eq(visibleEntries.isSpam, false))
+      ),
+      afterId ? gt(visibleEntries.id, afterId) : undefined
+    )
+  )
+    .orderBy(asc(visibleEntries.id))
+    .limit(limit);
+  return mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, (row) => toFullEntry(row));
 }
 
 // ============================================================================

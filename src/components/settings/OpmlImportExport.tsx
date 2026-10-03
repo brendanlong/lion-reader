@@ -7,6 +7,7 @@
  * - Preview of feeds to import
  * - Import progress and results display
  * - Export download functionality
+ * - Account export (saved, starred and newsletter entries) download link
  */
 
 "use client";
@@ -58,6 +59,7 @@ export function OpmlImportExport() {
       <div className="space-y-6">
         <ImportSection />
         <ExportSection />
+        <LibraryExportSection />
       </div>
     </section>
   );
@@ -555,6 +557,33 @@ function ExportSection() {
         <DownloadIcon className="mr-2 h-4 w-4" />
         Export subscriptions
       </Button>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Library Export Section
+// ============================================================================
+
+/** A plain link so the browser streams the zip to disk instead of buffering it in the page. */
+function LibraryExportSection() {
+  return (
+    <Card>
+      <h3 className="ui-text-sm text-body mb-2 font-medium">Export your library</h3>
+      <p className="ui-text-sm text-muted mb-4">
+        Download a zip of your saved articles, uploads, newsletters and starred entries, with a page
+        for each article, a bookmarks file other read-later apps can import, and your subscriptions
+        as OPML.
+      </p>
+
+      <a
+        href="/api/v1/export"
+        download
+        className="border-edge-input bg-surface text-body hover:bg-surface-muted ui-text-sm inline-flex min-h-[44px] items-center justify-center rounded-md border px-4 font-medium transition-colors"
+      >
+        <DownloadIcon className="mr-2 h-4 w-4" />
+        Export library
+      </a>
     </Card>
   );
 }

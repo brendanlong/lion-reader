@@ -29,7 +29,7 @@ import {
   fetchLessWrongUserById,
   type LessWrongUser,
 } from "@/server/feed/lesswrong";
-import { generateOpml, OpmlParseError, type OpmlSubscription } from "@/server/feed/opml";
+import { OpmlParseError } from "@/server/feed/opml";
 import { scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
@@ -732,32 +732,17 @@ export const subscriptionsRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
-      const userSubscriptions = await subscriptionsService.listAllSubscriptions(ctx.db, userId);
-
-      // Convert to OPML subscription format
-      const opmlSubscriptions: OpmlSubscription[] = userSubscriptions
-        .filter((row) => row.url !== null)
-        .map((row) => ({
-          title: row.title || row.url || "Untitled Feed",
-          xmlUrl: row.url!,
-          htmlUrl: row.siteUrl ?? undefined,
-          tags: row.tags.length > 0 ? row.tags.map((tag) => tag.name) : undefined,
-        }));
-
-      // Generate OPML
-      const opml = generateOpml(opmlSubscriptions, {
-        title: "Lion Reader Subscriptions",
-      });
+      const { opml, feedCount } = await subscriptionsService.exportSubscriptionsOpml(
+        ctx.db,
+        userId
+      );
 
       logger.info("OPML export completed", {
         userId,
-        feedCount: opmlSubscriptions.length,
+        feedCount,
       });
 
-      return {
-        opml,
-        feedCount: opmlSubscriptions.length,
-      };
+      return { opml, feedCount };
     }),
 
   /**
