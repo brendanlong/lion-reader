@@ -60,7 +60,7 @@ test("the prerendered article page carries the article and the list", async ({ r
 
   // The article body is in the HTML (no client-side fetch needed to see it).
   expect(html).toContain(welcome.contentHtml.match(/<p>(.*?)<\/p>/)![1]);
-  expect(html).toContain("Get Started");
+  expect(html).toContain("Get started for free");
   // The (hidden) list under the article is prerendered too, with crawlable
   // links — including the open (now read) entry itself, like the app's list.
   expect(html).toContain('href="/demo/all?entry=welcome"');

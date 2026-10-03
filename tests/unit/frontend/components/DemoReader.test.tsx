@@ -98,8 +98,8 @@ describe("demo reader tree", () => {
     expect(
       await screen.findByRole("heading", { name: "Welcome to Lion Reader", level: 1 })
     ).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Get Started" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Sign Up" })).toHaveAttribute("href", "/register");
+    expect(screen.getByRole("heading", { name: "Get started for free" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/register");
     // The canned-summary button is on offer (summarization.isAvailable → true).
     expect(screen.getByRole("button", { name: "Generate AI summary" })).toBeVisible();
 

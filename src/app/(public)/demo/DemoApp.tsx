@@ -89,7 +89,7 @@ function DemoShell() {
             href="/register"
             className="btn-primary ui-text-sm inline-flex min-h-[40px] items-center gap-1.5 rounded-md px-3 font-medium"
           >
-            Sign Up
+            Sign up for free
           </PageLink>
           <PageLink
             href="/login"
