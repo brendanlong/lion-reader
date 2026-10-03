@@ -169,6 +169,9 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   `public/logo.svg` by `scripts/app-icon.py` (its header says how).
   Debug builds get their own background color so they're easy to tell apart,
   except with themed icons on, which use only the monochrome layer.
+  E-ink devices get that monochrome layer black on white instead
+  (`LauncherIcon.kt`), so the launcher entry is an alias per icon: launch
+  `MainActivity` by its class, never by a launcher component name.
 - **Background sync** runs through WorkManager (`SyncScheduler`): a periodic
   full sync and a flush after each user change, both waiting for a network.
 - **Live updates:** while the app is on screen it listens to the server's
