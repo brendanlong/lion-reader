@@ -284,10 +284,10 @@ IDs) · **Code:** `src/app/api/wallabag/`, `src/app/api/greader.php/`,
 
 - `/api/prerecorded-speech/:key` has no session (the demo plays it) yet can
   synthesize speech on the server's key. It **only synthesizes keys in the
-  server-built demo catalog**, and every chunk it gets is written to the
-  machine's disk cache, which is consulted before anything else, so whatever
-  object storage does, a machine synthesizes each chunk at most once while its
-  disk lasts. A disk cache that
-  fails a write turns recorded narration off for the process. Never let the
-  route accept text, voice or model from the request, and never serve a
-  synthesis without caching it.
+  server-built demo catalog**, and caches every chunk it gets on the machine's
+  disk, which is consulted before anything else. So whatever object storage
+  does, a machine synthesizes each chunk once per start, plus any synthesis
+  that fails partway. A failed disk write turns recorded narration off for a
+  while (longer each time), so a broken disk can't turn into a synthesis per
+  play. Never let the route accept text, voice or model from the request, and
+  never let it synthesize a chunk without caching it on disk.

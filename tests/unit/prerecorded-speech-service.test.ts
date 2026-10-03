@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrerecordedChunk } from "@/server/services/demo-narration";
@@ -35,7 +35,6 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "prerecorded-speech-test-"));
 });
 afterEach(async () => {
-  await chmod(join(root, "cache"), 0o700).catch(() => {});
   await rm(root, { recursive: true, force: true });
 });
 
@@ -62,9 +61,6 @@ function setup(overrides: Partial<PrerecordedSpeechSources> = {}) {
   };
   return { get: createPrerecordedSpeech(sources), bucket, synthesized, cacheDir };
 }
-
-// Permissions don't stop root, so a failing write can't be staged as root.
-const canFailWrites = process.getuid?.() !== 0;
 
 describe("prerecorded speech", () => {
   it("serves nothing, and synthesizes nothing, for a key not in the catalog", async () => {
@@ -137,7 +133,7 @@ describe("prerecorded speech", () => {
     await expect(text(await get(KEY))).rejects.toThrow("connection dropped");
     await settle();
     expect(bucket.has(KEY)).toBe(false);
-    expect(await readdir(cacheDir)).toEqual([]);
+    expect(await readdir(cacheDir).catch(() => [])).toEqual([]);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     expect(synthesized).toEqual(["Hello.", "Hello."]);
   });
@@ -187,22 +183,49 @@ describe("prerecorded speech", () => {
     expect(restartedWithNewDisk.synthesized).toEqual(["Hello."]);
   });
 
-  it("is off, synthesizing nothing, when the disk cache can't be set up", async () => {
-    const blocked = join(root, "not-a-directory");
-    await writeFile(blocked, "");
-    const { get, bucket, synthesized } = setup({ cacheDir: join(blocked, "cache") });
-    bucket.set(KEY, "stored");
-    expect(await get(KEY)).toBeNull();
-    expect(synthesized).toEqual([]);
-  });
+  it("turns off for longer each time the disk fails a write, until one succeeds", async () => {
+    let time = 0;
+    // A file where the cache directory should be: every write fails.
+    const blocked = join(root, "blocked");
+    const breakDisk = async () => {
+      await rm(blocked, { recursive: true, force: true });
+      await writeFile(blocked, "");
+    };
+    await breakDisk();
+    const { get, bucket, synthesized } = setup({
+      cacheDir: join(blocked, "cache"),
+      now: () => time,
+    });
+    const minutes = (count: number) => count * 60 * 1000;
 
-  it.runIf(canFailWrites)("turns off when the disk cache fails a write", async () => {
-    const { get, synthesized, cacheDir } = setup();
-    await get("b".repeat(64)); // Waits out the probe.
-    await chmod(cacheDir, 0o500);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     await settle();
     expect(await get(KEY)).toBeNull();
-    expect(synthesized).toEqual(["Hello."]);
+
+    time += minutes(1);
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await settle();
+    time += minutes(1);
+    expect(await get(KEY)).toBeNull();
+    time += minutes(1);
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await settle();
+    expect(synthesized).toEqual(["Hello.", "Hello.", "Hello."]);
+
+    // The disk recovers: its next write succeeds and resets the pause.
+    await rm(blocked);
+    time += minutes(4);
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await settle();
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    expect(synthesized).toHaveLength(4);
+
+    await breakDisk();
+    expect(bucket.has(KEY)).toBe(true);
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await settle();
+    expect(await get(KEY)).toBeNull();
+    time += minutes(1);
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
   });
 });
