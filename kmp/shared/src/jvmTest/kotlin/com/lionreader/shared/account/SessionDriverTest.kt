@@ -53,7 +53,7 @@ class SessionDriverTest {
             )
         val unread =
             reader
-                .timeline(ListScope.All, true, emptySet(), 50)
+                .timeline(ListScope.All, unreadOnly = true, oldestFirst = false, emptySet(), 50)
                 .stateIn(
                     scope,
                     SharingStarted.Eagerly,

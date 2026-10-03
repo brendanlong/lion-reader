@@ -74,7 +74,11 @@ class RealServerTest {
             val engine = SyncEngine(api, db, { deviceClock }, { RetentionPolicy() })
             val reader = Reader(db, { deviceClock }, Dispatchers.Unconfined) {}
             suspend fun local(scope: ListScope = ListScope.All, unreadOnly: Boolean = false) =
-                reader.timeline(scope, unreadOnly, emptySet(), 100).first().map { it.id }.toSet()
+                reader
+                    .timeline(scope, unreadOnly, oldestFirst = false, emptySet(), 100)
+                    .first()
+                    .map { it.id }
+                    .toSet()
             suspend fun serverUnread() =
                 api.listEntries(ListFilter.ALL, null)
                     .items

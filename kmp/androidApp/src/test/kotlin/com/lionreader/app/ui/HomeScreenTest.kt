@@ -1,6 +1,7 @@
 package com.lionreader.app.ui
 
 import android.os.Looper
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -129,6 +131,7 @@ class HomeScreenTest {
         showSelection: Boolean = false,
         pageScrolling: Boolean = false,
         pageTurns: PageTurns = PageTurns(),
+        restoration: StateRestorationTester? = null,
     ) {
         model =
             HomeViewModel(
@@ -137,7 +140,9 @@ class HomeScreenTest {
                 { settings.value = it(settings.value) },
                 sync = { syncs++ },
             )
-        composeRule.setContent {
+        val setContent: (@Composable () -> Unit) -> Unit =
+            restoration?.let { it::setContent } ?: composeRule::setContent
+        setContent {
             HomeScreen(
                 model,
                 onOpen = {},
@@ -233,6 +238,61 @@ class HomeScreenTest {
         composeRule.onNodeWithText("Article 0").assertDoesNotExist()
     }
 
+    /** Scrolls the 60-entry timeline [seedTimeline] makes so its [index] is at the top. */
+    private fun scrollTimelineTo(index: Int) {
+        val timeline =
+            SemanticsMatcher("the timeline") {
+                it.config
+                    .getOrElseNullable(SemanticsProperties.CollectionInfo) { null }
+                    ?.rowCount == 60
+            }
+        composeRule.onNode(hasScrollToIndexAction() and timeline).performScrollToIndex(index)
+        composeRule.onNodeWithText("Article 0").assertDoesNotExist()
+    }
+
+    /** "Article 0" newest, in one feed, all unread. */
+    private fun seedTimeline() =
+        (59 downTo 0).forEach {
+            seed("e$it", "Article $it", read = false, sortAt = 60L - it, subscription = "sub")
+        }
+
+    @Test
+    fun anotherListFilterOrOrderStartsAtTheTop() {
+        // The same entries each time, so only the change of list scrolls: left alone, the list
+        // would keep its place by the entry at the top.
+        seedTimeline()
+        show()
+
+        scrollTimelineTo(40)
+        model.select(ListScope.Subscription("sub"))
+        composeRule.onNodeWithText("Article 0").assertIsDisplayed()
+
+        scrollTimelineTo(40)
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Show read articles").performClick()
+        composeRule.onNodeWithText("Article 0").assertIsDisplayed()
+
+        scrollTimelineTo(40)
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Oldest first").performClick()
+        composeRule.onNodeWithText("Article 59").assertIsDisplayed()
+        assertEquals((59 downTo 0).map { "e$it" }, model.shownIds())
+    }
+
+    @Test
+    fun comingBackToTheSameListKeepsItsPlace() {
+        seedTimeline()
+        val restoration = StateRestorationTester(composeRule)
+        show(restoration = restoration)
+        scrollTimelineTo(40)
+
+        // As leaving for an article and coming back does.
+        restoration.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("Article 40").assertIsDisplayed()
+        composeRule.onNodeWithText("Article 0").assertDoesNotExist()
+    }
+
     @Test
     fun theArticleBesideTheListIsSelectedUntilClosed() {
         seed("a", "First", read = false)
@@ -268,7 +328,7 @@ class HomeScreenTest {
     @Test
     fun aSwitchToAnEmptyListFromAnEmptyListIsSeenToLoad() {
         show()
-        composeRule.waitUntil { model.items.value != null }
+        composeRule.waitUntil { model.timeline.value != null }
         var loaded = false
         var waitedForTheOpenList = true
         // Starred and Saved are both empty: the entries don't change, the list does.

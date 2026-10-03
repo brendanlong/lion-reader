@@ -73,7 +73,15 @@ class SyncModelTest {
         val log = mutableListOf<String>()
 
         suspend fun localEntries() =
-            reader.timeline(ListScope.All, false, emptySet(), 10_000).first()
+            reader
+                .timeline(
+                    ListScope.All,
+                    unreadOnly = false,
+                    oldestFirst = false,
+                    emptySet(),
+                    10_000,
+                )
+                .first()
         suspend fun quietly(block: suspend () -> Unit) {
             try {
                 block()
@@ -193,7 +201,18 @@ class SyncModelTest {
         lastLocal: Map<Pair<String, String>, Pair<Boolean, Long>>,
     ): String? {
         val local =
-            reader.timeline(ListScope.All, false, emptySet(), 10_000).first().associateBy { it.id }
+            reader
+                .timeline(
+                    ListScope.All,
+                    unreadOnly = false,
+                    oldestFirst = false,
+                    emptySet(),
+                    10_000,
+                )
+                .first()
+                .associateBy {
+                    it.id
+                }
         val remote = server.visible.associateBy { it.id }
 
         if (local.keys != remote.keys) {
@@ -210,7 +229,18 @@ class SyncModelTest {
         if (pending != 0L) return "$pending changes still unsent"
 
         val recentlyRead =
-            reader.timeline(ListScope.RecentlyRead, false, emptySet(), 10_000).first().map { it.id }
+            reader
+                .timeline(
+                    ListScope.RecentlyRead,
+                    unreadOnly = false,
+                    oldestFirst = false,
+                    emptySet(),
+                    10_000,
+                )
+                .first()
+                .map {
+                    it.id
+                }
         if (recentlyRead != server.recentlyRead()) {
             return "recently read: device $recentlyRead, server ${server.recentlyRead()}"
         }

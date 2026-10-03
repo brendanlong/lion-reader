@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -111,8 +110,9 @@ fun HomeScreen(
     val coroutines = rememberCoroutineScope()
     val scope by model.scope.collectAsStateWithLifecycle()
     val navigation by model.navigation.collectAsStateWithLifecycle()
-    val items by model.items.collectAsStateWithLifecycle()
+    val timeline by model.timeline.collectAsStateWithLifecycle()
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
+    val oldestFirst by model.oldestFirst.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
     val hideEmptyLists by model.hideEmptyLists.collectAsStateWithLifecycle()
@@ -136,8 +136,11 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = search != null) { model.setSearch(null) }
+    // One scroll position per list (its filter and order included), so another list starts at the
+    // top rather than following its top entry by key, and coming back from an article keeps it.
+    val timelineList =
+        rememberSaveable(timeline?.listKey, saver = LazyListState.Saver) { LazyListState() }
     // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
-    val timelineList = rememberLazyListState()
     val searchList = remember(search == null) { LazyListState() }
 
     ModalNavigationDrawer(
@@ -208,6 +211,8 @@ fun HomeScreen(
                             ListMenu(
                                 showRead = !unreadOnly,
                                 onShowReadChange = { model.setUnreadOnly(!it) },
+                                oldestFirst = oldestFirst,
+                                onOldestFirstChange = model::setOldestFirst,
                                 onMarkAllRead = {
                                     coroutines.launch { markAllIds = model.unreadInList() }
                                 },
@@ -235,7 +240,7 @@ fun HomeScreen(
                     }
                     val text = search
                     EntryList(
-                        items = if (text != null) searchResults else items,
+                        items = if (text != null) searchResults else timeline?.items,
                         listState = if (text != null) searchList else timelineList,
                         selectedId = shown.takeIf { showSelection },
                         emptyText =
@@ -366,6 +371,8 @@ private fun SearchBar(text: String, onChange: (String) -> Unit, onClose: () -> U
 private fun ListMenu(
     showRead: Boolean,
     onShowReadChange: (Boolean) -> Unit,
+    oldestFirst: Boolean,
+    onOldestFirstChange: (Boolean) -> Unit,
     onMarkAllRead: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -380,6 +387,14 @@ private fun ListMenu(
                 onClick = {
                     open = false
                     onShowReadChange(!showRead)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Oldest first") },
+                trailingIcon = { Checkbox(checked = oldestFirst, onCheckedChange = null) },
+                onClick = {
+                    open = false
+                    onOldestFirstChange(!oldestFirst)
                 },
             )
             DropdownMenuItem(

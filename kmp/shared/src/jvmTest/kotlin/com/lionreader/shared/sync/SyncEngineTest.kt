@@ -73,8 +73,12 @@ class SyncEngineTest {
         entries.forEach { server.entries[it.id] = it }
     }
 
-    private suspend fun timeline(scope: ListScope = ListScope.All, unreadOnly: Boolean = false) =
-        reader.timeline(scope, unreadOnly, emptySet(), 1000).first().map { it.id }
+    private suspend fun timeline(
+        scope: ListScope = ListScope.All,
+        unreadOnly: Boolean = false,
+        oldestFirst: Boolean = false,
+        limit: Long = 1000,
+    ) = reader.timeline(scope, unreadOnly, oldestFirst, emptySet(), limit).first().map { it.id }
 
     private fun minutesAgo(minutes: Int) =
         Instant.fromEpochMilliseconds(NOW - minutes * 60_000L).toString()
@@ -510,6 +514,46 @@ class SyncEngineTest {
 
         assertEquals(listOf("untagged"), timeline(ListScope.Uncategorized))
         assertEquals(listOf("untagged"), reader.unreadIds(ListScope.Uncategorized))
+    }
+
+    @Test
+    fun oldestFirstIsEachListReversedAndPagesFromTheOldest() = runTest {
+        server.subscriptions += subscription("sub-1", tags = listOf(TagRef("tag-1", "News")))
+        server.subscriptions += subscription("sub-2")
+        serve(
+            entry("a", ageDays = 1),
+            // Same time as "a": the id breaks the tie, the other way round too.
+            entry("b", ageDays = 1, read = true, starred = true),
+            entry("c", ageDays = 2, subscriptionId = "sub-2"),
+            entry("d", ageDays = 3, read = true, subscriptionId = "sub-2")
+                .copy(readChangedAt = minutesAgo(10)),
+            entry("e", ageDays = 4, subscriptionId = null, type = FeedType.SAVED)
+                .copy(readChangedAt = minutesAgo(20)),
+        )
+        engine.sync()
+
+        val scopes =
+            listOf(
+                ListScope.All,
+                ListScope.Starred,
+                ListScope.Saved,
+                ListScope.Subscription("sub-2"),
+                ListScope.Tag("tag-1"),
+                ListScope.Uncategorized,
+                ListScope.RecentlyRead,
+            )
+        for (scope in scopes) {
+            for (unreadOnly in listOf(false, true)) {
+                val newest = timeline(scope, unreadOnly)
+                assertEquals(
+                    newest.reversed(),
+                    timeline(scope, unreadOnly, oldestFirst = true),
+                    "$scope, unreadOnly=$unreadOnly",
+                )
+            }
+        }
+        assertEquals(listOf("e", "d"), timeline(oldestFirst = true, limit = 2))
+        assertEquals(listOf("e"), timeline(ListScope.RecentlyRead, oldestFirst = true, limit = 1))
     }
 
     @Test
