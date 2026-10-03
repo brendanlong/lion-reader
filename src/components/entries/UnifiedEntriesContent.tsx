@@ -50,8 +50,12 @@ interface RouteInfo {
   emptyMessageUnread: string;
   /** Empty message when showing all entries */
   emptyMessageAll: string;
-  /** Description for mark all read dialog */
-  markAllReadDescription: string;
+  /**
+   * Description for mark all read dialog; null hides the button where it has no
+   * sensible scope (Recently Read lists entries from every feed, so it would
+   * mark the whole library read).
+   */
+  markAllReadDescription: string | null;
 }
 
 const ALL_ROUTE: RouteInfo = {
@@ -92,7 +96,7 @@ const STATIC_ROUTES: Record<string, RouteInfo> = {
     title: "Recently Read",
     emptyMessageUnread: "No unread entries. Toggle to show all items.",
     emptyMessageAll: "No recently read entries yet. Read some entries and they will appear here.",
-    markAllReadDescription: "all feeds",
+    markAllReadDescription: null,
   },
 };
 

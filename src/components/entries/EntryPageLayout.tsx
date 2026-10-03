@@ -48,8 +48,11 @@ interface EntryPageLayoutProps {
   /** Entry list slot - renders its own inline loading fallback (no Suspense) */
   entryListSlot: ReactNode;
 
-  /** Context description for the mark all read dialog (e.g., "all feeds", "this subscription") */
-  markAllReadDescription: string;
+  /**
+   * Context description for the mark all read dialog (e.g., "all feeds", "this
+   * subscription"); null hides the button and its shortcut.
+   */
+  markAllReadDescription: string | null;
 
   /** Options to pass to handleMarkAllRead */
   markAllReadOptions: MarkAllReadOptions;
@@ -151,7 +154,7 @@ export function EntryPageLayout({
                 results: mark-all-read acts on the whole view (not just the
                 matches), and search results are relevance-ranked (sort order
                 is ignored by the backend). */}
-            {!isSearching && (
+            {!isSearching && markAllReadDescription !== null && (
               <MarkAllReadButton
                 contextDescription={markAllReadDescription}
                 isLoading={isMarkAllReadPending}
