@@ -214,6 +214,36 @@ Caveats:
 
 ---
 
+## Expensive migrations: temporarily scale the machine
+
+`lion-reader-pg` runs on `shared-cpu-8x`, which is throttled to a ~50%-of-a-core
+sustained floor once its burst balance drains, so a heavy migration can crawl. A
+`machine update` resize is only a **few-second restart**, so scaling to a dedicated
+`performance` tier, running the migration, then scaling back is a viable pattern (the
+dashboard's scale button is disabled for PG apps — use the CLI). Pick the tier by the
+migration's **bottleneck**, not its size:
+
+- **Table rewrites are single-threaded.** `ALTER TABLE ... ADD COLUMN ... GENERATED ... STORED`
+  (and most `ALTER TABLE`/backfills) rewrite in one backend, so they want **dedicated
+  CPU, not more of it** — `performance-2x` runs the one hot core un-throttled. I/O-bound
+  migrations don't benefit from a CPU tier at all (volume IOPS scale with disk size).
+- **Index builds parallelize**, sublinearly: on PG 18+, B-tree, BRIN and GIN builds use
+  up to `max_parallel_maintenance_workers` (default 2), and go I/O-bound quickly.
+  `maintenance_work_mem` is usually the bigger lever. Set both per session (`SET ...`)
+  or with `ALTER DATABASE ... SET` before the run; don't persist a huge
+  `maintenance_work_mem` (PG 18 has parallel-GIN OOM reports at very large values).
+- **Don't hand-tune `shared_buffers`/`work_mem`** — flex sizes them from RAM at boot.
+  After a big rewrite, `VACUUM (ANALYZE)` the table before scaling back.
+- **Scale back with explicit memory** — a `--vm-size` preset alone won't restore the
+  original RAM:
+  `flyctl machine update <id> --vm-size shared-cpu-8x --vm-memory 2048 --app lion-reader-pg`.
+- A heavy migration can be **pre-applied by hand** in this window: our migrations are
+  guarded (`IF NOT EXISTS`, `CREATE OR REPLACE VIEW`), so the deploy's run then no-ops
+  the heavy parts. This is also how to build an index `CONCURRENTLY`, which the
+  migration runner can't (see `migrations/CLAUDE.md`).
+
+---
+
 ## Backups & Point-in-Time Recovery (PITR)
 
 Two independent layers protect the database:

@@ -124,7 +124,7 @@ export interface SavedArticleCapability {
    * Claim a page the generic path has already fetched, for a source that can't
    * be recognized from its URL alone (a Notion page on a customer's domain).
    * Return null to keep the page as fetched. When it runs and what it may
-   * claim: "Plugin System" in docs/DESIGN.md.
+   * claim: ./CLAUDE.md.
    */
   fetchContentFromPage?(page: FetchedPage): Promise<SavedArticleContent | null>;
 

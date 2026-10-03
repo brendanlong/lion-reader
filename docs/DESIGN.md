@@ -1,23 +1,10 @@
 # Lion Reader Design Document
 
-High-level architecture and design decisions. Mechanics, edge cases, and invariants live in per-directory `CLAUDE.md` files, pointed to from each section — read the relevant one before working on a subsystem.
-
-### Architecture Diagrams (D2)
-
-Visual architecture diagrams are available in `docs/diagrams/`:
-
-- **[frontend-data-flow.d2](diagrams/frontend-data-flow.d2)** - Delta-based state management with React Query
-- **[backend-api.d2](diagrams/backend-api.d2)** - tRPC routers, services layer, and database
-- **[feed-fetcher.d2](diagrams/feed-fetcher.d2)** - Background job queue and feed processing pipeline
-- **[sse-cache-updates.d2](diagrams/sse-cache-updates.d2)** - SSE event flow from backend to frontend cache updates
-
-To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playground](https://play.d2lang.com/).
+Architecture and the decisions behind it. The rules for working inside each subsystem live in its per-directory `CLAUDE.md`, linked from each section. Flow diagrams are in [`docs/diagrams/`](diagrams/) (render with the [D2 CLI](https://d2lang.com/) or [playground](https://play.d2lang.com/)).
 
 ---
 
 ## System Architecture
-
-### High-Level Overview
 
 ```
                                     ┌──────────────────┐
@@ -67,272 +54,99 @@ To render these diagrams, use the [D2 CLI](https://d2lang.com/) or [D2 Playgroun
            │  - job queue│       │  - sessions │
            └─────────────┘       │  - rate lim │
                                  └─────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                      MCP Server (Optional)                   │
-│  Exposes Lion Reader to AI assistants via HTTP + stdio       │
-│  Uses same services layer as tRPC routers                    │
-└─────────────────────────────────────────────────────────────┘
 ```
 
-The **app**, **worker**, and **discord** processes are separate Fly.io process
-groups (`[processes]` in `fly.toml`), each independently scaled — the worker is
-not embedded in the app servers.
+The app, worker, and Discord bot are separate, independently scaled Fly process groups; the worker is not embedded in the app servers. Background jobs use a Postgres-based queue (`src/server/jobs/`).
 
 ### Design Principles
 
 1. **Stateless app servers**: All state in Postgres/Redis, enabling horizontal scaling
 2. **Efficient data sharing**: Feed/entry data deduplicated across users
-3. **Privacy by default**: entry visibility is gated per user at insert time (see Entry Visibility below)
+3. **Privacy by default**: entry visibility is gated per user at insert time
 4. **Graceful degradation**: Handle misbehaving feeds, rate limits, and failures
 5. **Observable**: Comprehensive logging, metrics, and error tracking
 
 ---
 
-## Database Design
+## Data Model
 
-Detailed data-model invariants (entry visibility, subscription attribution, unread-counter algebra, idempotency/watermark rules, pagination mechanics) live in `src/server/CLAUDE.md`.
+Canonical `feeds`/`entries` rows are shared across users; `subscriptions` and `user_entries` hold each user's relationship and read/star state. Keys are UUIDv7. The schema is `migrations/schema.sql`; the invariants are in `src/server/CLAUDE.md`. The decisions that shape it:
 
-### ID Strategy
-
-All primary keys use **UUIDv7**: globally unique without coordination, time-ordered (good B-tree insert locality, natural keyset-pagination tiebreaker). The `id` is **not** the timeline sort key — the timeline sorts by publish time, which diverges from insert order.
-
-### Schema & Views
-
-The schema is the source of truth for tables and views: `migrations/schema.sql` (kept current by `pnpm db:schema`), with Drizzle schemas in `src/server/db/schema.ts`. The core shape: canonical `feeds`/`entries` rows are shared across users for storage efficiency, while `subscriptions` and `user_entries` hold each user's relationship and read/star state. Frontend queries go through the `user_feeds` / `visible_entries` views rather than manual joins — semantics and gotchas in `src/server/CLAUDE.md`.
-
-### Key Design Decisions
-
-Each of these is specified in full in `src/server/CLAUDE.md`; the summaries here state the decision and its rationale.
-
-- **Entry Visibility**: an entry is visible to a user iff a `user_entries` row exists and the entry is from an active subscription, starred, or a saved article. Rows are created at subscribe time (current feed contents only) and at fetch time (state-driven, self-healing fanout to active subscribers). This insert-time gating — not the view — is what prevents leaking pre-subscription private content.
-- **Subscription attribution**: each `user_entries` row carries a denormalized `subscription_id`, the sole entry→subscription link.
-- **Unread counts**: denormalized onto trigger-maintained counter columns so badges are O(subscriptions) arithmetic, never entry scans; a daily reconcile job repairs (and loudly reports) drift.
-- **Soft deletes**: subscriptions use `unsubscribed_at`, so resubscribing restores read state.
-- **Content change detection**: entries store a `content_hash`; changed content overwrites the previous version.
-- **Read/star idempotency & delta sync**: per-field last-writer-wins watermarks (`*_changed_at`) resolve conflicting multi-client updates; `updated_at` moves only on meaningful changes so re-asserts don't churn delta sync (issues #1118, #1084, #1160 — "Row Written vs. Value Flipped" in `src/server/CLAUDE.md`).
-- **Timeline sort key**: `COALESCE(published_at, fetched_at)` is denormalized onto `user_entries.published_or_fetched_at` so one index serves the user filter + timeline sort.
+- **Entry visibility is decided at insert time**: a user sees an entry only if a `user_entries` row exists, and rows are only created for what a feed currently contains when the user subscribes or a fetch runs. That — not a timestamp rule in a view — is what keeps pre-subscription content private.
+- **Unread counts are denormalized** onto trigger-maintained counters, so badges are arithmetic over subscriptions, never entry scans; a daily job repairs (and loudly reports) drift.
+- **Conflicting updates resolve to the newest user intent**: read/star carry per-field last-writer-wins watermarks, and `updated_at` moves only on a real change so re-asserts don't churn delta sync.
+- **Soft deletes** for subscriptions (`unsubscribed_at`), so resubscribing restores read state.
+- **Changed content overwrites** the previous version, detected by `content_hash`.
 
 ---
 
 ## Authentication
 
-Details (session flow, cookie design, scopes, brute-force protection): `src/server/auth/CLAUDE.md`.
-
-Custom auth using battle-tested primitives: **`openid-client`** (OAuth client for Google/Apple/Discord), **`argon2`** (password hashing), and custom token-based session management stored in Postgres with a Redis cache. Session tokens are 32 random bytes, base64url encoded; only the SHA-256 hash is stored.
-
-### OAuth Providers
-
-Sign-in providers are Google, Apple, and Discord; each is enabled by setting its client ID/secret environment variables, and the frontend automatically shows buttons for enabled providers. Google can additionally grant `documents.readonly` for Google Docs access.
-
-### Session Cookie
-
-The `session` cookie is `HttpOnly` + `Secure` and the server is its sole writer — there is no client-side token management. Dead sessions are detected without reading the cookie: the auth-error redirect is mounted only on authenticated surfaces, so any `UNAUTHORIZED` there means "session died".
-
-### Token Scopes & Authorization
-
-Authorization is **fail-closed** for tokens. Four credential types: browser sessions (full access), scoped sessions (compat-API bearer credentials, rejected for full-access use), API tokens (scope-restricted), and OAuth 2.1 access tokens (audience-bound to the MCP endpoint). tRPC procedures are session-only by default — **new endpoints are token-inaccessible until they explicitly opt in** via `scopedProtectedProcedure`. Scope table and enforcement details: `src/server/auth/CLAUDE.md`.
+Custom auth from established primitives: `openid-client` (Google/Apple/Discord sign-in, each enabled by its env vars), `argon2` (passwords), and token sessions stored in Postgres behind a Redis cache. Tokens are fail-closed: tRPC procedures are session-only unless they opt in to a scope. Details: `src/server/auth/CLAUDE.md`; the OAuth 2.1 server that issues tokens to MCP clients and the native app: `src/server/oauth/CLAUDE.md`.
 
 ---
 
 ## Feed Processing
 
-Details (polling/backoff ladder, WebSub invariants, renewal): `src/server/feed/CLAUDE.md`.
+Feed types are web (RSS/Atom/JSON), email (newsletters to per-user ingest addresses), and saved (read-it-later). We fetch respectfully — honoring `Cache-Control`, conditional requests and `Retry-After`, backing off failing feeds up to 7 days, and tracking permanent redirects. Feeds that advertise a WebSub hub get pushes and drop to a daily backup poll. Rules: `src/server/feed/CLAUDE.md`.
 
-### Feed Types
-
-- **RSS/Atom/JSON**: Standard web feeds fetched via HTTP
-- **Email**: Newsletters received via ingest email addresses
-- **Saved**: User-saved articles (read-it-later)
-
-### Respectful Fetching
-
-Lion Reader respects server `Cache-Control` headers and conditional-request validators, applies exponential backoff to failing feeds (capped at 7 days; rate-limit responses capped much lower), honors `Retry-After`, and tracks permanent redirects. Per-source plugins can raise the minimum poll interval.
-
-### WebSub Push & Backup Polling
-
-When a feed advertises a hub, we subscribe via WebSub and drop the feed to a 24h backup-poll cadence, trusting the hub to push in real time. Because hubs can silently die, staleness is bounded by a 14-day lease clamp and dead-hub breakage is made visible by a per-hub push-reliability tally (`websub_hub_stats`). Renewals are non-disruptive (row stays `active`, secret never rotates), and a hub that accepts a resubscribe but never verifies is reverted to polling (issue #1079).
-
-### SSRF Protection
-
-Every server-side fetch of a user-influenced URL goes through `fetchWithSsrfProtection`, never bare `fetch`. Why it is security-critical: `SECURITY.md` §2. Mechanics: `src/server/http/CLAUDE.md`.
+Per-source behavior (YouTube, LessWrong, Bluesky, Google Docs, …) lives in capability-based plugins (`src/server/plugins/`), so adding a source means writing one self-contained plugin instead of scattering URL checks through core modules.
 
 ---
 
 ## Real-time Updates
 
-The end-to-end flow (worker → Redis channel → SSE → local store / React Query cache) is drawn in [sse-cache-updates.d2](diagrams/sse-cache-updates.d2) and specified in `src/FRONTEND_STATE.md`.
+Workers publish to Redis; each app process forwards events over SSE; the client writes them straight into its local store and caches without refetching ([sse-cache-updates.d2](diagrams/sse-cache-updates.d2), `src/FRONTEND_STATE.md`).
 
-### Channel Design
-
-Two channel patterns, so servers only receive events they care about: `feed:{feedId}:events` for entry events (shared across the feed's subscribers) and `user:{userId}:events` for per-user events (subscription/tag/read-state changes, imports). The event types live in `src/server/redis/pubsub.ts`. When a user subscribes to a new feed, the SSE connection dynamically subscribes to that feed's channel. `saved_feed_created` is a server-internal signal (not forwarded to the client): it fires when a user's saved-articles feed is first created so already-open connections subscribe to its channel and the first saved article broadcasts live rather than only after the next reconnect.
-
-### Connection Efficiency
-
-- **Single client connection**: the browser opens the `/api/v1/events` EventSource directly (one connection per tab). SSE availability (e.g. Redis down) is detected via a lightweight `HEAD /api/v1/events` check only on the error path; a 503 switches the client to polling the sync endpoint.
-- **Shared Redis subscriber**: each app process holds a single Redis subscriber connection (`createPubSubSubscription` in `src/server/redis/pubsub.ts`). Channel subscriptions are reference-counted across SSE connections and messages are fanned out in-process, so Redis connections don't grow with the number of connected users.
+- **Two channel patterns**, so servers receive only what they need: `feed:{feedId}:events` (shared by the feed's subscribers) and `user:{userId}:events` (per-user state). Event types are in `src/server/redis/pubsub.ts`.
+- **One connection per tab** to `/api/v1/events`; if SSE is unavailable (a 503), the client polls the sync endpoint instead.
+- **One Redis subscriber per app process**, with channel subscriptions ref-counted across SSE connections, so Redis connections don't grow with users.
 
 ---
 
 ## API Design
 
-### Subscription-Centric Model
+**Subscriptions, not feeds, are the user-facing identifier.** Feeds are shared internally, but clients see "their subscriptions" with feed metadata flattened in, and filter entries by `subscriptionId`. The `feeds` router is pre-subscription only (preview, discover).
 
-The API uses **subscription ID as the primary user-facing identifier**. While feeds are shared internally for efficiency (fetching `nytimes.com/rss` once serves all subscribers), this is hidden from clients. Users interact with "their subscriptions" rather than "shared feeds."
+The same services back several surfaces under `src/app/api/`: the browser tRPC endpoint (`/api/trpc`); a REST API (`/api/v1/*`) generated from tRPC `openapi` meta, spec at `/api/openapi`; the Google Reader and Wallabag compatibility APIs; MCP (`/api/mcp`); and webhooks (Mailgun, WebSub).
 
-- Subscription responses include feed metadata (title, URL, etc.) flattened into a single object
-- Entry filtering uses `subscriptionId`, not `feedId`
-- The `feeds` router is only used for pre-subscription operations (preview, discover)
-
-### tRPC Router Structure
-
-Routers are organized by resource (one file per resource in `src/server/trpc/routers/` — see the directory for the list). Note `feeds` is pre-subscription only (preview/discover); everything post-subscription goes through `subscriptions`.
-
-### HTTP API Surfaces
-
-Besides the browser tRPC endpoint (`/api/trpc`), the same routers/services back several HTTP surfaces under `src/app/api/`:
-
-- **REST API** (`/api/v1/*`): generated from tRPC procedures' `openapi` meta via `trpc-to-openapi`; the OpenAPI 3.0 spec is served at `/api/openapi`. Includes the SSE stream at `/api/v1/events`.
-- **Google Reader API** (`/api/greader.php/*`): compatibility layer for Google Reader clients.
-- **Wallabag API** (`/api/wallabag/*`): compatibility layer for Wallabag read-it-later clients.
-- **MCP** (`/api/mcp`): see [MCP Server](#mcp-server).
-- **Webhooks** (`/api/webhooks/*`): Mailgun inbound email, WebSub hub callbacks.
-
-Both compat APIs expose **stored serial** integer ids, never UUID-derived ones — see "Compat API Integer IDs" in `src/server/CLAUDE.md`. This list is not exhaustive; see `src/app/api/` for the other route handlers (health check, PWA share target, telemetry, …).
-
-### Pagination
-
-Cursor-based pagination everywhere (never offset). Requests take `{ cursor?, limit? }` and responses return `{ items, nextCursor? }`; the cursor is a base64url-encoded keyset tuple. Encoding details — why base64url, and how timestamp cursors preserve microsecond precision via `Temporal` (#680, #683) — are in "Ordering & Pagination Mechanics" in `src/server/CLAUDE.md`.
-
-### Rate Limiting
-
-Token bucket via Redis, per-user, applied only to expensive/abusable operations. Ordinary limits fail open when Redis is down; the per-account password brute-force buckets are the deliberate exception and degrade to an in-memory fallback instead (see `src/server/auth/CLAUDE.md`). The OAuth server endpoints use their own generous per-IP bucket (see `src/server/oauth/CLAUDE.md`).
-
-### Error Responses
-
-Errors use tRPC's standard error envelope, extended by the `errorFormatter` in `src/server/trpc/trpc.ts`: `data` carries the tRPC error code and HTTP status, an optional app-specific `appErrorCode` (set via `createError` in `errors.ts`, e.g. `SIGNUP_CONFIRMATION_REQUIRED`, `INVITE_REQUIRED`, `CONTENT_TOO_LARGE`), and flattened Zod issues in `zodError` when input validation failed.
+- **Pagination** is cursor-based everywhere: `{ cursor?, limit? }` in, `{ items, nextCursor? }` out.
+- **Rate limits** (Redis token buckets) apply only to expensive or abusable operations, and fail open when Redis is down — except the per-account password buckets (`src/server/auth/CLAUDE.md`).
+- **Errors** use tRPC's envelope; `errorFormatter` in `src/server/trpc/trpc.ts` adds an optional app-specific `appErrorCode` and flattened Zod issues.
 
 ---
 
 ## Frontend Architecture
 
-### Client-Side Routing
-
-Next.js App Router handles **initial page loads only**. After hydration, all in-app
-navigation is shallow routing: `ClientLink` calls `window.history.pushState` (via
-`src/lib/navigation.ts`), and `AppRouter` (`src/components/app/AppRouter.tsx`) re-derives
-what to render from `usePathname()`. The `page.tsx` files exist to prefetch route-specific
-data on initial load; their rendered output is hidden by the app layout. Navigation costs
-zero server requests — data is served from the React Query cache and the local entry
-store (TanStack DB; see `src/FRONTEND_STATE.md`), kept fresh by SSE.
-
-Native App Router navigation was evaluated and rejected in issue #872 (per-navigation
-RSC fetches defeat the SSE-fed cache). The navigation rules this implies (which link
-components to use, `useParams()` not updating on `pushState`) are in `src/CLAUDE.md`.
-
-### Route Structure
-
-Routes are split across two root layouts, `src/app/(public)/` and `src/app/(spa)/` — see "Two root layouts" in `src/CLAUDE.md` for what belongs in each and the constraints that follow. The `src/app/` directory listing is the source of truth for the routes themselves.
-
-### Component Architecture
-
-Components live in `src/components/`, grouped by domain, with generic primitives in `ui/`. Component guidelines, the UI-primitive/icon/color-token reference, and the narration media-controls design are in `src/components/CLAUDE.md`.
+**The app is a client-side SPA after the first load.** Next.js App Router renders the initial page; after hydration, `ClientLink` navigates with `history.pushState` and `AppRouter` (`src/components/app/AppRouter.tsx`) picks what to render from the pathname, served from the React Query cache and the local entry store, which SSE keeps fresh. Navigation costs no server requests. Native App Router navigation was rejected (#872): per-navigation RSC fetches defeat the SSE-fed cache. The `page.tsx` files exist to prefetch data for the initial load. Routes split into two root layouts, `(spa)` and `(public)` (`src/CLAUDE.md`).
 
 ---
 
 ## MCP Server
 
-Lion Reader exposes functionality to AI assistants via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Two transports are supported:
-
-- **Streamable HTTP** at `POST /api/mcp` — for remote clients such as claude.ai. Authenticated with OAuth 2.1 access tokens (with the `mcp` scope) or legacy API tokens. Runs statelessly inside the Next.js route handler via `WebStandardStreamableHTTPServerTransport`, creating a fresh server+transport pair per request.
-- **stdio** (`pnpm mcp:serve`) — for local clients such as Claude Desktop.
-
-Both transports register the same tools and call the same services layer, mirroring the `mcp`-scoped tRPC endpoints. `src/server/mcp/tools.ts` defines the tools once and is the source of truth for the list; see `src/server/mcp/README.md`.
-
-The OAuth 2.1 authorization surface backing remote MCP auth (discovery documents, audience binding) is specified in `src/server/oauth/CLAUDE.md`.
-
----
-
-## Plugin System
-
-Lion Reader has an extensible plugin system (`src/server/plugins/`) that consolidates per-source custom parsing behind a capability-based interface, so adding a content source means writing one self-contained plugin instead of scattering URL checks across core modules. The code is the source of truth: `types.ts` (interfaces), `registry.ts` (hostname-indexed registry), `index.ts` (registration).
-
-The registry indexes plugins by hostname for O(1) lookup, then calls the plugin's `matchUrl(url)`; `findWithCapability(url, capability)` returns the first plugin that matches AND declares the capability:
-
-- **`feed`** capability: transform page URLs to feed URLs, clean entry content, synthesize entry content from parsed-entry metadata (e.g., YouTube's embedded player + description), transform feed titles (e.g., LessWrong GraphQL API), raise the source's minimum polling interval (e.g., YouTube rate-limit avoidance)
-- **`savedArticle`** capability: fetch full article content for read-it-later, optionally skipping Readability when the source returns clean HTML
-
-`matchUrl` must be selective, not "any URL on my hosts" — a plugin should only match URLs it can actually handle (e.g. LessWrong `/tag/...` pages must return `false` so the caller falls back to normal fetching). A host entry of the form `*.example.com` matches every subdomain (not the bare domain) — for platforms that give each site its own subdomain, like `*.notion.site`.
-
-A source can also be hosted on domains we can't enumerate (a Notion page on a customer's own domain). For those, `savedArticle.fetchContentFromPage(page)` lets a plugin claim a page the generic fetch has already retrieved: the save and full-content paths offer it (via `claimFetchedPage` in `index.ts`) only when no hostname-matched plugin handled the URL, after the generic fetch and before Readability. It runs on every such fetch, so it must decline cheaply, and it obeys the positive-recognition rule below — claim only from markers the document itself declares (Notion's shell names itself in its root element and embeds its page id), never from what the body looks like.
-
-A plugin can also declare `feedDefaultsToFullContent(feedUrl)`: when it returns true for a feed URL, a **fresh** subscription to that feed starts with `fetch_full_content` on (the frontend then hydrates each entry's full content on open, cached on the shared `entries` row). Used for sources whose feed entries are truncated or drop embedded content — Bluesky's native RSS renders quote posts/images/link cards as a bare placeholder. Matched by hostname + the plugin's predicate on the **feed** URL (not `matchUrl`, which matches entry URLs); a resubscribe keeps the user's stored preference. See `createSubscription` and `feedDefaultsToFullContent` in `src/server/plugins/index.ts`.
-
-The available plugins and their capabilities are registered in `src/server/plugins/index.ts`; each plugin file documents its own source-specific behavior.
-
-Some sources have no usable public read API and are scraped instead, from the structured metadata their page serves to a **logged-out** client (LinkedIn, Threads). Such a plugin must **only claim a page it positively recognizes** — matching a type the page itself declares, never sniffing for whichever field looks like a body — and return null otherwise. Because `skipReadability` means nothing downstream re-checks the extraction, a mis-identified body is stored silently: declining costs a fallback, guessing costs correctness. Before writing one, **measure what the generic path already produces**; that decides whether the plugin is rescuing a failure or improving a mediocre result, and how much it is allowed to assume. Each plugin file records that measurement and its source's `robots.txt` constraints.
+AI assistants reach Lion Reader over [MCP](https://modelcontextprotocol.io/): Streamable HTTP at `POST /api/mcp` (stateless, a fresh server per request; OAuth 2.1 or API tokens) and stdio (`pnpm mcp:serve`) for local clients. Both register the tools in `src/server/mcp/tools.ts`, which call the same services as the `mcp`-scoped tRPC endpoints. See `src/server/mcp/README.md`.
 
 ---
 
 ## Infrastructure
 
-### Fly.io Deployment
+`fly.toml` is the source of truth for regions, process groups, machine sizes, and the release command; `docs/DEPLOYMENT.md` is the runbook. Postgres is **unmanaged** Fly Postgres Flex, so we own its upgrades, backups and monitoring (`docs/fly-postgres-ops.md`). Redis is Upstash.
 
-`fly.toml` is the source of truth for regions, process groups, machine sizes, and the release command; the provisioning and operations runbook is `docs/DEPLOYMENT.md`. Postgres is **unmanaged** Fly Postgres Flex (single node), so we own its upgrades, backups, and monitoring — `docs/fly-postgres-ops.md` is the runbook for that. Redis (Upstash) backs caching and pub/sub.
-
-### Migration Compatibility (Expand/Contract)
-
-**Every migration must be backward-compatible with the previous release.** Nothing structural enforces this — it is a rule to follow when writing migrations.
-
-Why: `fly.toml` runs migrations in `release_command` _before_ the canary deploy, so the old code always runs against the new schema during rollout (and keeps running against it if the deploy fails health checks or is rolled back — migrations are not rolled back).
-
-Practically, this means using the expand/contract pattern:
-
-- **Expand** (safe in one release): add nullable columns or columns with defaults, add tables, add indexes, create views alongside old ones
-- **Contract** (requires two releases): to drop or rename a column/table, first ship a release whose code no longer references it; only then ship the migration that removes it. A rename is an add + dual-write/backfill + drop across releases, never a single `ALTER ... RENAME`.
-
-### Maintenance Mode
-
-For a migration that can't be made backward-compatible, an admin can flip **maintenance mode** from `/admin` → Status, which stops every process group from touching the DB until it's turned off. Details: "Site Status" in `src/server/CLAUDE.md`.
-
-### Local Development
-
-Docker Compose provides Postgres and Redis for local development. See README for setup instructions (and "Local Services" in the root CLAUDE.md for the no-Docker path).
-
-### Object Storage (S3/Tigris)
-
-An **optional** S3-compatible object store re-hosts external images that would otherwise expire or leak referrers — Google Docs images, which carry short-lived `contentUri` links — and caches the demo's narration, recorded the first time each chunk is played (`src/server/services/prerecorded-speech.ts`). `src/server/storage/s3.ts` (`isStorageAvailable`, `fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected, size-limited) and rewrite the document to the re-hosted URL. Both **no-op when unconfigured** (`STORAGE_*` env vars/secrets): images stay at their source, and the demo's narration is synthesized once per machine (into its disk cache) rather than once overall.
+- **Migrations run before the canary deploy**, so every migration must work with the previous release (`migrations/CLAUDE.md`). For one that can't, an admin turns on **maintenance mode** (`/admin` → Status), which stops every process group from touching the database ("Site Status" in `src/server/CLAUDE.md`).
+- **Object storage is optional** (S3 or Tigris, `src/server/storage/s3.ts`): it re-hosts expiring external images (Google Docs) and caches the demo's recorded narration. Without it, images stay at their source and each machine synthesizes demo narration once into its disk cache.
 
 ---
 
 ## Observability
 
-### Stack
+Sentry for errors, Prometheus (`prom-client`, `/metrics` per process) for metrics, structured JSON logs.
 
-- **Errors**: Sentry
-- **Metrics**: Prometheus via `prom-client` (each process exposes `/metrics` on its own port)
-- **Logging**: Structured JSON logs
+Alerting uses [healthchecks.io](https://healthchecks.io) dead-man's switches (declared in [`terraform/`](../terraform/README.md)), one **separate** check per signal so a dead worker is distinguishable from a fetch regression:
 
-### Feed Fetch Health Alerting
+| Check                | Env var                     | Pinged by                            | Signals                                                             |
+| -------------------- | --------------------------- | ------------------------------------ | ------------------------------------------------------------------- |
+| Feed fetch health    | `FEED_HEALTH_HEARTBEAT_URL` | `monitor_feed_health` (every 15 min) | `/fail` when no feed fetched successfully lately (`feed/health.ts`) |
+| Worker liveness      | `WORKER_HEARTBEAT_URL`      | worker process (every 1 min)         | `/fail` if the job loop wedges; silence = worker dead               |
+| Discord bot liveness | `DISCORD_BOT_HEARTBEAT_URL` | discord-bot process (every 5 min)    | silence = bot dead or crash-looping                                 |
 
-The `monitor_feed_health` singleton job (worker, every 15 minutes) enforces the invariant **"at least one feed must fetch successfully every N minutes"** (default 120, `FEED_HEALTH_MAX_SUCCESS_AGE_MINUTES`). Since feeds are polled at least hourly in steady state, zero successes anywhere means fetching is broken globally (worker stuck, fetch/parse regression, egress failure) — this catches whole-pipeline breakage that per-feed failure tracking doesn't surface. See `src/server/feed/health.ts`.
-
-On each run the job **pings a healthchecks.io check** (`FEED_HEALTH_HEARTBEAT_URL`): a success ping when healthy, a `/fail` ping when not, with a plain-text body explaining _why_ so the notification email is self-contained. The external monitor owns alert delivery and cadence (de-dupes, sends its own recovery email). The job also updates the Prometheus gauges `feed_last_successful_fetch_age_seconds` and `feeds_failing`.
-
-#### Monitoring layout: three independent checks
-
-Alerting uses [healthchecks.io](https://healthchecks.io) (or any compatible dead-man's-switch) via the shared `pingHealthcheck`/`startHeartbeat` helpers in `src/server/notifications/healthchecks.ts`. The hosted instance's checks are declared in [`terraform/`](../terraform/README.md). Each ping URL is a **separate** check, so the long-running processes get distinct ones — that way concurrent failures are individually visible and a dead worker is distinguishable from a fetch regression:
-
-| Check                    | Env var                     | Pinged by                            | Signals                                                                                                              |
-| ------------------------ | --------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **Feed fetch health**    | `FEED_HEALTH_HEARTBEAT_URL` | `monitor_feed_health` (every 15 min) | `/fail` when no feed has fetched successfully within the threshold (fetch/parse pipeline quality)                    |
-| **Worker liveness**      | `WORKER_HEARTBEAT_URL`      | worker process (every 1 min)         | success while the job loop is active; `/fail` if the loop wedges past the staleness threshold; missing = worker dead |
-| **Discord bot liveness** | `DISCORD_BOT_HEARTBEAT_URL` | discord-bot process (every 5 min)    | missing pings = bot dead or crash-looping                                                                            |
-
-All three are optional (a process skips pinging when its URL is unset). A fully dead worker trips both the worker-liveness and feed-health checks (the monitor job stops pinging too); the worker-liveness check is the more specific signal, while a feed-health `/fail` with a green worker check points at the fetch pipeline rather than the process.
-
----
-
-## Testing Strategy
-
-Structure code so business logic is pure and can be unit tested without mocks — **no mocks of internal code**; integration and e2e tests run against real Postgres/Redis, and e2e tests exercise the real SSE pipeline in a browser. Conventions, the frontend-testing playbook, and the e2e design points: `tests/CLAUDE.md`.
+Each is optional (no URL, no pings).

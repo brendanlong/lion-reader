@@ -184,14 +184,6 @@ This creates a long-lived deploy token. Copy the token value.
 
 `.github/workflows/deploy.yml` deploys every commit that passes CI on `master`; its comments explain the gating, queueing and checkout. The Bunny CDN in front of the site (`terraform/bunny.tf`) needs no deploy step: it honors origin `Cache-Control`, so our headers decide what it caches (CDN section of `src/server/http/CLAUDE.md`).
 
-### Why HTML and RSC are not CDN-cached
-
-HTML documents and RSC (`?_rsc=`) payloads reference build-specific artifacts — the `/_next/static/chunks/<hash>.js` bundles from the build that produced them — which are gone from the origin after the next deploy (Fly runs one build per release; it does not retain prior builds). A client holding a cached document or payload from an old build would 404 on its chunks, or version-skew against the newer origin, so we keep them off the edge. Note `?_rsc=<hash>` is a **router-state** cache-buster, not a build/deploy id, so it does **not** make an RSC payload safe to shared-cache across deploys — the same route+state hashes identically on both builds.
-
-**Enforcement** (`src/proxy.ts` overriding Next's `s-maxage` on the prerendered public pages) is described in the CDN section of `src/server/http/CLAUDE.md`. It also keeps the maintenance gate (#1318) from being bypassed by an edge-cached page.
-
-If we ever want to cache HTML/RSC, treat it as a fresh design effort: at minimum it needs Next's [`deploymentId`](https://nextjs.org/docs/app/api-reference/config/next-config-js/deploymentId) set, and — for anything cached on the CDN — old builds' assets kept available for as long as a cached response can reference them.
-
 ---
 
 ## First Deployment
@@ -354,12 +346,6 @@ The app uses `auto_stop_machines = "stop"`, which stops idle app machines. The f
 flyctl postgres connect -a lion-reader-pg --database lion_reader
 ```
 
-**Backups & PITR.** Continuous WAL archiving to Tigris is **enabled** on
-`lion-reader-pg` (point-in-time recovery, 7-day window, worst-case RPO ~60s), on
-top of daily volume snapshots. The full enable/configure/**restore** runbook —
-including PITR restore, the periodic restore drill, and monitoring — lives in
-[Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
-
 ### Operating unmanaged Postgres
 
 Fly does not manage this cluster, so these are ours:
@@ -379,7 +365,7 @@ Fly does not manage this cluster, so these are ours:
   restore into a scratch cluster to prove it works. Full procedure in
   [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
-**Temporarily scaling for expensive migrations:** see "Expensive migrations on production Postgres" in `../migrations/CLAUDE.md`.
+**Temporarily scaling for expensive migrations:** see [Fly Postgres operations](fly-postgres-ops.md#expensive-migrations-temporarily-scale-the-machine).
 
 ---
 

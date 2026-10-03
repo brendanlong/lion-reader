@@ -39,4 +39,4 @@ The stdio transport has no authentication layer — it acts as the single user c
 
 1. Add a service function in `src/server/services/{domain}.ts`
 2. Define the tool (with a Zod input schema) in `tools.ts` and register it in `registerTools()`
-3. If the tool mirrors a tRPC endpoint, keep the endpoint's scope handling in sync (see "Token Scopes & Authorization" in the Design Document)
+3. If the tool mirrors a tRPC endpoint, keep the endpoint's scope handling in sync (`src/server/auth/CLAUDE.md`, "Token scopes")

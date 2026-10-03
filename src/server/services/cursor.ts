@@ -7,7 +7,7 @@
  * `encode`/`decode` pair, so the envelope (and its two subtleties below) lives
  * in exactly one place.
  *
- * See "Ordering & Pagination Mechanics" in `src/server/CLAUDE.md`.
+ * See "Ordering & Pagination" in `src/server/CLAUDE.md`.
  */
 
 import { z } from "zod";

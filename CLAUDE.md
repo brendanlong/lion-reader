@@ -2,18 +2,15 @@
 
 ## Documentation Map
 
-Deep subsystem knowledge lives in per-directory `CLAUDE.md` files (loaded automatically when you work on files there):
+Per-directory `CLAUDE.md` files hold each subsystem's rules and load automatically when you work there (`src/`, `src/components/`, `src/server/` and its `auth/`, `oauth/`, `html/`, `http/`, `feed/`, `jobs/`, `plugins/`, plus `tests/`, `migrations/`, `kmp/`). Read these on demand:
 
-- `SECURITY.md` - Map of the **security-critical** code (XSS/SSRF/auth/cross-user isolation) and the invariant each area must uphold. **Reviewers and anyone touching auth, sanitization, outbound fetches, the compat/OAuth/MCP APIs, or cross-user data paths must read it first.**
-- `docs/DESIGN.md` - High-level architecture and design decisions. **Read it before design/architecture work** (deliberately not `@`-inlined).
-- `docs/diagrams/` - D2 flow diagrams for the major systems; great for orienting quickly.
-- `docs/references/` - Reference docs for external tools. Consult before editing related configs.
-- `docs/DEPLOYMENT.md` - Fly.io deployment/provisioning guide.
-- `terraform/` - Everything about the deployment that `fly.toml` does not own, as code, with its own README. **If it is third-party infrastructure, it changes there and not in a dashboard.**
-- `docs/fly-postgres-ops.md` - Fly Postgres Flex operations, recovery & backups (quorum, split-brain, zombie nodes, WAL/PITR restore & drill). **Read before any DB region move, failover, destroying a PG machine, or a restore.**
-- Per-directory guides: `src/server/CLAUDE.md` (data model, services, compat-API ids), `src/server/html/CLAUDE.md` (sanitization), `src/server/feed/CLAUDE.md` (fetching/WebSub), `src/server/auth/CLAUDE.md` (sessions/scopes), `src/server/oauth/CLAUDE.md` (OAuth server/MCP auth), `src/server/http/CLAUDE.md` (SSRF-safe fetching), `src/CLAUDE.md` + `src/components/CLAUDE.md` (frontend), `tests/CLAUDE.md` (testing), `kmp/CLAUDE.md` (Kotlin Multiplatform / Android app build).
-
-ALWAYS read the relevant documentation before working.
+- `SECURITY.md` - the **security-critical** code (XSS/SSRF/auth/cross-user isolation) and the invariant each area must uphold. **Read it first when reviewing, or when touching auth, sanitization, outbound fetches, the compat/OAuth/MCP APIs, or cross-user data paths.**
+- `docs/DESIGN.md` - architecture and design decisions. Read it before design/architecture work.
+- `src/FRONTEND_STATE.md` - the contract for queries, mutations, and cache/SSE updates.
+- `docs/diagrams/` - D2 flow diagrams of the major systems.
+- `docs/references/` - reference docs for external tools; consult before editing related configs.
+- `docs/DEPLOYMENT.md`, `docs/fly-postgres-ops.md` - Fly.io deployment and Postgres operations. **Read the latter before any DB region move, failover, machine destroy, restore, or heavy production migration.**
+- `terraform/` - all third-party infrastructure `fly.toml` doesn't own. **It changes there, never in a dashboard.**
 
 ## Documentation Guidelines
 
@@ -25,67 +22,29 @@ Docs (this file, per-directory `CLAUDE.md`s, `docs/`) explain **why and where**;
 - **No non-decisions**: don't document things we haven't done or have merely deferred — that reads as a commitment to never do them.
 - Keep docs current **both ways**: when you change code whose docs are stale, or notice bloat/duplication, fix the docs in the same change — pruning is as valuable as adding.
 
-## Node Version
+## Toolchain
 
-**Node 26** (`.nvmrc`, the single source of truth — CI reads it via `node-version-file`; the Dockerfile pins `node:26-alpine` separately). pnpm only _warns_ on a mismatch, so an older Node gets a long way in before failing: `next build`, unit tests and integration tests all pass on Node 22, and then Playwright dies at collection with a `TypeError: Cannot read properties of undefined (reading 'exports')` thrown deep inside `@sentry/nextjs` → `@apm-js-collab/code-transformer` → `require('meriyah')`. **If e2e fails that way, check `node --version` before debugging the dependency.**
+- **Node 26** (`.nvmrc` is the source of truth). pnpm only warns on a mismatch, and on an older Node everything passes until Playwright dies at collection with `TypeError: Cannot read properties of undefined (reading 'exports')` inside `@sentry/nextjs` — check `node --version` before debugging that. With no version manager available, unpack a toolchain into the worktree rather than touching system or `$HOME` config:
 
-With a version manager installed, `nvm use` / `fnm use` / `mise install` picks up `.nvmrc`. In a sandbox with none (no nvm/fnm/volta/mise/asdf on PATH), unpack a toolchain into the worktree and prepend it — don't touch system or `$HOME` config:
+  ```bash
+  mkdir -p .node26 && curl -sL https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-x64.tar.xz \
+    | tar -xJ -C .node26 --strip-components=1
+  export PATH="$PWD/.node26/bin:$PATH"
+  ```
 
-```bash
-mkdir -p .node26 && curl -sL https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-x64.tar.xz \
-  | tar -xJ -C .node26 --strip-components=1
-export PATH="$PWD/.node26/bin:$PATH"
-```
-
-## Rust Version
-
-Pinned to the rustc Alpine ships in the Dockerfile's `rust-base` stage
-(`rust-toolchain.toml`, which says why). Bump the two together — CI fails
-otherwise.
+- **Rust** is pinned to the rustc Alpine ships in the Dockerfile's `rust-base` stage (`rust-toolchain.toml` says why). Bump the two together.
 
 ## Commands
 
-- `pnpm build:native` - Build the native Rust modules (sanitizer, readability, feed-parser, markdown, speech-encoder). **Required once per checkout before tests or the app** — if tests fail with "Failed to load the native …", run this. Needs the Rust toolchain (`cargo` — if missing from PATH, try `~/.cargo/bin`) and a C++ compiler (speech-encoder builds Fraunhofer FDK AAC from source). The SessionStart hook starts it in the background, so it may already be done or in flight (log: `/tmp/lion-reader-build-native.log`).
-- `pnpm typecheck` - Run before committing (no `any`, no `@ts-ignore`)
-- `pnpm test:unit` - Pure logic tests (fast, no DB)
-- `pnpm test:native` / `pnpm lint:native` / `pnpm format:native` - `cargo test` / `cargo clippy -D warnings` / `cargo fmt` across all the native crates. All three gate CI.
-- `pnpm test:integration` - Backend tests against real Postgres/Redis (docker-compose)
-- `pnpm test:e2e` - Playwright browser tests against a real app server (docker-compose)
-- `pnpm knip` - Unused files, exports, and dependencies
-- `pnpm knip:production` - The same sweep from **production entry points only** — `knip.production.json` lists the shipped binaries and the service worker; knip's Next plugin supplies the app-router entries. Tests are entry points for `pnpm knip`, so only this run catches code that is dead in production and stays "used" because its own tests import it (#1551). Both gate CI. Delete what it reports, or tag an export that has to stay purely for tests `@testonly` — the sweep skips those. It deliberately ignores exports their own module still calls (otherwise ~100 ordinary test seams drown the signal), so it sees dead modules and dead exports, not a live helper that is merely exported too widely.
+- `pnpm build:native` - builds the native Rust modules (`native/`). **Required once per checkout before tests or the app** ("Failed to load the native …" means it hasn't run). Needs `cargo` (try `~/.cargo/bin`) and a C++ compiler. The SessionStart hook starts it in the background (log: `/tmp/lion-reader-build-native.log`).
+- `pnpm typecheck` - run before committing (no `any`, no `@ts-ignore`)
+- `pnpm test:unit` / `pnpm test:integration` / `pnpm test:e2e` - see `tests/CLAUDE.md`
+- `pnpm test:native` / `pnpm lint:native` / `pnpm format:native` - cargo test / clippy / fmt across the native crates
+- `pnpm knip` and `pnpm knip:production` - unused files/exports/deps. The production sweep starts only from shipped entry points, so it also catches code kept alive solely by its own tests (#1551): delete what it reports, or tag an export that must stay for tests `@testonly`.
 
 ## Local Services (no Docker)
 
-If you can't run `docker compose` or reach the shared dev databases (common in
-sandboxed agent environments), **don't hand-roll Postgres**. Use `pnpm services`,
-which starts a throwaway Postgres + Redis from the native binaries on **random
-free ports**, runs migrations, and writes two gitignored env files
-(`.env.local-services`, `.env.local-services.test`). See `scripts/local-services.sh`.
-
-Run it as a **background task** so it's torn down when your session ends — on exit
-it stops both servers and deletes its temp dir + env files:
-
-```bash
-pnpm services            # run in the BACKGROUND; leave it running
-```
-
-Then, in the foreground, use the `*:local` variants (they layer the generated env
-file over `.env.test` so it wins, via `dotenv -o`):
-
-```bash
-pnpm test:integration:local      # integration tests against the local DBs
-pnpm test:e2e:local              # e2e tests against the local DBs
-pnpm db:migrate:local            # re-run migrations (e.g. after adding one)
-PORT=<random> pnpm dev:local     # dev app (web + worker) — open http://<host>:<PORT>
-```
-
-Notes:
-
-- `pnpm services` prints the chosen ports and a ready-to-copy `dev:local` command
-  with a random `PORT`. Pick a random port for the app too — this is a shared host.
-- `dev:local` runs only the web server + worker (no Discord bot). Unit tests
-  (`pnpm test:unit`) need no DB and are unaffected.
-- These env files are throwaway and auto-removed; never commit them.
+Without `docker compose` or the shared dev databases, **don't hand-roll Postgres**: run `pnpm services` as a **background task** (it starts Postgres + Redis on random ports, migrates, writes gitignored `.env.local-services*` files, and tears everything down on exit). Then use the `*:local` variants: `pnpm test:integration:local`, `pnpm test:e2e:local`, `pnpm db:migrate:local`, and `PORT=<random> pnpm dev:local` (web + worker, no Discord bot). This is a shared host — pick a random app port.
 
 ## Code Quality
 
@@ -96,71 +55,33 @@ Notes:
 - Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
 - Don't create barrel files, prefer direct imports within our code
 
-## Testing
-
-See `tests/CLAUDE.md` for the testing playbook — especially before touching the realtime SSE/cache-update code, which must be tested, not reviewed. `src/FRONTEND_STATE.md` is the contract for queries/mutations/cache updates.
-
-## UI Components
-
-See `src/components/CLAUDE.md` for UI component guidelines, available components, and icons.
-
 ## Git
 
 - Break work into commit-sized chunks; commit when finished
 - Use amend commits when it makes sense (ALWAYS check the current commit before amending)
 - Main branch: `master`
 - Commit `migrations/schema.sql` changes separately if unrelated to current work
-
-## GitHub Issues
-
-When you mention GitHub issues:
-
-1. **Fetch the issues** - Use the GitHub API to list issues: `https://api.github.com/repos/brendanlong/lion-reader/issues`
-2. **Read relevant issues** - Fetch detailed issue content via the API to understand requirements and discussion
-3. **Reference in commits** - Include issue numbers in commit messages (e.g., "Fix: prevent over-fetching slow feeds (#175)") when applicable
-
-## Project Structure
-
-```
-src/server/
-  trpc/routers/  # tRPC API endpoints
-  services/      # Reusable business logic (shared across APIs)
-  db/            # Database schemas and client
-  jobs/          # Background job queue
-  plugins/       # Content source plugins (registry in plugins/index.ts)
-  mcp/           # MCP server
-src/lib/         # Shared utilities (client and server)
-src/components/  # React components
-src/app/         # Next.js routes
-tests/unit/      # Pure logic tests (no mocks, no DB)
-tests/integration/ # Real DB via docker-compose (no mocks)
-tests/e2e/       # Playwright browser tests (real server + DB + Redis)
-```
+- Reference GitHub issues by number in commit messages (e.g. "Fix: prevent over-fetching slow feeds (#175)"), and read an issue's discussion before working on it
 
 ## Database Conventions
 
-- **IDs**: UUIDv7, generated in TypeScript via `generateUuidv7()` from `@/lib/uuidv7`. `gen_uuidv7()` is not available in our Postgres version.
-- **Timestamps**: `timestamptz`, store UTC. Read as JS `Date` (millisecond precision) by default. Where microseconds matter — keyset cursors built from timestamps — use the `temporalTimestamp` Drizzle column type or `parseTimestamptz` from `src/server/db/temporal.ts` (see "Ordering & Pagination Mechanics" in `src/server/CLAUDE.md`; #680, #683).
-- **Soft deletes**: Use `deleted_at`/`unsubscribed_at` patterns
+- **IDs**: UUIDv7 via `generateUuidv7()` from `@/lib/uuidv7` (`gen_uuidv7()` isn't available in our Postgres)
+- **Timestamps**: `timestamptz` in UTC, read as JS `Date` (milliseconds). Keyset cursors need microseconds — see "Ordering & Pagination" in `src/server/CLAUDE.md`.
+- **Soft deletes**: `deleted_at`/`unsubscribed_at`
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act
-- **Migrations**: Must be backward-compatible with the previous release (expand/contract) — they run in Fly's `release_command` before the canary deploy, so old code runs against the new schema during rollout and on rollback. See "Migration Compatibility" in docs/DESIGN.md.
-- **Background jobs**: Postgres-based queue
-- **Caching/SSE**: Redis available for caching and coordinating SSE
-- **Views**: use `user_feeds` / `visible_entries` for frontend queries instead of manual joins — semantics and gotchas in `src/server/CLAUDE.md`.
+- **Migrations** must be backward-compatible with the previous release — see `migrations/CLAUDE.md`. That includes app code: drop references to a column a release before dropping it.
+- **Views**: use `user_feeds` / `visible_entries` for frontend queries instead of manual joins (`src/server/CLAUDE.md`)
 
 ## API Conventions
 
 - **Pagination**: Always cursor-based (never offset)
 - **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
-- **Authorization**: tRPC procedures are session-only by default; token access is explicit opt-in (see `src/server/auth/CLAUDE.md`)
+- **Authorization**: tRPC procedures are session-only by default; token access is explicit opt-in (`src/server/auth/CLAUDE.md`)
 
-## Services Layer
+## Untrusted Content
 
-Business logic shared across tRPC routers, the MCP server, and background jobs belongs in `src/server/services/` — see "Services Layer" in `src/server/CLAUDE.md` for the conventions.
-
-## Outgoing HTTP Requests
-
-Always use our custom user agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`), and fetch user-influenced URLs only through `fetchWithSsrfProtection` (see `src/server/http/CLAUDE.md`).
+- **HTML**: entry HTML is sanitized server-side in the services layer on every read; never add a client-side sanitizer, and never render feed-controlled text as HTML. Rules: `src/server/html/CLAUDE.md`.
+- **Outgoing HTTP**: send our User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`), and fetch user-influenced URLs only through `fetchWithSsrfProtection` (`src/server/http/CLAUDE.md`).
 
 ## Third-Party Providers
 
@@ -168,24 +89,15 @@ When you add, remove, or change a third-party service that receives or stores us
 
 ## Parsing
 
-Prefer SAX-style parsing unless the algorithm requires a DOM.
+Prefer SAX-style parsing unless the algorithm requires a DOM. Parse once and pass the parsed structure through.
 
-- Feed parsing (RSS/Atom/OPML): the native `@lion-reader/feed-parser` module (`native/feed-parser/`, quick-xml SAX, built by `pnpm build:native`) behind thin TS wrappers in `src/server/feed/streaming/` — date parsing and JSON Feed stay in JS. Request paths use the `*Async` forms (libuv thread pool); background jobs use the sync forms.
+- Feeds (RSS/Atom/OPML): the native `@lion-reader/feed-parser` behind `src/server/feed/streaming/`; request paths use the `*Async` forms, background jobs the sync ones.
 - XML generation (OPML export): `fast-xml-parser`
 - HTML extraction: `htmlparser2` (streaming)
-- DOM required: `linkedom` (but article extraction/Readability is the native `@lion-reader/readability` module — dom_smoothie, built by `pnpm build:native`)
-- DOM that must match the browser's, element for element: normalize with `parse5` first, then hand the result to linkedom — `src/lib/narration/parse-html.ts` owns this and says why. Anything numbering elements server-side against numbering the client redoes needs it (#1453); nothing else does, and it costs a second parse.
-- Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, which wrap the native `@lion-reader/markdown` module (`native/markdown/`, comrak for GFM + pulldown-latex for `$…$` TeX → MathML, built by `pnpm build:native`). Every source (uploads, Markdown URL saves, GitHub repo files, AI summaries) shares that one dialect, so there is a single dialect to reason about and one place to extend. Never import `@lion-reader/markdown` directly (a lint rule enforces it) — that bypasses the size budgets and invites a second set of render options. Rendering **amplifies**, so its size budgets are enforced _inside_ the renderer rather than by callers (#1431) — the crate docs carry the numbers.
-- Parse once, pass parsed structure through code
+- DOM required: `linkedom`. Article extraction is the native `@lion-reader/readability`.
+- A DOM that must number elements exactly as the browser does: `src/lib/narration/parse-html.ts` (parse5 first; it says why). Nothing else needs it.
+- Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, so every source shares one dialect and the renderer's size budgets. A lint rule forbids importing `@lion-reader/markdown` directly.
 
 ## Module System (ESM)
 
-The repo is ESM (`"type": "module"`); author source in ESM syntax. Three interop boundaries are load-bearing — don't "simplify" them without reading this:
-
-- **esbuild bundles (`dist/server.js` etc.) stay CommonJS.** `scripts/dist-cjs-marker.mjs` writes `dist/package.json` (`{"type":"commonjs"}`) so Node doesn't read them as ESM under the root `type: module`; the Dockerfile copies it. Don't switch the bundles to `format: "esm"` — it breaks named imports of external CJS deps (e.g. the native `.node` addons: `cjs-module-lexer` can't see a native binding's exports, so `import { x }` throws at load).
-- **Native loaders (`native/*/index.js`) are CJS by design** (`"type": "commonjs"`), with static `exports.<name> =` re-exports so ESM named imports resolve, plus a load-time drift guard that throws if any re-exported name comes out `undefined` — i.e. the `.node` binary has no such export (a `#[napi]` export renamed/removed, or a typo). That's the dangerous direction: `cjs-module-lexer` still sees the name, so the import "succeeds" and the missing symbol surfaces as a silent `undefined` that only crashes when called (in prod). Keep the bundler-proof `createRequire` binary resolution (turbopack inlines the loader and breaks static `require("./x.node")` — verified, not theoretical). Don't revert to `module.exports = binding` (dynamic ⇒ ESM named imports break only under Node's ESM loader, i.e. e2e).
-- **tsx-run scripts** must use ESM idioms: no `require.main === module` (use `process.argv[1] === fileURLToPath(import.meta.url)`), no bare `require()`/`__dirname`.
-
-## Sanitizing Untrusted HTML
-
-Entry HTML sanitization is **security-critical** (entry bodies are rendered via `dangerouslySetInnerHTML`; the sanitizer is the primary XSS defense). It happens **server-side in the services layer, on every read** — never add a client-side sanitizer, and never render feed-controlled text as HTML. The sanitizer is a native Rust module (`native/sanitizer/`, built with `pnpm build:native`). Read `src/server/html/CLAUDE.md` before touching anything sanitization-related.
+Author source as ESM. Two things are CommonJS on purpose — don't "simplify" them: the esbuild bundles in `dist/` (`scripts/build-bundle.mjs` says why) and the native loaders `native/*/index.js` (their headers explain the bundler-proof binary resolution, the lexable re-exports, and the drift guard). tsx-run scripts use ESM idioms: `process.argv[1] === fileURLToPath(import.meta.url)`, not `require.main`; no bare `require()`/`__dirname`.

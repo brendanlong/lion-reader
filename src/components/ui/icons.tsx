@@ -4,7 +4,7 @@
  * Inline-SVG icon components used across the app. Centralized so call sites
  * reuse an existing icon instead of pasting another SVG — check the exports
  * here before adding one. Some icons stay local to their feature; see
- * "When to Keep Icons Local" in `src/components/CLAUDE.md`.
+ * "Reuse before building" in `src/components/CLAUDE.md`.
  */
 
 interface IconProps {
