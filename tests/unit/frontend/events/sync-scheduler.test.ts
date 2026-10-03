@@ -119,24 +119,13 @@ describe("reduceSyncScheduler", () => {
 });
 
 describe("reduceSyncScheduler serialization (driven scenarios)", () => {
-  it("runs a single sync for a single request", () => {
-    const { state, syncsRun } = runScenario(1);
-    expect(syncsRun).toBe(1);
-    expect(state).toEqual(INITIAL_SYNC_SCHEDULER_STATE);
-  });
-
-  it("never runs two syncs concurrently and ends idle", () => {
+  it("never runs two syncs concurrently, coalescing a burst into two runs, and ends idle", () => {
     // runScenario asserts running===false on every start, so reaching here
-    // without throwing proves serialization held.
+    // without throwing proves serialization held. The first request runs
+    // immediately; the rest collapse into one follow-up.
     const { state, syncsRun } = runScenario(10);
-    expect(syncsRun).toBeGreaterThan(0);
-    expect(state).toEqual(INITIAL_SYNC_SCHEDULER_STATE);
-  });
-
-  it("coalesces a burst of synchronous requests into at most two runs", () => {
-    // The first request runs immediately; the rest collapse into one follow-up.
-    const { syncsRun } = runScenario(4);
     expect(syncsRun).toBe(2);
+    expect(state).toEqual(INITIAL_SYNC_SCHEDULER_STATE);
   });
 
   it("drains all pages when the server reports hasMore", () => {

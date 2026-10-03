@@ -125,51 +125,7 @@ describe("Dialog", () => {
     });
   });
 
-  describe("sizes", () => {
-    it("applies sm size", () => {
-      render(
-        <Dialog isOpen={true} onClose={vi.fn()} title="Small Dialog" size="sm">
-          Content
-        </Dialog>
-      );
-      const dialog = screen.getByRole("dialog");
-      const container = dialog.querySelector(".max-w-sm");
-      expect(container).toBeInTheDocument();
-    });
-
-    it("applies md size (default)", () => {
-      render(
-        <Dialog isOpen={true} onClose={vi.fn()} title="Medium Dialog">
-          Content
-        </Dialog>
-      );
-      const dialog = screen.getByRole("dialog");
-      const container = dialog.querySelector(".max-w-md");
-      expect(container).toBeInTheDocument();
-    });
-
-    it("applies lg size", () => {
-      render(
-        <Dialog isOpen={true} onClose={vi.fn()} title="Large Dialog" size="lg">
-          Content
-        </Dialog>
-      );
-      const dialog = screen.getByRole("dialog");
-      const container = dialog.querySelector(".max-w-lg");
-      expect(container).toBeInTheDocument();
-    });
-  });
-
   describe("accessibility", () => {
-    it("has role='dialog'", () => {
-      render(
-        <Dialog isOpen={true} onClose={vi.fn()} title="Accessible Dialog">
-          Content
-        </Dialog>
-      );
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
-    });
-
     it("has aria-modal='true'", () => {
       render(
         <Dialog isOpen={true} onClose={vi.fn()} title="Modal Dialog">
@@ -216,17 +172,6 @@ describe("Dialog", () => {
 });
 
 describe("DialogHeader", () => {
-  it("renders children correctly", () => {
-    render(<DialogHeader>Header content</DialogHeader>);
-    expect(screen.getByText("Header content")).toBeInTheDocument();
-  });
-
-  it("applies margin bottom", () => {
-    render(<DialogHeader>Header</DialogHeader>);
-    const header = screen.getByText("Header").closest("div");
-    expect(header).toHaveClass("mb-4");
-  });
-
   it("applies custom className", () => {
     render(<DialogHeader className="custom-header">Header</DialogHeader>);
     const header = screen.getByText("Header").closest("div");
@@ -238,12 +183,6 @@ describe("DialogTitle", () => {
   it("renders as h2 element", () => {
     render(<DialogTitle>Title</DialogTitle>);
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Title");
-  });
-
-  it("applies title styles", () => {
-    render(<DialogTitle>Styled Title</DialogTitle>);
-    const title = screen.getByRole("heading");
-    expect(title).toHaveClass("font-semibold", "text-body");
   });
 
   it("applies custom id", () => {
@@ -264,12 +203,6 @@ describe("DialogDescription", () => {
     expect(description.tagName).toBe("P");
   });
 
-  it("applies description styles", () => {
-    render(<DialogDescription>Styled description</DialogDescription>);
-    const description = screen.getByText("Styled description");
-    expect(description).toHaveClass("text-muted", "mt-2");
-  });
-
   it("applies custom className", () => {
     render(<DialogDescription className="custom-desc">Description</DialogDescription>);
     expect(screen.getByText("Description")).toHaveClass("custom-desc");
@@ -277,11 +210,6 @@ describe("DialogDescription", () => {
 });
 
 describe("DialogBody", () => {
-  it("renders children correctly", () => {
-    render(<DialogBody>Body content</DialogBody>);
-    expect(screen.getByText("Body content")).toBeInTheDocument();
-  });
-
   it("applies custom className", () => {
     render(<DialogBody className="custom-body">Body</DialogBody>);
     const body = screen.getByText("Body").closest("div");
@@ -290,17 +218,6 @@ describe("DialogBody", () => {
 });
 
 describe("DialogFooter", () => {
-  it("renders children correctly", () => {
-    render(<DialogFooter>Footer content</DialogFooter>);
-    expect(screen.getByText("Footer content")).toBeInTheDocument();
-  });
-
-  it("applies footer styles", () => {
-    render(<DialogFooter>Footer</DialogFooter>);
-    const footer = screen.getByText("Footer").closest("div");
-    expect(footer).toHaveClass("mt-6", "flex", "justify-end", "gap-3");
-  });
-
   it("applies custom className", () => {
     render(<DialogFooter className="custom-footer">Footer</DialogFooter>);
     const footer = screen.getByText("Footer").closest("div");

@@ -28,14 +28,6 @@ function getFileInput(): HTMLInputElement {
 }
 
 describe("OpmlImportExport drop zone accessibility", () => {
-  it("exposes the file input with an accessible name", () => {
-    renderWithTrpc(<OpmlImportExport />, { handlers });
-
-    const input = getFileInput();
-    expect(input).toBeInTheDocument();
-    expect(input.type).toBe("file");
-  });
-
   it("keeps the file input in the tab order", () => {
     renderWithTrpc(<OpmlImportExport />, { handlers });
 

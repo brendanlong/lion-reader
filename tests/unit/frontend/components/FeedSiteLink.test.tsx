@@ -33,11 +33,6 @@ describe("FeedSiteLink", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders nothing when siteUrl is undefined", () => {
-    const { container } = render(<FeedSiteLink siteUrl={undefined} />);
-    expect(container).toBeEmptyDOMElement();
-  });
-
   it("renders nothing when siteUrl is an empty string", () => {
     const { container } = render(<FeedSiteLink siteUrl="" />);
     expect(container).toBeEmptyDOMElement();

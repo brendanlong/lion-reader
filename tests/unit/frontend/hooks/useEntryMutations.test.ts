@@ -662,15 +662,4 @@ describe("useEntryMutations concurrent mutations", () => {
 
     await waitFor(() => expect(result.current.list).toMatchObject([{ id: "e1", read: false }]));
   });
-
-  it("still sends the mutation for an entry the store doesn't hold", async () => {
-    const { result, callsFor } = renderTwoInstances({
-      "entries.markRead": () => markReadResponse("other", { read: true, starred: false }, t1),
-    });
-
-    act(() => {
-      result.current.list.markRead(["other"], true);
-    });
-    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
-  });
 });

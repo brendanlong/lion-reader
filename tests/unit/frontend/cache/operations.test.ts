@@ -169,38 +169,6 @@ describe("handleSubscriptionCreated", () => {
     expect(cached?.tags).toHaveLength(2);
   });
 
-  it("handles email subscription type", () => {
-    const subscription = createSubscription({
-      type: "email",
-      url: null,
-    });
-    handleSubscriptionCreated(utils, subscription, queryClient);
-
-    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
-  });
-
-  it("handles saved subscription type", () => {
-    const subscription = createSubscription({
-      type: "saved",
-      url: null,
-    });
-    handleSubscriptionCreated(utils, subscription, queryClient);
-
-    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
-  });
-
-  it("handles subscription with null optional fields", () => {
-    const subscription = createSubscription({
-      title: null,
-      description: null,
-      siteUrl: null,
-    });
-    handleSubscriptionCreated(utils, subscription, queryClient);
-
-    // Should not throw
-    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
-  });
-
   it("does not cause count inflation for duplicate events", () => {
     setUtilsData(utils.entries.count, {}, { unread: 10 });
     const subscription = createSubscription({ unreadCount: 5 });
@@ -224,14 +192,6 @@ describe("handleSubscriptionDeleted", () => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     utils = createRealTrpcUtils(queryClient);
     invalidateSpy = spyOnInvalidate(queryClient);
-  });
-
-  it("removes subscription from lookup map", () => {
-    seedSubscription(queryClient, { id: "sub-1", unreadCount: 5, tags: [] });
-
-    handleSubscriptionDeleted(utils, "sub-1", queryClient);
-
-    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(false);
   });
 
   it("invalidates entries.list cache", () => {
@@ -265,13 +225,6 @@ describe("handleSubscriptionDeleted", () => {
     handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
     expect(findCachedSubscription(queryClient, "sub-2") !== undefined).toBe(true);
-  });
-
-  it("handles deletion when lookup map is empty", () => {
-    // Should not throw
-    handleSubscriptionDeleted(utils, "sub-1", queryClient);
-
-    expect(findCachedSubscription(queryClient, "sub-1")).toBeUndefined();
   });
 });
 

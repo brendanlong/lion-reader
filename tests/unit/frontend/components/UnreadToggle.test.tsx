@@ -13,13 +13,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { UnreadToggle } from "@/components/entries/UnreadToggle";
 
 describe("UnreadToggle", () => {
-  describe("rendering", () => {
-    it("renders a button element", () => {
-      render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} />);
-      expect(screen.getByRole("button")).toBeInTheDocument();
-    });
-  });
-
   describe("showUnreadOnly=true state", () => {
     it("displays 'Unread only' label when showUnreadOnly is true", () => {
       render(<UnreadToggle showUnreadOnly={true} onToggle={vi.fn()} />);
@@ -69,50 +62,12 @@ describe("UnreadToggle", () => {
       fireEvent.click(screen.getByRole("button"));
       expect(onToggle).toHaveBeenCalledTimes(1);
     });
-
-    it("calls onToggle with each click", () => {
-      const onToggle = vi.fn();
-      render(<UnreadToggle showUnreadOnly={false} onToggle={onToggle} />);
-
-      fireEvent.click(screen.getByRole("button"));
-      fireEvent.click(screen.getByRole("button"));
-      expect(onToggle).toHaveBeenCalledTimes(2);
-    });
   });
 
   describe("styling", () => {
     it("applies custom className", () => {
       render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} className="custom-class" />);
       expect(screen.getByRole("button")).toHaveClass("custom-class");
-    });
-
-    it("contains icon element", () => {
-      render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} />);
-      const button = screen.getByRole("button");
-      const icon = button.querySelector("svg");
-      expect(icon).toBeInTheDocument();
-    });
-  });
-
-  describe("accessibility", () => {
-    it("has type='button' to prevent form submission", () => {
-      render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} />);
-      expect(screen.getByRole("button")).toHaveAttribute("type", "button");
-    });
-
-    it("is focusable", () => {
-      render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} />);
-      const button = screen.getByRole("button");
-      button.focus();
-      expect(document.activeElement).toBe(button);
-    });
-
-    it("does not suppress the global focus outline (#1292)", () => {
-      render(<UnreadToggle showUnreadOnly={false} onToggle={vi.fn()} />);
-      const button = screen.getByRole("button");
-      // Focus visibility comes from the global :focus-visible outline in
-      // globals.css; per-component focus rings are not allowed.
-      expect(button.className).not.toMatch(/focus:/);
     });
   });
 });

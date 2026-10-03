@@ -13,13 +13,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { SortToggle } from "@/components/entries/SortToggle";
 
 describe("SortToggle", () => {
-  describe("rendering", () => {
-    it("renders a button element", () => {
-      render(<SortToggle sortOrder="newest" onToggle={vi.fn()} />);
-      expect(screen.getByRole("button")).toBeInTheDocument();
-    });
-  });
-
   describe("newest state", () => {
     it("displays 'Newest' label when sortOrder is newest", () => {
       render(<SortToggle sortOrder="newest" onToggle={vi.fn()} />);
@@ -67,15 +60,6 @@ describe("SortToggle", () => {
       fireEvent.click(screen.getByRole("button"));
       expect(onToggle).toHaveBeenCalledTimes(1);
     });
-
-    it("calls onToggle with each click", () => {
-      const onToggle = vi.fn();
-      render(<SortToggle sortOrder="newest" onToggle={onToggle} />);
-
-      fireEvent.click(screen.getByRole("button"));
-      fireEvent.click(screen.getByRole("button"));
-      expect(onToggle).toHaveBeenCalledTimes(2);
-    });
   });
 
   describe("styling", () => {
@@ -83,26 +67,12 @@ describe("SortToggle", () => {
       render(<SortToggle sortOrder="newest" onToggle={vi.fn()} className="custom-class" />);
       expect(screen.getByRole("button")).toHaveClass("custom-class");
     });
-
-    it("contains icon element", () => {
-      render(<SortToggle sortOrder="newest" onToggle={vi.fn()} />);
-      const button = screen.getByRole("button");
-      const icon = button.querySelector("svg");
-      expect(icon).toBeInTheDocument();
-    });
   });
 
   describe("accessibility", () => {
     it("has type='button' to prevent form submission", () => {
       render(<SortToggle sortOrder="newest" onToggle={vi.fn()} />);
       expect(screen.getByRole("button")).toHaveAttribute("type", "button");
-    });
-
-    it("is focusable", () => {
-      render(<SortToggle sortOrder="newest" onToggle={vi.fn()} />);
-      const button = screen.getByRole("button");
-      button.focus();
-      expect(document.activeElement).toBe(button);
     });
 
     it("does not suppress the global focus outline (#1292)", () => {

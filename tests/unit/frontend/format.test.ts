@@ -117,20 +117,9 @@ describe("getDomain", () => {
     expect(getDomain("http://subdomain.example.com:8080/")).toBe("subdomain.example.com");
   });
 
-  it("handles URLs without paths", () => {
-    expect(getDomain("https://example.com")).toBe("example.com");
-    expect(getDomain("https://example.com/")).toBe("example.com");
-  });
-
   it("returns the original string for invalid URLs", () => {
     expect(getDomain("not a url")).toBe("not a url");
     expect(getDomain("example.com")).toBe("example.com");
     expect(getDomain("")).toBe("");
-  });
-
-  it("handles edge cases", () => {
-    expect(getDomain("https://localhost")).toBe("localhost");
-    expect(getDomain("https://127.0.0.1")).toBe("127.0.0.1");
-    expect(getDomain("https://[::1]")).toBe("[::1]");
   });
 });

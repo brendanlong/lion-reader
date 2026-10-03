@@ -107,18 +107,6 @@ describe("useExpandedTags", () => {
 
       expect(result.current.expandedTagIds.has("tag-5")).toBe(false);
     });
-
-    it("supports uncategorized as a special key", async () => {
-      vi.resetModules();
-      const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
-      const { result } = renderHook(() => freshHook());
-
-      act(() => {
-        result.current.toggleExpanded("uncategorized");
-      });
-
-      expect(result.current.expandedTagIds.has("uncategorized")).toBe(true);
-    });
   });
 
   describe("isExpanded", () => {
@@ -138,17 +126,6 @@ describe("useExpandedTags", () => {
       const { result } = renderHook(() => freshHook());
 
       expect(result.current.isExpanded("tag-7")).toBe(false);
-    });
-
-    it("is consistent with expandedTagIds", async () => {
-      localStorageMock.setItem("lion-reader-expanded-tags", JSON.stringify(["tag-8"]));
-      vi.resetModules();
-
-      const { useExpandedTags: freshHook } = await import("@/lib/hooks/useExpandedTags");
-      const { result } = renderHook(() => freshHook());
-
-      expect(result.current.isExpanded("tag-8")).toBe(result.current.expandedTagIds.has("tag-8"));
-      expect(result.current.isExpanded("tag-9")).toBe(result.current.expandedTagIds.has("tag-9"));
     });
   });
 

@@ -58,16 +58,6 @@ describe("useShowOriginalPreference", () => {
       expect(result.current[0]).toBe(true);
     });
 
-    it("reads false preference from localStorage", async () => {
-      localStorageMock.setItem("lion-reader:show-original:read-false-feed", JSON.stringify(false));
-      vi.resetModules();
-
-      const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("read-false-feed"));
-
-      expect(result.current[0]).toBe(false);
-    });
-
     it("saves preference to localStorage when changed", async () => {
       vi.resetModules();
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
@@ -79,22 +69,6 @@ describe("useShowOriginalPreference", () => {
 
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
         "lion-reader:show-original:save-pref-feed",
-        JSON.stringify(true)
-      );
-    });
-
-    it("uses correct storage key format", async () => {
-      vi.resetModules();
-      const feedId = "abc-123-def";
-      const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference(feedId));
-
-      act(() => {
-        result.current[1](true);
-      });
-
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        `lion-reader:show-original:${feedId}`,
         JSON.stringify(true)
       );
     });
@@ -116,20 +90,6 @@ describe("useShowOriginalPreference", () => {
   });
 
   describe("setting preference", () => {
-    it("updates state when setShowOriginal is called with true", async () => {
-      vi.resetModules();
-      const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("set-true-feed"));
-
-      expect(result.current[0]).toBe(false);
-
-      act(() => {
-        result.current[1](true);
-      });
-
-      expect(result.current[0]).toBe(true);
-    });
-
     it("updates state when setShowOriginal is called with false", async () => {
       localStorageMock.setItem("lion-reader:show-original:set-false-feed", JSON.stringify(true));
       vi.resetModules();

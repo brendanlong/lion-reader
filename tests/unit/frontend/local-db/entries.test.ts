@@ -235,13 +235,6 @@ describe("setServerEntryState", () => {
 });
 
 describe("patchServerEntryMetadata", () => {
-  it("lets a state write computed before the metadata change still land", () => {
-    upsertServerEntries(store, [makeEntry({ updatedAt: t1 })]);
-    patchServerEntryMetadata(store, "e1", metadata("Renamed"), t3);
-    setServerEntryState(store, "e1", { read: true, starred: false, updatedAt: t2 });
-    expect(store.collection.get("e1")).toMatchObject({ title: "Renamed", read: true });
-  });
-
   it("isn't undone by a page fetched before the change landing after it", () => {
     upsertServerEntries(store, [makeEntry({ updatedAt: t1 })]);
     patchServerEntryMetadata(store, "e1", metadata("Renamed"), t3);

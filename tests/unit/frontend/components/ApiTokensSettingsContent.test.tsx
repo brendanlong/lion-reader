@@ -35,21 +35,6 @@ async function renderCreateForm() {
 }
 
 describe("ApiTokensSettingsContent create form labels", () => {
-  it("labels the token name field", async () => {
-    await renderCreateForm();
-
-    const input = screen.getByLabelText("Token Name");
-    expect(input).toHaveAttribute("id");
-    expect(input.tagName).toBe("INPUT");
-  });
-
-  it("labels the expiration field", async () => {
-    await renderCreateForm();
-
-    const input = screen.getByLabelText("Expiration (Optional)");
-    expect(input).toHaveAttribute("type", "number");
-  });
-
   it("finds the token name field by its accessible name and submits it", async () => {
     const { callsFor } = await renderCreateForm();
 

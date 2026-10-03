@@ -29,7 +29,7 @@
 export const INITIAL_RECONNECT_DELAY_MS = 1_000;
 
 /** Maximum reconnection delay in milliseconds (30 seconds). */
-export const MAX_RECONNECT_DELAY_MS = 30_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
 
 /** Backoff multiplier for exponential backoff. */
 const BACKOFF_MULTIPLIER = 2;
@@ -126,7 +126,7 @@ export interface TransitionResult {
 /**
  * Exponential backoff: doubles the delay, capped at MAX_RECONNECT_DELAY_MS.
  */
-export function nextReconnectDelay(currentDelayMs: number): number {
+function nextReconnectDelay(currentDelayMs: number): number {
   return Math.min(currentDelayMs * BACKOFF_MULTIPLIER, MAX_RECONNECT_DELAY_MS);
 }
 

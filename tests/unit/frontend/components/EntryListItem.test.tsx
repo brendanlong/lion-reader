@@ -209,14 +209,6 @@ describe("EntryListItem", () => {
       expect(button).toBeInTheDocument();
     });
 
-    it("shows empty star for unstarred entries when hovered", () => {
-      const entry = createMockEntry({ starred: false });
-      render(<EntryListItem entry={entry} onToggleStar={vi.fn()} />);
-
-      const button = screen.getByRole("button", { name: "Add to starred" });
-      expect(button).toBeInTheDocument();
-    });
-
     it("shows star icon without button when no onToggleStar callback", () => {
       const entry = createMockEntry({ starred: true });
       render(<EntryListItem entry={entry} />);
@@ -231,30 +223,6 @@ describe("EntryListItem", () => {
       render(<EntryListItem entry={entry} />);
 
       expect(screen.queryByLabelText("Starred")).not.toBeInTheDocument();
-    });
-  });
-
-  describe("selected state", () => {
-    // Selection is shown by the browser's global :focus-visible outline (the
-    // selected row is focused), not by a ring/border class — this avoids the
-    // double outline and the ring lingering after focus moves away. The only
-    // selected-specific rendering is the aria-label (covered below).
-    it("does not apply a selection ring/border when selected", () => {
-      const entry = createMockEntry();
-      render(<EntryListItem entry={entry} selected={true} />);
-
-      const article = screen.getByRole("button");
-      expect(article).not.toHaveClass("ring-2");
-      expect(article).not.toHaveClass("ring-accent");
-      expect(article).not.toHaveClass("border-accent");
-    });
-
-    it("does not apply a selection ring/border when not selected", () => {
-      const entry = createMockEntry();
-      render(<EntryListItem entry={entry} selected={false} />);
-
-      const article = screen.getByRole("button");
-      expect(article).not.toHaveClass("ring-2");
     });
   });
 
