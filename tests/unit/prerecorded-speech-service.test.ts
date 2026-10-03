@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { PrerecordedChunk } from "@/server/services/demo-narration";
 import {
   createPrerecordedSpeech,
+  RecordingLostError,
   type PrerecordedSpeechSources,
 } from "@/server/services/prerecorded-speech";
 
@@ -28,7 +29,6 @@ async function text(stream: ReadableStream<Uint8Array> | null): Promise<string |
 function setup(overrides: Partial<PrerecordedSpeechSources> = {}) {
   const bucket = new Map<string, Uint8Array>();
   const synthesized: string[] = [];
-  let stored = Promise.resolve();
   const sources: PrerecordedSpeechSources = {
     catalog: async () => new Map([[KEY, CHUNK]]),
     read: async (key) => {
@@ -39,11 +39,8 @@ function setup(overrides: Partial<PrerecordedSpeechSources> = {}) {
       synthesized.push(chunk.text);
       return streamOf("audio:", chunk.text);
     },
-    store: (key, audio) => {
-      stored = Promise.resolve().then(() => {
-        bucket.set(key, audio);
-      });
-      return stored;
+    store: async (key, audio) => {
+      bucket.set(key, audio);
     },
     synthesizeUncached: false,
     ...overrides,
@@ -52,7 +49,6 @@ function setup(overrides: Partial<PrerecordedSpeechSources> = {}) {
     get: createPrerecordedSpeech(sources),
     bucket,
     synthesized,
-    stored: () => stored,
   };
 }
 
@@ -130,6 +126,57 @@ describe("prerecorded speech", () => {
     await settle();
     refuse = false;
     expect(await text(await get(KEY))).toBe("audio:Hello.");
+  });
+
+  it("serves a stored recording whatever the catalog says", async () => {
+    const other = "c".repeat(64);
+    const { get, bucket } = setup();
+    bucket.set(other, new TextEncoder().encode("from another version"));
+    expect(await text(await get(other))).toBe("from another version");
+  });
+
+  it("gives requests waiting on a recording that fails its failure, not new syntheses", async () => {
+    let fail = true;
+    const { get, synthesized } = setup({
+      synthesize: async (chunk) => {
+        synthesized.push(chunk.text);
+        await settle();
+        if (fail) throw new Error("busy");
+        return streamOf("audio:", chunk.text);
+      },
+    });
+    const results = await Promise.allSettled([get(KEY), get(KEY), get(KEY)]);
+    expect(results.map((result) => result.status)).toEqual(["rejected", "rejected", "rejected"]);
+    expect(synthesized).toEqual(["Hello."]);
+    fail = false;
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+  });
+
+  it("serves a recording storage refused from memory, without paying again", async () => {
+    const { get, synthesized } = setup({
+      store: async () => {
+        throw new Error("storage down");
+      },
+    });
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await settle();
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    expect(synthesized).toEqual(["Hello."]);
+  });
+
+  it("won't pay again soon for a recording storage lost", async () => {
+    let time = 0;
+    const { get, synthesized } = setup({
+      // Stores, but reads somewhere else.
+      store: async () => {},
+      now: () => time,
+    });
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await settle();
+    await expect(get(KEY)).rejects.toThrow(RecordingLostError);
+    time += 2 * 60 * 60 * 1000;
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    expect(synthesized).toEqual(["Hello.", "Hello."]);
   });
 
   it("without storage, synthesizes every play only when told to", async () => {

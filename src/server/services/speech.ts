@@ -469,11 +469,22 @@ const SPEECH_TIMEOUT_MS = 120_000;
  */
 export async function streamSpeech(
   keys: AiProviderKeys,
-  options: SpeechChoice & { text: string; pauseSeconds?: number },
+  options: SpeechChoice & {
+    text: string;
+    pauseSeconds?: number;
+    /** Refuse rather than fall back to the default model or voice. */
+    exact?: boolean;
+  },
   signal?: AbortSignal
 ): Promise<ReadableStream<Uint8Array>> {
   const catalog = await listSpeechModels(keys, options);
   const { model, voice } = resolveSpeechModel(catalog, keys, options.model, options.voice);
+  if (
+    options.exact &&
+    (model.id !== normalizeModelRef(options.model ?? "") || voice !== options.voice)
+  ) {
+    throw new SpeechRequestError(`${options.model} voice ${options.voice} isn't available`);
+  }
   // Saying it in the default voice instead would be cached as the picked one's.
   if (catalog.pickedVoiceUnchecked && voice !== options.voice) {
     throw new SpeechUnavailableError(

@@ -9,8 +9,8 @@
  * cached. The CDN is another origin than the page, hence the CORS header.
  *
  * No auth: the demo, which has no session, is what plays these. Only keys in
- * the demo's catalog are served or synthesized, so the route can't be used to
- * speak arbitrary text.
+ * the demo's catalog are synthesized, so the route can't be used to speak
+ * arbitrary text (SECURITY.md section 10).
  */
 
 import { logger } from "@/lib/logger";
@@ -20,7 +20,7 @@ import {
 } from "@/lib/narration/prerecorded-speech";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { demoNarrationCatalog } from "@/server/services/demo-narration";
-import { createPrerecordedSpeech } from "@/server/services/prerecorded-speech";
+import { createPrerecordedSpeech, RecordingLostError } from "@/server/services/prerecorded-speech";
 import { ProviderBusyError } from "@/server/services/provider-errors";
 import {
   SpeechRejectedError,
@@ -53,8 +53,9 @@ async function readStoredRecording(key: string): Promise<ReadableStream<Uint8Arr
 const getPrerecordedSpeech = createPrerecordedSpeech({
   catalog: demoNarrationCatalog,
   read: readStoredRecording,
-  // On the server's keys, so its allowlist applies. No abort signal: a chunk
-  // the listener leaves halfway is still worth finishing and keeping.
+  // On the server's keys, so its allowlist applies, in exactly the voice the
+  // key names. No abort signal: a chunk the listener leaves halfway is still
+  // worth finishing and keeping.
   synthesize: ({ voice, text }) =>
     streamSpeech(
       {},
@@ -64,6 +65,7 @@ const getPrerecordedSpeech = createPrerecordedSpeech({
         text,
         pauseSeconds: voice.pauseSeconds,
         userId: "demo",
+        exact: true,
       }
     ),
   store: isStorageAvailable()
@@ -105,7 +107,13 @@ export async function GET(
     // Shown as is: in development, where these are likely, they say what to
     // fix ("Cloud voices require an API key …").
     if (error instanceof SpeechRequestError || error instanceof SpeechRejectedError) {
+      logger.warn("Recorded narration refused", { key, error: error.message });
       return errorResponse(422, error.message);
+    }
+    if (error instanceof RecordingLostError) {
+      // Storage misconfigured or losing writes: not paid for again yet.
+      logger.error("Recorded narration lost", { key });
+      return errorResponse(502, "Couldn't get the narration");
     }
     logger.error("Recorded narration failed", {
       key,
@@ -113,7 +121,7 @@ export async function GET(
     });
     return errorResponse(502, "Couldn't get the narration");
   }
-  if (!audio) return errorResponse(404, "This narration hasn't been recorded");
+  if (!audio) return errorResponse(404, "This narration isn't available");
 
   return new Response(audio, {
     headers: {
