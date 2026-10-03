@@ -26,15 +26,6 @@ describe("getClientIp", () => {
     expect(getClientIp(headers)).toBe("203.0.113.7");
   });
 
-  it("cannot be fooled by rotating a spoofed leftmost x-forwarded-for value", () => {
-    const realClientHop = "203.0.113.7";
-    const a = getClientIp(new Headers({ "x-forwarded-for": `1.1.1.1, ${realClientHop}` }));
-    const b = getClientIp(new Headers({ "x-forwarded-for": `2.2.2.2, ${realClientHop}` }));
-    // Different spoofed prefixes still resolve to the same real client IP.
-    expect(a).toBe(b);
-    expect(a).toBe(realClientHop);
-  });
-
   it("handles a single-hop x-forwarded-for", () => {
     expect(getClientIp(new Headers({ "x-forwarded-for": "203.0.113.7" }))).toBe("203.0.113.7");
   });

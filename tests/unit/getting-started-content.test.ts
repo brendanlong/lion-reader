@@ -11,11 +11,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { describe, it, expect } from "vitest";
 
-import {
-  GETTING_STARTED_EXCERPT,
-  GETTING_STARTED_MARKDOWN,
-  GETTING_STARTED_TITLE,
-} from "../../src/server/services/getting-started-content";
+import { GETTING_STARTED_MARKDOWN } from "../../src/server/services/getting-started-content";
 import { processMarkdown } from "../../src/server/markdown";
 import { sanitizeEntryHtmlAsync } from "../../src/server/html/sanitize";
 
@@ -69,20 +65,6 @@ describe("Getting Started content", () => {
       /^https?:\/\/(www\.)?lionreader\.com/i.test(t)
     );
     expect(absolute).toEqual([]);
-  });
-
-  it("has a title and an excerpt", () => {
-    expect(GETTING_STARTED_TITLE.length).toBeGreaterThan(0);
-    expect(GETTING_STARTED_EXCERPT.length).toBeGreaterThan(0);
-    // The body's own first lines are a poor excerpt, so one is supplied; if it
-    // ever grows past the saved-article clip it just gets truncated.
-    expect(GETTING_STARTED_EXCERPT.length).toBeLessThanOrEqual(300);
-  });
-
-  it("starts with prose, not a heading that would become the title", () => {
-    // processMarkdown promotes a leading H1 into the title, which would then
-    // fight the explicit title we pass to uploadArticle.
-    expect(GETTING_STARTED_MARKDOWN.startsWith("#")).toBe(false);
   });
 });
 

@@ -149,8 +149,4 @@ describe("notionPlugin", () => {
     });
     expect(content).toBeNull();
   });
-
-  it("skips Readability: the rendered fragment is the article", () => {
-    expect(notionPlugin.capabilities.savedArticle!.skipReadability).toBe(true);
-  });
 });

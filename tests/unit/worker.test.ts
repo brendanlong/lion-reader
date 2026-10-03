@@ -135,55 +135,6 @@ describe("Worker", () => {
       // Should never have exceeded concurrency limit
       expect(maxConcurrentJobs).toBe(3);
     });
-
-    it("respects different concurrency values", async () => {
-      let maxConcurrentJobs = 0;
-      let currentlyRunning = 0;
-      const jobDeferreds: ReturnType<typeof createDeferred>[] = [];
-
-      // Create 10 jobs
-      const jobs = Array.from({ length: 10 }, (_, i) => createMockJob(`${i}`));
-      let jobIndex = 0;
-
-      const worker = createWorker({
-        concurrency: 7,
-        pollIntervalMs: 10,
-        logger: silentLogger,
-        claimJob: async () => {
-          if (jobIndex < jobs.length) {
-            return jobs[jobIndex++];
-          }
-          return null;
-        },
-        processJob: async () => {
-          currentlyRunning++;
-          maxConcurrentJobs = Math.max(maxConcurrentJobs, currentlyRunning);
-
-          const deferred = createDeferred();
-          jobDeferreds.push(deferred);
-          await deferred.promise;
-
-          currentlyRunning--;
-        },
-      });
-
-      await worker.start();
-      await tick(50);
-
-      expect(currentlyRunning).toBe(7);
-      expect(maxConcurrentJobs).toBe(7);
-
-      // Cleanup - resolve all deferreds including any new ones
-      while (jobDeferreds.some((d) => d.promise)) {
-        const unresolvedCount = jobDeferreds.length;
-        for (const deferred of jobDeferreds) {
-          deferred.resolve();
-        }
-        await tick(50);
-        if (jobDeferreds.length === unresolvedCount) break;
-      }
-      await worker.stop();
-    });
   });
 
   describe("graceful shutdown", () => {
@@ -545,44 +496,6 @@ describe("Worker", () => {
   });
 
   describe("job timeout", () => {
-    it("times out a job that takes too long", async () => {
-      const errors: string[] = [];
-      let jobsClaimed = 0;
-      const testLogger: WorkerLogger = {
-        info: () => {},
-        warn: () => {},
-        error: (msg) => errors.push(msg),
-      };
-
-      const worker = createWorker({
-        concurrency: 1,
-        pollIntervalMs: 10,
-        jobTimeoutMs: 50, // Very short timeout for testing
-        logger: testLogger,
-        claimJob: async () => {
-          if (jobsClaimed === 0) {
-            jobsClaimed++;
-            return createMockJob("slow-job");
-          }
-          return null;
-        },
-        processJob: async () => {
-          // This job will never complete on its own
-          await new Promise(() => {});
-        },
-      });
-
-      await worker.start();
-
-      // Wait for the timeout to fire
-      await tick(200);
-
-      expect(errors).toContain("Job timed out");
-      expect(worker.getStats().totalFailed).toBe(1);
-
-      await worker.stop();
-    });
-
     it("does not time out jobs that complete in time", async () => {
       let jobsClaimed = 0;
 

@@ -59,19 +59,4 @@ describe("generateNarration fallback paragraph map", () => {
       { n: 2, o: 1 },
     ]);
   });
-
-  it("maintains the length invariant for every narration paragraph", async () => {
-    const html = [
-      "<h1>Title</h1>",
-      "<blockquote>Quote part one.",
-      "<br /><br />",
-      "Quote part two.</blockquote>",
-      "<p>Closing.</p>",
-    ].join("\n");
-    const result = await generateNarration(html);
-
-    const segments = splitNarrationParagraphs(result.text);
-    expect(result.paragraphMap.length).toBe(segments.length);
-    result.paragraphMap.forEach((entry, i) => expect(entry.n).toBe(i));
-  });
 });

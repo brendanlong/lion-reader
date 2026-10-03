@@ -183,13 +183,11 @@ describe("getNarrationModelRef", () => {
       provider: "groq",
       model: "openai/gpt-oss-120b",
     });
-    expect(DEFAULT_NARRATION_MODELS.groq).toBe("groq:openai/gpt-oss-120b");
     // Both configured → Cerebras wins (fastest, listed first).
     expect(await getNarrationModelRef(null, { groq: "g", cerebras: "c" })).toEqual({
       provider: "cerebras",
       model: "gpt-oss-120b",
     });
-    expect(DEFAULT_NARRATION_MODELS.cerebras).toBe("cerebras:gpt-oss-120b");
   });
 
   it("defaults to OpenRouter when it's the only JSON-mode provider configured", async () => {

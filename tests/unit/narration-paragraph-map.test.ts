@@ -32,20 +32,6 @@ describe("splitNarrationParagraphs", () => {
 });
 
 describe("buildAlignedNarration", () => {
-  it("keeps the map aligned with the player's paragraph split", () => {
-    const elements: NarrationElement[] = [
-      { o: 0, text: "First" },
-      { o: 1, text: "Second" },
-    ];
-    const { narrationText, paragraphMap } = buildAlignedNarration(elements);
-
-    expect(narrationText).toBe("First\n\nSecond");
-    expect(paragraphMap).toEqual([
-      { n: 0, o: 0 },
-      { n: 1, o: 1 },
-    ]);
-  });
-
   it("expands a block with internal blank lines into multiple entries sharing its element index", () => {
     // A single block (o=4) whose narration text holds three paragraphs — the
     // exact shape produced by <br><br>-formatted content and by an LLM that

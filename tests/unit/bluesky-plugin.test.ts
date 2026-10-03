@@ -278,8 +278,8 @@ describe("feedDefaultsToFullContent", () => {
     const author = { did: "did:plc:x", handle: "x.com" };
     const text = "😀".repeat(120); // each emoji is a surrogate pair
     const title = blueskyPostTitle({ uri: "at://x", author, record: { text } });
-    // No unpaired surrogate: the string round-trips through code points cleanly.
-    expect([...title].every((cp) => cp.codePointAt(0)! <= 0x10ffff)).toBe(true);
+    // No unpaired surrogate.
+    expect(title.isWellFormed()).toBe(true);
     expect(title.endsWith("…")).toBe(true);
   });
 });

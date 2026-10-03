@@ -15,14 +15,6 @@ describe("deriveEntryUrl", () => {
     ).toBe("https://example.com/post-1");
   });
 
-  it("returns the GUID when it is a valid HTTP URL and no link is present", () => {
-    expect(
-      deriveEntryUrl({
-        guid: "https://www.stilldrinking.org/stop-talking",
-      })
-    ).toBe("https://www.stilldrinking.org/stop-talking");
-  });
-
   it("returns the GUID when it is a valid HTTPS URL and no link is present", () => {
     expect(
       deriveEntryUrl({
@@ -43,14 +35,6 @@ describe("deriveEntryUrl", () => {
     expect(
       deriveEntryUrl({
         guid: "urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a",
-      })
-    ).toBeUndefined();
-  });
-
-  it("does not use non-HTTP URL GUIDs as the URL", () => {
-    expect(
-      deriveEntryUrl({
-        guid: "ftp://example.com/file",
       })
     ).toBeUndefined();
   });

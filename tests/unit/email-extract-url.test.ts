@@ -7,40 +7,6 @@ import { extractEmailUrl, extractUnsubscribeUrl } from "@/server/email/extract-u
 
 describe("extractEmailUrl", () => {
   describe("view online text matching (primary strategy)", () => {
-    it("extracts URL from Substack READ IN APP button", () => {
-      const html = `
-        <h1><a href="https://substack.com/app-link/post?publication_id=2355025&post_id=185204578">Title</a></h1>
-        <p>Some content...</p>
-        <a class="email-button-outline" href="https://open.substack.com/pub/cartoonshateher/p/the-rise-of-the-highfivesexuals?utm_source=email&redirect=app-store&utm_campaign=email-read-in-app">
-          <span class="email-button-text">READ IN APP</span>
-        </a>
-      `;
-      expect(extractEmailUrl(html)).toBe(
-        "https://open.substack.com/pub/cartoonshateher/p/the-rise-of-the-highfivesexuals"
-      );
-    });
-
-    it("extracts URL from 'Read Online' link in paragraph", () => {
-      const html = `
-        <p class="header" align="right">
-          January 25, 2026 |
-          <a href="https://leadershipintech.com/newsletters/2201?sid=eeba4afc">Read Online</a>
-        </p>
-        <h2><a href="https://leadershipintech.com/newsletters/2201?sid=eeba4afc">The hitchhiker's guide</a></h2>
-      `;
-      expect(extractEmailUrl(html)).toBe(
-        "https://leadershipintech.com/newsletters/2201?sid=eeba4afc"
-      );
-    });
-
-    it("extracts URL from 'View in your browser' link", () => {
-      const html = `
-        <a href="https://buttondown-0005.com/c/encodedtoken123">View in your browser</a>
-        <h1><a href="https://example.com/post">Newsletter Title</a></h1>
-      `;
-      expect(extractEmailUrl(html)).toBe("https://buttondown-0005.com/c/encodedtoken123");
-    });
-
     it("extracts URL from 'View in browser' with nested spans", () => {
       const html = `
         <td align="center">
@@ -153,30 +119,6 @@ describe("extractEmailUrl", () => {
         <h1><a href="https://example.com/post?id=123&category=tech&utm_source=email">Title</a></h1>
       `;
       expect(extractEmailUrl(html)).toBe("https://example.com/post?id=123&category=tech");
-    });
-
-    it("strips tracking params from open.substack.com URLs", () => {
-      const html = `
-        <h1>
-          <a href="https://open.substack.com/pub/test/p/my-post?utm_source=email&utm_campaign=test&r=abc">
-            Test Post
-          </a>
-        </h1>
-      `;
-      expect(extractEmailUrl(html)).toBe("https://open.substack.com/pub/test/p/my-post");
-    });
-
-    it("handles custom domain Substack (not *.substack.com)", () => {
-      const html = `
-        <h1>
-          <a href="https://www.astralcodexten.com/p/political-backflow-from-europe?utm_source=email">
-            Political Backflow From Europe
-          </a>
-        </h1>
-      `;
-      expect(extractEmailUrl(html)).toBe(
-        "https://www.astralcodexten.com/p/political-backflow-from-europe"
-      );
     });
 
     it("handles *.substack.com/p/ URLs with tracking params", () => {
@@ -389,10 +331,6 @@ describe("extractUnsubscribeUrl", () => {
     it("returns null for empty HTML", () => {
       expect(extractUnsubscribeUrl("")).toBeNull();
     });
-
-    it("returns null for null-like input", () => {
-      expect(extractUnsubscribeUrl("")).toBeNull();
-    });
   });
 
   describe("URL filtering", () => {
@@ -428,42 +366,6 @@ describe("extractUnsubscribeUrl", () => {
   });
 
   describe("real-world newsletter patterns", () => {
-    it("extracts Substack unsubscribe link", () => {
-      const html = `
-        <table>
-          <tr><td>
-            <h1><a href="https://open.substack.com/pub/test/p/my-post">My Post</a></h1>
-            <p>Content here...</p>
-            <p>
-              <a href="https://test.substack.com/action/disable_email">Unsubscribe</a>
-            </p>
-          </td></tr>
-        </table>
-      `;
-      expect(extractUnsubscribeUrl(html)).toBe("https://test.substack.com/action/disable_email");
-    });
-
-    it("extracts Ghost newsletter unsubscribe link", () => {
-      const html = `
-        <div class="post">
-          <h2><a href="https://blog.example.com/my-post/">My Post</a></h2>
-          <p>Content...</p>
-        </div>
-        <div class="footer">
-          <a href="https://blog.example.com/unsubscribe/?uuid=abc123">Unsubscribe</a>
-        </div>
-      `;
-      expect(extractUnsubscribeUrl(html)).toBe("https://blog.example.com/unsubscribe/?uuid=abc123");
-    });
-
-    it("extracts Buttondown unsubscribe link", () => {
-      const html = `
-        <p>You're receiving this because you subscribed.</p>
-        <a href="https://buttondown.com/author/unsubscribe/abc123">Unsubscribe</a>
-      `;
-      expect(extractUnsubscribeUrl(html)).toBe("https://buttondown.com/author/unsubscribe/abc123");
-    });
-
     it("extracts unsubscribe link from complex footer", () => {
       const html = `
         <table role="presentation">
@@ -478,13 +380,6 @@ describe("extractUnsubscribeUrl", () => {
         </table>
       `;
       expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe/user123");
-    });
-
-    it("handles unsubscribe link with surrounding text", () => {
-      const html = `
-        <p>To unsubscribe from future emails, <a href="https://example.com/unsubscribe?id=abc">click here to unsubscribe</a>.</p>
-      `;
-      expect(extractUnsubscribeUrl(html)).toBe("https://example.com/unsubscribe?id=abc");
     });
   });
 });

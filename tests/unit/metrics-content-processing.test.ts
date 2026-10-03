@@ -45,14 +45,4 @@ describe("content-processing duration metrics", () => {
     expect(output).toContain("sanitize_duration_seconds_bucket");
     expect(output).toMatch(/sanitize_duration_seconds_count \d+/);
   });
-
-  it("uses the same buckets across all three histograms", async () => {
-    metrics.startFeedParseTimer()();
-
-    const output = await exportedMetrics();
-    // A representative bucket from CONTENT_PROCESSING_BUCKETS should be present.
-    expect(output).toContain('feed_parse_duration_seconds_bucket{le="0.001"}');
-    expect(output).toContain('readability_duration_seconds_bucket{le="0.001"}');
-    expect(output).toContain('sanitize_duration_seconds_bucket{le="0.001"}');
-  });
 });

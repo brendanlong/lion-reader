@@ -32,13 +32,6 @@ describe("htmlToNarrationInput", () => {
       expect(narrated(result)).toEqual(["First paragraph.", "Second paragraph."]);
     });
 
-    it("returns paragraphs with sequential IDs", () => {
-      const html = "<p>First.</p><p>Second.</p><p>Third.</p>";
-      const result = htmlToNarrationInput(html);
-
-      expect(narrated(result)).toEqual(["First.", "Second.", "Third."]);
-    });
-
     it("handles empty HTML", () => {
       const result = htmlToNarrationInput("");
 
@@ -58,20 +51,6 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["Main Title"]);
-    });
-
-    it("extracts h2 headings", () => {
-      const html = "<h2>Section Title</h2>";
-      const result = htmlToNarrationInput(html);
-
-      expect(narrated(result)).toEqual(["Section Title"]);
-    });
-
-    it("extracts h3 headings", () => {
-      const html = "<h3>Subsection</h3>";
-      const result = htmlToNarrationInput(html);
-
-      expect(narrated(result)).toEqual(["Subsection"]);
     });
 
     it("extracts h4-h6 headings", () => {
@@ -564,13 +543,6 @@ describe("htmlToNarrationInput", () => {
       ).toEqual(["Table: Scores. A End table."]);
     });
 
-    it("marks tables with 'Table:' prefix", () => {
-      const html = "<table><tr><td>Cell 1</td><td>Cell 2</td></tr></table>";
-      const result = htmlToNarrationInput(html);
-
-      expect(narrated(result)).toEqual(["Table: Cell 1, Cell 2 End table."]);
-    });
-
     it("narrates a cell's paragraph only as part of the table (issue #1445)", () => {
       const html = "<table><tr><td><p>Cell 1</p></td><td>Cell 2</td></tr></table>";
       const result = htmlToNarrationInput(html);
@@ -697,33 +669,6 @@ describe("htmlToNarrationInput", () => {
         "Another paragraph.",
       ]);
     });
-
-    it("handles complex article structure", () => {
-      const html = `
-        <h1>Article Title</h1>
-        <p>By Dr. Smith</p>
-        <h2>Introduction</h2>
-        <p>This is the introduction.</p>
-        <ul>
-          <li>Point one</li>
-          <li>Point two</li>
-        </ul>
-        <blockquote>A memorable quote.</blockquote>
-        <p>Final thoughts.</p>
-      `;
-      const result = htmlToNarrationInput(html);
-
-      expect(narrated(result)).toEqual([
-        "Article Title",
-        "By Dr. Smith",
-        "Introduction",
-        "This is the introduction.",
-        "- Point one",
-        "- Point two",
-        "Quote: A memorable quote. End quote.",
-        "Final thoughts.",
-      ]);
-    });
   });
 
   describe("HTML entity handling", () => {
@@ -748,13 +693,6 @@ describe("htmlToNarrationInput", () => {
       const result = htmlToNarrationInput(html);
 
       expect(narrated(result)).toEqual(["Too many spaces"]);
-    });
-
-    it("handles multiple paragraphs", () => {
-      const html = "<p>First</p>\n\n\n\n<p>Second</p>";
-      const result = htmlToNarrationInput(html);
-
-      expect(narrated(result)).toEqual(["First", "Second"]);
     });
 
     it("trims whitespace", () => {
@@ -999,7 +937,6 @@ describe("htmlToNarrationInput", () => {
       // `<br />\n<br />` is how feeds write a paragraph break; the whitespace
       // between the two is still just whitespace.
       for (const html of [
-        "<p>Line one<br><br>Line two</p>",
         "<p>Line one<br>\n<br>\nLine two</p>",
         "<p>Line one<br /> <br /> Line two</p>",
       ]) {

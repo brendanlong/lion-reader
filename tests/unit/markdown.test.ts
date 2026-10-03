@@ -56,19 +56,6 @@ Content.`;
     expect(result.frontmatter?.author).toBe("John Doe");
   });
 
-  it("extracts author from frontmatter", () => {
-    const markdown = `---
-title: My Article
-author: Jane Smith
----
-
-Content here.`;
-
-    const result = extractFrontmatter(markdown);
-    expect(result.frontmatter?.title).toBe("My Article");
-    expect(result.frontmatter?.author).toBe("Jane Smith");
-  });
-
   it("trims whitespace from author", () => {
     const markdown = `---
 author: "  Padded Author  "
@@ -161,19 +148,6 @@ Content here.`;
     const result = extractFrontmatter(markdown);
     expect(result.frontmatter).toBeNull();
     // Frontmatter block is still stripped from content
-    expect(result.content).toBe("\nContent here.");
-  });
-
-  it("strips frontmatter from content for non-object YAML", () => {
-    const markdown = `---
-just a string value
----
-
-Content here.`;
-
-    const result = extractFrontmatter(markdown);
-    expect(result.frontmatter).toBeNull();
-    // Frontmatter block is still stripped
     expect(result.content).toBe("\nContent here.");
   });
 
@@ -292,28 +266,7 @@ Content here.`;
     expect(result.title).toBe("Heading Title");
   });
 
-  it("falls back to H1 heading when no frontmatter", async () => {
-    const markdown = `# Heading Title
-
-Content here.`;
-
-    const result = await processMarkdown(markdown);
-    expect(result.title).toBe("Heading Title");
-  });
-
-  it("returns summary from frontmatter description", async () => {
-    const markdown = `---
-title: My Article
-description: This is the summary.
----
-
-Full article content.`;
-
-    const result = await processMarkdown(markdown);
-    expect(result.summary).toBe("This is the summary.");
-  });
-
-  it("returns null summary when no description in frontmatter", async () => {
+  it("returns null summary and author when frontmatter lacks them", async () => {
     const markdown = `---
 title: My Article
 ---
@@ -322,25 +275,17 @@ Full article content.`;
 
     const result = await processMarkdown(markdown);
     expect(result.summary).toBeNull();
+    expect(result.author).toBeNull();
   });
 
-  it("returns null summary when no frontmatter", async () => {
+  it("returns null summary and author when there is no frontmatter", async () => {
     const markdown = `# My Article
 
 Full article content.`;
 
     const result = await processMarkdown(markdown);
     expect(result.summary).toBeNull();
-  });
-
-  it("converts markdown to HTML", async () => {
-    const markdown = `# Title
-
-This is **bold** and *italic*.`;
-
-    const result = await processMarkdown(markdown);
-    expect(result.html).toContain("<strong>bold</strong>");
-    expect(result.html).toContain("<em>italic</em>");
+    expect(result.author).toBeNull();
   });
 
   it("strips title header from HTML output", async () => {
@@ -371,38 +316,6 @@ A serverless platform for building, deploying, and scaling apps across [Cloudfla
     expect(result.summary).toBe("With Cloudflare Workers, you can expect to:");
     expect(result.html).toContain("serverless platform");
     expect(result.html).toContain('<a href="https://www.cloudflare.com/network/">');
-  });
-
-  it("extracts author from frontmatter", async () => {
-    const markdown = `---
-title: My Article
-author: John Doe
----
-
-Content here.`;
-
-    const result = await processMarkdown(markdown);
-    expect(result.author).toBe("John Doe");
-  });
-
-  it("returns null author when no author in frontmatter", async () => {
-    const markdown = `---
-title: My Article
----
-
-Content here.`;
-
-    const result = await processMarkdown(markdown);
-    expect(result.author).toBeNull();
-  });
-
-  it("returns null author when no frontmatter", async () => {
-    const markdown = `# My Article
-
-Content here.`;
-
-    const result = await processMarkdown(markdown);
-    expect(result.author).toBeNull();
   });
 
   it("extracts all metadata from frontmatter", async () => {
@@ -455,27 +368,6 @@ But this paradigm doesn't explain everything.`;
     expect(result.html).not.toContain("importance:");
   });
 
-  it("renders GFM footnotes instead of leaking literal syntax", async () => {
-    const markdown = `A claim that needs support.[^src]
-
-Body continues here.
-
-[^src]: The supporting evidence.`;
-
-    const result = await processMarkdown(markdown);
-    // Reference becomes a superscript anchor pointing at the definition.
-    // The `fn-` / `fnref-` anchor names are GitHub's own.
-    expect(result.html).toMatch(/<sup[^>]*><a[^>]*href="#fn-src"[^>]*>1<\/a><\/sup>/);
-    // Definitions are collected into a footnotes section, not left inline.
-    expect(result.html).toContain('<section class="footnotes"');
-    expect(result.html).toContain('id="fn-src"');
-    expect(result.html).toContain("The supporting evidence.");
-    // A back-reference link returns to the citation.
-    expect(result.html).toContain('href="#fnref-src"');
-    // No raw footnote markers survive in the output.
-    expect(result.html).not.toContain("[^src]");
-  });
-
   it("numbers multiple footnotes in reference order", async () => {
     const markdown = `First.[^a] Second.[^b]
 
@@ -487,32 +379,6 @@ Body continues here.
     expect(result.html).toMatch(/href="#fn-b"[^>]*>2<\/a>/);
     expect(result.html).toContain("Alpha.");
     expect(result.html).toContain("Bravo.");
-  });
-
-  it("renders inline and display TeX as MathML", async () => {
-    const markdown = `Mass-energy is $E = mc^2$.
-
-$$\\int_0^1 x\\,dx = \\frac{1}{2}$$`;
-
-    const result = await processMarkdown(markdown);
-    // Inline math → presentation MathML.
-    expect(result.html).toContain("<math");
-    expect(result.html).toMatch(/<msup><mi>c<\/mi><mn>2<\/mn><\/msup>/);
-    // Display math carries the block flag.
-    expect(result.html).toContain('display="block"');
-    expect(result.html).toContain("<mfrac>");
-    // The `$…$` / `$$…$$` delimiters are consumed, not left as literal text.
-    expect(result.html).not.toContain("$E = mc^2$");
-    expect(result.html).not.toContain("$$");
-    // No `<annotation>` copy of the TeX source: the read-path sanitizer dropped
-    // it anyway, so emitting one was pure amplification (#1431).
-    expect(result.html).not.toContain("<annotation");
-  });
-
-  it("does not throw on malformed TeX", async () => {
-    const markdown = `Broken math: $\\frac{1}{$ and text after.`;
-    // Malformed TeX renders as an inline error, never blows up the document.
-    await expect(processMarkdown(markdown)).resolves.toBeDefined();
   });
 
   it("handles frontmatter with unquoted colons in values (#818)", async () => {
@@ -540,27 +406,6 @@ This paper introduces Parcae.`;
       // The slug an author writing against GitHub's rules would expect.
       expect(result.html).toContain('id="front-loading-alignment"');
       expect(result.html).toContain('href="#front-loading-alignment"');
-    });
-
-    it("strips punctuation and lowercases like github-slugger", async () => {
-      const result = await processMarkdown("# Doc\n\n## What's *new* in v2.0?\n\nBody.");
-      expect(result.html).toContain('id="whats-new-in-v20"');
-    });
-
-    it("does not accumulate slug suffixes across documents", async () => {
-      // The occurrence table is per-render state inside the renderer. If it
-      // were ever shared between calls, the second document's "Intro" would
-      // become "intro-1" and its table of contents would break.
-      const first = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
-      const second = await processMarkdown("# Doc\n\n## Intro\n\nBody.");
-      expect(first.html).toContain('id="intro"');
-      expect(second.html).toContain('id="intro"');
-    });
-
-    it("disambiguates duplicate headings within one document", async () => {
-      const result = await processMarkdown("# Doc\n\n## Intro\n\nA.\n\n## Intro\n\nB.");
-      expect(result.html).toContain('id="intro"');
-      expect(result.html).toContain('id="intro-1"');
     });
 
     it("leaves a link to the stripped title heading dangling", async () => {

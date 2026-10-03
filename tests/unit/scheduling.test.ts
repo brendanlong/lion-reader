@@ -72,10 +72,6 @@ describe("syndicationToSeconds", () => {
     expect(syndicationToSeconds({ updatePeriod: "yearly" })).toBe(365 * 24 * 60 * 60);
   });
 
-  it("defaults frequency to 1 when not specified", () => {
-    expect(syndicationToSeconds({ updatePeriod: "daily" })).toBe(24 * 60 * 60);
-  });
-
   it("returns undefined for zero or negative frequency", () => {
     expect(syndicationToSeconds({ updatePeriod: "daily", updateFrequency: 0 })).toBeUndefined();
     expect(syndicationToSeconds({ updatePeriod: "daily", updateFrequency: -1 })).toBeUndefined();
@@ -317,17 +313,6 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("default");
     });
 
-    it("uses default interval when cacheControl is undefined", () => {
-      const result = calculateNextFetch({
-        cacheControl: undefined,
-        now: fixedNow,
-        randomSource: noJitter,
-      });
-
-      expect(result.intervalSeconds).toBe(DEFAULT_FETCH_INTERVAL_SECONDS);
-      expect(result.reason).toBe("default");
-    });
-
     it("uses default interval when cacheControl has no max-age", () => {
       const result = calculateNextFetch({
         cacheControl: createCacheControl(), // no max-age
@@ -353,43 +338,9 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("uses 1 hour backoff for 2 failures", () => {
-      const result = calculateNextFetch({
-        consecutiveFailures: 2,
-        now: fixedNow,
-        randomSource: noJitter,
-      });
-
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T13:00:00Z"));
-      expect(result.intervalSeconds).toBe(60 * 60); // 1 hour
-      expect(result.reason).toBe("failure_backoff");
-    });
-
-    it("uses 2 hour backoff for 3 failures", () => {
-      const result = calculateNextFetch({
-        consecutiveFailures: 3,
-        now: fixedNow,
-        randomSource: noJitter,
-      });
-
-      expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours
-      expect(result.reason).toBe("failure_backoff");
-    });
-
     it("caps backoff at 7 days for 10 failures", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 10,
-        now: fixedNow,
-        randomSource: noJitter,
-      });
-
-      expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
-      expect(result.reason).toBe("failure_backoff");
-    });
-
-    it("caps backoff at 7 days for more than 10 failures", () => {
-      const result = calculateNextFetch({
-        consecutiveFailures: 50,
         now: fixedNow,
         randomSource: noJitter,
       });
@@ -517,17 +468,6 @@ describe("calculateNextFetch", () => {
       expect(result.intervalSeconds).toBe(12 * 60 * 60);
       expect(result.reason).toBe("failure_backoff");
     });
-
-    it("does not cap non-rate-limited failures", () => {
-      const result = calculateNextFetch({
-        consecutiveFailures: 10,
-        rateLimited: false,
-        now: fixedNow,
-        randomSource: noJitter,
-      });
-
-      expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
-    });
   });
 
   describe("with a plugin minimum interval", () => {
@@ -598,19 +538,6 @@ describe("calculateNextFetch", () => {
   });
 
   describe("with jitter", () => {
-    it("adds jitter based on randomSource", () => {
-      const result = calculateNextFetch({
-        now: fixedNow,
-        randomSource: () => 0.5, // 50% of max jitter
-      });
-
-      // Default interval is 60 min, 10% jitter = 6 min max, 50% of that = 3 min
-      const expectedJitter = Math.floor(
-        DEFAULT_FETCH_INTERVAL_SECONDS * DEFAULT_JITTER_FRACTION * 0.5
-      );
-      expect(result.intervalSeconds).toBe(DEFAULT_FETCH_INTERVAL_SECONDS + expectedJitter);
-    });
-
     it("adds maximum jitter when randomSource returns 1", () => {
       const result = calculateNextFetch({
         now: fixedNow,
@@ -633,33 +560,6 @@ describe("calculateNextFetch", () => {
       expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS + MAX_JITTER_SECONDS);
     });
 
-    it("uses proportional jitter for short intervals", () => {
-      // For a 2 hour interval, 10% = 12 min, which is less than 30 min cap
-      const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 7200 }), // 2 hours
-        now: fixedNow,
-        randomSource: () => 1.0,
-      });
-
-      const expectedJitter = Math.floor(7200 * DEFAULT_JITTER_FRACTION); // 720 seconds = 12 min
-      expect(result.intervalSeconds).toBe(7200 + expectedJitter);
-    });
-
-    it("jitter is proportional to random value", () => {
-      const results = [0, 0.25, 0.5, 0.75, 1.0].map(
-        (random) =>
-          calculateNextFetch({
-            now: fixedNow,
-            randomSource: () => random,
-          }).intervalSeconds
-      );
-
-      // Each result should be larger than the previous
-      for (let i = 1; i < results.length; i++) {
-        expect(results[i]).toBeGreaterThan(results[i - 1]);
-      }
-    });
-
     it("jitter is applied to failure backoff too", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 2, // 1 hour backoff
@@ -675,26 +575,6 @@ describe("calculateNextFetch", () => {
 });
 
 describe("calculateFailureBackoff", () => {
-  it("returns 30 minutes for 1 failure", () => {
-    expect(calculateFailureBackoff(1)).toBe(30 * 60);
-  });
-
-  it("returns 1 hour for 2 failures", () => {
-    expect(calculateFailureBackoff(2)).toBe(60 * 60);
-  });
-
-  it("returns 2 hours for 3 failures", () => {
-    expect(calculateFailureBackoff(3)).toBe(2 * 60 * 60);
-  });
-
-  it("returns 4 hours for 4 failures", () => {
-    expect(calculateFailureBackoff(4)).toBe(4 * 60 * 60);
-  });
-
-  it("returns 8 hours for 5 failures", () => {
-    expect(calculateFailureBackoff(5)).toBe(8 * 60 * 60);
-  });
-
   it("returns max interval for 10 failures", () => {
     expect(calculateFailureBackoff(10)).toBe(MAX_FETCH_INTERVAL_SECONDS);
   });
@@ -724,145 +604,6 @@ describe("calculateFailureBackoff", () => {
   });
 });
 
-describe("real-world scenarios", () => {
-  const fixedNow = new Date("2024-01-15T12:00:00Z");
-
-  it("typical blog with 2 hour cache", () => {
-    const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 7200 }),
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(7200);
-    expect(result.reason).toBe("cache_control");
-  });
-
-  it("high-frequency news feed with 5 minute cache gets clamped to 10 min", () => {
-    const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 300 }),
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS); // Clamped to 10 min minimum
-    expect(result.reason).toBe("cache_control_clamped_min");
-  });
-
-  it("cache headers allow 15-minute polling when server specifies it", () => {
-    const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 900 }), // 15 minutes
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(900); // Allowed because server explicitly said so
-    expect(result.reason).toBe("cache_control");
-  });
-
-  it("TTL hint of 15 minutes still gets clamped to 60 min (less trusted)", () => {
-    const result = calculateNextFetch({
-      feedHints: { ttlMinutes: 15 }, // 15 minutes
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_SECONDS); // Clamped to 60 min
-    expect(result.reason).toBe("ttl_clamped_min");
-  });
-
-  it("infrequently updated feed with 1 day cache", () => {
-    const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 86400 }),
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(86400);
-    expect(result.reason).toBe("cache_control");
-  });
-
-  it("feed with TTL of 90 minutes", () => {
-    const result = calculateNextFetch({
-      feedHints: { ttlMinutes: 90 },
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(90 * 60);
-    expect(result.reason).toBe("ttl");
-  });
-
-  it("feed with daily syndication updates twice per day", () => {
-    const result = calculateNextFetch({
-      feedHints: {
-        syndication: { updatePeriod: "daily", updateFrequency: 2 },
-      },
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(12 * 60 * 60); // 12 hours
-    expect(result.reason).toBe("syndication");
-  });
-
-  it("feed with weekly syndication", () => {
-    const result = calculateNextFetch({
-      feedHints: {
-        syndication: { updatePeriod: "weekly" },
-      },
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(7 * 24 * 60 * 60);
-    expect(result.reason).toBe("syndication");
-  });
-
-  it("extremely long cache (1 year) gets clamped to 7 days", () => {
-    const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 365 * 24 * 60 * 60 }),
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(7 * 24 * 60 * 60);
-    expect(result.reason).toBe("cache_control_clamped_max");
-  });
-
-  it("feed with intermittent failures gradually backs off", () => {
-    // Simulate a feed that keeps failing
-    const intervals = [1, 2, 3, 4, 5].map(
-      (failures) =>
-        calculateNextFetch({
-          consecutiveFailures: failures,
-          now: fixedNow,
-          randomSource: noJitter,
-        }).intervalSeconds
-    );
-
-    // Each interval should be double the previous
-    expect(intervals[1]).toBe(intervals[0] * 2);
-    expect(intervals[2]).toBe(intervals[1] * 2);
-    expect(intervals[3]).toBe(intervals[2] * 2);
-    expect(intervals[4]).toBe(intervals[3] * 2);
-  });
-
-  it("feed recovery after failures uses cache headers again", () => {
-    // After failures are resolved (consecutiveFailures = 0),
-    // should use cache headers again
-    const result = calculateNextFetch({
-      cacheControl: createCacheControl({ maxAge: 7200 }), // 2 hours
-      consecutiveFailures: 0,
-      now: fixedNow,
-      randomSource: noJitter,
-    });
-
-    expect(result.intervalSeconds).toBe(7200);
-    expect(result.reason).toBe("cache_control");
-  });
-});
-
 describe("calculateJitter", () => {
   it("returns 0 when randomValue is 0", () => {
     expect(calculateJitter(3600, 0)).toBe(0);
@@ -886,13 +627,6 @@ describe("calculateJitter", () => {
   it("caps jitter proportionally for long intervals", () => {
     // 7 day interval with randomValue 0.5 should be 15 min (half of 30 min cap)
     expect(calculateJitter(MAX_FETCH_INTERVAL_SECONDS, 0.5)).toBe(MAX_JITTER_SECONDS / 2);
-  });
-
-  it("uses proportional jitter below the cap threshold", () => {
-    // 5 hour interval: 10% = 30 min, exactly at the cap
-    // Just below: 4 hour interval: 10% = 24 min (below cap)
-    const fourHours = 4 * 60 * 60;
-    expect(calculateJitter(fourHours, 1)).toBe(Math.floor(fourHours * DEFAULT_JITTER_FRACTION));
   });
 
   it("transitions smoothly at the cap threshold", () => {

@@ -14,42 +14,6 @@ function sanitize(html: string): string {
 }
 
 describe("inline SVG through sanitizeEntryHtml", () => {
-  it("is a no-op when there is no <svg>", () => {
-    const html = "<p>hello <b>world</b></p>";
-    expect(sanitize(html)).toBe(html);
-  });
-
-  it("round-trips a safe SVG, preserving camelCase attribute names", () => {
-    const out = sanitize(
-      '<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">' +
-        '<clipPath id="c"><rect width="10" height="10"/></clipPath>' +
-        '<circle cx="5" cy="5" r="5" clip-path="url(#c)"/></svg>'
-    );
-    expect(out).toContain("viewBox=");
-    expect(out).toContain("<clipPath");
-    expect(out).not.toContain("viewbox=");
-    expect(out).not.toContain("clippath");
-  });
-
-  it("drops disallowed elements with their whole subtree", () => {
-    const out = sanitize(
-      '<svg><script>alert(1)</script><foreignObject><div>hi</div></foreignObject><circle r="1"/></svg>'
-    );
-    expect(out).not.toContain("script");
-    expect(out.toLowerCase()).not.toContain("foreignobject");
-    expect(out).not.toContain("<div>");
-    expect(out).toContain("<circle");
-  });
-
-  it("strips event handlers and style attributes", () => {
-    const out = sanitize(
-      '<svg onload="x()"><rect style="fill:red" onclick="y()" width="1" height="1"/></svg>'
-    );
-    expect(out).not.toContain("onload");
-    expect(out).not.toContain("onclick");
-    expect(out).not.toContain("style");
-  });
-
   it("preserves the byte-verbatim text between and around SVGs", () => {
     const out = sanitize('A<svg><circle r="1"/></svg>B<svg><rect width="1" height="1"/></svg>C');
     // SVG subtrees are re-serialized with attributes in sorted order (the

@@ -11,10 +11,4 @@ describe("formatDate timeZone", () => {
     expect(formatDate(instant, "America/Los_Angeles")).toBe("Friday, July 17, 2026 at 5:55 PM");
     expect(formatDate(instant, "UTC")).toBe("Saturday, July 18, 2026 at 12:55 AM");
   });
-
-  it("is stable for the same zone (server and client would match)", () => {
-    expect(formatDate(instant, "America/Los_Angeles")).toBe(
-      formatDate(instant, "America/Los_Angeles")
-    );
-  });
 });
