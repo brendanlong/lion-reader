@@ -370,8 +370,10 @@ describe("summarization.generate concurrent requests", () => {
       callers.map((caller) => caller.summarization.generate({ entryId }))
     );
 
+    // The second request may start after the first stored its summary, and
+    // then serves it from the cache.
+    expect(results.some((result) => !result.cached)).toBe(true);
     for (const result of results) {
-      expect(result.cached).toBe(false);
       expect(result.summary).toContain("Concurrent summary");
     }
     const rows = await db.select().from(entrySummaries).where(eq(entrySummaries.userId, userId));
