@@ -32,7 +32,7 @@ interface TagListProps {
     customTitle: string | null;
     tagIds: string[];
   }) => void;
-  onUnsubscribe: (sub: { id: string; title: string }) => void;
+  onUnsubscribe: (sub: { id: string; title: string; isCollection: boolean }) => void;
   /** When true, only show tags/subscriptions with unread entries */
   unreadOnly: boolean;
   /** Called on mousedown with the link href (e.g., to prefetch data) */

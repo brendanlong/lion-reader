@@ -111,6 +111,27 @@ describe("demo reader tree", () => {
     });
   });
 
+  it("adds the open article to a new collection and takes it out again", async () => {
+    mockSearch = "entry=welcome";
+    const { callsFor } = renderDemo();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add to Collection" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New collection"), {
+      target: { value: "Research" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+
+    const research = await within(dialog).findByRole("checkbox", { name: "Research" });
+    await vi.waitFor(() => expect(research).toHaveAttribute("aria-checked", "true"));
+    expect(callsFor("collections.addEntries")[0].input).toMatchObject({ entryIds: ["welcome"] });
+    expect(screen.getByRole("button", { name: "Collections (1)" })).toBeVisible();
+
+    fireEvent.click(research);
+    await vi.waitFor(() => expect(research).toHaveAttribute("aria-checked", "false"));
+    expect(screen.getByRole("button", { name: "Add to Collection" })).toBeVisible();
+  });
+
   it("shows the canned summary through the real summarize flow", async () => {
     mockSearch = "entry=welcome";
     renderDemo();

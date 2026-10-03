@@ -262,12 +262,20 @@ function UnifiedEntriesContentInner() {
         markAllReadDescription: tag?.name ? `the "${tag.name}" tag` : "this tag",
       };
     }
+    if (subscriptionQuery.data?.type === "collection") {
+      return {
+        emptyMessageUnread: "No unread articles in this collection. Toggle to show all items.",
+        emptyMessageAll:
+          'Nothing in this collection yet. Open any article and use "Add to Collection".',
+        markAllReadDescription: "this collection",
+      };
+    }
     return {
       emptyMessageUnread: routeInfo.emptyMessageUnread,
       emptyMessageAll: routeInfo.emptyMessageAll,
       markAllReadDescription: routeInfo.markAllReadDescription,
     };
-  }, [routeInfo, tagsQuery.data]);
+  }, [routeInfo, tagsQuery.data, subscriptionQuery.data?.type]);
 
   // Mark-all-read acts on the current view, so it reuses the route's query
   // filters. `sortBy` only orders the list, so it isn't one of them.

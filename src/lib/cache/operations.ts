@@ -17,6 +17,8 @@ import {
   removeSubscriptionFromCache,
   findCachedSubscription,
 } from "./count-cache";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { insertIntoCollectionLists, removeFromCollectionLists } from "@/lib/local-db/entry-lists";
 
 /**
  * Subscription data for adding to cache.
@@ -228,8 +230,45 @@ export function handleSubscriptionCreated(
     subscription.tags.map((t) => t.id),
     subscription.tags.length === 0
   );
+  if (subscription.type === "collection") {
+    void utils.subscriptions.list.invalidate({ type: "collection" });
+  }
 
   applySubscriptionCounts(utils, counts, queryClient);
+}
+
+/**
+ * Applies articles being added to or removed from a collection: the absolute
+ * counts, each article's cached `collections.listForEntry`, and the
+ * collection's loaded entry lists. Idempotent, so the acting tab can apply
+ * both its mutation response and the SSE event.
+ */
+export function applyCollectionEntriesChange(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  change: {
+    subscriptionId: string;
+    entryIds: string[];
+    added: boolean;
+    counts?: EntryRelatedCounts;
+  }
+): void {
+  const { subscriptionId, entryIds, added, counts } = change;
+  if (counts) setEntryRelatedCounts(utils, counts, queryClient);
+  const db = getLocalDb(queryClient);
+  for (const entryId of entryIds) {
+    utils.collections.listForEntry.setData({ entryId }, (old) => {
+      if (!old) return old;
+      const others = old.collectionIds.filter((id) => id !== subscriptionId);
+      return { collectionIds: added ? [...others, subscriptionId] : others };
+    });
+    if (added) {
+      const stored = db.entries.getSynced(entryId);
+      if (stored) insertIntoCollectionLists(db.lists, stored, subscriptionId);
+    } else {
+      removeFromCollectionLists(db.lists, entryId, subscriptionId);
+    }
+  }
 }
 
 /**

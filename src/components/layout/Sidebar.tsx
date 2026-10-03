@@ -36,6 +36,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [unsubscribeTarget, setUnsubscribeTarget] = useState<{
     id: string;
     title: string;
+    isCollection: boolean;
   } | null>(null);
   const [editTarget, setEditTarget] = useState<{
     id: string;
@@ -88,7 +89,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     setEditTarget(sub);
   };
 
-  const handleUnsubscribe = (sub: { id: string; title: string }) => {
+  const handleUnsubscribe = (sub: { id: string; title: string; isCollection: boolean }) => {
     setUnsubscribeTarget(sub);
   };
 
@@ -120,6 +121,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       <UnsubscribeDialog
         isOpen={unsubscribeTarget !== null}
         feedTitle={unsubscribeTarget?.title ?? ""}
+        isCollection={unsubscribeTarget?.isCollection ?? false}
         isLoading={unsubscribeMutation.isPending}
         onConfirm={() => {
           if (unsubscribeTarget) {

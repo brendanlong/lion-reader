@@ -11,12 +11,27 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 interface UnsubscribeDialogProps {
   isOpen: boolean;
   feedTitle: string;
+  /** Collections are deleted rather than unsubscribed from; their articles stay put. */
+  isCollection?: boolean;
   isLoading: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-export function UnsubscribeDialog({ feedTitle, ...props }: UnsubscribeDialogProps) {
+export function UnsubscribeDialog({ feedTitle, isCollection, ...props }: UnsubscribeDialogProps) {
+  if (isCollection) {
+    return (
+      <ConfirmDialog
+        title="Delete collection?"
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        {...props}
+      >
+        Delete <span className="text-body font-medium">{feedTitle}</span>? Its articles stay in
+        their feeds and in Saved; only the collection is removed.
+      </ConfirmDialog>
+    );
+  }
   return (
     <ConfirmDialog
       title="Unsubscribe from feed?"

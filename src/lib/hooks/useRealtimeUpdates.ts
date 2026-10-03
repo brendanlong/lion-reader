@@ -81,6 +81,7 @@ const SSE_EVENT_NAMES = [
   "tag_created",
   "tag_updated",
   "tag_deleted",
+  "collection_entries_changed",
   "import_progress",
   "import_completed",
   "announcement_changed",

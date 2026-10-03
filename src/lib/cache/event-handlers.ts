@@ -9,6 +9,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
+  applyCollectionEntriesChange,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   setEntryRelatedCounts,
@@ -224,6 +225,10 @@ export function handleSyncEvent(
       // the case where a delete for a never-cached subscription (common with
       // tags collapsed) left inflated counts and stale entries (#1081).
       handleSubscriptionDeleted(utils, event.subscriptionId, queryClient, event.counts);
+      break;
+
+    case "collection_entries_changed":
+      applyCollectionEntriesChange(utils, queryClient, event);
       break;
 
     case "tag_created":
