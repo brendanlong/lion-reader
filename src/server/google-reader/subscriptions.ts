@@ -189,7 +189,7 @@ export async function getGreaderUnreadCounts(
   db: typeof dbType,
   userId: string
 ): Promise<{
-  subscriptions: Array<{ streamId: string; unreadCount: number }>;
+  subscriptions: Array<{ streamId: string; unreadCount: number; isCollection: boolean }>;
   newestItemAtByStreamId: Map<string, Date>;
 }> {
   // Key both arms by the Google Reader feed stream id — the subscription's
@@ -197,8 +197,11 @@ export async function getGreaderUnreadCounts(
   // formatUnreadCounts, which emits `feed/{streamId}`. Postgres returns bigint
   // (int8) as a decimal string, which is exactly what the wire id needs.
   const result = await db.execute(sql`
-    SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread, latest.newest AS newest
+    SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread,
+           COALESCE(latest.newest, latest_member.newest) AS newest,
+           f.type = 'collection' AS is_collection
     FROM subscriptions s
+    JOIN feeds f ON f.id = s.feed_id
     LEFT JOIN LATERAL (
       SELECT ue.published_or_fetched_at AS newest
       FROM user_entries ue
@@ -206,12 +209,19 @@ export async function getGreaderUnreadCounts(
       ORDER BY ue.published_or_fetched_at DESC, ue.entry_id DESC
       LIMIT 1
     ) latest ON true
+    LEFT JOIN LATERAL (
+      SELECT max(ue.published_or_fetched_at) AS newest
+      FROM collection_entries ce
+      JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
+      WHERE ce.subscription_id = s.id
+    ) latest_member ON true
     WHERE s.user_id = ${userId}::uuid
       AND s.unsubscribed_at IS NULL
 
     UNION ALL
 
-    SELECT f.greader_stream_id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest
+    SELECT f.greader_stream_id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest,
+           false AS is_collection
     FROM feeds f
     JOIN users u ON u.id = f.user_id
     LEFT JOIN LATERAL (
@@ -225,14 +235,19 @@ export async function getGreaderUnreadCounts(
     WHERE f.type = 'saved' AND f.user_id = ${userId}::uuid
   `);
 
-  const subscriptions: Array<{ streamId: string; unreadCount: number }> = [];
+  const subscriptions: Array<{ streamId: string; unreadCount: number; isCollection: boolean }> = [];
   const newestItemAtByStreamId = new Map<string, Date>();
   for (const row of result.rows as Array<{
     stream_id: string;
     unread: number;
     newest: Date | null;
+    is_collection: boolean;
   }>) {
-    subscriptions.push({ streamId: row.stream_id, unreadCount: row.unread });
+    subscriptions.push({
+      streamId: row.stream_id,
+      unreadCount: row.unread,
+      isCollection: row.is_collection,
+    });
     if (row.newest) newestItemAtByStreamId.set(row.stream_id, new Date(row.newest));
   }
 

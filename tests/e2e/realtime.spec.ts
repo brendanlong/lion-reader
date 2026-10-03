@@ -461,7 +461,7 @@ test("entry_state_changed for the last unread entry clears subscription and tag 
     updatedAt = await markEntryRead(db, user.id, entry.id);
   }
   const counts = await getBulkEntryRelatedCounts(db, user.id, [
-    { subscriptionId: taggedFeed.subscriptionId, type: "web" },
+    { subscriptionId: taggedFeed.subscriptionId },
   ]);
   const lastEntry = taggedEntries[taggedEntries.length - 1];
   await publishEntryStateChanged(user.id, lastEntry.id, true, false, updatedAt, counts);

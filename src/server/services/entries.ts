@@ -33,6 +33,7 @@ import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry
 import {
   buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
+  buildEntriesInSubscriptionsCondition,
   buildTaggedSubscriptionIdsSubquery,
   buildUncategorizedSubscriptionIdsSubquery,
 } from "./entry-filters";
@@ -1211,10 +1212,12 @@ export async function markAllEntriesRead(
   // inside the statement, so a foreign or unsubscribed subscription id matches
   // nothing. (The user_feeds view is display-only — scoping checks query the
   // subscriptions table directly.)
+  const columns = { entryId: userEntries.entryId, subscriptionId: userEntries.subscriptionId };
   if (params.subscriptionId) {
     conditions.push(
-      inArray(
-        userEntries.subscriptionId,
+      await buildEntriesInSubscriptionsCondition(
+        db,
+        params.userId,
         db
           .select({ id: subscriptions.id })
           .from(subscriptions)
@@ -1224,7 +1227,8 @@ export async function markAllEntriesRead(
               eq(subscriptions.userId, params.userId),
               isNull(subscriptions.unsubscribedAt)
             )
-          )
+          ),
+        columns
       )
     );
   }
@@ -1232,9 +1236,11 @@ export async function markAllEntriesRead(
   // Filter by tag (ownership enforced by the shared subquery's tags.userId join)
   if (params.tagId) {
     conditions.push(
-      inArray(
-        userEntries.subscriptionId,
-        buildTaggedSubscriptionIdsSubquery(db, params.tagId, params.userId)
+      await buildEntriesInSubscriptionsCondition(
+        db,
+        params.userId,
+        buildTaggedSubscriptionIdsSubquery(db, params.tagId, params.userId),
+        columns
       )
     );
   }
@@ -1243,9 +1249,11 @@ export async function markAllEntriesRead(
   // stays in sync with buildEntrySubscriptionFilter (listEntries/countEntries).
   if (params.uncategorized) {
     conditions.push(
-      inArray(
-        userEntries.subscriptionId,
-        buildUncategorizedSubscriptionIdsSubquery(db, params.userId)
+      await buildEntriesInSubscriptionsCondition(
+        db,
+        params.userId,
+        buildUncategorizedSubscriptionIdsSubquery(db, params.userId),
+        columns
       )
     );
   }

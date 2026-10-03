@@ -99,9 +99,7 @@ describe("Entry counts service", () => {
       const userId = await createTestUser();
       const { subId2 } = await createOverlappingSubscriptions(userId);
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: subId2, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId2 }]);
 
       expect(counts.all).toEqual({ unread: 2 });
     });
@@ -130,9 +128,7 @@ describe("Entry counts service", () => {
       });
       await createTestEntry(goneFeedId, { userIds: [userId] });
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: activeSubId, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: activeSubId }]);
 
       expect(counts.all).toEqual({ unread: 1 });
     });
@@ -161,9 +157,7 @@ describe("Entry counts service", () => {
         starred: true,
       });
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: goneSubId, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: goneSubId }]);
 
       expect(counts.all).toEqual({ unread: 1 });
       expect(counts.starred).toEqual({ unread: 1 });
@@ -181,9 +175,7 @@ describe("Entry counts service", () => {
       await createTestEntry(feedId, { userIds: [userId, otherUserId] });
       await createTestEntry(feedId, { userIds: [otherUserId] });
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: subId, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId }]);
 
       expect(counts.tags).toEqual([{ id: tagId, unread: 1 }]);
     });
@@ -198,9 +190,7 @@ describe("Entry counts service", () => {
         subscriptionIds: [subId1, subId2],
       });
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: subId1, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId1 }]);
 
       expect(counts.tags).toEqual([{ id: tagId, unread: 2 }]);
     });
@@ -209,9 +199,7 @@ describe("Entry counts service", () => {
       const userId = await createTestUser();
       const { subId1 } = await createOverlappingSubscriptions(userId);
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: subId1, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId1 }]);
 
       expect(counts.tags).toEqual([]);
       expect(counts.uncategorized).toEqual({ unread: 2 });
@@ -230,9 +218,7 @@ describe("Entry counts service", () => {
       const entryId = await createTestEntry(feedId, { userIds: [userId] });
       await markEntryRead(userId, entryId);
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: subId, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId }]);
 
       expect(counts.all).toEqual({ unread: 0 });
       expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
@@ -255,9 +241,7 @@ describe("Entry counts service", () => {
       await createTestEntry(feedIdB, { userIds: [userId] });
       await markEntryRead(userId, entryIdA);
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: subIdA, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subIdA }]);
 
       expect(counts.all).toEqual({ unread: 1 });
       expect(counts.subscriptions).toEqual([{ id: subIdA, unread: 0 }]);
@@ -271,9 +255,7 @@ describe("Entry counts service", () => {
       const entryId = await createTestEntry(feedId, { userIds: [userId] });
       await markEntryRead(userId, entryId);
 
-      const counts = await getBulkEntryRelatedCounts(db, userId, [
-        { subscriptionId: subId, type: "web" },
-      ]);
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId }]);
 
       expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
       expect(counts.tags).toEqual([]);

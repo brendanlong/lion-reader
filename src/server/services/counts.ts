@@ -16,20 +16,35 @@
  *   uncategorized = SUM(unread_count) over ACTIVE untagged subscriptions
  *   saved         = u.saved_unread_count
  *   starred       = u.starred_unread_count
- *   all           = SUM(unread_count)         over ACTIVE subscriptions
+ *   all           = SUM(unread_count)         over ACTIVE non-collection subscriptions
  *                 + u.saved_unread_count
  *                 + SUM(starred_unread_count) over INACTIVE subscriptions
+ *                 + collection orphans
  *
- * The last term of `all` is the starred-orphans correction: starred entries
+ * The third term of `all` is the starred-orphans correction: starred entries
  * of unsubscribed subscriptions stay visible, and their (still trigger-
  * maintained) counters live on the dead subscription rows. Deriving the term
  * from `unsubscribed_at` at read time means unsubscribe/resubscribe/merge
  * need zero counter writes.
+ *
+ * Collections (#1806) are subscriptions whose counters count their members,
+ * which already count toward their source, so `all` skips them. Members whose
+ * source is unsubscribed (and that aren't starred, which the previous term
+ * covers) stay visible through the collection: the last term counts them,
+ * scanning only the user's collection memberships. A tag holding both an
+ * article's feed and a collection with that article counts it twice; deduping
+ * would need an entry scan per badge.
  */
 
 import { eq, and, sql, inArray, isNull } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
-import { subscriptionTags, subscriptions, users } from "@/server/db/schema";
+import {
+  collectionEntries,
+  feeds,
+  subscriptionTags,
+  subscriptions,
+  users,
+} from "@/server/db/schema";
 
 // ============================================================================
 // Types
@@ -60,15 +75,27 @@ export async function getGlobalUnreadCounts(
   const result = await db
     .select({
       allUnread: sql<number>`(
-        COALESCE(sum(${subscriptions.unreadCount}) FILTER (WHERE ${subscriptions.unsubscribedAt} IS NULL), 0)
+        COALESCE(sum(${subscriptions.unreadCount}) FILTER (
+          WHERE ${subscriptions.unsubscribedAt} IS NULL AND ${feeds.type} <> 'collection'
+        ), 0)
         + ${users.savedUnreadCount}
         + COALESCE(sum(${subscriptions.starredUnreadCount}) FILTER (WHERE ${subscriptions.unsubscribedAt} IS NOT NULL), 0)
+        + (
+          SELECT count(DISTINCT ce.entry_id)
+          FROM ${collectionEntries} ce
+          JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
+          JOIN subscriptions src ON src.id = ue.subscription_id
+          WHERE ce.user_id = ${users.id}
+            AND src.unsubscribed_at IS NOT NULL
+            AND NOT ue.read AND NOT ue.is_spam AND NOT ue.starred
+        )
       )::int`,
       starredUnread: users.starredUnreadCount,
       savedUnread: users.savedUnreadCount,
     })
     .from(users)
     .leftJoin(subscriptions, eq(subscriptions.userId, users.id))
+    .leftJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(eq(users.id, userId))
     .groupBy(users.id, users.savedUnreadCount, users.starredUnreadCount);
   return result[0] ?? { allUnread: 0, starredUnread: 0, savedUnread: 0 };
@@ -164,18 +191,38 @@ export interface BulkUnreadCounts {
  *
  * @param db - Database instance
  * @param userId - User ID
- * @param entries - Entries with their context (subscriptionId, type)
+ * @param entries - Each entry's source subscription, plus its id when it may
+ *   already be in collections (whose counts are then included too)
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
   db: DbOrTx,
   userId: string,
-  entries: Array<{ subscriptionId: string | null; type: "web" | "email" | "saved" }>
+  entries: Array<{ id?: string; subscriptionId: string | null }>
 ): Promise<BulkUnreadCounts> {
+  const entryIds = entries.map((e) => e.id).filter((id) => id !== undefined);
+  const collectionIds =
+    entryIds.length > 0
+      ? (
+          await db
+            .selectDistinct({ id: collectionEntries.subscriptionId })
+            .from(collectionEntries)
+            .where(
+              and(
+                eq(collectionEntries.userId, userId),
+                inArray(collectionEntries.entryId, entryIds)
+              )
+            )
+        ).map((row) => row.id)
+      : [];
+
   // Collect unique subscription IDs (excluding null for saved articles)
   const subscriptionIds = [
-    ...new Set(entries.map((e) => e.subscriptionId).filter((id) => id !== null)),
-  ] as string[];
+    ...new Set([
+      ...entries.map((e) => e.subscriptionId).filter((id) => id !== null),
+      ...collectionIds,
+    ]),
+  ];
 
   // The global counter arithmetic runs alongside the subscription counter and
   // tag lookups; the latter are skipped when only saved entries are affected.

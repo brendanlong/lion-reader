@@ -12,7 +12,8 @@ CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
 CREATE TYPE public.feed_type AS ENUM (
     'web',
     'email',
-    'saved'
+    'saved',
+    'collection'
 );
 
 CREATE TYPE public.websub_state AS ENUM (
@@ -20,6 +21,63 @@ CREATE TYPE public.websub_state AS ENUM (
     'active',
     'unsubscribed'
 );
+
+CREATE FUNCTION public.collection_entries_counters_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count - d.u,
+      starred_unread_count = s.starred_unread_count - d.su
+  FROM (
+    SELECT o.subscription_id,
+           count(*) FILTER (WHERE NOT ue.read AND NOT ue.is_spam)::int AS u,
+           count(*) FILTER (WHERE ue.starred AND NOT ue.read AND NOT ue.is_spam)::int AS su
+    FROM old_rows o
+    JOIN user_entries ue ON ue.user_id = o.user_id AND ue.entry_id = o.entry_id
+    GROUP BY o.subscription_id
+  ) d
+  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.collection_entries_counters_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count + d.u,
+      starred_unread_count = s.starred_unread_count + d.su
+  FROM (
+    SELECT n.subscription_id,
+           count(*) FILTER (WHERE NOT ue.read AND NOT ue.is_spam)::int AS u,
+           count(*) FILTER (WHERE ue.starred AND NOT ue.read AND NOT ue.is_spam)::int AS su
+    FROM new_rows n
+    JOIN user_entries ue ON ue.user_id = n.user_id AND ue.entry_id = n.entry_id
+    GROUP BY n.subscription_id
+  ) d
+  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.subscriptions_empty_unsubscribed_collection() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  WITH removed AS (
+    DELETE FROM collection_entries ce
+    WHERE ce.subscription_id = NEW.id
+    RETURNING ce.user_id, ce.entry_id
+  )
+  UPDATE user_entries ue
+  SET updated_at = now()
+  FROM removed r
+  WHERE ue.user_id = r.user_id AND ue.entry_id = r.entry_id;
+  RETURN NULL;
+END;
+$$;
 
 CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql
@@ -49,6 +107,23 @@ BEGIN
     GROUP BY user_id
   ) d
   WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count - d.u,
+      starred_unread_count = s.starred_unread_count - d.su
+  FROM (
+    SELECT ce.subscription_id,
+           count(*) FILTER (WHERE NOT o.read AND NOT o.is_spam)::int AS u,
+           count(*) FILTER (WHERE o.starred AND NOT o.read AND NOT o.is_spam)::int AS su
+    FROM old_rows o
+    JOIN collection_entries ce ON ce.user_id = o.user_id AND ce.entry_id = o.entry_id
+    GROUP BY ce.subscription_id
+  ) d
+  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+
+  DELETE FROM collection_entries ce
+  USING old_rows o
+  WHERE ce.user_id = o.user_id AND ce.entry_id = o.entry_id;
   RETURN NULL;
 END;
 $$;
@@ -81,6 +156,19 @@ BEGIN
     GROUP BY user_id
   ) d
   WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count + d.u,
+      starred_unread_count = s.starred_unread_count + d.su
+  FROM (
+    SELECT ce.subscription_id,
+           count(*) FILTER (WHERE NOT n.read AND NOT n.is_spam)::int AS u,
+           count(*) FILTER (WHERE n.starred AND NOT n.read AND NOT n.is_spam)::int AS su
+    FROM new_rows n
+    JOIN collection_entries ce ON ce.user_id = n.user_id AND ce.entry_id = n.entry_id
+    GROUP BY ce.subscription_id
+  ) d
+  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
   RETURN NULL;
 END;
 $$;
@@ -132,6 +220,28 @@ BEGIN
     HAVING sum(sv) <> 0 OR sum(st) <> 0
   ) d
   WHERE usr.id = d.user_id;
+
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count + d.u,
+      starred_unread_count = s.starred_unread_count + d.su
+  FROM (
+    SELECT ce.subscription_id, sum(x.u)::int AS u, sum(x.su)::int AS su
+    FROM (
+      SELECT user_id, entry_id,
+             (NOT read AND NOT is_spam)::int AS u,
+             (starred AND NOT read AND NOT is_spam)::int AS su
+      FROM new_rows
+      UNION ALL
+      SELECT user_id, entry_id,
+             -((NOT read AND NOT is_spam)::int),
+             -((starred AND NOT read AND NOT is_spam)::int)
+      FROM old_rows
+    ) x
+    JOIN collection_entries ce ON ce.user_id = x.user_id AND ce.entry_id = x.entry_id
+    GROUP BY ce.subscription_id
+    HAVING sum(x.u) <> 0 OR sum(x.su) <> 0
+  ) d
+  WHERE s.id = d.subscription_id;
   RETURN NULL;
 END;
 $$;
@@ -182,6 +292,13 @@ CREATE TABLE public.blocked_senders (
     blocked_at timestamp with time zone DEFAULT now() NOT NULL,
     list_unsubscribe_mailto text,
     unsubscribe_sent_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.collection_entries (
+    subscription_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    entry_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -304,7 +421,7 @@ CREATE TABLE public.feeds (
     ttl_minutes integer,
     syndication_update_period text,
     syndication_update_frequency integer,
-    CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL)))
+    CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type, 'collection'::public.feed_type])) = (user_id IS NOT NULL)))
 );
 
 CREATE TABLE public.ingest_addresses (
@@ -597,7 +714,9 @@ CREATE VIEW public.visible_entries AS
    FROM ((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON ((s.id = ue.subscription_id)))
-  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::public.feed_type));
+  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::public.feed_type) OR (EXISTS ( SELECT 1
+           FROM public.collection_entries ce
+          WHERE ((ce.user_id = ue.user_id) AND (ce.entry_id = ue.entry_id)))));
 
 CREATE TABLE public.websub_hub_stats (
     hub_url text NOT NULL,
@@ -635,11 +754,17 @@ ALTER TABLE ONLY public.api_tokens
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.collection_entries
+    ADD CONSTRAINT collection_entries_pkey PRIMARY KEY (subscription_id, entry_id);
+
 ALTER TABLE ONLY public.discord_api_token_links
     ADD CONSTRAINT discord_api_token_links_pkey PRIMARY KEY (discord_id);
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
+
+ALTER TABLE public.entries
+    ADD CONSTRAINT entries_type_not_collection CHECK ((type <> 'collection'::public.feed_type)) NOT VALID;
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
@@ -768,6 +893,8 @@ CREATE INDEX idx_api_tokens_user ON public.api_tokens USING btree (user_id);
 
 CREATE INDEX idx_blocked_senders_user ON public.blocked_senders USING btree (user_id);
 
+CREATE INDEX idx_collection_entries_user_entry ON public.collection_entries USING btree (user_id, entry_id);
+
 CREATE INDEX idx_discord_api_token_links_token ON public.discord_api_token_links USING btree (token_id);
 
 CREATE INDEX idx_entries_feed ON public.entries USING btree (feed_id, id);
@@ -886,7 +1013,15 @@ CREATE UNIQUE INDEX uq_entries_feed_guid_canonical ON public.entries USING btree
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 
+CREATE UNIQUE INDEX uq_subscriptions_id_user ON public.subscriptions USING btree (id, user_id);
+
 CREATE UNIQUE INDEX uq_tags_user_name ON public.tags USING btree (user_id, name) WHERE (deleted_at IS NULL);
+
+CREATE TRIGGER collection_entries_counters_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_counters_delete();
+
+CREATE TRIGGER collection_entries_counters_insert_trigger AFTER INSERT ON public.collection_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_counters_insert();
+
+CREATE TRIGGER subscriptions_empty_unsubscribed_collection_trigger AFTER UPDATE OF unsubscribed_at ON public.subscriptions FOR EACH ROW WHEN (((old.unsubscribed_at IS NULL) AND (new.unsubscribed_at IS NOT NULL))) EXECUTE FUNCTION public.subscriptions_empty_unsubscribed_collection();
 
 CREATE TRIGGER user_entries_counters_delete_trigger AFTER DELETE ON public.user_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_delete();
 
@@ -901,6 +1036,15 @@ ALTER TABLE ONLY public.api_tokens
 
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.collection_entries
+    ADD CONSTRAINT collection_entries_subscription_id_user_id_fkey FOREIGN KEY (subscription_id, user_id) REFERENCES public.subscriptions(id, user_id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.collection_entries
+    ADD CONSTRAINT collection_entries_user_id_entry_id_fkey FOREIGN KEY (user_id, entry_id) REFERENCES public.user_entries(user_id, entry_id) DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.collection_entries
+    ADD CONSTRAINT collection_entries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.discord_api_token_links
     ADD CONSTRAINT discord_api_token_links_token_id_fkey FOREIGN KEY (token_id) REFERENCES public.api_tokens(id) ON DELETE CASCADE;

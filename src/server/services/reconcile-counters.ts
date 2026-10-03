@@ -17,7 +17,8 @@
  * narrow race, make the written value miss that change's trigger delta — the
  * next sweep corrects it, and at this write rate the window is negligible.
  * "Ground truth" mirrors the trigger contribution exactly: unread, non-spam
- * rows; starred subset; NULL subscription_id = saved.
+ * rows; starred subset; NULL subscription_id = saved; a collection's
+ * subscription counts its members (collection_entries, migration 0120).
  */
 
 import { sql } from "drizzle-orm";
@@ -39,8 +40,16 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
       SELECT subscription_id,
              count(*)::int AS u,
              count(*) FILTER (WHERE starred)::int AS su
-      FROM user_entries
-      WHERE subscription_id IS NOT NULL AND NOT read AND NOT is_spam
+      FROM (
+        SELECT subscription_id, starred
+        FROM user_entries
+        WHERE subscription_id IS NOT NULL AND NOT read AND NOT is_spam
+        UNION ALL
+        SELECT ce.subscription_id, ue.starred
+        FROM collection_entries ce
+        JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
+        WHERE NOT ue.read AND NOT ue.is_spam
+      ) contributions
       GROUP BY subscription_id
     ) t ON t.subscription_id = s2.id
     WHERE s.id = s2.id

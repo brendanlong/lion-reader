@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   customType,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -49,7 +50,12 @@ const tsvector = customType<{ data: string }>({
 // ENUMS
 // ============================================================================
 
-const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved"]);
+const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved", "collection"]);
+
+export type FeedType = (typeof feedTypeEnum.enumValues)[number];
+
+/** Collections never hold entries of their own, so an entry's type excludes it. */
+export type EntryType = Exclude<FeedType, "collection">;
 
 const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
 
@@ -495,8 +501,11 @@ export const feeds = pgTable(
   (table) => [
     index("idx_feeds_next_fetch").on(table.nextFetchAt),
     uniqueIndex("idx_feeds_greader_stream_id").on(table.greaderStreamId),
-    // Email and saved feeds require user_id, other feeds must not have it
-    check("feed_type_user_id", sql`(type IN ('email', 'saved')) = (user_id IS NOT NULL)`),
+    // Per-user feeds require user_id, shared web feeds must not have it
+    check(
+      "feed_type_user_id",
+      sql`(type IN ('email', 'saved', 'collection')) = (user_id IS NOT NULL)`
+    ),
     // Unique constraint for email feeds: one feed per (user, sender)
     unique("uq_feeds_email_user_sender").on(table.userId, table.emailSenderPattern),
     // Unique constraint for saved feeds: one saved feed per user (partial index)
@@ -519,7 +528,7 @@ export const entries = pgTable(
     feedId: uuid("feed_id")
       .notNull()
       .references(() => feeds.id, { onDelete: "cascade" }),
-    type: feedTypeEnum("type").notNull(), // Denormalized from feed for type-specific constraints and queries
+    type: feedTypeEnum("type").$type<EntryType>().notNull(), // Denormalized from feed for type-specific constraints and queries
 
     // Identifier from source - meaning varies by type:
     // - web: <guid> or <id> from feed
@@ -745,6 +754,37 @@ export const subscriptions = pgTable(
     unique("uq_subscriptions_user_feed").on(table.userId, table.feedId),
     index("idx_subscriptions_feed").on(table.feedId),
     uniqueIndex("idx_subscriptions_greader_stream_id").on(table.greaderStreamId),
+    uniqueIndex("uq_subscriptions_id_user").on(table.id, table.userId),
+  ]
+);
+
+/**
+ * Articles in a collection (#1806). A collection is a subscription to a
+ * per-user feed of type 'collection'; its members are articles from other
+ * feeds, referenced rather than copied, so read/star state stays shared.
+ * Trigger-maintained counters on the collection's subscription row count its
+ * unread members. (user_id, entry_id) references user_entries through a
+ * deferred foreign key; the user_entries delete trigger removes memberships
+ * (migration 0120 says why).
+ */
+export const collectionEntries = pgTable(
+  "collection_entries",
+  {
+    subscriptionId: uuid("subscription_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    entryId: uuid("entry_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.subscriptionId, table.entryId] }),
+    // Scopes every membership to its collection's owner.
+    foreignKey({
+      columns: [table.subscriptionId, table.userId],
+      foreignColumns: [subscriptions.id, subscriptions.userId],
+    }).onDelete("cascade"),
+    index("idx_collection_entries_user_entry").on(table.userId, table.entryId),
   ]
 );
 
@@ -896,7 +936,8 @@ export const userFeeds = pgView("user_feeds", {
  * An entry is visible if:
  * 1. User has a user_entries row for it, AND
  * 2. Either the entry is from an active subscription, OR the entry is starred,
- *    OR it is a saved article (saved feeds have no subscription rows)
+ *    OR it is a saved article (saved feeds have no subscription rows), OR it is
+ *    in one of the user's collections
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
  * (most recently redefined in 0090_drop_entry_scoring_columns.sql).
@@ -906,7 +947,7 @@ export const visibleEntries = pgView("visible_entries", {
   userId: uuid("user_id").notNull(),
   id: uuid("id").notNull(),
   feedId: uuid("feed_id").notNull(),
-  type: feedTypeEnum("type").notNull(),
+  type: feedTypeEnum("type").$type<EntryType>().notNull(),
   guid: text("guid").notNull(),
   url: text("url"),
   title: text("title"),

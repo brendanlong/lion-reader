@@ -227,7 +227,9 @@ interface GoogleReaderUnreadCount {
  * original bug from deriving this field off the saved feed's epoch `subscribedAt`.
  */
 export function formatUnreadCounts(
-  subscriptions: Array<{ streamId: string; unreadCount: number }>,
+  // Collections' members already count toward their sources, so they're left
+  // out of the reading-list total.
+  subscriptions: Array<{ streamId: string; unreadCount: number; isCollection?: boolean }>,
   newestItemAtByStreamId: Map<string, Date>
 ): {
   max: number;
@@ -247,7 +249,7 @@ export function formatUnreadCounts(
         count: sub.unreadCount,
         newestItemTimestampUsec: toUsec(newestMs),
       });
-      totalUnread += sub.unreadCount;
+      if (!sub.isCollection) totalUnread += sub.unreadCount;
       newestOverallMs = Math.max(newestOverallMs, newestMs);
     }
   }

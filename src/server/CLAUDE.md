@@ -21,7 +21,7 @@ The announcement banner and maintenance mode live in **Redis, not Postgres**, be
 
 ## Entry Visibility
 
-An entry is visible iff a `user_entries` row exists for `(user, entry)` and the entry is from an active subscription, starred, or a saved article. The saved-article arm gates on entry **type**, never on `subscription_id IS NULL`, so the view fails closed.
+An entry is visible iff a `user_entries` row exists for `(user, entry)` and the entry is from an active subscription, starred, a saved article, or in one of the user's collections. The saved-article arm gates on entry **type**, never on `subscription_id IS NULL`, so the view fails closed. `sync.ts` (`visibleEntrySql`) repeats the predicate; change both together.
 
 **The insert paths, not the view, keep pre-subscription content private**, so any new path that creates `user_entries` rows must only cover entries currently in the feed:
 
@@ -32,11 +32,13 @@ Starring is itself a visibility arm, so **never read a star write back through `
 
 ## Subscription Attribution
 
-`user_entries.subscription_id` (NULL for saved/uploaded articles) is the **sole** entry→subscription link; `visible_entries` and every subscription/tag filter resolve through it. Bulk insert paths set it inline, a `BEFORE INSERT` trigger fills it (and `is_spam` and the timeline sort key) for everything else, and the feed-merge job re-stamps it. Don't reintroduce a junction table: the column exists to avoid the `DISTINCT` dedup a junction forces (#1117).
+`user_entries.subscription_id` (NULL for saved/uploaded articles) is the **sole** link from an entry to its source subscription; `visible_entries` and every subscription/tag filter resolve through it. Bulk insert paths set it inline, a `BEFORE INSERT` trigger fills it (and `is_spam` and the timeline sort key) for everything else, and the feed-merge job re-stamps it. Don't reintroduce a junction table for sources: the column exists to avoid the `DISTINCT` dedup a junction forces (#1117).
+
+A **collection** (#1806) is a subscription to a per-user feed of type `collection` that has no entries of its own; its members live in `collection_entries`. Filter "entries in these subscriptions" with `buildEntriesInSubscriptionsCondition` (`services/entry-filters.ts`), which adds the membership arm as an `EXISTS` (no row fan-out, so still no `DISTINCT`). Membership changes move `user_entries.updated_at`, so delta sync re-delivers the entry.
 
 ## Unread Counts
 
-Badges read four trigger-maintained counter columns (spam excluded); the algebra is in `services/counts.ts`. Only the generic filtered counts used by MCP/Wallabag still scan `visible_entries`. The daily `reconcile_counters` job repairs drift and logs each fix at error level — **a fix means a trigger bug to investigate.**
+Badges read four trigger-maintained counter columns (spam excluded); the algebra, including how collections count, is in `services/counts.ts`. A collection's subscription counters count its members, so they're kept by triggers on `collection_entries` as well as `user_entries`. Only the generic filtered counts used by MCP/Wallabag still scan `visible_entries`. The daily `reconcile_counters` job repairs drift and logs each fix at error level — **a fix means a trigger bug to investigate.**
 
 ## Row Written vs. Value Flipped
 

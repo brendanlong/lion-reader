@@ -17,6 +17,7 @@ import {
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { ENTRY_TOMBSTONE_RETENTION_MS } from "@/server/services/entry-tombstones";
 import {
+  collectionEntries,
   entries,
   feeds,
   subscriptions,
@@ -272,7 +273,8 @@ async function databaseNow(db: Database): Promise<Temporal.Instant> {
  * or saved (#1080).
  */
 function visibleEntrySql(): SQL {
-  return sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved')`;
+  return sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved'
+    OR EXISTS (SELECT 1 FROM ${collectionEntries} ce WHERE ce.user_id = ${userEntries.userId} AND ce.entry_id = ${userEntries.entryId}))`;
 }
 
 /** Per-entity-type cursors, as a client sends them back. */
@@ -504,7 +506,7 @@ async function collectSyncEvents(
         readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
         feedId: entries.feedId,
-        feedType: feeds.type,
+        feedType: entries.type,
         feedTitle: feeds.title,
         visible: sql<boolean>`${visibleEntrySql()}`,
         // Categorization booleans, computed in SQL at µs precision so a row
@@ -572,10 +574,7 @@ async function collectSyncEvents(
         ? await getBulkEntryRelatedCounts(
             db,
             userId,
-            newEntries.map((row) => ({
-              subscriptionId: row.subscriptionId,
-              type: row.feedType,
-            }))
+            newEntries.map((row) => ({ subscriptionId: row.subscriptionId }))
           )
         : undefined;
 
@@ -587,10 +586,7 @@ async function collectSyncEvents(
         ? await getBulkEntryRelatedCounts(
             db,
             userId,
-            stateChangedEntries.map((row) => ({
-              subscriptionId: row.subscriptionId,
-              type: row.feedType,
-            }))
+            stateChangedEntries.map((row) => ({ id: row.id, subscriptionId: row.subscriptionId }))
           )
         : undefined;
 
