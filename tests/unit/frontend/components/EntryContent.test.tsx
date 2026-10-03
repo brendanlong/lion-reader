@@ -160,13 +160,18 @@ describe("EntryContent", () => {
     await screen.findByRole("link", { name: "The Great Article" });
 
     act(() => {
-      patchServerEntryMetadata(getLocalDb(queryClient).entries, "entry-1", {
-        title: "Renamed Article",
-        author: "Jane Doe",
-        summary: null,
-        url: "https://example.com/article",
-        publishedAt: new Date("2024-06-15T10:00:00Z"),
-      });
+      patchServerEntryMetadata(
+        getLocalDb(queryClient).entries,
+        "entry-1",
+        {
+          title: "Renamed Article",
+          author: "Jane Doe",
+          summary: null,
+          url: "https://example.com/article",
+          publishedAt: new Date("2024-06-15T10:00:00Z"),
+        },
+        new Date("2024-06-15T12:00:00Z")
+      );
     });
 
     expect(await screen.findByRole("link", { name: "Renamed Article" })).toBeInTheDocument();

@@ -18,7 +18,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
-import { setServerEntryState, type EntryRow } from "@/lib/local-db/entries";
+import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
 import { addSubscriptionToCache, _resetSubscriptionLookupMap } from "@/lib/cache/count-cache";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 
@@ -90,7 +90,7 @@ function renderLists(inputs: Record<string, ListInput>) {
   const insert = (entry: EntryRow) =>
     act(() => {
       const db = getLocalDb(rendered.queryClient);
-      db.entries.upsert([entry]);
+      upsertServerEntries(db.entries, [entry]);
       insertEntryIntoLists(db, rendered.queryClient, entry);
     });
   return { ...rendered, ids, insert };
@@ -144,7 +144,7 @@ describe("list ingestion", () => {
     act(() => {
       const db = getLocalDb(rendered.queryClient);
       const live = makeEntry("live", "2024-07-01");
-      db.entries.upsert([live]);
+      upsertServerEntries(db.entries, [live]);
       insertEntryIntoLists(db, rendered.queryClient, live);
     });
     await act(async () => {
@@ -217,7 +217,7 @@ describe("list ingestion", () => {
         act(() => {
           const db = getLocalDb(rendered.queryClient);
           const live = makeEntry("live", "2024-07-01");
-          db.entries.upsert([live]);
+          upsertServerEntries(db.entries, [live]);
           insertEntryIntoLists(db, rendered.queryClient, live);
         });
       const refetch = () => {

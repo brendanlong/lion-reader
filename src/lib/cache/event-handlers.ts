@@ -109,10 +109,15 @@ export function handleSyncEvent(
       break;
 
     case "entry_updated":
-      patchServerEntryMetadata(db.entries, event.entryId, {
-        ...event.metadata,
-        publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
-      });
+      patchServerEntryMetadata(
+        db.entries,
+        event.entryId,
+        {
+          ...event.metadata,
+          publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
+        },
+        new Date(event.updatedAt)
+      );
       break;
 
     case "entry_state_changed": {

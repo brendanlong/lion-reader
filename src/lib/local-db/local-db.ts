@@ -12,7 +12,13 @@
 
 import type { Query, QueryClient } from "@tanstack/react-query";
 import { BasicIndex } from "@tanstack/db";
-import { toEntryRow, upsertServerEntries, type EntryRow, type EntryStore } from "./entries";
+import {
+  toEntryRow,
+  upsertServerEntries,
+  type EntryRow,
+  type EntryStore,
+  type StoredEntryRow,
+} from "./entries";
 import {
   ingestEntryListPages,
   insertIntoMatchingLists,
@@ -41,7 +47,7 @@ function createLocalDb(): LocalDb {
   // Collection ids feed live-query identity hashes, so each store's must be
   // distinct from every other store's.
   const dbId = nextDbId++;
-  const entries = createSyncedCollection<EntryRow>({
+  const entries = createSyncedCollection<StoredEntryRow>({
     id: `entries-${dbId}`,
     getKey: (row) => row.id,
   });
