@@ -9,12 +9,13 @@
  * than testing `processEntries` in isolation.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
+import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
 import { handleFetchFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
@@ -27,8 +28,10 @@ interface FeedResponse {
 
 let server: Server;
 let baseUrl: string;
-/** Set per test; the server replays it for every request. */
+/** Set per test; the server replays it for every request not in `routes`. */
 let nextResponse: FeedResponse;
+/** Per-path overrides of `nextResponse`, e.g. a redirect from the feed URL. */
+let routes: Record<string, FeedResponse>;
 /** Headers of every request the server saw, in order. */
 let receivedHeaders: IncomingHttpHeaders[];
 /** Paths of the article pages (`/post/...`) the server was asked for. */
@@ -106,7 +109,7 @@ beforeAll(async () => {
       return;
     }
     receivedHeaders.push(req.headers);
-    const { status = 200, body = "", headers = {} } = nextResponse;
+    const { status = 200, body = "", headers = {} } = routes[req.url ?? ""] ?? nextResponse;
     res.writeHead(status, { "Content-Type": "application/rss+xml; charset=utf-8", ...headers });
     res.end(status === 304 ? undefined : body);
   });
@@ -123,6 +126,7 @@ beforeEach(async () => {
   receivedHeaders = [];
   articleRequests = [];
   nextResponse = { body: rss([]) };
+  routes = {};
 });
 
 afterAll(async () => {
@@ -483,6 +487,156 @@ describe("handleFetchFeed", () => {
 
       expect(second.metadata).not.toHaveProperty("bodyUnchanged");
       expect(second.metadata).toMatchObject({ newEntries: 0, unchangedEntries: 1 });
+    });
+  });
+
+  describe("permanent redirects", () => {
+    // The feed URL 301s to /moved.xml, which serves the feed.
+    const movedTo = () => `${baseUrl}/moved.xml`;
+    const redirectFeedUrl = (status = 301) => {
+      routes["/feed.xml"] = { status, headers: { Location: "/moved.xml" } };
+    };
+    // Freezes only `Date`, so the handler's clock is pinnable while timers, the
+    // HTTP server and Postgres run normally.
+    const NOW = new Date("2026-06-01T12:00:00Z");
+    const freezeClock = () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(NOW);
+    };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("starts tracking a new permanent redirect without moving the feed", async () => {
+      const feed = await createLoopbackFeed();
+      redirectFeedUrl();
+      nextResponse = { body: rss([{ guid: "a", title: "A", pubDate: new Date() }]) };
+
+      const before = Date.now();
+      const result = await handleFetchFeed({ feedId: feed.id });
+
+      // The fetch itself still succeeds against the destination.
+      expect(result.metadata).toMatchObject({ newEntries: 1 });
+      const after = await readFeed(feed.id);
+      expect(after.url).toBe(feed.url);
+      expect(after.redirectUrl).toBe(movedTo());
+      expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it("keeps waiting while the same redirect is younger than the wait period", async () => {
+      freezeClock();
+      const firstSeen = new Date(NOW.getTime() - REDIRECT_WAIT_PERIOD_MS + 1);
+      const feed = await createLoopbackFeed({
+        redirectUrl: `${baseUrl}/moved.xml`,
+        redirectFirstSeenAt: firstSeen,
+      });
+      redirectFeedUrl();
+
+      await handleFetchFeed({ feedId: feed.id });
+
+      const after = await readFeed(feed.id);
+      expect(after.url).toBe(feed.url);
+      expect(after.redirectUrl).toBe(movedTo());
+      expect(after.redirectFirstSeenAt!.getTime()).toBe(firstSeen.getTime());
+    });
+
+    it.each([
+      { name: "a changed body", destination: (): FeedResponse => ({ body: rss([]) }) },
+      // An unchanged destination takes the short-circuit path, which must still
+      // apply the redirect.
+      { name: "a 304", destination: (): FeedResponse => ({ status: 304 }) },
+    ])(
+      "moves the feed in place once the wait period has passed ($name)",
+      async ({ destination }) => {
+        freezeClock();
+        const feed = await createLoopbackFeed({
+          etag: '"v1"',
+          redirectUrl: `${baseUrl}/moved.xml`,
+          redirectFirstSeenAt: new Date(NOW.getTime() - REDIRECT_WAIT_PERIOD_MS),
+        });
+        redirectFeedUrl();
+        nextResponse = destination();
+
+        const result = await handleFetchFeed({ feedId: feed.id });
+
+        expect(result.success).toBe(true);
+        expect(result.metadata).toMatchObject({ redirectApplied: true, newUrl: movedTo() });
+        // Refetch straight away from the new URL.
+        expect(result.nextRunAt).toEqual(NOW);
+        const after = await readFeed(feed.id);
+        expect(after.url).toBe(movedTo());
+        expect(after.redirectUrl).toBeNull();
+        expect(after.redirectFirstSeenAt).toBeNull();
+      }
+    );
+
+    it("restarts the timer when the redirect points somewhere new", async () => {
+      const feed = await createLoopbackFeed({
+        redirectUrl: `${baseUrl}/elsewhere.xml`,
+        redirectFirstSeenAt: new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS - 60 * 60 * 1000),
+      });
+      redirectFeedUrl();
+
+      const before = Date.now();
+      await handleFetchFeed({ feedId: feed.id });
+
+      const after = await readFeed(feed.id);
+      expect(after.url).toBe(feed.url);
+      expect(after.redirectUrl).toBe(movedTo());
+      expect(after.redirectFirstSeenAt!.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it.each([
+      { name: "the redirect was reverted", setup: () => {} },
+      { name: "the redirect became temporary", setup: () => redirectFeedUrl(302) },
+    ])("stops tracking when $name", async ({ setup }) => {
+      const feed = await createLoopbackFeed({
+        redirectUrl: `${baseUrl}/moved.xml`,
+        redirectFirstSeenAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+      setup();
+
+      await handleFetchFeed({ feedId: feed.id });
+
+      const after = await readFeed(feed.id);
+      expect(after.url).toBe(feed.url);
+      expect(after.redirectUrl).toBeNull();
+      expect(after.redirectFirstSeenAt).toBeNull();
+    });
+
+    it("stops tracking when the destination doesn't parse as a feed", async () => {
+      const feed = await createLoopbackFeed({
+        redirectUrl: `${baseUrl}/moved.xml`,
+        redirectFirstSeenAt: new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS),
+      });
+      redirectFeedUrl();
+      nextResponse = { body: "this is not a feed" };
+
+      const result = await handleFetchFeed({ feedId: feed.id });
+
+      expect(result.success).toBe(false);
+      const after = await readFeed(feed.id);
+      expect(after.url).toBe(feed.url);
+      expect(after.redirectUrl).toBeNull();
+      expect(after.redirectFirstSeenAt).toBeNull();
+    });
+
+    it("applies a tracked redirect immediately once the original URL 404s", async () => {
+      const feed = await createLoopbackFeed({
+        redirectUrl: `${baseUrl}/moved.xml`,
+        redirectFirstSeenAt: new Date(),
+      });
+      nextResponse = { status: 404, body: "gone" };
+
+      const result = await handleFetchFeed({ feedId: feed.id });
+
+      expect(result.success).toBe(true);
+      expect(result.metadata).toMatchObject({ redirectApplied: true, originalUrlBroken: true });
+      const after = await readFeed(feed.id);
+      expect(after.url).toBe(movedTo());
+      expect(after.redirectUrl).toBeNull();
+      expect(after.consecutiveFailures).toBe(0);
     });
   });
 
