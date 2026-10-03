@@ -8,12 +8,12 @@ const article: DemoArticle = {
   title: "Discord Bot",
   author: null,
   summary:
-    "Save articles to Lion Reader directly from Discord by reacting to messages with a lion emoji, or by sending a link to the bot in a DM.",
+    "Save articles to Lion Reader directly from Discord by reacting to messages with the Lion Reader emoji, or by sending a link to the bot in a DM.",
   publishedAt: new Date("2026-01-18T01:20:31Z"),
   starred: false,
-  summaryHtml: `<p>The Lion Reader Discord bot automatically saves articles when users react to messages with a lion emoji or send a link to the bot in a DM. After linking accounts through Discord OAuth or API tokens, the bot provides instant visual feedback using custom emojis to confirm successful saves or indicate errors.</p>`,
+  summaryHtml: `<p>React to a link in Discord with the <strong>Lion Reader emoji</strong>, or message it to the bot, and Lion Reader saves it to your reading list, reacting back to confirm. Sign in with Discord or link your account with a <strong>token from Settings</strong> to get started.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-07-13"),
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>See a good link in a <a href="https://discord.com/" target="_blank" rel="noopener noreferrer">Discord</a> channel? React to the message with the save emoji and the Lion Reader bot saves the article to your reading list. You can also send or forward a link to the bot in a direct message. The bot reacts back so you know it worked.</p>
 
@@ -39,7 +39,7 @@ const article: DemoArticle = {
 
     <p>Add the bot to your server with the invite link in Settings. If you sign in to Lion Reader with Discord, the bot already knows who you are. Otherwise, link your account with the <code>/link</code> command and a token from Settings &mdash; only you can see the bot&rsquo;s replies, so your token stays private. Anyone in the server who has linked their account can save with a reaction.</p>
 
-    <p>Server admins can upload the Lion Reader logo above as a custom emoji to use as the save button; otherwise the bot listens for the lion emoji (&#x1F981;).</p>
+    <p>To save with reactions in a server, an admin needs to add the Lion Reader logo above as a custom emoji named <code>savetolionreader</code>. Direct messages to the bot work without it.</p>
   `,
 };
 

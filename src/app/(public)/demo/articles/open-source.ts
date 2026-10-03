@@ -11,15 +11,15 @@ const article: DemoArticle = {
     "Lion Reader is free and open source. Read the code, run your own copy, or help build it on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader is a fully <strong>open source, self-hostable RSS reader</strong> built with modern technologies including Next.js 16, tRPC, PostgreSQL, and Redis. Features include stateless architecture, efficient feed deduplication, AI-powered summaries and narration, and deployment via Fly.io or Docker Compose.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-07"),
+  summaryHtml: `<p>Lion Reader is <strong>free and open source</strong> under the MIT license. Use the hosted version, or self-host your own copy with just a database and a cache; optional features like Google sign-in, AI summaries, or newsletters can be enabled individually. Subscriptions export to a standard file, and contributions are welcome.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>Lion Reader is free and <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">open source</a> under the MIT license. You can use the hosted version at lionreader.com, or run your own copy and keep every feed, article, and setting on hardware you control.</p>
 
     <h3>Run Your Own</h3>
 
-    <p>Lion Reader ships as a Docker image and needs only a database and a cache alongside it. It runs comfortably on a small, inexpensive server, and grows by adding more servers when you need them. Features that depend on outside services &mdash; like signing in with Google, AI summaries, or receiving newsletters &mdash; are optional, so you can turn on just the ones you want.</p>
+    <p>Lion Reader comes with a Dockerfile and needs only a database and a cache alongside it. It runs comfortably on a small, inexpensive server, and grows by adding more servers when you need them. Features that depend on outside services &mdash; like signing in with Google, AI summaries, or receiving newsletters &mdash; are optional, so you can turn on just the ones you want.</p>
 
     <h3>No Lock-In</h3>
 

@@ -15,9 +15,9 @@ const article: DemoArticle = {
   // resolveWelcomePublishedAt for the full rationale.
   publishedAt: resolveWelcomePublishedAt(process.env.NEXT_PUBLIC_BUILD_TIME),
   starred: true,
-  summaryHtml: `<p><strong>Lion Reader</strong> is an AI-native, self-hostable reader that unifies RSS/Atom/JSON feeds, email newsletters, and saved articles in one fast interface. It connects to AI assistants over <strong>MCP</strong>, generates on-demand <strong>summaries</strong> via Claude, and narrates articles with synchronized highlighting &mdash; all with real-time, jank-free updates. Free and open source.</p>`,
+  summaryHtml: `<p>Lion Reader is a <strong>self-hostable feed reader</strong> that brings your feeds, newsletters, and saved articles into one fast interface built to work with AI assistants. Ask an assistant to search or save articles, summarize, and listen in a natural voice. It&rsquo;s free, open source, and never tracks what you read.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-07-03"),
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>Lion Reader is a self-hostable feed reader for people who take their reading seriously. It brings your feeds, your newsletters, and everything you save for later into one fast, elegant interface &mdash; and it&rsquo;s built from the ground up to work with AI assistants.</p>
 
@@ -28,9 +28,9 @@ const article: DemoArticle = {
     <ul>
       <li><strong>AI-native, not AI-bolted-on</strong> &mdash; <a href="/demo/all?entry=mcp-server">Ask Claude or another AI assistant</a> to search, triage, and save articles for you. <a href="/demo/all?entry=ai-summaries">Summarize</a> any article when you want to (never behind your back), and <a href="/demo/all?entry=text-to-speech">listen</a> to anything in a natural voice while it highlights along.</li>
       <li><strong>Everything in one place</strong> &mdash; <a href="/demo/all?entry=rss-atom">Follow any website</a>, read <a href="/demo/all?entry=email-newsletters">email newsletters</a> without cluttering your inbox, and <a href="/demo/all?entry=save-for-later">save anything for later</a> from your browser, your phone, Discord, or a file. Links from places like YouTube, arXiv, and GitHub <a href="/demo/all?entry=plugins">come through complete and readable</a>.</li>
-      <li><a href="/demo/all?entry=performance"><strong>Obsessively fast</strong></a> &mdash; New articles show up in the list you&rsquo;re reading without a refresh and without losing your place, and moving around the app is instant.</li>
+      <li><a href="/demo/all?entry=performance"><strong>Obsessively fast</strong></a> &mdash; New articles show up in the list you&rsquo;re reading without a refresh, and moving around the app is instant.</li>
       <li><strong>All the essentials, done well</strong> &mdash; <a href="/demo/all?entry=full-content">Full articles from excerpt-only feeds</a>, <a href="/demo/all?entry=search">search</a>, <a href="/demo/all?entry=tags">tags</a>, <a href="/demo/all?entry=keyboard-shortcuts">keyboard shortcuts</a>, <a href="/demo/all?entry=opml">easy import and export</a>, <a href="/demo/all?entry=pwa">install it like an app</a>, and <a href="/demo/all?entry=appearance">themes</a> for day, night, and e-ink.</li>
-      <li><strong>Yours to own</strong> &mdash; Free and <a href="/demo/all?entry=open-source">open source</a>, and you can run your own copy. No ads, no data selling, and nothing that records what you read.</li>
+      <li><strong>Yours to own</strong> &mdash; Free and <a href="/demo/all?entry=open-source">open source</a>, and you can run your own copy. No ads, no data selling, and no tracking of what you read.</li>
     </ul>
 
     <p>Lion Reader is designed and built by <a href="https://www.brendanlong.com/pages/about-me.html" target="_blank" rel="noopener noreferrer">Brendan Long</a>.</p>

@@ -11,9 +11,9 @@ const article: DemoArticle = {
     "Get a private email address for newsletters, and read them alongside your feeds instead of in your inbox.",
   publishedAt: new Date("2025-12-30T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader generates unique ingest email addresses that convert newsletters into feed entries. Subscribe to Substack, Ghost, or any newsletter using these addresses, and they appear in your unified timeline with full RSS-like features: starring, search, tags, and reading controls. Built-in security includes HMAC verification and sender blocking.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-08"),
+  summaryHtml: `<p>Lion Reader gives you a private email address for newsletters, keeping them next to your feeds instead of your inbox. Each sender becomes its own subscription with <strong>starring, tags, search, summaries, and narration</strong>. Create multiple addresses in Settings, and unsubscribing blocks the sender and, where supported, takes you off the mailing list.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>Lots of great writing only arrives by email. Lion Reader gives you a private address to subscribe with, so newsletters land next to your feeds instead of burying your inbox. Each sender becomes its own subscription automatically, and its issues get everything a feed does: starring, <a href="/demo/all?entry=tags">tags</a>, <a href="/demo/all?entry=search">search</a>, <a href="/demo/all?entry=ai-summaries">summaries</a>, and <a href="/demo/all?entry=text-to-speech">narration</a>.</p>
 
@@ -23,7 +23,7 @@ const article: DemoArticle = {
 
     <h3>Staying in Control</h3>
 
-    <p>Block a sender and their mail stops showing up. Unsubscribe from a newsletter and, when the sender supports it, Lion Reader unsubscribes you from the mailing list too &mdash; no hunting for the tiny link at the bottom of the email.</p>
+    <p>Unsubscribe from a newsletter and Lion Reader blocks that sender, so their mail stops showing up &mdash; and for newsletters that support one-click unsubscribe, it takes you off the mailing list too, with no hunting for the tiny link at the bottom of the email. Changed your mind? Unblock the sender in Settings.</p>
   `,
 };
 

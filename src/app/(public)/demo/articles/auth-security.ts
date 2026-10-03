@@ -11,11 +11,11 @@ const article: DemoArticle = {
     "Your reading habits stay private: no ads, no tracking, and full control over where you're signed in and what can access your account.",
   publishedAt: new Date("2025-12-26T11:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader offers <strong>multiple sign-in methods</strong> including email/password and OAuth providers (Google, Apple, Discord), with secure <strong>session management</strong> using SHA-256 hashes and Redis caching. Features include <strong>API tokens</strong> with scoped permissions, rate limiting, webhook verification, and subscription-based entry visibility to protect privacy.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-07"),
+  summaryHtml: `<p>Lion Reader protects your privacy &mdash; no ads, no data selling, no tracking &mdash; using your reading activity only to <strong>sync read and starred articles</strong> across devices. Sign in with email or Google/Apple, see and sign out your devices, revoke connected apps, and read articles <strong>cleaned of harmful code</strong> before display.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
-    <p>What you read says a lot about you, so Lion Reader is built to keep it private. There are no ads, your data is never sold, and there&rsquo;s no third-party tracking script anywhere in the app. Your reading activity is used for one thing: keeping your read and starred articles in sync across your devices.</p>
+    <p>What you read says a lot about you, so Lion Reader is built to keep it private. There are no ads, your data is never sold, and there&rsquo;s no third-party tracking script anywhere in the app. Your reading activity is used only to run the app for you, like keeping your read and starred articles in sync across your devices.</p>
 
     <h3>Signing In</h3>
 
@@ -23,7 +23,7 @@ const article: DemoArticle = {
 
     <h3>Controlling What Has Access</h3>
 
-    <p>When you connect a <a href="/demo/all?entry=browser-extension">browser extension</a>, an <a href="/demo/all?entry=mcp-server">AI assistant</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a>, it gets only the access it needs &mdash; a save button can save articles but can&rsquo;t read your feeds. You can see when each connection was last used, give it an expiration date, and revoke it at any time.</p>
+    <p>When you connect a <a href="/demo/all?entry=browser-extension">browser extension</a>, an <a href="/demo/all?entry=mcp-server">AI assistant</a>, or the <a href="/demo/all?entry=discord-bot">Discord bot</a>, it gets only the access it needs &mdash; a save button can save articles but can&rsquo;t read your feeds. You can see when each connection was last used and revoke it at any time, and tokens you create yourself can be given an expiration date.</p>
 
     <h3>Safe to Read</h3>
 
@@ -31,7 +31,7 @@ const article: DemoArticle = {
 
     <details>
       <summary>About analytics</summary>
-      <p>The hosted site counts page views itself, without cookies, and records only the <em>kind</em> of page you opened &mdash; an article list, an article, a settings page &mdash; never which feed or article. Self-hosted copies send nothing at all.</p>
+      <p>The hosted site sends a minimal, cookie-free page count to GoatCounter without loading any tracking script, and reports only the <em>kind</em> of page you opened &mdash; an article list, an article, a settings page &mdash; never which feed or article. Self-hosted copies send nothing at all.</p>
     </details>
   `,
 };

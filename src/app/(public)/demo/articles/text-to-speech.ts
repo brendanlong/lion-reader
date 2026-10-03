@@ -8,10 +8,10 @@ const article: DemoArticle = {
   title: "Listen to Any Article",
   author: null,
   summary:
-    "Press Listen and Lion Reader reads any article aloud in a natural voice, highlighting along as it goes. It keeps playing with your screen locked.",
+    "Press Listen and Lion Reader reads any article aloud in a natural voice, highlighting along as it goes, and can keep playing with your screen locked.",
   publishedAt: new Date("2025-12-27T18:00:00Z"),
   starred: true,
-  summaryHtml: `<p>Lion Reader can read articles aloud. <strong>Cloud voices</strong> (Kokoro by default, or your own BreezeBlue/DeepInfra/OpenRouter key) stream audio with minimal setup. <strong>On-device voices</strong> (Piper or browser built-ins) keep audio local. Optional <strong>AI cleanup</strong> rewrites text for smoother listening. Playback supports <strong>paragraph highlighting</strong>, navigation, speed control, and media-key shortcuts.</p>`,
+  summaryHtml: `<p>Press <strong>Listen</strong> on any article and Lion Reader reads it aloud in a natural voice, highlighting each paragraph as it plays, with pause, skip, and speed controls from your lock screen or media keys. Choose cloud voices or offline on-device voices, and turn on AI text processing to adjust wording.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
@@ -26,8 +26,9 @@ const article: DemoArticle = {
     <h3>Choose Your Voice</h3>
 
     <ul>
-      <li><strong>Cloud voices</strong> &mdash; the most natural-sounding option, and what this demo uses. Pick them in Settings; no account needed. Narration starts within a second or two and keeps playing with your screen locked. If you have your own account with a supported voice provider, add its key for even more voices.</li>
-      <li><strong>On-device voices</strong> &mdash; for when you&rsquo;d rather nothing leave your device. Download a high-quality voice once and it works offline, even with your screen locked, or use the voices your browser already has with no setup at all.</li>
+      <li><strong>Cloud Voices</strong> &mdash; the most natural-sounding option, and what this demo uses. Pick them in Settings; no extra accounts needed. Narration starts quickly and keeps playing with your screen locked. If you pay for your own account with a supported voice provider, connect it in Settings for even more voices.</li>
+      <li><strong>Enhanced Voices</strong> &mdash; for when you&rsquo;d rather nothing leave your device. Download one once and it works offline, even with your screen locked.</li>
+      <li><strong>Browser Voices</strong> &mdash; the voices your browser already has, with no setup at all.</li>
     </ul>
 
     <h3>Smoother Listening</h3>
@@ -36,7 +37,7 @@ const article: DemoArticle = {
 
     <details>
       <summary>What gets sent where</summary>
-      <p>With cloud voices, only the text being read is sent to the voice provider, a passage at a time. With on-device voices, nothing leaves your device unless you turn on AI text processing, which sends the article to an AI model first.</p>
+      <p>With Cloud Voices, only the text being read is sent to the voice provider, a passage at a time. With Enhanced Voices, nothing leaves your device. Browser Voices marked &ldquo;online&rdquo; are run by your browser&rsquo;s maker. With any voice, turning on AI text processing also sends the article to an AI model first.</p>
     </details>
   `,
 };

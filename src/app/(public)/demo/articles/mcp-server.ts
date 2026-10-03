@@ -11,9 +11,9 @@ const article: DemoArticle = {
     "Connect Claude or another AI assistant to your reader and ask it to find, triage, organize, and save articles for you.",
   publishedAt: new Date("2026-01-14T12:00:00Z"),
   starred: true,
-  summaryHtml: `<p>The Model Context Protocol (MCP) lets AI assistants like Claude access Lion Reader&#39;s features directly. The server exposes tools for listing, reading, searching, saving, and starring entries plus managing subscriptions and tags, all through the same services layer as the web UI. Remote clients (e.g. claude.ai) connect over Streamable HTTP with <strong>OAuth 2.1</strong>; local clients use stdio. Access is scoped by <strong>token permissions</strong>.</p>`,
+  summaryHtml: `<p>Connect Lion Reader to Claude or another <strong>AI assistant</strong> using the Model Context Protocol, and it can read, search, star, save, and mark articles read, look up subscriptions, or edit tags, with the same results as doing it yourself. Its access is limited to your reader and can be revoked anytime.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-07-03"),
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>Connect Lion Reader to Claude or another AI assistant, and it can work with your reading list the way you would. Just ask:</p>
 
@@ -25,7 +25,7 @@ const article: DemoArticle = {
       <li>&ldquo;Write up these meeting notes and put them in my reading list.&rdquo;</li>
     </ul>
 
-    <p>Your assistant can read, search, star, and save articles, mark things read, look up your subscriptions, and manage your tags &mdash; with the same results you&rsquo;d get doing it yourself in the app.</p>
+    <p>Your assistant can read, search, star, and save articles, mark things read, look up your subscriptions, and create and edit your tags &mdash; with the same results you&rsquo;d get doing it yourself in the app.</p>
 
     <h3>Connecting</h3>
 

@@ -8,30 +8,30 @@ const article: DemoArticle = {
   title: "Smart Content Sources",
   author: null,
   summary:
-    "Links from YouTube, arXiv, GitHub, Google Docs, and many other sites come through complete and readable, whether you subscribe or save them.",
+    "Links from YouTube, arXiv, GitHub, Google Docs, and other sites come through complete and readable, whether you subscribe or save them.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: true,
-  summaryHtml: `<p>Lion Reader extracts complete, readable content from sources plain RSS handles poorly: LessWrong posts and comments with rendered math, YouTube videos with descriptions, arXiv papers, GitHub READMEs, Google Docs, published Notion pages, and Bluesky embeds. It also converts MathJax markup to native MathML, working across web, AI assistant, and Discord.</p>`,
+  summaryHtml: `<p>Lion Reader recognizes popular sites and pulls in their full content automatically when you subscribe or save a link: playable <strong>YouTube</strong> videos, <strong>arXiv</strong> papers in HTML when available, full GitHub READMEs, intact Google Docs, and Notion or Bluesky content other readers show stripped down. It also renders math that other readers drop.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-09-08"),
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>Plenty of the web doesn&rsquo;t fit neatly into a feed &mdash; and even when it does, the feed often leaves out the parts you actually wanted. Lion Reader recognizes many popular sites and pulls in their content complete and easy to read, whether you&rsquo;re subscribing or <a href="/demo/all?entry=save-for-later">saving something for later</a>. You don&rsquo;t have to do anything special: paste a link and Lion Reader takes care of the rest. A few examples:</p>
 
     <ul>
       <li><strong>YouTube</strong> &mdash; subscribe to a channel, or save a video, and get a playable video with its full description.</li>
-      <li><strong>Bluesky</strong> &mdash; follow any profile and see quoted posts, images, and link cards that other readers show as a bare &ldquo;embedded content&rdquo; note.</li>
-      <li><strong>arXiv</strong> &mdash; save a paper from its abstract or PDF link and read the clean HTML version instead of squinting at a PDF.</li>
+      <li><strong>Bluesky</strong> &mdash; follow any profile and see the quoted posts, images, and link cards that Bluesky&rsquo;s own feed reduces to a bare &ldquo;embedded content&rdquo; note.</li>
+      <li><strong>arXiv</strong> &mdash; save a paper from its abstract or PDF link and read arXiv&rsquo;s HTML version when there is one, instead of squinting at a PDF.</li>
       <li><strong>GitHub</strong> &mdash; save a repository, file, or gist and its README or Markdown reads like a proper page.</li>
       <li><strong>Google Docs</strong> &mdash; save a doc with its formatting intact, instead of a sign-in page.</li>
-      <li><strong>Notion</strong> &mdash; save a published Notion page and get the whole document, where other readers save a blank page.</li>
-      <li><strong>LessWrong</strong> &mdash; follow an author&rsquo;s posts and comments, with full text and rendered math.</li>
+      <li><strong>Notion</strong> &mdash; save a published Notion page and get the whole document, where a normal save gets a blank page.</li>
+      <li><strong>LessWrong</strong> &mdash; follow an author&rsquo;s posts or a post&rsquo;s comment thread, with full text and rendered math.</li>
     </ul>
 
-    <p>New sources are added regularly, and they work everywhere you save from &mdash; the web app, your <a href="/demo/all?entry=mcp-server">AI assistant</a>, and the <a href="/demo/all?entry=discord-bot">Discord bot</a> &mdash; with no setup on your end.</p>
+    <p>New sources are added regularly, and they work everywhere you save from: the web app, your <a href="/demo/all?entry=mcp-server">AI assistant</a>, and the <a href="/demo/all?entry=discord-bot">Discord bot</a>.</p>
 
     <h3>Math That Actually Renders</h3>
 
-    <p>Many feeds publish equations in a way most readers can&rsquo;t display, so sentences arrive with the math missing. Lion Reader converts them into math your browser draws natively and crisply, like this:</p>
+    <p>Some sites, like LessWrong, publish equations in a form most readers can&rsquo;t display, so sentences arrive with the math missing. Lion Reader converts them into math your browser draws natively and crisply, and Markdown you save or upload can include math too. Like this:</p>
 
     <math display="block">
       <mrow>

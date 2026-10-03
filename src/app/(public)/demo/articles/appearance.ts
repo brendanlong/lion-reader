@@ -11,9 +11,9 @@ const article: DemoArticle = {
     "Pick your font, text size, and list layout, and choose a theme for daytime, late-night reading, or e-ink screens.",
   publishedAt: new Date("2025-12-28T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader offers extensive reading customization: <strong>dark mode</strong> with sleep-friendly warm amber tones to reduce blue light, an <strong>e-paper theme</strong> optimized for e-ink displays, typography controls (font family, size, alignment), list density options, and Progressive Web App support for native-like installation.</p>`,
+  summaryHtml: `<p>Lion Reader lets you customize reading comfort: choose <strong>Light</strong>, <strong>Dark</strong>, or <strong>E-paper</strong> themes (or Auto, which follows your device), pick fonts and text size, choose paragraph alignment, and switch between Comfortable and Compact list views to fit more articles on screen.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-07-14"),
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>Reading comfort is personal, so Lion Reader lets you set things up the way your eyes like them. Changes apply instantly as you adjust them.</p>
 
@@ -21,7 +21,7 @@ const article: DemoArticle = {
 
     <ul>
       <li><strong>Light</strong> &mdash; clean and bright for daytime reading.</li>
-      <li><strong>Dark</strong> &mdash; made for reading in bed. Instead of the usual blue highlights, it uses warm amber and neutral grays to cut down on blue light late at night.</li>
+      <li><strong>Dark</strong> &mdash; made for reading in bed. It uses warm amber highlights and neutral grays, with no blue, to cut down on blue light late at night.</li>
       <li><strong>E-paper</strong> &mdash; for Kindle, Kobo, Boox, and other e-ink screens, with high contrast that stays readable in grayscale.</li>
     </ul>
 

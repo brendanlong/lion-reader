@@ -11,9 +11,9 @@ const article: DemoArticle = {
     "Use the free Wallabag app on Android or iOS to save links to Lion Reader from any app's share menu.",
   publishedAt: new Date("2026-02-22T20:33:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader implements a <strong>Wallabag-compatible API</strong> that lets you use the official Wallabag mobile apps on Android and iOS to save articles directly to your Lion Reader account. Share any URL from your phone to the Wallabag app, and it appears in Lion Reader as a saved article. The API also supports viewing, archiving, starring, and deleting saved articles from the app.</p>`,
-  summaryModelId: "claude-sonnet-4-6",
-  summaryGeneratedAt: new Date("2026-02-22"),
+  summaryHtml: `<p>Lion Reader works with the free <strong>Wallabag</strong> apps for Android and iOS: share a link and pick Wallabag to save it to Lion Reader. Browse, star, archive, delete, and read saved articles offline. Set up by scanning a QR code on Android or copying server details on iOS.</p>`,
+  summaryModelId: "claude-sonnet-5",
+  summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `
     <p>Lion Reader works with the free <a href="https://wallabag.org/" target="_blank" rel="noopener noreferrer">Wallabag</a> read-it-later apps for <a href="https://play.google.com/store/apps/details?id=fr.gaulupeau.apps.InThePoche" target="_blank" rel="noopener noreferrer">Android</a> and <a href="https://apps.apple.com/app/wallabag-2-official/id1170800946" target="_blank" rel="noopener noreferrer">iOS</a>. Once connected, tap <strong>Share</strong> in your browser, your social media app, or anywhere else, pick Wallabag, and the link is saved to Lion Reader.</p>
 
@@ -21,7 +21,7 @@ const article: DemoArticle = {
 
     <h3>Setting It Up</h3>
 
-    <p>On Android, scan the QR code in Lion Reader&rsquo;s settings (or tap the link next to it) and the app fills in most of the setup for you &mdash; you just enter your password. On iOS, copy the server details from the same page into the app.</p>
+    <p>On Android, scan the QR code in Lion Reader&rsquo;s settings (or tap the link next to it) and the app fills in most of the setup for you &mdash; you just enter your password. (If you sign in with Google or Apple, set a password in Account settings first.) On iOS, copy the server details from the same page into the app.</p>
   `,
 };
 
