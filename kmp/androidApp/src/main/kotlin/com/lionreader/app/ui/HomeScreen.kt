@@ -111,8 +111,9 @@ fun HomeScreen(
     val coroutines = rememberCoroutineScope()
     val scope by model.scope.collectAsStateWithLifecycle()
     val navigation by model.navigation.collectAsStateWithLifecycle()
-    val items by model.items.collectAsStateWithLifecycle()
+    val timeline by model.timeline.collectAsStateWithLifecycle()
     val unreadOnly by model.unreadOnly.collectAsStateWithLifecycle()
+    val oldestFirst by model.oldestFirst.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val expandedTags by model.expandedTags.collectAsStateWithLifecycle()
     val hideEmptyLists by model.hideEmptyLists.collectAsStateWithLifecycle()
@@ -138,6 +139,15 @@ fun HomeScreen(
     BackHandler(enabled = search != null) { model.setSearch(null) }
     // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
     val timelineList = rememberLazyListState()
+    // A new order starts at the top. Once it's composed: before, the list would follow its first
+    // entry by key to wherever the new order puts it.
+    var reorderingTo by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(timeline?.oldestFirst) {
+        if (reorderingTo != null && timeline?.oldestFirst == reorderingTo) {
+            timelineList.scrollToItem(0)
+            reorderingTo = null
+        }
+    }
     val searchList = remember(search == null) { LazyListState() }
 
     ModalNavigationDrawer(
@@ -208,6 +218,11 @@ fun HomeScreen(
                             ListMenu(
                                 showRead = !unreadOnly,
                                 onShowReadChange = { model.setUnreadOnly(!it) },
+                                oldestFirst = oldestFirst,
+                                onOldestFirstChange = {
+                                    model.setOldestFirst(it)
+                                    reorderingTo = it
+                                },
                                 onMarkAllRead = {
                                     coroutines.launch { markAllIds = model.unreadInList() }
                                 },
@@ -235,7 +250,7 @@ fun HomeScreen(
                     }
                     val text = search
                     EntryList(
-                        items = if (text != null) searchResults else items,
+                        items = if (text != null) searchResults else timeline?.items,
                         listState = if (text != null) searchList else timelineList,
                         selectedId = shown.takeIf { showSelection },
                         emptyText =
@@ -366,6 +381,8 @@ private fun SearchBar(text: String, onChange: (String) -> Unit, onClose: () -> U
 private fun ListMenu(
     showRead: Boolean,
     onShowReadChange: (Boolean) -> Unit,
+    oldestFirst: Boolean,
+    onOldestFirstChange: (Boolean) -> Unit,
     onMarkAllRead: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -380,6 +397,14 @@ private fun ListMenu(
                 onClick = {
                     open = false
                     onShowReadChange(!showRead)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Oldest first") },
+                trailingIcon = { Checkbox(checked = oldestFirst, onCheckedChange = null) },
+                onClick = {
+                    open = false
+                    onOldestFirstChange(!oldestFirst)
                 },
             )
             DropdownMenuItem(

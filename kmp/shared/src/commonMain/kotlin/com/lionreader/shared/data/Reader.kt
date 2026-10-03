@@ -103,37 +103,55 @@ class Reader(
     private val onLocalChange: () -> Unit,
 ) {
     /**
-     * One list, newest first. Entries in [keepIds] stay even once read (with [unreadOnly]) or
-     * unstarred (in Starred), so an entry the user just read or swiped doesn't vanish from under
-     * them (the web keeps list membership until the list is reloaded).
+     * One list, newest first unless [oldestFirst]. Entries in [keepIds] stay even once read (with
+     * [unreadOnly]) or unstarred (in Starred), so an entry the user just read or swiped doesn't
+     * vanish from under them (the web keeps list membership until the list is reloaded).
      */
     fun timeline(
         scope: ListScope,
         unreadOnly: Boolean,
+        oldestFirst: Boolean,
         keepIds: Collection<String>,
         limit: Long,
     ): Flow<List<TimelineItem>> {
-        // Read and unread alike: it's the list of what was read.
-        if (scope == ListScope.RecentlyRead) {
-            return db.entryQueries
-                .selectRecentlyRead(limit, ::timelineItem)
-                .asFlow()
-                .mapToList(context)
-        }
-        return db.entryQueries
-            .selectTimeline(
-                subscriptionId = (scope as? ListScope.Subscription)?.id,
-                tagId = (scope as? ListScope.Tag)?.id,
-                starredOnly = if (scope == ListScope.Starred) 1L else 0L,
-                savedOnly = if (scope == ListScope.Saved) 1L else 0L,
-                uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L,
-                unreadOnly = if (unreadOnly) 1L else 0L,
-                keepIds = keepIds,
-                limit = limit,
-                mapper = ::timelineItem,
-            )
-            .asFlow()
-            .mapToList(context)
+        val queries = db.entryQueries
+        val subscriptionId = (scope as? ListScope.Subscription)?.id
+        val tagId = (scope as? ListScope.Tag)?.id
+        val starredOnly = if (scope == ListScope.Starred) 1L else 0L
+        val savedOnly = if (scope == ListScope.Saved) 1L else 0L
+        val uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L
+        val unread = if (unreadOnly) 1L else 0L
+        val query =
+            if (scope == ListScope.RecentlyRead) {
+                // Read and unread alike: it's the list of what was read.
+                if (oldestFirst) queries.selectRecentlyReadOldestFirst(limit, ::timelineItem)
+                else queries.selectRecentlyRead(limit, ::timelineItem)
+            } else if (oldestFirst) {
+                queries.selectTimelineOldestFirst(
+                    subscriptionId = subscriptionId,
+                    tagId = tagId,
+                    starredOnly = starredOnly,
+                    savedOnly = savedOnly,
+                    uncategorizedOnly = uncategorizedOnly,
+                    unreadOnly = unread,
+                    keepIds = keepIds,
+                    limit = limit,
+                    mapper = ::timelineItem,
+                )
+            } else {
+                queries.selectTimeline(
+                    subscriptionId = subscriptionId,
+                    tagId = tagId,
+                    starredOnly = starredOnly,
+                    savedOnly = savedOnly,
+                    uncategorizedOnly = uncategorizedOnly,
+                    unreadOnly = unread,
+                    keepIds = keepIds,
+                    limit = limit,
+                    mapper = ::timelineItem,
+                )
+            }
+        return query.asFlow().mapToList(context)
     }
 
     @Suppress("UNUSED_PARAMETER")

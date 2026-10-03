@@ -51,6 +51,8 @@ data class AppSettings(
     val textSize: TextSize = TextSize.MEDIUM,
     val justify: Boolean = false,
     val unreadOnly: Boolean = true,
+    /** Lists run oldest first (Recently Read: earliest read first), as the web's sort toggle. */
+    val oldestFirst: Boolean = false,
     val retentionDays: Int = 30,
     /** Drawer tags shown with their feeds; the rest are collapsed. */
     val expandedTags: Set<String> = emptySet(),
@@ -99,6 +101,7 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         enumStored("text_size", { textSize }) { copy(textSize = it) },
         Stored(booleanPreferencesKey("justify"), { justify }) { copy(justify = it) },
         Stored(booleanPreferencesKey("unread_only"), { unreadOnly }) { copy(unreadOnly = it) },
+        Stored(booleanPreferencesKey("oldest_first"), { oldestFirst }) { copy(oldestFirst = it) },
         Stored(intPreferencesKey("retention_days"), { retentionDays }) {
             copy(retentionDays = it)
         },

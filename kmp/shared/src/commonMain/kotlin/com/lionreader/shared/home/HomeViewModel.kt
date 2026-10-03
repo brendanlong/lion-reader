@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -30,6 +31,8 @@ import kotlinx.coroutines.launch
 import kotlinx.io.IOException
 
 private const val SEARCH_LIMIT = 200L
+
+class Timeline(val scope: ListScope, val oldestFirst: Boolean, val items: List<TimelineItem>)
 
 sealed interface SyncStatus {
     data object Idle : SyncStatus
@@ -63,6 +66,9 @@ class HomeViewModel(
     val unreadOnly: StateFlow<Boolean> =
         settings.map { it.unreadOnly }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val oldestFirst: StateFlow<Boolean> =
+        settings.map { it.oldestFirst }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val hideEmptyLists: StateFlow<Boolean> =
         settings.map { it.hideEmptyLists }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
@@ -72,19 +78,23 @@ class HomeViewModel(
     val navigation: StateFlow<Navigation?> =
         reader.navigation().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** The list's entries, with the list they're of (so a switch can wait for them). */
-    private val loaded: StateFlow<Pair<ListScope, List<TimelineItem>>?> =
-        combine(view, unreadOnly, ::Pair)
-            .flatMapLatest { (view, unreadOnly) ->
-                reader.timeline(view.scope, unreadOnly, view.keepIds, view.limit).map {
-                    view.scope to it
+    /**
+     * The list's entries, with which list and order they're in (so a switch can wait for them, and
+     * a new order start at the top). From [settings] rather than [unreadOnly] and [oldestFirst],
+     * whose placeholder values before the settings load would query a list only to replace it.
+     */
+    val timeline: StateFlow<Timeline?> =
+        combine(
+                view,
+                settings.map { it.unreadOnly to it.oldestFirst }.distinctUntilChanged(),
+                ::Pair,
+            )
+            .flatMapLatest { (view, filters) ->
+                val (unreadOnly, oldestFirst) = filters
+                reader.timeline(view.scope, unreadOnly, oldestFirst, view.keepIds, view.limit).map {
+                    Timeline(view.scope, oldestFirst, it)
                 }
             }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    val items: StateFlow<List<TimelineItem>?> =
-        loaded
-            .map { it?.second }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -92,8 +102,8 @@ class HomeViewModel(
      * ones loaded already. Whether it had to wait, i.e. there's a new list to draw.
      */
     suspend fun awaitLoaded(scope: ListScope): Boolean {
-        if (loaded.value?.first == scope) return false
-        loaded.first { it?.first == scope }
+        if (timeline.value?.scope == scope) return false
+        timeline.first { it?.scope == scope }
         return true
     }
 
@@ -118,7 +128,9 @@ class HomeViewModel(
 
     /** The ids of the list on screen (search results while searching), for paging through. */
     fun shownIds(): List<String> =
-        (if (_search.value != null) searchResults.value else items.value).orEmpty().map { it.id }
+        (if (_search.value != null) searchResults.value else timeline.value?.items).orEmpty().map {
+            it.id
+        }
 
     init {
         refresh()
@@ -149,6 +161,11 @@ class HomeViewModel(
     fun setUnreadOnly(value: Boolean) {
         view.update { it.letGoOfKept() }
         viewModelScope.launch { updateSettings { it.copy(unreadOnly = value) } }
+    }
+
+    fun setOldestFirst(value: Boolean) {
+        view.update { it.letGoOfKept() }
+        viewModelScope.launch { updateSettings { it.copy(oldestFirst = value) } }
     }
 
     fun toggleTag(tagId: String) {

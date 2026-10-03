@@ -234,6 +234,27 @@ class HomeScreenTest {
     }
 
     @Test
+    fun oldestFirstReversesTheListAndStartsItFromTheTop() {
+        (59 downTo 0).forEach { seed("e$it", "Article $it", read = false, sortAt = 60L - it) }
+        show()
+        val timeline =
+            SemanticsMatcher("the timeline") {
+                it.config
+                    .getOrElseNullable(SemanticsProperties.CollectionInfo) { null }
+                    ?.rowCount == 60
+            }
+        composeRule.onNode(hasScrollToIndexAction() and timeline).performScrollToIndex(40)
+
+        composeRule.onNodeWithContentDescription("List options").performClick()
+        composeRule.onNodeWithText("Oldest first").performClick()
+        composeRule.waitUntil { settings.value.oldestFirst }
+        composeRule.waitForIdle()
+
+        assertEquals((59 downTo 0).map { "e$it" }, model.shownIds())
+        composeRule.onNodeWithText("Article 59").assertIsDisplayed()
+    }
+
+    @Test
     fun theArticleBesideTheListIsSelectedUntilClosed() {
         seed("a", "First", read = false)
         seed("b", "Second", read = false)
@@ -268,7 +289,7 @@ class HomeScreenTest {
     @Test
     fun aSwitchToAnEmptyListFromAnEmptyListIsSeenToLoad() {
         show()
-        composeRule.waitUntil { model.items.value != null }
+        composeRule.waitUntil { model.timeline.value != null }
         var loaded = false
         var waitedForTheOpenList = true
         // Starred and Saved are both empty: the entries don't change, the list does.

@@ -59,7 +59,7 @@ class MarkReadOnArrivalTest {
         composeRule.setContent { MarkReadOnArrival(reader, "a") {} }
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
         val recentlyRead = runBlocking {
-            reader.timeline(ListScope.RecentlyRead, false, emptySet(), 10).first()
+            reader.timeline(ListScope.RecentlyRead, false, false, emptySet(), 10).first()
         }
         assertEquals(listOf("a"), recentlyRead.map { it.id })
     }
