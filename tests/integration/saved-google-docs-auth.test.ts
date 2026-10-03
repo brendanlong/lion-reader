@@ -15,7 +15,7 @@
  * fetch) needs a live Google token + network, so it isn't covered here.
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
@@ -24,6 +24,13 @@ import { users, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { saveArticle } from "../../src/server/services/saved";
 import { createTestUser } from "./helpers";
+import { GOOGLE_DOCS_READONLY_SCOPE } from "../../src/server/auth/oauth/google";
+import { fetchPrivateGoogleDoc, GOOGLE_DRIVE_SCOPE } from "../../src/server/google/docs";
+
+vi.mock("../../src/server/google/docs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/server/google/docs")>()),
+  fetchPrivateGoogleDoc: vi.fn(),
+}));
 
 // A syntactically-valid but non-public Google Docs URL. The plugin's public
 // fetch no-ops (no service account), so this always reaches the private path.
@@ -126,5 +133,21 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
         googleDocsAuth: "interactive",
       })
     ).rejects.toMatchObject({ message: "NEEDS_DOCS_PERMISSION" });
+  });
+
+  // A Google-rejected token must surface as NEEDS_GOOGLE_REAUTH, not a bare 401
+  // message: the browser extension treats any other 401 as its own API token
+  // expiring and deletes it (#1772).
+  it("throws NEEDS_GOOGLE_REAUTH in interactive mode when Google rejects the stored token", async () => {
+    const userId = await createUser();
+    await linkGoogleAccount(userId, [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE]);
+    vi.mocked(fetchPrivateGoogleDoc).mockRejectedValueOnce(new Error("GOOGLE_TOKEN_INVALID"));
+
+    await expect(
+      saveArticle(db, userId, {
+        url: PRIVATE_DOC_URL,
+        googleDocsAuth: "interactive",
+      })
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED", message: "NEEDS_GOOGLE_REAUTH" });
   });
 });

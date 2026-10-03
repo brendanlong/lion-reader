@@ -65,6 +65,12 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
     redirect(`/login?redirect=${encodeURIComponent(returnUrl)}`);
   }
 
+  // Checked before the Google redirect below, which would otherwise loop when
+  // the OAuth callback sends us back with an error
+  if (error) {
+    return <ExtensionSaveClient error={decodeURIComponent(error)} url={url} />;
+  }
+
   // Check if this is a Google Doc and we need OAuth
   const isGoogleDoc = url.includes("docs.google.com");
   if (isGoogleDoc) {
@@ -75,18 +81,15 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
       .where(and(eq(oauthAccounts.userId, session.user.id), eq(oauthAccounts.provider, "google")))
       .limit(1);
 
+    // The Google callback only adds scopes to an already-linked account, so
+    // without one, just try the save (public docs need no auth)
     const userScopes = googleAccount[0]?.scopes ?? [];
     const hasAllScopes = GOOGLE_DOCS_SCOPES.every((scope) => userScopes.includes(scope));
 
-    if (!hasAllScopes) {
+    if (googleAccount.length > 0 && !hasAllScopes) {
       // Need to request Google Docs scopes; redirect to Google with return to this page
       await redirectToGoogleDocsAuth();
     }
-  }
-
-  // If there's an error from a previous attempt, show it
-  if (error) {
-    return <ExtensionSaveClient error={decodeURIComponent(error)} url={url} />;
   }
 
   // All auth is complete - save the article
@@ -111,6 +114,13 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
     // Check for Google reauth needed - handle outside try/catch since redirect throws
     if (errorMessage === "NEEDS_GOOGLE_REAUTH") {
       needsGoogleReauth = true;
+    } else if (errorMessage === "NEEDS_GOOGLE_SIGNIN") {
+      return (
+        <ExtensionSaveClient
+          error="This is a private Google Doc. To save it, link your Google account in Lion Reader's account settings, then try again."
+          url={url}
+        />
+      );
     } else {
       return <ExtensionSaveClient error={errorMessage} url={url} />;
     }
