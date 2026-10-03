@@ -284,9 +284,10 @@ IDs) · **Code:** `src/app/api/wallabag/`, `src/app/api/greader.php/`,
 
 - `/api/prerecorded-speech/:key` has no session (the demo plays it) yet can
   synthesize speech on the server's key. It **only synthesizes keys in the
-  server-built demo catalog**, and each process synthesizes a key at most once
-  an hour whatever storage does (a recording storage refuses is served from
-  memory), so an anonymous caller can cost at most the catalog per machine per
-  hour, and with storage healthy, one recording of the demo. Never let it
-  accept text, voice or model from the request, never synthesize uncached
-  outside development, and keep that per-process cap.
+  server-built demo catalog**, and every chunk it gets is written to the
+  machine's disk cache, which is consulted before anything else, so whatever
+  object storage does, a machine synthesizes each chunk at most once while its
+  disk lasts. A disk cache that
+  fails a write turns recorded narration off for the process. Never let the
+  route accept text, voice or model from the request, and never serve a
+  synthesis without caching it.

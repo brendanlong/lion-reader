@@ -1,21 +1,23 @@
 /**
  * Recorded narration (`@/lib/narration/prerecorded-speech`), recorded on
- * demand: a chunk is synthesized the first time anyone asks for it and kept in
- * object storage, which serves it from then on. Only chunks in the catalog
- * (`./demo-narration`) are ever synthesized, and a process synthesizes a chunk
- * at most once per {@link RESYNTHESIS_INTERVAL_MS} however storage behaves, so
- * what this can spend is bounded by catalog × machines, and with storage
- * healthy is one recording of the demo.
+ * demand. Every request takes the same path: the machine's disk cache, else
+ * object storage, else (for chunks in the catalog, `./demo-narration`)
+ * synthesis; whatever it fetched or synthesized is written to the disk cache,
+ * and a synthesis to object storage too, for every process after this one.
+ *
+ * The disk cache is what bounds the spending: whatever object storage does, a
+ * machine synthesizes each chunk in the catalog at most once while its disk
+ * lasts (on Fly, until it restarts). So the disk is checked before anything
+ * is served, and if it ever fails a write, recorded narration is off for this
+ * process. Processes may share the directory: files are content-addressed and
+ * written atomically.
  */
 
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { logger } from "@/lib/logger";
 import type { PrerecordedChunk } from "@/server/services/demo-narration";
-
-/**
- * How soon a process may synthesize again a chunk it already recorded: only
- * needed when storage loses it, or the bucket read isn't the one written.
- */
-const RESYNTHESIS_INTERVAL_MS = 60 * 60 * 1000;
 
 export interface PrerecordedSpeechSources {
   catalog: () => Promise<Map<string, PrerecordedChunk>>;
@@ -25,19 +27,8 @@ export interface PrerecordedSpeechSources {
   synthesize: (chunk: PrerecordedChunk) => Promise<ReadableStream<Uint8Array>>;
   /** Stores a recording; null when there's no storage to write to. */
   store: ((key: string, audio: Uint8Array) => Promise<void>) | null;
-  /**
-   * Synthesize every time when there's nowhere to store the result. For
-   * development only: in production it would pay for every play.
-   */
-  synthesizeUncached: boolean;
-  now?: () => number;
-}
-
-/** A chunk this process recorded is missing from storage, and won't be paid for again yet. */
-export class RecordingLostError extends Error {
-  constructor(readonly key: string) {
-    super(`Recorded narration ${key} is missing from storage`);
-  }
+  /** The disk cache's directory. */
+  cacheDir: string;
 }
 
 function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
@@ -49,82 +40,132 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
   });
 }
 
-/** Fetches recordings, recording missing ones as {@link PrerecordedSpeechSources} allow. */
-export function createPrerecordedSpeech(sources: PrerecordedSpeechSources) {
-  const now = sources.now ?? Date.now;
-  /** Recordings being made here, so concurrent requests for one share it. */
-  const recording = new Map<string, Promise<Uint8Array>>();
-  /** When this process last recorded each chunk. */
-  const recordedAt = new Map<string, number>();
-  /** Recordings storage refused, served from here instead. At most the catalog. */
-  const unstored = new Map<string, Uint8Array>();
+async function readIfPresent(path: string): Promise<Uint8Array | null> {
+  try {
+    return await readFile(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
 
-  async function record(
-    key: string,
-    chunk: PrerecordedChunk,
-    store: NonNullable<PrerecordedSpeechSources["store"]>
-  ): Promise<ReadableStream<Uint8Array>> {
-    const streams = sources.synthesize(chunk).then((audio) => audio.tee());
-    // Read to the end even if the listener leaves, so the chunk is kept; a
-    // stream that fails partway isn't.
-    const recorded = streams.then(async ([, toStore]) => {
-      const bytes = await new Response(toStore).bytes();
-      recordedAt.set(key, now());
-      try {
-        await store(key, bytes);
-      } catch (error) {
-        unstored.set(key, bytes);
-        logger.error("Couldn't store recorded narration; serving it from memory", {
+/** Written whole or not at all: a file is only ever served complete. */
+async function writeAtomically(path: string, data: Uint8Array): Promise<void> {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, data);
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+/** Whether the cache directory can be written and read back. */
+async function probe(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  // Named for this probe alone: other processes may be probing the directory.
+  const path = join(dir, `probe-${randomUUID()}`);
+  const written = new TextEncoder().encode("probe");
+  await writeAtomically(path, written);
+  const read = await readFile(path);
+  await rm(path);
+  if (!Buffer.from(read).equals(written)) throw new Error("Read back what wasn't written");
+}
+
+/**
+ * Gets recordings as described above. Resolves to null for a key that isn't
+ * recorded and can't be (not in the catalog), or when recorded narration is
+ * off; rejects with a synthesis's failure, which requests waiting on the same
+ * chunk get too, rather than each paying to try again.
+ */
+export function createPrerecordedSpeech(sources: PrerecordedSpeechSources) {
+  const { cacheDir } = sources;
+  let disabled = false;
+  const ready = probe(cacheDir).catch((error: unknown) => {
+    disabled = true;
+    logger.error("Recorded narration is off: its disk cache doesn't work", {
+      cacheDir,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  /** Chunks being fetched or synthesized, so concurrent requests share one. */
+  const filling = new Map<string, Promise<Uint8Array | null>>();
+
+  async function fetchOrSynthesize(
+    key: string
+  ): Promise<{ audio: ReadableStream<Uint8Array>; synthesized: boolean } | null> {
+    // Read before consulting the catalog, so a recording another version of
+    // the catalog asked for (mid-deploy) is still served.
+    const stored = await sources.read(key);
+    if (stored) return { audio: stored, synthesized: false };
+    const chunk = (await sources.catalog()).get(key);
+    if (!chunk) return null;
+    return { audio: await sources.synthesize(chunk), synthesized: true };
+  }
+
+  async function cache(key: string, bytes: Uint8Array, synthesized: boolean): Promise<void> {
+    try {
+      await writeAtomically(join(cacheDir, key), bytes);
+    } catch (error) {
+      disabled = true;
+      logger.error("Recorded narration is off: its disk cache failed a write", {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    if (synthesized && sources.store) {
+      await sources.store(key, bytes).catch((error: unknown) => {
+        logger.error("Couldn't store recorded narration", {
           key,
           error: error instanceof Error ? error.message : String(error),
         });
-      }
+      });
+    }
+  }
+
+  /** Fetches or synthesizes `key`, streaming it to the caller while caching it. */
+  async function fill(key: string): Promise<ReadableStream<Uint8Array> | null> {
+    const source = fetchOrSynthesize(key).then(
+      (found) => found && { synthesized: found.synthesized, branches: found.audio.tee() }
+    );
+    // Read to the end even if the listener leaves, so the chunk is kept; a
+    // stream that fails partway isn't.
+    const filled = source.then(async (found) => {
+      if (!found) return null;
+      const bytes = await new Response(found.branches[1]).bytes();
+      await cache(key, bytes, found.synthesized);
       return bytes;
     });
-    recording.set(key, recorded);
-    recorded
+    filling.set(key, filled);
+    filled
       .catch((error: unknown) => {
-        logger.warn("Couldn't record narration", {
+        logger.warn("Couldn't get recorded narration", {
           key,
           error: error instanceof Error ? error.message : String(error),
         });
       })
-      .finally(() => recording.delete(key));
-    const [toListener] = await streams;
-    return toListener;
+      .finally(() => filling.delete(key));
+    return (await source)?.branches[0] ?? null;
   }
 
-  /**
-   * `key`'s audio, or null if there's no such chunk (or way to get it).
-   * Rejects with a synthesis's failure, which requests waiting on another's
-   * recording get too, rather than each paying to try again.
-   */
+  async function filledElsewhere(key: string): Promise<ReadableStream<Uint8Array> | null> {
+    const bytes = await filling.get(key);
+    return bytes ? streamOf(bytes) : null;
+  }
+
   return async function getPrerecordedSpeech(
     key: string
   ): Promise<ReadableStream<Uint8Array> | null> {
-    const inProgress = recording.get(key);
-    if (inProgress) return streamOf(await inProgress);
-    const kept = unstored.get(key);
-    if (kept) return streamOf(kept);
-    // Read before consulting the catalog, so a recording another version of
-    // the catalog asked for (mid-deploy) is still served.
-    const stored = await sources.read(key);
-    if (stored) return stored;
-    const chunk = (await sources.catalog()).get(key);
-    if (!chunk) return null;
-
-    if (sources.store) {
-      // Without awaiting since: a request for it may have started recording
-      // while this one read the bucket.
-      const started = recording.get(key);
-      if (started) return streamOf(await started);
-      const last = recordedAt.get(key);
-      if (last !== undefined && now() - last < RESYNTHESIS_INTERVAL_MS) {
-        throw new RecordingLostError(key);
-      }
-      return record(key, chunk, sources.store);
-    }
-    if (sources.synthesizeUncached) return sources.synthesize(chunk);
-    return null;
+    await ready;
+    if (disabled) return null;
+    if (filling.has(key)) return filledElsewhere(key);
+    const cached = await readIfPresent(join(cacheDir, key));
+    if (cached) return streamOf(cached);
+    // Asked again without awaiting since: a request for it may have started
+    // filling while this one read the disk.
+    if (filling.has(key)) return filledElsewhere(key);
+    return fill(key);
   };
 }

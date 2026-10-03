@@ -301,7 +301,7 @@ Docker Compose provides Postgres and Redis for local development. See README for
 
 ### Object Storage (S3/Tigris)
 
-An **optional** S3-compatible object store re-hosts external images that would otherwise expire or leak referrers — Google Docs images, which carry short-lived `contentUri` links — and caches the demo's narration, recorded the first time each chunk is played (`src/server/services/prerecorded-speech.ts`). `src/server/storage/s3.ts` (`isStorageAvailable`, `fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected, size-limited) and rewrite the document to the re-hosted URL. Both **no-op when unconfigured** (`STORAGE_*` env vars/secrets): images stay at their source, and the demo's narration is synthesized on every play in development and unavailable in production.
+An **optional** S3-compatible object store re-hosts external images that would otherwise expire or leak referrers — Google Docs images, which carry short-lived `contentUri` links — and caches the demo's narration, recorded the first time each chunk is played (`src/server/services/prerecorded-speech.ts`). `src/server/storage/s3.ts` (`isStorageAvailable`, `fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected, size-limited) and rewrite the document to the re-hosted URL. Both **no-op when unconfigured** (`STORAGE_*` env vars/secrets): images stay at their source, and the demo's narration is synthesized once per machine (into its disk cache) rather than once overall.
 
 ---
 

@@ -1,8 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PrerecordedChunk } from "@/server/services/demo-narration";
 import {
   createPrerecordedSpeech,
-  RecordingLostError,
   type PrerecordedSpeechSources,
 } from "@/server/services/prerecorded-speech";
 
@@ -25,80 +27,105 @@ async function text(stream: ReadableStream<Uint8Array> | null): Promise<string |
   return stream ? new Response(stream).text() : null;
 }
 
+/** Lets a recording's background caching run. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+let root: string;
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "prerecorded-speech-test-"));
+});
+afterEach(async () => {
+  await chmod(join(root, "cache"), 0o700).catch(() => {});
+  await rm(root, { recursive: true, force: true });
+});
+
 /** A bucket and a voice in memory, counting what the voice is asked to say. */
 function setup(overrides: Partial<PrerecordedSpeechSources> = {}) {
-  const bucket = new Map<string, Uint8Array>();
+  const bucket = new Map<string, string>();
   const synthesized: string[] = [];
+  const cacheDir = overrides.cacheDir ?? join(root, "cache");
   const sources: PrerecordedSpeechSources = {
     catalog: async () => new Map([[KEY, CHUNK]]),
     read: async (key) => {
-      const bytes = bucket.get(key);
-      return bytes ? streamOf(new TextDecoder().decode(bytes)) : null;
+      const stored = bucket.get(key);
+      return stored === undefined ? null : streamOf(stored);
     },
     synthesize: async (chunk) => {
       synthesized.push(chunk.text);
       return streamOf("audio:", chunk.text);
     },
     store: async (key, audio) => {
-      bucket.set(key, audio);
+      bucket.set(key, new TextDecoder().decode(audio));
     },
-    synthesizeUncached: false,
+    cacheDir,
     ...overrides,
   };
-  return {
-    get: createPrerecordedSpeech(sources),
-    bucket,
-    synthesized,
-  };
+  return { get: createPrerecordedSpeech(sources), bucket, synthesized, cacheDir };
 }
 
-/** Lets the recording's background read and store run. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// Permissions don't stop root, so a failing write can't be staged as root.
+const canFailWrites = process.getuid?.() !== 0;
 
 describe("prerecorded speech", () => {
-  it("serves only keys in the catalog", async () => {
+  it("serves nothing, and synthesizes nothing, for a key not in the catalog", async () => {
     const { get, synthesized } = setup();
     expect(await get("b".repeat(64))).toBeNull();
     expect(synthesized).toEqual([]);
   });
 
-  it("serves a stored recording without synthesizing", async () => {
+  it("serves a recording from the bucket, then from disk", async () => {
     const { get, bucket, synthesized } = setup();
-    bucket.set(KEY, new TextEncoder().encode("stored"));
+    bucket.set(KEY, "stored");
+    expect(await text(await get(KEY))).toBe("stored");
+    await settle();
+    bucket.clear();
     expect(await text(await get(KEY))).toBe("stored");
     expect(synthesized).toEqual([]);
   });
 
-  it("records a missing chunk once, then serves the recording", async () => {
+  it("serves a recording in the bucket whatever the catalog says", async () => {
+    const other = "c".repeat(64);
+    const { get, bucket } = setup();
+    bucket.set(other, "from another version");
+    expect(await text(await get(other))).toBe("from another version");
+  });
+
+  it("records a missing chunk once, into the bucket and onto disk", async () => {
     const { get, bucket, synthesized } = setup();
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     await settle();
-    expect(new TextDecoder().decode(bucket.get(KEY))).toBe("audio:Hello.");
+    expect(bucket.get(KEY)).toBe("audio:Hello.");
+    bucket.clear();
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     expect(synthesized).toEqual(["Hello."]);
   });
 
   it("synthesizes once for concurrent requests", async () => {
     const { get, synthesized } = setup();
-    const [first, second] = await Promise.all([get(KEY), get(KEY)]);
-    expect([await text(first), await text(second)]).toEqual(["audio:Hello.", "audio:Hello."]);
+    const results = await Promise.all([get(KEY), get(KEY), get(KEY)]);
+    expect(await Promise.all(results.map(text))).toEqual([
+      "audio:Hello.",
+      "audio:Hello.",
+      "audio:Hello.",
+    ]);
     expect(synthesized).toEqual(["Hello."]);
   });
 
   it("keeps the recording when the listener leaves early", async () => {
-    const { get, bucket } = setup();
+    const { get, bucket, synthesized } = setup();
     await (await get(KEY))?.cancel();
     await settle();
-    expect(new TextDecoder().decode(bucket.get(KEY))).toBe("audio:Hello.");
+    expect(bucket.get(KEY)).toBe("audio:Hello.");
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    expect(synthesized).toEqual(["Hello."]);
   });
 
-  it("doesn't keep audio that stopped partway, and tries again", async () => {
+  it("keeps nothing of audio that stopped partway, and tries again", async () => {
     let attempts = 0;
-    const { get, bucket, synthesized } = setup({
+    const { get, bucket, synthesized, cacheDir } = setup({
       synthesize: async (chunk) => {
         synthesized.push(chunk.text);
-        attempts++;
-        if (attempts > 1) return streamOf("audio:", chunk.text);
+        if (++attempts > 1) return streamOf("audio:", chunk.text);
         return new ReadableStream({
           start(controller) {
             controller.enqueue(new TextEncoder().encode("audio:"));
@@ -110,32 +137,12 @@ describe("prerecorded speech", () => {
     await expect(text(await get(KEY))).rejects.toThrow("connection dropped");
     await settle();
     expect(bucket.has(KEY)).toBe(false);
+    expect(await readdir(cacheDir)).toEqual([]);
     expect(await text(await get(KEY))).toBe("audio:Hello.");
     expect(synthesized).toEqual(["Hello.", "Hello."]);
   });
 
-  it("passes on a provider's refusal, and tries again next time", async () => {
-    let refuse = true;
-    const { get } = setup({
-      synthesize: async (chunk) => {
-        if (refuse) throw new Error("busy");
-        return streamOf("audio:", chunk.text);
-      },
-    });
-    await expect(get(KEY)).rejects.toThrow("busy");
-    await settle();
-    refuse = false;
-    expect(await text(await get(KEY))).toBe("audio:Hello.");
-  });
-
-  it("serves a stored recording whatever the catalog says", async () => {
-    const other = "c".repeat(64);
-    const { get, bucket } = setup();
-    bucket.set(other, new TextEncoder().encode("from another version"));
-    expect(await text(await get(other))).toBe("from another version");
-  });
-
-  it("gives requests waiting on a recording that fails its failure, not new syntheses", async () => {
+  it("gives requests waiting on a synthesis that fails its failure, not new syntheses", async () => {
     let fail = true;
     const { get, synthesized } = setup({
       synthesize: async (chunk) => {
@@ -152,7 +159,7 @@ describe("prerecorded speech", () => {
     expect(await text(await get(KEY))).toBe("audio:Hello.");
   });
 
-  it("serves a recording storage refused from memory, without paying again", async () => {
+  it("serves from disk what the bucket refused, without paying again", async () => {
     const { get, synthesized } = setup({
       store: async () => {
         throw new Error("storage down");
@@ -164,29 +171,38 @@ describe("prerecorded speech", () => {
     expect(synthesized).toEqual(["Hello."]);
   });
 
-  it("won't pay again soon for a recording storage lost", async () => {
-    let time = 0;
-    const { get, synthesized } = setup({
-      // Stores, but reads somewhere else.
-      store: async () => {},
-      now: () => time,
-    });
-    expect(await text(await get(KEY))).toBe("audio:Hello.");
+  it("without a bucket, synthesizes once per disk cache", async () => {
+    const first = setup({ read: async () => null, store: null });
+    expect(await text(await first.get(KEY))).toBe("audio:Hello.");
     await settle();
-    await expect(get(KEY)).rejects.toThrow(RecordingLostError);
-    time += 2 * 60 * 60 * 1000;
-    expect(await text(await get(KEY))).toBe("audio:Hello.");
-    expect(synthesized).toEqual(["Hello.", "Hello."]);
+    expect(await text(await first.get(KEY))).toBe("audio:Hello.");
+    expect(first.synthesized).toEqual(["Hello."]);
+
+    const restartedWithNewDisk = setup({
+      read: async () => null,
+      store: null,
+      cacheDir: join(root, "next"),
+    });
+    expect(await text(await restartedWithNewDisk.get(KEY))).toBe("audio:Hello.");
+    expect(restartedWithNewDisk.synthesized).toEqual(["Hello."]);
   });
 
-  it("without storage, synthesizes every play only when told to", async () => {
-    const dev = setup({ store: null, synthesizeUncached: true });
-    expect(await text(await dev.get(KEY))).toBe("audio:Hello.");
-    expect(await text(await dev.get(KEY))).toBe("audio:Hello.");
-    expect(dev.synthesized).toEqual(["Hello.", "Hello."]);
+  it("is off, synthesizing nothing, when the disk cache can't be set up", async () => {
+    const blocked = join(root, "not-a-directory");
+    await writeFile(blocked, "");
+    const { get, bucket, synthesized } = setup({ cacheDir: join(blocked, "cache") });
+    bucket.set(KEY, "stored");
+    expect(await get(KEY)).toBeNull();
+    expect(synthesized).toEqual([]);
+  });
 
-    const production = setup({ store: null, synthesizeUncached: false });
-    expect(await production.get(KEY)).toBeNull();
-    expect(production.synthesized).toEqual([]);
+  it.runIf(canFailWrites)("turns off when the disk cache fails a write", async () => {
+    const { get, synthesized, cacheDir } = setup();
+    await get("b".repeat(64)); // Waits out the probe.
+    await chmod(cacheDir, 0o500);
+    expect(await text(await get(KEY))).toBe("audio:Hello.");
+    await settle();
+    expect(await get(KEY)).toBeNull();
+    expect(synthesized).toEqual(["Hello."]);
   });
 });

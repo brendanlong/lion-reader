@@ -2,9 +2,9 @@
  * GET /api/prerecorded-speech/:key
  *
  * A chunk of the demo's narration (`@/lib/narration/prerecorded-speech`):
- * from the bucket, or, the first time it's asked for, synthesized with the
- * server's key and stored there (`@/server/services/prerecorded-speech`). The
- * player fetches it through the CDN (`ASSET_PREFIX`), which caches it: a key
+ * from the machine's disk cache, the bucket, or, the first time it's asked
+ * for, synthesized with the server's key (`@/server/services/prerecorded-speech`).
+ * The player fetches it through the CDN (`ASSET_PREFIX`), which caches it: a key
  * names its content, so audio can be cached forever, while a failure isn't
  * cached. The CDN is another origin than the page, hence the CORS header.
  *
@@ -13,6 +13,8 @@
  * arbitrary text (SECURITY.md section 10).
  */
 
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { logger } from "@/lib/logger";
 import {
   isPrerecordedSpeechKey,
@@ -20,7 +22,7 @@ import {
 } from "@/lib/narration/prerecorded-speech";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { demoNarrationCatalog } from "@/server/services/demo-narration";
-import { createPrerecordedSpeech, RecordingLostError } from "@/server/services/prerecorded-speech";
+import { createPrerecordedSpeech } from "@/server/services/prerecorded-speech";
 import { ProviderBusyError } from "@/server/services/provider-errors";
 import {
   SpeechRejectedError,
@@ -71,7 +73,7 @@ const getPrerecordedSpeech = createPrerecordedSpeech({
   store: isStorageAvailable()
     ? (key, audio) => uploadObject(prerecordedSpeechObjectKey(key), audio, "audio/mp4")
     : null,
-  synthesizeUncached: process.env.NODE_ENV === "development",
+  cacheDir: join(tmpdir(), "lion-reader-prerecorded-speech"),
 });
 
 function errorResponse(
@@ -109,11 +111,6 @@ export async function GET(
     if (error instanceof SpeechRequestError || error instanceof SpeechRejectedError) {
       logger.warn("Recorded narration refused", { key, error: error.message });
       return errorResponse(422, error.message);
-    }
-    if (error instanceof RecordingLostError) {
-      // Storage misconfigured or losing writes: not paid for again yet.
-      logger.error("Recorded narration lost", { key });
-      return errorResponse(502, "Couldn't get the narration");
     }
     logger.error("Recorded narration failed", {
       key,
