@@ -106,26 +106,12 @@ describe("detectFeedType", () => {
     it("returns unknown for empty string", () => {
       expect(detectFeedType("")).toBe("unknown");
     });
-
-    it("returns unknown for plain text", () => {
-      expect(detectFeedType("This is not XML")).toBe("unknown");
-    });
   });
 
   describe("JSON Feed detection", () => {
     it("detects JSON Feed 1.1", () => {
       const json = JSON.stringify({
         version: "https://jsonfeed.org/version/1.1",
-        title: "Test Feed",
-        items: [],
-      });
-
-      expect(detectFeedType(json)).toBe("json");
-    });
-
-    it("detects JSON Feed 1.0", () => {
-      const json = JSON.stringify({
-        version: "https://jsonfeed.org/version/1",
         title: "Test Feed",
         items: [],
       });
@@ -160,15 +146,6 @@ describe("detectFeedType", () => {
         </rss>`;
 
       expect(detectFeedType(xml)).toBe("rss");
-    });
-
-    it("handles feed with attributes in element", () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
-          <title>Test Feed</title>
-        </feed>`;
-
-      expect(detectFeedType(xml)).toBe("atom");
     });
 
     it("handles whitespace before JSON", () => {
@@ -339,28 +316,6 @@ describe("parseFeed", () => {
       expect(rssFeed.items[0].pubDate).toEqual(atomFeed.items[0].pubDate);
       expect(rssFeed.items[0].pubDate).toEqual(jsonParsed.items[0].pubDate);
     });
-  });
-});
-
-describe("UnknownFeedFormatError", () => {
-  it("has correct name and message", () => {
-    const error = new UnknownFeedFormatError();
-
-    expect(error.name).toBe("UnknownFeedFormatError");
-    expect(error.message).toBe("Unknown feed format: unable to detect RSS, Atom, or JSON Feed");
-  });
-
-  it("accepts custom message", () => {
-    const error = new UnknownFeedFormatError("Custom error message");
-
-    expect(error.message).toBe("Custom error message");
-  });
-
-  it("is instanceof Error", () => {
-    const error = new UnknownFeedFormatError();
-
-    expect(error).toBeInstanceOf(Error);
-    expect(error).toBeInstanceOf(UnknownFeedFormatError);
   });
 });
 

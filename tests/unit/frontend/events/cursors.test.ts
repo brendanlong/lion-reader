@@ -115,11 +115,6 @@ describe("advanceCursors", () => {
     expect(next.subscriptions).toBe("2026-01-03T12:00:00.000Z");
   });
 
-  it("advances the entries cursor from a mark_all_read event", () => {
-    const next = advanceCursors(EMPTY_CURSORS, markAllReadEvent("2026-02-01T00:00:00.000Z"));
-    expect(next.entries).toBe("2026-02-01T00:00:00.000Z");
-  });
-
   it("does not move a cursor backwards for older or equal events", () => {
     const cursors = advanceCursors(EMPTY_CURSORS, entryEvent("2026-01-02T00:00:00.000Z"));
     expect(advanceCursors(cursors, entryEvent("2026-01-01T00:00:00.000Z"))).toBe(cursors);

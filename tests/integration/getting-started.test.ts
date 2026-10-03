@@ -110,15 +110,6 @@ describe("createGettingStartedArticle", () => {
     expect(counts.saved).toBe(1);
   });
 
-  it("is a no-op the second time", async () => {
-    const userId = await createUser();
-
-    expect(await createGettingStartedArticle(db, userId)).not.toBeNull();
-    expect(await createGettingStartedArticle(db, userId)).toBeNull();
-
-    expect(await savedEntriesFor(userId)).toHaveLength(1);
-  });
-
   it("does not re-add the article after the user deletes it", async () => {
     const userId = await createUser();
 

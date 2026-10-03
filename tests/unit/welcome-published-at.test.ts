@@ -11,18 +11,12 @@ describe("resolveWelcomePublishedAt", () => {
     expect(result.toISOString()).toBe("2026-07-15T09:30:00.000Z");
   });
 
-  it("falls back to the fixed date when build time is undefined", () => {
-    const result = resolveWelcomePublishedAt(undefined);
-    expect(result.toISOString()).toBe(new Date(WELCOME_FALLBACK_PUBLISHED_AT).toISOString());
-  });
-
-  it("falls back to the fixed date when build time is empty", () => {
-    const result = resolveWelcomePublishedAt("");
-    expect(result.toISOString()).toBe(new Date(WELCOME_FALLBACK_PUBLISHED_AT).toISOString());
-  });
-
-  it("falls back to the fixed date when build time is unparseable", () => {
-    const result = resolveWelcomePublishedAt("not-a-date");
+  it.each([
+    ["undefined", undefined],
+    ["empty", ""],
+    ["unparseable", "not-a-date"],
+  ])("falls back to the fixed date when build time is %s", (_label, buildTime) => {
+    const result = resolveWelcomePublishedAt(buildTime);
     expect(result.toISOString()).toBe(new Date(WELCOME_FALLBACK_PUBLISHED_AT).toISOString());
   });
 

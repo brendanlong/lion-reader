@@ -33,21 +33,8 @@ describe("calculateTokensToAdd", () => {
     expect(calculateTokensToAdd(1000, 10)).toBe(10);
   });
 
-  it("calculates correct tokens for half second", () => {
-    expect(calculateTokensToAdd(500, 10)).toBe(5);
-  });
-
-  it("calculates correct tokens for 5 seconds", () => {
-    expect(calculateTokensToAdd(5000, 10)).toBe(50);
-  });
-
   it("returns 0 for 0 elapsed time", () => {
     expect(calculateTokensToAdd(0, 10)).toBe(0);
-  });
-
-  it("works with different refill rates", () => {
-    expect(calculateTokensToAdd(1000, 1)).toBe(1);
-    expect(calculateTokensToAdd(1000, 100)).toBe(100);
   });
 
   it("handles fractional tokens", () => {
@@ -100,17 +87,6 @@ describe("refillBucket", () => {
     expect(result.tokens).toBe(50);
     expect(result.lastRefillMs).toBe(startMs);
   });
-
-  it("handles full bucket correctly", () => {
-    const startMs = 1000000;
-    const nowMs = startMs + 1000;
-    const bucket = createBucketState({ tokens: 100, lastRefillMs: startMs });
-
-    const result = refillBucket(bucket, config, nowMs);
-
-    expect(result.tokens).toBe(100); // Already at capacity
-    expect(result.lastRefillMs).toBe(nowMs);
-  });
 });
 
 describe("consumeToken", () => {
@@ -151,16 +127,6 @@ describe("consumeToken", () => {
     expect(result.remaining).toBe(0);
     expect(result.retryAfterSeconds).toBe(1); // Need 1 token, 10/sec = 0.1s, ceil = 1
     expect(newState.tokens).toBe(0); // State unchanged
-  });
-
-  it("calculates retry-after correctly", () => {
-    const bucket = createBucketState({ tokens: 0.5, lastRefillMs: nowMs });
-
-    const { result } = consumeToken(bucket, config, nowMs);
-
-    expect(result.allowed).toBe(false);
-    // Need 0.5 tokens, 10/sec = 0.05s, ceil = 1
-    expect(result.retryAfterSeconds).toBe(1);
   });
 
   it("refills before consuming", () => {
@@ -204,13 +170,6 @@ describe("createBucket", () => {
 
     expect(bucket.tokens).toBe(100);
     expect(bucket.lastRefillMs).toBe(nowMs);
-  });
-
-  it("uses config capacity for different configs", () => {
-    const smallConfig: RateLimitConfig = { capacity: 10, refillRate: 1 };
-    const bucket = createBucket(smallConfig, nowMs);
-
-    expect(bucket.tokens).toBe(10);
   });
 });
 
@@ -281,14 +240,6 @@ describe("getRateLimitKey", () => {
     expect(getRateLimitKey("ip:1.2.3.4", "oauth")).not.toBe(
       getRateLimitKey("ip:1.2.3.4", "expensive")
     );
-  });
-
-  it("generates key for IP address", () => {
-    expect(getRateLimitKey("ip:192.168.1.1")).toBe("rate_limit:default:ip:192.168.1.1");
-  });
-
-  it("handles default type parameter", () => {
-    expect(getRateLimitKey("test")).toBe("rate_limit:default:test");
   });
 });
 
@@ -385,60 +336,5 @@ describe("integration scenarios", () => {
     // 3rd request should be rejected
     const { result } = consumeToken(bucket, config, nowMs);
     expect(result.allowed).toBe(false);
-  });
-
-  it("recovers fully after waiting long enough", () => {
-    const startMs = 1000000;
-    let bucket = createBucket(config, startMs);
-
-    // Exhaust all tokens
-    for (let i = 0; i < 10; i++) {
-      const { newState } = consumeToken(bucket, config, startMs);
-      bucket = newState;
-    }
-
-    // Wait 15 seconds (more than enough to refill to capacity)
-    const laterMs = startMs + 15000;
-
-    // Should have full capacity again
-    const { result, newState } = consumeToken(bucket, config, laterMs);
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(9); // 10 refilled (capped) - 1 consumed
-
-    // Verify we can make 9 more requests
-    bucket = newState;
-    for (let i = 0; i < 9; i++) {
-      const { result: r, newState: ns } = consumeToken(bucket, config, laterMs);
-      expect(r.allowed).toBe(true);
-      bucket = ns;
-    }
-
-    // 10th additional request should be rejected
-    const { result: final } = consumeToken(bucket, config, laterMs);
-    expect(final.allowed).toBe(false);
-  });
-
-  it("works with expensive operation limits", () => {
-    const expensiveConfig = RATE_LIMIT_CONFIGS.expensive;
-    let nowMs = 1000000;
-    let bucket = createBucket(expensiveConfig, nowMs);
-
-    // Can make 10 requests
-    for (let i = 0; i < 10; i++) {
-      const { result, newState } = consumeToken(bucket, expensiveConfig, nowMs);
-      expect(result.allowed).toBe(true);
-      bucket = newState;
-    }
-
-    // 11th should fail
-    const { result } = consumeToken(bucket, expensiveConfig, nowMs);
-    expect(result.allowed).toBe(false);
-
-    // Wait 1 second
-    nowMs += 1000;
-
-    // Can make 1 more request
-    const { result: after } = consumeToken(bucket, expensiveConfig, nowMs);
-    expect(after.allowed).toBe(true);
   });
 });

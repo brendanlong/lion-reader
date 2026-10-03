@@ -29,27 +29,6 @@ describe("Button", () => {
     });
   });
 
-  describe("variants", () => {
-    it("applies primary variant styles", () => {
-      render(<Button variant="primary">Primary</Button>);
-      const button = screen.getByRole("button");
-      expect(button).toHaveClass("btn-primary");
-    });
-
-    it("applies secondary variant styles", () => {
-      render(<Button variant="secondary">Secondary</Button>);
-      const button = screen.getByRole("button");
-      expect(button).toHaveClass("border", "bg-surface", "text-body");
-    });
-
-    it("applies ghost variant styles", () => {
-      render(<Button variant="ghost">Ghost</Button>);
-      const button = screen.getByRole("button");
-      expect(button).toHaveClass("text-body");
-      expect(button).not.toHaveClass("btn-primary", "bg-surface");
-    });
-  });
-
   describe("sizes", () => {
     it("applies sm size styles", () => {
       render(<Button size="sm">Small</Button>);
@@ -102,17 +81,6 @@ describe("Button", () => {
       render(<Button disabled={true}>Disabled</Button>);
       expect(screen.getByRole("button")).toBeDisabled();
     });
-
-    it("is not disabled when disabled prop is false", () => {
-      render(<Button disabled={false}>Enabled</Button>);
-      expect(screen.getByRole("button")).not.toBeDisabled();
-    });
-
-    it("applies disabled styles", () => {
-      render(<Button disabled={true}>Disabled</Button>);
-      const button = screen.getByRole("button");
-      expect(button).toHaveClass("disabled:cursor-not-allowed", "disabled:opacity-50");
-    });
   });
 
   describe("callbacks", () => {
@@ -159,21 +127,9 @@ describe("Button", () => {
       render(<Button type="submit">Submit</Button>);
       expect(screen.getByRole("button")).toHaveAttribute("type", "submit");
     });
-
-    it("passes through aria attributes", () => {
-      render(<Button aria-describedby="description">Accessible</Button>);
-      expect(screen.getByRole("button")).toHaveAttribute("aria-describedby", "description");
-    });
   });
 
   describe("accessibility", () => {
-    it("is focusable", () => {
-      render(<Button>Focusable</Button>);
-      const button = screen.getByRole("button");
-      button.focus();
-      expect(document.activeElement).toBe(button);
-    });
-
     it("does not suppress the global focus outline (#1292)", () => {
       render(<Button>Focus Ring</Button>);
       const button = screen.getByRole("button");

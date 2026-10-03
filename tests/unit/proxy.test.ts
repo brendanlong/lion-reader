@@ -20,24 +20,6 @@ function makeRequest(path: string, method = "GET"): NextRequest {
   });
 }
 
-describe("proxy", () => {
-  it("does not gate auth: an unauthenticated protected path passes through untouched", async () => {
-    // Auth is handled by the server-side layout guards, not the proxy (#984).
-    const res = await proxy(makeRequest("/all"));
-    expect(res.headers.get("location")).toBeNull();
-    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
-  });
-
-  it.each(["GET", "POST", "OPTIONS"])(
-    "%s /register is never rewritten — DCR lives only at /oauth/register",
-    async (method) => {
-      const res = await proxy(makeRequest("/register", method));
-      expect(res.headers.get("x-middleware-rewrite")).toBeNull();
-      expect(res.headers.get("location")).toBeNull();
-    }
-  );
-});
-
 describe("proxy CSP tiering (issue #1359)", () => {
   const PUBLIC_PATHS = [
     "/demo",
@@ -48,6 +30,8 @@ describe("proxy CSP tiering (issue #1359)", () => {
     "/privacy",
   ];
   const DYNAMIC_PATHS = [
+    // An unauthenticated protected path passes through untouched: auth is the
+    // server-side layout guards' job, not the proxy's (#984).
     "/all",
     "/auth/oauth/complete",
     "/settings",
@@ -83,12 +67,13 @@ describe("proxy CSP tiering (issue #1359)", () => {
   });
 
   it.each(["GET", "POST", "OPTIONS"])(
-    "%s /register gets the relaxed static CSP (no route handler exists; a non-GET is a bodyless 405)",
+    "%s /register is never rewritten (DCR lives only at /oauth/register) and gets the relaxed static CSP",
     async (method) => {
       const res = await proxy(makeRequest("/register", method));
       expect(res.headers.get("Content-Security-Policy")).toMatch(/script-src[^;]*'unsafe-inline'/);
       expect(res.headers.get("Content-Security-Policy")).not.toContain("'nonce-");
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+      expect(res.headers.get("location")).toBeNull();
     }
   );
 

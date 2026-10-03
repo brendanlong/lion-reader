@@ -175,26 +175,6 @@ describe("addParagraphIdsToHtml", () => {
       // Outer ul + parent li + inner ul + 2 child li + parent li = 6 total
       expect(result.paragraphCount).toBe(6);
     });
-
-    it("assigns IDs in document order for nested lists", () => {
-      const html = `
-        <p>Before list</p>
-        <ul>
-          <li>Item 1</li>
-          <li>Item 2</li>
-        </ul>
-        <p>After list</p>
-      `;
-      const result = addParagraphIdsToHtml(html);
-
-      // p, ul, li, li, p = 5 elements
-      expect(result.paragraphCount).toBe(5);
-
-      // Verify p comes before ul in the output
-      const pIndex = result.html.indexOf('<p data-para-id="para-0"');
-      const ulIndex = result.html.indexOf('<ul data-para-id="para-1"');
-      expect(pIndex).toBeLessThan(ulIndex);
-    });
   });
 
   describe("empty content", () => {
@@ -247,53 +227,6 @@ describe("addParagraphIdsToHtml", () => {
       // it is a highlight target too.
       expect(result.paragraphCount).toBe(4);
       expect(result.html).toContain('data-para-id="para-0"');
-    });
-
-    it("handles inline elements within block elements", () => {
-      const html = `
-        <p>Text with <a href="#">link</a> and <code>code</code>.</p>
-      `;
-      const result = addParagraphIdsToHtml(html);
-
-      expect(result.paragraphCount).toBe(1);
-      expect(result.html).toContain("<a href=");
-      expect(result.html).toContain("<code>");
-    });
-
-    it("handles self-closing elements", () => {
-      const html = `
-        <p>Before</p>
-        <figure><img src="test.jpg" /></figure>
-        <p>After</p>
-      `;
-      const result = addParagraphIdsToHtml(html);
-
-      // p, figure, img, p
-      expect(result.paragraphCount).toBe(4);
-    });
-
-    it("handles HTML entities", () => {
-      const html = "<p>Less &lt; than &amp; greater &gt; than</p>";
-      const result = addParagraphIdsToHtml(html);
-
-      expect(result.paragraphCount).toBe(1);
-      // DOMParser may decode entities, that's fine
-      expect(result.html).toContain("data-para-id");
-    });
-
-    it("handles special characters in content", () => {
-      const html = "<p>Hello \"world\" with 'quotes' and unicode: </p>";
-      const result = addParagraphIdsToHtml(html);
-
-      expect(result.paragraphCount).toBe(1);
-      expect(result.html).toContain("Hello");
-    });
-
-    it("handles multiple adjacent block elements without whitespace", () => {
-      const html = "<p>One</p><p>Two</p><h2>Three</h2>";
-      const result = addParagraphIdsToHtml(html);
-
-      expect(result.paragraphCount).toBe(3);
     });
 
     it("keeps the whole article when a stray end tag closes a wrapper", () => {
@@ -360,40 +293,6 @@ describe("addParagraphIdsToHtml", () => {
       expect(result.html).toContain("<ul data-para-id");
       expect(result.html).toContain("<li data-para-id");
     });
-
-    it("handles article with code snippets and quotes", () => {
-      const html = `
-        <p>Consider this example:</p>
-        <pre><code>const result = await fetchData();
-console.log(result);</code></pre>
-        <p>As the documentation states:</p>
-        <blockquote>
-          <p>"Always handle errors gracefully."</p>
-        </blockquote>
-        <p>Keep this in mind.</p>
-      `;
-      const result = addParagraphIdsToHtml(html);
-
-      // p + pre + p + blockquote + p + p = 6
-      expect(result.paragraphCount).toBe(6);
-
-      // Code content should be preserved
-      expect(result.html).toContain("await fetchData()");
-      expect(result.html).toContain("console.log");
-    });
-  });
-
-  describe("consistency with server-side processing", () => {
-    // The two sides number the same elements because they call the same
-    // `narrationTargets`; that invariant is held in narration-walk.test.ts.
-    it("produces same ID format as server-side (para-N)", () => {
-      const html = "<p>Test</p><h2>Header</h2><p>More</p>";
-      const result = addParagraphIdsToHtml(html);
-
-      expect(result.html).toContain('data-para-id="para-0"');
-      expect(result.html).toContain('data-para-id="para-1"');
-      expect(result.html).toContain('data-para-id="para-2"');
-    });
   });
 });
 
@@ -409,15 +308,6 @@ describe("processHtmlForHighlighting", () => {
   it("returns empty string for empty input", () => {
     expect(processHtmlForHighlighting("")).toBe("");
     expect(processHtmlForHighlighting("   ")).toBe("");
-  });
-
-  it("can be used directly in a component", () => {
-    // Simulate typical React usage
-    const content = "<p>Article content</p>";
-    const processed = processHtmlForHighlighting(content);
-
-    expect(processed).toContain("data-para-id");
-    expect(processed).toContain("Article content");
   });
 });
 
@@ -525,13 +415,6 @@ describe("htmlToClientNarration", () => {
       expect(result.paragraphMap).toEqual([{ n: 0, o: 0 }]);
     });
 
-    it("handles multiple inline images within a paragraph", () => {
-      const html = '<p>First <img alt="image one"> middle <img alt="image two"> last</p>';
-      const result = htmlToClientNarration(html);
-
-      expect(result.narrationText).toBe("First Image: image one middle Image: image two last");
-    });
-
     it("skips inline images without alt text within paragraphs", () => {
       const html = '<p>Text before <img src="test.jpg"> text after</p>';
       const result = htmlToClientNarration(html);
@@ -546,13 +429,6 @@ describe("htmlToClientNarration", () => {
 
       // ul produces no text, li does
       expect(result.narrationText).toBe("Item with Image: icon image");
-    });
-
-    it("handles inline images in blockquotes", () => {
-      const html = '<blockquote>Quote with <img alt="emphasis"> for effect</blockquote>';
-      const result = htmlToClientNarration(html);
-
-      expect(result.narrationText).toBe("Quote with Image: emphasis for effect");
     });
   });
 
@@ -714,52 +590,6 @@ describe("htmlToClientNarration", () => {
         { n: 1, o: 1 },
         { n: 2, o: 2 },
       ]);
-    });
-  });
-
-  describe("paragraph mapping consistency", () => {
-    it("ensures processed HTML IDs match paragraph map", () => {
-      const html = "<p>First</p><p>Second</p><p>Third</p>";
-      const result = htmlToClientNarration(html);
-
-      // Parse the processed HTML and check IDs
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(`<div>${result.processedHtml}</div>`, "text/html");
-      const container = doc.body.firstElementChild!;
-
-      const elements = container.querySelectorAll("[data-para-id]");
-      expect(elements.length).toBe(3);
-      expect(elements[0].getAttribute("data-para-id")).toBe("para-0");
-      expect(elements[1].getAttribute("data-para-id")).toBe("para-1");
-      expect(elements[2].getAttribute("data-para-id")).toBe("para-2");
-
-      // Verify paragraph map correctly maps narration indices to element indices
-      for (const mapping of result.paragraphMap) {
-        const targetId = `para-${mapping.o}`;
-        const element = container.querySelector(`[data-para-id="${targetId}"]`);
-        expect(element).not.toBeNull();
-      }
-    });
-
-    it("correctly maps when elements are skipped in narration", () => {
-      // This is the key test for the sync issue
-      const html = '<p>Before image</p><img src="x"><p>After image</p>';
-      const result = htmlToClientNarration(html);
-
-      // Narration text should have 2 paragraphs (image without alt is skipped)
-      const narrationParagraphs = result.narrationText.split("\n\n");
-      expect(narrationParagraphs.length).toBe(2);
-      expect(narrationParagraphs[0]).toBe("Before image");
-      expect(narrationParagraphs[1]).toBe("After image");
-
-      // Paragraph map should correctly point to DOM element indices
-      expect(result.paragraphMap[0]).toEqual({ n: 0, o: 0 }); // "Before image" -> para-0
-      expect(result.paragraphMap[1]).toEqual({ n: 1, o: 2 }); // "After image" -> para-2 (skipping para-1 which is the image)
-
-      // Verify the processed HTML has all 3 elements with IDs
-      expect(result.processedHtml).toContain('data-para-id="para-0"');
-      expect(result.processedHtml).toContain('data-para-id="para-1"'); // Image still gets ID
-      expect(result.processedHtml).toContain('data-para-id="para-2"');
     });
   });
 

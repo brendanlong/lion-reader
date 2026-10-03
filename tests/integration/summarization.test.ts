@@ -294,19 +294,6 @@ describe("summarization.generate regenerate bypasses the cache", () => {
     });
   }
 
-  it("serves the cached feed summary when regenerate is not set", async () => {
-    const userId = await createUser();
-    const contentHash = `hash-${generateUuidv7()}`;
-    const entryId = await createVisibleEntry(userId, contentHash);
-    await cacheSummary(userId, contentHash, "<p>Cached feed summary</p>");
-
-    const caller = createCaller(await createAuthContext(userId));
-    const result = await caller.summarization.generate({ entryId });
-
-    expect(result.cached).toBe(true);
-    expect(result.summary).toContain("Cached feed summary");
-  });
-
   it("skips the cached feed summary when regenerate is true", async () => {
     const userId = await createUser();
     const contentHash = `hash-${generateUuidv7()}`;

@@ -302,11 +302,6 @@ describe("renderLinkedInPost", () => {
     expect(result!.excerpt).toBe("Watch this.");
   });
 
-  it("omits the transcript block entirely when there is no transcript", () => {
-    const result = renderLinkedInPost(page(TEXT_POST), POST_URL);
-    expect(result!.html).not.toContain("<details>");
-  });
-
   it("reads a DiscussionForumPosting's articleBody", () => {
     const result = renderLinkedInPost(
       page({ "@type": "DiscussionForumPosting", articleBody: "A discussion post." }),

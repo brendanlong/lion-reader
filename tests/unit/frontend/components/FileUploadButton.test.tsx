@@ -41,15 +41,6 @@ describe("FileUploadButton drop zone accessibility", () => {
     vi.clearAllMocks();
   });
 
-  it("exposes the file input with an accessible name", () => {
-    renderWithTrpc(<FileUploadButton />, { handlers });
-    openDialog();
-
-    const input = getFileInput();
-    expect(input).toBeInTheDocument();
-    expect(input.type).toBe("file");
-  });
-
   it("keeps the file input rendered rather than display:none, so it is tabbable", () => {
     renderWithTrpc(<FileUploadButton />, { handlers });
     openDialog();

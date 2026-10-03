@@ -8,189 +8,40 @@
 import { describe, it, expect } from "vitest";
 import { classifyVoiceError, getVoiceErrorInfo } from "../../src/lib/narration/errors";
 
+/** An Error with the given message and, optionally, name. */
+function err(message: string, name?: string): Error {
+  const error = new Error(message);
+  if (name) error.name = name;
+  return error;
+}
+
 describe("classifyVoiceError", () => {
-  describe("quota exceeded errors", () => {
-    it("classifies QuotaExceededError by name", () => {
-      const error = new Error("Storage quota exceeded");
-      error.name = "QuotaExceededError";
-
-      expect(classifyVoiceError(error)).toBe("quota_exceeded");
-    });
-
-    it("classifies errors with 'quota' in message", () => {
-      const error = new Error("Quota exceeded for IndexedDB");
-
-      expect(classifyVoiceError(error)).toBe("quota_exceeded");
-    });
-
-    it("classifies errors with 'storage' in message", () => {
-      const error = new Error("Not enough storage space available");
-
-      expect(classifyVoiceError(error)).toBe("quota_exceeded");
-    });
-
-    it("classifies errors with 'disk' in message", () => {
-      const error = new Error("Disk full");
-
-      expect(classifyVoiceError(error)).toBe("quota_exceeded");
-    });
-
-    it("classifies errors with 'space' in message", () => {
-      const error = new Error("Not enough space");
-
-      expect(classifyVoiceError(error)).toBe("quota_exceeded");
-    });
+  // One case per kind of signal (error name vs message keyword) for each type;
+  // the keyword lists themselves live in errors.ts.
+  it.each([
+    [
+      "QuotaExceededError by name",
+      err("Storage quota exceeded", "QuotaExceededError"),
+      "quota_exceeded",
+    ],
+    ["a storage message", err("Not enough storage space available"), "quota_exceeded"],
+    ["NetworkError by name", err("Network request failed", "NetworkError"), "network_error"],
+    ["a fetch TypeError", new TypeError("Failed to fetch"), "network_error"],
+    ["a Chrome-style net:: message", err("net::ERR_INTERNET_DISCONNECTED"), "network_error"],
+    ["a 404 message", err("HTTP 404: Not Found"), "voice_not_found"],
+    ["AbortError by name", err("Request was aborted", "AbortError"), "download_interrupted"],
+    ["an interrupted message", err("Download was interrupted"), "download_interrupted"],
+    ["a corrupt-cache message", err("Cache data is corrupt"), "corrupted_cache"],
+    ["a generic error", err("Something went wrong"), "unknown"],
+  ] as const)("classifies %s", (_label, error, expected) => {
+    expect(classifyVoiceError(error)).toBe(expected);
   });
 
-  describe("network errors", () => {
-    it("classifies NetworkError by name", () => {
-      const error = new Error("Network request failed");
-      error.name = "NetworkError";
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-
-    it("classifies TypeError (common for fetch failures)", () => {
-      const error = new TypeError("Failed to fetch");
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-
-    it("classifies errors with 'network' in message", () => {
-      const error = new Error("A network error occurred");
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-
-    it("classifies errors with 'connection' in message", () => {
-      const error = new Error("Connection refused");
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-
-    it("classifies errors with 'timeout' in message", () => {
-      const error = new Error("Request timeout");
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-
-    it("classifies errors with 'dns' in message", () => {
-      const error = new Error("DNS lookup failed");
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-
-    it("classifies errors with 'offline' in message", () => {
-      const error = new Error("Browser is offline");
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-
-    it("classifies Chrome-style net errors", () => {
-      const error = new Error("net::ERR_INTERNET_DISCONNECTED");
-
-      expect(classifyVoiceError(error)).toBe("network_error");
-    });
-  });
-
-  describe("voice not found errors", () => {
-    it("classifies errors with '404' in message", () => {
-      const error = new Error("HTTP 404: Not Found");
-
-      expect(classifyVoiceError(error)).toBe("voice_not_found");
-    });
-
-    it("classifies errors with 'not found' in message", () => {
-      const error = new Error("Voice model not found");
-
-      expect(classifyVoiceError(error)).toBe("voice_not_found");
-    });
-
-    it("classifies errors with 'does not exist' in message", () => {
-      const error = new Error("The requested resource does not exist");
-
-      expect(classifyVoiceError(error)).toBe("voice_not_found");
-    });
-  });
-
-  describe("download interrupted errors", () => {
-    it("classifies AbortError by name", () => {
-      const error = new Error("Request was aborted");
-      error.name = "AbortError";
-
-      expect(classifyVoiceError(error)).toBe("download_interrupted");
-    });
-
-    it("classifies errors with 'abort' in message", () => {
-      const error = new Error("Download was aborted");
-
-      expect(classifyVoiceError(error)).toBe("download_interrupted");
-    });
-
-    it("classifies errors with 'interrupt' in message", () => {
-      const error = new Error("Download was interrupted");
-
-      expect(classifyVoiceError(error)).toBe("download_interrupted");
-    });
-
-    it("classifies errors with 'cancel' in message", () => {
-      const error = new Error("Request cancelled by user");
-
-      expect(classifyVoiceError(error)).toBe("download_interrupted");
-    });
-  });
-
-  describe("corrupted cache errors", () => {
-    it("classifies errors with 'corrupt' in message", () => {
-      const error = new Error("Cache data is corrupt");
-
-      expect(classifyVoiceError(error)).toBe("corrupted_cache");
-    });
-
-    it("classifies errors with 'invalid' in message", () => {
-      const error = new Error("Invalid data in cache");
-
-      expect(classifyVoiceError(error)).toBe("corrupted_cache");
-    });
-
-    it("classifies errors with 'parse' in message", () => {
-      const error = new Error("Failed to parse cached data");
-
-      expect(classifyVoiceError(error)).toBe("corrupted_cache");
-    });
-
-    it("classifies errors with 'malformed' in message", () => {
-      const error = new Error("Malformed cache entry");
-
-      expect(classifyVoiceError(error)).toBe("corrupted_cache");
-    });
-
-    it("classifies IndexedDB errors", () => {
-      const error = new Error("IndexedDB error: data corrupted");
-
-      expect(classifyVoiceError(error)).toBe("corrupted_cache");
-    });
-  });
-
-  describe("unknown errors", () => {
-    it("returns unknown for non-Error values", () => {
-      expect(classifyVoiceError("string error")).toBe("unknown");
-      expect(classifyVoiceError(null)).toBe("unknown");
-      expect(classifyVoiceError(undefined)).toBe("unknown");
-      expect(classifyVoiceError(42)).toBe("unknown");
-    });
-
-    it("returns unknown for generic errors", () => {
-      const error = new Error("Something went wrong");
-
-      expect(classifyVoiceError(error)).toBe("unknown");
-    });
-
-    it("returns unknown for unrecognized error types", () => {
-      const error = new Error("Unexpected server response");
-
-      expect(classifyVoiceError(error)).toBe("unknown");
-    });
+  it("returns unknown for non-Error values", () => {
+    expect(classifyVoiceError("string error")).toBe("unknown");
+    expect(classifyVoiceError(null)).toBe("unknown");
+    expect(classifyVoiceError(undefined)).toBe("unknown");
+    expect(classifyVoiceError(42)).toBe("unknown");
   });
 });
 

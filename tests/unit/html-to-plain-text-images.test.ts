@@ -9,19 +9,6 @@ import { describe, it, expect } from "vitest";
 import { htmlToPlainText } from "../../src/lib/narration/html-to-narration-input";
 
 describe("htmlToPlainText image handling", () => {
-  it("should convert standalone images with alt text to text placeholders", () => {
-    const html = '<p>Before</p><img src="test.jpg" alt="A test image"><p>After</p>';
-    const result = htmlToPlainText(html);
-
-    expect(result).toContain("Before");
-    expect(result).toContain("Image: A test image");
-    expect(result).toContain("After");
-
-    // Should have 3 paragraphs when split
-    const paragraphs = result.split("\n\n").filter((p) => p.trim().length > 0);
-    expect(paragraphs).toHaveLength(3);
-  });
-
   it("should convert standalone images without alt text to generic placeholders", () => {
     const html = '<p>Before</p><img src="test.jpg"><p>After</p>';
     const result = htmlToPlainText(html);

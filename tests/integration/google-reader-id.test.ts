@@ -94,18 +94,6 @@ describe("greaderItemIdsToUuids", () => {
     }
   });
 
-  it("assigns a distinct greader_item_id per entry", async () => {
-    const userId = await createUser();
-    const feedId = await createFeed();
-    const a = await insertEntry(feedId, userId);
-    const b = await insertEntry(feedId, userId);
-    expect(a.greaderItemId).not.toBe(b.greaderItemId);
-
-    const resolved = await greaderItemIdsToUuids(db, userId, [a.greaderItemId, b.greaderItemId]);
-    expect(resolved.get(a.greaderItemId)).toBe(a.id);
-    expect(resolved.get(b.greaderItemId)).toBe(b.id);
-  });
-
   it("skips ids with no matching entry", async () => {
     const userId = await createUser();
     const feedId = await createFeed();

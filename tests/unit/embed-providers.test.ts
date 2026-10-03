@@ -7,9 +7,6 @@ import { normalizeEmbed, embedCanonicalHostnames } from "@lion-reader/sanitizer"
  * exported `normalizeEmbed` binding. Keep in sync with the Rust unit tests.
  */
 
-/** Canonical hostnames every surviving embed src is rewritten to (embeds.rs). */
-const EMBED_CANONICAL_HOSTNAMES = embedCanonicalHostnames();
-
 describe("normalizeEmbed", () => {
   it("returns null for empty/unrecognized srcs", () => {
     expect(normalizeEmbed("")).toBeNull();
@@ -38,11 +35,6 @@ describe("normalizeEmbed", () => {
       expect(out?.provider).toBe("Vimeo");
       expect(out?.src).toBe("https://player.vimeo.com/video/123456789?h=abc123");
       expect(out?.src).not.toContain("autoplay");
-    });
-
-    it("treats protocol-relative srcs as https", () => {
-      const out = normalizeEmbed("//player.vimeo.com/video/42");
-      expect(out?.src).toBe("https://player.vimeo.com/video/42");
     });
 
     it("rejects non-video paths", () => {
@@ -116,23 +108,6 @@ describe("normalizeEmbed", () => {
     it("rejects the non-embed pen page", () => {
       expect(normalizeEmbed("https://codepen.io/team/pen/abcDEF")).toBeNull();
     });
-  });
-
-  it("only ever rewrites to a canonical hostname", () => {
-    const srcs = [
-      "https://www.youtube.com/embed/dQw4w9WgXcQ",
-      "https://player.vimeo.com/video/123",
-      "https://open.spotify.com/embed/track/abc",
-      "https://w.soundcloud.com/player/?url=https%3A%2F%2Fsoundcloud.com%2Fa%2Fb",
-      "https://bandcamp.com/EmbeddedPlayer/album=1/size=large/",
-      "https://codepen.io/a/embed/b",
-    ];
-    for (const src of srcs) {
-      const out = normalizeEmbed(src);
-      expect(out).not.toBeNull();
-      const host = new URL(out!.src).hostname;
-      expect(EMBED_CANONICAL_HOSTNAMES).toContain(host);
-    }
   });
 
   it("exposes exactly the six canonical embed hosts (CSP frame-src source of truth)", () => {

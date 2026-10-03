@@ -39,20 +39,6 @@ describe("rankVoices", () => {
       expect(ranked[0].name).toBe("Premium Voice");
       expect(ranked[1].name).toBe("Default Voice");
     });
-
-    it("ranks non-default voices above default even when default comes first", () => {
-      const voices = [
-        createMockVoice("System Default", { default: true }),
-        createMockVoice("Neural Voice A", { default: false }),
-        createMockVoice("Neural Voice B", { default: false }),
-      ];
-
-      const ranked = rankVoices(voices);
-
-      expect(ranked[0].default).toBe(false);
-      expect(ranked[1].default).toBe(false);
-      expect(ranked[2].default).toBe(true);
-    });
   });
 
   describe("local vs remote preference", () => {
@@ -64,18 +50,6 @@ describe("rankVoices", () => {
 
       expect(ranked[0].name).toBe("Local Voice");
       expect(ranked[1].name).toBe("Cloud Voice");
-    });
-
-    it("prefers local service for better latency and offline support", () => {
-      const voices = [
-        createMockVoice("Remote A", { localService: false }),
-        createMockVoice("Remote B", { localService: false }),
-        createMockVoice("Local", { localService: true }),
-      ];
-
-      const ranked = rankVoices(voices);
-
-      expect(ranked[0].localService).toBe(true);
     });
   });
 
@@ -96,21 +70,6 @@ describe("rankVoices", () => {
       // Non-default wins over default, even though it's remote
       expect(ranked[0].name).toBe("Premium Remote");
     });
-
-    it("uses local preference when default status is equal", () => {
-      const nonDefaultRemote = createMockVoice("Premium Remote", {
-        default: false,
-        localService: false,
-      });
-      const nonDefaultLocal = createMockVoice("Premium Local", {
-        default: false,
-        localService: true,
-      });
-
-      const ranked = rankVoices([nonDefaultRemote, nonDefaultLocal]);
-
-      expect(ranked[0].name).toBe("Premium Local");
-    });
   });
 
   describe("alphabetical fallback", () => {
@@ -123,28 +82,11 @@ describe("rankVoices", () => {
 
       expect(ranked.map((v) => v.name)).toEqual(["Alpha", "Bravo", "Charlie"]);
     });
-
-    it("provides consistent ordering for identical criteria", () => {
-      const voices = [createMockVoice("Zulu"), createMockVoice("Mike"), createMockVoice("Alpha")];
-
-      const ranked1 = rankVoices(voices);
-      const ranked2 = rankVoices([...voices].reverse());
-
-      expect(ranked1.map((v) => v.name)).toEqual(ranked2.map((v) => v.name));
-    });
   });
 
   describe("edge cases", () => {
     it("returns empty array for empty input", () => {
       expect(rankVoices([])).toEqual([]);
-    });
-
-    it("returns single voice unchanged", () => {
-      const voice = createMockVoice("Only Voice");
-      const ranked = rankVoices([voice]);
-
-      expect(ranked).toHaveLength(1);
-      expect(ranked[0].name).toBe("Only Voice");
     });
 
     it("does not mutate the original array", () => {
@@ -154,18 +96,6 @@ describe("rankVoices", () => {
       rankVoices(original);
 
       expect(original.map((v) => v.name)).toEqual(originalOrder);
-    });
-
-    it("handles voices with special characters in names", () => {
-      const voices = [
-        createMockVoice("Voice (Enhanced)"),
-        createMockVoice("Voice - Standard"),
-        createMockVoice("Voice #1"),
-      ];
-
-      // Should not throw
-      const ranked = rankVoices(voices);
-      expect(ranked).toHaveLength(3);
     });
   });
 

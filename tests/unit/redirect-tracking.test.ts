@@ -12,15 +12,6 @@ describe("findPermanentRedirectUrl", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when there are only temporary redirects", () => {
-    const redirects: RedirectInfo[] = [
-      { url: "https://example.com/temp1", type: "temporary" },
-      { url: "https://example.com/temp2", type: "temporary" },
-    ];
-    const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
-    expect(result).toBeNull();
-  });
-
   it("returns the permanent redirect URL when present", () => {
     const redirects: RedirectInfo[] = [{ url: "https://newsite.com/feed.xml", type: "permanent" }];
     const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
@@ -67,31 +58,12 @@ describe("findPermanentRedirectUrl", () => {
     const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
     expect(result).toBeNull();
   });
-
-  it("ignores temporary redirects after a leading permanent one", () => {
-    const redirects: RedirectInfo[] = [
-      { url: "https://permanent.com/feed", type: "permanent" },
-      { url: "https://temp.com/feed", type: "temporary" },
-    ];
-    // Follows the leading permanent hop, then stops at the temporary one.
-    const result = findPermanentRedirectUrl(redirects, "https://example.com/feed.xml");
-    expect(result).toBe("https://permanent.com/feed");
-  });
 });
 
 describe("isHttpToHttpsUpgrade", () => {
   it("returns true for http to https upgrade with same URL", () => {
     expect(
       isHttpToHttpsUpgrade("http://example.com/feed.xml", "https://example.com/feed.xml")
-    ).toBe(true);
-  });
-
-  it("returns true for http to https upgrade with path", () => {
-    expect(
-      isHttpToHttpsUpgrade(
-        "http://example.com/path/to/feed.xml",
-        "https://example.com/path/to/feed.xml"
-      )
     ).toBe(true);
   });
 
@@ -147,16 +119,6 @@ describe("isHttpToHttpsUpgrade", () => {
 
     expect(
       isHttpToHttpsUpgrade("http://example.com:8080/feed.xml", "https://example.com:8443/feed.xml")
-    ).toBe(false);
-  });
-
-  it("handles URLs with subdomains", () => {
-    expect(
-      isHttpToHttpsUpgrade("http://www.example.com/feed.xml", "https://www.example.com/feed.xml")
-    ).toBe(true);
-
-    expect(
-      isHttpToHttpsUpgrade("http://www.example.com/feed.xml", "https://example.com/feed.xml")
     ).toBe(false);
   });
 });

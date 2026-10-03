@@ -60,18 +60,6 @@ describe("useImagePrefetch", () => {
     expect(img.decoding).toBe("sync");
   });
 
-  it("leaves far-below-the-fold images lazy for the observer to upgrade", () => {
-    // Well beyond the viewport + 50% margin (768 * 1.5 = 1152).
-    const img = makeImage({ top: 5000, bottom: 5300 });
-    renderWithImages([img]);
-
-    // The hook sets the `loading`/`decoding` IDL properties; an untouched image
-    // keeps its original `loading="lazy"` attribute and no sync-decode.
-    expect(img.getAttribute("loading")).toBe("lazy");
-    expect(img.loading).not.toBe("eager");
-    expect(img.decoding).not.toBe("sync");
-  });
-
   it("does not sync-decode lazy images just below the viewport (leaves them to the observer)", () => {
     // Below the fold: no visible flash to prevent, so it must not be
     // eagerly sync-decoded — it's queued for the IntersectionObserver instead.

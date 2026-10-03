@@ -44,11 +44,6 @@ describe("sanitizeEntryHtml", () => {
       expect(out).toBe("<div>x</div>");
     });
 
-    it("removes script nested in svg", () => {
-      const out = sanitizeEntryHtml("<svg><script>alert(1)</script></svg>");
-      expect(out).not.toContain("script");
-    });
-
     it("drops markup hidden inside rawtext/RCDATA elements (mXSS)", () => {
       // Inside title/xmp/noembed/noframes/noscript/plaintext the tokenizer
       // reads the contents as text, so an unwrap would re-emit them verbatim

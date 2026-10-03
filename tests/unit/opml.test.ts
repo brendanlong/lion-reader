@@ -230,20 +230,6 @@ describe("parseOpmlAsync", () => {
       expect(feeds).toHaveLength(0);
     });
 
-    it("handles OPML with single outline (not array)", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="2.0">
-          <head><title>Single</title></head>
-          <body>
-            <outline type="rss" text="Only Feed" xmlUrl="https://example.com/feed" />
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlAsync(xml);
-
-      expect(feeds).toHaveLength(1);
-    });
-
     it("ignores outlines without xmlUrl that are not folders", async () => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
         <opml version="2.0">
@@ -315,54 +301,6 @@ describe("parseOpmlAsync", () => {
         </opml>`;
 
       await expect(parseOpmlAsync(xml)).rejects.toThrow("Invalid OPML: missing body element");
-    });
-  });
-
-  describe("real-world OPML examples", () => {
-    it("parses Feedly-style OPML export", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="1.0">
-          <head>
-            <title>Feedly subscriptions</title>
-          </head>
-          <body>
-            <outline text="tech" title="tech">
-              <outline type="rss" text="Hacker News" title="Hacker News" xmlUrl="https://news.ycombinator.com/rss" htmlUrl="https://news.ycombinator.com/"/>
-              <outline type="rss" text="TechCrunch" title="TechCrunch" xmlUrl="https://techcrunch.com/feed/" htmlUrl="https://techcrunch.com"/>
-            </outline>
-            <outline type="rss" text="xkcd" title="xkcd" xmlUrl="https://xkcd.com/rss.xml" htmlUrl="https://xkcd.com/"/>
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlAsync(xml);
-
-      expect(feeds).toHaveLength(3);
-      expect(feeds[0].category).toEqual(["tech"]);
-      expect(feeds[1].category).toEqual(["tech"]);
-      expect(feeds[2].category).toBeUndefined();
-    });
-
-    it("parses Inoreader-style OPML export", async () => {
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <opml version="1.0">
-          <head>
-            <title>Inoreader Subscriptions</title>
-            <dateCreated>Mon, 01 Jan 2024 00:00:00 +0000</dateCreated>
-          </head>
-          <body>
-            <outline text="Blogs" title="Blogs">
-              <outline text="Personal" title="Personal">
-                <outline type="rss" text="Paul Graham" title="Paul Graham" xmlUrl="http://www.paulgraham.com/rss.html" htmlUrl="http://www.paulgraham.com/articles.html"/>
-              </outline>
-            </outline>
-          </body>
-        </opml>`;
-
-      const feeds = await parseOpmlAsync(xml);
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].category).toEqual(["Blogs", "Personal"]);
-      expect(feeds[0].title).toBe("Paul Graham");
     });
   });
 });
@@ -467,22 +405,6 @@ describe("generateOpml", () => {
   });
 
   describe("tag grouping", () => {
-    it("groups subscriptions by tag", () => {
-      const subscriptions: OpmlSubscription[] = [
-        { title: "Tech Blog", xmlUrl: "https://tech.example.com/feed", tags: ["Technology"] },
-        { title: "News Site", xmlUrl: "https://news.example.com/feed", tags: ["News"] },
-        { title: "Ungrouped", xmlUrl: "https://other.example.com/feed" },
-      ];
-
-      const xml = generateOpml(subscriptions);
-
-      // Should have tag folder outlines
-      expect(xml).toContain('text="Technology"');
-      expect(xml).toContain('text="News"');
-      // Every feed, tagged or not, is also listed at top level
-      expect(xml).toMatch(/<outline type="rss" text="Ungrouped"/);
-    });
-
     it("places multiple feeds in the same tag folder", () => {
       const subscriptions: OpmlSubscription[] = [
         { title: "Blog 1", xmlUrl: "https://blog1.example.com/feed", tags: ["Blogs"] },

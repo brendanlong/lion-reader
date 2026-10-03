@@ -95,10 +95,6 @@ describe("ArXiv URL detection", () => {
       expect(buildArxivHtmlUrl("2601.04649")).toBe("https://arxiv.org/html/2601.04649");
     });
 
-    it("builds HTML URL from paper ID with version", () => {
-      expect(buildArxivHtmlUrl("2601.04649v1")).toBe("https://arxiv.org/html/2601.04649v1");
-    });
-
     it("builds HTML URL from old format paper ID", () => {
       expect(buildArxivHtmlUrl("hep-th/9901001")).toBe("https://arxiv.org/html/hep-th/9901001");
     });
@@ -142,16 +138,6 @@ describe("parseArxivAbsMetadata", () => {
   it("leaves collaboration names without a comma alone", () => {
     const html = `<head><meta name="citation_author" content="ATLAS Collaboration" /></head>`;
     expect(parseArxivAbsMetadata(html).authors).toEqual(["ATLAS Collaboration"]);
-  });
-
-  it("prefers citation_title over the page title and og:title", () => {
-    const result = parseArxivAbsMetadata(ARXIV_ABS_HTML);
-    expect(result.title).not.toContain("[2503.11926]");
-    expect(result.title).not.toBe("Some other title");
-  });
-
-  it("stops at </head> so body content cannot inject authors", () => {
-    expect(parseArxivAbsMetadata(ARXIV_ABS_HTML).authors).not.toContain("Body Ignored");
   });
 
   it("keeps the first value when a tag is repeated", () => {

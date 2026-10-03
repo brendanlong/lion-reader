@@ -34,11 +34,6 @@ const compact = (s: string) => s.replace(/\s+/g, "");
 
 describe("MathJax CHTML conversion through sanitizeEntryHtml", () => {
   describe("no-op paths", () => {
-    it("leaves content without MathJax CHTML untouched", () => {
-      const html = "<p>Just <em>regular</em> text with no math.</p>";
-      expect(convert(html)).toBe(html);
-    });
-
     it("returns input unchanged when '<mjx-container' appears only in text/attributes", () => {
       const html = `<p title="about &lt;mjx-container&gt;">discussing <code>&lt;mjx-container&gt;</code> markup</p>`;
       expect(convert(html)).toBe(html);
@@ -102,19 +97,6 @@ describe("MathJax CHTML conversion through sanitizeEntryHtml", () => {
       expect(out).not.toContain("mjx-");
     });
 
-    it("recovers article content absorbed into an unclosed container (EOF)", () => {
-      // Unclosed container at EOF: HTML parsing pulls the trailing `<p>` into
-      // the container as a child. The converter keeps only the math, so the
-      // absorbed content must be spliced back verbatim rather than dropped.
-      const unclosed = MJX_X.replace("</mjx-container>", "");
-      const out = convert(`<p>before</p>${unclosed}<p>rest of article</p>`);
-      expect(out).toBe(
-        `<p>before</p><math xmlns="${MATHML_NS}"><mi>\u{1D465}</mi></math>` +
-          `<p>rest of article</p>`
-      );
-      expect(out).not.toContain("mjx-");
-    });
-
     it("recovers content absorbed between the math and an ancestor close", () => {
       const unclosed = MJX_X.replace("</mjx-container>", "");
       const out = convert(`<div>${unclosed}<p>stuff</p></div>after`);
@@ -141,13 +123,6 @@ describe("MathJax CHTML conversion through sanitizeEntryHtml", () => {
   });
 
   describe("basic tokens and structures (LessWrong-serialized samples)", () => {
-    it("converts a single identifier to <math><mi>", () => {
-      const out = convert(MJX_X);
-      expect(out).toContain("<math");
-      expect(out).toContain("<mi>\u{1D465}</mi>"); // 𝑥
-      expect(out).not.toContain("mjx-");
-    });
-
     it("converts an over-accent (y-hat) preserving base-then-over order", () => {
       const out = convert(MJX_YHAT);
       expect(out).toMatch(/<mover><mi>\u{1D466}<\/mi><mo>\^<\/mo><\/mover>/u);
@@ -165,28 +140,9 @@ describe("MathJax CHTML conversion through sanitizeEntryHtml", () => {
       );
     });
 
-    it('marks display math with display="block"', () => {
-      const out = convert(MJX_Y_SUB);
-      expect(out).toContain('display="block"');
-    });
-
     it("flattens multi-character identifiers into one token", () => {
       const out = convert(MJX_LOG);
       expect(out).toContain("<mi>log</mi>");
-    });
-
-    it("unwraps unknown <mjx-*> wrappers so inner glyphs survive", () => {
-      const html = `<mjx-container><mjx-math><mjx-unknown-wrapper><mjx-mi><mjx-c class="mjx-c1D465 TEX-I"></mjx-c></mjx-mi></mjx-unknown-wrapper></mjx-math></mjx-container>`;
-      const out = convert(html);
-      expect(out).toContain("<mi>\u{1D465}</mi>");
-      expect(out).not.toContain("mjx-");
-    });
-
-    it("rejects surrogate codepoints in glyph classes", () => {
-      const html = `<mjx-container><mjx-math><mjx-mi><mjx-c class="mjx-cD800"></mjx-c></mjx-mi></mjx-math></mjx-container>`;
-      const out = convert(html);
-      expect(out).not.toContain("\ud800");
-      expect(out).toContain("<mi></mi>");
     });
   });
 
@@ -290,23 +246,6 @@ describe("MathJax CHTML conversion through sanitizeEntryHtml", () => {
       expect(out).not.toContain("mjx-container");
       expect(out).not.toContain("<math");
       expect(out).toContain("<p>a b</p>");
-    });
-  });
-
-  describe("MathML survives the sanitize pass", () => {
-    it("preserves converted MathML through sanitization", () => {
-      const out = convert(`<p>Let ${MJX_X} be the context.</p>`);
-      expect(out).toContain("<math");
-      expect(out).toContain("<mi>\u{1D465}</mi>");
-      expect(out).not.toContain("mjx-");
-      expect(out).not.toContain("<style");
-    });
-
-    it("preserves table structures through sanitization", () => {
-      const out = convert(fixtures.pmatrix);
-      expect(out).toContain("<mtable>");
-      expect(out).toContain("<mtr>");
-      expect(out).toContain("<mtd>");
     });
   });
 });

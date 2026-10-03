@@ -160,21 +160,7 @@ describe("markEntriesRead SSE publishing", () => {
     expect(event.entryId).toBe(entryId);
     expect(event.read).toBe(true);
     expect(event.counts.all.unread).toBe(0);
-  });
-
-  it("omits the entry list payload when an entry flips to read", async () => {
-    const userId = await seedUser();
-    const entryId = await seedEntry(userId);
-
-    const channel = getUserEventsChannel(userId);
-    await subscriber.subscribe(channel);
-    const messagePromise = waitForMessage(subscriber, channel);
-
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], true);
-
     // Nothing to insert client-side for a read flip, so no payload is fetched.
-    const event = JSON.parse(await messagePromise);
-    expect(event.read).toBe(true);
     expect(event.entry).toBeUndefined();
     expect(event.feedId).toBeUndefined();
   });

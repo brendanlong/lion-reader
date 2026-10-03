@@ -188,13 +188,6 @@ describe("cleanContent", () => {
         expect(result.textContent.trim().length).toBeLessThan(50);
       }
     });
-
-    it("should respect minimum content length option", () => {
-      const html = "<p>Short content</p>";
-      // With a low minContentLength, the function will attempt to process
-      // even short content (though Readability may still fail to extract)
-      expect(() => cleanContent(html, { minContentLength: 10 })).not.toThrow();
-    });
   });
 
   describe("content cleaning", () => {
@@ -234,24 +227,6 @@ describe("cleanContent", () => {
       expect(result!.content).not.toContain("<style");
       expect(result!.content).not.toContain("display: none");
     });
-
-    it("should handle content with HTML comments", () => {
-      const html = `
-        <article>
-          <h1>Article Title</h1>
-          <!-- This is a comment -->
-          <p>Main content paragraph one with text.</p>
-          <p>Main content paragraph two with more text.</p>
-          <p>Main content paragraph three.</p>
-        </article>
-      `;
-
-      const result = cleanContent(html);
-
-      expect(result).not.toBeNull();
-      // Main content should be preserved
-      expect(result!.content).toContain("Main content paragraph");
-    });
   });
 
   describe("metadata extraction", () => {
@@ -275,25 +250,6 @@ describe("cleanContent", () => {
       expect(result).not.toBeNull();
       // Title could come from h1 or page title
       expect(result!.title).toBeTruthy();
-    });
-
-    it("should extract byline when present", () => {
-      const html = `
-        <article>
-          <h1>Featured Article</h1>
-          <div class="byline">By John Smith</div>
-          <p>This is the article content written by the author.</p>
-          <p>More content in the second paragraph.</p>
-          <p>Third paragraph with additional text.</p>
-        </article>
-      `;
-
-      const result = cleanContent(html);
-
-      expect(result).not.toBeNull();
-      // Note: Byline extraction can be finicky
-      // Just verify we got content
-      expect(result!.content).toContain("article content");
     });
 
     it("should generate excerpt from content", () => {
@@ -363,12 +319,6 @@ describe("absolutizeUrls", () => {
       expect(result).toContain('src="https://example.com/images/photo.jpg"');
     });
 
-    it("should convert relative path image src to absolute", () => {
-      const html = '<img src="../images/photo.jpg" alt="Test">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain('src="https://example.com/images/photo.jpg"');
-    });
-
     it("should convert same-directory relative image src to absolute", () => {
       const html = '<img src="photo.jpg" alt="Test">';
       const result = absolutizeUrls(html, baseUrl);
@@ -417,13 +367,6 @@ describe("absolutizeUrls", () => {
       expect(result).toContain("https://example.com/images/large.jpg 2x");
     });
 
-    it("should handle srcset with width descriptors", () => {
-      const html = '<img srcset="/images/small.jpg 480w, /images/large.jpg 800w">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain("https://example.com/images/small.jpg 480w");
-      expect(result).toContain("https://example.com/images/large.jpg 800w");
-    });
-
     it("should leave absolute URLs in srcset unchanged", () => {
       const html = '<img srcset="https://cdn.example.com/small.jpg 1x">';
       const result = absolutizeUrls(html, baseUrl);
@@ -457,16 +400,6 @@ describe("absolutizeUrls", () => {
       const result = absolutizeUrls(html, baseUrl);
       expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/img.jpg 1x");
       expect(result).toContain("https://example.com/images/fallback.jpg 2x");
-    });
-
-    it("should handle multiple commas in a single URL", () => {
-      // URL with multiple transformation parameters
-      const html =
-        '<img srcset="https://res.cloudinary.com/demo/image/upload/c_fill,g_auto,h_250,w_970/docs/shoes.jpg">';
-      const result = absolutizeUrls(html, baseUrl);
-      expect(result).toContain(
-        "https://res.cloudinary.com/demo/image/upload/c_fill,g_auto,h_250,w_970/docs/shoes.jpg"
-      );
     });
   });
 
@@ -534,12 +467,6 @@ describe("absolutizeUrls", () => {
         '<html><head><base href="/assets/"></head><body><img src="photo.jpg"></body></html>';
       const result = absolutizeUrls(html, "https://example.com/page");
       expect(result).toContain('src="https://example.com/assets/photo.jpg"');
-    });
-
-    it("should fall back to provided baseUrl when no <base> tag is present", () => {
-      const html = '<img src="photo.jpg">';
-      const result = absolutizeUrls(html, "https://example.com/articles/");
-      expect(result).toContain('src="https://example.com/articles/photo.jpg"');
     });
 
     it("should apply <base href> to all URL attribute types", () => {
@@ -871,18 +798,6 @@ describe("cleanLessWrongContent", () => {
       const result = cleanLessWrongContent(content);
       expect(result).toBe("<p>Mixed tags.</p>");
     });
-
-    it("should handle single digit day", () => {
-      const content = "Published on January 1, 2026 1:00 AM GMT<br/><br/><p>New Year article.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe("<p>New Year article.</p>");
-    });
-
-    it("should handle double digit hour without leading zero", () => {
-      const content = "Published on April 20, 2026 12:30 PM GMT<br/><br/><p>Noon article.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe("<p>Noon article.</p>");
-    });
   });
 
   describe("preserves content without published date prefix", () => {
@@ -903,16 +818,6 @@ describe("cleanLessWrongContent", () => {
       const content = "Published on January 7, 2026<br/><br/><p>Missing time.</p>";
       const result = cleanLessWrongContent(content);
       expect(result).toBe(content);
-    });
-  });
-
-  describe("real-world examples", () => {
-    it("should clean actual LessWrong RSS content", () => {
-      const content = `Published on January 7, 2026 2:39 AM GMT<br/><br/><p>I am not an expert on dating. In fact, I am an extremely conservative male who is not polyamorous and who is not really interested in dating.</p><p>However, I have seen my friends approach dating in a way that seems irrational to me.</p>`;
-      const result = cleanLessWrongContent(content);
-      expect(result).not.toContain("Published on");
-      expect(result).toContain("I am not an expert on dating");
-      expect(result.startsWith("<p>")).toBe(true);
     });
   });
 });

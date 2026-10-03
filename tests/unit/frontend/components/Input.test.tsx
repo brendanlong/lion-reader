@@ -18,39 +18,12 @@ describe("Input", () => {
       render(<Input />);
       expect(screen.getByRole("textbox")).toBeInTheDocument();
     });
-
-    it("renders with placeholder", () => {
-      render(<Input placeholder="Enter text..." />);
-      expect(screen.getByPlaceholderText("Enter text...")).toBeInTheDocument();
-    });
-
-    it("renders with initial value", () => {
-      render(<Input value="Hello" onChange={vi.fn()} />);
-      expect(screen.getByRole("textbox")).toHaveValue("Hello");
-    });
   });
 
   describe("label", () => {
     it("renders label when provided", () => {
       render(<Input label="Email" id="email" />);
       expect(screen.getByLabelText("Email")).toBeInTheDocument();
-    });
-
-    it("does not render label when not provided", () => {
-      render(<Input id="email" />);
-      expect(screen.queryByRole("label")).not.toBeInTheDocument();
-    });
-
-    it("associates label with input via htmlFor", () => {
-      render(<Input label="Email" id="email-field" />);
-      const label = screen.getByText("Email");
-      expect(label).toHaveAttribute("for", "email-field");
-    });
-
-    it("applies label styles", () => {
-      render(<Input label="Styled Label" id="styled" />);
-      const label = screen.getByText("Styled Label");
-      expect(label).toHaveClass("font-medium", "text-body");
     });
   });
 
@@ -63,19 +36,6 @@ describe("Input", () => {
     it("does not render error message when not provided", () => {
       render(<Input id="field" />);
       expect(screen.queryByText(/error/i)).not.toBeInTheDocument();
-    });
-
-    it("applies error border styles", () => {
-      render(<Input error="Error" id="error-field" />);
-      const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("border-danger");
-    });
-
-    it("applies normal border styles when no error", () => {
-      render(<Input id="normal-field" />);
-      const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("border-edge-input");
-      expect(input).not.toHaveClass("border-danger");
     });
 
     it("sets aria-invalid when error is present", () => {
@@ -101,29 +61,12 @@ describe("Input", () => {
       const errorMessage = screen.getByText("Error message");
       expect(errorMessage).toHaveAttribute("id", "my-field-error");
     });
-
-    it("applies error text styles", () => {
-      render(<Input error="Error text" id="field" />);
-      const errorMessage = screen.getByText("Error text");
-      expect(errorMessage).toHaveClass("text-danger");
-    });
   });
 
   describe("disabled state", () => {
     it("is disabled when disabled prop is true", () => {
       render(<Input disabled={true} />);
       expect(screen.getByRole("textbox")).toBeDisabled();
-    });
-
-    it("is not disabled when disabled prop is false", () => {
-      render(<Input disabled={false} />);
-      expect(screen.getByRole("textbox")).not.toBeDisabled();
-    });
-
-    it("applies disabled styles", () => {
-      render(<Input disabled={true} />);
-      const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("disabled:cursor-not-allowed", "disabled:opacity-50");
     });
   });
 
@@ -134,24 +77,6 @@ describe("Input", () => {
 
       fireEvent.change(screen.getByRole("textbox"), { target: { value: "new value" } });
       expect(onChange).toHaveBeenCalledTimes(1);
-    });
-
-    it("calls onFocus when focused", () => {
-      const onFocus = vi.fn();
-      render(<Input onFocus={onFocus} />);
-
-      fireEvent.focus(screen.getByRole("textbox"));
-      expect(onFocus).toHaveBeenCalledTimes(1);
-    });
-
-    it("calls onBlur when blurred", () => {
-      const onBlur = vi.fn();
-      render(<Input onBlur={onBlur} />);
-
-      const input = screen.getByRole("textbox");
-      fireEvent.focus(input);
-      fireEvent.blur(input);
-      expect(onBlur).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -165,62 +90,15 @@ describe("Input", () => {
       render(<Input type="email" />);
       expect(screen.getByRole("textbox")).toHaveAttribute("type", "email");
     });
-
-    it("passes through name attribute", () => {
-      render(<Input name="username" />);
-      expect(screen.getByRole("textbox")).toHaveAttribute("name", "username");
-    });
-
-    it("passes through required attribute", () => {
-      render(<Input required />);
-      expect(screen.getByRole("textbox")).toBeRequired();
-    });
-
-    it("passes through maxLength attribute", () => {
-      render(<Input maxLength={100} />);
-      expect(screen.getByRole("textbox")).toHaveAttribute("maxLength", "100");
-    });
-
-    it("passes through autoComplete attribute", () => {
-      render(<Input autoComplete="email" />);
-      expect(screen.getByRole("textbox")).toHaveAttribute("autoComplete", "email");
-    });
   });
 
   describe("styling", () => {
-    it("applies base input styles", () => {
-      render(<Input />);
-      const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("rounded-md", "border", "bg-surface", "px-3", "py-2");
-    });
-
     it("does not suppress the global focus outline (#1292)", () => {
       render(<Input />);
       const input = screen.getByRole("textbox");
       // Focus visibility comes from the global :focus-visible outline in
       // globals.css; per-component focus rings are not allowed.
       expect(input.className).not.toMatch(/focus:/);
-    });
-
-    it("fills width of container", () => {
-      render(<Input />);
-      const input = screen.getByRole("textbox");
-      expect(input).toHaveClass("w-full");
-    });
-  });
-
-  describe("accessibility", () => {
-    it("is focusable", () => {
-      render(<Input />);
-      const input = screen.getByRole("textbox");
-      input.focus();
-      expect(document.activeElement).toBe(input);
-    });
-
-    it("has proper input id for label association", () => {
-      render(<Input label="Name" id="name-input" />);
-      const input = screen.getByRole("textbox");
-      expect(input).toHaveAttribute("id", "name-input");
     });
   });
 

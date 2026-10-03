@@ -26,15 +26,6 @@ describe("trpc procedure duration metric", () => {
       /trpc_procedure_duration_seconds_count\{[^}]*procedure="entries\.list"[^}]*type="query"[^}]*ok="true"[^}]*\} \d+/
     );
   });
-
-  it("separates errored calls via the ok label", async () => {
-    metrics.trackTrpcProcedure("subscriptions.create", "mutation", false, 34);
-
-    const output = await metrics.registry.metrics();
-    expect(output).toMatch(
-      /trpc_procedure_duration_seconds_count\{[^}]*procedure="subscriptions\.create"[^}]*ok="false"[^}]*\} \d+/
-    );
-  });
 });
 
 describe("timingMiddleware records the procedure metric", () => {

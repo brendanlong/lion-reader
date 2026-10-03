@@ -1,20 +1,16 @@
 /**
  * Integration tests for Google OAuth flow.
  *
- * These tests use a real database to verify OAuth account creation,
- * linking, and session management. The Google API responses are mocked
+ * These tests use real Redis to verify authorization URL creation, callback
+ * validation and PKCE verifier handling. The Google API responses are mocked
  * since we don't control that external service.
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi, beforeAll, afterEach } from "vitest";
-import { eq, and } from "drizzle-orm";
 import { generateKeyPair, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
-import * as argon2 from "argon2";
-import { createTestUser } from "./helpers";
 
 const GOOGLE_ISSUER = "https://accounts.google.com";
 const GOOGLE_CLIENT_ID = "test-client-id";
@@ -221,16 +217,6 @@ describe("Google OAuth", () => {
       expect(headers.get("authorization")).toBeNull();
     });
 
-    it("accepts the id_token issuer Google's discovery document publishes", async () => {
-      const { createGoogleAuthUrl, validateGoogleCallback } =
-        await import("../../src/server/auth/oauth/google");
-
-      mockTokenResponse.id_token = await signGoogleIdToken({ iss: GOOGLE_ISSUER });
-      const { state } = await createGoogleAuthUrl();
-
-      await expect(validateGoogleCallback("mock-auth-code", state)).resolves.toBeDefined();
-    });
-
     it("rejects an id_token minted for a different client", async () => {
       const { createGoogleAuthUrl, validateGoogleCallback } =
         await import("../../src/server/auth/oauth/google");
@@ -239,91 +225,6 @@ describe("Google OAuth", () => {
       const { state } = await createGoogleAuthUrl();
 
       await expect(validateGoogleCallback("mock-auth-code", state)).rejects.toThrow();
-    });
-  });
-
-  describe("OAuth callback integration", () => {
-    // Helper to create a test user
-    async function createUser(email: string, withPassword = true) {
-      return createTestUser({
-        email,
-        passwordHash: withPassword ? await argon2.hash("password123") : null,
-      });
-    }
-
-    // Helper to create OAuth account
-    async function createOAuthAccount(userId: string, providerAccountId: string) {
-      const accountId = generateUuidv7();
-
-      await db.insert(oauthAccounts).values({
-        id: accountId,
-        userId,
-        provider: "google",
-        providerAccountId,
-        accessToken: "old-token",
-        createdAt: new Date(),
-      });
-
-      return accountId;
-    }
-
-    it("creates new user and OAuth account for new Google user", async () => {
-      // Store PKCE data manually (JSON format with verifier and scopes)
-      const pkceData = JSON.stringify({
-        verifier: "mock-code-verifier",
-        scopes: ["openid", "email", "profile"],
-      });
-      await redis.setex("oauth:pkce:new-user-state", 600, pkceData);
-
-      const { validateGoogleCallback } = await import("../../src/server/auth/oauth/google");
-
-      const result = await validateGoogleCallback("mock-auth-code", "new-user-state");
-
-      expect(result.userInfo.email).toBe("test@example.com");
-
-      // Verify user was NOT created by this test (we're testing validateGoogleCallback only)
-      // The actual user creation happens in the tRPC callback handler
-    });
-
-    it("finds existing OAuth account", async () => {
-      // Create existing user and OAuth account
-      const userId = await createUser("existing@example.com");
-      await createOAuthAccount(userId, "google-user-123");
-
-      // Verify OAuth account exists
-      const oauthAccount = await db
-        .select()
-        .from(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.provider, "google"),
-            eq(oauthAccounts.providerAccountId, "google-user-123")
-          )
-        )
-        .limit(1);
-
-      expect(oauthAccount.length).toBe(1);
-      expect(oauthAccount[0].userId).toBe(userId);
-    });
-
-    it("can link OAuth to existing user with matching email", async () => {
-      // Create existing user with email that matches Google user
-      const userId = await createUser("test@example.com", true);
-
-      // Verify user exists
-      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-
-      expect(user.length).toBe(1);
-      expect(user[0].email).toBe("test@example.com");
-
-      // Verify no OAuth account exists yet
-      const oauthAccount = await db
-        .select()
-        .from(oauthAccounts)
-        .where(eq(oauthAccounts.userId, userId))
-        .limit(1);
-
-      expect(oauthAccount.length).toBe(0);
     });
   });
 

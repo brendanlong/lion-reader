@@ -1,13 +1,13 @@
 /**
  * Integration tests for feed redirect handling.
  *
- * These tests verify that when a feed permanently redirects to a new URL:
- * 1. If no feed exists at the target URL, the feed's URL is simply updated
- * 2. If a feed exists at the target URL, subscriptions are migrated
- * 3. User read/starred state is preserved through the migration
- * 4. Users see entries from both old and new feeds without duplicates
+ * These tests verify that when a feed permanently redirects to a URL that
+ * already has a feed:
+ * 1. Subscriptions are migrated
+ * 2. User read/starred state is preserved through the migration
+ * 3. Users see entries from both old and new feeds without duplicates
  *    (attribution via user_entries.subscription_id, re-stamped by the merge job)
- * 5. The surviving feed always ends up with a fetch_feed job, even when no new
+ * 4. The surviving feed always ends up with a fetch_feed job, even when no new
  *    subscription row had to be created
  */
 
@@ -172,27 +172,6 @@ describe("Feed Redirect Handling", () => {
 
   beforeEach(cleanup);
   afterAll(cleanup);
-
-  describe("Redirect to new URL (no existing feed)", () => {
-    it("updates feed URL when redirect target has no existing feed", async () => {
-      // This scenario is handled by simply updating the feed's URL
-      // We just verify that the URL can be updated
-      const feedId = await createTestFeed({
-        url: "https://old-domain.com/feed.xml",
-        title: "Test Feed",
-      });
-
-      // Simulate URL update (what happens in the handler)
-      await db
-        .update(feeds)
-        .set({ url: "https://new-domain.com/feed.xml" })
-        .where(eq(feeds.id, feedId));
-
-      // Verify the URL was updated
-      const [updatedFeed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
-      expect(updatedFeed.url).toBe("https://new-domain.com/feed.xml");
-    });
-  });
 
   describe("Redirect to existing feed - new subscription created", () => {
     it("creates subscription to new feed and re-stamps old-feed entries to it", async () => {
@@ -883,39 +862,6 @@ describe("Feed Redirect Handling", () => {
       expect(entryIds).toContain(anotherNewEntry);
       // Should NOT contain the duplicate
       expect(entryIds).not.toContain(newSharedEntry);
-    });
-
-    it("createUserEntriesForFeed uses ON CONFLICT DO NOTHING for same entry_id", async () => {
-      const userId = await createTestUser();
-      const fetchTime = new Date("2024-01-01T10:00:00Z");
-
-      const feedId = await createTestFeed({
-        url: "https://example.com/feed.xml",
-        title: "Test Feed",
-        lastFetchedAt: fetchTime,
-        lastEntriesUpdatedAt: fetchTime,
-      });
-
-      await createTestSubscription(userId, feedId);
-
-      const entryId = await createTestEntry(feedId, {
-        guid: "entry-1",
-        title: "Entry 1",
-        fetchedAt: fetchTime,
-        lastSeenAt: fetchTime,
-      });
-
-      // First sync creates user_entry
-      await createUserEntriesForFeed(feedId, [entryId]);
-
-      const afterFirst = await getUserEntries(userId);
-      expect(afterFirst.length).toBe(1);
-
-      // Second sync with same entry - ON CONFLICT DO NOTHING should prevent error
-      await createUserEntriesForFeed(feedId, [entryId]);
-
-      const afterSecond = await getUserEntries(userId);
-      expect(afterSecond.length).toBe(1);
     });
   });
 

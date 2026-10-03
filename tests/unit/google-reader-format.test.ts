@@ -52,27 +52,15 @@ describe("formatUnreadCounts", () => {
     );
 
     const usecById = new Map(result.unreadcounts.map((c) => [c.id, c.newestItemTimestampUsec]));
-    // microseconds = ms * 1000, exact (not "now").
+    // microseconds = ms * 1000, exact (not "now"). Regression: the synthetic
+    // saved feed once derived this from an epoch `subscribedAt`, emitting a
+    // literal "0" that made clients treat it as never-updated.
     expect(usecById.get(`feed/${SUB_A}`)).toBe((NEWEST_A.getTime() * 1000).toString());
     expect(usecById.get(`feed/${SAVED_FEED}`)).toBe((NEWEST_SAVED.getTime() * 1000).toString());
     // reading-list total carries the newest across all feeds.
     expect(usecById.get(stateStreamId("reading-list"))).toBe(
       (NEWEST_SAVED.getTime() * 1000).toString()
     );
-  });
-
-  it("never emits the epoch/zero for the saved feed (regression: subscribedAt sentinel)", () => {
-    // The synthetic saved feed once derived its timestamp from an epoch
-    // `subscribedAt`, emitting a literal "0" that made clients treat it as
-    // never-updated. With a real newest-item time it must be a recent value.
-    const result = formatUnreadCounts(
-      [{ streamId: SAVED_FEED, unreadCount: 1 }],
-      new Map([[SAVED_FEED, NEWEST_SAVED]])
-    );
-    for (const line of result.unreadcounts) {
-      expect(line.newestItemTimestampUsec).not.toBe("0");
-      expect(Number(line.newestItemTimestampUsec)).toBe(NEWEST_SAVED.getTime() * 1000);
-    }
   });
 
   it("falls back to a current, non-zero timestamp when a feed is missing from the map", () => {

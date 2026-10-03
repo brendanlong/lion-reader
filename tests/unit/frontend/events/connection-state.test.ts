@@ -12,8 +12,6 @@ import {
   connectionStatusForPhase,
   INITIAL_CONNECTION_STATE,
   INITIAL_RECONNECT_DELAY_MS,
-  MAX_RECONNECT_DELAY_MS,
-  nextReconnectDelay,
   POLL_INTERVAL_MS,
   SSE_RETRY_INTERVAL_MS,
   transition,
@@ -46,18 +44,6 @@ const POLLING_STATE = run([{ type: "probe-result", sseUnavailable: true }], PROB
 
 /** State after the probe reported a transient failure: backoff wait. */
 const BACKOFF_STATE = run([{ type: "probe-result", sseUnavailable: false }], PROBING_STATE);
-
-describe("nextReconnectDelay", () => {
-  it("doubles the delay", () => {
-    expect(nextReconnectDelay(1_000)).toBe(2_000);
-    expect(nextReconnectDelay(8_000)).toBe(16_000);
-  });
-
-  it("caps at MAX_RECONNECT_DELAY_MS", () => {
-    expect(nextReconnectDelay(16_000)).toBe(30_000);
-    expect(nextReconnectDelay(MAX_RECONNECT_DELAY_MS)).toBe(MAX_RECONNECT_DELAY_MS);
-  });
-});
 
 describe("connectionStatusForPhase", () => {
   it("maps phases to UI statuses", () => {

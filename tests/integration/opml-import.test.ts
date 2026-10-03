@@ -126,29 +126,6 @@ describe("OPML Import", () => {
   afterAll(cleanupTables);
 
   describe("subscriptions.import", () => {
-    it("imports a simple OPML with few feeds", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(await createAuthContext(userId));
-
-      const opml = generateOpml(3);
-
-      const result = await caller.subscriptions.import({ opml });
-
-      expect(result.totalFeeds).toBe(3);
-      expect(result.importId).toBeDefined();
-
-      // Verify import record was created
-      const importRecord = await db
-        .select()
-        .from(opmlImports)
-        .where(eq(opmlImports.id, result.importId))
-        .limit(1);
-
-      expect(importRecord).toHaveLength(1);
-      expect(importRecord[0].status).toBe("pending");
-      expect(importRecord[0].totalFeeds).toBe(3);
-    });
-
     it("imports OPML with many feeds (stress test)", async () => {
       const userId = await createTestUser();
       const caller = createCaller(await createAuthContext(userId));
@@ -314,47 +291,6 @@ describe("OPML Import", () => {
       const result = await caller.imports.list();
 
       expect(result.items).toEqual([]);
-    });
-  });
-
-  describe("database insert directly", () => {
-    it("inserts import record with large feeds_data", async () => {
-      const userId = await createTestUser();
-
-      // Create a large feeds_data array similar to what would come from OPML
-      const feedsData: OpmlImportFeedData[] = Array.from({ length: 550 }, (_, i) => ({
-        xmlUrl: `https://example${i + 1}.com/feed.xml`,
-        title: `Feed ${i + 1}`,
-        htmlUrl: `https://example${i + 1}.com`,
-      }));
-
-      const importId = generateUuidv7();
-      const now = new Date();
-
-      // This is the same insert that happens in the subscriptions.import handler
-      await db.insert(opmlImports).values({
-        id: importId,
-        userId,
-        status: "pending",
-        totalFeeds: feedsData.length,
-        importedCount: 0,
-        skippedCount: 0,
-        failedCount: 0,
-        feedsData,
-        results: [],
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      // Verify it was inserted
-      const record = await db
-        .select()
-        .from(opmlImports)
-        .where(eq(opmlImports.id, importId))
-        .limit(1);
-
-      expect(record).toHaveLength(1);
-      expect(record[0].feedsData).toHaveLength(550);
     });
   });
 

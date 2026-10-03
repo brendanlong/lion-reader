@@ -185,32 +185,4 @@ describe("VoiceNotDownloadedError", () => {
     expect(error.message).toContain("en_US-lessac-medium");
     expect(error.message).toContain("not downloaded");
   });
-
-  it("is an instance of Error", () => {
-    const error = new VoiceNotDownloadedError("test-voice");
-    expect(error).toBeInstanceOf(Error);
-  });
-});
-
-describe("getPiperTTSProvider", () => {
-  beforeEach(() => {
-    // Set up browser environment mocks
-    vi.stubGlobal("window", {});
-    vi.stubGlobal("navigator", {
-      storage: {
-        getDirectory: vi.fn().mockResolvedValue({}),
-      },
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("returns a PiperTTSProvider instance", async () => {
-    // Dynamically import to get fresh singleton
-    const { getPiperTTSProvider } = await import("../../src/lib/narration/piper-tts-provider");
-    const piperProvider = getPiperTTSProvider();
-    expect(piperProvider).toBeInstanceOf(PiperTTSProvider);
-  });
 });

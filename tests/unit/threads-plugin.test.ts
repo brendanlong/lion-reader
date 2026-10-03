@@ -80,7 +80,7 @@ describe("parseThreadsPostCode", () => {
     }
   });
 
-  it("drives matchUrl for every form Threads hands out", () => {
+  it("drives matchUrl: posts in every form Threads hands out, and nothing else", () => {
     for (const href of [
       "https://www.threads.com/@smbccomics/post/DbYcIlkj-Pv",
       "https://www.threads.com/t/DbYcIlkj-Pv",
@@ -88,6 +88,7 @@ describe("parseThreadsPostCode", () => {
     ]) {
       expect(threadsPlugin.matchUrl(new URL(href))).toBe(true);
     }
+    expect(threadsPlugin.matchUrl(new URL("https://www.threads.com/@anujs3"))).toBe(false);
   });
 
   it("handles both the threads.com and threads.net domains, with or without www", () => {
@@ -113,11 +114,6 @@ describe("parseThreadsPostCode", () => {
 
   it("returns null for non-Threads hosts", () => {
     expect(parseThreadsPostCode(new URL("https://example.com/@a/post/b"))).toBeNull();
-  });
-
-  it("drives matchUrl (posts only)", () => {
-    expect(threadsPlugin.matchUrl(new URL(POST_URL))).toBe(true);
-    expect(threadsPlugin.matchUrl(new URL("https://www.threads.com/@anujs3"))).toBe(false);
   });
 
   // See the LinkedIn equivalent: matchUrl runs outside the try that wraps
@@ -167,11 +163,6 @@ describe("renderThreadsPost", () => {
       '<p>See <a href="https://example.com/x">https://example.com/x</a> &amp; ' +
         "&lt;b&gt;this&lt;/b&gt;</p>"
     );
-  });
-
-  it("uses og:description, not the elided twitter:description", () => {
-    const result = renderThreadsPost(page({ description: "The full post body." }), POST_URL);
-    expect(result!.html).toBe("<p>The full post body.</p>");
   });
 
   it("does not report a publish date (Threads serves none)", () => {

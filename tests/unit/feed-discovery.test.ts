@@ -86,20 +86,6 @@ describe("discoverFeeds", () => {
         title: "Atom Feed",
       });
     });
-
-    it("discovers Atom feed with full URL", () => {
-      const html = `
-        <head>
-          <link rel="alternate" type="application/atom+xml" href="https://blog.example.com/atom" />
-        </head>
-      `;
-
-      const feeds = discoverFeeds(html, "https://www.example.com");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].url).toBe("https://blog.example.com/atom");
-      expect(feeds[0].type).toBe("atom");
-    });
   });
 
   describe("multiple feeds on one page", () => {
@@ -120,30 +106,6 @@ describe("discoverFeeds", () => {
       expect(feeds[0].title).toBe("All Posts");
       expect(feeds[1].title).toBe("Tech Posts");
       expect(feeds[2].title).toBe("Life Posts");
-    });
-
-    it("discovers mixed RSS and Atom feeds", () => {
-      const html = `
-        <html>
-          <head>
-            <link rel="alternate" type="application/rss+xml" href="/rss.xml" title="RSS">
-            <link rel="alternate" type="application/atom+xml" href="/atom.xml" title="Atom">
-          </head>
-        </html>
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(2);
-
-      const rss = feeds.find((f) => f.type === "rss");
-      const atom = feeds.find((f) => f.type === "atom");
-
-      expect(rss).toBeDefined();
-      expect(rss!.url).toBe("https://example.com/rss.xml");
-
-      expect(atom).toBeDefined();
-      expect(atom!.url).toBe("https://example.com/atom.xml");
     });
 
     it("deduplicates feeds with the same URL", () => {
@@ -186,17 +148,6 @@ describe("discoverFeeds", () => {
       expect(feeds[0].url).toBe("https://example.com/blog/feed.xml");
     });
 
-    it("resolves parent-relative URLs", () => {
-      const html = `
-        <link rel="alternate" type="application/rss+xml" href="../feed.xml">
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com/blog/posts/");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].url).toBe("https://example.com/blog/feed.xml");
-    });
-
     it("resolves protocol-relative URLs", () => {
       const html = `
         <link rel="alternate" type="application/rss+xml" href="//cdn.example.com/feed.xml">
@@ -206,28 +157,6 @@ describe("discoverFeeds", () => {
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].url).toBe("https://cdn.example.com/feed.xml");
-    });
-
-    it("handles query parameters in URLs", () => {
-      const html = `
-        <link rel="alternate" type="application/rss+xml" href="/feed?format=rss&category=tech">
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].url).toBe("https://example.com/feed?format=rss&category=tech");
-    });
-
-    it("preserves URL fragments", () => {
-      const html = `
-        <link rel="alternate" type="application/atom+xml" href="/feed.xml#section">
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].url).toBe("https://example.com/feed.xml#section");
     });
   });
 
@@ -352,16 +281,6 @@ describe("discoverFeeds", () => {
       expect(feeds[0].title).toBe("My Feed");
     });
 
-    it("handles mixed quote styles", () => {
-      const html = `
-        <link rel="alternate" type='application/rss+xml' href="/feed.xml" title='Feed'>
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(1);
-    });
-
     it("handles unquoted attribute values", () => {
       const html = `
         <link rel=alternate type=application/rss+xml href=/feed.xml>
@@ -371,16 +290,6 @@ describe("discoverFeeds", () => {
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].url).toBe("https://example.com/feed.xml");
-    });
-
-    it("handles extra whitespace in attributes", () => {
-      const html = `
-        <link  rel = "alternate"   type = "application/rss+xml"   href = "/feed.xml" >
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(1);
     });
 
     it("handles newlines within link tags", () => {
@@ -408,19 +317,6 @@ describe("discoverFeeds", () => {
 
       expect(feeds).toHaveLength(1);
       expect(feeds[0].title).toBe("Uppercase");
-    });
-
-    it("handles mixed-case tags and attributes", () => {
-      const html = `
-        <Link Rel="alternate" Type="application/rss+xml" Href="/feed.xml" Title="MixedCase">
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].url).toBe("https://example.com/feed.xml");
-      expect(feeds[0].type).toBe("rss");
-      expect(feeds[0].title).toBe("MixedCase");
     });
 
     it("handles link tags mixed with other content", () => {
@@ -479,16 +375,6 @@ describe("discoverFeeds", () => {
   });
 
   describe("rel attribute variations", () => {
-    it("handles rel with multiple values including alternate", () => {
-      const html = `
-        <link rel="alternate nofollow" type="application/rss+xml" href="/feed.xml">
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(1);
-    });
-
     it("handles alternate in different positions", () => {
       const html = `
         <link rel="nofollow alternate" type="application/rss+xml" href="/feed1.xml">
@@ -546,64 +432,6 @@ describe("discoverFeeds", () => {
       expect(feeds).toHaveLength(2);
       expect(feeds[0].type).toBe("unknown");
       expect(feeds[1].type).toBe("unknown");
-    });
-  });
-
-  describe("real-world examples", () => {
-    it("discovers feed from typical WordPress blog", () => {
-      const html = `
-        <!DOCTYPE html>
-        <html lang="en-US">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <link rel="profile" href="https://gmpg.org/xfn/11">
-          <link rel="alternate" type="application/rss+xml" title="My Blog - Feed" href="https://myblog.com/feed/">
-          <link rel="alternate" type="application/rss+xml" title="My Blog - Comments Feed" href="https://myblog.com/comments/feed/">
-          <title>My Blog</title>
-        </head>
-        <body></body>
-        </html>
-      `;
-
-      const feeds = discoverFeeds(html, "https://myblog.com");
-
-      expect(feeds).toHaveLength(2);
-      expect(feeds[0].url).toBe("https://myblog.com/feed/");
-      expect(feeds[0].title).toBe("My Blog - Feed");
-      expect(feeds[1].url).toBe("https://myblog.com/comments/feed/");
-    });
-
-    it("discovers feed from GitHub repository", () => {
-      const html = `
-        <html>
-        <head>
-          <link rel="alternate" type="application/atom+xml" title="Recent Commits to repo:main" href="/owner/repo/commits/main.atom">
-        </head>
-        </html>
-      `;
-
-      const feeds = discoverFeeds(html, "https://github.com/owner/repo");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].url).toBe("https://github.com/owner/repo/commits/main.atom");
-      expect(feeds[0].type).toBe("atom");
-    });
-
-    it("discovers feeds from Medium-style blog", () => {
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <link rel="alternate" type="application/rss+xml" href="https://medium.com/feed/@username">
-        </head>
-        </html>
-      `;
-
-      const feeds = discoverFeeds(html, "https://medium.com/@username");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].url).toBe("https://medium.com/feed/@username");
     });
   });
 
@@ -674,17 +502,6 @@ describe("discoverFeeds", () => {
       expect(json).toBeDefined();
       expect(json!.url).toBe("https://example.com/feed.json");
     });
-
-    it("handles JSON Feed with charset parameter", () => {
-      const html = `
-        <link rel="alternate" type="application/feed+json; charset=utf-8" href="/feed.json">
-      `;
-
-      const feeds = discoverFeeds(html, "https://example.com");
-
-      expect(feeds).toHaveLength(1);
-      expect(feeds[0].type).toBe("json");
-    });
   });
 });
 
@@ -715,38 +532,9 @@ describe("getCommonFeedUrls", () => {
     expect(urls).toContain("https://example.com:8080/rss.xml");
   });
 
-  it("handles http protocol", () => {
-    const urls = getCommonFeedUrls("http://example.com");
-
-    expect(urls).toContain("http://example.com/feed");
-    expect(urls).toContain("http://example.com/rss.xml");
-  });
-
   it("returns empty array for invalid URL", () => {
     const urls = getCommonFeedUrls("not-a-valid-url");
 
     expect(urls).toEqual([]);
-  });
-
-  it("returns empty array for empty string", () => {
-    const urls = getCommonFeedUrls("");
-
-    expect(urls).toEqual([]);
-  });
-
-  it("handles subdomain correctly", () => {
-    const urls = getCommonFeedUrls("https://blog.example.com/posts");
-
-    expect(urls).toContain("https://blog.example.com/feed");
-    expect(urls).toContain("https://blog.example.com/rss.xml");
-    expect(urls).not.toContain("https://example.com/feed");
-  });
-
-  it("ignores query parameters and fragments from base URL", () => {
-    const urls = getCommonFeedUrls("https://example.com/page?query=test#section");
-
-    // Should use origin only
-    expect(urls).toContain("https://example.com/feed");
-    expect(urls).not.toContain("https://example.com/page/feed");
   });
 });

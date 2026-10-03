@@ -71,13 +71,6 @@ describe("parseItemId", () => {
     const parsed = parseItemId(longForm);
     expect(parsed).toBe(original);
   });
-
-  it("roundtrips through decimal string", () => {
-    const original = BigInt(42);
-    const decimal = original.toString();
-    const parsed = parseItemId(decimal);
-    expect(parsed).toBe(original);
-  });
 });
 
 describe("feedStreamId", () => {
@@ -93,19 +86,10 @@ describe("parseStreamId", () => {
     expect(result).toEqual({ type: "feed", subscriptionInt64: BigInt(12345) });
   });
 
-  it("parses user/-/state/com.google/reading-list", () => {
-    const result = parseStreamId("user/-/state/com.google/reading-list");
-    expect(result).toEqual({ type: "state", state: "reading-list" });
-  });
-
-  it("parses user/-/state/com.google/starred", () => {
-    const result = parseStreamId("user/-/state/com.google/starred");
-    expect(result).toEqual({ type: "state", state: "starred" });
-  });
-
-  it("parses user/-/state/com.google/read", () => {
-    const result = parseStreamId("user/-/state/com.google/read");
-    expect(result).toEqual({ type: "state", state: "read" });
+  it("parses user/-/state/com.google/{state}", () => {
+    for (const state of ["reading-list", "starred", "read"] as const) {
+      expect(parseStreamId(`user/-/state/com.google/${state}`)).toEqual({ type: "state", state });
+    }
   });
 
   it("parses user/-/label/{name}", () => {

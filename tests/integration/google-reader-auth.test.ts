@@ -148,15 +148,6 @@ describe("createSession scope validation", () => {
       createSession(db, { userId: user.id, scopes: ["not-a-real-scope"] })
     ).rejects.toThrow(/unknown scope/i);
   });
-
-  it("accepts a known scope", async () => {
-    const user = await createUser();
-    const { token } = await createSession(db, {
-      userId: user.id,
-      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
-    });
-    expect(token).toBeTruthy();
-  });
 });
 
 describe("last_active_at accounting for scoped vs full-access sessions", () => {

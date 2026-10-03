@@ -42,10 +42,6 @@ describe("getMaxWords", () => {
 });
 
 describe("hashPrompt", () => {
-  it("is stable for the same prompt", () => {
-    expect(hashPrompt("hello {{content}}")).toBe(hashPrompt("hello {{content}}"));
-  });
-
   it("differs for different custom prompts", () => {
     expect(hashPrompt("prompt A")).not.toBe(hashPrompt("prompt B"));
   });

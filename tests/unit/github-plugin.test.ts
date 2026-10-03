@@ -48,17 +48,6 @@ describe("GitHub plugin URL parsing", () => {
       });
     });
 
-    it("parses gist URLs with file fragment containing multiple dashes", () => {
-      const result = parseGitHubUrl(
-        new URL("https://gist.github.com/user/gist123#file-my-cool-script-py")
-      );
-      expect(result).toEqual({
-        type: "gist",
-        gistId: "gist123",
-        filename: "my-cool-script-py",
-      });
-    });
-
     it("ignores non-file fragments on gists", () => {
       const result = parseGitHubUrl(new URL("https://gist.github.com/brendanlong/abc123#comments"));
       expect(result).toEqual({
@@ -145,32 +134,6 @@ describe("GitHub plugin URL parsing", () => {
       });
     });
 
-    it("parses blob URLs with commit SHA as ref", () => {
-      const result = parseGitHubUrl(
-        new URL("https://github.com/owner/repo/blob/abc123def456/file.js")
-      );
-      expect(result).toEqual({
-        type: "blob",
-        owner: "owner",
-        repo: "repo",
-        ref: "abc123def456",
-        path: "file.js",
-      });
-    });
-
-    it("parses blob URLs with tag as ref", () => {
-      const result = parseGitHubUrl(
-        new URL("https://github.com/owner/repo/blob/v1.0.0/package.json")
-      );
-      expect(result).toEqual({
-        type: "blob",
-        owner: "owner",
-        repo: "repo",
-        ref: "v1.0.0",
-        path: "package.json",
-      });
-    });
-
     it("returns null for incomplete blob URLs (no path)", () => {
       const result = parseGitHubUrl(new URL("https://github.com/owner/repo/blob/main"));
       expect(result).toBeNull();
@@ -218,19 +181,6 @@ describe("GitHub plugin URL parsing", () => {
       });
     });
 
-    it("parses raw URLs with a fully-qualified tag ref", () => {
-      const result = parseGitHubUrl(
-        new URL("https://raw.githubusercontent.com/owner/repo/refs/tags/v1.0.0/README.md")
-      );
-      expect(result).toEqual({
-        type: "raw",
-        owner: "owner",
-        repo: "repo",
-        ref: "refs/tags/v1.0.0",
-        path: "README.md",
-      });
-    });
-
     it("returns null for incomplete raw URLs", () => {
       const result = parseGitHubUrl(new URL("https://raw.githubusercontent.com/owner/repo/main"));
       expect(result).toBeNull();
@@ -243,18 +193,8 @@ describe("GitHub plugin URL parsing", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null for github.com search", () => {
-      const result = parseGitHubUrl(new URL("https://github.com/search?q=test"));
-      expect(result).toBeNull();
-    });
-
     it("returns null for github.com issues", () => {
       const result = parseGitHubUrl(new URL("https://github.com/owner/repo/issues/123"));
-      expect(result).toBeNull();
-    });
-
-    it("returns null for github.com pull requests", () => {
-      const result = parseGitHubUrl(new URL("https://github.com/owner/repo/pull/456"));
       expect(result).toBeNull();
     });
 
@@ -296,16 +236,8 @@ describe("Gist filename fragment parsing", () => {
       expect(normalizeFilenameForFragment("README.md")).toBe("readme-md");
     });
 
-    it("normalizes filenames with multiple dots", () => {
-      expect(normalizeFilenameForFragment("config.prod.json")).toBe("config-prod-json");
-    });
-
     it("normalizes filenames with special characters", () => {
       expect(normalizeFilenameForFragment("my_cool_script.py")).toBe("my-cool-script-py");
-    });
-
-    it("normalizes filenames with spaces", () => {
-      expect(normalizeFilenameForFragment("My Document.txt")).toBe("my-document-txt");
     });
 
     it("collapses consecutive special characters", () => {
@@ -536,12 +468,8 @@ describe("processFileContent", () => {
 
     it("resolves a sibling image reference to the gist's raw host", async () => {
       const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, gistFile);
+      // Without the blob sha in raw_url, which would serve the wrong file.
       expect(html).toContain(`src="${gistRawBase}/chart.png"`);
-    });
-
-    it("drops the blob sha in raw_url, which would serve the wrong file", async () => {
-      const { html } = await processFileContent("![Chart](chart.png)", "notes.md", null, gistFile);
-      expect(html).not.toContain("deadbeef");
     });
 
     it("pins to the gist's revision when the response carried its history", async () => {

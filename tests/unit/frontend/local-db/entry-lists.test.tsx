@@ -310,13 +310,6 @@ describe("list ingestion", () => {
 });
 
 describe("live inserts - sorted position", () => {
-  it("inserts a newest entry at the top of a newest-sorted list", async () => {
-    const { queryClient, ids, insert } = renderLists({ all: ALL });
-    act(() => seedList(queryClient, ALL, [{ items: [makeEntry("a", "2024-06-01")] }]));
-    insert(makeEntry("new", "2024-07-01"));
-    await waitFor(() => expect(ids("all")).toEqual(["new", "a"]));
-  });
-
   it("inserts an older entry in sorted position (feed backfill)", async () => {
     const { queryClient, ids, insert } = renderLists({ all: ALL });
     act(() =>

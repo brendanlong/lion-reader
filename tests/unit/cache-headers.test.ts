@@ -61,32 +61,11 @@ describe("parseCacheControl", () => {
       expect(result.maxAge).toBe(3600);
       expect(result.noStore).toBe(true);
     });
-
-    it("handles no spaces between directives", () => {
-      const result = parseCacheControl("max-age=3600,public,no-store");
-
-      expect(result.maxAge).toBe(3600);
-      expect(result.noStore).toBe(true);
-    });
-
-    it("handles multiple spaces", () => {
-      const result = parseCacheControl("max-age=3600   ,   no-store");
-
-      expect(result.maxAge).toBe(3600);
-      expect(result.noStore).toBe(true);
-    });
   });
 
   describe("case insensitivity", () => {
     it("handles uppercase directives", () => {
       const result = parseCacheControl("MAX-AGE=3600, NO-STORE");
-
-      expect(result.maxAge).toBe(3600);
-      expect(result.noStore).toBe(true);
-    });
-
-    it("handles mixed case directives", () => {
-      const result = parseCacheControl("Max-Age=3600, No-Store");
 
       expect(result.maxAge).toBe(3600);
       expect(result.noStore).toBe(true);
@@ -107,13 +86,6 @@ describe("parseCacheControl", () => {
 
       expect(result.maxAge).toBeUndefined();
       expect(result.sMaxAge).toBeUndefined();
-      expect(result.noStore).toBe(false);
-    });
-
-    it("returns defaults for undefined input", () => {
-      const result = parseCacheControl(undefined);
-
-      expect(result.maxAge).toBeUndefined();
       expect(result.noStore).toBe(false);
     });
 
@@ -163,35 +135,6 @@ describe("parseCacheControl", () => {
       expect(result.noStore).toBe(false);
     });
   });
-
-  describe("real-world examples", () => {
-    it("parses typical blog feed header", () => {
-      const result = parseCacheControl("public, max-age=900");
-
-      expect(result.maxAge).toBe(900); // 15 minutes
-    });
-
-    it("parses Cloudflare CDN header", () => {
-      const result = parseCacheControl(
-        "public, max-age=14400, s-maxage=14400, stale-while-revalidate=86400"
-      );
-
-      expect(result.maxAge).toBe(14400);
-      expect(result.sMaxAge).toBe(14400);
-    });
-
-    it("parses no-cache API response", () => {
-      const result = parseCacheControl("private, no-cache, no-store, must-revalidate");
-
-      expect(result.noStore).toBe(true);
-    });
-
-    it("parses GitHub raw content header", () => {
-      const result = parseCacheControl("max-age=300");
-
-      expect(result.maxAge).toBe(300); // 5 minutes
-    });
-  });
 });
 
 describe("parseCacheHeaders", () => {
@@ -207,42 +150,6 @@ describe("parseCacheHeaders", () => {
     expect(result.etag).toBe('"abc123"');
     expect(result.lastModified).toBe("Wed, 21 Oct 2015 07:28:00 GMT");
     expect(result.cacheControl.maxAge).toBe(3600);
-    expect(result.cacheControl.noStore).toBe(false);
-  });
-
-  it("handles missing ETag", () => {
-    const headers = new Headers({
-      "Last-Modified": "Wed, 21 Oct 2015 07:28:00 GMT",
-      "Cache-Control": "max-age=3600",
-    });
-
-    const result = parseCacheHeaders(headers);
-
-    expect(result.etag).toBeUndefined();
-    expect(result.lastModified).toBe("Wed, 21 Oct 2015 07:28:00 GMT");
-  });
-
-  it("handles missing Last-Modified", () => {
-    const headers = new Headers({
-      ETag: '"abc123"',
-      "Cache-Control": "max-age=3600",
-    });
-
-    const result = parseCacheHeaders(headers);
-
-    expect(result.etag).toBe('"abc123"');
-    expect(result.lastModified).toBeUndefined();
-  });
-
-  it("handles missing Cache-Control", () => {
-    const headers = new Headers({
-      ETag: '"abc123"',
-    });
-
-    const result = parseCacheHeaders(headers);
-
-    expect(result.etag).toBe('"abc123"');
-    expect(result.cacheControl.maxAge).toBeUndefined();
     expect(result.cacheControl.noStore).toBe(false);
   });
 

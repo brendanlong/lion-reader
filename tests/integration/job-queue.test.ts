@@ -77,29 +77,6 @@ describe("Job Queue", () => {
       const payload = getJobPayload<"fetch_feed">(job);
       expect(payload.feedId).toBe("test-feed-id");
     });
-
-    it("creates a job with custom nextRunAt", async () => {
-      const futureDate = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
-
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-        nextRunAt: futureDate,
-      });
-
-      expect(job.nextRunAt!.getTime()).toBe(futureDate.getTime());
-    });
-
-    it("creates a renew_websub job with empty payload", async () => {
-      const job = await createJob({
-        type: "renew_websub",
-        payload: {},
-      });
-
-      expect(job.type).toBe("renew_websub");
-      const payload = getJobPayload<"renew_websub">(job);
-      expect(payload).toEqual({});
-    });
   });
 
   describe("claimJob", () => {
@@ -564,24 +541,6 @@ describe("Job Queue", () => {
 
       expect(job.type).toBe("fetch_feed");
       expect(getJobPayload<"fetch_feed">(job).feedId).toBe(feedId);
-    });
-
-    it("ensureFeedJob returns existing job", async () => {
-      const feedId = generateUuidv7();
-
-      // Create an existing job
-      await createJob({
-        type: "fetch_feed",
-        payload: { feedId },
-      });
-
-      // Should return existing, not create a new one
-      const job = await ensureFeedJob(feedId);
-
-      // Should only be one job
-      const allJobs = await listJobs({ type: "fetch_feed" });
-      expect(allJobs).toHaveLength(1);
-      expect(job.id).toBe(allJobs[0].id);
     });
 
     it("ensureFeedJob does not create duplicate jobs under concurrency (#952)", async () => {

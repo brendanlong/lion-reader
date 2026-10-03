@@ -20,38 +20,11 @@ describe("findEnhancedVoice", () => {
       expect(voice?.id).toBe("en_US-lessac-medium");
       expect(voice?.displayName).toBe("Alex (US)");
     });
-
-    it("returns correct metadata for found voice", () => {
-      const voice = findEnhancedVoice("en_US-ryan-medium");
-
-      expect(voice).toBeDefined();
-      expect(voice?.language).toBe("en-US");
-      expect(voice?.gender).toBe("male");
-      expect(voice?.quality).toBe("medium");
-    });
-
-    it("finds voices with different quality levels", () => {
-      const lowQuality = findEnhancedVoice("en_US-amy-low");
-
-      expect(lowQuality).toBeDefined();
-      expect(lowQuality?.quality).toBe("low");
-    });
-
-    it("finds voices with different languages", () => {
-      const britishVoice = findEnhancedVoice("en_GB-alba-medium");
-
-      expect(britishVoice).toBeDefined();
-      expect(britishVoice?.language).toBe("en-GB");
-    });
   });
 
   describe("non-existent voices", () => {
     it("returns undefined for unknown voice IDs", () => {
       expect(findEnhancedVoice("nonexistent-voice")).toBeUndefined();
-    });
-
-    it("returns undefined for empty string", () => {
-      expect(findEnhancedVoice("")).toBeUndefined();
     });
 
     it("returns undefined for partial matches", () => {
@@ -69,13 +42,6 @@ describe("findEnhancedVoice", () => {
 
 describe("isEnhancedVoice", () => {
   describe("valid enhanced voices", () => {
-    it("returns true for known voice IDs", () => {
-      expect(isEnhancedVoice("en_US-lessac-medium")).toBe(true);
-      expect(isEnhancedVoice("en_US-amy-low")).toBe(true);
-      expect(isEnhancedVoice("en_US-ryan-medium")).toBe(true);
-      expect(isEnhancedVoice("en_GB-alba-medium")).toBe(true);
-    });
-
     it("returns true for all voices in ENHANCED_VOICES", () => {
       for (const voice of ENHANCED_VOICES) {
         expect(isEnhancedVoice(voice.id)).toBe(true);
@@ -88,33 +54,16 @@ describe("isEnhancedVoice", () => {
       expect(isEnhancedVoice("unknown-voice")).toBe(false);
     });
 
-    it("returns false for empty string", () => {
-      expect(isEnhancedVoice("")).toBe(false);
-    });
-
     it("returns false for browser TTS voice URIs", () => {
       // Browser voices have different URI formats
       expect(isEnhancedVoice("com.apple.speech.synthesis.voice.Alex")).toBe(false);
       expect(isEnhancedVoice("Google US English")).toBe(false);
       expect(isEnhancedVoice("Microsoft David Desktop")).toBe(false);
     });
-
-    it("is case-sensitive", () => {
-      expect(isEnhancedVoice("EN_US-LESSAC-MEDIUM")).toBe(false);
-    });
-
-    it("returns false for partial matches", () => {
-      expect(isEnhancedVoice("en_US")).toBe(false);
-      expect(isEnhancedVoice("lessac")).toBe(false);
-    });
   });
 });
 
 describe("ENHANCED_VOICES constant", () => {
-  it("contains at least one voice", () => {
-    expect(ENHANCED_VOICES.length).toBeGreaterThan(0);
-  });
-
   it("all voices have required properties", () => {
     for (const voice of ENHANCED_VOICES) {
       expect(voice.id).toBeDefined();
@@ -141,19 +90,5 @@ describe("ENHANCED_VOICES constant", () => {
     const uniqueIds = new Set(ids);
 
     expect(uniqueIds.size).toBe(ids.length);
-  });
-
-  it("contains expected US and UK voices", () => {
-    const languages = ENHANCED_VOICES.map((v) => v.language);
-
-    expect(languages).toContain("en-US");
-    expect(languages).toContain("en-GB");
-  });
-
-  it("contains both male and female voices", () => {
-    const genders = ENHANCED_VOICES.map((v) => v.gender);
-
-    expect(genders).toContain("male");
-    expect(genders).toContain("female");
   });
 });

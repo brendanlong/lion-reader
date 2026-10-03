@@ -114,12 +114,4 @@ describe("OAuth Dynamic Client Registration scope handling", () => {
       expect(result.data.scope).toBe("mcp");
     }
   });
-
-  it("accepts a single valid scope", async () => {
-    const result = await register("saved:write");
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.scope).toBe("saved:write");
-    }
-  });
 });

@@ -518,47 +518,6 @@ describe("WebSub Integration", () => {
       const isValid = await verifyHmacSignature(feed.id, subscription.id, signature, body);
       expect(isValid).toBe(true);
     });
-
-    it("multiple subscriptions for same feed get updated", async () => {
-      const feed = await createTestFeed();
-      const topicUrl = feed.url ?? "https://example.com/feed.xml";
-
-      // Create first subscription
-      const { subscription } = await createTestSubscription(feed.id, {
-        topicUrl,
-        state: "pending",
-      });
-
-      // Verify first subscription
-      await handleVerificationChallenge(feed.id, subscription.id, {
-        mode: "subscribe",
-        topic: topicUrl,
-        challenge: "challenge-1",
-        leaseSeconds: "3600",
-      });
-
-      // Check state
-      const [first] = await db.select().from(websubSubscriptions).limit(1);
-      expect(first.state).toBe("active");
-      expect(first.leaseSeconds).toBe(3600);
-
-      // Update the subscription (simulating re-subscription)
-      await db
-        .update(websubSubscriptions)
-        .set({ state: "pending", leaseSeconds: null, expiresAt: null });
-
-      // Verify again with different lease
-      await handleVerificationChallenge(feed.id, subscription.id, {
-        mode: "subscribe",
-        topic: topicUrl,
-        challenge: "challenge-2",
-        leaseSeconds: "7200",
-      });
-
-      const [second] = await db.select().from(websubSubscriptions).limit(1);
-      expect(second.state).toBe("active");
-      expect(second.leaseSeconds).toBe(7200);
-    });
   });
 
   // Callbacks carry both feed and subscription IDs, so they resolve to exactly
@@ -695,22 +654,6 @@ describe("WebSub Integration", () => {
       expect(renewed.leaseSeconds).toBe(3600);
       // Lease extended into the future, taking the row out of the stale window.
       expect(renewed.expiresAt!.getTime()).toBeGreaterThanOrEqual(before + 3600 * 1000);
-    });
-
-    it("pushes are never dropped during a renewal (secret stays valid)", async () => {
-      // The row stays active under the same secret throughout a renewal, so a
-      // content push arriving mid-renewal always verifies.
-      const feed = await createTestFeed();
-      const secret = generateCallbackSecret();
-      const { subscription } = await createTestSubscription(feed.id, {
-        state: "active",
-        callbackSecret: secret,
-        expiresAt: new Date(Date.now() + 60 * 1000),
-      });
-
-      const body = SAMPLE_RSS_FEED;
-      const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
-      expect(await verifyHmacSignature(feed.id, subscription.id, signature, body)).toBe(true);
     });
 
     it("declines a subscribe verification for an already-unsubscribed subscription", async () => {

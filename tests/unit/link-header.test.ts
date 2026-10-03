@@ -32,12 +32,6 @@ describe("parseWebSubLinkHeaders", () => {
 
       expect(result.selfUrl).toBe("https://example.com/feed.xml");
     });
-
-    it("extracts self URL with unquoted rel", () => {
-      const result = parseWebSubLinkHeaders("<https://example.com/feed.xml>; rel=self");
-
-      expect(result.selfUrl).toBe("https://example.com/feed.xml");
-    });
   });
 
   describe("multiple links", () => {

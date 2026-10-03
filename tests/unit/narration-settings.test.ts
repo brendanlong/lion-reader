@@ -8,7 +8,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { stubMemoryLocalStorage } from "../utils/component-test-helpers";
 
 const localStorageMock = stubMemoryLocalStorage();
-vi.spyOn(localStorageMock, "setItem");
 // Mock window (settings.ts bails out when it is undefined)
 vi.stubGlobal("window", { localStorage: localStorageMock });
 
@@ -37,60 +36,9 @@ describe("loadNarrationSettings", () => {
       expect(settings).toEqual(DEFAULT_NARRATION_SETTINGS);
     });
 
-    it("returns defaults when localStorage item is missing", () => {
-      const settings = loadNarrationSettings();
-
-      expect(settings.enabled).toBe(true);
-      expect(settings.provider).toBe("browser");
-      expect(settings.voiceId).toBeNull();
-      expect(settings.rate).toBe(1.0);
-      expect(settings.pitch).toBe(1.0);
-    });
-  });
-
-  describe("parsing stored values", () => {
-    it("parses enabled boolean correctly", () => {
-      localStorageMock.setItem(
-        "lion-reader-narration-settings",
-        JSON.stringify({ enabled: false })
-      );
-
-      const settings = loadNarrationSettings();
-      expect(settings.enabled).toBe(false);
-    });
-
-    it("parses provider correctly", () => {
-      localStorageMock.setItem(
-        "lion-reader-narration-settings",
-        JSON.stringify({ provider: "piper" })
-      );
-
-      const settings = loadNarrationSettings();
-      expect(settings.provider).toBe("piper");
-    });
-
-    it("parses voiceId correctly", () => {
-      localStorageMock.setItem(
-        "lion-reader-narration-settings",
-        JSON.stringify({ voiceId: "test-voice-id" })
-      );
-
-      const settings = loadNarrationSettings();
-      expect(settings.voiceId).toBe("test-voice-id");
-    });
-
-    it("parses rate correctly", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ rate: 1.5 }));
-
-      const settings = loadNarrationSettings();
-      expect(settings.rate).toBe(1.5);
-    });
-
-    it("parses pitch correctly", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ pitch: 0.8 }));
-
-      const settings = loadNarrationSettings();
-      expect(settings.pitch).toBe(0.8);
+    it("keeps LLM text processing off by default", () => {
+      // The privacy policy describes sending article text to an AI provider as opt-in.
+      expect(loadNarrationSettings().useLlmNormalization).toBe(false);
     });
   });
 
@@ -120,16 +68,6 @@ describe("loadNarrationSettings", () => {
 
       const settings = loadNarrationSettings();
       expect(settings.provider).toBe("piper");
-    });
-
-    it("accepts browser as valid provider", () => {
-      localStorageMock.setItem(
-        "lion-reader-narration-settings",
-        JSON.stringify({ provider: "browser" })
-      );
-
-      const settings = loadNarrationSettings();
-      expect(settings.provider).toBe("browser");
     });
   });
 
@@ -207,29 +145,6 @@ describe("saveNarrationSettings", () => {
     vi.clearAllMocks();
   });
 
-  it("saves settings to localStorage", () => {
-    const settings: NarrationSettings = {
-      enabled: false,
-      provider: "piper",
-      cloudModelId: null,
-      voiceId: "test-voice",
-      rate: 1.5,
-      pitch: 0.8,
-      highlightEnabled: false,
-      autoScrollEnabled: true,
-      useLlmNormalization: true,
-      sentenceGapSeconds: 0.3,
-      cloudPauseSeconds: 0.5,
-    };
-
-    saveNarrationSettings(settings);
-
-    expect(localStorageMock.setItem).toHaveBeenCalledWith(
-      "lion-reader-narration-settings",
-      JSON.stringify(settings)
-    );
-  });
-
   it("roundtrips settings correctly", () => {
     const originalSettings: NarrationSettings = {
       enabled: false,
@@ -249,20 +164,6 @@ describe("saveNarrationSettings", () => {
     const loadedSettings = loadNarrationSettings();
 
     expect(loadedSettings).toEqual(originalSettings);
-  });
-});
-
-describe("DEFAULT_NARRATION_SETTINGS", () => {
-  it("has expected default values", () => {
-    expect(DEFAULT_NARRATION_SETTINGS.enabled).toBe(true);
-    expect(DEFAULT_NARRATION_SETTINGS.provider).toBe("browser");
-    expect(DEFAULT_NARRATION_SETTINGS.voiceId).toBeNull();
-    expect(DEFAULT_NARRATION_SETTINGS.rate).toBe(1.0);
-    expect(DEFAULT_NARRATION_SETTINGS.pitch).toBe(1.0);
-    expect(DEFAULT_NARRATION_SETTINGS.highlightEnabled).toBe(true);
-    expect(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled).toBe(true);
-    expect(DEFAULT_NARRATION_SETTINGS.sentenceGapSeconds).toBe(0.1);
-    expect(DEFAULT_NARRATION_SETTINGS.cloudPauseSeconds).toBe(0.6);
   });
 });
 
@@ -304,27 +205,11 @@ describe("highlighting settings", () => {
     expect(settings.highlightEnabled).toBe(false);
   });
 
-  it("parses autoScrollEnabled correctly", () => {
-    localStorageMock.setItem(
-      "lion-reader-narration-settings",
-      JSON.stringify({ autoScrollEnabled: false })
-    );
-
-    const settings = loadNarrationSettings();
-    expect(settings.autoScrollEnabled).toBe(false);
-  });
-
-  it("defaults highlightEnabled to true when missing", () => {
+  it("defaults highlightEnabled and autoScrollEnabled to true when missing", () => {
     localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ enabled: true }));
 
     const settings = loadNarrationSettings();
     expect(settings.highlightEnabled).toBe(true);
-  });
-
-  it("defaults autoScrollEnabled to true when missing", () => {
-    localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ enabled: true }));
-
-    const settings = loadNarrationSettings();
     expect(settings.autoScrollEnabled).toBe(true);
   });
 

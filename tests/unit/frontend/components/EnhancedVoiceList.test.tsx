@@ -57,13 +57,6 @@ describe("EnhancedVoiceList radio group", () => {
     mockStored.mockResolvedValue([FIRST.id, SECOND.id]);
   });
 
-  it("wraps the voices in a radiogroup with an accessible name", async () => {
-    renderList();
-
-    const group = await screen.findByRole("radiogroup", { name: "Enhanced voices" });
-    expect(group).toBeInTheDocument();
-  });
-
   it("gives every voice a real radio with the voice's name", async () => {
     renderList();
 

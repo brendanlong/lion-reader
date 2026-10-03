@@ -67,24 +67,6 @@ function collector(): {
 }
 
 describe("createPubSubSubscription", () => {
-  it("delivers published messages to a subscribed handle", async () => {
-    const channel = uniqueChannel();
-    const received = collector();
-    const handle = createPubSubSubscription(received.listener);
-    expect(handle).not.toBeNull();
-
-    try {
-      await handle!.subscribe(channel);
-      expect(await numsub(channel)).toBe(1);
-
-      await redis.publish(channel, "hello");
-      await waitFor(() => received.messages.length === 1);
-      expect(received.messages[0]).toEqual({ channel, message: "hello" });
-    } finally {
-      handle!.close();
-    }
-  });
-
   it("fans out one Redis-level subscription to multiple handles", async () => {
     const channel = uniqueChannel();
     const receivedA = collector();

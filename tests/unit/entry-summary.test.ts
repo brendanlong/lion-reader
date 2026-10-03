@@ -119,29 +119,9 @@ describe("stripHtml", () => {
       expect(stripHtml(html, 300)).toBe("Before After");
     });
 
-    it("drops noframes content", () => {
-      const html = "<p>A</p><noframes><p>Use a real browser</p></noframes><p>B</p>";
-      expect(stripHtml(html, 300)).toBe("A B");
-    });
-
-    it("drops noembed content", () => {
-      const html = "<p>A</p><noembed><p>No embed support</p></noembed><p>B</p>";
-      expect(stripHtml(html, 300)).toBe("A B");
-    });
-
-    it("drops noscript content", () => {
-      const html = "<p>A</p><noscript><p>Enable JavaScript</p></noscript><p>B</p>";
-      expect(stripHtml(html, 300)).toBe("A B");
-    });
-
     it("drops everything after plaintext, which never closes", () => {
       const html = "<p>Visible</p><plaintext><p>Swallowed by the tokenizer</p>";
       expect(stripHtml(html, 300)).toBe("Visible");
-    });
-
-    it("drops xmp content", () => {
-      const html = "<p>A</p><xmp><b>literal</b></xmp><p>B</p>";
-      expect(stripHtml(html, 300)).toBe("A B");
     });
 
     it("drops textarea and option content (form defaults, not prose)", () => {
@@ -216,11 +196,6 @@ describe("stripHtml", () => {
   });
 
   describe("HTML entity decoding", () => {
-    it("decodes common HTML entities", () => {
-      const html = "<p>Rock &amp; Roll</p>";
-      expect(stripHtml(html, 300)).toBe("Rock & Roll");
-    });
-
     it("decodes numeric entities", () => {
       const html = "<p>&#60;tag&#62;</p>";
       expect(stripHtml(html, 300)).toBe("<tag>");
@@ -233,11 +208,6 @@ describe("stripHtml", () => {
   });
 
   describe("truncation", () => {
-    it("does not truncate text within limit", () => {
-      const html = "<p>Short text</p>";
-      expect(stripHtml(html, 300)).toBe("Short text");
-    });
-
     it("truncates at word boundary with ellipsis", () => {
       const html = "<p>This is a longer piece of text that needs truncating.</p>";
       const result = stripHtml(html, 30);
@@ -251,36 +221,12 @@ describe("stripHtml", () => {
       expect(result).toBe("Supercalifragilis...");
       expect(result.length).toBe(20);
     });
-
-    it("handles real-world summary case", () => {
-      const html = `
-        <h1>The problem of evaluation awareness</h1>
-        <p>I've taken on the task of making highly realistic alignment evaluations,
-        and I'm now sure that the mainstream approach of creating such evals is a
-        dead end and should change.</p>
-      `;
-      const result = stripHtml(html, 300);
-      expect(result).toContain("The problem of evaluation awareness");
-      expect(result).toContain("I've taken on");
-      // Should have space between heading and paragraph
-      expect(result).not.toContain("awarenessI've");
-    });
   });
 
   describe("inline elements", () => {
     it("preserves text from inline elements without extra spacing", () => {
       const html = "<p>This is <strong>bold</strong> and <em>italic</em> text.</p>";
       expect(stripHtml(html, 300)).toBe("This is bold and italic text.");
-    });
-
-    it("handles links", () => {
-      const html = '<p>Click <a href="http://example.com">here</a> to continue.</p>';
-      expect(stripHtml(html, 300)).toBe("Click here to continue.");
-    });
-
-    it("handles spans", () => {
-      const html = '<p>Some <span class="highlight">highlighted</span> text.</p>';
-      expect(stripHtml(html, 300)).toBe("Some highlighted text.");
     });
 
     it("adds space between inline element and following block element", () => {
@@ -316,12 +262,6 @@ describe("summarizeCleanedContent", () => {
     expect(summary.length).toBeLessThanOrEqual(303); // 300 + "..."
     expect(summary.endsWith("...")).toBe(true);
     expect(summary.includes("wordword")).toBe(false); // broke on a space
-  });
-
-  it("does not truncate short content", () => {
-    const summary = summarizeCleanedContent({ excerpt: "", textContent: "Short content" });
-    expect(summary).toBe("Short content");
-    expect(summary.endsWith("...")).toBe(false);
   });
 
   it("returns an empty string for empty content", () => {

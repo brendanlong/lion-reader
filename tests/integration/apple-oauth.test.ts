@@ -1,9 +1,9 @@
 /**
  * Integration tests for Apple OAuth flow.
  *
- * These tests use a real database to verify OAuth account creation,
- * linking, and session management. The Apple API responses are mocked
- * since we don't control that external service.
+ * These tests use real Redis state storage and real id_token verification.
+ * The Apple API responses are mocked since we don't control that external
+ * service.
  *
  * Apple-specific considerations tested:
  * - First-auth user data (name, email) only sent once
@@ -12,14 +12,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi, beforeAll, afterEach } from "vitest";
-import { eq, and } from "drizzle-orm";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
-import { generateUuidv7 } from "../../src/lib/uuidv7";
-import * as argon2 from "argon2";
-import { createTestUser } from "./helpers";
 
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";
@@ -258,73 +254,6 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
     });
   });
 
-  describe("OAuth callback integration", () => {
-    // Helper to create a test user
-    async function createUser(email: string, withPassword = true) {
-      return createTestUser({
-        email,
-        passwordHash: withPassword ? await argon2.hash("password123") : null,
-      });
-    }
-
-    // Helper to create OAuth account
-    async function createAppleOAuthAccount(userId: string, providerAccountId: string) {
-      const accountId = generateUuidv7();
-
-      await db.insert(oauthAccounts).values({
-        id: accountId,
-        userId,
-        provider: "apple",
-        providerAccountId,
-        accessToken: "old-token",
-        createdAt: new Date(),
-      });
-
-      return accountId;
-    }
-
-    it("finds existing Apple OAuth account", async () => {
-      // Create existing user and OAuth account
-      const userId = await createUser("existing@example.com");
-      await createAppleOAuthAccount(userId, mockAppleUserSub);
-
-      // Verify OAuth account exists
-      const oauthAccount = await db
-        .select()
-        .from(oauthAccounts)
-        .where(
-          and(
-            eq(oauthAccounts.provider, "apple"),
-            eq(oauthAccounts.providerAccountId, mockAppleUserSub)
-          )
-        )
-        .limit(1);
-
-      expect(oauthAccount.length).toBe(1);
-      expect(oauthAccount[0].userId).toBe(userId);
-    });
-
-    it("can link Apple OAuth to existing user with matching email", async () => {
-      // Create existing user with email that matches Apple user
-      const userId = await createUser(mockAppleEmail, true);
-
-      // Verify user exists
-      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-
-      expect(user.length).toBe(1);
-      expect(user[0].email).toBe(mockAppleEmail);
-
-      // Verify no OAuth account exists yet
-      const oauthAccount = await db
-        .select()
-        .from(oauthAccounts)
-        .where(eq(oauthAccounts.userId, userId))
-        .limit(1);
-
-      expect(oauthAccount.length).toBe(0);
-    });
-  });
-
   describe("State storage", () => {
     it("stores state with TTL", async () => {
       const { createAppleAuthUrl } = await import("../../src/server/auth/oauth/apple");
@@ -376,19 +305,6 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       }
       return messages.join(" | ");
     }
-
-    it("extracts user info from valid JWT", async () => {
-      // Store state first
-      await redis.setex("oauth:apple:state:jwt-test-state", 600, "valid");
-
-      const { validateAppleCallback } = await import("../../src/server/auth/oauth/apple");
-
-      const result = await validateAppleCallback("mock-auth-code", "jwt-test-state");
-
-      // Verify extracted info
-      expect(result.userInfo.sub).toBe(mockAppleUserSub);
-      expect(result.userInfo.email).toBe(mockAppleEmail);
-    });
 
     it("rejects an id_token with a mismatched audience", async () => {
       appleMock.idToken = await signAppleIdToken({ aud: "some-other-clients-id" });

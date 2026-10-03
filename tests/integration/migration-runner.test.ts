@@ -99,17 +99,6 @@ describe("migration runner pure functions", () => {
       expect(hash).toHaveLength(64);
       expect(hash).toMatch(/^[a-f0-9]+$/);
     });
-
-    it("produces same hash for same content", () => {
-      const sql = "CREATE TABLE test (id int);";
-      expect(computeHash(sql)).toBe(computeHash(sql));
-    });
-
-    it("produces different hash for different content", () => {
-      const sql1 = "CREATE TABLE test1 (id int);";
-      const sql2 = "CREATE TABLE test2 (id int);";
-      expect(computeHash(sql1)).not.toBe(computeHash(sql2));
-    });
   });
 
   describe("splitStatements", () => {

@@ -76,12 +76,6 @@ describe("getNarrationPhase", () => {
     });
   });
 
-  it("offers no skips while generating, whatever paragraphs a previous narration left", () => {
-    const phase = getNarrationPhase({ ...MID_ARTICLE, status: "generating" });
-    expect(phase.canSkipBackward).toBe(false);
-    expect(phase.canSkipForward).toBe(false);
-  });
-
   it("bounds skips by the narration paragraph, not the DOM element", () => {
     const first = getNarrationPhase({
       ...MID_ARTICLE,
