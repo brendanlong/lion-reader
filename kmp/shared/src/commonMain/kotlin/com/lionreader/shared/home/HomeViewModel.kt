@@ -32,7 +32,7 @@ import kotlinx.io.IOException
 
 private const val SEARCH_LIMIT = 200L
 
-class Timeline(val scope: ListScope, val oldestFirst: Boolean, val items: List<TimelineItem>)
+data class Timeline(val scope: ListScope, val oldestFirst: Boolean, val items: List<TimelineItem>)
 
 sealed interface SyncStatus {
     data object Idle : SyncStatus
@@ -164,7 +164,6 @@ class HomeViewModel(
     }
 
     fun setOldestFirst(value: Boolean) {
-        view.update { it.letGoOfKept() }
         viewModelScope.launch { updateSettings { it.copy(oldestFirst = value) } }
     }
 
