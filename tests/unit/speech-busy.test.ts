@@ -45,6 +45,22 @@ describe("speakWhenFree", () => {
     ).rejects.toBe(busy);
   });
 
+  it("gives up on a provider that stays unreachable within the same budget", async () => {
+    let calls = 0;
+    const unreachable = new TypeError("fetch failed");
+    await expect(
+      speakWhenFree(
+        async () => {
+          calls++;
+          throw unreachable;
+        },
+        signal(),
+        1_000
+      )
+    ).rejects.toBe(unreachable);
+    expect(calls).toBeLessThanOrEqual(3);
+  });
+
   it("doesn't retry other failures, and stops when the client goes away", async () => {
     let calls = 0;
     await expect(

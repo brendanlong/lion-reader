@@ -524,9 +524,8 @@ const BUSY_MAX_WAIT_MS = 5_000;
  * `speak`, asked again while the provider is busy ({@link classifyProviderError}:
  * a plan's concurrency limit, say, which several listeners on the server's key
  * can hit together, or an overloaded or unreachable provider), waiting as long
- * as it asks, within reason. Past
- * {@link BUSY_RETRY_MS} the last busy error is thrown, for the client to retry
- * later.
+ * as it asks, within reason. Past {@link BUSY_RETRY_MS} the last busy error is
+ * thrown, for the client to retry later.
  */
 export async function speakWhenFree<T>(
   speak: () => Promise<T>,
