@@ -63,7 +63,9 @@ import org.json.JSONObject
 /**
  * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
  * SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
- * than file:// access.
+ * than file:// access. The only WebView in the app (entry HTML can hold MathML, SVG, tables and
+ * embeds), with the article's header in it too. It fills the page and scrolls itself: sized to its
+ * content inside a scrolling layout, a WebView stays blank until it has measured.
  */
 @Composable
 fun ReaderWebView(
@@ -236,10 +238,12 @@ internal const val CRASH_WINDOW_MILLIS = 60_000L
 internal const val MAX_RENDERER_CRASHES = 3
 
 /**
- * The article's narration in the page (the reader's narration.js): [paragraph] is the one to
- * highlight, if any. [onParagraphs] gets the text to speak once the page has extracted it, [onSeek]
- * the paragraph the user tapped, and [onListenFrom] the paragraph a selection starts in, when its
- * menu's Listen is tapped (offered only when this is given).
+ * The article's narration in the page. The reader's narration.js is the web's own code (bundled
+ * from `src/lib/narration/app-reader.ts`), so the app numbers, speaks and highlights an article
+ * exactly as the web does, offline included. [paragraph] is the one to highlight, if any.
+ * [onParagraphs] gets the text to speak once the page has extracted it, [onSeek] the paragraph the
+ * user tapped, and [onListenFrom] the paragraph a selection starts in, when its menu's Listen is
+ * tapped (offered only when this is given).
  */
 data class ReaderNarration(
     val paragraph: Int? = null,

@@ -173,8 +173,9 @@ class Reader(
         }
 
     /**
-     * Articles on the device matching what the user typed (see [searchQuery]), newest first:
-     * titles, authors, feeds, summaries and downloaded bodies.
+     * Articles on the device matching what the user typed (see [searchQuery]), newest first, read
+     * or not (and nothing the device doesn't have): titles, authors, feeds, summaries and
+     * downloaded bodies.
      */
     fun search(text: String, limit: Long): Flow<List<TimelineItem>> {
         val query = searchQuery(text) ?: return flowOf(emptyList())
@@ -206,7 +207,11 @@ class Reader(
             .mapToList(context)
     }
 
-    /** Lists and their unread counts, counted on the device (see kmp/CLAUDE.md). */
+    /**
+     * Lists and their unread counts, counted over the device's entries (unsent changes included),
+     * never taken from the server: its counts include unread entries outside the offline window,
+     * which the app never shows.
+     */
     fun navigation(): Flow<Navigation> {
         val subs = db.subscriptionQueries
         val entries = db.entryQueries
@@ -261,8 +266,10 @@ class Reader(
         withContext(context) { db.entryQueries.markOpened(now(), id) }
 
     /**
-     * The unread entries of [scope] on the device: what mark-all-read marks (with [setRead]). Taken
-     * when the user is asked to confirm, so entries a sync adds meanwhile aren't marked unseen.
+     * The unread entries of [scope] on the device: what mark-all-read marks (with [setRead]),
+     * rather than everything unread the server has, as the counts are the device's ([navigation]).
+     * Taken when the user is asked to confirm, so entries a sync adds meanwhile aren't marked
+     * unseen.
      */
     suspend fun unreadIds(scope: ListScope): List<String> =
         withContext(context) { queryUnreadIds(scope) }

@@ -1,9 +1,9 @@
 # Native App Plan
 
 What's left of the plan for the native Lion Reader client (Kotlin
-Multiplatform, Android first). The app as built — architecture, API, auth,
-sync, outbox, retention, reader view — is documented in `kmp/CLAUDE.md`.
-Each phase below adds the server pieces it needs alongside its client code.
+Multiplatform, Android first). The app as built is documented in
+`kmp/CLAUDE.md` (overview and rules) and in the KDoc of the classes doing the
+work. Each phase below adds the server pieces it needs alongside its client code.
 
 ## Remaining phases
 
@@ -34,7 +34,8 @@ Each phase below adds the server pieces it needs alongside its client code.
 
 ### Narration
 
-How narration works in the app is in `kmp/CLAUDE.md`; what's left:
+How narration works in the app is in `Narrator`'s and `SpeechEngine`'s KDoc;
+what's left:
 
 - **Piper voices**: a `SpeechEngine` over sherpa-onnx (its static-link AAR,
   from JitPack) and its converted Piper models from the `tts-models` release
