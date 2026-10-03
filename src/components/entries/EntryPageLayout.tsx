@@ -1,7 +1,8 @@
 /**
  * EntryPageLayout Component
  *
- * Shared layout component for entry list pages (All, Starred, Saved, Subscription, Tag, Uncategorized).
+ * Shared layout component for entry list pages (All, Starred, Saved, Subscription, Tag,
+ * Uncategorized, Recently Read).
  * Handles the header with title and actions. Entry content and list are passed as slots.
  *
  * The buttons use non-suspending hooks directly, so they render immediately
@@ -48,8 +49,11 @@ interface EntryPageLayoutProps {
   /** Entry list slot - renders its own inline loading fallback (no Suspense) */
   entryListSlot: ReactNode;
 
-  /** Context description for the mark all read dialog (e.g., "all feeds", "this subscription") */
-  markAllReadDescription: string;
+  /**
+   * Context description for the mark all read dialog (e.g., "all feeds", "this
+   * subscription"); null hides the button and its shortcut.
+   */
+  markAllReadDescription: string | null;
 
   /** Options to pass to handleMarkAllRead */
   markAllReadOptions: MarkAllReadOptions;
@@ -151,7 +155,7 @@ export function EntryPageLayout({
                 results: mark-all-read acts on the whole view (not just the
                 matches), and search results are relevance-ranked (sort order
                 is ignored by the backend). */}
-            {!isSearching && (
+            {!isSearching && markAllReadDescription !== null && (
               <MarkAllReadButton
                 contextDescription={markAllReadDescription}
                 isLoading={isMarkAllReadPending}
