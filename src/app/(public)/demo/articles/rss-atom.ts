@@ -25,7 +25,7 @@ const article: DemoArticle = {
 
     <h3>Feeds That Keep Working</h3>
 
-    <p>When a site moves its feed, Lion Reader follows it to the new address. When a site is down, Lion Reader backs off and tries again later instead of giving up, and the sites you follow are never hammered with requests.</p>
+    <p>When a site moves its feed, Lion Reader follows it to the new address. When a site is down, Lion Reader keeps trying again later until it comes back.</p>
 
     <details>
       <summary>How Lion Reader checks feeds</summary>

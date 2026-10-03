@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Links from YouTube, arXiv, GitHub, Google Docs, and other sites come through complete and readable, whether you subscribe or save them.",
   publishedAt: new Date("2026-01-20T12:00:00Z"),
   starred: true,
-  summaryHtml: `<p>Lion Reader recognizes popular sites and pulls in their full content automatically when you subscribe or save a link: playable <strong>YouTube</strong> videos, <strong>arXiv</strong> papers in HTML when available, full GitHub READMEs, intact Google Docs, and Notion or Bluesky content other readers show stripped down. It also renders math that other readers drop.</p>`,
+  summaryHtml: `<p>Lion Reader recognizes popular sites and pulls in their full content automatically when you subscribe or save a link: playable <strong>YouTube</strong> videos, <strong>arXiv</strong> papers in HTML when available, full GitHub READMEs, intact Google Docs, complete Notion pages, and Bluesky posts with their embeds. It also renders equations that would otherwise go missing.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-02"),
   contentHtml: `

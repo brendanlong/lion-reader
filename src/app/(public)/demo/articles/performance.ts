@@ -37,7 +37,7 @@ const article: DemoArticle = {
       <summary>How it stays fast</summary>
       <ul>
         <li>Lists are built so that loading the next page takes the same time whether you have a hundred articles or a million.</li>
-        <li>The readable version of each article is extracted once, when it&rsquo;s first fetched, not every time you open it.</li>
+        <li>Each article is prepared for reading when it&rsquo;s first fetched, so opening it later is quick.</li>
         <li>A feed is fetched once and shared by everyone subscribed to it, while each person&rsquo;s reading stays private.</li>
         <li>Updates send only what changed, so the app can patch the article in place instead of reloading the list.</li>
       </ul>
