@@ -17,6 +17,7 @@ import { publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import { errors } from "@/server/trpc/errors";
+import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
 
 // ============================================================================
 // Types
@@ -266,6 +267,34 @@ export async function listAllSubscriptions(
     .where(eq(userFeeds.userId, userId))
     .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id);
   return results.map(formatSubscriptionRow);
+}
+
+/**
+ * The user's subscriptions as OPML. Feeds without a URL (saved articles,
+ * newsletters) have nothing to subscribe to elsewhere, so they're left out.
+ */
+export async function exportSubscriptionsOpml(
+  db: typeof dbType,
+  userId: string
+): Promise<{ opml: string; feedCount: number }> {
+  const opmlSubscriptions: OpmlSubscription[] = (await listAllSubscriptions(db, userId)).flatMap(
+    (row) =>
+      row.url === null
+        ? []
+        : [
+            {
+              title: row.title || row.url,
+              xmlUrl: row.url,
+              htmlUrl: row.siteUrl ?? undefined,
+              tags: row.tags.length > 0 ? row.tags.map((tag) => tag.name) : undefined,
+            },
+          ]
+  );
+
+  return {
+    opml: generateOpml(opmlSubscriptions, { title: "Lion Reader Subscriptions" }),
+    feedCount: opmlSubscriptions.length,
+  };
 }
 
 /**

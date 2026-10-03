@@ -8,22 +8,20 @@ import type { ButtonHTMLAttributes, Ref } from "react";
 import { SpinnerIcon } from "@/components/ui/icons";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
-  size?: "sm" | "md" | "lg";
+  variant?: ButtonVariant;
+  size?: ButtonSize;
   loading?: boolean;
   ref?: Ref<HTMLButtonElement>;
 }
 
-export function Button({
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonSize = "sm" | "md" | "lg";
+
+/** Button styling, for the rare link that has to look like a button (e.g. a plain download link). */
+export function buttonClassName({
   variant = "primary",
   size = "md",
-  loading = false,
-  disabled,
-  className = "",
-  children,
-  ref,
-  ...props
-}: ButtonProps) {
+}: { variant?: ButtonVariant; size?: ButtonSize } = {}): string {
   const baseStyles =
     "inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -46,11 +44,24 @@ export function Button({
     lg: "min-h-[48px] px-6 ui-text-base",
   };
 
+  return `${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]}`;
+}
+
+export function Button({
+  variant = "primary",
+  size = "md",
+  loading = false,
+  disabled,
+  className = "",
+  children,
+  ref,
+  ...props
+}: ButtonProps) {
   return (
     <button
       ref={ref}
       disabled={disabled || loading}
-      className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={`${buttonClassName({ variant, size })} ${className}`}
       {...props}
     >
       {loading && <SpinnerIcon className="mr-2 -ml-1 h-4 w-4" />}

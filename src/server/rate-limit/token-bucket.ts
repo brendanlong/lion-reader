@@ -89,6 +89,15 @@ export const RATE_LIMIT_CONFIGS = {
     capacity: 10,
     refillRate: 1 / 60,
   },
+  /**
+   * Account export (`/api/v1/export`), which reads and sanitizes every saved,
+   * starred and newsletter entry. A few retries of a failed download, then one
+   * every ten minutes.
+   */
+  libraryExport: {
+    capacity: 3,
+    refillRate: 1 / 600,
+  },
 } as const satisfies Record<string, RateLimitConfig>;
 
 export type RateLimitType = keyof typeof RATE_LIMIT_CONFIGS;

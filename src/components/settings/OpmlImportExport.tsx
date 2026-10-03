@@ -7,6 +7,7 @@
  * - Preview of feeds to import
  * - Import progress and results display
  * - Export download functionality
+ * - Account export (saved, starred and newsletter entries) download link
  */
 
 "use client";
@@ -15,7 +16,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSectionHeading } from "@/components/settings/SettingsSection";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClassName } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icons";
@@ -58,6 +59,7 @@ export function OpmlImportExport() {
       <div className="space-y-6">
         <ImportSection />
         <ExportSection />
+        <LibraryExportSection />
       </div>
     </section>
   );
@@ -555,6 +557,29 @@ function ExportSection() {
         <DownloadIcon className="mr-2 h-4 w-4" />
         Export subscriptions
       </Button>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Library Export Section
+// ============================================================================
+
+/** A plain link so the browser streams the zip to disk instead of buffering it in the page. */
+function LibraryExportSection() {
+  return (
+    <Card>
+      <h3 className="ui-text-sm text-body mb-2 font-medium">Export your library</h3>
+      <p className="ui-text-sm text-muted mb-4">
+        Download a zip of your saved articles, uploads, newsletters and starred entries, with a page
+        for each article, a bookmarks file browsers and bookmark managers can import, and your
+        subscriptions as OPML.
+      </p>
+
+      <a href="/api/v1/export" download className={buttonClassName({ variant: "secondary" })}>
+        <DownloadIcon className="mr-2 h-4 w-4" />
+        Export library
+      </a>
     </Card>
   );
 }

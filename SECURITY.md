@@ -54,6 +54,10 @@ fetches user-influenced URLs and must never be usable to reach internal services
   `escapeHtml`, and the title links to the entry only when it's http(s) (`webUrl`,
   which also gates the link menu, Open original and Share). Loosening any of this
   needs a security review.
+- **The account export's pages** (`src/server/services/library-export.ts`) open
+  from disk with no CSP behind them. Bodies are only the services layer's
+  sanitized output, every other field goes through `escapeHtml`, and a URL becomes
+  an href only if it's http(s).
 - **The native app's share target** (`ShareActivity`) is exported, so any app can
   hand it a link to save. That stays bounded because only http(s) links are
   taken, the server fetches through the SSRF guard and sanitizes on read, and

@@ -11,6 +11,7 @@ import {
   desc,
   asc,
   inArray,
+  gt,
   sql,
   isNull,
   isNotNull,
@@ -22,6 +23,8 @@ import type { db as dbType, DbOrTx } from "@/server/db";
 import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
+import { showsFullContent } from "@/lib/narration/select-content";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";
@@ -519,6 +522,130 @@ export async function getFullEntries(db: typeof dbType, userId: string, entryIds
   );
   const byId = new Map(mapped.map((entry) => [entry.id, entry]));
   return entryIds.flatMap((id) => byId.get(id) ?? []);
+}
+
+export interface ExportableEntry {
+  id: string;
+  type: "web" | "email" | "saved";
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  siteName: string | null;
+  /** The subscription's name for the feed; null for saved articles. */
+  feedTitle: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  read: boolean;
+  starred: boolean;
+  /** The sanitized body the entry view shows by default. */
+  contentHtml: string | null;
+}
+
+/**
+ * One page of the entries an account export keeps (`library-export.ts`): saved
+ * and uploaded articles, newsletter issues, and starred entries of any type,
+ * limited like every read to what `visible_entries` shows. Pages are keyed on
+ * entry id; pass the previous page's `nextAfterId` until it comes back null.
+ *
+ * The page's ids come from `user_entries` directly so its primary key bounds
+ * each page's scan (a range predicate on the view's id doesn't reach it); a
+ * page can hold fewer entries than `limit` when some aren't visible.
+ */
+export async function listExportableEntries(
+  db: typeof dbType,
+  userId: string,
+  { afterId, limit }: { afterId: string | null; limit: number }
+): Promise<{ entries: ExportableEntry[]; nextAfterId: string | null }> {
+  const idRows = await db
+    .select({ id: userEntries.entryId })
+    .from(userEntries)
+    .innerJoin(entries, eq(entries.id, userEntries.entryId))
+    .where(
+      and(
+        eq(userEntries.userId, userId),
+        afterId ? gt(userEntries.entryId, afterId) : undefined,
+        or(
+          eq(userEntries.starred, true),
+          and(inArray(entries.type, ["saved", "email"]), eq(entries.isSpam, false))
+        )
+      )
+    )
+    .orderBy(asc(userEntries.entryId))
+    .limit(limit);
+  if (idRows.length === 0) return { entries: [], nextAfterId: null };
+
+  // Each family is reduced to the variant the view shows by default (cleaned,
+  // falling back to original), so a whole-page original is never loaded
+  // alongside its cleaned version.
+  const rows = await db
+    .select({
+      id: visibleEntries.id,
+      type: visibleEntries.type,
+      url: visibleEntries.url,
+      title: visibleEntries.title,
+      author: visibleEntries.author,
+      siteName: visibleEntries.siteName,
+      feedTitle: sql<
+        string | null
+      >`CASE WHEN ${visibleEntries.type} = 'saved' THEN NULL ELSE COALESCE(${subscriptions.customTitle}, ${feeds.title}) END`,
+      summary: visibleEntries.summary,
+      publishedAt: visibleEntries.publishedAt,
+      fetchedAt: visibleEntries.fetchedAt,
+      read: visibleEntries.read,
+      starred: visibleEntries.starred,
+      content: sql<
+        string | null
+      >`COALESCE(${visibleEntries.contentCleaned}, ${visibleEntries.contentOriginal})`,
+      fullContent: sql<
+        string | null
+      >`COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal})`,
+      fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+      fullContentError: visibleEntries.fullContentError,
+      fetchFullContent: subscriptions.fetchFullContent,
+    })
+    .from(visibleEntries)
+    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
+    .where(
+      and(
+        eq(visibleEntries.userId, userId),
+        inArray(
+          visibleEntries.id,
+          idRows.map((row) => row.id)
+        )
+      )
+    )
+    .orderBy(asc(visibleEntries.id));
+
+  const exportable = await mapWithConcurrency(
+    rows,
+    GET_ENTRIES_SANITIZE_CONCURRENCY,
+    async ({
+      content,
+      fullContent,
+      fullContentFetchedAt,
+      fullContentError,
+      fetchFullContent,
+      ...rest
+    }) => {
+      const showFull = showsFullContent({
+        fullContentCleaned: fullContent,
+        fullContentFetchedAt,
+        fullContentError,
+        fetchFullContent,
+      });
+      return {
+        ...rest,
+        contentHtml: await sanitizeEntryHtmlAsync(showFull ? fullContent : content),
+      };
+    }
+  );
+
+  return {
+    entries: exportable,
+    nextAfterId: idRows.length < limit ? null : idRows[idRows.length - 1].id,
+  };
 }
 
 // ============================================================================

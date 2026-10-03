@@ -1,6 +1,5 @@
 /**
- * Authentication for route handlers outside tRPC that stream (`/api/v1/events`,
- * `/api/v1/narration/speech`): the same credentials the tRPC context takes from
+ * Authentication for route handlers outside tRPC that stream: the same credentials the tRPC context takes from
  * a browser or the first-party app — a session (cookie or Bearer) or the app's
  * OAuth access token.
  */

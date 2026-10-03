@@ -21,7 +21,7 @@ const article: DemoArticle = {
 
     <h3>Take It With You</h3>
 
-    <p>Export your subscription list, with your tags and custom names, in one click. Keep it as a backup, share a list with a friend, or move to another reader.</p>
+    <p>Export your subscription list, with your tags and custom names, in one click. Keep it as a backup, share a list with a friend, or move to another reader. To take your saved articles and newsletters too, use <strong>Export library</strong> in the same place.</p>
   `,
 };
 

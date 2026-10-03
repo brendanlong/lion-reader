@@ -569,7 +569,8 @@ export default function PrivacyPolicyPage() {
           </li>
           <li>
             <strong>Export:</strong> Download your feed subscriptions in OPML format for import into
-            other RSS readers
+            other RSS readers, and your saved articles, uploads, newsletters and starred entries as
+            a zip archive
           </li>
           <li>
             <strong>Correct:</strong> Update your email address and other account information at any
