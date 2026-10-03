@@ -139,14 +139,15 @@ fun HomeScreen(
     BackHandler(enabled = search != null) { model.setSearch(null) }
     // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
     val timelineList = rememberLazyListState()
-    // A new order starts at the top. Once it's composed: before, the list would follow its first
-    // entry by key to wherever the new order puts it.
-    var reorderingTo by remember { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(timeline?.oldestFirst) {
-        if (reorderingTo != null && timeline?.oldestFirst == reorderingTo) {
-            timelineList.scrollToItem(0)
-            reorderingTo = null
-        }
+    // Another list (or this one filtered or ordered differently) starts at the top; coming back
+    // from an article to the same one keeps its place. Once it's composed: before, the list would
+    // follow its first entry by key to wherever the new list has it.
+    val listKey = timeline?.listKey
+    var listShown by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(listKey) {
+        if (listKey == null) return@LaunchedEffect
+        if (listShown != null && listShown != listKey) timelineList.scrollToItem(0)
+        listShown = listKey
     }
     val searchList = remember(search == null) { LazyListState() }
 
@@ -219,10 +220,7 @@ fun HomeScreen(
                                 showRead = !unreadOnly,
                                 onShowReadChange = { model.setUnreadOnly(!it) },
                                 oldestFirst = oldestFirst,
-                                onOldestFirstChange = {
-                                    model.setOldestFirst(it)
-                                    reorderingTo = it
-                                },
+                                onOldestFirstChange = model::setOldestFirst,
                                 onMarkAllRead = {
                                     coroutines.launch { markAllIds = model.unreadInList() }
                                 },

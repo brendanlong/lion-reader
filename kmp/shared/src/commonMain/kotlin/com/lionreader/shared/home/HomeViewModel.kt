@@ -32,7 +32,16 @@ import kotlinx.io.IOException
 
 private const val SEARCH_LIMIT = 200L
 
-data class Timeline(val scope: ListScope, val oldestFirst: Boolean, val items: List<TimelineItem>)
+data class Timeline(
+    val scope: ListScope,
+    val unreadOnly: Boolean,
+    val oldestFirst: Boolean,
+    val items: List<TimelineItem>,
+) {
+    /** Which list this is, in what order: a change is a new list, which starts at the top. */
+    val listKey: String
+        get() = "$scope unreadOnly=$unreadOnly oldestFirst=$oldestFirst"
+}
 
 sealed interface SyncStatus {
     data object Idle : SyncStatus
@@ -79,9 +88,10 @@ class HomeViewModel(
         reader.navigation().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
-     * The list's entries, with which list and order they're in (so a switch can wait for them, and
-     * a new order start at the top). From [settings] rather than [unreadOnly] and [oldestFirst],
-     * whose placeholder values before the settings load would query a list only to replace it.
+     * The list's entries, with which list, filter and order they're in (so a switch can wait for
+     * them, and a new list start at the top). From [settings] rather than [unreadOnly] and
+     * [oldestFirst], whose placeholder values before the settings load would query a list only to
+     * replace it.
      */
     val timeline: StateFlow<Timeline?> =
         combine(
@@ -92,7 +102,7 @@ class HomeViewModel(
             .flatMapLatest { (view, filters) ->
                 val (unreadOnly, oldestFirst) = filters
                 reader.timeline(view.scope, unreadOnly, oldestFirst, view.keepIds, view.limit).map {
-                    Timeline(view.scope, oldestFirst, it)
+                    Timeline(view.scope, unreadOnly, oldestFirst, it)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
