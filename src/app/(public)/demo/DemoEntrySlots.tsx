@@ -19,7 +19,7 @@ function WelcomeCallToAction() {
           href="/register"
           className="btn-primary ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md px-6 font-medium sm:w-auto"
         >
-          Sign Up
+          Sign up for free
         </PageLink>
         <PageLink
           href="/login"
