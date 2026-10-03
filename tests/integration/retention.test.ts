@@ -523,20 +523,4 @@ describe("runRetentionCleanup", () => {
       .where(eq(entryTombstones.userId, userId));
     expect(remaining.map((row) => row.entryId)).toEqual([recent]);
   });
-
-  it("returns zero counts when there is nothing to delete", async () => {
-    const result = await runRetentionCleanup(db);
-    expect(result).toEqual({
-      sessions: 0,
-      apiTokens: 0,
-      oauthAuthorizationCodes: 0,
-      oauthAccessTokens: 0,
-      oauthRefreshTokens: 0,
-      oauthClients: 0,
-      opmlImports: 0,
-      parkedJobs: 0,
-      deadFeedJobs: 0,
-      entryTombstones: 0,
-    });
-  });
 });

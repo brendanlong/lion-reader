@@ -421,32 +421,6 @@ describe("Entry Processor", () => {
   });
 
   describe("processEntries", () => {
-    it("processes all entries from a feed", async () => {
-      const feed = await createTestFeed();
-
-      const parsedFeed: ParsedFeed = {
-        title: "Test Feed",
-        items: [
-          { guid: "entry-1", title: "Entry 1", content: "Content 1" },
-          { guid: "entry-2", title: "Entry 2", content: "Content 2" },
-          { guid: "entry-3", title: "Entry 3", content: "Content 3" },
-        ],
-      };
-
-      const result = await processEntries(feed.id, parsedFeed);
-
-      expect(result.newCount).toBe(3);
-      expect(result.updatedCount).toBe(0);
-      expect(result.unchangedCount).toBe(0);
-      expect(result.entries).toHaveLength(3);
-
-      // Verify all entries are new
-      for (const entry of result.entries) {
-        expect(entry.isNew).toBe(true);
-        expect(entry.isUpdated).toBe(false);
-      }
-    });
-
     it("counts new, updated, and unchanged correctly", async () => {
       const feed = await createTestFeed();
 

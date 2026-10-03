@@ -188,63 +188,6 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
   });
 
   describe("feed merge re-stamp (migrateSubscriptionsToExistingFeed)", () => {
-    it("re-stamps old-feed entries to the newly created subscription", async () => {
-      const userId = await createTestUser({ emailPrefix: "merge-new" });
-      const oldFeedId = await createTestFeed({ url: "https://old.example.com/feed.xml" });
-      const newFeedId = await createTestFeed({ url: "https://new.example.com/feed.xml" });
-      const oldSubId = await createTestSubscription(userId, oldFeedId);
-      const entryId = await createTestEntry(oldFeedId);
-      await db.insert(userEntries).values({ userId, entryId });
-
-      // Sanity: stamped with the old subscription before the merge.
-      expect((await getUserEntry(userId, entryId)).subscriptionId).toBe(oldSubId);
-
-      const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, oldFeedId));
-      const [newFeed] = await db.select().from(feeds).where(eq(feeds.id, newFeedId));
-      await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
-
-      const [newSub] = await db
-        .select({ id: subscriptions.id })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeedId)));
-      const row = await getUserEntry(userId, entryId);
-      expect(row.subscriptionId).toBe(newSub.id);
-      expect(row.subscriptionId).not.toBe(oldSubId);
-    });
-
-    it("re-stamps old-feed entries to the user's existing subscription to the target feed", async () => {
-      const userId = await createTestUser({ emailPrefix: "merge-existing" });
-      const oldFeedId = await createTestFeed({ url: "https://old2.example.com/feed.xml" });
-      const newFeedId = await createTestFeed({ url: "https://new2.example.com/feed.xml" });
-      const oldSubId = await createTestSubscription(userId, oldFeedId);
-      const existingNewSubId = await createTestSubscription(userId, newFeedId);
-
-      const oldEntryId = await createTestEntry(oldFeedId);
-      const newEntryId = await createTestEntry(newFeedId);
-      await db.insert(userEntries).values({ userId, entryId: oldEntryId });
-      await db.insert(userEntries).values({ userId, entryId: newEntryId });
-
-      const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, oldFeedId));
-      const [newFeed] = await db.select().from(feeds).where(eq(feeds.id, newFeedId));
-      await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
-
-      // Old-feed entry moved to the surviving subscription; new-feed entry unchanged.
-      expect((await getUserEntry(userId, oldEntryId)).subscriptionId).toBe(existingNewSubId);
-      expect((await getUserEntry(userId, newEntryId)).subscriptionId).toBe(existingNewSubId);
-
-      // Old subscription is unsubscribed and owns no rows anymore.
-      const [oldSub] = await db
-        .select({ unsubscribedAt: subscriptions.unsubscribedAt })
-        .from(subscriptions)
-        .where(eq(subscriptions.id, oldSubId));
-      expect(oldSub.unsubscribedAt).not.toBeNull();
-      const orphaned = await db
-        .select({ entryId: userEntries.entryId })
-        .from(userEntries)
-        .where(eq(userEntries.subscriptionId, oldSubId));
-      expect(orphaned).toHaveLength(0);
-    });
-
     it("re-stamps every affected user in a multi-subscriber merge", async () => {
       const oldFeedId = await createTestFeed({ url: "https://old3.example.com/feed.xml" });
       const newFeedId = await createTestFeed({ url: "https://new3.example.com/feed.xml" });

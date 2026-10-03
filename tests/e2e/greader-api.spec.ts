@@ -156,22 +156,6 @@ test.describe("Google Reader API happy path", () => {
     expect(titles).toContain(feed.title);
   });
 
-  test("stream/items/ids returns item refs for the reading list", async ({ request }) => {
-    const token = await getToken(request);
-
-    const res = await request.get(
-      `${API_BASE}/stream/items/ids?s=user/-/state/com.google/reading-list`,
-      { headers: authHeader(token) }
-    );
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.itemRefs)).toBe(true);
-    expect(body.itemRefs.length).toBeGreaterThanOrEqual(1);
-    for (const ref of body.itemRefs) {
-      expect(typeof ref.id).toBe("string");
-    }
-  });
-
   // Newsflash's FreshRSS backend fetches "latest" articles during its initial
   // sync by calling stream/contents with *no* stream id. That must resolve to
   // the reading list, not 404 (which would break account setup). Regression

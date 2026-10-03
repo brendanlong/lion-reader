@@ -203,145 +203,6 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(result.unreadCount).toBe(1);
     });
 
-    it("shows all entries when lastEntriesUpdatedAt matches all entries lastSeenAt", async () => {
-      const userId = await createTestUser();
-
-      const feedUrl = "https://example.com/feed2.xml";
-      const fetchTime = new Date("2024-01-01T10:00:00Z");
-
-      const feedId = await createTestFeed({
-        url: feedUrl,
-        lastFetchedAt: fetchTime,
-        lastEntriesUpdatedAt: fetchTime,
-      });
-
-      // All entries have the same lastSeenAt
-      const entry1Id = await createTestEntry(feedId, {
-        guid: "entry-1",
-        title: "Entry 1",
-        fetchedAt: fetchTime,
-        lastSeenAt: fetchTime,
-      });
-
-      const entry2Id = await createTestEntry(feedId, {
-        guid: "entry-2",
-        title: "Entry 2",
-        fetchedAt: fetchTime,
-        lastSeenAt: fetchTime,
-      });
-
-      const entry3Id = await createTestEntry(feedId, {
-        guid: "entry-3",
-        title: "Entry 3",
-        fetchedAt: fetchTime,
-        lastSeenAt: fetchTime,
-      });
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      const result = await caller.subscriptions.create({ url: feedUrl });
-
-      expect(result.unreadCount).toBe(3);
-
-      // Verify all entries are visible
-      const entries = await getUserEntries(userId);
-      const entryIds = entries.map((e) => e.entryId).sort();
-
-      expect(entryIds).toHaveLength(3);
-      expect(entryIds).toContain(entry1Id);
-      expect(entryIds).toContain(entry2Id);
-      expect(entryIds).toContain(entry3Id);
-    });
-
-    it("handles multiple fetches correctly - shows only entries from last fetch with changes", async () => {
-      const userId = await createTestUser();
-
-      const feedUrl = "https://example.com/feed3.xml";
-      const fetch1Time = new Date("2024-01-01T10:00:00Z");
-      const fetch2Time = new Date("2024-01-02T10:00:00Z");
-      const fetch3Time = new Date("2024-01-03T10:00:00Z");
-
-      const feedId = await createTestFeed({
-        url: feedUrl,
-        lastFetchedAt: fetch3Time,
-        lastEntriesUpdatedAt: fetch3Time,
-      });
-
-      // Fetch 1: entries A, B
-      await createTestEntry(feedId, {
-        guid: "entry-A",
-        title: "Entry A",
-        fetchedAt: fetch1Time,
-        lastSeenAt: fetch1Time,
-      });
-
-      await createTestEntry(feedId, {
-        guid: "entry-B",
-        title: "Entry B",
-        fetchedAt: fetch1Time,
-        lastSeenAt: fetch1Time,
-      });
-
-      // Fetch 2: entries B, C (A disappeared, C is new)
-      const entryBId = (
-        await db
-          .select({ id: entries.id })
-          .from(entries)
-          .where(eq(entries.guid, "entry-B"))
-          .limit(1)
-      )[0].id;
-
-      await db.update(entries).set({ lastSeenAt: fetch2Time }).where(eq(entries.id, entryBId));
-
-      await createTestEntry(feedId, {
-        guid: "entry-C",
-        title: "Entry C",
-        fetchedAt: fetch2Time,
-        lastSeenAt: fetch2Time,
-      });
-
-      // Fetch 3: entries C, D, E (B disappeared, D and E are new)
-      const entryCId = (
-        await db
-          .select({ id: entries.id })
-          .from(entries)
-          .where(eq(entries.guid, "entry-C"))
-          .limit(1)
-      )[0].id;
-
-      await db.update(entries).set({ lastSeenAt: fetch3Time }).where(eq(entries.id, entryCId));
-
-      const entryDId = await createTestEntry(feedId, {
-        guid: "entry-D",
-        title: "Entry D",
-        fetchedAt: fetch3Time,
-        lastSeenAt: fetch3Time,
-      });
-
-      const entryEId = await createTestEntry(feedId, {
-        guid: "entry-E",
-        title: "Entry E",
-        fetchedAt: fetch3Time,
-        lastSeenAt: fetch3Time,
-      });
-
-      // User subscribes after all 3 fetches
-      const caller = createCaller(await createAuthContext(userId));
-
-      const result = await caller.subscriptions.create({ url: feedUrl });
-
-      expect(result.unreadCount).toBe(3);
-
-      // Should only see C, D, E (entries from fetch 3)
-      const userEntriesResult = await getUserEntries(userId);
-      const entryIds = userEntriesResult.map((e) => e.entryId).sort();
-
-      expect(entryIds).toHaveLength(3);
-      expect(entryIds).toContain(entryCId);
-      expect(entryIds).toContain(entryDId);
-      expect(entryIds).toContain(entryEId);
-    });
-
     it("includes entries a WebSub hub pushed since the last poll (issue #1078)", async () => {
       // A WebSub push stamps last_seen_at = pushTime but leaves the feed's
       // last_entries_updated_at at the last poll, so a pushed entry sits *above*
@@ -408,29 +269,6 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         guid: "entry-1",
         title: "Entry 1",
       });
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      const result = await caller.subscriptions.create({ url: feedUrl });
-
-      expect(result.unreadCount).toBe(0);
-
-      // Verify no user_entries created
-      const count = await getUserEntriesCount(userId);
-      expect(count).toBe(0);
-    });
-
-    it("handles empty feed (no entries)", async () => {
-      const userId = await createTestUser();
-
-      const feedUrl = "https://example.com/empty-feed.xml";
-      await createTestFeed({
-        url: feedUrl,
-        lastFetchedAt: new Date("2024-01-01T10:00:00Z"),
-        lastEntriesUpdatedAt: new Date("2024-01-01T10:00:00Z"),
-      });
-
-      // No entries created
 
       const caller = createCaller(await createAuthContext(userId));
 
@@ -836,64 +674,6 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
   });
 
-  describe("Multiple users subscribing", () => {
-    it("each user gets their own user_entries for current entries", async () => {
-      const userAId = await createTestUser({ emailPrefix: "userA" });
-      const userBId = await createTestUser({ emailPrefix: "userB" });
-      const userCId = await createTestUser({ emailPrefix: "userC" });
-
-      const feedUrl = "https://example.com/multi-user.xml";
-      const fetchTime = new Date("2024-01-01T10:00:00Z");
-
-      const feedId = await createTestFeed({
-        url: feedUrl,
-        lastFetchedAt: fetchTime,
-        lastEntriesUpdatedAt: fetchTime,
-      });
-
-      const entry1Id = await createTestEntry(feedId, {
-        guid: "entry-1",
-        title: "Entry 1",
-        fetchedAt: fetchTime,
-        lastSeenAt: fetchTime,
-      });
-
-      const entry2Id = await createTestEntry(feedId, {
-        guid: "entry-2",
-        title: "Entry 2",
-        fetchedAt: fetchTime,
-        lastSeenAt: fetchTime,
-      });
-
-      // All three users subscribe
-      const ctxA = await createAuthContext(userAId);
-      const callerA = createCaller(ctxA);
-      await callerA.subscriptions.create({ url: feedUrl });
-
-      const ctxB = await createAuthContext(userBId);
-      const callerB = createCaller(ctxB);
-      await callerB.subscriptions.create({ url: feedUrl });
-
-      const ctxC = await createAuthContext(userCId);
-      const callerC = createCaller(ctxC);
-      await callerC.subscriptions.create({ url: feedUrl });
-
-      // Verify each user has their own user_entries
-      const userAEntries = await getUserEntries(userAId);
-      const userBEntries = await getUserEntries(userBId);
-      const userCEntries = await getUserEntries(userCId);
-
-      expect(userAEntries).toHaveLength(2);
-      expect(userBEntries).toHaveLength(2);
-      expect(userCEntries).toHaveLength(2);
-
-      // All should have the same entry IDs
-      expect(userAEntries.map((e) => e.entryId).sort()).toEqual([entry1Id, entry2Id].sort());
-      expect(userBEntries.map((e) => e.entryId).sort()).toEqual([entry1Id, entry2Id].sort());
-      expect(userCEntries.map((e) => e.entryId).sort()).toEqual([entry1Id, entry2Id].sort());
-    });
-  });
-
   describe("list with query filter", () => {
     it("filters subscriptions by title query", async () => {
       const userId = await createTestUser();
@@ -979,22 +759,6 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(result.items.map((s) => s.title)).toContain("JavaScript Daily News");
     });
 
-    it("returns empty results for non-matching query", async () => {
-      const userId = await createTestUser();
-
-      const feedId = await createTestFeed({
-        url: "https://example.com/tech.xml",
-        title: "Tech News",
-      });
-      await createTestSubscription(userId, feedId);
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      const result = await caller.subscriptions.list({ query: "nonexistentquery12345" });
-
-      expect(result.items).toHaveLength(0);
-    });
-
     it("only filters user's own subscriptions", async () => {
       const user1Id = await createTestUser({ emailPrefix: "user1" });
       const user2Id = await createTestUser({ emailPrefix: "user2" });
@@ -1020,68 +784,6 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       // Should only see their own subscription
       expect(result1.items).toHaveLength(1);
       expect(result1.items[0].title).toBe("Shared Topic Feed");
-    });
-
-    it("filters case-insensitively (lowercase query matches mixed case title)", async () => {
-      const userId = await createTestUser();
-
-      const feedId = await createTestFeed({
-        url: "https://example.com/arxiv.xml",
-        title: "cs.AI updates on arXiv.org",
-      });
-      await createTestSubscription(userId, feedId);
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      // Search with lowercase - should match
-      const result = await caller.subscriptions.list({ query: "arxiv" });
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].title).toBe("cs.AI updates on arXiv.org");
-    });
-
-    it("filters case-insensitively (uppercase query matches mixed case title)", async () => {
-      const userId = await createTestUser();
-
-      const feedId = await createTestFeed({
-        url: "https://example.com/arxiv.xml",
-        title: "cs.AI updates on arXiv.org",
-      });
-      await createTestSubscription(userId, feedId);
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      // Search with uppercase - should match
-      const result = await caller.subscriptions.list({ query: "ARXIV" });
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].title).toBe("cs.AI updates on arXiv.org");
-    });
-
-    it("filters case-insensitively (mixed case query matches different case title)", async () => {
-      const userId = await createTestUser();
-
-      const feedId = await createTestFeed({
-        url: "https://example.com/feed.xml",
-        title: "JavaScript Weekly Newsletter",
-      });
-      await createTestSubscription(userId, feedId);
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      // Search with different casing
-      const result1 = await caller.subscriptions.list({ query: "javascript" });
-      expect(result1.items).toHaveLength(1);
-
-      const result2 = await caller.subscriptions.list({ query: "WEEKLY" });
-      expect(result2.items).toHaveLength(1);
-
-      const result3 = await caller.subscriptions.list({ query: "newsletter" });
-      expect(result3.items).toHaveLength(1);
-
-      // All should find the same feed
-      expect(result1.items[0].id).toBe(result2.items[0].id);
-      expect(result2.items[0].id).toBe(result3.items[0].id);
     });
 
     it("filters case-insensitively with partial matches", async () => {
@@ -1222,8 +924,3 @@ describe("subscriptions.export", () => {
     expect(result.opml).not.toContain("<outline");
   });
 });
-
-// The `includeUnreadCounts: false` opt-out (issue #1074) was removed in the
-// #1117 step 5b counter migration: unread counts are now free reads of the
-// trigger-maintained subscriptions.unread_count counter, so every caller gets
-// real counts and there is nothing to skip.

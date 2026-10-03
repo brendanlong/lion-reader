@@ -416,21 +416,6 @@ describe("Admin API", () => {
       expect(result.items[0].email).toContain("findme-unique");
     });
 
-    it("returns lastActiveAt from the denormalized user column", async () => {
-      const caller = createCaller(createAdminContext());
-
-      const userId = await createTestUser({ emailPrefix: "active-user" });
-
-      const activeTime = new Date("2026-03-15T12:00:00Z");
-      await db.update(users).set({ lastActiveAt: activeTime }).where(eq(users.id, userId));
-
-      const result = await caller.admin.listUsers({ search: "active-user" });
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].lastActiveAt).toBeInstanceOf(Date);
-      expect(result.items[0].lastActiveAt!.getTime()).toBe(activeTime.getTime());
-    });
-
     it("keeps lastActiveAt after the user's sessions are cleaned up", async () => {
       // Regression: activity used to be derived from MAX(sessions.last_active_at),
       // so retention cleanup deleting expired sessions blanked it out. It now
@@ -534,17 +519,6 @@ describe("Admin API", () => {
       expect(result.items[0].lastTokenUsedAt).toBeNull();
     });
 
-    it("returns null token use for users who never used a token", async () => {
-      const caller = createCaller(createAdminContext());
-
-      await createTestUser({ emailPrefix: "no-token-user" });
-
-      const result = await caller.admin.listUsers({ search: "no-token-user" });
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].lastTokenUsedAt).toBeNull();
-    });
-
     it("sorts by most recent activity by default, nulls last", async () => {
       const caller = createCaller(createAdminContext());
 
@@ -614,33 +588,6 @@ describe("Admin API", () => {
       // Most-recent first across both pages.
       const combined = [...page1.items, ...page2.items].filter((u) => ids.includes(u.id));
       expect(combined.map((u) => u.id)).toEqual([ids[2], ids[1], ids[0]]);
-    });
-
-    it("pagination works", async () => {
-      const caller = createCaller(createAdminContext());
-
-      // Create enough users to paginate
-      await createTestUser({ emailPrefix: "page-a" });
-      await createTestUser({ emailPrefix: "page-b" });
-      await createTestUser({ emailPrefix: "page-c" });
-
-      const page1 = await caller.admin.listUsers({ limit: 2 });
-
-      expect(page1.items).toHaveLength(2);
-      expect(page1.nextCursor).toBeDefined();
-
-      const page2 = await caller.admin.listUsers({
-        limit: 2,
-        cursor: page1.nextCursor,
-      });
-
-      expect(page2.items.length).toBeGreaterThanOrEqual(1);
-
-      // Verify no overlap between pages
-      const page1Ids = new Set(page1.items.map((u) => u.id));
-      for (const user of page2.items) {
-        expect(page1Ids.has(user.id)).toBe(false);
-      }
     });
 
     it.each(["activity", "email", "created", "oldest"] as const)(

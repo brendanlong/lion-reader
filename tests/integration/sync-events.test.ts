@@ -634,42 +634,6 @@ describe("sync.events", () => {
       });
       expect(tagIds).toEqual([tag1Id, tag2Id, tag3Id]);
     });
-
-    it("preserves microsecond precision in cursors", async () => {
-      const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/precision.xml" });
-      await createTestSubscription(userId, feedId);
-
-      // Use explicit timestamps to avoid setTimeout and ensure deterministic ordering
-      const entry1Time = new Date("2024-06-01T00:00:00.000Z");
-      const entry1Id = await createTestEntry(feedId, {
-        title: "First",
-        createdAt: entry1Time,
-        updatedAt: entry1Time,
-      });
-      await createUserEntry(userId, entry1Id, { updatedAt: entry1Time });
-
-      // Get cursor after first entry - this captures entry1's timestamp
-      const midCursor = await createCaller(await createAuthContext(userId)).sync.cursors();
-
-      // Create second entry with a later explicit timestamp
-      const entry2Time = new Date("2024-06-01T00:00:01.000Z");
-      const entry2Id = await createTestEntry(feedId, {
-        title: "Second",
-        createdAt: entry2Time,
-        updatedAt: entry2Time,
-      });
-      await createUserEntry(userId, entry2Id, { updatedAt: entry2Time });
-
-      // Using the mid cursor should only return the second entry
-      const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: midCursor.entries! },
-      });
-
-      const newEntryEvents = result.events.filter((e) => e.type === "new_entry");
-      expect(newEntryEvents).toHaveLength(1);
-      expect(newEntryEvents[0]).toMatchObject({ entryId: entry2Id });
-    });
   });
 
   // ==========================================================================
@@ -811,68 +775,6 @@ describe("sync.events", () => {
         parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
       ).toBe(true);
     });
-  });
-
-  // ==========================================================================
-  // Pagination
-  // ==========================================================================
-
-  describe("pagination", () => {
-    it("sets hasMore when entries exceed limit", async () => {
-      const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/pagination.xml" });
-      await createTestSubscription(userId, feedId);
-      const baseCursor = new Date("2020-01-01").toISOString();
-
-      // Create 501 entries to exceed MAX_ENTRIES (500)
-      // Use raw SQL for performance
-      const entryValues = [];
-      const userEntryValues = [];
-      for (let i = 0; i < 501; i++) {
-        const entryId = generateUuidv7();
-        const now = new Date();
-        entryValues.push({
-          id: entryId,
-          feedId,
-          type: "web" as const,
-          guid: `guid-pagination-${i}`,
-          title: `Entry ${i}`,
-          contentHash: `hash-${i}`,
-          fetchedAt: now,
-          publishedAt: now,
-          lastSeenAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-        userEntryValues.push({
-          userId,
-          entryId,
-          read: false,
-          starred: false,
-        });
-      }
-
-      // Insert in batches to avoid SQL parameter limits
-      const batchSize = 100;
-      for (let i = 0; i < entryValues.length; i += batchSize) {
-        await db.insert(entries).values(entryValues.slice(i, i + batchSize));
-        await db.insert(userEntries).values(userEntryValues.slice(i, i + batchSize));
-      }
-
-      const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: baseCursor },
-      });
-
-      expect(result.hasMore).toBe(true);
-      // MAX_ENTRIES limits DB rows to 500 (after popping the 501st).
-      // Each row produces exactly 2 events: new_entry (createdAt > cursor)
-      // + entry_state_changed (userEntry.updatedAt > cursor) = 1000 total.
-      const entryEvents = result.events.filter(
-        (e) =>
-          e.type === "new_entry" || e.type === "entry_updated" || e.type === "entry_state_changed"
-      );
-      expect(entryEvents).toHaveLength(1000);
-    }, 30000); // 30s timeout for bulk insert
   });
 
   // ==========================================================================

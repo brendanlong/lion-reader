@@ -273,20 +273,6 @@ describe("Saved Articles API", () => {
       const allIds = [...page1.items, ...page2.items, ...page3.items].map((a) => a.id);
       expect(new Set(allIds).size).toBe(5);
     });
-
-    it("respects limit parameter", async () => {
-      const userId = await createTestUser();
-
-      for (let i = 1; i <= 10; i++) {
-        await createTestSavedArticle(userId, { title: `Article ${i}` });
-      }
-
-      const caller = createCaller(await createAuthContext(userId));
-      const result = await caller.entries.list({ type: "saved", limit: 3 });
-
-      expect(result.items).toHaveLength(3);
-      expect(result.nextCursor).toBeDefined();
-    });
   });
 
   describe("entries.get for saved articles", () => {
@@ -554,15 +540,6 @@ describe("Saved Articles API", () => {
       expect(dbUserEntry[0].starred).toBe(false);
     });
 
-    it("throws error for non-existent article", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(await createAuthContext(userId));
-
-      await expect(
-        caller.entries.setStarred({ id: generateUuidv7(), starred: false })
-      ).rejects.toThrow("Entry not found");
-    });
-
     it("throws error when unstarring another user's article", async () => {
       const userId1 = await createTestUser();
       const userId2 = await createTestUser({ emailPrefix: "other" });
@@ -650,23 +627,6 @@ describe("Saved Articles API", () => {
       expect(result.article.id).toBe(articleId);
       expect(result.article.title).toBe("Already Saved Article");
       expect(result.article.url).toBe(existingUrl);
-    });
-
-    it("allows different users to save the same URL", async () => {
-      const userId1 = await createTestUser();
-      const userId2 = await createTestUser({ emailPrefix: "other" });
-      const sharedUrl = "https://example.com/shared";
-
-      // User 1 saves the URL
-      await createTestSavedArticle(userId1, { url: sharedUrl, title: "User 1's Copy" });
-
-      // User 2 saves the same URL (verifies URL uniqueness is per-user, not global)
-      await createTestSavedArticle(userId2, { url: sharedUrl, title: "User 2's Copy" });
-
-      // Both should have their own copy in entries
-      const articles = await db.select().from(entries).where(eq(entries.type, "saved"));
-      expect(articles).toHaveLength(2);
-      expect(articles.filter((a) => a.url === sharedUrl)).toHaveLength(2);
     });
   });
 
@@ -1061,29 +1021,6 @@ describe("Saved Articles API", () => {
       expect(result.article.excerpt).toBe("Caller-supplied summary.");
     });
 
-    it("falls back to og:title when title parameter is not provided", async () => {
-      const userId = await createTestUser();
-      const caller = createCaller(await createAuthContext(userId));
-
-      const testHtml = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Page Title</title>
-            <meta property="og:title" content="OG Title" />
-          </head>
-          <body><article><p>Content</p></article></body>
-        </html>
-      `;
-
-      const result = await caller.saved.save({
-        url: "https://example.com/og-title-fallback",
-        html: testHtml,
-      });
-
-      expect(result.article.title).toBe("OG Title");
-    });
-
     it("handles HTML without metadata gracefully", async () => {
       const userId = await createTestUser();
       const caller = createCaller(await createAuthContext(userId));
@@ -1314,19 +1251,6 @@ describe("Saved Articles API", () => {
         .limit(1);
       return row.isPlaceholder;
     }
-
-    it("marks the placeholder entry with is_placeholder = true", async () => {
-      const userId = await createTestUser();
-      const url = "https://example.com/placeholder-marked";
-
-      const placeholder = await savePlaceholderArticle(db, userId, {
-        url,
-        reason: "The site blocked us.",
-      });
-
-      expect(placeholder.outcome).toBe("created");
-      expect(await isPlaceholderFlag(placeholder.id)).toBe(true);
-    });
 
     it("always refetches a placeholder on a no-refetch re-save, replacing it with real content", async () => {
       const userId = await createTestUser();

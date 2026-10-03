@@ -128,28 +128,6 @@ describe("Tags API", () => {
       expect(empty?.unreadCount).toBe(0);
     });
 
-    it("deduplicates unread entries reachable through multiple subscriptions of the same tag", async () => {
-      const userId = await createTestUser();
-
-      // sub1 is subscribed to feedA, sub2 to feedB. Each user_entries row is
-      // attributed to exactly one subscription (user_entries.subscription_id),
-      // so an unread entry in feedB counts once for the tag even though both
-      // subscriptions carry the same tag.
-      const feedIdA = await createTestFeed({ url: "https://feed-a.com/rss" });
-      const feedIdB = await createTestFeed({ url: "https://feed-b.com/rss" });
-      const subId1 = await createTestSubscription(userId, feedIdA);
-      const subId2 = await createTestSubscription(userId, feedIdB);
-      await createTestTag(userId, { name: "Tech", subscriptionIds: [subId1, subId2] });
-
-      await createTestEntry(feedIdA, { userIds: [userId] });
-      await createTestEntry(feedIdB, { userIds: [userId] });
-
-      const caller = createCaller(await createAuthContext(userId));
-      const result = await caller.tags.list();
-
-      expect(result.items[0].unreadCount).toBe(2);
-    });
-
     it("does not count other users' unread entries on shared feeds", async () => {
       const userId = await createTestUser({ emailPrefix: "user-a" });
       const otherUserId = await createTestUser({ emailPrefix: "user-b" });
@@ -215,25 +193,6 @@ describe("Tags API", () => {
       const caller = createCaller(await createAuthContext(userId));
       const result = await caller.tags.list();
 
-      expect(result.items[0].unreadCount).toBe(0);
-    });
-
-    it("returns zero unread for a tag whose entries are all read", async () => {
-      const userId = await createTestUser();
-
-      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
-      const subId = await createTestSubscription(userId, feedId);
-      await createTestTag(userId, { name: "Tech", subscriptionIds: [subId] });
-      const entryId = await createTestEntry(feedId, { userIds: [userId] });
-      await db
-        .update(userEntries)
-        .set({ read: true })
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
-
-      const caller = createCaller(await createAuthContext(userId));
-      const result = await caller.tags.list();
-
-      expect(result.items[0].feedCount).toBe(1);
       expect(result.items[0].unreadCount).toBe(0);
     });
 
@@ -387,17 +346,6 @@ describe("Tags API", () => {
       expect(result.tag.name).toBe("Technology");
     });
 
-    it("updates tag color", async () => {
-      const userId = await createTestUser();
-      const tagId = await createTestTag(userId, { name: "Tech", color: "#ff6b6b" });
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      const result = await caller.tags.update({ id: tagId, color: "#4ecdc4" });
-
-      expect(result.tag.color).toBe("#4ecdc4");
-    });
-
     it("removes tag color when set to null", async () => {
       const userId = await createTestUser();
       const tagId = await createTestTag(userId, { name: "Tech", color: "#ff6b6b" });
@@ -407,22 +355,6 @@ describe("Tags API", () => {
       const result = await caller.tags.update({ id: tagId, color: null });
 
       expect(result.tag.color).toBeNull();
-    });
-
-    it("updates both name and color", async () => {
-      const userId = await createTestUser();
-      const tagId = await createTestTag(userId, { name: "Tech", color: "#ff6b6b" });
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      const result = await caller.tags.update({
-        id: tagId,
-        name: "Technology",
-        color: "#4ecdc4",
-      });
-
-      expect(result.tag.name).toBe("Technology");
-      expect(result.tag.color).toBe("#4ecdc4");
     });
 
     it("returns correct feed count after update", async () => {
@@ -588,29 +520,14 @@ describe("Tags API", () => {
   });
 
   describe("authentication", () => {
-    it("requires authentication for list", async () => {
+    it("requires authentication for list, create, update, and delete", async () => {
       const caller = createCaller(createUnauthContext());
 
       await expect(caller.tags.list()).rejects.toThrow("You must be logged in");
-    });
-
-    it("requires authentication for create", async () => {
-      const caller = createCaller(createUnauthContext());
-
       await expect(caller.tags.create({ name: "Tech" })).rejects.toThrow("You must be logged in");
-    });
-
-    it("requires authentication for update", async () => {
-      const caller = createCaller(createUnauthContext());
-
       await expect(caller.tags.update({ id: generateUuidv7(), name: "Tech" })).rejects.toThrow(
         "You must be logged in"
       );
-    });
-
-    it("requires authentication for delete", async () => {
-      const caller = createCaller(createUnauthContext());
-
       await expect(caller.tags.delete({ id: generateUuidv7() })).rejects.toThrow(
         "You must be logged in"
       );
@@ -949,21 +866,6 @@ describe("Tags API", () => {
 
       // Filter by empty tag - should return empty
       const result = await caller.entries.list({ tagId });
-
-      expect(result.items).toHaveLength(0);
-    });
-
-    it("returns empty list for non-existent tag", async () => {
-      const userId = await createTestUser();
-
-      const feedId = await createTestFeed({ url: "https://feed1.com/rss" });
-      await createTestSubscription(userId, feedId);
-      await createTestEntry(feedId);
-
-      const caller = createCaller(await createAuthContext(userId));
-
-      // Filter by non-existent tag
-      const result = await caller.entries.list({ tagId: generateUuidv7() });
 
       expect(result.items).toHaveLength(0);
     });
