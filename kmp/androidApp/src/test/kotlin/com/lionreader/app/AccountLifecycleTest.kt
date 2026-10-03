@@ -7,6 +7,8 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.Configuration
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import com.lionreader.app.narration.NarratedArticle
@@ -265,6 +267,17 @@ class AccountLifecycleTest {
         until { graph.accountStatus.value is AccountStatus.Ready }
         assertSame(graph.account.value, (graph.accountStatus.value as AccountStatus.Ready).session)
     }
+
+    @Test
+    fun aNewAccountsFirstSyncIsScheduled() {
+        val graph = AppGraph(context, http)
+        graph.signInAndWait("alice")
+
+        until { syncNow().any { it.state == WorkInfo.State.ENQUEUED } }
+    }
+
+    private fun syncNow() =
+        WorkManager.getInstance(context).getWorkInfosForUniqueWork("sync-now").get()
 
     @Test
     fun aRedirectForAnotherSignInDoesntCancelThisOne() {

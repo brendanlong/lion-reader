@@ -206,9 +206,7 @@ class AppGraph(
                 var wait = confirmRetryMillis
                 while (true) {
                     try {
-                        // A new session's list syncs as it opens; the same account's,
-                        // kept through an involuntary sign-out, doesn't.
-                        if (!signedIn()) syncInBackground()
+                        signedIn()
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {}
@@ -250,18 +248,21 @@ class AppGraph(
 
     /**
      * After a sign-in: asks the server who this is and switches to that account's database,
-     * deleting the previous account's if it's another one. Whether it opened a session (rather than
-     * finding this account's already open).
+     * deleting the previous account's if it's another one.
      */
-    private suspend fun signedIn(): Boolean = accountMutex.withLock {
+    private suspend fun signedIn() = accountMutex.withLock {
         val server = _connection.value
         val user = server.api.me()
-        // Once it's begun, a switch is finished.
+        // Once it's begun, a switch is finished, its first sync included: confirming the
+        // account cancels the loop that asked.
         withContext(NonCancellable) {
-            switchTo(server, accountDbName(server.auth.serverUrl, user.id))
+            // A new session's list syncs as it opens; the same account's, kept through an
+            // involuntary sign-out, doesn't.
+            if (switchTo(server, accountDbName(server.auth.serverUrl, user.id))) syncInBackground()
         }
     }
 
+    /** Whether it opened a session (rather than finding this account's already open). */
     private suspend fun switchTo(server: ServerConnection, dbName: String): Boolean {
         val current = _account.value
         if (current?.dbName == dbName && current.connection === server) {
@@ -334,6 +335,8 @@ class AppGraph(
      * cancelled and its database is closed; with [deleteData], its database and audio go too.
      */
     private suspend fun endSession(session: AccountSession, deleteData: Boolean) {
+        // Before narration stops, so narration started meanwhile can't take its cloud voices.
+        _account.compareAndSet(session, null)
         if (narratorInstance.isInitialized()) withContext(Dispatchers.Main) { narrator.stop() }
         session.close()
         if (deleteData) {
