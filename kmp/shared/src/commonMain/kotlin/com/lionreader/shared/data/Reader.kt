@@ -6,7 +6,9 @@ import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -42,6 +44,13 @@ data class TimelineItem(
     val read: Boolean,
     val starred: Boolean,
 )
+
+/** What an article's page shows: the article (null once it's gone), or that it can't be read. */
+sealed interface ArticleState {
+    data class Shown(val entry: EntryDetail?) : ArticleState
+
+    data object Unreadable : ArticleState
+}
 
 data class EntryDetail(
     val id: String,
@@ -153,6 +162,19 @@ class Reader(
             read = read == 1L,
             starred = starred == 1L,
         )
+
+    /**
+     * [entry] for its page: an article that can't be read off the device (on Android, a row bigger
+     * than the cursor window) is a [ArticleState.Unreadable] to say so, not a crash. A cancellation
+     * (the session closing under it) still cancels.
+     */
+    fun article(id: String): Flow<ArticleState> =
+        entry(id)
+            .map<EntryDetail?, ArticleState> { ArticleState.Shown(it) }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                emit(ArticleState.Unreadable)
+            }
 
     fun entry(id: String): Flow<EntryDetail?> =
         db.entryQueries.selectById(id).asFlow().mapToOneOrNull(context).map { row ->
