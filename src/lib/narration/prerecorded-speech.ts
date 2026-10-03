@@ -38,9 +38,13 @@ export async function prerecordedSpeechKey(voice: PrerecordedVoice, text: string
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** Where the browser fetches a recording from (`src/app/api/prerecorded-speech`). */
+/**
+ * Where the browser fetches a recording from (`src/app/api/prerecorded-speech`):
+ * through the CDN where there is one, which caches it.
+ */
 export function prerecordedSpeechUrl(key: string): string {
-  return `/api/prerecorded-speech/${key}`;
+  const cdn = (process.env.NEXT_PUBLIC_ASSET_PREFIX ?? "").replace(/\/$/, "");
+  return `${cdn}/api/prerecorded-speech/${key}`;
 }
 
 /** Where a recording is filed in object storage. */

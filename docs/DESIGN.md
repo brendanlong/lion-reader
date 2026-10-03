@@ -301,7 +301,7 @@ Docker Compose provides Postgres and Redis for local development. See README for
 
 ### Object Storage (S3/Tigris)
 
-An **optional** S3-compatible object store re-hosts external images that would otherwise expire or leak referrers — currently only Google Docs images, which carry short-lived `contentUri` links. `src/server/storage/s3.ts` (`isStorageAvailable`, `fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected, size-limited) and rewrite the document to the re-hosted URL. The feature **no-ops when unconfigured** (`STORAGE_*` env vars/secrets), so the rest of the app runs unaffected.
+An **optional** S3-compatible object store re-hosts external images that would otherwise expire or leak referrers — Google Docs images, which carry short-lived `contentUri` links — and holds the demo's recorded narration (`src/lib/narration/prerecorded-speech.ts`). `src/server/storage/s3.ts` (`isStorageAvailable`, `fetchAndUploadImage`) signs requests with `aws4fetch` and works against AWS S3 or Fly.io Tigris; `src/server/google/docs.ts` calls it to fetch each image (SSRF-protected, size-limited) and rewrite the document to the re-hosted URL. Both **no-op when unconfigured** (`STORAGE_*` env vars/secrets): images stay at their source, and the demo's narration reports itself unrecorded.
 
 ---
 

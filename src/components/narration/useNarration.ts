@@ -411,7 +411,8 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
 
       const start = async (narration: string) => {
         player.load(splitNarrationParagraphs(narration));
-        if (!hasTrackedPlaybackRef.current) {
+        // Demo plays aren't cloud voice use.
+        if (!hasTrackedPlaybackRef.current && !prerecordedVoice) {
           trackNarrationPlaybackStarted(settings.provider);
           hasTrackedPlaybackRef.current = true;
         }
@@ -468,6 +469,7 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
     showOriginal,
     getOrCreatePiperPlayer,
     getOrCreateCloudPlayer,
+    prerecordedVoice,
   ]);
 
   // The active Piper or cloud player, if either is in use.

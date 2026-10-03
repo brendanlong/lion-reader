@@ -2,11 +2,12 @@
  * GET /api/prerecorded-speech/:key
  *
  * A narration chunk recorded ahead of time (`@/lib/narration/prerecorded-speech`),
- * relayed from the public bucket. Relayed rather than fetched from the bucket
- * directly because the player reads the bytes with `fetch`, which a
- * cross-origin bucket would have to allow with CORS, and so that the CDN in
- * front of the site caches it. A key names its content, so a recording can be
- * cached forever; a missing one is not cached, since it may be recorded later.
+ * relayed from the public bucket. The player fetches it through the CDN
+ * (`ASSET_PREFIX`), which caches it: a key names its content, so a recording
+ * can be cached forever, while a missing one isn't cached, since it may be
+ * recorded later. The CDN is another origin than the page, hence the CORS
+ * header; the bucket itself has no CORS configured, which is why this relays
+ * rather than the player fetching from the bucket.
  *
  * No auth: the demo, which has no session, is what plays these. The key is
  * checked to be a hash before it goes into the URL, so only recordings can be
@@ -23,10 +24,13 @@ import { getPublicObjectUrl } from "@/server/storage/s3";
 
 const FETCH_TIMEOUT_MS = 30_000;
 
+/** Recordings are public, and a constant value is safe to cache at the CDN. */
+const CORS = { "Access-Control-Allow-Origin": "*" };
+
 function errorResponse(status: number, message: string): Response {
   return new Response(JSON.stringify({ message }), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
 
@@ -64,6 +68,7 @@ export async function GET(
   }
 
   const headers: Record<string, string> = {
+    ...CORS,
     "Content-Type": "audio/mp4",
     "Cache-Control": "public, max-age=31536000, immutable",
   };

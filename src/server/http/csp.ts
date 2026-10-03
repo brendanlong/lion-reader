@@ -77,8 +77,9 @@ import { goatCounterConfig } from "@/lib/analytics/goatcounter";
  *   next/font files — load from it in production, so it joins `script-src`
  *   (the `'self'` fallback path for pre-CSP3 browsers; `'strict-dynamic'`
  *   browsers ignore the host list), `style-src`, `font-src`, and `default-src`
- *   (which backstops `<link rel="prefetch">`). Unset in dev/tests, where the
- *   directives stay origin-only.
+ *   (which backstops `<link rel="prefetch">`), plus `connect-src` for what
+ *   client code fetches through the CDN (recorded narration). Unset in
+ *   dev/tests, where the directives stay origin-only.
  * - `form-action` is deliberately absent: Chrome checks post-submit redirects
  *   against it, which would break the OAuth consent flow (form POST to self,
  *   then 302 to the client's external `redirect_uri`). Note `form-action`
@@ -139,7 +140,7 @@ function buildPolicy(scriptSrcExtra: string): string {
     "img-src 'self' data: blob: http: https:",
     "media-src 'self' data: blob: http: https:",
     `font-src 'self'${cdn} data:`,
-    `connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net${gcConnect}${
+    `connect-src 'self'${cdn} https://huggingface.co https://*.huggingface.co https://*.hf.co https://cdn.jsdelivr.net${gcConnect}${
       isDev ? " ws:" : ""
     }`,
     "worker-src 'self' blob:",
