@@ -17,10 +17,20 @@ Per-directory `CLAUDE.md` files hold each subsystem's rules and load automatical
 Docs (this file, per-directory `CLAUDE.md`s, `docs/`) explain **why and where**; the code explains **how**. Apply these rules when writing docs, and check for violations when reviewing doc changes (reviewer subagents included):
 
 - **Say each thing once**, in the doc closest to the code it governs; link from elsewhere instead of restating.
-- **Document decisions and required patterns** ("we use X", "always do Y") — not mechanics the reader can get from the code, and not exhaustive lists (tables, routers, events) the code already is the source of truth for.
+- **Document decisions and required patterns** ("we use X", "always do Y") — not mechanics the reader can get from the code, and not exhaustive lists (tables, routers, events) the code already is the source of truth for. When a doc restates code, move any fact the code doesn't say into a doc comment on that code and delete the paragraph.
 - **No history** unless it prevents repeating a mistake ("don't do X, it caused bug Y"). Describe the current state, never the change that got us here ("the old A is gone", "B replaced A").
 - **No non-decisions**: don't document things we haven't done or have merely deferred — that reads as a commitment to never do them.
 - Keep docs current **both ways**: when you change code whose docs are stale, or notice bloat/duplication, fix the docs in the same change — pruning is as valuable as adding.
+- **No machine provisioning** (installing SDKs system-wide, shared caches, `$HOME`/prefs overrides): that lives with the machine. Docs say only what the build reads (e.g. "`ANDROID_HOME` or `sdk.dir`").
+- When you rename or remove a doc section, grep for references to it (code comments and other docs).
+
+### `CLAUDE.md` files
+
+Every `CLAUDE.md` is loaded into context whenever an agent works in its directory, so each line costs every future session. Keep them to rules:
+
+- A rule goes in the deepest directory's `CLAUDE.md` covering all the code it governs; this root file holds only what applies everywhere. Long runbooks needed rarely (ops, scaling) go in `docs/` with a pointer, not in a file that loads on every edit.
+- Write each rule as an instruction, with its reason only when the reason stops a mistake ("no `INSERT OR REPLACE`: it deletes the row"). No architecture tours or command output.
+- Before adding a line, check whether code, lint, knip or a test already enforces it; write it down only if the check's failure doesn't tell you the fix. Prefer adding a check over adding a line.
 
 ## Toolchain
 
@@ -51,9 +61,16 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 - **Types**: Explicit types everywhere; use Zod for runtime validation
 - **Queries**: Avoid N+1 queries; use joins or batch fetching
 - **UI**: Use optimistic updates for responsive UX
-- **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes
-- Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
+- **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes. A value that must agree in several places (a lifetime, a length cap, a cookie-and-Redis TTL) is one named constant every use imports, not repeated literals like `30 * 24 * 60 * 60`; where the uses share a language, share the constant instead of testing that copies match.
 - Don't create barrel files, prefer direct imports within our code
+
+## Tests (all languages)
+
+- Always write tests for the intended behavior of functions, not the actual behavior. If the actual behavior is wrong and the issue is pre-existing, write the test correctly, mark it skipped, and file a GitHub issue on brendanlong/lion-reader (labels: `bug`, `reported-by-claude`)
+- **Don't pin tunable constants.** A test that fails only because someone deliberately retuned a value is noise: import the constant (export it if needed) and assert relative to it — the boundary is at `MAX_X`/`MAX_X + 1` — and keep the assertion exact, not weakened to "is positive". Do hardcode values something outside our code depends on (wire/protocol formats, storage/cookie key names, CSP hosts) and policy (privacy defaults, security budgets, the 44px touch target), and do test required relationships between constants (e.g. a floor below its cap).
+- **Each test must be able to catch a bug no other test catches.** No duplicates of a code path and input class already covered (at another level, or input-for-input in a native crate's own tests: keep the Rust copy, and test only what the binding/wrapper adds); collapse trivial variants into one case. No circular tests that write data and read it back without calling app code.
+- Keep security tests (sanitizer, SSRF, auth/scopes, cross-user) and issue-referenced regression tests, dropping only exact duplicates; move the issue reference to the surviving copy.
+- Concurrent tests assert only what every interleaving guarantees (e.g. "exactly one row", not "both requests missed the cache").
 
 ## Git
 
