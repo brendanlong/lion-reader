@@ -10,7 +10,7 @@ import * as client from "openid-client";
 import { redis } from "@/server/redis";
 
 /** How long a user has to finish an OAuth flow before its stored state expires. */
-const OAUTH_STATE_TTL_SECONDS = 600;
+export const OAUTH_STATE_TTL_SECONDS = 600;
 
 /** Stores a flow's state blob under `key` (the provider's prefix + the `state` value). */
 export async function storeOAuthState(key: string, data: object): Promise<void> {

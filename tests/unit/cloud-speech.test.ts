@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fetchWhenFree } from "@/lib/narration/cloud-speech";
+import { BUSY_ATTEMPTS, BUSY_FIRST_WAIT_MS, fetchWhenFree } from "@/lib/narration/cloud-speech";
 
 function answers(...statuses: Array<[number, string?]>) {
   const queue = [...statuses];
@@ -25,7 +25,8 @@ describe("fetchWhenFree", () => {
       }
     );
     expect(response.status).toBe(200);
-    expect(waits).toEqual([2000, 2000]);
+    // The asked-for 2 s, then the backoff, which has doubled once already.
+    expect(waits).toEqual([2000, 2 * BUSY_FIRST_WAIT_MS]);
   });
 
   it("gives up after a few tries, and doesn't retry other failures", async () => {
@@ -34,15 +35,15 @@ describe("fetchWhenFree", () => {
       waits.push(ms);
     };
     const busy = await fetchWhenFree(
-      answers([503], [503], [503], [200]),
+      answers(...Array.from({ length: BUSY_ATTEMPTS }, (): [number] => [503]), [200]),
       new AbortController().signal,
       record
     );
     expect(busy.status).toBe(503);
-    expect(waits).toHaveLength(2);
+    expect(waits).toHaveLength(BUSY_ATTEMPTS - 1);
 
     const broken = await fetchWhenFree(answers([500]), new AbortController().signal, record);
     expect(broken.status).toBe(500);
-    expect(waits).toHaveLength(2);
+    expect(waits).toHaveLength(BUSY_ATTEMPTS - 1);
   });
 });

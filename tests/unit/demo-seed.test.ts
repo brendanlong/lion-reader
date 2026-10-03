@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import superjson from "superjson";
 import { buildDemoDehydratedState } from "@/app/(public)/demo/seed";
 import { createDemoStore } from "@/app/(public)/demo/store";
-import { DEMO_ENTRIES } from "@/app/(public)/demo/data";
+import { DEMO_ENTRIES, getDemoSubscription } from "@/app/(public)/demo/data";
 
 type Query = { queryKey: unknown; state: { data: unknown } };
 
@@ -40,7 +40,14 @@ describe("buildDemoDehydratedState", () => {
       pageParams: unknown[];
     };
     expect(list.pageParams).toEqual([null]);
-    expect(list.pages[0].items).toHaveLength(10);
+    // The first page of the tag's entries.
+    const { limit } = JSON.parse(listKey.slice("entries.list:infinite:".length)) as {
+      limit: number;
+    };
+    const featureEntries = DEMO_ENTRIES.filter(
+      (e) => getDemoSubscription(e.feedId)?.tagId === "features"
+    );
+    expect(list.pages[0].items).toHaveLength(Math.min(limit, featureEntries.length));
     expect(list.pages[0].items.every((i) => i.id !== "welcome")).toBe(true);
   });
 
@@ -66,7 +73,7 @@ describe("buildDemoDehydratedState", () => {
   it("seeds the subscription for a subscription page", () => {
     const { byPath } = seeded("/subscription/organization", "");
     expect(byPath.get('subscriptions.get:{"id":"organization"}')).toMatchObject({
-      title: "Organization & Search",
+      title: getDemoSubscription("organization")?.title,
     });
   });
 });

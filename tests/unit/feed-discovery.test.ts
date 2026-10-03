@@ -506,30 +506,22 @@ describe("discoverFeeds", () => {
 });
 
 describe("getCommonFeedUrls", () => {
-  it("generates feed URLs from base URL", () => {
+  it("generates a URL for every common feed path", () => {
     const urls = getCommonFeedUrls("https://example.com");
 
-    expect(urls.length).toBe(COMMON_FEED_PATHS.length);
-    expect(urls).toContain("https://example.com/feed");
-    expect(urls).toContain("https://example.com/feed.xml");
-    expect(urls).toContain("https://example.com/rss");
-    expect(urls).toContain("https://example.com/rss.xml");
-    expect(urls).toContain("https://example.com/atom.xml");
-    expect(urls).toContain("https://example.com/feed.json");
+    expect(urls).toEqual(COMMON_FEED_PATHS.map((path) => `https://example.com${path}`));
   });
 
   it("uses origin only, ignoring path", () => {
     const urls = getCommonFeedUrls("https://example.com/blog/post/123");
 
-    expect(urls).toContain("https://example.com/feed");
-    expect(urls).not.toContain("https://example.com/blog/post/123/feed");
+    expect(urls).toEqual(COMMON_FEED_PATHS.map((path) => `https://example.com${path}`));
   });
 
   it("preserves port in origin", () => {
     const urls = getCommonFeedUrls("https://example.com:8080/blog");
 
-    expect(urls).toContain("https://example.com:8080/feed");
-    expect(urls).toContain("https://example.com:8080/rss.xml");
+    expect(urls).toEqual(COMMON_FEED_PATHS.map((path) => `https://example.com:8080${path}`));
   });
 
   it("returns empty array for invalid URL", () => {

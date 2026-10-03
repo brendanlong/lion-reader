@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripHtml, summarizeCleanedContent } from "@/server/html/strip-html";
+import { stripHtml, summarizeCleanedContent, SUMMARY_MAX_LENGTH } from "@/server/html/strip-html";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 
 describe("stripHtml", () => {
@@ -257,9 +257,10 @@ describe("summarizeCleanedContent", () => {
   });
 
   it("truncates long content at a word boundary with an ellipsis", () => {
-    const longText = "word ".repeat(200).trim(); // 999 chars, spaces to break on
+    // Well past the limit, with spaces to break on.
+    const longText = "word ".repeat(SUMMARY_MAX_LENGTH).trim();
     const summary = summarizeCleanedContent({ excerpt: "", textContent: longText });
-    expect(summary.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(summary.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
     expect(summary.endsWith("...")).toBe(true);
     expect(summary.includes("wordword")).toBe(false); // broke on a space
   });

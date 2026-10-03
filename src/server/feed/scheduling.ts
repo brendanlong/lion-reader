@@ -39,10 +39,10 @@ export const DEFAULT_JITTER_FRACTION = 0.1;
 export const MAX_JITTER_SECONDS = 30 * 60; // 1800
 
 /** Maximum consecutive failures before permanent max backoff */
-const MAX_CONSECUTIVE_FAILURES = 10;
+export const MAX_CONSECUTIVE_FAILURES = 10;
 
 /** Base backoff time for failures: 30 minutes */
-const FAILURE_BASE_BACKOFF_SECONDS = 30 * 60; // 1800
+export const FAILURE_BASE_BACKOFF_SECONDS = 30 * 60; // 1800
 
 /**
  * Maximum backoff for rate-limited (429) failures: 6 hours.

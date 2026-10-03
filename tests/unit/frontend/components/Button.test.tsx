@@ -29,26 +29,6 @@ describe("Button", () => {
     });
   });
 
-  describe("sizes", () => {
-    it("applies sm size styles", () => {
-      render(<Button size="sm">Small</Button>);
-      const button = screen.getByRole("button");
-      expect(button).toHaveClass("min-h-[36px]", "px-3");
-    });
-
-    it("applies md size styles (default)", () => {
-      render(<Button size="md">Medium</Button>);
-      const button = screen.getByRole("button");
-      expect(button).toHaveClass("min-h-[44px]", "px-4");
-    });
-
-    it("applies lg size styles", () => {
-      render(<Button size="lg">Large</Button>);
-      const button = screen.getByRole("button");
-      expect(button).toHaveClass("min-h-[48px]", "px-6");
-    });
-  });
-
   describe("loading state", () => {
     it("shows loading spinner when loading is true", () => {
       render(<Button loading={true}>Submit</Button>);

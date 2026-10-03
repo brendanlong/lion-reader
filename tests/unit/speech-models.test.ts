@@ -19,7 +19,11 @@ import {
 } from "@/server/services/deepinfra";
 import type { OpenRouterModel } from "@/server/services/openrouter";
 import { ProviderRejectedError } from "@/server/services/provider-errors";
-import { DEEPINFRA_KOKORO, OPENROUTER_KOKORO } from "@/lib/narration/constants";
+import {
+  DEEPINFRA_KOKORO,
+  DEFAULT_CLOUD_VOICES,
+  OPENROUTER_KOKORO,
+} from "@/lib/narration/constants";
 
 const catalog: OpenRouterModel[] = [
   {
@@ -92,7 +96,7 @@ describe("toSpeechModels", () => {
 describe("defaultVoiceFor", () => {
   it("prefers the curated default voice, else the first listed", () => {
     const [, kokoro, minimax] = toSpeechModels(catalog, { openrouter: "o" });
-    expect(defaultVoiceFor(kokoro)).toBe("af_heart");
+    expect(defaultVoiceFor(kokoro)).toBe(DEFAULT_CLOUD_VOICES[OPENROUTER_KOKORO]);
     expect(defaultVoiceFor(minimax)).toBe("English_expressive_narrator");
   });
 });
@@ -146,7 +150,7 @@ describe("defaultSpeechModelId", () => {
   });
 
   it("gives DeepInfra's Kokoro its curated default voice too", () => {
-    expect(defaultVoiceFor(deepInfra[0])).toBe("af_heart");
+    expect(defaultVoiceFor(deepInfra[0])).toBe(DEFAULT_CLOUD_VOICES[DEEPINFRA_KOKORO]);
   });
 });
 
@@ -244,7 +248,7 @@ describe("resolveSpeechModel", () => {
     process.env.DEEPINFRA_API_KEY = "di-server";
     expect(resolveSpeechModel(catalog([deepInfraKokoro]), {}, null, null)).toEqual({
       model: deepInfraKokoro,
-      voice: "af_heart",
+      voice: DEFAULT_CLOUD_VOICES[DEEPINFRA_KOKORO],
     });
   });
 
@@ -264,7 +268,7 @@ describe("resolveSpeechModel", () => {
     process.env.SERVER_KEY_MODELS = DEEPINFRA_KOKORO;
     expect(resolveSpeechModel(catalog([deepInfraKokoro]), {}, qwen.id, "Vivian")).toEqual({
       model: deepInfraKokoro,
-      voice: "af_heart",
+      voice: DEFAULT_CLOUD_VOICES[DEEPINFRA_KOKORO],
     });
   });
 

@@ -7,7 +7,8 @@ import {
   narrationFromLlmOutput,
   type NarrationFailure,
 } from "@/server/services/narration";
-import { NARRATION_FORMAT_VERSION } from "@/lib/narration/constants";
+import { DEFAULT_NARRATION_MODELS, NARRATION_FORMAT_VERSION } from "@/lib/narration/constants";
+import { parseModelRef } from "@/lib/ai/model-ref";
 import { TextGenerationError, UnreadableApiKeyError } from "@/server/services/ai-providers";
 
 const input = [
@@ -148,7 +149,9 @@ describe("narrationContentHash", () => {
 
 describe("narrationCacheOwner", () => {
   it("shares a default model's narration, whoever's key it ran on", () => {
-    expect(narrationCacheOwner({ provider: "groq", model: "openai/gpt-oss-120b" }, "u")).toBeNull();
+    for (const model of Object.values(DEFAULT_NARRATION_MODELS)) {
+      expect(narrationCacheOwner(parseModelRef(model), "u")).toBeNull();
+    }
   });
 
   it("keeps a picked model's narration to the user who picked it", () => {

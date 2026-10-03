@@ -58,7 +58,7 @@ const TIME_EPSILON = 0.01;
  * Times a chunk whose audio stopped arriving partway is synthesized again
  * before narration gives up on it.
  */
-const MAX_STREAM_RETRIES = 2;
+export const MAX_STREAM_RETRIES = 2;
 /**
  * The waits before trying a chunk again after a transient failure. Each try
  * may be paid for (and is rate-limited), so a few, spaced out; a failure the

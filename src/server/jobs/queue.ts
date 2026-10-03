@@ -139,12 +139,12 @@ export const JOB_LEASE_HEARTBEAT_MS = 60 * 1000; // 1 minute
 /**
  * Base delay before retrying a job whose handler threw: 1 minute.
  */
-const EXCEPTION_RETRY_BASE_MS = 60 * 1000;
+export const EXCEPTION_RETRY_BASE_MS = 60 * 1000;
 
 /**
  * Maximum delay between retries of a job whose handler keeps throwing: 24 hours.
  */
-const EXCEPTION_RETRY_MAX_MS = 24 * 60 * 60 * 1000;
+export const EXCEPTION_RETRY_MAX_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Calculates the retry delay for a job whose handler threw an exception.

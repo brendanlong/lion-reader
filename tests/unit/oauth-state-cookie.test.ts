@@ -4,6 +4,7 @@ import {
   oauthStateCookieMatches,
   OAUTH_STATE_COOKIE_NAME,
 } from "@/server/auth/oauth/state-cookie";
+import { OAUTH_STATE_TTL_SECONDS } from "@/server/auth/oauth/token-exchange";
 
 describe("oauthStateCookieMatches", () => {
   it("accepts a cookie that equals the callback state", () => {
@@ -37,7 +38,8 @@ describe("setOAuthStateCookie", () => {
     expect(cookie).toContain(`${OAUTH_STATE_COOKIE_NAME}=state-value`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
-    expect(cookie).toContain("Max-Age=600");
+    // The cookie lives exactly as long as the server-side state it binds.
+    expect(cookie).toContain(`Max-Age=${OAUTH_STATE_TTL_SECONDS};`);
     expect(cookie).toContain("Path=/");
   });
 

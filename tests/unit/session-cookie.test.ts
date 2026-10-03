@@ -9,7 +9,11 @@
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
+import {
+  setSessionCookie,
+  clearSessionCookie,
+  SESSION_MAX_AGE_SECONDS,
+} from "@/server/auth/session-cookie";
 
 /** Collect the Set-Cookie header(s) appended to a fresh Headers object. */
 function capture(fn: (h: Headers) => void): string[] {
@@ -31,7 +35,7 @@ describe("server session cookie", () => {
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("Path=/");
     expect(cookie).toContain("SameSite=Lax");
-    expect(cookie).toContain("Max-Age=2592000"); // 30 days
+    expect(cookie).toContain(`Max-Age=${SESSION_MAX_AGE_SECONDS};`); // persistent, not a session cookie
     // No companion/readable cookie is emitted.
     expect(cookie).not.toMatch(/logged_in/i);
   });

@@ -1,7 +1,7 @@
 import { generateSummary, summarizeCleanedContent, truncateText } from "@/server/html/strip-html";
 
 /** Max length of a saved-article excerpt, matching {@link generateSummary}. */
-const MAX_EXCERPT_LENGTH = 300;
+export const MAX_EXCERPT_LENGTH = 300;
 
 /**
  * Choose the plain-text excerpt for a saved article.

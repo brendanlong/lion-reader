@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 
 import { resolveSignupProviderAccess } from "@/server/auth/signup-providers";
-import { signupConfig } from "@/server/config/env";
+import { ALL_SIGNUP_PROVIDERS, signupConfig } from "@/server/config/env";
 
 describe("resolveSignupProviderAccess", () => {
   it("denies a provider not in the allowlist", () => {
@@ -72,12 +72,7 @@ describe("signupConfig provider parsing", () => {
   it("defaults to all-allowed, none-public (fully invite-only)", () => {
     delete process.env.ALLOWED_SIGNUP_PROVIDERS;
     delete process.env.ALLOWED_PUBLIC_SIGNUP_PROVIDERS;
-    expect([...signupConfig.allowedSignupProviders].sort()).toEqual([
-      "apple",
-      "discord",
-      "email",
-      "google",
-    ]);
+    expect(signupConfig.allowedSignupProviders).toEqual(ALL_SIGNUP_PROVIDERS);
     expect(signupConfig.publicSignupProviders).toEqual([]);
   });
 
@@ -96,11 +91,6 @@ describe("signupConfig provider parsing", () => {
 
   it("falls back to all when the allowlist is set but has no known providers", () => {
     process.env.ALLOWED_SIGNUP_PROVIDERS = "bogus,nonsense";
-    expect([...signupConfig.allowedSignupProviders].sort()).toEqual([
-      "apple",
-      "discord",
-      "email",
-      "google",
-    ]);
+    expect(signupConfig.allowedSignupProviders).toEqual(ALL_SIGNUP_PROVIDERS);
   });
 });

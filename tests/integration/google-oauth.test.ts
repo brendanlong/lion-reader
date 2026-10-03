@@ -11,6 +11,7 @@ import { generateKeyPair, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
+import { OAUTH_STATE_TTL_SECONDS } from "../../src/server/auth/oauth/token-exchange";
 
 const GOOGLE_ISSUER = "https://accounts.google.com";
 const GOOGLE_CLIENT_ID = "test-client-id";
@@ -234,11 +235,11 @@ describe("Google OAuth", () => {
 
       const result = await createGoogleAuthUrl();
 
-      // Check TTL is set (should be 600 seconds)
+      // Check TTL is set, so an abandoned flow's state expires
       // Use the actual state returned to handle mock variations
       const ttl = await redis.ttl(`oauth:pkce:${result.state}`);
       expect(ttl).toBeGreaterThan(0);
-      expect(ttl).toBeLessThanOrEqual(600);
+      expect(ttl).toBeLessThanOrEqual(OAUTH_STATE_TTL_SECONDS);
     });
 
     it("consumes verifier on use (one-time use)", async () => {

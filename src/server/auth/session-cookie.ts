@@ -18,7 +18,7 @@
 
 const SESSION_COOKIE_NAME = "session";
 
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
+export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 function secureSuffix(): string {
   return process.env.NODE_ENV === "production" ? "; Secure" : "";

@@ -80,7 +80,7 @@ describe("entry list pagination", () => {
     expect(callsFor("entries.list")).toHaveLength(1);
 
     // Open the second-to-last loaded entry: distanceToEnd = 1, inside the
-    // 3-entry pagination threshold, so the next page is requested.
+    // pagination threshold, so the next page is requested.
     mockSearch = `entry=${ids[ids.length - 2]}`;
     rerender(<UnifiedEntriesContent />);
 
