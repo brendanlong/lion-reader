@@ -5,15 +5,22 @@
  */
 
 import { z } from "zod";
-import { eq, and, gt, isNull, sql } from "drizzle-orm";
-import type { db as dbType } from "@/server/db";
-import { feeds, subscriptions, tags, subscriptionTags, userFeeds } from "@/server/db/schema";
+import { eq, and, gt, inArray, isNull, sql } from "drizzle-orm";
+import type { db as dbType, DbOrTx } from "@/server/db";
+import {
+  feeds,
+  subscriptions,
+  tags,
+  subscriptionTags,
+  userFeeds,
+  type FeedType,
+} from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob } from "@/server/jobs/queue";
 import { feedDefaultsToFullContent } from "@/server/plugins";
-import { publishSubscriptionCreated } from "@/server/redis/pubsub";
+import { publishSubscriptionCreated, publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import { errors } from "@/server/trpc/errors";
@@ -31,7 +38,7 @@ export interface Tag {
 
 export interface Subscription {
   id: string;
-  type: "web" | "email" | "saved";
+  type: FeedType;
   url: string | null;
   title: string | null;
   originalTitle: string | null;
@@ -129,6 +136,21 @@ const subscriptionCursor = createCursorCodec(
   })
 );
 
+/**
+ * Counts the user's active subscriptions (collections included) for the cap
+ * check, first taking a transaction-scoped lock that serializes concurrent
+ * subscription creation for the user, so two callers can't both pass the
+ * check and both insert past the limit (issue #952).
+ */
+export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string): Promise<number> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+  const [{ activeCount }] = await tx
+    .select({ activeCount: sql<number>`count(*)::int` })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+  return activeCount;
+}
+
 // ============================================================================
 // Service Functions
 // ============================================================================
@@ -139,6 +161,7 @@ export interface ListSubscriptionsParams {
   tagId?: string; // Filter by tag
   uncategorized?: boolean; // Only show subscriptions with no tags
   unreadOnly?: boolean; // Only show feeds with unread items
+  type?: FeedType; // Only show subscriptions of this type (e.g. collections)
   cursor?: string; // Pagination cursor (base64-encoded JSON: {title, id})
   limit?: number; // Max results per page
 }
@@ -162,7 +185,7 @@ export async function listSubscriptions(
   db: typeof dbType,
   params: ListSubscriptionsParams
 ): Promise<ListSubscriptionsResult> {
-  const { userId, query, tagId, uncategorized, unreadOnly, cursor, limit = 50 } = params;
+  const { userId, query, tagId, uncategorized, unreadOnly, type, cursor, limit = 50 } = params;
 
   // Cap limit at 100
   const effectiveLimit = Math.min(limit, 100);
@@ -183,6 +206,10 @@ export async function listSubscriptions(
       WHERE ${subscriptionTags.subscriptionId} = ${userFeeds.id}
         AND ${subscriptionTags.tagId} = ${tagId}
     )`);
+  }
+
+  if (type) {
+    conditions.push(eq(userFeeds.type, type));
   }
 
   // Uncategorized filter (subscriptions with no tags)
@@ -350,7 +377,7 @@ export interface CreateSubscriptionResult {
   /** Feed data (from existing or newly created feed) */
   feed: {
     id: string;
-    type: "web" | "email" | "saved";
+    type: FeedType;
     url: string | null;
     title: string | null;
     description: string | null;
@@ -444,10 +471,7 @@ export async function createSubscription(
   // 3–5. Cap check + subscription upsert + user_entries populate, all in ONE
   //       transaction. Previously these were separate statements: a crash
   //       between them could leave a half-created subscription, and
-  //       the cap count → insert was check-then-act. The advisory lock
-  //       serializes concurrent subscribes for this user so two callers can't
-  //       both pass the cap check and both insert past the limit; it releases
-  //       automatically at commit/rollback (issue #952).
+  //       the cap count → insert was check-then-act (issue #952).
   const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
 
   interface TxResult {
@@ -459,9 +483,6 @@ export async function createSubscription(
   }
 
   const txResult: TxResult = await db.transaction(async (tx) => {
-    // Serialize concurrent subscribes for this user (fixes the cap race).
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
-
     const selectActiveSubscription = () =>
       tx
         .select({
@@ -481,10 +502,7 @@ export async function createSubscription(
         .limit(1);
 
     // 3. Check subscription cap; if at cap, return existing or throw
-    const [{ activeCount }] = await tx
-      .select({ activeCount: sql<number>`count(*)::int` })
-      .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+    const activeCount = await lockAndCountActiveSubscriptions(tx, userId);
 
     if (activeCount >= maxSubs) {
       // Over cap — check if we're already subscribed to this specific feed
@@ -610,9 +628,7 @@ export async function createSubscription(
   // 7. Compute absolute unread counts for the affected lists. A newly created
   // or reactivated subscription is untagged, so it only moves All Articles and
   // Uncategorized (plus its own count). The client sets these directly.
-  const counts = await getBulkEntryRelatedCounts(db, userId, [
-    { subscriptionId, type: feedData.type },
-  ]);
+  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
 
   // The subscription's own badge is the trigger-maintained counter this bulk
   // read already returned (spam excluded), never a scan — see "Unread Counts"
@@ -656,4 +672,108 @@ export async function createSubscription(
     feed: feedData,
     counts,
   };
+}
+
+/**
+ * Replaces a subscription's tags (an empty list makes it uncategorized).
+ * Publishes subscription_updated and bumps updated_at only on a real change.
+ */
+export async function setSubscriptionTags(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string,
+  tagIds: string[]
+): Promise<void> {
+  // Verify the subscription exists and belongs to the user
+  const existingSubscription = await db
+    .select()
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
+    .limit(1);
+
+  if (existingSubscription.length === 0) {
+    throw errors.subscriptionNotFound();
+  }
+
+  const now = new Date();
+
+  // Verify all tag IDs belong to the current user, are not soft-deleted, and
+  // get tag details. Excluding tombstoned tags prevents assigning a tag that
+  // is invisible in listTags (which would silently drop the subscription
+  // from "Uncategorized").
+  const userTags =
+    tagIds.length === 0
+      ? []
+      : await db
+          .select({ id: tags.id, name: tags.name, color: tags.color })
+          .from(tags)
+          .where(and(eq(tags.userId, userId), inArray(tags.id, tagIds), isNull(tags.deletedAt)));
+
+  const validTagIds = new Set(userTags.map((t) => t.id));
+  const invalidTagIds = tagIds.filter((id) => !validTagIds.has(id));
+
+  if (invalidTagIds.length > 0) {
+    throw errors.validation("One or more tag IDs are invalid or do not belong to you");
+  }
+
+  // Replace (or clear) tags atomically: delete-then-insert (+updated_at bump)
+  // must be one unit, or a crash/concurrent call between them could leave the
+  // subscription untagged or with a partial tag set (issue #952).
+  const changed = await db.transaction(async (tx) => {
+    // Delete all existing tags for the subscription. The RETURNING captures
+    // the prior tag set race-free (no pre-SELECT TOCTOU window) so we can
+    // tell a real change from a re-apply of the identical set (issue #1160).
+    const deleted = await tx
+      .delete(subscriptionTags)
+      .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+      .returning({ tagId: subscriptionTags.tagId });
+
+    if (tagIds.length > 0) {
+      await tx.insert(subscriptionTags).values(
+        tagIds.map((tagId) => ({
+          subscriptionId: subscriptionId,
+          tagId,
+          createdAt: now,
+        }))
+      );
+    }
+
+    // Re-applying the identical tag set (including clearing an already-empty
+    // one) is not a meaningful change: skip the updated_at bump so the
+    // delta-sync cursor doesn't move (and skip the publish below).
+    const previousTagIds = new Set(deleted.map((d) => d.tagId));
+    if (previousTagIds.size === validTagIds.size && tagIds.every((id) => previousTagIds.has(id))) {
+      return false;
+    }
+
+    // Update subscription's updated_at for sync cursor tracking
+    await tx
+      .update(subscriptions)
+      .set({ updatedAt: now })
+      .where(eq(subscriptions.id, subscriptionId));
+    return true;
+  });
+
+  // Publish SSE event with new tags
+  if (changed) {
+    publishSubscriptionUpdated(
+      userId,
+      subscriptionId,
+      now,
+      userTags,
+      existingSubscription[0].customTitle
+    ).catch((err) => {
+      logger.error("Failed to publish subscription_updated event", {
+        err,
+        userId,
+        subscriptionId: subscriptionId,
+      });
+    });
+  }
 }

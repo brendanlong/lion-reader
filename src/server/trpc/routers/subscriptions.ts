@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, inArray, type SQL } from "drizzle-orm";
+import { eq, and, isNull, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import {
@@ -72,10 +72,8 @@ const tagOutputSchema = z.object({
  * Flat subscription output schema - subscription with feed metadata merged.
  * Uses subscription.id as the primary key, hiding internal feedId from clients.
  */
-const subscriptionOutputSchema = z.object({
+export const subscriptionOutputSchema = z.object({
   id: z.string(), // subscription ID (primary key)
-  // "collection" ships with #1806; accepting it a release early keeps a
-  // rollback or canary on this release from failing on a collection.
   type: z.enum(["web", "email", "saved", "collection"]),
   url: z.string().nullable(),
   title: z.string().nullable(), // resolved title (custom or original)
@@ -313,6 +311,7 @@ export const subscriptionsRouter = createTRPCRouter({
           tagId: z.string().uuid().optional(),
           uncategorized: z.boolean().optional(),
           unreadOnly: z.boolean().optional(),
+          type: subscriptionOutputSchema.shape.type.optional(),
           cursor: z.string().optional(),
           limit: z.number().min(1).max(100).optional(),
         })
@@ -774,106 +773,12 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(z.object({}))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Verify the subscription exists and belongs to the user
-      const existingSubscription = await ctx.db
-        .select()
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.id, input.id),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .limit(1);
-
-      if (existingSubscription.length === 0) {
-        throw errors.subscriptionNotFound();
-      }
-
-      const now = new Date();
-
-      // Verify all tag IDs belong to the current user, are not soft-deleted, and
-      // get tag details. Excluding tombstoned tags prevents assigning a tag that
-      // is invisible in listTags (which would silently drop the subscription
-      // from "Uncategorized").
-      const userTags =
-        input.tagIds.length === 0
-          ? []
-          : await ctx.db
-              .select({ id: tags.id, name: tags.name, color: tags.color })
-              .from(tags)
-              .where(
-                and(eq(tags.userId, userId), inArray(tags.id, input.tagIds), isNull(tags.deletedAt))
-              );
-
-      const validTagIds = new Set(userTags.map((t) => t.id));
-      const invalidTagIds = input.tagIds.filter((id) => !validTagIds.has(id));
-
-      if (invalidTagIds.length > 0) {
-        throw errors.validation("One or more tag IDs are invalid or do not belong to you");
-      }
-
-      // Replace (or clear) tags atomically: delete-then-insert (+updated_at bump)
-      // must be one unit, or a crash/concurrent call between them could leave the
-      // subscription untagged or with a partial tag set (issue #952).
-      const changed = await ctx.db.transaction(async (tx) => {
-        // Delete all existing tags for the subscription. The RETURNING captures
-        // the prior tag set race-free (no pre-SELECT TOCTOU window) so we can
-        // tell a real change from a re-apply of the identical set (issue #1160).
-        const deleted = await tx
-          .delete(subscriptionTags)
-          .where(eq(subscriptionTags.subscriptionId, input.id))
-          .returning({ tagId: subscriptionTags.tagId });
-
-        if (input.tagIds.length > 0) {
-          await tx.insert(subscriptionTags).values(
-            input.tagIds.map((tagId) => ({
-              subscriptionId: input.id,
-              tagId,
-              createdAt: now,
-            }))
-          );
-        }
-
-        // Re-applying the identical tag set (including clearing an already-empty
-        // one) is not a meaningful change: skip the updated_at bump so the
-        // delta-sync cursor doesn't move (and skip the publish below).
-        const previousTagIds = new Set(deleted.map((d) => d.tagId));
-        if (
-          previousTagIds.size === validTagIds.size &&
-          input.tagIds.every((id) => previousTagIds.has(id))
-        ) {
-          return false;
-        }
-
-        // Update subscription's updated_at for sync cursor tracking
-        await tx
-          .update(subscriptions)
-          .set({ updatedAt: now })
-          .where(eq(subscriptions.id, input.id));
-        return true;
-      });
-
-      // Publish SSE event with new tags
-      if (changed) {
-        publishSubscriptionUpdated(
-          userId,
-          input.id,
-          now,
-          userTags,
-          existingSubscription[0].customTitle
-        ).catch((err) => {
-          logger.error("Failed to publish subscription_updated event", {
-            err,
-            userId,
-            subscriptionId: input.id,
-          });
-        });
-      }
-
+      await subscriptionsService.setSubscriptionTags(
+        ctx.db,
+        ctx.session.user.id,
+        input.id,
+        input.tagIds
+      );
       return {};
     }),
 });

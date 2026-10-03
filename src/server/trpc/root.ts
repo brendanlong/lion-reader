@@ -14,6 +14,7 @@ import { subscriptionsRouter } from "./routers/subscriptions";
 import { entriesRouter } from "./routers/entries";
 import { feedsRouter } from "./routers/feeds";
 import { tagsRouter } from "./routers/tags";
+import { collectionsRouter } from "./routers/collections";
 import { savedRouter } from "./routers/saved";
 import { narrationRouter } from "./routers/narration";
 import { oauthGrantsRouter } from "./routers/oauth-grants";
@@ -38,6 +39,7 @@ export const appRouter = createTRPCRouter({
   entries: entriesRouter,
   feeds: feedsRouter,
   tags: tagsRouter,
+  collections: collectionsRouter,
   saved: savedRouter,
   narration: narrationRouter,
   oauthGrants: oauthGrantsRouter,

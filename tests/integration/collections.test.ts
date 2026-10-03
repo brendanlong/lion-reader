@@ -1,0 +1,268 @@
+/**
+ * Integration tests for collections (#1806): membership counters, visibility,
+ * entry filters, deletion, and cross-user isolation.
+ */
+
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { and, eq } from "drizzle-orm";
+import { db } from "../../src/server/db";
+import {
+  collectionEntries,
+  entries,
+  feeds,
+  subscriptionTags,
+  subscriptions,
+  tags,
+  userEntries,
+  users,
+} from "../../src/server/db/schema";
+import {
+  addEntriesToCollection,
+  createCollection,
+  removeEntriesFromCollection,
+} from "../../src/server/services/collections";
+import {
+  getEntries,
+  listEntries,
+  markAllEntriesRead,
+  markEntriesRead,
+  updateEntryStarred,
+} from "../../src/server/services/entries";
+import { getBulkEntryRelatedCounts, getGlobalUnreadCounts } from "../../src/server/services/counts";
+import { reconcileCounters } from "../../src/server/services/reconcile-counters";
+import { deleteSavedArticle, uploadArticle } from "../../src/server/services/saved";
+import { createCaller } from "../../src/server/trpc/root";
+import {
+  createAuthContext,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestTag,
+  createTestUser,
+} from "./helpers";
+
+async function cleanup(): Promise<void> {
+  await db.delete(collectionEntries);
+  await db.delete(userEntries);
+  await db.delete(entries);
+  await db.delete(subscriptionTags);
+  await db.delete(tags);
+  await db.delete(subscriptions);
+  await db.delete(feeds);
+  await db.delete(users);
+}
+
+async function counters(subscriptionId: string) {
+  const [row] = await db
+    .select({ unread: subscriptions.unreadCount, starredUnread: subscriptions.starredUnreadCount })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, subscriptionId));
+  return row;
+}
+
+async function expectNoDrift(): Promise<void> {
+  expect(await reconcileCounters(db)).toEqual({ subscriptionsFixed: 0, usersFixed: 0 });
+}
+
+async function listIds(userId: string, filter: { subscriptionId?: string; tagId?: string }) {
+  const { items } = await listEntries(db, { userId, ...filter, showSpam: false });
+  return items.map((item) => item.id).sort();
+}
+
+/** A user subscribed to one feed with two unread entries, and an empty collection. */
+async function setup() {
+  const userId = await createTestUser();
+  const feedId = await createTestFeed();
+  const sourceId = await createTestSubscription(userId, feedId);
+  const entryA = await createTestEntry(feedId, { userIds: [userId] });
+  const entryB = await createTestEntry(feedId, { userIds: [userId] });
+  const { subscription } = await createCollection(db, userId, "Research");
+  return { userId, feedId, sourceId, entryA, entryB, collectionId: subscription.id };
+}
+
+describe("collections", () => {
+  beforeEach(cleanup);
+  afterAll(cleanup);
+
+  describe("counters", () => {
+    it("tracks unread and starred members through add, read, star and remove", async () => {
+      const { userId, entryA, entryB, collectionId } = await setup();
+
+      await addEntriesToCollection(db, userId, collectionId, [entryA, entryB]);
+      expect(await counters(collectionId)).toEqual({ unread: 2, starredUnread: 0 });
+
+      await markEntriesRead(db, userId, [{ id: entryA }], true);
+      await updateEntryStarred(db, userId, entryB, true);
+      expect(await counters(collectionId)).toEqual({ unread: 1, starredUnread: 1 });
+
+      await removeEntriesFromCollection(db, userId, collectionId, [entryB]);
+      expect(await counters(collectionId)).toEqual({ unread: 0, starredUnread: 0 });
+      await expectNoDrift();
+    });
+
+    it("drops a member's contribution exactly once when its entry is deleted", async () => {
+      // user_entries and collection_entries both cascade from entries; each
+      // counter trigger must see the other table's row only while it exists.
+      const { userId, collectionId } = await setup();
+      const saved = await uploadArticle(db, userId, { content: "Body", title: "Paper" });
+      await addEntriesToCollection(db, userId, collectionId, [saved.id]);
+      expect(await counters(collectionId)).toEqual({ unread: 1, starredUnread: 0 });
+
+      await deleteSavedArticle(db, userId, saved.id);
+
+      expect(await counters(collectionId)).toEqual({ unread: 0, starredUnread: 0 });
+      await expectNoDrift();
+    });
+
+    it("counts an article in both its feed and a collection once toward All", async () => {
+      const { userId, entryA, collectionId } = await setup();
+
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(2);
+    });
+
+    it("returns the collections holding a marked entry among the affected counts", async () => {
+      const { userId, sourceId, entryA, collectionId } = await setup();
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      const { counts } = await markEntriesRead(db, userId, [{ id: entryA }], true);
+
+      expect(counts?.subscriptions).toEqual(
+        expect.arrayContaining([
+          { id: sourceId, unread: 1 },
+          { id: collectionId, unread: 0 },
+        ])
+      );
+    });
+  });
+
+  describe("visibility", () => {
+    it("keeps members visible after unsubscribing from their source, until removed", async () => {
+      const { userId, sourceId, entryA, entryB, collectionId } = await setup();
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, sourceId));
+
+      expect((await getEntries(db, userId, [entryA, entryB])).map((e) => e.id)).toEqual([entryA]);
+      expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([entryA]);
+      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(1);
+
+      await removeEntriesFromCollection(db, userId, collectionId, [entryA]);
+
+      expect(await getEntries(db, userId, [entryA])).toEqual([]);
+      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(0);
+    });
+
+    it("deleting a collection empties it and hides members of unsubscribed sources", async () => {
+      const { userId, sourceId, entryA, collectionId } = await setup();
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, sourceId));
+      const caller = createCaller(await createAuthContext(userId));
+
+      await caller.subscriptions.delete({ id: collectionId });
+
+      expect(
+        await db
+          .select()
+          .from(collectionEntries)
+          .where(eq(collectionEntries.subscriptionId, collectionId))
+      ).toEqual([]);
+      expect(await getEntries(db, userId, [entryA])).toEqual([]);
+      expect(await counters(collectionId)).toEqual({ unread: 0, starredUnread: 0 });
+      await expectNoDrift();
+    });
+  });
+
+  describe("filters", () => {
+    it("lists a collection's members and marks only them read", async () => {
+      const { userId, entryA, entryB, collectionId } = await setup();
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([entryA]);
+
+      const marked = await markAllEntriesRead(db, {
+        userId,
+        subscriptionId: collectionId,
+        showSpam: false,
+      });
+      expect(marked).toEqual([entryA]);
+      const [rowB] = await db
+        .select({ read: userEntries.read })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryB)));
+      expect(rowB.read).toBe(false);
+    });
+
+    it("a tag holding a feed and a collection lists each article once", async () => {
+      const { userId, sourceId, entryA, entryB, collectionId } = await setup();
+      const otherFeed = await createTestFeed();
+      await createTestSubscription(userId, otherFeed);
+      const otherEntry = await createTestEntry(otherFeed, { userIds: [userId] });
+      await addEntriesToCollection(db, userId, collectionId, [entryA, otherEntry]);
+      const tagId = await createTestTag(userId, { subscriptionIds: [sourceId, collectionId] });
+
+      expect(await listIds(userId, { tagId })).toEqual([entryA, entryB, otherEntry].sort());
+    });
+  });
+
+  describe("isolation", () => {
+    it("skips articles the user can't see", async () => {
+      const { userId, collectionId } = await setup();
+      const otherUser = await createTestUser();
+      const otherFeed = await createTestFeed();
+      await createTestSubscription(otherUser, otherFeed);
+      const foreignEntry = await createTestEntry(otherFeed, { userIds: [otherUser] });
+
+      const result = await addEntriesToCollection(db, userId, collectionId, [foreignEntry]);
+
+      expect(result.entryIds).toEqual([]);
+      expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([]);
+    });
+
+    it("rejects another user's collection and plain feed subscriptions", async () => {
+      const { userId, sourceId, entryA, collectionId } = await setup();
+      const otherUser = await createTestUser();
+      const otherCaller = createCaller(await createAuthContext(otherUser));
+      const caller = createCaller(await createAuthContext(userId));
+
+      await expect(
+        otherCaller.collections.addEntries({ id: collectionId, entryIds: [entryA] })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        caller.collections.addEntries({ id: sourceId, entryIds: [entryA] })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("refuses a membership row pointing at another user's collection", async () => {
+      const { collectionId, entryA } = await setup();
+      const otherUser = await createTestUser();
+
+      await expect(
+        db.insert(collectionEntries).values({
+          subscriptionId: collectionId,
+          userId: otherUser,
+          entryId: entryA,
+        })
+      ).rejects.toThrow();
+    });
+  });
+
+  it("counts a new collection's tags in the affected counts", async () => {
+    const { userId, entryA, collectionId } = await setup();
+    const tagId = await createTestTag(userId, { subscriptionIds: [collectionId] });
+
+    const { counts } = await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+    expect(counts?.tags).toEqual([{ id: tagId, unread: 1 }]);
+    expect(
+      (await getBulkEntryRelatedCounts(db, userId, [{ id: entryA, subscriptionId: null }])).tags
+    ).toEqual([{ id: tagId, unread: 1 }]);
+  });
+});

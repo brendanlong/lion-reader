@@ -20,6 +20,7 @@ import * as entriesService from "@/server/services/entries";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
+import * as collectionsService from "@/server/services/collections";
 
 // ============================================================================
 // Types
@@ -119,7 +120,9 @@ const listEntriesArgs = z.object({
     .string()
     .optional()
     .describe("Full-text search query over entry title and content (relevance-ranked)"),
-  subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
+  subscriptionId: uuidSchema
+    .optional()
+    .describe("Filter by subscription ID (a feed or a collection)"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
   type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
@@ -153,7 +156,9 @@ const starEntriesArgs = z.object({
 });
 
 const countEntriesArgs = z.object({
-  subscriptionId: uuidSchema.optional().describe("Filter by subscription ID"),
+  subscriptionId: uuidSchema
+    .optional()
+    .describe("Filter by subscription ID (a feed or a collection)"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Count only uncategorized entries"),
   type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
@@ -162,6 +167,12 @@ const countEntriesArgs = z.object({
   starredOnly: z.boolean().optional().describe("Count only starred entries"),
   unstarredOnly: z.boolean().optional().describe("Count only unstarred entries"),
 });
+
+const saveCollectionIdsArg = z
+  .array(uuidSchema)
+  .max(100)
+  .optional()
+  .describe("Optional collection IDs to also add the article to (see create_collection)");
 
 const saveArticleArgs = z.object({
   url: z.url().describe("The URL to save"),
@@ -189,6 +200,7 @@ const saveArticleArgs = z.object({
         "text (NOT Markdown or HTML). Do NOT HTML-escape it — write & not &amp;, since " +
         "it is rendered as literal text. Clipped to ~300 characters."
     ),
+  collectionIds: saveCollectionIdsArg,
 });
 
 const deleteSavedArticleArgs = z.object({
@@ -227,6 +239,7 @@ const uploadArticleArgs = z.object({
         "text (NOT Markdown or HTML). Do NOT HTML-escape it — write & not &amp;, since " +
         "it is rendered as literal text. Clipped to ~300 characters."
     ),
+  collectionIds: saveCollectionIdsArg,
 });
 
 const listSubscriptionsArgs = z.object({
@@ -245,6 +258,29 @@ const listSubscriptionsArgs = z.object({
 
 const getSubscriptionArgs = z.object({
   subscriptionId: uuidSchema.describe("Subscription ID"),
+});
+
+const setSubscriptionTagsArgs = z.object({
+  subscriptionId: uuidSchema.describe("Subscription ID (a feed or a collection)"),
+  tagIds: z
+    .array(uuidSchema)
+    .max(100)
+    .describe("The complete set of tag IDs it should have; an empty array removes all tags"),
+});
+
+const createCollectionArgs = z.object({
+  name: z.string().trim().min(1).max(255).describe("Collection name"),
+});
+
+const collectionEntriesArgs = z.object({
+  collectionId: uuidSchema.describe(
+    "The collection's subscription ID (list_subscriptions shows collections with type 'collection')"
+  ),
+  entryIds: z
+    .array(uuidSchema)
+    .min(1)
+    .max(collectionsService.MAX_COLLECTION_BATCH)
+    .describe("Entry IDs"),
 });
 
 const listTagsArgs = z.object({});
@@ -388,7 +424,8 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(saveArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(saveArticleArgs, args);
-        return savedService.saveArticle(db, userId, {
+        await collectionsService.assertOwnedCollections(db, userId, params.collectionIds ?? []);
+        const article = await savedService.saveArticle(db, userId, {
           url: params.url,
           title: params.title,
           author: params.author,
@@ -399,6 +436,13 @@ function buildTools(): Tool[] {
           // can't run the interactive consent flow).
           googleDocsAuth: "non-interactive",
         });
+        await collectionsService.addEntryToCollections(
+          db,
+          userId,
+          article.id,
+          params.collectionIds ?? []
+        );
+        return article;
       },
     },
 
@@ -420,12 +464,20 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(uploadArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(uploadArticleArgs, args);
-        return savedService.uploadArticle(db, userId, {
+        await collectionsService.assertOwnedCollections(db, userId, params.collectionIds ?? []);
+        const article = await savedService.uploadArticle(db, userId, {
           content: params.content,
           title: params.title,
           author: params.author,
           excerpt: params.summary,
         });
+        await collectionsService.addEntryToCollections(
+          db,
+          userId,
+          article.id,
+          params.collectionIds ?? []
+        );
+        return article;
       },
     },
 
@@ -454,6 +506,79 @@ function buildTools(): Tool[] {
       handler: async (db, userId, args) => {
         const params = parseArgs(getSubscriptionArgs, args);
         return subscriptionsService.getSubscription(db, userId, params.subscriptionId);
+      },
+    },
+
+    {
+      name: "set_subscription_tags",
+      description:
+        "Replace the tags on a subscription (a feed or a collection). Tags group feeds and " +
+        "collections in the sidebar; one subscription can have several tags.",
+      inputSchema: toInputSchema(setSubscriptionTagsArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(setSubscriptionTagsArgs, args);
+        await subscriptionsService.setSubscriptionTags(
+          db,
+          userId,
+          params.subscriptionId,
+          params.tagIds
+        );
+        return { success: true };
+      },
+    },
+
+    // ========================================================================
+    // Collections Tools
+    // ========================================================================
+
+    {
+      name: "create_collection",
+      description:
+        "Create a collection: a list of articles you fill by hand, shown and tagged like a " +
+        "feed. Returns it as a subscription; its id is the collectionId for " +
+        "add_to_collection and the subscriptionId for list_entries and set_subscription_tags.",
+      inputSchema: toInputSchema(createCollectionArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(createCollectionArgs, args);
+        const { subscription } = await collectionsService.createCollection(db, userId, params.name);
+        return subscription;
+      },
+    },
+
+    {
+      name: "add_to_collection",
+      description:
+        "Add articles to a collection. Any visible article works (feed entries or saved " +
+        "articles); it stays in its own feed too, sharing read and starred state. Returns " +
+        "the IDs newly added (already-present and unknown IDs are skipped).",
+      inputSchema: toInputSchema(collectionEntriesArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(collectionEntriesArgs, args);
+        const { entryIds } = await collectionsService.addEntriesToCollection(
+          db,
+          userId,
+          params.collectionId,
+          params.entryIds
+        );
+        return { entryIds };
+      },
+    },
+
+    {
+      name: "remove_from_collection",
+      description:
+        "Remove articles from a collection. The articles themselves are not deleted. Returns " +
+        "the IDs actually removed.",
+      inputSchema: toInputSchema(collectionEntriesArgs),
+      handler: async (db, userId, args) => {
+        const params = parseArgs(collectionEntriesArgs, args);
+        const { entryIds } = await collectionsService.removeEntriesFromCollection(
+          db,
+          userId,
+          params.collectionId,
+          params.entryIds
+        );
+        return { entryIds };
       },
     },
 

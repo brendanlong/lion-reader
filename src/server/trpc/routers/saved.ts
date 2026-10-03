@@ -34,6 +34,7 @@ import { logger } from "@/lib/logger";
 import type { DbOrTx } from "@/server/db";
 import { getGlobalUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
+import * as collectionsService from "@/server/services/collections";
 import {
   convertUploadedFile,
   detectFileType,
@@ -105,6 +106,9 @@ async function getSavedUnreadCounts(
   };
 }
 
+/** Collections to put a newly saved article in; checked before saving. */
+const collectionIdsSchema = z.array(uuidSchema).max(100).optional();
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -158,11 +162,13 @@ export const savedRouter = createTRPCRouter({
         refetch: z.boolean().default(true),
         /** When true with refetch, update even if new content appears lower quality */
         force: z.boolean().optional(),
+        collectionIds: collectionIdsSchema,
       })
     )
     .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      await collectionsService.assertOwnedCollections(ctx.db, userId, input.collectionIds ?? []);
 
       const article = await savedService.saveArticle(ctx.db, userId, {
         url: input.url,
@@ -177,6 +183,12 @@ export const savedRouter = createTRPCRouter({
         // drive prompts; the app can't, so it gets the readable messages.
         googleDocsAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
+      await collectionsService.addEntryToCollections(
+        ctx.db,
+        userId,
+        article.id,
+        input.collectionIds ?? []
+      );
 
       return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
     }),
@@ -252,11 +264,13 @@ export const savedRouter = createTRPCRouter({
           ),
         filename: z.string().min(1, "Filename is required"),
         title: z.string().optional(),
+        collectionIds: collectionIdsSchema,
       })
     )
     .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      await collectionsService.assertOwnedCollections(ctx.db, userId, input.collectionIds ?? []);
 
       // Validate file type
       const fileType = detectFileType(input.filename);
@@ -314,6 +328,12 @@ export const savedRouter = createTRPCRouter({
         fileType: converted.fileType,
         title: article.title,
       });
+      await collectionsService.addEntryToCollections(
+        ctx.db,
+        userId,
+        article.id,
+        input.collectionIds ?? []
+      );
 
       return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
     }),
