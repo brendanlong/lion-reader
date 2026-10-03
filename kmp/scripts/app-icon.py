@@ -40,7 +40,8 @@ def safe_scale(logo):
 
 
 def outline_art(logo):
-    """The outline strokes only, in black (the system tints the monochrome layer)."""
+    """The outline strokes only, in black (the system tints the monochrome layer;
+    the e-ink icon, ic_launcher_eink.xml, shows it as is on white)."""
     art = Image.new("RGBA", logo.size, (0, 0, 0, 0))
     src, dst = logo.load(), art.load()
     for y in range(logo.height):
