@@ -110,7 +110,7 @@ async function seed() {
       return {
         id: generateUuidv7(),
         feedId: feed.id,
-        type: feed.type,
+        type: "web" as const,
         guid: `${feed.url}/entry-${i + 1}`,
         url: `${feed.siteUrl}/posts/sample-post-${i + 1}`,
         title: `Sample Post ${i + 1} from ${feed.title}`,
@@ -119,10 +119,9 @@ async function seed() {
         summary: `This is sample content for entry ${i + 1} from ${feed.title}...`,
         publishedAt: new Date(Date.now() - i * 24 * 60 * 60 * 1000), // Each day older
         fetchedAt: new Date(Date.now() - i * 24 * 60 * 60 * 1000),
-        // Web entries require last_seen_at (and only web entries may set it) per
-        // the entries_last_seen_only_fetched CHECK constraint. All seeded feeds
-        // are web, but gate on type so this stays correct if others are added.
-        lastSeenAt: feed.type === "web" ? new Date(Date.now() - i * 24 * 60 * 60 * 1000) : null,
+        // Every seeded feed is a web feed, and web entries require last_seen_at
+        // (entries_last_seen_only_fetched).
+        lastSeenAt: new Date(Date.now() - i * 24 * 60 * 60 * 1000),
         contentHash: hashContent(content),
       };
     });
