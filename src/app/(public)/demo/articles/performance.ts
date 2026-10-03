@@ -11,27 +11,27 @@ const article: DemoArticle = {
     "New articles appear in your lists without a refresh, moving around is instant, and typical pages load in under 100ms.",
   publishedAt: new Date("2026-03-01T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader is built for <strong>speed you can feel</strong>: new articles slide into your list automatically without a refresh, previously opened views load instantly, and marking an article read or starred takes effect immediately. Typical page loads land under 100ms, staying fast no matter how many articles pile up.</p>`,
+  summaryHtml: `<p>Lion Reader is built for speed: new articles appear automatically without a refresh, previously visited lists open instantly, and marking something read or starred takes effect immediately and syncs to other devices. Page loads stay under a tenth of a second even as your library grows, on an inexpensive server.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-02"),
+  summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Most of Lion Reader&rsquo;s features exist in other readers somewhere. What&rsquo;s harder to find is a reader that treats <em>speed</em> as a feature you can feel. Lion Reader is built so the interface stays out of your way.</p>
+    <p>Lion Reader treats speed as a feature you can feel. Try it here: jump between lists in the sidebar, or press <kbd>j</kbd> to move through articles.</p>
 
     <h3>New Articles Appear on Their Own</h3>
 
-    <p>When a new article is published, it appears in your list automatically &mdash; no refresh, no &ldquo;load more&rdquo; button. It slides into the right spot by date, and the article you&rsquo;re reading stays open. Articles you read or star on another device update the same way, and so do new subscriptions and <a href="/demo/all?entry=opml">imports</a>.</p>
+    <p>When Lion Reader picks up a new article, it appears in your list automatically &mdash; no refresh, no &ldquo;load more&rdquo; button. It slides into the right spot by date, and the article you&rsquo;re reading stays open. Articles you read or star on another device update the same way, and so do new subscriptions, <a href="/demo/all?entry=email-newsletters">newsletters</a>, <a href="/demo/all?entry=save-for-later">saved articles</a>, and <a href="/demo/all?entry=opml">imports</a>.</p>
 
     <h3>Instant Navigation</h3>
 
-    <p>Anything you&rsquo;ve already opened &mdash; a subscription, a tag, your saved articles &mdash; comes back instantly from what&rsquo;s already loaded, then quietly refreshes in the background. Opening something new loads just that content; the rest of the app, including your place in the current list, stays put.</p>
+    <p>Lists you&rsquo;ve already visited &mdash; a subscription, a tag, your saved articles &mdash; open instantly and catch up quietly in the background. Opening an article keeps the list where it was, so closing it puts you right back where you left off.</p>
 
-    <h3>No Waiting on the Server</h3>
+    <h3>Every Tap Takes Effect Immediately</h3>
 
-    <p>Marking an article read or starring it takes effect the moment you press the key. If you make conflicting changes on two devices, Lion Reader keeps the most recent one, so everything stays in sync.</p>
+    <p>Marking an article read or starring it takes effect the moment you tap or press the key, without waiting on the server, and shows up on your other devices right away.</p>
 
-    <h3>Fast on Cheap Hardware</h3>
+    <h3>Stays Fast as Your Library Grows</h3>
 
-    <p>Typical page loads land under 100ms on inexpensive cloud servers, and stay fast no matter how many articles pile up in your account.</p>
+    <p>Lion Reader stays fast no matter how many articles pile up in your account. Typical page loads take under a tenth of a second, even on an inexpensive server.</p>
 
     <details>
       <summary>How it stays fast</summary>
@@ -40,6 +40,7 @@ const article: DemoArticle = {
         <li>Each article is prepared for reading when it&rsquo;s first fetched, so opening it later is quick.</li>
         <li>A feed is fetched once and shared by everyone subscribed to it, while each person&rsquo;s reading stays private.</li>
         <li>Updates send only what changed, so the app can patch the article in place instead of reloading the list.</li>
+        <li>If you make conflicting changes on two devices, the most recent one wins, so every device ends up the same.</li>
       </ul>
     </details>
   `,

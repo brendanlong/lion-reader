@@ -11,11 +11,11 @@ const article: DemoArticle = {
     "Fly through your reading without touching the mouse: move between articles, star, mark read, search, and control narration from the keyboard.",
   publishedAt: new Date("2025-12-27T14:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader gives every common action a keyboard shortcut, letting you move through unread articles without the mouse: <strong>j/k</strong> to navigate, m to mark read, s to star, and / to search. Press g then a letter to jump to a section, and ? shows the full list anytime.</p>`,
+  summaryHtml: `<p>Lion Reader supports Gmail- and Google Reader-style keyboard shortcuts for moving through articles, marking them read, starring, and searching, plus a <strong>g</strong> then letter combination to jump to sections like all articles, starred, or saved for later. Press <strong>?</strong> to see the full list; shortcuts stay disabled while you&rsquo;re typing.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-02"),
+  summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Once you learn a few keys, the keyboard is the fastest way through a pile of unread articles. Most everyday actions in Lion Reader have a shortcut, and you can try them right here in the demo. Press <kbd>?</kbd> anytime to see the full list.</p>
+    <p>If you&rsquo;ve used Gmail or Google Reader, you already know most of these keys. They&rsquo;re the fastest way through a pile of unread articles, and you can try them right here in the demo. Press <kbd>?</kbd> anytime to see the full list.</p>
 
     <h3>The Essentials</h3>
 
@@ -25,14 +25,21 @@ const article: DemoArticle = {
       <li><kbd>m</kbd> &mdash; mark read or unread</li>
       <li><kbd>s</kbd> &mdash; star</li>
       <li><kbd>v</kbd> &mdash; open the selected article&rsquo;s original page in a new tab</li>
+      <li><kbd>u</kbd> &mdash; show or hide articles you&rsquo;ve read</li>
       <li><kbd>/</kbd> &mdash; <a href="/demo/all?entry=search">search</a> from the article list</li>
     </ul>
 
     <h3>Getting Around</h3>
 
-    <p>From the article list, press <kbd>g</kbd> and then a letter to jump to a section: <kbd>g</kbd> <kbd>a</kbd> for all articles, <kbd>g</kbd> <kbd>s</kbd> for starred, and <kbd>g</kbd> <kbd>l</kbd> for <a href="/demo/all?entry=save-for-later">saved</a>. There are also shortcuts to control <a href="/demo/all?entry=text-to-speech">narration</a>, like <kbd>p</kbd> to play or pause.</p>
+    <p>From the article list, press <kbd>g</kbd> and then a letter to jump to a section:</p>
 
-    <p>Shortcuts stay out of the way while you&rsquo;re typing in a search box or form, so you never trigger one by accident.</p>
+    <ul>
+      <li><kbd>g</kbd> <kbd>a</kbd> &mdash; all articles</li>
+      <li><kbd>g</kbd> <kbd>s</kbd> &mdash; starred</li>
+      <li><kbd>g</kbd> <kbd>l</kbd> &mdash; <a href="/demo/all?entry=save-for-later">saved for later</a></li>
+    </ul>
+
+    <p>While <a href="/demo/all?entry=text-to-speech">listening</a>, press <kbd>p</kbd> to play or pause. Shortcuts stay out of the way while you&rsquo;re typing, so you never trigger one by accident.</p>
   `,
 };
 

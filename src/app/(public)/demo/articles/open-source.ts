@@ -11,23 +11,26 @@ const article: DemoArticle = {
     "Lion Reader is free and open source. Read the code, run your own copy, or help build it on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader is <strong>free and open source</strong> under the MIT license. Use the hosted version, or self-host your own copy with just a database and a cache; optional features like Google sign-in, AI summaries, or newsletters can be enabled individually. Subscriptions export to a standard file, and contributions are welcome.</p>`,
+  summaryHtml: `<p>Lion Reader is <strong>open source</strong> and free to use, hosted or self-run on hardware you control, so it never depends on one company staying in business. Subscriptions export to a standard OPML file, and the app works with existing RSS clients, letting you switch apps without switching services.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-02"),
+  summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Lion Reader is free and <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">open source</a> under the MIT license. You can use the hosted version at lionreader.com, or run your own copy and keep every feed, article, and setting on hardware you control.</p>
+    <p>Lion Reader is <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">open source</a> under the MIT license. Use the free hosted version at lionreader.com, or run your own copy and keep every feed, article, and setting on hardware you control. Because the code is open, your reader never depends on one company deciding to keep it running.</p>
+
+    <h3>Take Your Subscriptions Anywhere</h3>
+
+    <p>Your subscriptions export to a <a href="/demo/all?entry=opml">standard OPML file</a> any feed reader can import, and Lion Reader works with <a href="/demo/all?entry=google-reader-api">existing RSS apps</a>, so you can switch apps without switching services.</p>
 
     <h3>Run Your Own</h3>
 
-    <p>Lion Reader comes with a Dockerfile and needs only a database and a cache alongside it. It runs comfortably on a small, inexpensive server, and grows by adding more servers when you need them. Features that depend on outside services &mdash; like signing in with Google, AI summaries, or receiving newsletters &mdash; are optional, so you can turn on just the ones you want.</p>
+    <p>Lion Reader runs affordably at small scale. Features that depend on outside services &mdash; like signing in with Google, AI summaries, or receiving newsletters &mdash; are optional.</p>
 
-    <h3>No Lock-In</h3>
+    <details>
+      <summary>What self-hosting needs</summary>
+      <p>Lion Reader comes with a Dockerfile and needs a PostgreSQL database and a Redis cache alongside it. The <a href="https://github.com/brendanlong/lion-reader/blob/master/docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">deployment guide</a> walks through a full setup on Fly.io.</p>
+    </details>
 
-    <p>Your subscriptions export to a <a href="/demo/all?entry=opml">standard file</a> any feed reader can import, and Lion Reader works with <a href="/demo/all?entry=google-reader-api">existing RSS apps</a>. If you ever want to leave, your subscriptions come with you.</p>
-
-    <h3>Get Involved</h3>
-
-    <p>Bug reports, feature ideas, and pull requests are all welcome. Browse the <a href="https://github.com/brendanlong/lion-reader/issues" target="_blank" rel="noopener noreferrer">open issues</a> to find something to work on; the repository includes design docs and diagrams to help you find your way around.</p>
+    <p>Bug reports, feature ideas, and pull requests are welcome on <a href="https://github.com/brendanlong/lion-reader/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>
   `,
 };
 

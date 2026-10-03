@@ -11,17 +11,15 @@ const article: DemoArticle = {
     "Add Lion Reader to your home screen or desktop for an app-like experience, and save links and files from your phone's share menu.",
   publishedAt: new Date("2026-01-08T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Install Lion Reader from your browser onto your phone, tablet, or computer &mdash; no app store needed &mdash; with an icon, window, and automatic updates. On Android it appears in the <strong>share menu</strong>, so you can save links and files too. On iPhone and iPad, add it via Safari&rsquo;s Share menu.</p>`,
+  summaryHtml: `<p>Install Lion Reader straight from your browser, no app store needed, for its own icon, no address bar, and automatic updates, though it needs an internet connection. On Android it appears in your phone&rsquo;s share menu for saving links and files; on iPhone and iPad, use the free <strong>Wallabag</strong> app.</p>`,
   summaryModelId: "claude-sonnet-5",
-  summaryGeneratedAt: new Date("2026-10-02"),
+  summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
-    <p>Lion Reader can be installed on your phone, tablet, or computer straight from your browser &mdash; no app store needed. It gets its own icon and opens in its own window, like any other app, and updates itself automatically.</p>
+    <p>Install Lion Reader on your phone, tablet, or computer straight from your browser &mdash; no app store needed. It gets its own icon, opens without the browser&rsquo;s address bar and tabs, and updates itself automatically. It needs a connection to load articles; if you&rsquo;d rather use a native app, Lion Reader also works with <a href="/demo/all?entry=google-reader-api">many RSS apps</a>.</p>
 
     <h3>Save From the Share Menu</h3>
 
-    <p>Once it&rsquo;s installed on Android, Lion Reader shows up in your phone&rsquo;s share menu. Share a link from your browser or any other app and it&rsquo;s <a href="/demo/all?entry=save-for-later">saved for later</a>. You can share files too &mdash; a Word document, Markdown, or HTML file becomes a <a href="/demo/all?entry=file-upload">saved article</a> you can read right away.</p>
-
-    <p>On iPhone and iPad, the <a href="/demo/all?entry=wallabag-api">Wallabag app</a> gives you the same share-menu saving.</p>
+    <p>On Android, an installed Lion Reader shows up in your phone&rsquo;s share menu. Share a link from your browser or any other app and it&rsquo;s <a href="/demo/all?entry=save-for-later">saved for later</a>. You can share files too &mdash; a Word document, Markdown, or HTML file becomes a <a href="/demo/all?entry=file-upload">saved article</a> you can read right away. On iPhone and iPad, where installed web apps can&rsquo;t receive shares, the free <a href="/demo/all?entry=wallabag-api">Wallabag app</a> gives you the same share-menu saving.</p>
 
     <details>
       <summary>How to install</summary>
