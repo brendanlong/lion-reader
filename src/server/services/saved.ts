@@ -38,7 +38,7 @@ import { escapeHtml } from "@/server/http/html";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
-import { toNewEntryListData } from "@/lib/events/schemas";
+import { entryListPayload } from "@/server/services/entry-sync-events";
 import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { markEntriesRead } from "@/server/services/entries";
 import { publishMarkReadStateChanges } from "@/server/services/entry-events";
@@ -547,7 +547,7 @@ async function insertSavedEntry(
     entryId,
     now,
     "saved",
-    toNewEntryListData(values, SAVED_FEED_TITLE)
+    entryListPayload(values, SAVED_FEED_TITLE)
   ).catch(() => {});
 
   // Sanitize the body for the returned SavedArticle: it is returned verbatim by

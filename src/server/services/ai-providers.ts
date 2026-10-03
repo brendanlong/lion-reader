@@ -36,6 +36,11 @@ import {
   type ModelPrice,
 } from "@/server/services/server-key-models";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import {
+  classifyProviderStatus,
+  isFetchConnectionError,
+  type ProviderFailure,
+} from "@/server/services/provider-errors";
 
 /**
  * Per-user provider API keys, as `getUserApiKeys` returns them. A missing or
@@ -63,7 +68,7 @@ function userKeyFor(provider: AiProvider, keys?: AiProviderKeys): string | null 
 }
 
 /** Whether calls to the provider are the user's own (their key, even an unreadable one). */
-function isOnUserKey(provider: AiProvider, keys?: AiProviderKeys): boolean {
+export function isOnUserKey(provider: AiProvider, keys?: AiProviderKeys): boolean {
   return !!userKeyFor(provider, keys) || keys?.[provider] === UNREADABLE_API_KEY;
 }
 
@@ -221,14 +226,8 @@ export function supportsReasoningEffort(model: string): boolean {
   return model.toLowerCase().includes("gpt-oss");
 }
 
-/**
- * How a provider call failed, as far as the caller should care:
- * - `busy`: rate limited, overloaded, or unreachable — worth trying again shortly.
- * - `rejected`: the provider refused the request (bad key, no credit, a model
- *   or request it won't serve) — retrying unchanged won't help.
- * - `failed`: anything else.
- */
-export type TextGenerationFailure = "busy" | "rejected" | "failed";
+/** How a text provider call failed (see {@link ProviderFailure}). */
+export type TextGenerationFailure = ProviderFailure;
 
 /** A failed {@link generateChatCompletion}; the provider's error is the `cause`. */
 export class TextGenerationError extends Error {
@@ -250,22 +249,12 @@ export class TextGenerationError extends Error {
   }
 }
 
-/**
- * HTTP statuses meaning "not right now": a timeout, rate limiting, an
- * unavailable upstream, Groq's 498 (flex tier out of capacity), and
- * Anthropic's 529 (overloaded).
- */
-const BUSY_STATUSES: ReadonlySet<number> = new Set([408, 429, 498, 502, 503, 504, 529]);
-
 const SDKS = [Anthropic, Groq, Cerebras];
 
 function isConnectionError(error: unknown): boolean {
-  if (SDKS.some((sdk) => error instanceof sdk.APIConnectionError)) return true;
-  // OpenRouter is plain fetch: a network failure is a TypeError, a timeout a
-  // TimeoutError DOMException.
+  // OpenRouter is plain fetch.
   return (
-    (error instanceof TypeError && error.message === "fetch failed") ||
-    (error instanceof DOMException && error.name === "TimeoutError")
+    SDKS.some((sdk) => error instanceof sdk.APIConnectionError) || isFetchConnectionError(error)
   );
 }
 
@@ -301,9 +290,7 @@ function providerStatusOf(error: unknown): number | undefined {
 export function classifyTextGenerationError(error: unknown): TextGenerationFailure {
   if (isConnectionError(error)) return "busy";
   const status = providerStatusOf(error);
-  if (status === undefined) return "failed";
-  if (BUSY_STATUSES.has(status)) return "busy";
-  return status >= 400 && status < 500 ? "rejected" : "failed";
+  return status === undefined ? "failed" : classifyProviderStatus(status);
 }
 
 /**

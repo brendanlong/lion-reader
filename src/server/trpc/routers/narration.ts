@@ -7,7 +7,6 @@
 
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { createHash } from "node:crypto";
 
 import {
   createTRPCRouter,
@@ -25,16 +24,16 @@ import {
   generateNarration,
   isNarrationLlmAvailable,
   getNarrationModelRef,
+  narrationCacheOwner,
+  narrationContentHash,
+  narrationFailureScope,
+  type NarrationFailure,
 } from "@/server/services/narration";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
-import {
-  isModelAllowed,
-  listAllModels,
-  UnreadableApiKeyError,
-} from "@/server/services/ai-providers";
+import { isModelAllowed, isTextModelAllowed, listAllModels } from "@/server/services/ai-providers";
 import { formatModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
-import { NARRATION_FORMAT_VERSION, NARRATION_PROVIDERS } from "@/lib/narration/constants";
+import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { defaultSpeechModelId, defaultVoiceFor, listSpeechModels } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/narration/select-content";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
@@ -161,16 +160,6 @@ export const narrationRouter = createTRPCRouter({
             showOriginal: input.showOriginal,
           })
         )) ?? "";
-      // Key the cache by the exact content being narrated (so variants of one
-      // entry don't collide) and by the narration format: a stored paragraph
-      // map's element numbers only mean anything against the numbering that
-      // produced them, so a format bump has to miss rather than mis-highlight.
-      // In the key rather than a column so the release that wrote a row and the
-      // release that reads it can never disagree — a rollback simply looks
-      // somewhere else instead of overwriting a row it will misread later.
-      const contentHash = createHash("sha256")
-        .update(`${NARRATION_FORMAT_VERSION}\n${sourceContent}`, "utf8")
-        .digest("hex");
 
       // Handle empty content
       if (!sourceContent.trim()) {
@@ -182,6 +171,15 @@ export const narrationRouter = createTRPCRouter({
           paragraphMap: [],
         };
       }
+
+      // The model this request narrates with, resolved once: the cache slot
+      // it reads (see narrationContentHash) and the call that fills it must
+      // agree on whose output it is.
+      const modelRef = await getNarrationModelRef(userNarrationModel, keys);
+      const contentHash = narrationContentHash(
+        sourceContent,
+        narrationCacheOwner(modelRef, userId)
+      );
 
       const selectByContentHash = () =>
         ctx.db
@@ -251,7 +249,7 @@ export const narrationRouter = createTRPCRouter({
       // If user disabled LLM normalization, no provider is configured, or we had a recent error, fall back to plain text
       if (
         !input.useLlmNormalization ||
-        !(await isNarrationLlmAvailable(keys, userNarrationModel)) ||
+        !(await isTextModelAllowed(formatModelRef(modelRef.provider, modelRef.model), keys)) ||
         !canRetryLLM
       ) {
         return fallbackResponse();
@@ -260,31 +258,33 @@ export const narrationRouter = createTRPCRouter({
       // Start timer for LLM generation duration
       const stopTimer = startNarrationGenerationTimer();
 
-      // Record a failed generation so replays within RETRY_AFTER_MS serve the
-      // plain-text fallback instead of paying for another LLM call.
+      // Record a failure the content caused so replays within RETRY_AFTER_MS
+      // serve the plain-text fallback instead of paying for another LLM call.
+      // The row is everyone's, so nothing else is recorded on it.
       const recordId = narrationRecord.id;
-      const recordFailure = (message: string) =>
-        ctx.db
+      const recordFailure = async (failure: NarrationFailure, message: string) => {
+        if (narrationFailureScope(failure) !== "content") return;
+        await ctx.db
           .update(narrationContent)
           .set({ error: message, errorAt: new Date() })
           .where(eq(narrationContent.id, recordId));
+      };
 
       try {
         // Generate via LLM
-        const result = await generateNarration(sourceContent, {
-          keys,
-          userModel: userNarrationModel,
-        });
+        const result = await generateNarration(sourceContent, { keys, modelRef });
 
         // Stop the timer after generation completes
         stopTimer();
 
         // The LLM answered but its output was empty or unusable: don't cache the
-        // fallback as narration, but back off like any other failure — the
-        // tokens were billed, and the same input would likely fail again.
+        // fallback as narration, but back off — the tokens were billed, and
+        // the same input would likely fail again.
         if (result.source === "fallback") {
           trackNarrationGenerationError("empty_response");
-          await recordFailure("LLM returned empty or unparseable output");
+          if (result.failure) {
+            await recordFailure(result.failure, "LLM returned empty or unparseable output");
+          }
           return fallbackResponse(result);
         }
 
@@ -322,11 +322,10 @@ export const narrationRouter = createTRPCRouter({
         // Track the error
         trackNarrationGenerationError("api_error");
 
-        // Store error in narration_content for retry tracking. Not one user's
-        // unreadable key: the row is shared by everyone narrating this content.
-        if (!(error instanceof UnreadableApiKeyError)) {
-          await recordFailure(error instanceof Error ? error.message : "Unknown error");
-        }
+        await recordFailure(
+          { kind: "error", error },
+          error instanceof Error ? error.message : "Unknown error"
+        );
 
         return fallbackResponse();
       }

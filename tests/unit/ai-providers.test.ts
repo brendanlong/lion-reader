@@ -24,6 +24,7 @@ import {
   OpenRouterChatError,
 } from "@/server/services/openrouter";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
+import { classifyProviderStatus } from "@/server/services/provider-errors";
 import { getSummarizationModelId, isSummarizationAvailable } from "@/server/services/summarization";
 import { serverKeyTokenPriceCaps } from "@/server/services/server-key-models";
 import {
@@ -643,6 +644,13 @@ describe("classifyTextGenerationError", () => {
       classifyTextGenerationError(Cerebras.APIError.generate(400, undefined, "bad model", {}))
     ).toBe("rejected");
     expect(classifyTextGenerationError(new OpenRouterChatError(402, "no credit"))).toBe("rejected");
+  });
+
+  it("reads a status the way speech does", () => {
+    for (const status of [400, 401, 402, 408, 409, 429, 498, 500, 502, 503, 504, 529]) {
+      const sdkError = Groq.APIError.generate(status, undefined, "x", headers);
+      expect(classifyTextGenerationError(sdkError)).toBe(classifyProviderStatus(status));
+    }
   });
 
   it("treats anything else as a failure", () => {

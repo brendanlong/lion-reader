@@ -1090,7 +1090,7 @@ export const websubHubStats = pgTable("websub_hub_stats", {
  */
 export const narrationContent = pgTable("narration_content", {
   id: uuid("id").primaryKey(), // UUIDv7
-  contentHash: text("content_hash").unique().notNull(), // SHA256 of source content
+  contentHash: text("content_hash").unique().notNull(), // narrationContentHash (services/narration.ts)
 
   contentNarration: text("content_narration"), // null until generated
   // Paragraph map for highlighting (narration paragraph index -> data-para-id),

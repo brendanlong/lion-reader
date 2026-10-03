@@ -6,9 +6,11 @@ import {
   SpeechRejectedError,
   SpeechUnavailableError,
   type SpeechModel,
+  targetSpeechModelId,
   toDeepInfraSpeechModels,
   toSpeechModels,
 } from "@/server/services/speech";
+import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import type { SpeechProvider } from "@/lib/ai/providers";
 import {
   canNarrate,
@@ -309,5 +311,65 @@ describe("resolveSpeechModel", () => {
     expect(() => resolveSpeechModel(catalog([]), {}, null, null)).toThrow(
       "Cloud voices require an API key from DeepInfra, OpenRouter, or BreezeBlue"
     );
+  });
+
+  it("asks for the key again when the chosen model's saved key can't be read", () => {
+    process.env.DEEPINFRA_API_KEY = "di-server";
+    expect(() =>
+      resolveSpeechModel(
+        catalog([deepInfraKokoro]),
+        { openrouter: UNREADABLE_API_KEY },
+        OPENROUTER_KOKORO,
+        null
+      )
+    ).toThrow(
+      new SpeechRejectedError(
+        "Your saved OpenRouter API key can't be read; enter it again in Settings."
+      )
+    );
+  });
+});
+
+describe("targetSpeechModelId", () => {
+  const listed = (...ids: string[]): SpeechModel[] =>
+    ids.map((id) => ({
+      id,
+      displayName: id,
+      provider: id.split(":")[0] as SpeechProvider,
+      voices: [{ id: "v", name: "v" }],
+    }));
+
+  it.each([
+    ["nothing asked for", listed(DEEPINFRA_KOKORO), {}, null, DEEPINFRA_KOKORO],
+    [
+      "a listed model",
+      listed(DEEPINFRA_KOKORO, OPENROUTER_KOKORO),
+      {},
+      OPENROUTER_KOKORO,
+      OPENROUTER_KOKORO,
+    ],
+    [
+      "an unlisted model on the server's key",
+      listed(DEEPINFRA_KOKORO),
+      {},
+      OPENROUTER_KOKORO,
+      DEEPINFRA_KOKORO,
+    ],
+    [
+      "an unlisted model on the user's own key",
+      listed(DEEPINFRA_KOKORO),
+      { openrouter: "o" },
+      OPENROUTER_KOKORO,
+      OPENROUTER_KOKORO,
+    ],
+    [
+      "an unlisted model on an unreadable key",
+      listed(DEEPINFRA_KOKORO),
+      { openrouter: UNREADABLE_API_KEY },
+      OPENROUTER_KOKORO,
+      OPENROUTER_KOKORO,
+    ],
+  ] as const)("for %s", (_, models, keys, requested, expected) => {
+    expect(targetSpeechModelId(models, keys, requested)).toBe(expected);
   });
 });

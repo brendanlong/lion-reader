@@ -16,7 +16,7 @@
  *     player splits the narration text — length(map) === length(split).
  */
 
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -27,6 +27,7 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
+import { narrationContentHash } from "../../src/server/services/narration";
 import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { encryptApiKey } from "../../src/lib/encryption";
@@ -400,14 +401,19 @@ describe("narration.generate rate limit", () => {
 /**
  * When the model answers but its output is empty or unparseable, the plain-text
  * fallback is served and nothing is cached — but the failure must still be
- * recorded, or every replay of the same article bills another LLM call.
+ * recorded, or every replay of the same article bills the server's key for
+ * another LLM call. The record is shared by everyone narrating the content, so
+ * a failure that isn't the content's (a busy provider, anything one user's key
+ * or model answered) isn't recorded.
  */
-describe("narration.generate unusable LLM output", () => {
+describe("narration.generate failure backoff", () => {
   let server: Server;
   let llmRequests = 0;
   let llmContent = "";
+  let llmStatus = 200;
   const previousBaseUrl = process.env.GROQ_BASE_URL;
   const previousEncryptionKey = process.env.API_KEY_ENCRYPTION_KEY;
+  const previousServerKey = process.env.GROQ_API_KEY;
 
   beforeAll(async () => {
     process.env.API_KEY_ENCRYPTION_KEY = randomBytes(32).toString("base64");
@@ -417,6 +423,12 @@ describe("narration.generate unusable LLM output", () => {
       req.resume();
       req.on("end", () => {
         llmRequests++;
+        if (llmStatus !== 200) {
+          // Retry-After 0 so the SDK's own retry doesn't slow the test down.
+          res.writeHead(llmStatus, { "Content-Type": "application/json", "Retry-After": "0" });
+          res.end(JSON.stringify({ error: { message: "Not now" } }));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -449,15 +461,31 @@ describe("narration.generate unusable LLM output", () => {
 
   beforeEach(() => {
     llmRequests = 0;
+    llmStatus = 200;
   });
 
-  async function createGroqUser(): Promise<string> {
+  afterEach(() => {
+    if (previousServerKey === undefined) delete process.env.GROQ_API_KEY;
+    else process.env.GROQ_API_KEY = previousServerKey;
+  });
+
+  /** A user without keys of their own, narrating on the server's Groq key. */
+  async function createServerKeyUser(): Promise<string> {
+    process.env.GROQ_API_KEY = "gsk-server-key";
     const userId = await createTestUser({ emailPrefix: "narr" });
     createdUserIds.push(userId);
     await db
       .update(users)
       .set({ narrationModel: "groq:openai/gpt-oss-120b" })
       .where(eq(users.id, userId));
+    return userId;
+  }
+
+  /** A user with their own Groq key, narrating with Groq's default model unless told otherwise. */
+  async function createGroqUser(narrationModel = "groq:openai/gpt-oss-120b"): Promise<string> {
+    const userId = await createTestUser({ emailPrefix: "narr" });
+    createdUserIds.push(userId);
+    await db.update(users).set({ narrationModel }).where(eq(users.id, userId));
     await db
       .insert(userApiKeys)
       .values({ userId, provider: "groq", encryptedKey: encryptApiKey("gsk-test-key") });
@@ -469,7 +497,7 @@ describe("narration.generate unusable LLM output", () => {
     ["unparseable", "this is not JSON"],
   ])("records a failure on %s output and doesn't re-call the LLM on replay", async (_, content) => {
     llmContent = content;
-    const userId = await createGroqUser();
+    const userId = await createServerKeyUser();
     const contentCleaned = `<p>LLM failure body ${generateUuidv7()}.</p>`;
     const contentHash = narrationHash(contentCleaned);
     createdNarrationHashes.push(contentHash);
@@ -497,6 +525,59 @@ describe("narration.generate unusable LLM output", () => {
     expect(second.narration).toBe(first.narration);
   });
 
+  /** Narrates fresh content once; `pickedModel` is the user's pick, whose row is theirs. */
+  async function narrateOnce(
+    userId: string,
+    pickedModel?: string
+  ): Promise<{ row: typeof narrationContent.$inferSelect; source: string }> {
+    const contentCleaned = `<p>Not the content's fault ${generateUuidv7()}.</p>`;
+    const contentHash = pickedModel
+      ? narrationContentHash(sanitizeEntryHtml(contentCleaned) ?? "", {
+          userId,
+          model: pickedModel,
+        })
+      : narrationHash(contentCleaned);
+    createdNarrationHashes.push(contentHash);
+    const entryId = await createVisibleEntry(userId, { contentCleaned });
+    const caller = createCaller(await createAuthContext(userId));
+    const { source } = await caller.narration.generate({ id: entryId });
+    const [row] = await db
+      .select()
+      .from(narrationContent)
+      .where(eq(narrationContent.contentHash, contentHash));
+    return { row, source };
+  }
+
+  it.each([
+    ["busy", 429],
+    ["overloaded", 503],
+    ["refusing the user's key", 401],
+  ])("doesn't back everyone off when the provider is %s", async (_, status) => {
+    llmStatus = status;
+    const { row, source } = await narrateOnce(await createGroqUser());
+    expect(llmRequests).toBeGreaterThan(0);
+    expect(source).toBe("fallback");
+    expect(row.errorAt).toBeNull();
+    expect(row.error).toBeNull();
+  });
+
+  it("doesn't back everyone off when the user's own key answers with nothing usable", async () => {
+    llmContent = "this is not JSON";
+    const { row, source } = await narrateOnce(await createGroqUser());
+    expect(llmRequests).toBe(1);
+    expect(source).toBe("fallback");
+    expect(row.errorAt).toBeNull();
+  });
+
+  it("doesn't back everyone off when a model the user picked answers with nothing usable", async () => {
+    llmContent = "this is not JSON";
+    const picked = "groq:llama-3.3-70b-versatile";
+    const { row, source } = await narrateOnce(await createGroqUser(picked), picked);
+    expect(llmRequests).toBe(1);
+    expect(source).toBe("fallback");
+    expect(row.errorAt).toBeNull();
+  });
+
   it("caches a usable response (the fake endpoint reaches the LLM path)", async () => {
     const userId = await createGroqUser();
     const contentCleaned = `<p>LLM success body ${generateUuidv7()}.</p>`;
@@ -511,5 +592,38 @@ describe("narration.generate unusable LLM output", () => {
     const second = await caller.narration.generate({ id: entryId });
     expect(second.cached).toBe(true);
     expect(llmRequests).toBe(1);
+  });
+
+  it("keeps a model one user picked to that user, in both directions", async () => {
+    const picked = "groq:llama-3.3-70b-versatile";
+    const userA = await createGroqUser(picked);
+    const userB = await createGroqUser();
+    const contentCleaned = `<p>Shared article ${generateUuidv7()}.</p>`;
+    createdNarrationHashes.push(
+      narrationHash(contentCleaned),
+      narrationContentHash(sanitizeEntryHtml(contentCleaned) ?? "", {
+        userId: userA,
+        model: picked,
+      })
+    );
+    const narrate = async (userId: string) => {
+      const entryId = await createVisibleEntry(userId, { contentCleaned });
+      const caller = createCaller(await createAuthContext(userId));
+      return () => caller.narration.generate({ id: entryId });
+    };
+    const [narrateA, narrateB] = [await narrate(userA), await narrate(userB)];
+    const answer = (text: string) => JSON.stringify({ paragraphs: [{ id: 0, text }] });
+
+    // A narrates first: B gets the default model's narration, not A's.
+    llmContent = answer("What A's model says.");
+    expect(await narrateA()).toMatchObject({ narration: "What A's model says.", cached: false });
+    llmContent = answer("What the default says.");
+    expect(await narrateB()).toMatchObject({ narration: "What the default says.", cached: false });
+
+    // A narrating again reads A's own slot and leaves B's alone.
+    llmContent = answer("Something else entirely.");
+    expect(await narrateA()).toMatchObject({ narration: "What A's model says.", cached: true });
+    expect(await narrateB()).toMatchObject({ narration: "What the default says.", cached: true });
+    expect(llmRequests).toBe(2);
   });
 });

@@ -25,7 +25,8 @@ import {
   tags,
   entryTombstones,
 } from "@/server/db/schema";
-import { syncTagSchema, serverSyncEventSchema, toNewEntryListData } from "@/lib/events/schemas";
+import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
@@ -265,34 +266,13 @@ async function databaseNow(db: Database): Promise<Temporal.Instant> {
 }
 
 /**
- * Entries whose state changed after the entries cursor in a way that took them
- * out of the user's view — today, unstarring an entry of an unsubscribed feed.
- * `collectSyncEvents` filters on visibility, so it can't report these; an
- * offline store would otherwise keep them (starred) forever.
+ * The `visible_entries` predicate, over `user_entries` joined to `entries`
+ * and left-joined to `subscriptions` on the stamped subscription id. It is
+ * fail-closed: an orphaned row's NULL subscription is hidden unless starred
+ * or saved (#1080).
  */
-async function hiddenSinceCursor(
-  db: Database,
-  userId: string,
-  entriesCursor: string
-): Promise<Array<{ entryId: string; deletedAt: string }>> {
-  const rows = await db
-    .select({
-      entryId: userEntries.entryId,
-      updatedAt: sql`${userEntries.updatedAt}`.mapWith(parseTimestamptz),
-    })
-    .from(userEntries)
-    .innerJoin(entries, eq(entries.id, userEntries.entryId))
-    .leftJoin(subscriptions, eq(subscriptions.id, userEntries.subscriptionId))
-    .where(
-      and(
-        eq(userEntries.userId, userId),
-        sql`${userEntries.updatedAt} > ${entriesCursor}::timestamptz`,
-        // The negation of the visible_entries predicate (see collectSyncEvents).
-        sql`NOT ((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved')`
-      )
-    )
-    .limit(MAX_ENTRIES);
-  return rows.map((row) => ({ entryId: row.entryId, deletedAt: row.updatedAt.toString() }));
+function visibleEntrySql(): SQL {
+  return sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved')`;
 }
 
 /** Per-entity-type cursors, as a client sends them back. */
@@ -334,15 +314,24 @@ const syncCursorsInputSchema = z.object({
  * sync, matching the cursor tracking used in the SSE path. Only entries are
  * paged (`hasMore`); the next entries cursor is the last returned row's keyset,
  * so a paged catch-up never skips rows.
+ *
+ * With `reportHidden`, entries a state change took out of the user's view
+ * since the catch-up's start (today, unstarring an entry of an unsubscribed
+ * feed) come back as `hidden`, in the same pages: an offline store would
+ * otherwise keep them (starred) forever. Only for a caller that takes the
+ * returned cursors — a page of nothing but hidden rows has no events for a
+ * client to advance its own cursor from.
  */
 async function collectSyncEvents(
   db: Database,
   userId: string,
-  cursors: SyncCursorsInput
+  cursors: SyncCursorsInput,
+  options: { reportHidden?: boolean } = {}
 ): Promise<{
   events: z.infer<typeof serverSyncEventSchema>[];
   hasMore: boolean;
   next: SyncCursorsInput;
+  hidden: Array<{ entryId: string; deletedAt: string }>;
 }> {
   // Keep cursors as strings to preserve Postgres µs precision (#680)
   const entriesCursor = cursors.entries ?? null;
@@ -357,8 +346,9 @@ async function collectSyncEvents(
     subscriptions: cursors.subscriptions,
     tags: cursors.tags,
   };
+  const hidden: Array<{ entryId: string; deletedAt: string }> = [];
   if (!entriesCursor && !subscriptionsCursor && !tagsCursor) {
-    return { events: [], hasMore: false, next };
+    return { events: [], hasMore: false, next, hidden };
   }
 
   // Collect all events with their timestamps for sorting. _sortTime is a
@@ -508,6 +498,7 @@ async function collectSyncEvents(
         fetchedAt: entries.fetchedAt,
         siteName: entries.siteName,
         isSpam: entries.isSpam,
+        isBackfill: entries.isBackfill,
         read: userEntries.read,
         starred: userEntries.starred,
         readChangedAt: userEntries.readChangedAt,
@@ -515,6 +506,7 @@ async function collectSyncEvents(
         feedId: entries.feedId,
         feedType: feeds.type,
         feedTitle: feeds.title,
+        visible: sql<boolean>`${visibleEntrySql()}`,
         // Categorization booleans, computed in SQL at µs precision so a row
         // selected past the cursor always gets at least one event.
         metadataChanged: sql<boolean>`${afterSince(entries.updatedAt)}`,
@@ -523,6 +515,7 @@ async function collectSyncEvents(
         // Full-precision Temporal.Instant for cursor/timestamp output (both
         // updatedAt columns are NOT NULL, so GREATEST is never null here).
         maxUpdatedAt: sql`${greatest}`.mapWith(parseTimestamptz),
+        stateUpdatedAt: sql`${userEntries.updatedAt}`.mapWith(parseTimestamptz),
       })
       .from(changed)
       .innerJoin(
@@ -535,13 +528,11 @@ async function collectSyncEvents(
       .where(
         and(
           afterCursor(greatest),
-          // Fail-closed visibility, matching the visible_entries view
-          // (migration 0073): an entry is visible only via an ACTIVE
-          // subscription, being starred, or being a saved article. The old
-          // `subscriptions.unsubscribed_at IS NULL` was fail-OPEN — for an
-          // orphaned user_entries row the LEFT JOIN yields NULL and
-          // `NULL IS NULL` = TRUE, leaking entries the web app hides. #1080
-          sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved')`
+          // A row a state change took out of view is a deletion, paged with
+          // the rest so none is lost past a page's end.
+          options.reportHidden
+            ? sql`(${visibleEntrySql()} OR ${afterSince(userEntries.updatedAt)})`
+            : visibleEntrySql()
         )
       )
       // Direct join on the stamped user_entries.subscription_id — one
@@ -560,19 +551,22 @@ async function collectSyncEvents(
       next.entriesAfterId = lastEntry.id;
     }
 
-    // Differentiate event types based on which timestamps changed.
-    // Both metadata and state can change simultaneously, so emit separate
-    // events for each — the frontend handles them with different cache updates.
+    const visibleRows = changedEntryResults.filter((row) => row.visible);
+    for (const row of changedEntryResults) {
+      if (!row.visible) {
+        hidden.push({ entryId: row.id, deletedAt: row.stateUpdatedAt.toString() });
+      }
+    }
 
     // Collect entries with state changes for batch count computation
-    const stateChangedEntries = changedEntryResults.filter((row) => row.stateChanged);
+    const stateChangedEntries = visibleRows.filter((row) => row.stateChanged);
 
     // Entries created after the catch-up's start emit new_entry events. Compute one
     // absolute-count snapshot covering all of them so each new_entry event
     // carries server-authoritative counts (the client sets them directly
     // rather than applying a +1 delta, making the events idempotent across
     // the live-SSE / catch-up-sync overlap).
-    const newEntries = changedEntryResults.filter((row) => row.metadataChanged && row.isNew);
+    const newEntries = visibleRows.filter((row) => row.metadataChanged && row.isNew);
     const newEntryCounts =
       newEntries.length > 0
         ? await getBulkEntryRelatedCounts(
@@ -600,88 +594,13 @@ async function collectSyncEvents(
           )
         : undefined;
 
-    for (const row of changedEntryResults) {
-      const entryMetadataChanged = row.metadataChanged;
-      const entryStateChanged = row.stateChanged;
-
-      if (entryMetadataChanged) {
-        if (row.isNew) {
-          // Entry created after the catch-up's start - emit new_entry for count and
-          // list updates. The entry payload mirrors the live SSE path so a
-          // catch-up sync inserts missed entries into cached lists too.
-          // Unlike the live path, the entry may already have been read or
-          // starred (on another device) since creation, so the payload
-          // carries the actual state. Spam entries get no payload — the
-          // default entries.list filters them, so a client-side insert
-          // would show a row the server never returns.
-          allEvents.push({
-            type: "new_entry" as const,
-            subscriptionId: row.subscriptionId,
-            entryId: row.id,
-            timestamp: row.maxUpdatedAt.toString(),
-            updatedAt: row.maxUpdatedAt.toString(),
-            feedType: row.feedType,
-            feedId: row.feedId,
-            ...(row.isSpam
-              ? {}
-              : {
-                  entry: toNewEntryListData(row, row.feedTitle, {
-                    read: row.read,
-                    starred: row.starred,
-                    readChangedAt: row.readChangedAt,
-                  }),
-                }),
-            ...(newEntryCounts && { counts: newEntryCounts }),
-            _sortTime: row.maxUpdatedAt,
-          });
-        } else {
-          // Existing entry with metadata changes
-          allEvents.push({
-            type: "entry_updated" as const,
-            subscriptionId: row.subscriptionId,
-            entryId: row.id,
-            timestamp: row.maxUpdatedAt.toString(),
-            updatedAt: row.maxUpdatedAt.toString(),
-            metadata: {
-              title: row.title,
-              author: row.author,
-              summary: row.summary,
-              url: row.url,
-              publishedAt: row.publishedAt?.toISOString() ?? null,
-            },
-            _sortTime: row.maxUpdatedAt,
-          });
-        }
-      }
-
-      if (entryStateChanged && stateChangedCounts) {
-        // User state changed (read/starred) - emit separately from metadata
-        // so the frontend updates both the entry content and read/starred state.
-        allEvents.push({
-          type: "entry_state_changed" as const,
-          entryId: row.id,
-          read: row.read,
-          starred: row.starred,
-          readChangedAt: row.readChangedAt?.toISOString() ?? null,
-          counts: stateChangedCounts,
-          timestamp: row.maxUpdatedAt.toString(),
-          updatedAt: row.maxUpdatedAt.toString(),
-          // Unread entries carry list-item data so a client that doesn't
-          // have the entry in any cached list can insert it into the lists
-          // it now belongs to, mirroring the live SSE path and the
-          // new_entry payload (issue #1237). Read entries carry none
-          // (nothing to insert), and spam gets no payload for the same
-          // reason as new_entry (the default entries.list filters it).
-          ...(!row.read && !row.isSpam
-            ? {
-                subscriptionId: row.subscriptionId,
-                feedId: row.feedId,
-                feedType: row.feedType,
-                entry: toNewEntryListData(row, row.feedTitle),
-              }
-            : {}),
-          _sortTime: row.maxUpdatedAt,
-        });
+    for (const row of visibleRows) {
+      const events = entryRowToSyncEvents(
+        { ...row, updatedAt: row.maxUpdatedAt.toString() },
+        { newEntry: newEntryCounts, stateChanged: stateChangedCounts }
+      );
+      for (const event of events) {
+        allEvents.push({ ...event, _sortTime: row.maxUpdatedAt });
       }
     }
   }
@@ -850,7 +769,7 @@ async function collectSyncEvents(
     typeof serverSyncEventSchema
   >[];
 
-  return { events, hasMore, next };
+  return { events, hasMore, next, hidden };
 }
 
 // ============================================================================
@@ -965,7 +884,9 @@ export const syncRouter = createTRPCRouter({
         };
       }
 
-      const { events, hasMore, next } = await collectSyncEvents(ctx.db, userId, cursors);
+      const { events, hasMore, next, hidden } = await collectSyncEvents(ctx.db, userId, cursors, {
+        reportHidden: true,
+      });
 
       const tombstones = deletionsCursor
         ? await ctx.db
@@ -998,10 +919,6 @@ export const syncRouter = createTRPCRouter({
           .filter((t): t is Temporal.Instant => t !== null)
           .reduce((a, b) => (Temporal.Instant.compare(a, b) >= 0 ? a : b));
       }
-
-      const hidden = cursors.entries
-        ? await hiddenSinceCursor(ctx.db, userId, cursors.entries)
-        : [];
 
       return {
         events,

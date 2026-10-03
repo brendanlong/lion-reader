@@ -16,11 +16,18 @@ import { logger } from "@/lib/logger";
 import {
   getProviderApiKey,
   isModelAllowed,
+  isOnUserKey,
+  UnreadableApiKeyError,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
+import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { encodeSpeech, type PcmStream } from "@/server/services/speech-encoding";
 import { setTimeout } from "node:timers/promises";
-import { ProviderBusyError, ProviderRejectedError } from "@/server/services/provider-errors";
+import {
+  classifyProviderError,
+  ProviderBusyError,
+  ProviderRejectedError,
+} from "@/server/services/provider-errors";
 import {
   deepInfraSpeech,
   listDeepInfraSpeechModels,
@@ -200,7 +207,9 @@ async function keepPickedVoice(
   { model: pickedModel, voice, userId }: SpeechChoice
 ): Promise<"listed" | "kept" | "missing" | "unchecked"> {
   if (!voice) return "listed";
-  const id = pickedModel ? normalizeModelRef(pickedModel) : defaultSpeechModelId(models);
+  const id = targetSpeechModelId(models, keys, pickedModel);
+  // The voice was picked for a model this request won't run on.
+  if (pickedModel && id !== normalizeModelRef(pickedModel)) return "listed";
   const index = models.findIndex((candidate) => candidate.id === id);
   const model = models[index];
   const findVoice = model && SPEECH_PROVIDER_ADAPTERS[model.provider].findVoice;
@@ -348,6 +357,24 @@ export function defaultSpeechModelId(models: SpeechModel[]): string {
   );
 }
 
+/**
+ * The model a request for `requestedModel` (null: the default) runs on: the
+ * one asked for if it's listed or on the user's own key (which is then an
+ * error if the provider stopped listing it), else the default.
+ */
+export function targetSpeechModelId(
+  models: SpeechModel[],
+  keys: AiProviderKeys | undefined,
+  requestedModel: string | null
+): string {
+  if (!requestedModel) return defaultSpeechModelId(models);
+  const requested = normalizeModelRef(requestedModel);
+  return isOnUserKey(parseModelRef(requested).provider, keys) ||
+    models.some((candidate) => candidate.id === requested)
+    ? requested
+    : defaultSpeechModelId(models);
+}
+
 function hasVoice(model: SpeechModel, voice: string): boolean {
   return model.voices.some((candidate) => candidate.id === voice);
 }
@@ -377,7 +404,7 @@ function speechRejection(
   keys: AiProviderKeys
 ): SpeechRejectedError {
   const name = aiProviderName(provider);
-  if (!keys[provider]) {
+  if (!isOnUserKey(provider, keys)) {
     return new SpeechRejectedError(`${name} cloud voices aren't available right now`);
   }
   return new SpeechRejectedError(
@@ -388,10 +415,9 @@ function speechRejection(
 }
 
 /**
- * The model and voice to synthesize with. A null model means the default. A
- * choice on a provider with no key left (or no longer allowed on the server's
- * key) falls back to the default; one on the user's own key is kept, and is
- * an error if the provider stopped listing it.
+ * The model and voice to synthesize with: the model by
+ * {@link targetSpeechModelId}, refused for now if the user's own key for it
+ * can't be read.
  */
 export function resolveSpeechModel(
   { models, unavailable }: SpeechCatalog,
@@ -399,8 +425,10 @@ export function resolveSpeechModel(
   requestedModel: string | null,
   requestedVoice: string | null
 ): { model: SpeechModel; voice: string } {
-  const requested = requestedModel ? normalizeModelRef(requestedModel) : null;
-  const requestedProvider = requested ? parseModelRef(requested).provider : null;
+  const requestedProvider = requestedModel ? parseModelRef(requestedModel).provider : null;
+  if (requestedProvider && keys[requestedProvider] === UNREADABLE_API_KEY) {
+    throw new SpeechRejectedError(new UnreadableApiKeyError(requestedProvider).message);
+  }
   const failed =
     unavailable.find(({ provider }) => provider === requestedProvider) ??
     (models.length === 0 ? unavailable[0] : undefined);
@@ -417,11 +445,7 @@ export function resolveSpeechModel(
       `Cloud voices require an API key from ${aiProviderNames(SPEECH_PROVIDERS)}`
     );
   }
-  const onOwnKey = requestedProvider !== null && !!keys[requestedProvider];
-  const modelId =
-    requested && (onOwnKey || models.some((candidate) => candidate.id === requested))
-      ? requested
-      : defaultSpeechModelId(models);
+  const modelId = targetSpeechModelId(models, keys, requestedModel);
   const model = models.find((candidate) => candidate.id === modelId);
   if (!model) {
     throw new SpeechRequestError(`Speech model not available: ${modelId}`);
@@ -481,6 +505,11 @@ export async function streamSpeech(
       logger.warn("Speech provider refused", { model: model.id, error: error.message });
       throw speechRejection(model.provider, error, keys);
     }
+    // A provider that couldn't be reached is busy too: the client is told to
+    // come back later, as for a 503.
+    if (!(error instanceof ProviderBusyError) && classifyProviderError(error) === "busy") {
+      throw new ProviderBusyError(error instanceof Error ? error.message : String(error), null);
+    }
     throw error;
   }
   return encodeSpeech(pcm, { pauseSeconds: options.pauseSeconds });
@@ -492,11 +521,11 @@ const BUSY_FIRST_WAIT_MS = 500;
 const BUSY_MAX_WAIT_MS = 5_000;
 
 /**
- * `speak`, asked again while the provider is busy ({@link ProviderBusyError}:
+ * `speak`, asked again while the provider is busy ({@link classifyProviderError}:
  * a plan's concurrency limit, say, which several listeners on the server's key
- * can hit together), waiting as long as it asks, within reason. Past
- * {@link BUSY_RETRY_MS} the last busy error is thrown, for the client to retry
- * later.
+ * can hit together, or an overloaded or unreachable provider), waiting as long
+ * as it asks, within reason. Past {@link BUSY_RETRY_MS} the last busy error is
+ * thrown, for the client to retry later.
  */
 export async function speakWhenFree<T>(
   speak: () => Promise<T>,
@@ -509,8 +538,9 @@ export async function speakWhenFree<T>(
     try {
       return await speak();
     } catch (error) {
-      if (!(error instanceof ProviderBusyError)) throw error;
-      const asked = error.retryAfterSeconds === null ? wait : error.retryAfterSeconds * 1000;
+      if (classifyProviderError(error) !== "busy") throw error;
+      const askedSeconds = error instanceof ProviderBusyError ? error.retryAfterSeconds : null;
+      const asked = askedSeconds === null ? wait : askedSeconds * 1000;
       // Jittered, so listeners turned away together don't all come back together.
       const delay =
         Math.min(Math.max(asked, BUSY_FIRST_WAIT_MS), BUSY_MAX_WAIT_MS) *

@@ -8,17 +8,26 @@
  */
 
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { logger } from "@/lib/logger";
-import { formatModelRef, parseModelRef, type ModelRef } from "@/lib/ai/model-ref";
+import {
+  formatModelRef,
+  normalizeModelRef,
+  parseModelRef,
+  type ModelRef,
+} from "@/lib/ai/model-ref";
 import {
   DEFAULT_NARRATION_MODELS,
   isNarrationProvider,
+  NARRATION_FORMAT_VERSION,
   NARRATION_PROVIDERS,
 } from "@/lib/narration/constants";
 import {
   generateChatCompletion,
+  isOnUserKey,
   isProviderAvailable,
   isTextModelAllowed,
+  TextGenerationError,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
@@ -46,8 +55,6 @@ const llmParagraphSchema = z.object({
 const llmOutputSchema = z.object({
   paragraphs: z.array(llmParagraphSchema),
 });
-
-type LLMOutput = z.infer<typeof llmOutputSchema>;
 
 /**
  * System prompt for the LLM that converts article content to narration-ready text.
@@ -171,6 +178,133 @@ export interface GenerateNarrationResult {
    * don't produce narration text, causing indices to diverge.
    */
   paragraphMap: ParagraphMapEntry[];
+  /** Set on a fallback served because the model's answer couldn't be used. */
+  failure?: Extract<NarrationFailure, { kind: "unusable_output" }>;
+}
+
+/** Why the model's narration couldn't be served. */
+export type NarrationFailure =
+  /** It answered, but with nothing usable. */
+  | {
+      kind: "unusable_output";
+      /**
+       * It ran on the user's terms: a model they picked rather than one anyone
+       * gets by default, or their own key (whose account settings and limits
+       * are theirs alone).
+       */
+      onCallerTerms: boolean;
+    }
+  /** The call failed (what `generateNarration` threw). */
+  | { kind: "error"; error: unknown };
+
+/**
+ * Whose problem a narration failure is, which decides whether it's recorded
+ * on the `narration_content` row. That row is shared by everyone narrating
+ * the same content, so only a failure the content itself causes may back them
+ * all off:
+ * - `content`: a default model on the server's key couldn't narrate this
+ *   content; it would most likely fail the same way again for anyone.
+ * - `caller`: this user's key or model choice (a refusal on their own key, a
+ *   key that can't be read, a model they picked, anything their own key
+ *   answered).
+ * - `transient`: the provider being busy, down, or refusing the server's key —
+ *   nothing to do with the content.
+ */
+export type NarrationFailureScope = "content" | "caller" | "transient";
+
+export function narrationFailureScope(failure: NarrationFailure): NarrationFailureScope {
+  if (failure.kind === "unusable_output") {
+    return failure.onCallerTerms ? "caller" : "content";
+  }
+  const { error } = failure;
+  if (!(error instanceof TextGenerationError)) {
+    // An unreadable key, or a model that isn't available on these keys.
+    return "caller";
+  }
+  if (error.failure === "rejected" && error.usedUserKey) return "caller";
+  return "transient";
+}
+
+/** Whether `ref` is a model anyone can get without picking it. */
+function isDefaultNarrationModel(ref: ModelRef): boolean {
+  const id = formatModelRef(ref.provider, ref.model);
+  const configured = process.env.NARRATION_MODEL;
+  return (
+    Object.values(DEFAULT_NARRATION_MODELS).includes(id) ||
+    (!!configured && normalizeModelRef(configured) === id)
+  );
+}
+
+/**
+ * Whose narration a `narration_content` row holds: null for everyone's (a
+ * default model, on whichever key), else the user who picked the model.
+ */
+export type NarrationCacheOwner = { userId: string; model: string } | null;
+
+/** The {@link NarrationCacheOwner} of `userId`'s narration with `ref`. */
+export function narrationCacheOwner(ref: ModelRef, userId: string): NarrationCacheOwner {
+  return isDefaultNarrationModel(ref)
+    ? null
+    : { userId, model: formatModelRef(ref.provider, ref.model) };
+}
+
+/**
+ * The `narration_content.content_hash` for narrating `sourceContent`: the
+ * narration format (a stored paragraph map only means anything against the
+ * numbering that produced it, so a bump misses rather than mis-highlights)
+ * and the exact content, plus the owner when it isn't everyone's. All in the
+ * key rather than in columns, so the release that wrote a row and the one
+ * reading it can never disagree: a rollback looks somewhere else instead of
+ * overwriting a row it would misread. A model
+ * someone picked writes what that user's model says, so its output must never
+ * be served to, or overwrite, anyone else's. The owner goes before the
+ * feed-controlled content behind a separator the shared form never has right
+ * after the version (a space, not a newline), so no content can collide with
+ * an owned slot.
+ */
+export function narrationContentHash(sourceContent: string, owner: NarrationCacheOwner): string {
+  const header = owner
+    ? `${NARRATION_FORMAT_VERSION} ${JSON.stringify([owner.userId, owner.model])}`
+    : `${NARRATION_FORMAT_VERSION}`;
+  return createHash("sha256").update(`${header}\n${sourceContent}`, "utf8").digest("hex");
+}
+
+/**
+ * The narration in the model's raw JSON answer, or null if there's none to
+ * use (empty, not JSON, or not shaped like the request). Each input paragraph
+ * takes the model's rewrite of its id, or keeps its own text if the model
+ * left that id out; a rewrite of `""` drops the paragraph (the model judged
+ * it junk), leaving it no narration paragraph and no map entry.
+ * `buildAlignedNarration` keeps the map aligned to the player's paragraph
+ * split even if a rewrite contains blank-line breaks.
+ */
+export function narrationFromLlmOutput(
+  inputParagraphs: NarrationInputParagraph[],
+  rawOutput: string
+): GenerateNarrationResult | null {
+  if (!rawOutput) return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(rawOutput);
+  } catch {
+    return null;
+  }
+  const parsed = llmOutputSchema.safeParse(json);
+  if (!parsed.success) return null;
+
+  const llmTextMap = new Map<number, string>();
+  for (const p of parsed.data.paragraphs) {
+    if (!isNaN(p.id)) {
+      llmTextMap.set(p.id, p.text);
+    }
+  }
+  const { narrationText, paragraphMap } = buildAlignedNarration(
+    inputParagraphs.map((inputPara) => ({
+      o: inputPara.o,
+      text: llmTextMap.get(inputPara.id) ?? inputPara.text,
+    }))
+  );
+  return { text: narrationText, source: "llm", paragraphMap };
 }
 
 /**
@@ -200,9 +334,12 @@ export async function generateNarration(
   options?: {
     keys?: AiProviderKeys;
     userModel?: string | null;
+    /** The model already resolved from `userModel` (see `getNarrationModelRef`). */
+    modelRef?: ModelRef;
   }
 ): Promise<GenerateNarrationResult> {
-  const modelRef = await getNarrationModelRef(options?.userModel, options?.keys);
+  const modelRef =
+    options?.modelRef ?? (await getNarrationModelRef(options?.userModel, options?.keys));
 
   // Convert HTML to structured paragraphs
   const { paragraphs: inputParagraphs } = htmlToNarrationInput(htmlContent);
@@ -237,56 +374,21 @@ export async function generateNarration(
       maxTokens: 16000,
     });
 
-    if (!rawOutput) {
-      logger.warn("Narration LLM returned empty response, using fallback", {
-        provider: modelRef.provider,
-      });
-      trackNarrationHighlightFallback();
-      return buildFallbackNarration(inputParagraphs);
-    }
+    const narration = narrationFromLlmOutput(inputParagraphs, rawOutput);
+    if (narration) return narration;
 
-    // Parse and validate JSON output
-    let llmOutput: LLMOutput;
-    try {
-      const parsed = JSON.parse(rawOutput);
-      llmOutput = llmOutputSchema.parse(parsed);
-    } catch (parseError) {
-      logger.warn("Failed to parse or validate LLM JSON output, using fallback", {
-        error: parseError instanceof Error ? parseError.message : String(parseError),
-        rawOutput: rawOutput.substring(0, 200), // Log first 200 chars for debugging
-      });
-      trackNarrationHighlightFallback();
-      return buildFallbackNarration(inputParagraphs);
-    }
-
-    // Build a Map from LLM output: id → text
-    const llmTextMap = new Map<number, string>();
-    for (const p of llmOutput.paragraphs) {
-      if (!isNaN(p.id)) {
-        llmTextMap.set(p.id, p.text);
-      }
-    }
-
-    // For each input paragraph, pick the LLM's rewrite (falling back to the
-    // original input text when the LLM omitted that id). An empty string means
-    // the LLM deliberately dropped the paragraph (junk/garbage) — it produces
-    // no narration paragraph and no map entry. `buildAlignedNarration` filters
-    // empties and, crucially, keeps the map aligned to the player's paragraph
-    // split even if a rewrite contains blank-line breaks.
-    const elements = inputParagraphs.map((inputPara) => {
-      const llmText = llmTextMap.get(inputPara.id);
-      return {
-        o: inputPara.o,
-        text: llmText !== undefined ? llmText : inputPara.text,
-      };
+    logger.warn("Narration LLM output was empty or unusable, using fallback", {
+      provider: modelRef.provider,
+      rawOutput: rawOutput.substring(0, 200),
     });
-
-    const { narrationText, paragraphMap } = buildAlignedNarration(elements);
-
+    trackNarrationHighlightFallback();
     return {
-      text: narrationText,
-      source: "llm",
-      paragraphMap,
+      ...buildFallbackNarration(inputParagraphs),
+      failure: {
+        kind: "unusable_output",
+        onCallerTerms:
+          !isDefaultNarrationModel(modelRef) || isOnUserKey(modelRef.provider, options?.keys),
+      },
     };
   } catch (error) {
     // Log the error and re-throw so caller can handle
