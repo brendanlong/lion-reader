@@ -92,8 +92,9 @@ internal class SessionPlayer(private val narrator: Narrator) : ForwardingPlayer(
     override fun seekToPreviousMediaItem() = narrator.skipParagraphs(-1)
 
     override fun getAvailableCommands(): Player.Commands {
-        val previous = narrator.canSkipParagraphs(-1)
-        val next = narrator.canSkipParagraphs(1)
+        val state = narrator.state.value
+        val previous = state?.canSkipBack == true
+        val next = state?.canSkipForward == true
         return super.getAvailableCommands()
             .buildUpon()
             .removeAll(

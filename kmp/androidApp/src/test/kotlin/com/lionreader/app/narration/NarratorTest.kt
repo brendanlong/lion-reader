@@ -185,17 +185,39 @@ class NarratorTest {
         narrator.skipParagraphs(1)
         narrator.skipParagraphs(1)
         assertEquals(2, state?.paragraph)
-        assertFalse(narrator.canSkipParagraphs(1))
+        assertFalse(state!!.canSkipForward)
         narrator.skipParagraphs(1)
         assertEquals(2, state?.paragraph)
+    }
+
+    @Test
+    fun theSkipsFollowTheArticleSuppliedWhilePaused() {
+        narrator.narrate(article("a", "One."))
+        idle()
+        narrator.togglePlaying()
+        // The title is already the article's, so supplying it changes only what can be skipped.
+        narrator.follow("b", "Title b")
+        assertFalse(state!!.canSkipForward)
+        assertFalse(state!!.canSkipBack)
+
+        narrator.supply(article("b", "One.", "Two."))
+
+        assertTrue(state!!.canSkipForward)
+        assertFalse(state!!.canSkipBack)
+        narrator.skipParagraphs(1)
+        assertTrue(state!!.canSkipForward)
+        assertFalse(state!!.canSkipBack)
+        narrator.skipParagraphs(1)
+        assertFalse(state!!.canSkipForward)
+        assertTrue(state!!.canSkipBack)
     }
 
     @Test
     fun skippingPastEitherEndDoesNothing() {
         narrator.narrate(article("a", "One.", "", "Three."))
         idle()
-        assertFalse(narrator.canSkipParagraphs(-1))
-        assertTrue(narrator.canSkipParagraphs(1))
+        assertFalse(state!!.canSkipBack)
+        assertTrue(state!!.canSkipForward)
         val playing = narrator.player.currentMediaItem
         narrator.skipParagraphs(-1)
         idle()
@@ -207,7 +229,7 @@ class NarratorTest {
         narrator.skipParagraphs(1)
         idle()
         assertEquals(2, state?.paragraph)
-        assertFalse(narrator.canSkipParagraphs(1))
+        assertFalse(state!!.canSkipForward)
         narrator.skipParagraphs(1)
         idle()
         assertEquals(2, state?.paragraph)
