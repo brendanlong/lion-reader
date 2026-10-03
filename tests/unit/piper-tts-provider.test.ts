@@ -32,6 +32,10 @@ import {
   VoiceNotDownloadedError,
 } from "../../src/lib/narration/piper-tts-provider";
 import * as piperTTS from "@mintplex-labs/piper-tts-web";
+import { ENHANCED_VOICES } from "../../src/lib/narration/enhanced-voices";
+
+/** Any voice in the catalog; the provider refuses ids that aren't. */
+const VOICE_ID = ENHANCED_VOICES[0].id;
 
 describe("PiperTTSProvider", () => {
   let provider: PiperTTSProvider;
@@ -83,11 +87,11 @@ describe("PiperTTSProvider", () => {
 
   describe("getStoredVoiceIds", () => {
     it("returns stored voice IDs", async () => {
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium", "en_GB-alba-medium"]);
+      vi.mocked(piperTTS.stored).mockResolvedValue([VOICE_ID, "en_GB-alba-medium"]);
 
       const voiceIds = await provider.getStoredVoiceIds();
 
-      expect(voiceIds).toEqual(["en_US-lessac-medium", "en_GB-alba-medium"]);
+      expect(voiceIds).toEqual([VOICE_ID, "en_GB-alba-medium"]);
     });
 
     it("returns empty array on error", async () => {
@@ -103,9 +107,9 @@ describe("PiperTTSProvider", () => {
     it("downloads a known voice", async () => {
       vi.mocked(piperTTS.download).mockResolvedValue(undefined);
 
-      await provider.downloadVoice("en_US-lessac-medium");
+      await provider.downloadVoice(VOICE_ID);
 
-      expect(piperTTS.download).toHaveBeenCalledWith("en_US-lessac-medium", expect.any(Function));
+      expect(piperTTS.download).toHaveBeenCalledWith(VOICE_ID, expect.any(Function));
     });
 
     it("calls progress callback", async () => {
@@ -115,7 +119,7 @@ describe("PiperTTSProvider", () => {
       });
 
       const onProgress = vi.fn();
-      await provider.downloadVoice("en_US-lessac-medium", onProgress);
+      await provider.downloadVoice(VOICE_ID, onProgress);
 
       expect(onProgress).toHaveBeenCalledWith(0.5);
       expect(onProgress).toHaveBeenCalledWith(1);
@@ -132,18 +136,18 @@ describe("PiperTTSProvider", () => {
     it("removes a voice from storage", async () => {
       vi.mocked(piperTTS.remove).mockResolvedValue(undefined);
 
-      await provider.removeVoice("en_US-lessac-medium");
+      await provider.removeVoice(VOICE_ID);
 
-      expect(piperTTS.remove).toHaveBeenCalledWith("en_US-lessac-medium");
+      expect(piperTTS.remove).toHaveBeenCalledWith(VOICE_ID);
     });
   });
 
   describe("synthesize", () => {
     it("rejects when not available", async () => {
       vi.stubGlobal("window", undefined);
-      await expect(
-        new PiperTTSProvider().synthesize("Hello", "en_US-lessac-medium")
-      ).rejects.toThrow("not available");
+      await expect(new PiperTTSProvider().synthesize("Hello", VOICE_ID)).rejects.toThrow(
+        "not available"
+      );
     });
 
     it("rejects an unknown voice", async () => {
@@ -154,19 +158,19 @@ describe("PiperTTSProvider", () => {
 
     it("rejects a voice that isn't downloaded", async () => {
       vi.mocked(piperTTS.stored).mockResolvedValue([]);
-      await expect(provider.synthesize("Hello", "en_US-lessac-medium")).rejects.toBeInstanceOf(
+      await expect(provider.synthesize("Hello", VOICE_ID)).rejects.toBeInstanceOf(
         VoiceNotDownloadedError
       );
     });
 
     it("returns Piper's WAV clip for a downloaded voice", async () => {
-      vi.mocked(piperTTS.stored).mockResolvedValue(["en_US-lessac-medium"]);
+      vi.mocked(piperTTS.stored).mockResolvedValue([VOICE_ID]);
       const wav = new Blob([new Uint8Array(1000)], { type: "audio/wav" });
       mockPredict.mockResolvedValue(wav);
 
-      expect(await provider.synthesize("Hello", "en_US-lessac-medium")).toBe(wav);
+      expect(await provider.synthesize("Hello", VOICE_ID)).toBe(wav);
       expect(piperTTS.TtsSession.create).toHaveBeenCalledWith({
-        voiceId: "en_US-lessac-medium",
+        voiceId: VOICE_ID,
         // Absolute: ONNX Runtime import()s it from CDN-hosted chunks, where a
         // root-relative path can't resolve.
         wasmPaths: expect.objectContaining({ onnxWasm: "https://lionreader.test/onnx/" }),
@@ -178,11 +182,11 @@ describe("PiperTTSProvider", () => {
 
 describe("VoiceNotDownloadedError", () => {
   it("has correct name and message", () => {
-    const error = new VoiceNotDownloadedError("en_US-lessac-medium");
+    const error = new VoiceNotDownloadedError(VOICE_ID);
 
     expect(error.name).toBe("VoiceNotDownloadedError");
-    expect(error.voiceId).toBe("en_US-lessac-medium");
-    expect(error.message).toContain("en_US-lessac-medium");
+    expect(error.voiceId).toBe(VOICE_ID);
+    expect(error.message).toContain(VOICE_ID);
     expect(error.message).toContain("not downloaded");
   });
 });

@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { ALL_FORMATS, BufferSource, Input } from "mediabunny";
-import { ClipEdges, encodeSpeech, pcmFromWav, pcmOrWav } from "@/server/services/speech-encoding";
+import {
+  ClipEdges,
+  encodeSpeech,
+  MAX_SECONDS,
+  pcmFromWav,
+  pcmOrWav,
+} from "@/server/services/speech-encoding";
 
 function streamOf(...chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -207,11 +213,12 @@ describe("encodeSpeech", () => {
   });
 
   it("cuts off a provider that sends far too much", async () => {
-    // 15 minutes' worth at 8 kHz, in one-minute pieces, then one more.
+    // The longest allowed at 8 kHz, in one-minute pieces, then one more.
     const minute = new Uint8Array(8_000 * 2 * 60);
+    const pieces = Math.ceil(MAX_SECONDS / 60) + 1;
     const data = new ReadableStream<Uint8Array>({
       start(controller) {
-        for (let i = 0; i < 16; i++) controller.enqueue(minute);
+        for (let i = 0; i < pieces; i++) controller.enqueue(minute);
         controller.close();
       },
     });

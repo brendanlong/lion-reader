@@ -528,7 +528,7 @@ export async function streamSpeech(
 
 /** How long a busy provider is asked again before the client is told to come back later. */
 const BUSY_RETRY_MS = 15_000;
-const BUSY_FIRST_WAIT_MS = 500;
+export const BUSY_FIRST_WAIT_MS = 500;
 const BUSY_MAX_WAIT_MS = 5_000;
 
 /**

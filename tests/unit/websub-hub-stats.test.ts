@@ -19,12 +19,12 @@ function ago(ms: number): Date {
 
 describe("classifyBackupPollEntries", () => {
   it("counts an entry published well before the grace window as a confirmed miss", () => {
-    const result = classifyBackupPollEntries([ago(60 * 60 * 1000)], NOW);
+    const result = classifyBackupPollEntries([ago(4 * WEBSUB_PUSH_GRACE_PERIOD_MS)], NOW);
     expect(result).toEqual({ backupMisses: 1, nearMisses: 0 });
   });
 
   it("counts an entry published within the grace window as a near-miss", () => {
-    const result = classifyBackupPollEntries([ago(60 * 1000)], NOW);
+    const result = classifyBackupPollEntries([ago(WEBSUB_PUSH_GRACE_PERIOD_MS / 2)], NOW);
     expect(result).toEqual({ backupMisses: 0, nearMisses: 1 });
   });
 
@@ -50,7 +50,12 @@ describe("classifyBackupPollEntries", () => {
 
   it("tallies a mixed batch", () => {
     const result = classifyBackupPollEntries(
-      [ago(2 * 60 * 60 * 1000), ago(60 * 1000), null, ago(24 * 60 * 60 * 1000)],
+      [
+        ago(2 * WEBSUB_PUSH_GRACE_PERIOD_MS),
+        ago(WEBSUB_PUSH_GRACE_PERIOD_MS / 2),
+        null,
+        ago(10 * WEBSUB_PUSH_GRACE_PERIOD_MS),
+      ],
       NOW
     );
     expect(result).toEqual({ backupMisses: 2, nearMisses: 2 });
@@ -61,14 +66,18 @@ describe("classifyBackupPollEntries", () => {
   });
 
   it("honors a custom grace period", () => {
-    const oneHour = 60 * 60 * 1000;
-    // Published 30 min ago: a miss under the default 15-min grace, a near-miss
-    // under a 1-hour grace.
-    expect(classifyBackupPollEntries([ago(30 * 60 * 1000)], NOW)).toEqual({
+    // A miss under the default grace, a near-miss under a longer one.
+    expect(classifyBackupPollEntries([ago(2 * WEBSUB_PUSH_GRACE_PERIOD_MS)], NOW)).toEqual({
       backupMisses: 1,
       nearMisses: 0,
     });
-    expect(classifyBackupPollEntries([ago(30 * 60 * 1000)], NOW, oneHour)).toEqual({
+    expect(
+      classifyBackupPollEntries(
+        [ago(2 * WEBSUB_PUSH_GRACE_PERIOD_MS)],
+        NOW,
+        4 * WEBSUB_PUSH_GRACE_PERIOD_MS
+      )
+    ).toEqual({
       backupMisses: 0,
       nearMisses: 1,
     });

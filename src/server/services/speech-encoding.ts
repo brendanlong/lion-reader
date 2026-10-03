@@ -24,7 +24,7 @@ export interface PcmStream {
 /** Plenty for mono speech. */
 const BITRATE = 48_000;
 /** Longest audio one chunk may be: ~15 minutes, where a 1000-character chunk is about one. */
-const MAX_SECONDS = 15 * 60;
+export const MAX_SECONDS = 15 * 60;
 
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   const joined = new Uint8Array(a.length + b.length);

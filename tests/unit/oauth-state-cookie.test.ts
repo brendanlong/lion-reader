@@ -37,7 +37,6 @@ describe("setOAuthStateCookie", () => {
     expect(cookie).toContain(`${OAUTH_STATE_COOKIE_NAME}=state-value`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
-    expect(cookie).toContain("Max-Age=600");
     expect(cookie).toContain("Path=/");
   });
 

@@ -28,7 +28,7 @@ export function formatDate(date: Date, timeZone?: string): string {
 /**
  * Swipe gesture configuration constants.
  */
-const SWIPE_CONFIG = {
+export const SWIPE_CONFIG = {
   /** Minimum horizontal distance for swipe */
   SWIPE_THRESHOLD: 50,
   /** Maximum ratio of vertical to horizontal movement (0.5 = require 2:1 horizontal-to-vertical) */
@@ -61,7 +61,7 @@ export function detectSwipeDirection(
  * nav). Covers the system zones on both platforms: ~20pt on iOS, 24-32dp on
  * Android.
  */
-const EDGE_GESTURE_ZONE_PX = 32;
+export const EDGE_GESTURE_ZONE_PX = 32;
 
 /**
  * Convert a touch's layout-viewport clientX into its physical distance (screen

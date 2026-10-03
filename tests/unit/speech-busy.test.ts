@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { speakWhenFree } from "@/server/services/speech";
+import { BUSY_FIRST_WAIT_MS, speakWhenFree } from "@/server/services/speech";
 import {
   classifyProviderError,
   classifyProviderStatus,
@@ -55,10 +55,12 @@ describe("speakWhenFree", () => {
           throw unreachable;
         },
         signal(),
-        1_000
+        2 * BUSY_FIRST_WAIT_MS
       )
     ).rejects.toBe(unreachable);
-    expect(calls).toBeLessThanOrEqual(3);
+    // The first wait (jittered, at most 1.2x) fits in the budget; the doubled
+    // second one (at least 0.8x of twice that) doesn't.
+    expect(calls).toBe(2);
   });
 
   it("doesn't retry other failures, and stops when the client goes away", async () => {

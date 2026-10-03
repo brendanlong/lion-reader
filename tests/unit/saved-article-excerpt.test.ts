@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { SUMMARY_MAX_LENGTH } from "@/server/html/strip-html";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 
 describe("computeSavedArticleExcerpt", () => {
@@ -29,7 +30,7 @@ describe("computeSavedArticleExcerpt", () => {
   });
 
   it("clips a long caller-provided excerpt to the summary length at a word boundary", () => {
-    const longSummary = "Reward hacking ".repeat(40).trim(); // > 300 chars
+    const longSummary = "Reward hacking ".repeat(SUMMARY_MAX_LENGTH).trim();
     const excerpt = computeSavedArticleExcerpt({
       providedExcerpt: longSummary,
       preCleanedContent: null,
@@ -38,7 +39,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
     expect(excerpt!.endsWith("...")).toBe(true);
   });
 
@@ -54,7 +55,7 @@ describe("computeSavedArticleExcerpt", () => {
   });
 
   it("clips a long plugin excerpt to the summary length at a word boundary", () => {
-    const longAbstract = "Reward hacking ".repeat(40).trim(); // > 300 chars
+    const longAbstract = "Reward hacking ".repeat(SUMMARY_MAX_LENGTH).trim();
     const excerpt = computeSavedArticleExcerpt({
       preCleanedContent: null,
       cleaned: null,
@@ -62,7 +63,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
     expect(excerpt!.endsWith("...")).toBe(true);
     expect(excerpt!).not.toContain("Reward hackin…"); // no mid-word cut
   });
@@ -81,7 +82,7 @@ describe("computeSavedArticleExcerpt", () => {
     // `processMarkdown` copies frontmatter `description:` verbatim, so an
     // uploaded file can carry a multi-kilobyte one; it must not become a
     // multi-kilobyte entries.summary.
-    const longDescription = "Frontmatter description ".repeat(40).trim(); // > 300 chars
+    const longDescription = "Frontmatter description ".repeat(SUMMARY_MAX_LENGTH).trim();
     const excerpt = computeSavedArticleExcerpt({
       preCleanedContent: { summary: longDescription },
       cleaned: null,
@@ -89,7 +90,7 @@ describe("computeSavedArticleExcerpt", () => {
       html: "<p>Raw</p>",
     });
     expect(excerpt).not.toBeNull();
-    expect(excerpt!.length).toBeLessThanOrEqual(303); // 300 + "..."
+    expect(excerpt!.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
     expect(excerpt!.endsWith("...")).toBe(true);
     expect(excerpt!.startsWith("Frontmatter description")).toBe(true);
   });

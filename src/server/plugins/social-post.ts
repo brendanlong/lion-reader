@@ -12,14 +12,14 @@ import { escapeHtml } from "@/server/http/html";
  * it only has to identify the post in a list, and a post whose first line is a
  * whole paragraph would otherwise fill the heading with body text.
  */
-const MAX_TITLE_LENGTH = 60;
+export const MAX_TITLE_LENGTH = 60;
 
 /**
  * Shortest an elided title may be after backing up to a word boundary. Below
  * this we cut mid-word instead, so a single very long opening word (a URL, a
  * German compound) can't collapse the title to a couple of characters.
  */
-const MIN_ELIDED_TITLE_LENGTH = 40;
+export const MIN_ELIDED_TITLE_LENGTH = 40;
 
 /**
  * Build a saved-article title from a post's opening words, falling back to

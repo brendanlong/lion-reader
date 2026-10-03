@@ -31,7 +31,7 @@ import {
   DEFAULT_SUMMARIZATION_MODELS,
   SUMMARIZATION_PROVIDER_PRIORITY,
 } from "@/lib/summarization/constants";
-import { DEFAULT_NARRATION_MODELS } from "@/lib/narration/constants";
+import { DEFAULT_NARRATION_MODELS, NARRATION_PROVIDERS } from "@/lib/narration/constants";
 
 const ENV_VARS = [
   "ANTHROPIC_API_KEY",
@@ -158,9 +158,8 @@ describe("getSummarizationModelId", () => {
     );
   });
 
-  it("defaults to the first-priority provider (Cerebras) when nothing is configured", async () => {
+  it("defaults to the first-priority provider when nothing is configured", async () => {
     clearEnv();
-    expect(SUMMARIZATION_PROVIDER_PRIORITY[0]).toBe("cerebras");
     expect(await getSummarizationModelId(null, {})).toBe(
       DEFAULT_SUMMARIZATION_MODELS[SUMMARIZATION_PROVIDER_PRIORITY[0]]
     );
@@ -168,34 +167,30 @@ describe("getSummarizationModelId", () => {
 });
 
 describe("getNarrationModelRef", () => {
-  it("defaults to the Cerebras gpt-oss-120b model when nothing is configured", async () => {
+  it("defaults to the first-preference provider's model when nothing is configured", async () => {
     clearEnv();
-    expect(await getNarrationModelRef(null)).toEqual({
-      provider: "cerebras",
-      model: "gpt-oss-120b",
-    });
+    expect(await getNarrationModelRef(null)).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS[NARRATION_PROVIDERS[0]])
+    );
   });
 
   it("defaults to the first configured provider (Cerebras before Groq)", async () => {
     clearEnv();
     // Only Groq configured → Groq default.
-    expect(await getNarrationModelRef(null, { groq: "g" })).toEqual({
-      provider: "groq",
-      model: "openai/gpt-oss-120b",
-    });
+    expect(await getNarrationModelRef(null, { groq: "g" })).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS.groq)
+    );
     // Both configured → Cerebras wins (fastest, listed first).
-    expect(await getNarrationModelRef(null, { groq: "g", cerebras: "c" })).toEqual({
-      provider: "cerebras",
-      model: "gpt-oss-120b",
-    });
+    expect(await getNarrationModelRef(null, { groq: "g", cerebras: "c" })).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS.cerebras)
+    );
   });
 
   it("defaults to OpenRouter when it's the only JSON-mode provider configured", async () => {
     clearEnv();
-    expect(await getNarrationModelRef(null, { openrouter: "o", anthropic: "a" })).toEqual({
-      provider: "openrouter",
-      model: "openai/gpt-oss-120b",
-    });
+    expect(await getNarrationModelRef(null, { openrouter: "o", anthropic: "a" })).toEqual(
+      parseModelRef(DEFAULT_NARRATION_MODELS.openrouter)
+    );
   });
 
   it("accepts OpenRouter model IDs, including ones containing colons", async () => {

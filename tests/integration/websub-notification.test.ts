@@ -29,6 +29,7 @@ import {
   MAX_RUNNING_FULL_CONTENT_JOBS,
 } from "../../src/server/jobs/queue";
 import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
+import { MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../../src/server/services/full-content";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 const HUB_URL = "https://hub.example.com/";
@@ -338,7 +339,10 @@ describe("ingestWebsubNotification", () => {
       fetchFullContent: true,
     });
 
-    await ingestWebsubNotification(busy.feed, multiPushBody("busy", 12, new Date(now - 60 * 1000)));
+    await ingestWebsubNotification(
+      busy.feed,
+      multiPushBody("busy", MAX_FULL_CONTENT_ENTRIES_PER_BATCH + 2, new Date(now - 60 * 1000))
+    );
     await ingestWebsubNotification(
       quiet.feed,
       pushBody("quiet-1", "Quiet", new Date(now - 60 * 1000), `${articleBaseUrl}/post/quiet-1`)
@@ -348,8 +352,11 @@ describe("ingestWebsubNotification", () => {
     const firstPayload = getJobPayload<"fetch_full_content">(first!);
     expect(firstPayload.feedId).toBe(busy.feed.id);
     const result = await handleFetchFullContent(firstPayload, 0);
-    expect(result.metadata).toMatchObject({ fullContentFetched: 10, requeuedEntries: 2 });
-    expect(articleRequests).toHaveLength(10);
+    expect(result.metadata).toMatchObject({
+      fullContentFetched: MAX_FULL_CONTENT_ENTRIES_PER_BATCH,
+      requeuedEntries: 2,
+    });
+    expect(articleRequests).toHaveLength(MAX_FULL_CONTENT_ENTRIES_PER_BATCH);
 
     // The busy feed's remainder waits behind the quiet feed's job.
     const second = await claimFullContentJob();
@@ -361,7 +368,7 @@ describe("ingestWebsubNotification", () => {
       fullContentFetched: 0,
       fullContentFailed: 0,
     });
-    expect(articleRequests).toHaveLength(10);
+    expect(articleRequests).toHaveLength(MAX_FULL_CONTENT_ENTRIES_PER_BATCH);
     const remainder = (await queuedFullContentJobs()).filter(
       (j) => getJobPayload<"fetch_full_content">(j).pending
     );

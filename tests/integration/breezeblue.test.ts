@@ -16,6 +16,7 @@ import {
   streamSpeech,
 } from "../../src/server/services/speech";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
+import { RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
 import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route";
 import { createSession } from "../../src/server/auth/session";
 import { db } from "../../src/server/db";
@@ -267,14 +268,15 @@ describe("BreezeBlue voices", () => {
   it("rate-limits one user's lookups", async () => {
     const key = randomUUID();
     const userId = randomUUID();
-    const voices = Array.from({ length: 15 }, () => `library-${randomUUID()}`);
+    const { capacity } = RATE_LIMIT_CONFIGS.voiceLookup;
+    const voices = Array.from({ length: capacity + 5 }, () => `library-${randomUUID()}`);
     for (const voice of voices) {
       await listSpeechModels(
         { breezeblue: key },
         { model: "breezeblue:breeze-tts-2", voice, userId }
       );
     }
-    expect(voices.filter((voice) => lookupsOf(voice) > 0)).toHaveLength(10);
+    expect(voices.filter((voice) => lookupsOf(voice) > 0)).toHaveLength(capacity);
 
     // Another user's lookup isn't held up by the first one's.
     const other = `library-${randomUUID()}`;

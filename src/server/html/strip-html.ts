@@ -174,17 +174,20 @@ export function stripHtml(html: string, maxLength?: number): string {
   return trimmed.slice(0, truncateAt) + "...";
 }
 
+/** Longest summary (entry preview text) we generate, in characters. */
+export const SUMMARY_MAX_LENGTH = 300;
+
 /**
  * Generates a summary from HTML content.
  *
  * Extracts text with proper spacing between block elements and truncates
- * to 300 characters at a word boundary.
+ * to {@link SUMMARY_MAX_LENGTH} characters at a word boundary.
  *
  * @param html - The HTML content to summarize
- * @returns Summary string (max 300 chars)
+ * @returns Summary string (at most SUMMARY_MAX_LENGTH chars)
  */
 export function generateSummary(html: string): string {
-  return stripHtml(html, 300);
+  return stripHtml(html, SUMMARY_MAX_LENGTH);
 }
 
 /**
@@ -229,7 +232,7 @@ export function truncateText(text: string, maxLength: number): string {
  */
 export function summarizeCleanedContent(
   cleaned: { excerpt: string; textContent: string },
-  maxLength = 300
+  maxLength = SUMMARY_MAX_LENGTH
 ): string {
   if (cleaned.excerpt && cleaned.excerpt.length >= 50) {
     return truncateText(cleaned.excerpt, maxLength);

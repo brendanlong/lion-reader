@@ -14,11 +14,9 @@ import {
 describe("findEnhancedVoice", () => {
   describe("finding existing voices", () => {
     it("finds a voice by its exact ID", () => {
-      const voice = findEnhancedVoice("en_US-lessac-medium");
-
-      expect(voice).toBeDefined();
-      expect(voice?.id).toBe("en_US-lessac-medium");
-      expect(voice?.displayName).toBe("Alex (US)");
+      for (const expected of ENHANCED_VOICES) {
+        expect(findEnhancedVoice(expected.id)).toBe(expected);
+      }
     });
   });
 

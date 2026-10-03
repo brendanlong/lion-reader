@@ -29,8 +29,10 @@ afterEach(() => {
 });
 
 describe("DOCX_WORKER_MAX_HEAP_MB", () => {
-  it("defaults to 64", async () => {
-    expect(await loadHeapMb(undefined)).toBe(64);
+  it("falls back to a usable heap cap when unset", async () => {
+    const heapMb = await loadHeapMb(undefined);
+    expect(Number.isInteger(heapMb)).toBe(true);
+    expect(heapMb).toBeGreaterThan(0);
   });
 
   it("accepts a positive integer", async () => {

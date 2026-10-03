@@ -10,6 +10,7 @@ import {
   decideAppendFailure,
   decideSynthesisFailure,
   lastWantedChunk,
+  MAX_STREAM_RETRIES,
   nextParagraphChunk,
   paragraphChunk,
   previousParagraphChunk,
@@ -37,21 +38,18 @@ describe("decideSynthesisFailure", () => {
     });
   });
 
-  it.each([
-    { streamRetries: 0, expected: { type: "resynthesize", streamRetries: 1 } },
-    { streamRetries: 1, expected: { type: "resynthesize", streamRetries: 2 } },
-  ])("synthesizes a dropped stream again ($streamRetries retries so far)", (row) => {
-    expect(
-      decideSynthesisFailure(new StreamInterruptedError(), {
-        ...fresh,
-        streamRetries: row.streamRetries,
-      })
-    ).toEqual(row.expected);
-  });
+  it.each(Array.from({ length: MAX_STREAM_RETRIES }, (_, streamRetries) => ({ streamRetries })))(
+    "synthesizes a dropped stream again ($streamRetries retries so far)",
+    ({ streamRetries }) => {
+      expect(
+        decideSynthesisFailure(new StreamInterruptedError(), { ...fresh, streamRetries })
+      ).toEqual({ type: "resynthesize", streamRetries: streamRetries + 1 });
+    }
+  );
 
   it("gives up on a stream that keeps dropping", () => {
     const error = new StreamInterruptedError();
-    expect(decideSynthesisFailure(error, { ...fresh, streamRetries: 2 })).toEqual({
+    expect(decideSynthesisFailure(error, { ...fresh, streamRetries: MAX_STREAM_RETRIES })).toEqual({
       type: "give-up",
       error,
     });

@@ -1,7 +1,9 @@
-import { generateSummary, summarizeCleanedContent, truncateText } from "@/server/html/strip-html";
-
-/** Max length of a saved-article excerpt, matching {@link generateSummary}. */
-const MAX_EXCERPT_LENGTH = 300;
+import {
+  generateSummary,
+  SUMMARY_MAX_LENGTH,
+  summarizeCleanedContent,
+  truncateText,
+} from "@/server/html/strip-html";
 
 /**
  * Choose the plain-text excerpt for a saved article.
@@ -46,17 +48,17 @@ export function computeSavedArticleExcerpt(params: {
 
   if (providedExcerpt) {
     // Explicit caller override: authoritative, just clip it.
-    return truncateText(providedExcerpt, MAX_EXCERPT_LENGTH) || null;
+    return truncateText(providedExcerpt, SUMMARY_MAX_LENGTH) || null;
   }
   if (pluginContent?.excerpt) {
     // Explicit plugin excerpt (arXiv abstract): authoritative, just clip it.
-    return truncateText(pluginContent.excerpt, MAX_EXCERPT_LENGTH) || null;
+    return truncateText(pluginContent.excerpt, SUMMARY_MAX_LENGTH) || null;
   }
   if (preCleanedContent?.summary) {
     // Use the summary from the source metadata (frontmatter / docx description).
     // It's plain text and copied verbatim from the source, so it's just clipped
     // — an uploaded file's `description:` is arbitrarily long.
-    return truncateText(preCleanedContent.summary, MAX_EXCERPT_LENGTH) || null;
+    return truncateText(preCleanedContent.summary, SUMMARY_MAX_LENGTH) || null;
   }
   if (cleaned) {
     return summarizeCleanedContent(cleaned) || null;

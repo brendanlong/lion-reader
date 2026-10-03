@@ -5,7 +5,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { socialPostTitle } from "@/server/plugins/social-post";
+import {
+  MAX_TITLE_LENGTH,
+  MIN_ELIDED_TITLE_LENGTH,
+  socialPostTitle,
+} from "@/server/plugins/social-post";
 
 describe("socialPostTitle", () => {
   it("uses the first line of the text", () => {
@@ -16,74 +20,82 @@ describe("socialPostTitle", () => {
     expect(socialPostTitle("  padded  \nmore", "Sen")).toBe("padded");
   });
 
-  // The cap is asserted numerically only here — the per-plugin tests check that
-  // they route through this helper, not what the number is.
+  // The cap and floor are asserted only here — the per-plugin tests check that
+  // they route through this helper, not what the numbers are.
   it("keeps a line of exactly the maximum length intact, and elides past it", () => {
-    expect(socialPostTitle("x".repeat(60), "Sen")).toBe("x".repeat(60));
-    expect(socialPostTitle("x".repeat(61), "Sen")).toBe(`${"x".repeat(59)}…`);
+    expect(socialPostTitle("x".repeat(MAX_TITLE_LENGTH), "Sen")).toBe("x".repeat(MAX_TITLE_LENGTH));
+    expect(socialPostTitle("x".repeat(MAX_TITLE_LENGTH + 1), "Sen")).toBe(
+      `${"x".repeat(MAX_TITLE_LENGTH - 1)}…`
+    );
   });
 
   it("elides by code point so it never splits a surrogate pair", () => {
-    // 150 astral-plane code points: a UTF-16 slice would cut an emoji in half.
-    const title = socialPostTitle("😀".repeat(150), "Sen");
-    expect([...title]).toHaveLength(60);
+    // Astral-plane code points: a UTF-16 slice would cut an emoji in half.
+    const title = socialPostTitle("😀".repeat(MAX_TITLE_LENGTH * 2), "Sen");
+    expect([...title]).toHaveLength(MAX_TITLE_LENGTH);
     expect(title.endsWith("😀…")).toBe(true);
   });
 
   it("drops a trailing partial word rather than cutting mid-word", () => {
-    // The cut lands inside "showing".
-    const text = "Opened up your Barnes & Noble NOOK just to find it's showing the wrong time?";
-    expect(socialPostTitle(text, "Sen")).toBe(
-      "Opened up your Barnes & Noble NOOK just to find it's…"
-    );
+    // The cut lands inside the second word.
+    const first = "a".repeat(MAX_TITLE_LENGTH - 5);
+    expect(socialPostTitle(`${first} ${"b".repeat(10)}`, "Sen")).toBe(`${first}…`);
   });
 
   it("keeps a whole word the cut happens to end on", () => {
     // The dropped character is a space, so nothing is mid-word — backing up
-    // here would discard the complete word "and" for no reason.
-    const text = "Some people are complaining that they are seeing videos and photos on Threads";
-    expect(socialPostTitle(text, "Sen")).toBe(
-      "Some people are complaining that they are seeing videos and…"
-    );
+    // here would discard the complete second word for no reason.
+    const kept = `${"a".repeat(10)} ${"b".repeat(MAX_TITLE_LENGTH - 12)}`;
+    expect([...kept]).toHaveLength(MAX_TITLE_LENGTH - 1);
+    expect(socialPostTitle(`${kept} and more`, "Sen")).toBe(`${kept}…`);
   });
 
   it("never leaves a space before the ellipsis", () => {
-    // The break lands exactly on a space, which would read as "Bob …".
-    const text = "Just outside of Orlando, Florida is the cemetery where Bob Ross is buried";
-    const title = socialPostTitle(text, "Sen");
-    expect(title).toBe("Just outside of Orlando, Florida is the cemetery where Bob…");
+    // The break lands exactly on a space, which would read as "bbb …".
+    const kept = `${"a".repeat(10)} ${"b".repeat(MAX_TITLE_LENGTH - 13)}`;
+    const title = socialPostTitle(`${kept} cccc dddd`, "Sen");
+    expect(title).toBe(`${kept}…`);
     expect(title).not.toContain(" …");
   });
 
   it("cuts mid-word rather than collapse the title when the opening word is huge", () => {
-    // A 200-character first "word" (e.g. a bare URL) has no usable boundary.
-    const title = socialPostTitle(`https://example.com/${"a".repeat(200)} then text`, "Sen");
-    expect([...title]).toHaveLength(60);
+    // A first "word" longer than the cap (e.g. a bare URL) has no usable boundary.
+    const url = `https://example.com/${"a".repeat(MAX_TITLE_LENGTH * 3)}`;
+    const title = socialPostTitle(`${url} then text`, "Sen");
+    expect([...title]).toHaveLength(MAX_TITLE_LENGTH);
     expect(title.endsWith("…")).toBe(true);
   });
 
   // The case above has NO space inside the cap, so the backup is a no-op and the
-  // floor is never the reason for the result. This one has a boundary to back up
-  // over and is rejected *because* of the floor.
+  // floor is never the reason for the result. These have a boundary to back up
+  // over, and the floor decides whether to.
+  it("backs up to a word boundary that leaves exactly the floor", () => {
+    const first = "a".repeat(MIN_ELIDED_TITLE_LENGTH);
+    expect(socialPostTitle(`${first} ${"b".repeat(MAX_TITLE_LENGTH)}`, "Sen")).toBe(`${first}…`);
+  });
+
   it("cuts mid-word when backing up would leave less than the floor", () => {
-    const title = socialPostTitle(`${"a".repeat(30)} ${"b".repeat(60)}`, "Sen");
-    // Backing up to the boundary would leave 30 characters, under the floor, so
+    const first = "a".repeat(MIN_ELIDED_TITLE_LENGTH - 1);
+    const title = socialPostTitle(`${first} ${"b".repeat(MAX_TITLE_LENGTH)}`, "Sen");
+    // Backing up to the boundary would leave one character under the floor, so
     // the mid-word cut is kept and the title stays full length.
-    expect([...title]).toHaveLength(60);
-    expect(title.startsWith("a".repeat(30))).toBe(true);
+    expect([...title]).toHaveLength(MAX_TITLE_LENGTH);
+    expect(title.startsWith(`${first} b`)).toBe(true);
   });
 
   it("measures the floor in code points, not UTF-16 units", () => {
-    // 25 emoji are 25 characters of title but 50 UTF-16 units. Counting units
-    // would clear the 40 floor and collapse the title to 26 characters.
-    const title = socialPostTitle(`${"😀".repeat(25)} ${"b".repeat(60)}`, "Sen");
-    expect([...title]).toHaveLength(60);
+    // Just under the floor in emoji is twice that in UTF-16 units. Counting
+    // units would clear the floor and collapse the title to the emoji.
+    const emoji = "😀".repeat(MIN_ELIDED_TITLE_LENGTH - 1);
+    expect(emoji.length).toBeGreaterThanOrEqual(MIN_ELIDED_TITLE_LENGTH);
+    const title = socialPostTitle(`${emoji} ${"b".repeat(MAX_TITLE_LENGTH)}`, "Sen");
+    expect([...title]).toHaveLength(MAX_TITLE_LENGTH);
     expect(title).toContain("b");
   });
 
   it("collapses whitespace runs so they can't eat the title", () => {
     // A long run of spaces inside the cap would otherwise leave just "a…".
-    expect(socialPostTitle(`a${" ".repeat(70)}b`, "Sen")).toBe("a b");
+    expect(socialPostTitle(`a${" ".repeat(MAX_TITLE_LENGTH + 10)}b`, "Sen")).toBe("a b");
     // Tabs and hard-wrapped lines collapse the same way.
     expect(socialPostTitle("one\t\ttwo   three", "Sen")).toBe("one two three");
   });

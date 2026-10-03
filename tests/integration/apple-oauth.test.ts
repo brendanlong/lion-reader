@@ -16,6 +16,7 @@ import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
+import { OAUTH_STATE_TTL_SECONDS } from "../../src/server/auth/oauth/state-cookie";
 
 // Default mock Apple user info (embedded in JWT)
 const mockAppleUserSub = "apple-user-123.abc.def";
@@ -260,10 +261,10 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
 
       const { state } = await createAppleAuthUrl();
 
-      // Check TTL is set (should be 600 seconds)
+      // Check TTL is set, so an abandoned flow's state expires
       const ttl = await redis.ttl(`oauth:apple:state:${state}`);
       expect(ttl).toBeGreaterThan(0);
-      expect(ttl).toBeLessThanOrEqual(600);
+      expect(ttl).toBeLessThanOrEqual(OAUTH_STATE_TTL_SECONDS);
     });
 
     it("consumes state on use (one-time use)", async () => {

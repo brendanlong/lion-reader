@@ -2,28 +2,38 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   detectSwipeDirection,
+  EDGE_GESTURE_ZONE_PX,
   getScreenX,
   getViewportEdges,
   isEdgeGestureSwipe,
   isSwipeNavigationAllowed,
+  SWIPE_CONFIG,
   type ViewportEdges,
 } from "@/components/entries/EntryContentHelpers";
 
 describe("detectSwipeDirection", () => {
-  it("detects a leftward swipe past the threshold", () => {
-    expect(detectSwipeDirection({ x: 200, y: 0 }, { x: 100, y: 0 })).toBe("left");
+  const { SWIPE_THRESHOLD } = SWIPE_CONFIG;
+
+  it("detects a leftward swipe at the threshold", () => {
+    expect(detectSwipeDirection({ x: 200, y: 0 }, { x: 200 - SWIPE_THRESHOLD, y: 0 })).toBe("left");
   });
 
-  it("detects a rightward swipe past the threshold", () => {
-    expect(detectSwipeDirection({ x: 100, y: 0 }, { x: 200, y: 0 })).toBe("right");
+  it("detects a rightward swipe at the threshold", () => {
+    expect(detectSwipeDirection({ x: 100, y: 0 }, { x: 100 + SWIPE_THRESHOLD, y: 0 })).toBe(
+      "right"
+    );
   });
 
   it("ignores short horizontal movement below the threshold", () => {
-    expect(detectSwipeDirection({ x: 100, y: 0 }, { x: 120, y: 0 })).toBeNull();
+    expect(
+      detectSwipeDirection({ x: 100, y: 0 }, { x: 100 + SWIPE_THRESHOLD - 1, y: 0 })
+    ).toBeNull();
   });
 
   it("ignores mostly-vertical movement (scrolling)", () => {
-    expect(detectSwipeDirection({ x: 100, y: 0 }, { x: 160, y: 100 })).toBeNull();
+    expect(
+      detectSwipeDirection({ x: 100, y: 0 }, { x: 100 + SWIPE_THRESHOLD, y: SWIPE_THRESHOLD * 2 })
+    ).toBeNull();
   });
 });
 
@@ -32,24 +42,24 @@ describe("isEdgeGestureSwipe", () => {
 
   it("flags a rightward swipe starting against the left screen edge (browser back gesture)", () => {
     expect(isEdgeGestureSwipe("right", 0, WIDTH)).toBe(true);
-    expect(isEdgeGestureSwipe("right", 32, WIDTH)).toBe(true);
+    expect(isEdgeGestureSwipe("right", EDGE_GESTURE_ZONE_PX, WIDTH)).toBe(true);
   });
 
   it("flags a leftward swipe starting against the right screen edge (browser forward gesture)", () => {
     expect(isEdgeGestureSwipe("left", WIDTH, WIDTH)).toBe(true);
-    expect(isEdgeGestureSwipe("left", WIDTH - 32, WIDTH)).toBe(true);
+    expect(isEdgeGestureSwipe("left", WIDTH - EDGE_GESTURE_ZONE_PX, WIDTH)).toBe(true);
   });
 
-  it("allows swipes starting away from the screen edges", () => {
-    expect(isEdgeGestureSwipe("right", 33, WIDTH)).toBe(false);
-    expect(isEdgeGestureSwipe("left", WIDTH - 33, WIDTH)).toBe(false);
+  it("allows swipes starting just outside the edge zones", () => {
+    expect(isEdgeGestureSwipe("right", EDGE_GESTURE_ZONE_PX + 1, WIDTH)).toBe(false);
+    expect(isEdgeGestureSwipe("left", WIDTH - EDGE_GESTURE_ZONE_PX - 1, WIDTH)).toBe(false);
   });
 
   it("allows a swipe moving away from the edge it started against", () => {
     // Leftward swipe from the left edge / rightward from the right edge are
     // not system gestures.
-    expect(isEdgeGestureSwipe("left", 10, WIDTH)).toBe(false);
-    expect(isEdgeGestureSwipe("right", WIDTH - 10, WIDTH)).toBe(false);
+    expect(isEdgeGestureSwipe("left", EDGE_GESTURE_ZONE_PX, WIDTH)).toBe(false);
+    expect(isEdgeGestureSwipe("right", WIDTH - EDGE_GESTURE_ZONE_PX, WIDTH)).toBe(false);
   });
 
   it("never blocks when the viewport width is unknown", () => {

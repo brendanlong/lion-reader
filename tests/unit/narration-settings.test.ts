@@ -18,6 +18,13 @@ import {
   DEFAULT_NARRATION_SETTINGS,
   type NarrationSettings,
 } from "../../src/lib/narration/settings";
+import {
+  MAX_CLOUD_SPEECH_PAUSE_SECONDS,
+  MAX_PITCH,
+  MAX_RATE,
+  MIN_PITCH,
+  MIN_RATE,
+} from "../../src/lib/narration/constants";
 
 describe("loadNarrationSettings", () => {
   beforeEach(() => {
@@ -43,21 +50,21 @@ describe("loadNarrationSettings", () => {
   });
 
   describe("provider validation", () => {
-    it("defaults to browser for invalid provider values", () => {
+    it("falls back to the default for invalid provider values", () => {
       localStorageMock.setItem(
         "lion-reader-narration-settings",
         JSON.stringify({ provider: "invalid-provider" })
       );
 
       const settings = loadNarrationSettings();
-      expect(settings.provider).toBe("browser");
+      expect(settings.provider).toBe(DEFAULT_NARRATION_SETTINGS.provider);
     });
 
-    it("defaults to browser when provider is missing", () => {
+    it("falls back to the default when provider is missing", () => {
       localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ enabled: true }));
 
       const settings = loadNarrationSettings();
-      expect(settings.provider).toBe("browser");
+      expect(settings.provider).toBe(DEFAULT_NARRATION_SETTINGS.provider);
     });
 
     it("accepts piper as valid provider", () => {
@@ -73,47 +80,65 @@ describe("loadNarrationSettings", () => {
 
   describe("rate validation", () => {
     it("clamps rate below minimum to default", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ rate: 0.1 }));
+      localStorageMock.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ rate: MIN_RATE / 2 })
+      );
 
       const settings = loadNarrationSettings();
-      expect(settings.rate).toBe(1.0); // Falls back to default
+      expect(settings.rate).toBe(DEFAULT_NARRATION_SETTINGS.rate);
     });
 
     it("clamps rate above maximum to default", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ rate: 5.0 }));
+      localStorageMock.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ rate: MAX_RATE * 2 })
+      );
 
       const settings = loadNarrationSettings();
-      expect(settings.rate).toBe(1.0); // Falls back to default
+      expect(settings.rate).toBe(DEFAULT_NARRATION_SETTINGS.rate);
     });
 
     it("accepts rate at minimum boundary", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ rate: 0.5 }));
+      localStorageMock.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ rate: MIN_RATE })
+      );
 
       const settings = loadNarrationSettings();
-      expect(settings.rate).toBe(0.5);
+      expect(settings.rate).toBe(MIN_RATE);
     });
 
     it("accepts rate at maximum boundary", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ rate: 2.0 }));
+      localStorageMock.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ rate: MAX_RATE })
+      );
 
       const settings = loadNarrationSettings();
-      expect(settings.rate).toBe(2.0);
+      expect(settings.rate).toBe(MAX_RATE);
     });
   });
 
   describe("pitch validation", () => {
     it("clamps pitch below minimum to default", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ pitch: 0.1 }));
+      localStorageMock.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ pitch: MIN_PITCH / 2 })
+      );
 
       const settings = loadNarrationSettings();
-      expect(settings.pitch).toBe(1.0); // Falls back to default
+      expect(settings.pitch).toBe(DEFAULT_NARRATION_SETTINGS.pitch);
     });
 
     it("clamps pitch above maximum to default", () => {
-      localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ pitch: 5.0 }));
+      localStorageMock.setItem(
+        "lion-reader-narration-settings",
+        JSON.stringify({ pitch: MAX_PITCH * 2 })
+      );
 
       const settings = loadNarrationSettings();
-      expect(settings.pitch).toBe(1.0); // Falls back to default
+      expect(settings.pitch).toBe(DEFAULT_NARRATION_SETTINGS.pitch);
     });
   });
 
@@ -132,9 +157,9 @@ describe("loadNarrationSettings", () => {
       );
 
       const settings = loadNarrationSettings();
-      expect(settings.enabled).toBe(true); // Falls back to default
-      expect(settings.rate).toBe(1.0); // Falls back to default
-      expect(settings.pitch).toBe(1.0); // Falls back to default
+      expect(settings.enabled).toBe(DEFAULT_NARRATION_SETTINGS.enabled);
+      expect(settings.rate).toBe(DEFAULT_NARRATION_SETTINGS.rate);
+      expect(settings.pitch).toBe(DEFAULT_NARRATION_SETTINGS.pitch);
     });
   });
 });
@@ -181,7 +206,7 @@ describe("cloud voice pause", () => {
 
     localStorageMock.setItem(
       "lion-reader-narration-settings",
-      JSON.stringify({ cloudPauseSeconds: 60 })
+      JSON.stringify({ cloudPauseSeconds: MAX_CLOUD_SPEECH_PAUSE_SECONDS + 1 })
     );
     expect(loadNarrationSettings().cloudPauseSeconds).toBe(
       DEFAULT_NARRATION_SETTINGS.cloudPauseSeconds
@@ -205,12 +230,12 @@ describe("highlighting settings", () => {
     expect(settings.highlightEnabled).toBe(false);
   });
 
-  it("defaults highlightEnabled and autoScrollEnabled to true when missing", () => {
+  it("falls back to the default highlightEnabled and autoScrollEnabled when missing", () => {
     localStorageMock.setItem("lion-reader-narration-settings", JSON.stringify({ enabled: true }));
 
     const settings = loadNarrationSettings();
-    expect(settings.highlightEnabled).toBe(true);
-    expect(settings.autoScrollEnabled).toBe(true);
+    expect(settings.highlightEnabled).toBe(DEFAULT_NARRATION_SETTINGS.highlightEnabled);
+    expect(settings.autoScrollEnabled).toBe(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled);
   });
 
   it("handles non-boolean highlightEnabled gracefully", () => {
@@ -220,7 +245,7 @@ describe("highlighting settings", () => {
     );
 
     const settings = loadNarrationSettings();
-    expect(settings.highlightEnabled).toBe(true); // Falls back to default
+    expect(settings.highlightEnabled).toBe(DEFAULT_NARRATION_SETTINGS.highlightEnabled);
   });
 
   it("handles non-boolean autoScrollEnabled gracefully", () => {
@@ -230,6 +255,6 @@ describe("highlighting settings", () => {
     );
 
     const settings = loadNarrationSettings();
-    expect(settings.autoScrollEnabled).toBe(true); // Falls back to default
+    expect(settings.autoScrollEnabled).toBe(DEFAULT_NARRATION_SETTINGS.autoScrollEnabled);
   });
 });

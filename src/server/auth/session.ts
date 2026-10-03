@@ -21,6 +21,7 @@ import { assertEncryptionConfigured, decryptApiKey } from "@/lib/encryption";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
 import { errors } from "@/server/trpc/errors";
+import { SESSION_MAX_AGE_SECONDS } from "@/server/auth/session-cookie";
 
 /**
  * Scopes a session may be restricted to. A scoped session is a fail-closed
@@ -33,11 +34,6 @@ const VALID_SESSION_SCOPES = new Set<string>(Object.values(OAUTH_SCOPES));
 // ============================================================================
 // Constants
 // ============================================================================
-
-/**
- * Session duration in days
- */
-const SESSION_DURATION_DAYS = 30;
 
 /**
  * Redis cache TTL for sessions (5 minutes)
@@ -110,9 +106,7 @@ interface CachedSession {
  * Calculates session expiry date
  */
 function getSessionExpiry(): Date {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + SESSION_DURATION_DAYS);
-  return expiresAt;
+  return new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
 }
 
 // ============================================================================

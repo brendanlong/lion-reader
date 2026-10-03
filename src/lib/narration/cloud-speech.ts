@@ -62,8 +62,8 @@ function isBusyStatus(status: number): boolean {
 }
 
 /** Times a chunk is asked for while busy, before playback pauses there. */
-const BUSY_ATTEMPTS = 3;
-const BUSY_FIRST_WAIT_MS = 1_000;
+export const BUSY_ATTEMPTS = 3;
+export const BUSY_FIRST_WAIT_MS = 1_000;
 const BUSY_MAX_WAIT_MS = 10_000;
 
 /**

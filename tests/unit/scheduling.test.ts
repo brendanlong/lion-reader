@@ -15,7 +15,10 @@ import {
   RATE_LIMIT_MAX_BACKOFF_SECONDS,
   DEFAULT_FETCH_INTERVAL_SECONDS,
   DEFAULT_JITTER_FRACTION,
+  FAILURE_BASE_BACKOFF_SECONDS,
+  MAX_CONSECUTIVE_FAILURES,
   MAX_JITTER_SECONDS,
+  WEBSUB_BACKUP_POLL_INTERVAL_SECONDS,
 } from "../../src/server/feed/scheduling";
 import type { CacheControl } from "../../src/server/feed/cache-headers";
 
@@ -34,6 +37,11 @@ function createCacheControl(overrides: Partial<CacheControl> = {}): CacheControl
  * Use this for deterministic tests that check exact interval values.
  */
 const noJitter = () => 0;
+
+/** `seconds` after `date`. */
+function after(date: Date, seconds: number): Date {
+  return new Date(date.getTime() + seconds * 1000);
+}
 
 describe("syndicationToSeconds", () => {
   it("returns undefined for undefined hints", () => {
@@ -106,21 +114,25 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("cache_control");
     });
 
-    it("clamps max-age below minimum to minimum (10 minutes for cache headers)", () => {
+    it("clamps max-age below minimum to the cache-hint minimum", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 300 }), // 5 minutes
+        cacheControl: createCacheControl({
+          maxAge: MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS / 2,
+        }),
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:10:00Z")); // 10 min later
+      expect(result.nextFetchAt).toEqual(
+        after(fixedNow, MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS)
+      );
       expect(result.intervalSeconds).toBe(MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS);
       expect(result.reason).toBe("cache_control_clamped_min");
     });
 
-    it("clamps max-age at exactly minimum (10 minutes)", () => {
+    it("clamps max-age at exactly minimum", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 600 }), // exactly 10 minutes
+        cacheControl: createCacheControl({ maxAge: MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS }),
         now: fixedNow,
         randomSource: noJitter,
       });
@@ -129,37 +141,38 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("cache_control");
     });
 
-    it("respects max-age between 10 and 60 minutes", () => {
+    it("respects max-age between the cache-hint minimum and the general minimum", () => {
+      const maxAge = (MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS + MIN_FETCH_INTERVAL_SECONDS) / 2;
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 1800 }), // 30 minutes
+        cacheControl: createCacheControl({ maxAge }),
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(1800);
+      expect(result.intervalSeconds).toBe(maxAge);
       expect(result.reason).toBe("cache_control");
     });
 
-    it("clamps max-age above maximum to maximum (7 days)", () => {
+    it("clamps max-age above maximum to maximum", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 86400 * 30 }), // 30 days
+        cacheControl: createCacheControl({ maxAge: MAX_FETCH_INTERVAL_SECONDS * 2 }),
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-22T12:00:00Z")); // 7 days later
+      expect(result.nextFetchAt).toEqual(after(fixedNow, MAX_FETCH_INTERVAL_SECONDS));
       expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
       expect(result.reason).toBe("cache_control_clamped_max");
     });
 
     it("clamps max-age at exactly maximum", () => {
       const result = calculateNextFetch({
-        cacheControl: createCacheControl({ maxAge: 604800 }), // exactly 7 days
+        cacheControl: createCacheControl({ maxAge: MAX_FETCH_INTERVAL_SECONDS }),
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(604800);
+      expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS);
       expect(result.reason).toBe("cache_control");
     });
 
@@ -175,7 +188,7 @@ describe("calculateNextFetch", () => {
       expect(result.reason).toBe("default");
     });
 
-    it("uses max-age=0 as minimum interval (10 minutes)", () => {
+    it("uses max-age=0 as minimum interval", () => {
       const result = calculateNextFetch({
         cacheControl: createCacheControl({ maxAge: 0 }),
         now: fixedNow,
@@ -202,7 +215,7 @@ describe("calculateNextFetch", () => {
 
     it("clamps TTL below minimum", () => {
       const result = calculateNextFetch({
-        feedHints: { ttlMinutes: 15 }, // 15 minutes, below 60 min minimum
+        feedHints: { ttlMinutes: MIN_FETCH_INTERVAL_SECONDS / 60 / 2 },
         now: fixedNow,
         randomSource: noJitter,
       });
@@ -213,7 +226,7 @@ describe("calculateNextFetch", () => {
 
     it("clamps TTL above maximum", () => {
       const result = calculateNextFetch({
-        feedHints: { ttlMinutes: 60 * 24 * 30 }, // 30 days
+        feedHints: { ttlMinutes: (MAX_FETCH_INTERVAL_SECONDS / 60) * 2 },
         now: fixedNow,
         randomSource: noJitter,
       });
@@ -302,13 +315,13 @@ describe("calculateNextFetch", () => {
   });
 
   describe("without any hints", () => {
-    it("uses default interval (60 minutes) when no hints", () => {
+    it("uses default interval when no hints", () => {
       const result = calculateNextFetch({
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T13:00:00Z"));
+      expect(result.nextFetchAt).toEqual(after(fixedNow, DEFAULT_FETCH_INTERVAL_SECONDS));
       expect(result.intervalSeconds).toBe(DEFAULT_FETCH_INTERVAL_SECONDS);
       expect(result.reason).toBe("default");
     });
@@ -326,21 +339,21 @@ describe("calculateNextFetch", () => {
   });
 
   describe("with failures (exponential backoff)", () => {
-    it("uses 30 minute backoff for 1 failure", () => {
+    it("uses the base failure backoff for 1 failure", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 1,
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.nextFetchAt).toEqual(new Date("2024-01-15T12:30:00Z"));
-      expect(result.intervalSeconds).toBe(30 * 60); // 30 minutes
+      expect(result.nextFetchAt).toEqual(after(fixedNow, FAILURE_BASE_BACKOFF_SECONDS));
+      expect(result.intervalSeconds).toBe(FAILURE_BASE_BACKOFF_SECONDS);
       expect(result.reason).toBe("failure_backoff");
     });
 
-    it("caps backoff at 7 days for 10 failures", () => {
+    it("caps backoff at the maximum interval for many failures", () => {
       const result = calculateNextFetch({
-        consecutiveFailures: 10,
+        consecutiveFailures: MAX_CONSECUTIVE_FAILURES,
         now: fixedNow,
         randomSource: noJitter,
       });
@@ -359,7 +372,7 @@ describe("calculateNextFetch", () => {
       });
 
       // Should use failure backoff, not any hints
-      expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours
+      expect(result.intervalSeconds).toBe(calculateFailureBackoff(3));
       expect(result.reason).toBe("failure_backoff");
     });
 
@@ -378,20 +391,20 @@ describe("calculateNextFetch", () => {
 
   describe("with Retry-After", () => {
     it("honors Retry-After as a floor when longer than the backoff", () => {
-      // 1 failure would normally back off 30 minutes; Retry-After asks for 2 hours.
+      const retryAfterSeconds = calculateFailureBackoff(1) * 4;
       const result = calculateNextFetch({
         consecutiveFailures: 1,
-        retryAfterSeconds: 2 * 60 * 60,
+        retryAfterSeconds,
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(2 * 60 * 60);
+      expect(result.intervalSeconds).toBe(retryAfterSeconds);
       expect(result.reason).toBe("failure_backoff");
     });
 
     it("keeps the exponential backoff when it exceeds Retry-After", () => {
-      // 3 failures back off 2 hours; a shorter Retry-After must not shrink it.
+      // A shorter Retry-After must not shrink the backoff.
       const result = calculateNextFetch({
         consecutiveFailures: 3,
         retryAfterSeconds: 60,
@@ -399,14 +412,14 @@ describe("calculateNextFetch", () => {
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(2 * 60 * 60);
+      expect(result.intervalSeconds).toBe(calculateFailureBackoff(3));
       expect(result.reason).toBe("failure_backoff");
     });
 
     it("caps a very large Retry-After at the maximum interval", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 1,
-        retryAfterSeconds: 30 * 24 * 60 * 60, // 30 days
+        retryAfterSeconds: MAX_FETCH_INTERVAL_SECONDS * 2,
         now: fixedNow,
         randomSource: noJitter,
       });
@@ -430,11 +443,11 @@ describe("calculateNextFetch", () => {
   });
 
   describe("with rate-limited failures", () => {
-    it("caps rate-limited backoff at 6 hours instead of escalating to 7 days", () => {
-      // 10 ordinary failures would hit the 7-day max; a chronically
-      // rate-limited feed must keep retrying every few hours instead.
+    it("caps rate-limited backoff instead of escalating to the maximum interval", () => {
+      // Many ordinary failures would hit the max; a chronically rate-limited
+      // feed must keep retrying every few hours instead.
       const result = calculateNextFetch({
-        consecutiveFailures: 10,
+        consecutiveFailures: MAX_CONSECUTIVE_FAILURES,
         rateLimited: true,
         now: fixedNow,
         randomSource: noJitter,
@@ -452,20 +465,20 @@ describe("calculateNextFetch", () => {
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(2 * 60 * 60); // 2 hours, same as non-rate-limited
+      expect(result.intervalSeconds).toBe(calculateFailureBackoff(3)); // same as non-rate-limited
       expect(result.reason).toBe("failure_backoff");
     });
 
     it("honors a Retry-After larger than the rate-limit cap", () => {
       const result = calculateNextFetch({
-        consecutiveFailures: 10,
+        consecutiveFailures: MAX_CONSECUTIVE_FAILURES,
         rateLimited: true,
-        retryAfterSeconds: 12 * 60 * 60,
+        retryAfterSeconds: RATE_LIMIT_MAX_BACKOFF_SECONDS * 2,
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(12 * 60 * 60);
+      expect(result.intervalSeconds).toBe(RATE_LIMIT_MAX_BACKOFF_SECONDS * 2);
       expect(result.reason).toBe("failure_backoff");
     });
   });
@@ -506,19 +519,19 @@ describe("calculateNextFetch", () => {
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(24 * 60 * 60);
+      expect(result.intervalSeconds).toBe(WEBSUB_BACKUP_POLL_INTERVAL_SECONDS);
       expect(result.reason).toBe("websub_backup");
     });
 
     it("does not affect failure backoff", () => {
       const result = calculateNextFetch({
         consecutiveFailures: 1,
-        minIntervalSeconds: 60 * 60,
+        minIntervalSeconds: calculateFailureBackoff(1) * 2,
         now: fixedNow,
         randomSource: noJitter,
       });
 
-      expect(result.intervalSeconds).toBe(30 * 60);
+      expect(result.intervalSeconds).toBe(calculateFailureBackoff(1));
       expect(result.reason).toBe("failure_backoff");
     });
   });
@@ -544,7 +557,6 @@ describe("calculateNextFetch", () => {
         randomSource: () => 1.0,
       });
 
-      // Default interval is 60 min, 10% jitter = 6 min max
       const expectedJitter = Math.floor(DEFAULT_FETCH_INTERVAL_SECONDS * DEFAULT_JITTER_FRACTION);
       expect(result.intervalSeconds).toBe(DEFAULT_FETCH_INTERVAL_SECONDS + expectedJitter);
     });
@@ -556,51 +568,42 @@ describe("calculateNextFetch", () => {
         randomSource: () => 1.0,
       });
 
-      // 7 days with 10% jitter would be 16.8 hours, but capped at 30 min
       expect(result.intervalSeconds).toBe(MAX_FETCH_INTERVAL_SECONDS + MAX_JITTER_SECONDS);
     });
 
     it("jitter is applied to failure backoff too", () => {
       const result = calculateNextFetch({
-        consecutiveFailures: 2, // 1 hour backoff
+        consecutiveFailures: 2,
         now: fixedNow,
         randomSource: () => 1.0,
       });
 
-      // 1 hour backoff, 10% jitter = 6 min max
-      const expectedJitter = Math.floor(60 * 60 * DEFAULT_JITTER_FRACTION);
-      expect(result.intervalSeconds).toBe(60 * 60 + expectedJitter);
+      const backoff = calculateFailureBackoff(2);
+      expect(result.intervalSeconds).toBe(backoff + calculateJitter(backoff, 1));
     });
   });
 });
 
 describe("calculateFailureBackoff", () => {
-  it("returns max interval for 10 failures", () => {
-    expect(calculateFailureBackoff(10)).toBe(MAX_FETCH_INTERVAL_SECONDS);
-  });
-
-  it("returns max interval for failures beyond 10", () => {
-    expect(calculateFailureBackoff(11)).toBe(MAX_FETCH_INTERVAL_SECONDS);
-    expect(calculateFailureBackoff(100)).toBe(MAX_FETCH_INTERVAL_SECONDS);
-  });
-
-  it("follows exponential pattern", () => {
-    // Use hardcoded expected values to avoid duplicating the implementation logic
-    const expectedBackoffs: Record<number, number> = {
-      1: 1800, // 30 min
-      2: 3600, // 1 hour
-      3: 7200, // 2 hours
-      4: 14400, // 4 hours
-      5: 28800, // 8 hours
-      6: 57600, // 16 hours
-      7: 115200, // 32 hours
-      8: 230400, // 64 hours
-      9: 460800, // 128 hours
-    };
-
-    for (const [failures, expected] of Object.entries(expectedBackoffs)) {
-      expect(calculateFailureBackoff(Number(failures))).toBe(expected);
+  it("starts at the base backoff and doubles per failure below the cutoff", () => {
+    for (let failures = 1; failures < MAX_CONSECUTIVE_FAILURES; failures++) {
+      expect(calculateFailureBackoff(failures)).toBe(
+        FAILURE_BASE_BACKOFF_SECONDS * 2 ** (failures - 1)
+      );
     }
+  });
+
+  it("stays within the max interval below the cutoff", () => {
+    // Nothing clamps the doubling, so the cutoff has to come first.
+    expect(calculateFailureBackoff(MAX_CONSECUTIVE_FAILURES - 1)).toBeLessThanOrEqual(
+      MAX_FETCH_INTERVAL_SECONDS
+    );
+  });
+
+  it("returns max interval at the cutoff and beyond", () => {
+    expect(calculateFailureBackoff(MAX_CONSECUTIVE_FAILURES)).toBe(MAX_FETCH_INTERVAL_SECONDS);
+    expect(calculateFailureBackoff(MAX_CONSECUTIVE_FAILURES + 1)).toBe(MAX_FETCH_INTERVAL_SECONDS);
+    expect(calculateFailureBackoff(100)).toBe(MAX_FETCH_INTERVAL_SECONDS);
   });
 });
 
@@ -609,29 +612,24 @@ describe("calculateJitter", () => {
     expect(calculateJitter(3600, 0)).toBe(0);
   });
 
-  it("returns 10% of interval for short intervals with randomValue 1", () => {
-    // 60 min interval, 10% = 6 min = 360 seconds
-    expect(calculateJitter(3600, 1)).toBe(360);
+  it("returns the jitter fraction of short intervals with randomValue 1", () => {
+    expect(calculateJitter(3600, 1)).toBe(Math.floor(3600 * DEFAULT_JITTER_FRACTION));
   });
 
   it("returns proportional jitter for intermediate randomValue", () => {
-    // 60 min interval, 10% = 6 min, 50% of that = 3 min = 180 seconds
-    expect(calculateJitter(3600, 0.5)).toBe(180);
+    expect(calculateJitter(3600, 0.5)).toBe(Math.floor(3600 * DEFAULT_JITTER_FRACTION * 0.5));
   });
 
   it("caps jitter at MAX_JITTER_SECONDS for long intervals", () => {
-    // 7 day interval, 10% would be 16.8 hours, but capped at 30 min
     expect(calculateJitter(MAX_FETCH_INTERVAL_SECONDS, 1)).toBe(MAX_JITTER_SECONDS);
   });
 
   it("caps jitter proportionally for long intervals", () => {
-    // 7 day interval with randomValue 0.5 should be 15 min (half of 30 min cap)
     expect(calculateJitter(MAX_FETCH_INTERVAL_SECONDS, 0.5)).toBe(MAX_JITTER_SECONDS / 2);
   });
 
   it("transitions smoothly at the cap threshold", () => {
-    // Find the threshold where 10% of interval equals MAX_JITTER_SECONDS
-    // MAX_JITTER_SECONDS / 0.1 = 18000 seconds = 5 hours
+    // The threshold where the jitter fraction of the interval equals MAX_JITTER_SECONDS
     const thresholdInterval = MAX_JITTER_SECONDS / DEFAULT_JITTER_FRACTION;
 
     // Just below threshold: proportional
