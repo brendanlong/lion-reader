@@ -30,7 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -47,8 +49,10 @@ data class NarratedArticle(
 /**
  * Narration is on while there is a state: the article it's on, the paragraph being spoken (null
  * when narration has just followed to an article and has no place in it yet), and whether it's
- * playing or paused. [waiting]: it should be playing but has no audio yet (the article's text
- * hasn't been supplied, the engine is getting ready, or the next chunk is still being synthesized).
+ * playing or paused. The rest is derived ([derive]). [waiting]: it should be playing but has no
+ * audio yet (the article's text hasn't been supplied, the engine is getting ready, or the next
+ * chunk is still being synthesized). [canSkipBack] and [canSkipForward]: whether there's a
+ * paragraph to skip to that way.
  */
 data class NarrationState(
     val entryId: String,
@@ -56,6 +60,8 @@ data class NarrationState(
     val paragraph: Int?,
     val playing: Boolean,
     val waiting: Boolean = false,
+    val canSkipBack: Boolean = false,
+    val canSkipForward: Boolean = false,
 )
 
 /**
@@ -66,11 +72,13 @@ data class NarrationState(
  * the article. A chunk the engine can't say is skipped, so the playlist can have gaps: items are
  * found by their chunk index (the media id).
  *
- * Main thread only (ExoPlayer's rule).
+ * Main thread only (ExoPlayer's rule). Its coroutines run on [Dispatchers.Main], not
+ * `Main.immediate`, so that publishing a state never runs one there and then: a waiter woken in the
+ * middle of a command would act on what the command hasn't finished changing.
  */
 class Narrator(
     private val context: Context,
-    private val settings: () -> AppSettings,
+    private val settings: StateFlow<AppSettings>,
     private val engineFor: suspend (AppSettings) -> SpeechEngine,
     /**
      * Binds a controller, which starts [NarrationService]: it puts the player in a media session
@@ -89,7 +97,7 @@ class Narrator(
     private val pauseAfterMillis: Long = 60_000,
     private val now: () -> Long = SystemClock::elapsedRealtime,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val dir = File(context.cacheDir, "narration")
 
     private val _state = MutableStateFlow<NarrationState?>(null)
@@ -112,7 +120,17 @@ class Narrator(
      */
     private val reached = MutableStateFlow(0L)
 
-    val player: ExoPlayer by lazy { buildPlayer() }
+    private val playerInstance = lazy { buildPlayer() }
+    val player: ExoPlayer by playerInstance
+
+    init {
+        scope.launch {
+            settings
+                .map { it.narrationSpeed }
+                .distinctUntilChanged()
+                .collect { if (playerInstance.isInitialized()) player.setPlaybackSpeed(it) }
+        }
+    }
 
     @OptIn(UnstableApi::class)
     private fun buildPlayer(): ExoPlayer =
@@ -135,7 +153,6 @@ class Narrator(
 
     /** What the narrator has of the article it's on; replaced whole when it moves on. */
     private var current: Current = Current.Awaiting
-    private var speed = 1f
     private val playingChunk = MutableStateFlow(0)
     /**
      * Unbinds the media session; kept from one article to the next, so the notification doesn't
@@ -205,15 +222,9 @@ class Narrator(
     fun narrate(article: NarratedArticle, fromParagraph: Int = 0) {
         reset()
         _notice.value = null
-        _state.value =
-            NarrationState(
-                article.entryId,
-                article.title,
-                fromParagraph,
-                playing = true,
-                waiting = true,
-            )
-        prepare(Current.Article(article).also { current = it })
+        val audio = Current.Article(article).also { current = it }
+        publish(NarrationState(article.entryId, article.title, fromParagraph, playing = true))
+        prepare(audio)
     }
 
     /**
@@ -224,15 +235,14 @@ class Narrator(
     fun follow(entryId: String, title: String) {
         val state = _state.value ?: return
         if (state.entryId == entryId) {
-            if (current == Current.Awaiting) _state.value = state.copy(title = title)
+            if (current == Current.Awaiting) publish(state.copy(title = title))
             return
         }
         val resume = left?.takeIf { it.first == entryId }?.second
         // An article passed through without a place doesn't replace the one remembered.
         state.paragraph?.let { left = state.entryId to it }
         reset()
-        _state.value =
-            NarrationState(entryId, title, resume, state.playing, waiting = state.playing)
+        publish(NarrationState(entryId, title, resume, state.playing))
     }
 
     /**
@@ -245,28 +255,27 @@ class Narrator(
         if (state.entryId != article.entryId || current != Current.Awaiting) return
         if (article.paragraphs.all { it.isBlank() }) {
             current = Current.Silent
-            _state.value = state.copy(title = article.title, waiting = false)
+            publish(state.copy(title = article.title))
             return
         }
         val supplied = Current.Article(article)
         current = supplied
         if (state.playing) {
-            _state.value = state.copy(title = article.title, paragraph = state.paragraph ?: 0)
+            publish(state.copy(title = article.title, paragraph = state.paragraph ?: 0))
             prepare(supplied)
         } else {
             // No place in it (so no highlight to scroll the page to) until it plays.
-            _state.value = state.copy(title = article.title)
+            publish(state.copy(title = article.title))
         }
     }
 
     /** Gets [audio]'s engine and chunks ready, then starts from the state's paragraph. */
     private fun prepare(audio: Current.Article) {
-        speed = settings().narrationSpeed
         if (session == null) session = connectSession()
         audio.preparing = scope.launch {
             val engine =
                 try {
-                    reaching(Starved()) { engineFor(settings()) }
+                    reaching(Starved()) { engineFor(settings.value) }
                 } catch (e: SpeechUnavailable) {
                     return@launch fail(e.message)
                 }
@@ -304,10 +313,8 @@ class Narrator(
             val playing = !state.playing
             // Supplied while paused: its audio is prepared now. Only from the app: with the
             // player empty, media3 hides the notification and doesn't pass a headset's play on.
-            // Decided first: playing again can finish a preparation waiting on it, there and then.
             val pending = onArticle?.takeIf { playing && it.preparing?.isActive != true }
-            _state.value =
-                state.copy(playing = playing, waiting = playing && current != Current.Silent)
+            publish(state.copy(playing = playing))
             if (playing) _notice.value = null
             pending?.let(::prepare)
             return
@@ -320,38 +327,18 @@ class Narrator(
      * headset button can still come in).
      */
     fun skipParagraphs(delta: Int) {
-        paragraphAfter(delta)?.let(::seekToParagraph)
+        val state = _state.value ?: return
+        spoken()?.let { paragraphAfter(it, state.paragraph, delta) }?.let(::seekToParagraph)
     }
 
-    /** Whether [skipParagraphs] by [delta] would go anywhere. */
-    fun canSkipParagraphs(delta: Int): Boolean = paragraphAfter(delta) != null
-
-    private fun paragraphAfter(delta: Int): Int? {
-        val state = _state.value ?: return null
-        // The paragraphs with something to say: the chunks', or before the audio is prepared, the
-        // article's.
-        val spoken =
-            prepared?.chunks?.map { it.paragraph }?.distinct()
-                ?: onArticle
-                    ?.article
-                    ?.paragraphs
-                    ?.withIndex()
-                    ?.filter { it.value.isNotBlank() }
-                    ?.map {
-                        it.index
-                    }
-                ?: return null
-        // With no place yet, "next" is the first paragraph.
-        val from = state.paragraph ?: -1
-        return if (delta > 0) spoken.filter { it > from }.getOrNull(delta - 1)
-        else spoken.filter { it < from }.let { it.getOrNull(it.size + delta) }
-    }
+    private fun spoken(): List<Int>? =
+        spokenParagraphs(onArticle?.prepared?.chunks, onArticle?.article?.paragraphs)
 
     fun seekToParagraph(paragraph: Int) {
         val prepared = prepared
         if (prepared == null) {
             // Not ready to play yet: start there instead.
-            _state.value = _state.value?.copy(paragraph = paragraph)
+            publish(_state.value?.copy(paragraph = paragraph))
             return
         }
         val chunk = prepared.firstChunkOf(paragraph)
@@ -366,14 +353,9 @@ class Narrator(
      */
     fun awaitingSynthesis(): Boolean = onArticle?.feed?.fed == false
 
-    fun setSpeed(speed: Float) {
-        this.speed = speed
-        player.setPlaybackSpeed(speed)
-    }
-
     fun stop() {
         reset()
-        _state.value = null
+        publish(null)
         _notice.value = null
         left = null
         session?.invoke()
@@ -410,9 +392,9 @@ class Narrator(
         playingChunk.value = chunk
         val feed = Feed()
         audio.feed = feed
-        player.setPlaybackSpeed(speed)
+        player.setPlaybackSpeed(settings.value.narrationSpeed)
         player.playWhenReady = play
-        publish(chunk)
+        publishAt(chunk)
         feed.job = scope.launch {
             try {
                 feed(feed, audio.article, prepared, chunk)
@@ -423,17 +405,14 @@ class Narrator(
         }
     }
 
-    /**
-     * Whether [chunk] is close enough to what's playing to synthesize now. Always, when nothing is
-     * queued past what's playing (skipped chunks can leave a gap wider than the lookahead, and the
-     * player would sit at the end of the queue waiting).
-     */
-    private fun wanted(chunk: Int, prepared: Prepared, feed: Feed): Boolean {
-        val next = playingChunk.value + 1
-        return chunk <= next ||
-            (feed.lastAdded ?: -1) <= playingChunk.value ||
-            prepared.offsets[chunk] - prepared.offsets[next] <= prepared.engine.lookaheadChars
-    }
+    private fun wanted(chunk: Int, prepared: Prepared, feed: Feed): Boolean =
+        shouldSynthesize(
+            chunk,
+            playingChunk.value,
+            feed.lastAdded,
+            prepared.offsets,
+            prepared.engine.lookaheadChars,
+        )
 
     private suspend fun feed(
         feed: Feed,
@@ -468,7 +447,7 @@ class Narrator(
                 Player.STATE_ENDED -> player.seekTo(player.mediaItemCount - 1, 0)
                 else -> {}
             }
-            updateWaiting()
+            publish(_state.value)
         }
         feed.fed = true
         if (feed.lastAdded == null)
@@ -535,7 +514,7 @@ class Narrator(
      */
     private fun interrupted(starved: Starved, error: SpeechInterrupted) {
         val state = _state.value
-        if (state == null || !state.playing || !waiting()) {
+        if (state == null || !state.playing || !derived(state).waiting) {
             starved.since = null
             return
         }
@@ -543,18 +522,14 @@ class Narrator(
         if (now() - since < pauseAfterMillis) return
         starved.since = null
         // Before the audio's prepared the player may not be playing yet: pause the narration.
-        if (prepared == null) _state.value = state.copy(playing = false, waiting = false)
-        else player.pause()
+        if (prepared == null) publish(state.copy(playing = false)) else player.pause()
         _notice.value = "Narration paused: ${error.message}"
     }
 
     /** Stops once the last chunk there'll ever be has played. */
     private fun stopIfFinished() {
         val feed = onArticle?.feed ?: return
-        val playing = player.currentMediaItem?.mediaId?.toIntOrNull()
-        if (feed.fed && player.playbackState == Player.STATE_ENDED && playing == feed.lastAdded) {
-            stop()
-        }
+        if (finished(snapshot(), feed.fed, feed.lastAdded)) stop()
     }
 
     private fun item(article: NarratedArticle, chunk: Int, audio: Uri) =
@@ -570,40 +545,52 @@ class Narrator(
             )
             .build()
 
-    private fun publish(chunk: Int) {
+    /** Publishes [chunk] as the place in the article. */
+    private fun publishAt(chunk: Int) {
         val audio = onArticle ?: return
         val prepared = audio.prepared ?: return
-        _state.value =
+        publish(
             NarrationState(
                 audio.article.entryId,
                 audio.article.title,
                 prepared.chunks[chunk].paragraph,
                 player.playWhenReady,
-                waiting(),
             )
+        )
     }
 
     /**
-     * No audio to play yet: nothing queued, still buffering, idle after an error until the feed
-     * brings the next chunk, or caught up with the synthesis.
+     * The one way the state is set: with what's [derive]d from it and the narrator's article, so
+     * that can't go stale. Publish again whenever what it's derived from changes.
      */
-    private fun waiting(): Boolean =
-        prepared == null ||
-            player.mediaItemCount == 0 ||
-            player.playbackState == Player.STATE_BUFFERING ||
-            player.playbackState == Player.STATE_IDLE ||
-            (player.playbackState == Player.STATE_ENDED && onArticle?.feed?.fed != true)
-
-    private fun updateWaiting() {
-        _state.value = _state.value?.copy(waiting = waiting())
+    private fun publish(state: NarrationState?) {
+        _state.value = state?.let(::derived)
     }
+
+    private fun derived(state: NarrationState): NarrationState {
+        val audio = onArticle
+        return derive(
+            state,
+            spoken(),
+            silent = current == Current.Silent,
+            player = audio?.prepared?.let { snapshot() },
+            fed = audio?.feed?.fed == true,
+        )
+    }
+
+    private fun snapshot() =
+        PlayerSnapshot(
+            player.playbackState,
+            player.mediaItemCount,
+            player.currentMediaItem?.mediaId?.toIntOrNull(),
+        )
 
     private val listener =
         object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val chunk = mediaItem?.mediaId?.toIntOrNull() ?: return
                 playingChunk.value = chunk
-                publish(chunk)
+                publishAt(chunk)
                 // Drop what's well behind, so skipping back a little stays instant.
                 // Only our own files: an engine's cache stays.
                 while (player.currentMediaItemIndex > KEEP_BEHIND) {
@@ -614,13 +601,13 @@ class Narrator(
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                _state.value = _state.value?.copy(playing = playWhenReady, waiting = waiting())
+                publish(_state.value?.copy(playing = playWhenReady))
                 // Going on: what paused it is past.
                 if (playWhenReady) _notice.value = null
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                updateWaiting()
+                publish(_state.value)
                 stopIfFinished()
             }
 

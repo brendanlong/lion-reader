@@ -12,6 +12,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.lionreader.shared.api.ApiFailure
+import com.lionreader.shared.api.apiFailure
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,11 +87,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Result.success()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
-        } catch (e: com.lionreader.shared.api.ApiException) {
-            if (e.status == 0) Result.failure() else Result.retry()
         } catch (e: Exception) {
-            // Network, token endpoint, unexpected responses: try again later.
-            Result.retry()
+            // Anything but signing out is tried again later: the periodic sync would anyway.
+            if (e.apiFailure() == ApiFailure.SignedOut) Result.failure() else Result.retry()
         }
     }
 }

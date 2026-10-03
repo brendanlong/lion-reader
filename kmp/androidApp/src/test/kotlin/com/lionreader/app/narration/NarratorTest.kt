@@ -9,6 +9,7 @@ import com.lionreader.app.AppSettings
 import java.io.File
 import java.io.IOException
 import java.time.Duration
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -58,10 +59,12 @@ class NarratorTest {
             }
         }
 
+    private val settings = MutableStateFlow(AppSettings())
+
     private val narrator =
         Narrator(
             ApplicationProvider.getApplicationContext(),
-            { AppSettings() },
+            settings,
             {
                 if (engineUnreachable) throw SpeechInterrupted("Couldn't reach Lion Reader.")
                 engine
@@ -182,17 +185,39 @@ class NarratorTest {
         narrator.skipParagraphs(1)
         narrator.skipParagraphs(1)
         assertEquals(2, state?.paragraph)
-        assertFalse(narrator.canSkipParagraphs(1))
+        assertFalse(state!!.canSkipForward)
         narrator.skipParagraphs(1)
         assertEquals(2, state?.paragraph)
+    }
+
+    @Test
+    fun theSkipsFollowTheArticleSuppliedWhilePaused() {
+        narrator.narrate(article("a", "One."))
+        idle()
+        narrator.togglePlaying()
+        // The title is already the article's, so supplying it changes only what can be skipped.
+        narrator.follow("b", "Title b")
+        assertFalse(state!!.canSkipForward)
+        assertFalse(state!!.canSkipBack)
+
+        narrator.supply(article("b", "One.", "Two."))
+
+        assertTrue(state!!.canSkipForward)
+        assertFalse(state!!.canSkipBack)
+        narrator.skipParagraphs(1)
+        assertTrue(state!!.canSkipForward)
+        assertFalse(state!!.canSkipBack)
+        narrator.skipParagraphs(1)
+        assertFalse(state!!.canSkipForward)
+        assertTrue(state!!.canSkipBack)
     }
 
     @Test
     fun skippingPastEitherEndDoesNothing() {
         narrator.narrate(article("a", "One.", "", "Three."))
         idle()
-        assertFalse(narrator.canSkipParagraphs(-1))
-        assertTrue(narrator.canSkipParagraphs(1))
+        assertFalse(state!!.canSkipBack)
+        assertTrue(state!!.canSkipForward)
         val playing = narrator.player.currentMediaItem
         narrator.skipParagraphs(-1)
         idle()
@@ -204,7 +229,7 @@ class NarratorTest {
         narrator.skipParagraphs(1)
         idle()
         assertEquals(2, state?.paragraph)
-        assertFalse(narrator.canSkipParagraphs(1))
+        assertFalse(state!!.canSkipForward)
         narrator.skipParagraphs(1)
         idle()
         assertEquals(2, state?.paragraph)
@@ -364,6 +389,23 @@ class NarratorTest {
         assertEquals(3, synthesized.count { it == "One." })
         assertEquals(1, state?.paragraph)
         assertTrue(state!!.playing)
+    }
+
+    @Test
+    fun theSpeedFollowsTheSetting() {
+        settings.value = AppSettings(narrationSpeed = 1.5f)
+        narrator.narrate(article("a", "One.", "Two."))
+        idle()
+        assertEquals(1.5f, narrator.player.playbackParameters.speed)
+
+        settings.value = AppSettings(narrationSpeed = 2f)
+        idle()
+        assertEquals(2f, narrator.player.playbackParameters.speed)
+        // Starting again elsewhere keeps it.
+        narrator.follow("b", "Title b")
+        narrator.supply(article("b", "Three."))
+        idle()
+        assertEquals(2f, narrator.player.playbackParameters.speed)
     }
 
     @Test

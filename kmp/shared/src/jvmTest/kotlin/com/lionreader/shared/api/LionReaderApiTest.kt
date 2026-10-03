@@ -5,7 +5,6 @@ import io.ktor.http.HttpStatusCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
@@ -30,16 +29,12 @@ class LionReaderApiTest {
 
         assertEquals("Link your Google account in the web app.", error.serverMessage)
         assertEquals("NEEDS_GOOGLE_SIGNIN", error.appErrorCode)
-        assertTrue(error.isPermanent)
+        assertEquals(
+            ApiFailure.Invalid("Link your Google account in the web app."),
+            error.failure(),
+        )
         // No token refresh, and the save wasn't sent twice.
         assertEquals(listOf("/api/v1/saved"), server.requests.map { it.url.encodedPath })
-    }
-
-    @Test
-    fun codedRetryableErrorsAreNotPermanent() {
-        assertFalse(ApiException(429, "busy", appErrorCode = "SERVER_BUSY").isPermanent)
-        assertFalse(ApiException(500, "oops", appErrorCode = "INTERNAL_ERROR").isPermanent)
-        assertTrue(ApiException(403, "no", appErrorCode = "NEEDS_DOCS_PERMISSION").isPermanent)
     }
 
     @Test
@@ -52,12 +47,6 @@ class LionReaderApiTest {
 
         assertEquals("SOMETHING_ELSE", error.appErrorCode)
         assertEquals(listOf("/api/v1/events"), server.requests.map { it.url.encodedPath })
-    }
-
-    @Test
-    fun signedOut() {
-        assertTrue(ApiException(0, "Signed out").signedOut)
-        assertFalse(ApiException(401, "no").signedOut)
     }
 
     @Test

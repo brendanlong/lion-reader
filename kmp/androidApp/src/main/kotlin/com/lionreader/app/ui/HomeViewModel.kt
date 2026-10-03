@@ -6,6 +6,8 @@ import com.lionreader.app.AccountSession
 import com.lionreader.app.AppGraph
 import com.lionreader.app.AppSettings
 import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.ApiFailure
+import com.lionreader.shared.api.failure
 import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.Reader
@@ -212,7 +214,8 @@ class HomeViewModel(
                     throw e
                 } catch (e: ApiException) {
                     SyncStatus.Failed(
-                        if (e.status == 0) "Signed out" else "Sync failed (${e.status})"
+                        if (e.failure() == ApiFailure.SignedOut) "Signed out"
+                        else "Sync failed (${e.status})"
                     )
                 } catch (e: java.io.IOException) {
                     SyncStatus.Failed("Offline — showing saved articles")

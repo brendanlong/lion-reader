@@ -261,7 +261,24 @@ data class VoiceModel(
     fun voiceName(id: String): String = voices.firstOrNull { it.id == id }?.name ?: id
 }
 
-@Serializable data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String)
+@Serializable
+data class VoiceModels(val models: List<VoiceModel>, val defaultModelId: String) {
+    /** The server's default model, or failing that the first. */
+    val defaultModel: VoiceModel?
+        get() = models.firstOrNull { it.id == defaultModelId } ?: models.firstOrNull()
+
+    /**
+     * What narration uses for the chosen [modelId] and [voiceId] (null: the defaults): each if it's
+     * still offered, else the default model, and its default voice. Null when there are no models.
+     */
+    fun resolve(modelId: String?, voiceId: String?): ResolvedVoice? {
+        val model = models.firstOrNull { it.id == modelId } ?: defaultModel ?: return null
+        return ResolvedVoice(model, voiceId?.takeIf(model::hasVoice) ?: model.defaultVoice)
+    }
+}
+
+/** A cloud model and one of its voices' id. */
+data class ResolvedVoice(val model: VoiceModel, val voice: String)
 
 @Serializable
 data class SpeechRequest(

@@ -12,7 +12,8 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.lionreader.app.SyncScheduler
 import com.lionreader.app.graph
-import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.ApiFailure
+import com.lionreader.shared.api.apiFailure
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
@@ -37,19 +38,14 @@ class SaveWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Result.success(workDataOf(TITLE to saved.title))
         } catch (e: CancellationException) {
             throw e
-        } catch (e: ApiException) {
-            when {
-                e.status == 0 -> failure("Sign in to Lion Reader to save links.")
-                // Any other 4xx but 429 is the server's answer: a 401 here came
-                // back after a token refresh, so it isn't about the token.
-                e.isPermanent || (e.status in 400..499 && e.status != 429) ->
-                    failure(e.serverMessage ?: "Lion Reader couldn't save this link.")
+        } catch (e: Exception) {
+            when (val why = e.apiFailure()) {
+                ApiFailure.SignedOut -> failure("Sign in to Lion Reader to save links.")
+                is ApiFailure.Rejected ->
+                    failure(why.message ?: "Lion Reader couldn't save this link.")
+                // Saving a URL twice just updates the article.
                 else -> Result.retry()
             }
-        } catch (e: Exception) {
-            // Network, token endpoint, unexpected responses: try again later
-            // (saving a URL twice just updates the article).
-            Result.retry()
         }
     }
 

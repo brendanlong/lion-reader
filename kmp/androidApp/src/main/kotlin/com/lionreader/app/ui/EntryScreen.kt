@@ -78,7 +78,7 @@ import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.reader.readerDocument
 import com.lionreader.app.shareWebPage
 import com.lionreader.app.webUrl
-import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.apiFailure
 import com.lionreader.shared.data.EntryDetail
 import com.lionreader.shared.data.Reader
 import kotlinx.coroutines.CancellationException
@@ -183,11 +183,8 @@ fun EntryScreen(
                             throw e
                         } catch (e: Exception) {
                             // A 4xx says why (the provider is busy, or rejected the
-                            // user's own key); a 5xx's message isn't for the user.
-                            val reason =
-                                (e as? ApiException)
-                                    ?.takeIf { it.status in 400..499 }
-                                    ?.serverMessage
+                            // user's own key).
+                            val reason = e.apiFailure().message
                             Toast.makeText(
                                     context,
                                     reason ?: "Couldn't summarize this article",
@@ -277,14 +274,13 @@ fun EntryScreen(
                             NarrationBar(
                                 state = it,
                                 speed = settings.narrationSpeed,
-                                // Read again whenever the narration state changes.
                                 onPrevious =
-                                    if (graph.narrator.canSkipParagraphs(-1)) {
+                                    if (it.canSkipBack) {
                                         { graph.narrator.skipParagraphs(-1) }
                                     } else null,
                                 onToggle = graph.narrator::togglePlaying,
                                 onNext =
-                                    if (graph.narrator.canSkipParagraphs(1)) {
+                                    if (it.canSkipForward) {
                                         { graph.narrator.skipParagraphs(1) }
                                     } else null,
                                 onSpeed = graph::setNarrationSpeed,

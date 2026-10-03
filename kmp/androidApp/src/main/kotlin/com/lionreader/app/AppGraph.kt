@@ -13,9 +13,11 @@ import com.lionreader.app.narration.SpeechInterrupted
 import com.lionreader.app.narration.SpeechUnavailable
 import com.lionreader.app.narration.SystemTts
 import com.lionreader.app.ui.PageTurns
-import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.LionReaderApi
+import com.lionreader.shared.api.ResolvedVoice
 import com.lionreader.shared.api.VoiceModels
+import com.lionreader.shared.api.apiFailure
 import com.lionreader.shared.auth.AppAuth
 import com.lionreader.shared.auth.AuthException
 import com.lionreader.shared.auth.AuthorizationRequest
@@ -38,12 +40,21 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -61,7 +72,12 @@ const val DEFAULT_SERVER_URL = "https://lionreader.com"
  * its own database file, reader and sync engine. Data of different accounts or servers never shares
  * a database, and signing out deletes the account's file.
  */
-class AppGraph(private val context: Context, private val http: HttpClient = appHttpClient()) {
+class AppGraph(
+    private val context: Context,
+    private val http: HttpClient = appHttpClient(),
+    /** How soon to ask again which account a sign-in is, at first (it backs off). */
+    private val confirmRetryMillis: Long = 5_000,
+) {
     private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
 
     val settings = SettingsRepository(context, deviceDefaults())
@@ -78,7 +94,7 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
     val systemTts: SystemTts by lazy { SystemTts(context) }
 
     private val narratorInstance = lazy {
-        Narrator(context, { currentSettings.value }, ::speechEngine)
+        Narrator(context, currentSettings, ::speechEngine)
     }
 
     /** Text-to-speech narration; one article at a time, app-wide. */
@@ -91,9 +107,6 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
     /** What the volume buttons turn the pages of, when the settings have them do so. */
     val pageTurns = PageTurns()
 
-    /** Cloud narration audio: the account's articles, so it goes with the account. */
-    private val cloudVoiceCache = File(context.cacheDir, "cloud-voices")
-
     /** Shared by every article's engine, so its limit on requests at once holds app-wide. */
     private val cloudSpeechRequests = CloudSpeechRequests()
 
@@ -101,67 +114,49 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
         when (settings.narrationEngine) {
             NarrationEngine.DEVICE -> DeviceVoices(systemTts, settings.narrationVoice)
             NarrationEngine.CLOUD -> {
-                val api =
-                    account.value?.connection?.api
-                        ?: throw SpeechUnavailable("Sign in to use cloud voices.")
-                val choice = cloudVoice(api, settings)
+                val session =
+                    account.value ?: throw SpeechUnavailable("Sign in to use cloud voices.")
+                val choice = cloudVoice(session, settings)
                 CloudVoices(
-                    api,
-                    choice.first,
-                    choice.second,
+                    session.connection.api,
+                    choice.model.id,
+                    choice.voice,
                     // The server takes up to 2 seconds.
                     settings.cloudVoicePauseSeconds.coerceIn(0f, 2f),
-                    cloudVoiceCache,
-                    scope,
+                    session.cloudVoiceCache,
+                    session.work,
                     cloudSpeechRequests,
                 )
             }
         }
 
-    /**
-     * The voices the server last offered, for the account by that database: narration moving to the
-     * next article mustn't need the network just to find out again.
-     */
-    @Volatile private var lastVoiceModels: Pair<String?, VoiceModels>? = null
-
     /** The cloud model and voice to use: the chosen ones if the server still offers them. */
-    private suspend fun cloudVoice(
-        api: LionReaderApi,
-        settings: AppSettings,
-    ): Pair<String, String> {
-        val accountDb = account.value?.dbName
+    private suspend fun cloudVoice(session: AccountSession, settings: AppSettings): ResolvedVoice {
         val available =
             try {
-                // With the picked voice, which the server lists while the provider has it, even
-                // once it's left the voices it offers.
-                api.voiceModels(settings.cloudVoiceModel, settings.cloudVoice).also {
-                    lastVoiceModels = accountDb to it
-                }
+                session.fetchVoiceModels(settings.cloudVoiceModel, settings.cloudVoice)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: ApiException) {
-                if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
-                if (e.isPermanent || (e.status in 400..499 && e.status != 408 && e.status != 429)) {
-                    throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
+            } catch (e: Exception) {
+                when (val why = e.apiFailure()) {
+                    ApiFailure.SignedOut -> throw SpeechUnavailable("Sign in to use cloud voices.")
+                    is ApiFailure.Rejected ->
+                        throw SpeechUnavailable(why.message ?: "Cloud voices aren't available.")
+                    // Moving to the next article mustn't need the network just to find out again.
+                    else ->
+                        session.voiceModels.value
+                            ?: throw SpeechInterrupted(
+                                "Couldn't reach Lion Reader for cloud voices."
+                            )
                 }
-                lastVoiceModels?.takeIf { it.first == accountDb }?.second
-                    ?: throw SpeechInterrupted("Couldn't reach Lion Reader for cloud voices.")
-            } catch (_: Exception) {
-                lastVoiceModels?.takeIf { it.first == accountDb }?.second
-                    ?: throw SpeechInterrupted("Couldn't reach Lion Reader for cloud voices.")
             }
-        val model =
-            available.models.firstOrNull { it.id == settings.cloudVoiceModel }
-                ?: available.models.firstOrNull { it.id == available.defaultModelId }
-                ?: available.models.firstOrNull()
-                ?: throw SpeechUnavailable("Cloud voices aren't set up for your account.")
-        val voice = settings.cloudVoice?.takeIf(model::hasVoice) ?: model.defaultVoice
-        return model.id to voice
+        return available.resolve(settings.cloudVoiceModel, settings.cloudVoice)
+            ?: throw SpeechUnavailable("Cloud voices aren't set up for your account.")
     }
 
+    /** Only the setting: the narrator follows it. */
     fun setNarrationSpeed(speed: Float) {
         scope.launch { settings.update { it.copy(narrationSpeed = speed) } }
-        if (narratorInstance.isInitialized()) narrator.setSpeed(speed)
     }
 
     private val _connection =
@@ -181,14 +176,60 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
     /** Serializes account switches. */
     private val accountMutex = Mutex()
 
+    /** Whether there's an account to show, and which. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val accountStatus: StateFlow<AccountStatus> =
+        combine(
+                _connection.flatMapLatest { server -> server.auth.signedIn.map { server to it } },
+                _account.flatMapLatest { session ->
+                    session?.confirmed?.map { yes -> session.takeIf { yes } } ?: flowOf(null)
+                },
+            ) { (server, signedIn), confirmed ->
+                accountStatus(signedIn, server, confirmed)
+            }
+            .stateIn(
+                scope,
+                SharingStarted.Eagerly,
+                accountStatus(
+                    _connection.value.auth.signedIn.value,
+                    _connection.value,
+                    _account.value?.takeIf { it.confirmed.value },
+                ),
+            )
+
+    init {
+        // Until /auth/me says whose the tokens are, nothing shows or syncs, so
+        // this keeps asking, on screen or not (e.g. a sign-in that finished offline).
+        scope.launch {
+            accountStatus.collectLatest { status ->
+                if (status != AccountStatus.Confirming) return@collectLatest
+                var wait = confirmRetryMillis
+                while (true) {
+                    try {
+                        signedIn()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {}
+                    delay(wait)
+                    wait = (wait * 2).coerceAtMost(CONFIRM_RETRY_MAX_MILLIS)
+                }
+            }
+        }
+    }
+
     private fun restoreAccount(): AccountSession? {
         val dbName = prefs.getString(ACCOUNT_DB, null)
-        // Any other account's file was left by a sign-out or switch the app
-        // didn't live to finish.
+        // Any other account's file and audio were left by a sign-out or switch
+        // the app didn't live to finish.
         context
             .databaseList()
             .filter { it.startsWith("account-") && it.endsWith(".db") && it != dbName }
             .forEach { context.deleteDatabase(it) }
+        val keep = dbName?.let { cloudVoiceCache(context, it) }
+        cloudVoiceCaches(context)
+            .listFiles()
+            ?.filter { it != keep }
+            ?.forEach { it.deleteRecursively() }
         val confirmed =
             _connection.value.auth.signedIn.value && prefs.getBoolean(ACCOUNT_CONFIRMED, true)
         return dbName?.let { openAccount(it, confirmed) }
@@ -207,32 +248,37 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
 
     /**
      * After a sign-in: asks the server who this is and switches to that account's database,
-     * deleting the previous account's if it's another one. Whether it opened a session (rather than
-     * finding this account's already open).
+     * deleting the previous account's if it's another one.
      */
-    suspend fun signedIn(): Boolean = accountMutex.withLock {
+    private suspend fun signedIn() = accountMutex.withLock {
         val server = _connection.value
         val user = server.api.me()
-        val dbName = accountDbName(server.auth.serverUrl, user.id)
+        // Once it's begun, a switch is finished, its first sync included: confirming the
+        // account cancels the loop that asked.
+        withContext(NonCancellable) {
+            // A new session's list syncs as it opens; the same account's, kept through an
+            // involuntary sign-out, doesn't.
+            if (switchTo(server, accountDbName(server.auth.serverUrl, user.id))) syncInBackground()
+        }
+    }
+
+    /** Whether it opened a session (rather than finding this account's already open). */
+    private suspend fun switchTo(server: ServerConnection, dbName: String): Boolean {
         val current = _account.value
         if (current?.dbName == dbName && current.connection === server) {
             prefs.edit(commit = true) { putBoolean(ACCOUNT_CONFIRMED, true) }
             current.confirm()
-            return@withLock false
+            return false
         }
-        current?.close()
         // Another account's data goes; the same account's is reopened on
         // the current connection, unsent changes and all.
-        if (current != null && current.dbName != dbName) {
-            context.deleteDatabase(current.dbName)
-            cloudVoiceCache.deleteRecursively()
-        }
+        current?.let { endSession(it, deleteData = it.dbName != dbName) }
         prefs.edit(commit = true) {
             putString(ACCOUNT_DB, dbName)
             putBoolean(ACCOUNT_CONFIRMED, true)
         }
         _account.value = openAccount(dbName, confirmed = true)
-        true
+        return true
     }
 
     /**
@@ -265,7 +311,6 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
      * the app's scope, so leaving the screen can't cancel any of it.
      */
     fun signOut() {
-        if (narratorInstance.isInitialized()) narrator.stop()
         scope.launch {
             SyncScheduler.cancelAll(context)
             val auth = _connection.value.auth
@@ -273,16 +318,30 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
                 val session = _account.value
                 _account.value = null
                 pendingAuthorization = null
-                // If the app dies before the file goes, the next start deletes it.
+                // If the app dies before the data goes, the next start deletes it.
                 prefs.edit(commit = true) { remove(ACCOUNT_DB) }
-                session?.close()
-                session?.let { context.deleteDatabase(it.dbName) }
-                cloudVoiceCache.deleteRecursively()
+                session?.let { endSession(it, deleteData = true) }
                 // AppAuth.signOut forgets the tokens before it reaches the network.
                 launch(start = CoroutineStart.UNDISPATCHED) { auth.signOut() }
                 auth.signedIn.first { !it }
             }
             SyncScheduler.schedulePeriodic(context)
+        }
+    }
+
+    /**
+     * Ends [session], for a sign-out or a switch: narration stops (it may be reading the account's
+     * articles, with cloud voices on whoever's tokens are in now), the account's requests are
+     * cancelled and its database is closed; with [deleteData], its database and audio go too.
+     */
+    private suspend fun endSession(session: AccountSession, deleteData: Boolean) {
+        // Before narration stops, so narration started meanwhile can't take its cloud voices.
+        _account.compareAndSet(session, null)
+        if (narratorInstance.isInitialized()) withContext(Dispatchers.Main) { narrator.stop() }
+        session.close()
+        if (deleteData) {
+            context.deleteDatabase(session.dbName)
+            session.cloudVoiceCache.deleteRecursively()
         }
     }
 
@@ -341,15 +400,7 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
                 } catch (_: Exception) {
                     "Sign-in failed"
                 }
-            if (_signInError.value != null) return@launch
-            // A new session's list syncs as it opens; the same account's, kept
-            // through an involuntary sign-out, doesn't. Offline, the screen keeps
-            // asking which account this is.
-            try {
-                if (!signedIn()) syncInBackground()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {}
+            // Signed in, accountStatus is Confirming, which asks which account this is.
         }
     }
 
@@ -369,6 +420,7 @@ class AppGraph(private val context: Context, private val http: HttpClient = appH
             }
 
     private companion object {
+        const val CONFIRM_RETRY_MAX_MILLIS = 60_000L
         const val SERVER_URL = "server_url"
         const val ACCOUNT_DB = "account_db"
         const val ACCOUNT_CONFIRMED = "account_confirmed"
@@ -409,6 +461,28 @@ class ServerConnection(serverUrl: String, http: HttpClient, tokens: TokenStore) 
         )
     val api = LionReaderApi(http, auth)
 }
+
+/** Whether the app has an account to show: see [AppGraph.accountStatus]. */
+sealed interface AccountStatus {
+    data object SignedOut : AccountStatus
+
+    /** Signed in, but whose tokens they are isn't settled yet (e.g. /auth/me failed offline). */
+    data object Confirming : AccountStatus
+
+    data class Ready(val session: AccountSession) : AccountStatus
+}
+
+/** [confirmed]: the account on the device, if its tokens are known to be its. */
+private fun accountStatus(
+    signedIn: Boolean,
+    server: ServerConnection,
+    confirmed: AccountSession?,
+): AccountStatus =
+    when {
+        !signedIn -> AccountStatus.SignedOut
+        confirmed == null || confirmed.connection !== server -> AccountStatus.Confirming
+        else -> AccountStatus.Ready(confirmed)
+    }
 
 /** A signed-in account's local data and the sync that maintains it. */
 class AccountSession(
@@ -467,8 +541,35 @@ class AccountSession(
     suspend fun unsentChanges(): Long =
         withContext(Dispatchers.IO) { database.outboxQueries.countStates().executeAsOne() }
 
-    fun close() = driver.close()
+    /** Cloud narration audio of the account's articles, so it goes with the account. */
+    val cloudVoiceCache = cloudVoiceCache(context, dbName)
+
+    /** The account's work that outlives the screen that asked for it (cloud speech), not it. */
+    val work = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val _voiceModels = MutableStateFlow<VoiceModels?>(null)
+
+    /** The cloud voices the server last offered this account; null until it's been asked. */
+    val voiceModels: StateFlow<VoiceModels?> = _voiceModels.asStateFlow()
+
+    /**
+     * Asks the server for its cloud voices, into [voiceModels]. It lists [model]'s [voice] while
+     * the provider has it, even once it no longer offers it, so a chosen voice stays chosen.
+     */
+    suspend fun fetchVoiceModels(model: String?, voice: String?): VoiceModels =
+        connection.api.voiceModels(model, voice).also { _voiceModels.value = it }
+
+    fun close() {
+        work.cancel()
+        driver.close()
+    }
 }
+
+/** Every account's [AccountSession.cloudVoiceCache]. */
+private fun cloudVoiceCaches(context: Context) = File(context.cacheDir, "cloud-voices")
+
+private fun cloudVoiceCache(context: Context, dbName: String) =
+    File(cloudVoiceCaches(context), dbName.removeSuffix(".db"))
 
 /**
  * Tokens in app-private SharedPreferences, written with `commit` so a rotated refresh token is on

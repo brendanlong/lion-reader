@@ -1,9 +1,10 @@
 package com.lionreader.app.narration
 
 import android.net.Uri
-import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.ApiFailure
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MAX_CLOUD_SPEECH_CHARS
+import com.lionreader.shared.api.apiFailure
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -178,24 +179,17 @@ class CloudVoices(
                 throw e
             } catch (e: Exception) {
                 if (started) throw e
-                if (e is ApiException) {
-                    if (e.status == 0) throw SpeechUnavailable("Sign in to use cloud voices.")
-                    // Refused (a provider turning down the key is a 422 saying so), except a
-                    // timeout or our rate limit.
-                    if (
-                        e.isPermanent ||
-                            (e.status in 400..499 && e.status != 408 && e.status != 429)
-                    ) {
-                        throw SpeechUnavailable(e.serverMessage ?: "Cloud voices aren't available.")
-                    }
-                    // 503: the server's provider is busy, which isn't this text's fault.
-                    busy = e.status == 429 || e.status == 503
-                    serverTrouble = e.status >= 500 && !busy
-                } else {
-                    // Network: try again below.
-                    serverTrouble = false
-                    busy = false
+                val why = e.apiFailure()
+                when (why) {
+                    ApiFailure.SignedOut -> throw SpeechUnavailable("Sign in to use cloud voices.")
+                    // A provider turning down the key is a 422 saying so.
+                    is ApiFailure.Rejected ->
+                        throw SpeechUnavailable(why.message ?: "Cloud voices aren't available.")
+                    else -> {}
                 }
+                // Busy (the server's provider, or our rate limit) isn't this text's fault.
+                busy = why is ApiFailure.Busy
+                serverTrouble = why == ApiFailure.ServerTrouble
             }
             if (attempt < ATTEMPTS) {
                 delay(wait)

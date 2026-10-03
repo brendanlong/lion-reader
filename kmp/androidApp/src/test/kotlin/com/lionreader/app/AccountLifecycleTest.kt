@@ -1,12 +1,18 @@
 package com.lionreader.app
 
 import android.app.Application
+import android.content.ComponentName
 import android.content.Context
+import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.Configuration
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.lionreader.app.narration.NarratedArticle
+import com.lionreader.app.narration.NarrationService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -17,6 +23,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.headersOf
 import io.ktor.http.parseUrlEncodedParameters
+import java.io.File
 import java.util.Collections
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -25,6 +32,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
@@ -34,6 +42,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /** AppGraph's accounts against a fake server: sign-in, sign-out, and switching accounts. */
@@ -49,6 +58,9 @@ class AccountLifecycleTest {
 
     /** While set, /auth/me waits for it. */
     @Volatile private var meGate: CompletableDeferred<Unit>? = null
+
+    /** While set, /auth/me fails as the server being down. */
+    @Volatile private var meDown = false
 
     private val http =
         HttpClient(
@@ -70,6 +82,7 @@ class AccountLifecycleTest {
                     }
                     "/api/v1/auth/me" -> {
                         meGate?.await()
+                        if (meDown) return@MockEngine respondError(HttpStatusCode.BadGateway)
                         val user =
                             request.headers[HttpHeaders.Authorization]!!.removePrefix("Bearer a-")
                         json("""{"user":{"id":"$user","email":"$user@example.com"}}""")
@@ -99,8 +112,28 @@ class AccountLifecycleTest {
 
     private fun accountFiles() = context.databaseList().filter { it.startsWith("account-") }.toSet()
 
+    /** Waits for [condition], running the main thread's work meanwhile (stopping narration). */
     private fun until(condition: () -> Boolean) = runBlocking {
-        withTimeout(5_000) { while (!condition()) delay(10) }
+        withTimeout(5_000) {
+            while (!condition()) {
+                shadowOf(Looper.getMainLooper()).idle()
+                delay(10)
+            }
+        }
+    }
+
+    private fun AccountSession.cacheAudio(): File =
+        File(cloudVoiceCache, "chunk.mp4").apply {
+            parentFile!!.mkdirs()
+            writeText("audio")
+        }
+
+    private fun AppGraph.loseTheTokens() {
+        refreshDead = true
+        runBlocking {
+            connection.value.auth.accessToken(forceRefresh = true, rejected = "a-alice")
+        }
+        refreshDead = false
     }
 
     private fun AppGraph.signIn(user: String) {
@@ -127,10 +160,12 @@ class AccountLifecycleTest {
         // The file is made on first use.
         runBlocking { session.reader.setStarred("entry", true) }
         assertEquals(setOf(session.dbName), accountFiles().filter { it.endsWith(".db") }.toSet())
+        val audio = session.cacheAudio()
 
         graph.signOutAndWait()
 
         assertEquals(emptySet<String>(), accountFiles())
+        assertFalse(audio.exists())
         val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
         assertNull(prefs.getString("access_token", null))
         assertNull(prefs.getString("refresh_token", null))
@@ -162,13 +197,9 @@ class AccountLifecycleTest {
         val graph = AppGraph(context, http)
         val alice = graph.signInAndWait("alice")
         runBlocking { alice.reader.setStarred("entry", true) }
-        refreshDead = true
-        runBlocking {
-            graph.connection.value.auth.accessToken(forceRefresh = true, rejected = "a-alice")
-        }
+        graph.loseTheTokens()
         assertFalse(graph.connection.value.auth.signedIn.value)
         assertSame(alice, graph.account.value)
-        refreshDead = false
 
         val gate = CompletableDeferred<Unit>().also { meGate = it }
         graph.signIn("bob")
@@ -190,11 +221,7 @@ class AccountLifecycleTest {
         val graph = AppGraph(context, http)
         val alice = graph.signInAndWait("alice")
         runBlocking { alice.reader.setStarred("entry", true) }
-        refreshDead = true
-        runBlocking {
-            graph.connection.value.auth.accessToken(forceRefresh = true, rejected = "a-alice")
-        }
-        refreshDead = false
+        graph.loseTheTokens()
 
         graph.signIn("alice")
         until { alice.confirmed.value }
@@ -202,6 +229,55 @@ class AccountLifecycleTest {
         assertSame(alice, graph.account.value)
         assertEquals(1L, runBlocking { alice.unsentChanges() })
     }
+
+    /**
+     * Narration may be of the account's article, and its cloud voice would go on with the next
+     * account's tokens: switching accounts ends it, and the audio goes with the account's data.
+     */
+    @Test
+    fun switchingAccountsStopsNarrationAndDeletesTheAudio() {
+        // Robolectric can't bind media3's session service.
+        shadowOf(context as Application)
+            .declareComponentUnbindable(ComponentName(context, NarrationService::class.java))
+        val graph = AppGraph(context, http)
+        val alice = graph.signInAndWait("alice")
+        val audio = alice.cacheAudio()
+        graph.narrator.narrate(NarratedArticle("entry", "Title", null, listOf("One.")))
+        assertNotNull(graph.narrator.state.value)
+        graph.loseTheTokens()
+
+        val bob = graph.signInAndWait("bob")
+
+        assertNull(graph.narrator.state.value)
+        assertFalse(audio.exists())
+        assertNotEquals(alice.cloudVoiceCache, bob.cloudVoiceCache)
+    }
+
+    @Test
+    fun aSignInThatCantAskWhoItIsKeepsAskingWithoutTheScreen() {
+        meDown = true
+        val graph = AppGraph(context, http, confirmRetryMillis = 50)
+        graph.signIn("alice")
+        until { graph.connection.value.auth.signedIn.value }
+        until { requests.count { it == "GET /api/v1/auth/me" } >= 2 }
+        assertEquals(AccountStatus.Confirming, graph.accountStatus.value)
+
+        meDown = false
+
+        until { graph.accountStatus.value is AccountStatus.Ready }
+        assertSame(graph.account.value, (graph.accountStatus.value as AccountStatus.Ready).session)
+    }
+
+    @Test
+    fun aNewAccountsFirstSyncIsScheduled() {
+        val graph = AppGraph(context, http)
+        graph.signInAndWait("alice")
+
+        until { syncNow().any { it.state == WorkInfo.State.ENQUEUED } }
+    }
+
+    private fun syncNow() =
+        WorkManager.getInstance(context).getWorkInfosForUniqueWork("sync-now").get()
 
     @Test
     fun aRedirectForAnotherSignInDoesntCancelThisOne() {
@@ -219,6 +295,13 @@ class AccountLifecycleTest {
         listOf("account-v5-kept.db", "account-v5-orphan.db").forEach {
             context.openOrCreateDatabase(it, Context.MODE_PRIVATE, null).close()
         }
+        val audio = File(context.cacheDir, "cloud-voices")
+        listOf("account-v5-kept", "account-v5-orphan").forEach {
+            File(audio, "$it/chunk.mp4").apply {
+                parentFile!!.mkdirs()
+                writeText("audio")
+            }
+        }
         context
             .getSharedPreferences("auth", Context.MODE_PRIVATE)
             .edit()
@@ -232,6 +315,8 @@ class AccountLifecycleTest {
             setOf("account-v5-kept.db"),
             accountFiles().filter { it.endsWith(".db") }.toSet(),
         )
+        assertEquals(listOf("account-v5-kept"), audio.list()?.toList())
+        assertEquals(graph.account.value!!.cloudVoiceCache, File(audio, "account-v5-kept"))
     }
 
     private companion object {
