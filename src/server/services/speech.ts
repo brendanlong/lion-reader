@@ -479,17 +479,17 @@ export async function streamSpeech(
 ): Promise<ReadableStream<Uint8Array>> {
   const catalog = await listSpeechModels(keys, options);
   const { model, voice } = resolveSpeechModel(catalog, keys, options.model, options.voice);
-  if (
-    options.exact &&
-    (model.id !== normalizeModelRef(options.model ?? "") || voice !== options.voice)
-  ) {
-    throw new SpeechRequestError(`${options.model} voice ${options.voice} isn't available`);
-  }
   // Saying it in the default voice instead would be cached as the picked one's.
   if (catalog.pickedVoiceUnchecked && voice !== options.voice) {
     throw new SpeechUnavailableError(
       `Couldn't check the voice with ${aiProviderName(model.provider)}; try again shortly`
     );
+  }
+  if (
+    options.exact &&
+    (model.id !== normalizeModelRef(options.model ?? "") || voice !== options.voice)
+  ) {
+    throw new SpeechRequestError(`${options.model} voice ${options.voice} isn't available`);
   }
   const apiKey = getProviderApiKey(model.provider, keys);
   if (!apiKey) {

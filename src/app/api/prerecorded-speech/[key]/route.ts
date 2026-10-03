@@ -13,7 +13,6 @@
  * arbitrary text (SECURITY.md section 10).
  */
 
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { logger } from "@/lib/logger";
 import {
@@ -73,7 +72,9 @@ const getPrerecordedSpeech = createPrerecordedSpeech({
   store: isStorageAvailable()
     ? (key, audio) => uploadObject(prerecordedSpeechObjectKey(key), audio, "audio/mp4")
     : null,
-  cacheDir: join(tmpdir(), "lion-reader-prerecorded-speech"),
+  // The app's own (not a shared /tmp, where another user could plant files),
+  // and on Fly, like the rest of the root filesystem, wiped on restart.
+  cacheDir: join(process.cwd(), ".next", "cache", "prerecorded-speech"),
 });
 
 function errorResponse(
