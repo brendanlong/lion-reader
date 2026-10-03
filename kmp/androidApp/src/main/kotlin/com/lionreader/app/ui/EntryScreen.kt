@@ -432,8 +432,8 @@ private fun EntryPage(
     val article by
         remember(entryId) { account.reader.article(entryId) }.collectAsStateWithLifecycle(null)
     val entry = (article as? ArticleState.Shown)?.entry
-    // Null once it's gone (e.g. deleted), and when the page leaves: the top
-    // bar shows only what's on a page now.
+    // Null once it's gone (e.g. deleted) or can't be read, and when the page
+    // leaves: the top bar shows only what's on a page now.
     LaunchedEffect(entry) { onEntry(entryId, entry) }
     DisposableEffect(entryId) { onDispose { onEntry(entryId, null) } }
     val settings by graph.currentSettings.collectAsStateWithLifecycle()

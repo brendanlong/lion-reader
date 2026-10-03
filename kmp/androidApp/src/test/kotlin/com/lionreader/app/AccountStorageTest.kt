@@ -46,18 +46,35 @@ class AccountStorageTest {
 
     @Test
     fun anArticleBiggerThanTheDefaultCursorWindowOpens() {
-        val reader = AndroidAccountStorage(context).openDatabase("big.db").withLargeArticle()
+        AndroidAccountStorage(context).openDatabase("big.db").use { driver ->
+            val reader = driver.withLargeArticle()
 
-        assertEquals(body, runBlocking { reader.entry("a").first()?.content })
+            assertEquals(body, runBlocking { reader.entry("a").first()?.content })
+        }
     }
 
     /** What the window size is for: without it, the same article can't be read. */
     @Test
     fun withTheDefaultWindowItCant() {
-        val reader = AndroidSqliteDriver(AppSchema, context, "default.db").withLargeArticle()
+        AndroidSqliteDriver(AppSchema, context, "default.db").use { driver ->
+            val reader = driver.withLargeArticle()
 
-        assertThrows(SQLiteBlobTooBigException::class.java) {
-            runBlocking { reader.entry("a").first() }
+            assertThrows(SQLiteBlobTooBigException::class.java) {
+                runBlocking { reader.entry("a").first() }
+            }
+        }
+    }
+
+    /** Sync compares and checks bodies without reading them out, so no window limits it. */
+    @Test
+    fun syncChecksABodyOfAnySizeInPlace() {
+        AndroidSqliteDriver(AppSchema, context, "checks.db").use { driver ->
+            driver.withLargeArticle()
+            val bodies = LionReaderDatabase(driver).bodyQueries
+
+            assertEquals(1L, bodies.matches("a", body).executeAsOne())
+            assertEquals(0L, bodies.matches("a", "<p>Revised</p>").executeAsOne())
+            assertEquals(1L, bodies.exists("a").executeAsOne())
         }
     }
 }

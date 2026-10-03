@@ -164,9 +164,9 @@ class Reader(
         )
 
     /**
-     * [entry] for its page: an article that can't be read off the device (on Android, a row bigger
-     * than the cursor window) is a [ArticleState.Unreadable] to say so, not a crash. A cancellation
-     * (the session closing under it) still cancels.
+     * [entry] for its page, where failing to read it (on Android, a row bigger than the cursor
+     * window) is [ArticleState.Unreadable] rather than a crash, and ends the flow: leaving the page
+     * and coming back reads it again. A cancellation (the session closing under it) still cancels.
      */
     fun article(id: String): Flow<ArticleState> =
         entry(id)

@@ -23,8 +23,13 @@ WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVe
 deleteForEntry:
 DELETE FROM entry_body WHERE entry_id = ?;
 
-content:
-SELECT content FROM entry_body WHERE entry_id = ?;
+-- Comparisons stay in SQLite: reading a body out can take more than Android's
+-- cursor window holds.
+matches:
+SELECT count(*) FROM entry_body WHERE entry_id = :entryId AND content = :content;
+
+exists:
+SELECT count(*) FROM entry e JOIN entry_body b ON b.entry_id = e.id WHERE e.id = ?;
 
 -- Bodies whose entry is gone (retention, deletions, unsubscribes).
 pruneOrphans:
