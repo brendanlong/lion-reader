@@ -43,8 +43,8 @@ export default function PrivacyPolicyPage() {
             <LegalParagraph tight>
               When you create an account, we collect your email address and password. Passwords are
               securely hashed using argon2 (industry-standard). If you sign in with Google, Apple,
-              or Discord, we store only your email address and account ID from that provider (see
-              Authentication Providers below).
+              or Discord, we store your email address and account ID from that provider, plus the
+              sign-in tokens it issues (see Authentication Providers below).
             </LegalParagraph>
           </LegalSubsection>
           <LegalSubsection title="Session Information">
@@ -299,12 +299,13 @@ export default function PrivacyPolicyPage() {
 
           <LegalSubsection title="Content Delivery Network (Bunny.net)">
             <LegalParagraph tight>
-              The app&apos;s static files (code, styles, and fonts) are served from Bunny.net&apos;s
-              content delivery network (cdn.lionreader.com), using only servers in the United
-              States. Your browser fetches these files directly from Bunny.net, so it sees your IP
-              address and browser user agent, as with any download. These files are the same for
-              everyone; no account information, reading activity, or article content passes through
-              it.
+              The app&apos;s static files (code, styles, fonts, and the demo&apos;s pre-recorded
+              audio) are served from Bunny.net&apos;s content delivery network (cdn.lionreader.com),
+              using only servers in the United States. Your browser fetches these files directly
+              from Bunny.net, so Bunny.net sees your IP address and browser user agent, as with any
+              download, and may keep them in its request logs under its own policy. These files are
+              the same for everyone; no account information, reading activity, or article content
+              passes through the CDN.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink href="https://bunny.net/privacy/" external className="ui-text-sm">
@@ -315,25 +316,29 @@ export default function PrivacyPolicyPage() {
 
           <LegalSubsection title="Error Tracking and Session Replay (Sentry)">
             <LegalParagraph tight>
-              We use Sentry to track application errors and performance issues. Sentry receives
-              error messages, stack traces, and context about what led up to the error, and timing
-              data for a sample of page loads. We configure both Sentry and our own code not to
-              store your IP address.
+              We use Sentry to find and fix errors and performance problems. When something goes
+              wrong, Sentry receives the error message and where in our code it happened, along with
+              what led up to it: the pages you visited, the requests the app made, the buttons and
+              links you clicked, and messages the app logged. Errors on our servers include your
+              account ID so we can investigate problems affecting a particular account. Sentry also
+              receives timing data for a sample of page loads. We configure both Sentry and our own
+              code not to store your IP address.
             </LegalParagraph>
             <LegalParagraph tight>
-              <strong>Session Replay:</strong> for a random 10% of browser sessions, and for every
-              session in which an error occurs, Sentry also records a replay of the session—the
-              layout of each page, your clicks and scrolling, and the pages you visit—so we can see
-              what led to a problem. All text and anything you type are masked, and images and media
-              are blocked, before the recording leaves your browser, so a replay does not show
-              article text, titles, or your input.
+              <strong>Session Replay:</strong> for a random 10% of browser sessions, and for the
+              minute or so before any error, Sentry also records a replay—the layout of each page,
+              your clicks and scrolling, and the pages you visit—so we can see what led to a
+              problem. Text and anything you type are masked, and images and media are blocked,
+              before the recording leaves your browser, so a replay does not show the words on the
+              page.
             </LegalParagraph>
             <LegalParagraph tight>
-              Both error reports and replays include the web addresses of the pages you visited and
-              of the requests the app made. These addresses contain internal IDs of the article,
-              feed, or tag you had open (not their titles or content) and, if you searched, your
-              search terms. Sentry could therefore tell which article or feed was open, though
-              matching an ID to an article requires access to our database.
+              <strong>Sentry can see what you were reading.</strong> Error reports and replays
+              include web addresses: of the pages you visited, of the links on them (such as an
+              article&apos;s original web address), and of the requests the app made. Depending on
+              what you were doing, these can include the address of an article you opened or saved,
+              a feed you previewed, your search terms, and the name of a feed whose button you
+              clicked. We use this only to fix problems, and Sentry keeps it for 30 days.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink href="https://sentry.io/privacy/" external className="ui-text-sm">
@@ -353,21 +358,28 @@ export default function PrivacyPolicyPage() {
           <LegalSubsection title="Authentication Providers (Google, Apple, Discord)">
             <LegalParagraph tight>
               If you choose to sign in with Google, Apple, or Discord, we use their OAuth services.
-              We store only your email address and account ID from these providers. Google also
-              shares your name and profile picture, and Discord your username and avatar, as part of
-              sign-in; we do not store them.
+              We store your email address and account ID from the provider, plus the tokens it
+              issues at sign-in. The providers also share your name (and Google your profile
+              picture, Discord your username and avatar); we do not store these. We use the stored
+              tokens only for Google Docs saving, described below.
             </LegalParagraph>
           </LegalSubsection>
 
           <LegalSubsection title="Google Docs Saving (Google) — Optional">
             <LegalParagraph tight>
-              <strong>Only if you save a Google Doc with the browser extension.</strong> The first
-              time you do, we ask Google for read-only access to your Google Docs and Google Drive
-              (the <code>documents.readonly</code> and <code>drive.readonly</code> permissions). We
-              store the resulting access tokens with your linked Google account and use them only to
-              download the specific documents you choose to save. We never modify or delete your
-              files. You can revoke this access at any time in your Google account settings, and
-              disconnecting Google in Lion Reader deletes the stored tokens.
+              <strong>Only if you save a Google Doc.</strong> When you save a Google Doc (from the
+              browser extension, the save page, or the bookmarklet) and we don&apos;t yet have
+              access, we ask Google for read-only access to your Google Docs and to{" "}
+              <strong>all files in your Google Drive</strong> (Google describes this as &quot;See
+              and download all your Google Drive files&quot;). Drive access is needed to import
+              uploaded Word documents. We use this access only to download the specific documents
+              you choose to save, including saves made later through the extension or an app
+              connected to your account, and we never modify or delete your files.
+            </LegalParagraph>
+            <LegalParagraph tight>
+              You can revoke this access at any time in your Google account settings. Unlinking
+              Google in Lion Reader&apos;s settings also deletes the stored tokens; if Google is
+              your only way to sign in, set a password first.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink href="https://policies.google.com/privacy" external className="ui-text-sm">
@@ -489,6 +501,11 @@ export default function PrivacyPolicyPage() {
             read items, sort order), and keyboard shortcut preferences
           </li>
           <li>
+            <strong>sessionStorage:</strong> An identifier for the current Sentry session replay, if
+            one is being recorded (see Error Tracking and Session Replay above), cleared when you
+            close the tab
+          </li>
+          <li>
             <strong>Origin private file system:</strong> Enhanced narration voices (if you download
             optional high-quality voices using Piper TTS). These voice files are stored locally on
             your device and never sent to our servers.
@@ -550,8 +567,8 @@ export default function PrivacyPolicyPage() {
             avoid repeated processing
           </li>
           <li>
-            <strong>Logs and metrics:</strong> Application logs and error reports are retained for
-            30 days for troubleshooting and performance monitoring
+            <strong>Logs and metrics:</strong> Application logs, error reports, and session replays
+            are retained for 30 days for troubleshooting and performance monitoring
           </li>
         </LegalList>
       </LegalSection>
