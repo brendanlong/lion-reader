@@ -70,10 +70,10 @@ class CloudVoices(
     private val cacheBytes: Long = 50L * 1024 * 1024,
 ) : SpeechEngine {
     override val maxChunkChars = MAX_CLOUD_SPEECH_CHARS
-    // Requests take anywhere from under a second to many, so a minute ahead. One is started at a
-    // time, once the one before has started playing; see [CloudSpeechRequests.streams] for how many
-    // run at once.
-    override val lookaheadChars = 900
+    // Requests take anywhere from under a second to many (the server waits up to 15 s for a busy
+    // provider), so 30 seconds ahead. One is started at a time, once the one before has started
+    // playing; see [CloudSpeechRequests.streams] for how many run at once.
+    override val lookaheadChars = 450
     override val parallelism = 1
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri {

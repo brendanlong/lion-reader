@@ -10,7 +10,7 @@ import java.io.File
  */
 interface SpeechEngine {
     val maxChunkChars: Int
-    /** Speech runs about 15 characters a second, so 900 is about a minute ahead. */
+    /** Speech runs about 15 characters a second, so 450 is about 30 seconds ahead. */
     val lookaheadChars: Int
     val parallelism: Int
 
@@ -39,7 +39,7 @@ sealed class SpeechException(message: String) : Exception(message)
 /** The device's text-to-speech engine, with the voice named [voice] (null: the default). */
 class DeviceVoices(private val tts: SystemTts, private val voice: String?) : SpeechEngine {
     override val maxChunkChars = 400
-    override val lookaheadChars = 1200
+    override val lookaheadChars = 450
     override val parallelism = 1
 
     override suspend fun synthesize(text: String, dir: File, name: String): Uri =
