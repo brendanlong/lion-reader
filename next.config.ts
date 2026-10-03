@@ -124,7 +124,20 @@ const nextConfig: NextConfig = {
   // The demo's starred list used to live at /demo/highlights; it now uses the
   // app's own route name so the shared reader tree maps it to a filter.
   async redirects() {
-    return [{ source: "/demo/highlights", destination: "/demo/starred", permanent: true }];
+    return [
+      { source: "/demo/highlights", destination: "/demo/starred", permanent: true },
+      // Demo articles folded into others; their URLs are in search indexes.
+      ...[
+        ["json-feed", "rss-atom"],
+        ["websub", "rss-atom"],
+        ["real-time", "performance"],
+      ].map(([from, to]) => ({
+        source: "/demo/:path*",
+        has: [{ type: "query" as const, key: "entry", value: from }],
+        destination: `/demo/:path*?entry=${to}`,
+        permanent: true,
+      })),
+    ];
   },
   // Serve the demo article URLs (`?entry=` on any /demo page) from the
   // statically-prerendered /demo/entry/[entryId] route (issue #1359). Reading

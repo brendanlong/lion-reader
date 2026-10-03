@@ -84,7 +84,6 @@ const DEMO_ARTICLE_IDS = [
   "file-upload",
   "full-content",
   "google-reader-api",
-  "json-feed",
   "keyboard-shortcuts",
   "mcp-server",
   "open-source",
@@ -92,14 +91,12 @@ const DEMO_ARTICLE_IDS = [
   "performance",
   "plugins",
   "pwa",
-  "real-time",
   "rss-atom",
   "save-for-later",
   "search",
   "tags",
   "text-to-speech",
   "wallabag-api",
-  "websub",
   "welcome",
 ] as const;
 

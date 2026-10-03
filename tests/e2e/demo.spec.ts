@@ -93,7 +93,7 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await page.goto("/demo/all");
 
   const allItems = page.getByRole("link", { name: /^All Items/ });
-  await expect(allItems).toContainText("(26)");
+  await expect(allItems).toContainText("(23)");
 
   // Open an article from the list; it auto-marks read and the count drops.
   await page.getByRole("button", { name: /article: Obsessive Performance/ }).click();
@@ -101,7 +101,7 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await expect(
     page.getByRole("heading", { name: "Obsessive Performance", level: 1 })
   ).toBeVisible();
-  await expect(allItems).toContainText("(25)");
+  await expect(allItems).toContainText("(22)");
 
   // Star it from the reader; the sidebar Starred count follows.
   const starred = page.getByRole("link", { name: /^Starred/ });
@@ -128,9 +128,9 @@ test("reading, starring and navigating work through the real reader", async ({ p
   // Search runs against the store, over body text: a term only the performance
   // article contains.
   await page.getByRole("button", { name: "Search entries" }).click();
-  await page.getByRole("searchbox").fill("sub-100ms");
+  await page.getByRole("searchbox").fill("100ms");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/q=sub-100ms/);
+  await expect(page).toHaveURL(/q=100ms/);
   await expect(page.getByRole("button", { name: /article: Obsessive Performance/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /article: Welcome to Lion Reader/ })).toHaveCount(
     0
@@ -150,7 +150,7 @@ test("mark all read empties the unread view and the sidebar counts", async ({ pa
     .click();
 
   await expect(page.getByText(/No unread entries in this subscription/)).toBeVisible();
-  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText("(23)");
+  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText("(20)");
 });
 
 test("the old highlights URL redirects to the starred list", async ({ request }) => {
@@ -172,5 +172,5 @@ test("a direct visit to the internal entry route normalizes to the public URL", 
   expect(renderErrors).toEqual([]);
   // The article stayed open across the normalization (it was never closed and
   // reopened): its single auto-mark-read leaves the count at 25.
-  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText("(25)");
+  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText("(22)");
 });
