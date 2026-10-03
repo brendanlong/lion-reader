@@ -724,20 +724,10 @@ async function fetchPrivateGoogleDocWithAuth(
     const accessToken = await getValidGoogleToken(userId);
     return await fetchPrivateGoogleDoc(docId, accessToken, tabId);
   } catch (error) {
-    if (error instanceof Error && error.message === "GOOGLE_TOKEN_INVALID") {
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message:
-          mode === "interactive"
-            ? "Google authentication expired. Please reconnect your Google account."
-            : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.reauth,
-      });
-    } else if (error instanceof Error && error.message === "GOOGLE_PERMISSION_DENIED") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "You don't have permission to access this Google Doc.",
-      });
-    } else if (error instanceof Error && error.message === "GOOGLE_NEEDS_REAUTH") {
+    if (
+      error instanceof Error &&
+      (error.message === "GOOGLE_TOKEN_INVALID" || error.message === "GOOGLE_NEEDS_REAUTH")
+    ) {
       throw new TRPCError({
         code: "UNAUTHORIZED",
         message:
@@ -750,6 +740,11 @@ async function fetchPrivateGoogleDocWithAuth(
             url: normalizedUrl,
           },
         },
+      });
+    } else if (error instanceof Error && error.message === "GOOGLE_PERMISSION_DENIED") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "You don't have permission to access this Google Doc.",
       });
     }
     if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
