@@ -16,16 +16,14 @@ import { and, eq, inArray } from "drizzle-orm";
 import { publishEntryStateChanged, type EntryStateListData } from "@/server/redis/pubsub";
 import type { DbOrTx } from "@/server/db";
 import { feeds, visibleEntries } from "@/server/db/schema";
-import { toNewEntryListData } from "@/lib/events/schemas";
+import { entryListPayload } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
 import type { MarkReadEntryState } from "@/server/services/entries";
 
 /**
  * Fetches the list-item context for entries that flipped to unread, keyed by
  * entry id, so their entry_state_changed events can carry an insertable
- * payload (issue #1237). Spam entries are skipped — the default entries.list
- * filters them, so a client-side insert would show a row the server never
- * returns (mirroring the new_entry rule).
+ * payload (issue #1237), which spam doesn't get (see `entryListPayload`).
  */
 async function fetchUnreadListData(
   db: DbOrTx,
@@ -54,12 +52,13 @@ async function fetchUnreadListData(
 
   const result = new Map<string, EntryStateListData>();
   for (const row of rows) {
-    if (row.isSpam) continue;
+    const entry = entryListPayload(row, row.feedTitle);
+    if (!entry) continue;
     result.set(row.id, {
       subscriptionId: row.subscriptionId,
       feedId: row.feedId,
       feedType: row.feedType,
-      entry: toNewEntryListData(row, row.feedTitle),
+      entry,
     });
   }
   return result;

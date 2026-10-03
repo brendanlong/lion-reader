@@ -22,6 +22,7 @@ import {
   type NewEntryListData,
 } from "@/lib/events/schemas";
 import { ANNOUNCEMENT_LEVELS, type Announcement } from "@/server/services/site-status";
+import { toEntryMetadata } from "@/server/services/entry-sync-events";
 
 // ============================================================================
 // Event Schemas (single source of truth for both publishing and parsing)
@@ -376,13 +377,7 @@ export async function publishEntryUpdatedFromEntry(
   feedId: string,
   entry: EntryLike
 ): Promise<number> {
-  return publishEntryUpdated(feedId, entry.id, entry.updatedAt, {
-    title: entry.title,
-    author: entry.author,
-    summary: entry.summary,
-    url: entry.url,
-    publishedAt: entry.publishedAt?.toISOString() ?? null,
-  });
+  return publishEntryUpdated(feedId, entry.id, entry.updatedAt, toEntryMetadata(entry));
 }
 
 /**

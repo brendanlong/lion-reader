@@ -167,6 +167,25 @@ describe("sync.events", () => {
       });
     });
 
+    it("doesn't announce a backfilled entry, as the live path doesn't", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/sync-backfill.xml" });
+      await createTestSubscription(userId, feedId);
+      const baseCursor = new Date(Date.now() - 1000).toISOString();
+
+      // Fanned out already read, like every backfill.
+      const entryId = await createTestEntry(feedId, { title: "Old post", isBackfill: true });
+      await createUserEntry(userId, entryId, { read: true });
+
+      const result = await createCaller(await createAuthContext(userId)).sync.events({
+        cursors: { entries: baseCursor },
+      });
+
+      expect(result.events.map((e) => e.type)).toEqual(["entry_state_changed"]);
+      expect(result.events[0]).toMatchObject({ entryId, read: true });
+      expect(result.events[0]).not.toHaveProperty("entry");
+    });
+
     it("includes the subscription's tag in new_entry absolute counts", async () => {
       const userId = await createTestUser();
       const feedId = await createFetchedFeed({ url: "https://example.com/tagged-sync-feed.xml" });
@@ -1312,6 +1331,110 @@ describe("sync.events", () => {
         cursors: { entries: new Date("2025-03-01T00:00:00.000Z").toISOString() },
       });
 
+      expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
+    });
+  });
+
+  // ==========================================================================
+  // Entries a state change hid, reported by sync.changes as deletions
+  // ==========================================================================
+
+  describe("sync.changes hidden entries", () => {
+    it("reports every entry a bulk unstar hid, across pages, with the visible changes", async () => {
+      const userId = await createTestUser();
+      const activeFeed = await createFetchedFeed({ url: "https://example.com/hidden-active.xml" });
+      await createTestSubscription(userId, activeFeed);
+      const goneFeed = await createFetchedFeed({ url: "https://example.com/hidden-gone.xml" });
+      await createTestSubscription(userId, goneFeed, {
+        unsubscribedAt: new Date("2025-04-01T00:00:00.000Z"),
+      });
+
+      // One unstar of more than a page of entries, from a feed the user left,
+      // stamps them all with one timestamp — shared with visible entries read
+      // in the same instant, so a page boundary lands inside the tie.
+      const created = new Date("2025-04-02T00:00:00.000Z");
+      const unstarredAt = "2025-04-03T00:00:00.123456Z";
+      const hiddenIds = new Set<string>();
+      const visibleIds = new Set<string>();
+      const entryValues = [];
+      const userEntryValues = [];
+      for (let i = 0; i < 560; i++) {
+        const entryId = generateUuidv7();
+        const hidden = i % 10 !== 0;
+        (hidden ? hiddenIds : visibleIds).add(entryId);
+        entryValues.push({
+          id: entryId,
+          feedId: hidden ? goneFeed : activeFeed,
+          type: "web" as const,
+          guid: `guid-hidden-${i}`,
+          title: `Hidden ${i}`,
+          contentHash: `hash-hidden-${i}`,
+          fetchedAt: created,
+          publishedAt: created,
+          lastSeenAt: created,
+          createdAt: created,
+          updatedAt: created,
+        });
+        userEntryValues.push({
+          userId,
+          entryId,
+          read: !hidden,
+          starred: false,
+          updatedAt: sql`${unstarredAt}::timestamptz`,
+        });
+      }
+      for (let i = 0; i < entryValues.length; i += 100) {
+        await db.insert(entries).values(entryValues.slice(i, i + 100));
+        await db.insert(userEntries).values(userEntryValues.slice(i, i + 100));
+      }
+
+      const caller = createCaller(await createAuthContext(userId));
+      const since = new Date("2025-04-02T12:00:00.000Z").toISOString();
+      let cursors: { entries?: string; entriesAfterId?: string } = { entries: since };
+      const deleted: string[] = [];
+      const stateChanged: string[] = [];
+      let pages = 0;
+      for (;;) {
+        const result = await caller.sync.changes({ ...cursors, entriesSince: since });
+        pages++;
+        deleted.push(...result.deletions.map((d) => d.entryId));
+        for (const event of result.events) {
+          if (event.type === "entry_state_changed") stateChanged.push(event.entryId);
+        }
+        cursors = {
+          entries: result.cursors.entries,
+          entriesAfterId: result.cursors.entriesAfterId,
+        };
+        if (!result.hasMore) break;
+        expect(pages).toBeLessThan(10);
+      }
+
+      expect(pages).toBeGreaterThan(1);
+      expect(deleted).toHaveLength(hiddenIds.size);
+      expect(new Set(deleted)).toEqual(hiddenIds);
+      expect(new Set(stateChanged)).toEqual(visibleIds);
+      expect(stateChanged).toHaveLength(visibleIds.size);
+      // The cursor ends past the unstar, microseconds included.
+      expect(cursors.entries).toBe(unstarredAt);
+    }, 30000);
+
+    it("doesn't report a hidden entry whose state didn't change since the start", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/hidden-old.xml" });
+      await createTestSubscription(userId, feedId, {
+        unsubscribedAt: new Date("2025-05-01T00:00:00.000Z"),
+      });
+      // Left long ago; only the entry's content changed since.
+      const entryId = await createTestEntry(feedId, {
+        createdAt: new Date("2025-05-02T00:00:00.000Z"),
+        updatedAt: new Date("2025-05-04T00:00:00.000Z"),
+      });
+      await createUserEntry(userId, entryId, { updatedAt: new Date("2025-05-02T00:00:00.000Z") });
+
+      const result = await createCaller(await createAuthContext(userId)).sync.changes({
+        entries: new Date("2025-05-03T00:00:00.000Z").toISOString(),
+      });
+      expect(result.deletions).toEqual([]);
       expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
     });
   });

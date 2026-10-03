@@ -22,7 +22,7 @@ import {
 } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishSubscriptionCreated } from "../redis/pubsub";
-import { toNewEntryListData } from "@/lib/events/schemas";
+import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 
@@ -487,23 +487,17 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   });
 
   // 9. Publish real-time event via Redis
-  // Fire and forget - we don't want publishing failures to affect email processing
-  // Spam-flagged entries get no list payload: the default entries.list
-  // filters isSpam rows, so inserting one client-side would show a ghost row
-  // the server would never return. The event still fires for count updates.
-  publishNewEntry(
-    feed.id,
-    entryId,
-    now,
-    "email",
-    newEntry.isSpam ? undefined : toNewEntryListData(newEntry, feed.title)
-  ).catch((err) => {
-    logger.error("Failed to publish new_entry event for email", {
-      feedId: feed.id,
-      entryId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  });
+  // Fire and forget - we don't want publishing failures to affect email processing.
+  // A spam entry's event still fires, for the counts.
+  publishNewEntry(feed.id, entryId, now, "email", entryListPayload(newEntry, feed.title)).catch(
+    (err) => {
+      logger.error("Failed to publish new_entry event for email", {
+        feedId: feed.id,
+        entryId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  );
 
   return {
     success: true,

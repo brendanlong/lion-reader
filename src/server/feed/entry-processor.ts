@@ -12,7 +12,8 @@ import { db } from "../db";
 import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
 import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
-import { toNewEntryListData, type NewEntryListDataSource } from "@/lib/events/schemas";
+import type { NewEntryListDataSource } from "@/lib/events/schemas";
+import { newEntryAnnouncement } from "@/server/services/entry-sync-events";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { canonicalGuid, canonicalGuidSql, guidMatchCandidates } from "./guid-identity";
@@ -40,9 +41,11 @@ export interface ProcessedEntry {
    * Present when isNew or isUpdated (unchanged entries aren't re-read).
    */
   updatedAt?: Date;
-  /** List-item metadata for the new_entry event. Present when isNew. */
-  newEntryData?: NewEntryListDataSource;
+  /** What the new_entry event is built from. Present when isNew. */
+  newEntryData?: NewEntryEventSource;
 }
+
+type NewEntryEventSource = NewEntryListDataSource & { isSpam: boolean; isBackfill: boolean };
 
 /**
  * Result of processing all entries from a feed.
@@ -307,7 +310,7 @@ export async function updateEntryContent(
 /**
  * Extracts the list-item metadata for new_entry events from an entry row.
  */
-function toNewEntryData(entry: Entry): NewEntryListDataSource {
+function toNewEntryData(entry: Entry): NewEntryEventSource {
   return {
     url: entry.url,
     title: entry.title,
@@ -316,6 +319,8 @@ function toNewEntryData(entry: Entry): NewEntryListDataSource {
     publishedAt: entry.publishedAt,
     fetchedAt: entry.fetchedAt,
     siteName: entry.siteName,
+    isSpam: entry.isSpam,
+    isBackfill: entry.isBackfill,
   };
 }
 
@@ -736,23 +741,21 @@ export async function processEntries(
     // the counts would exclude these entries (leaving badges stale until the
     // next count-bearing event). Fire and forget — publishing failures must
     // not affect entry processing.
-    // Backfilled entries are excluded: they were fanned out as read, so there is
-    // no new unread item for a connected client to insert or count.
     for (const result of results) {
-      if (result.isNew && !result.isBackfill && result.updatedAt && result.newEntryData) {
-        publishNewEntry(
-          feedId,
-          result.id,
-          result.updatedAt,
-          "web",
-          toNewEntryListData(result.newEntryData, feedTitle ?? null)
-        ).catch((err) => {
-          logger.error("Failed to publish new_entry event", {
-            feedId,
-            entryId: result.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
+      const announcement =
+        result.isNew && result.newEntryData
+          ? newEntryAnnouncement(result.newEntryData, feedTitle ?? null)
+          : null;
+      if (announcement && result.updatedAt) {
+        publishNewEntry(feedId, result.id, result.updatedAt, "web", announcement.entry).catch(
+          (err) => {
+            logger.error("Failed to publish new_entry event", {
+              feedId,
+              entryId: result.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        );
       }
     }
   }
