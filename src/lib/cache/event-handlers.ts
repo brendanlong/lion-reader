@@ -209,7 +209,7 @@ export function handleSyncEvent(
         }
         // If not cached, the invalidation below will correct it
       }
-      updateSubscriptionInCache(utils, event.subscriptionId, subUpdates);
+      updateSubscriptionInCache(utils, queryClient, event.subscriptionId, subUpdates);
       utils.tags.list.invalidate();
       utils.subscriptions.list.invalidate();
       break;

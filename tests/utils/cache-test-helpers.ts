@@ -338,6 +338,7 @@ type SetInfiniteData = (input: unknown, data: unknown) => void;
  */
 export function seedCacheState(
   utils: TRPCClientUtils,
+  queryClient: QueryClient,
   options: {
     subscriptions?: SeededSubscription[];
     tags?: SeededTag[];
@@ -357,7 +358,7 @@ export function seedCacheState(
 
   // Seed subscriptions into the subscription lookup map
   for (const sub of subs) {
-    addSubscriptionToCache(sub);
+    addSubscriptionToCache(queryClient, sub);
   }
 
   // Seed the sidebar's per-tag / uncategorized subscriptions.list pages (the

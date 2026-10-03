@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { _resetSubscriptionLookupMap, findCachedSubscription } from "@/lib/cache/count-cache";
+import { findCachedSubscription } from "@/lib/cache/count-cache";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   createSeededQueryClient,
@@ -49,10 +49,9 @@ let queryClient: QueryClient;
 let invalidateSpy: MockInstance;
 
 beforeEach(() => {
-  _resetSubscriptionLookupMap();
   queryClient = createSeededQueryClient();
   utils = createRealTrpcUtils(queryClient);
-  seedCacheState(utils);
+  seedCacheState(utils, queryClient);
   // Spy after seeding so only the event-driven invalidations are recorded.
   invalidateSpy = spyOnInvalidate(queryClient);
 });
