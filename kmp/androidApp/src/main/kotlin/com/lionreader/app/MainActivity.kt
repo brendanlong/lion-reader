@@ -58,7 +58,6 @@ import com.lionreader.app.ui.ScreenTransitions
 import com.lionreader.app.ui.SettingsScreen
 import com.lionreader.app.ui.SignInScreen
 import com.lionreader.app.ui.isDark
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val NO_BROWSER = "Signing in needs a web browser."
@@ -188,33 +187,18 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun App() {
-        val connection by graph.connection.collectAsStateWithLifecycle()
-        val signedIn by connection.auth.signedIn.collectAsStateWithLifecycle()
-        val current by graph.account.collectAsStateWithLifecycle()
-        val account = current
-        if (!signedIn) {
-            val error by graph.signInError.collectAsStateWithLifecycle()
-            SignInScreen(graph.serverUrl, error, allowHttp = BuildConfig.DEBUG, ::startSignIn)
-            return
-        }
-        val confirmed = account?.confirmed?.collectAsStateWithLifecycle()?.value == true
-        if (account == null || account.connection !== connection || !confirmed) {
-            // Signed in, but which account isn't settled yet (e.g. the
-            // /auth/me call failed offline); keep trying.
-            LaunchedEffect(connection) {
-                while (
-                    graph.account.value.let { it?.connection !== connection || !it.confirmed.value }
-                ) {
-                    runCatching { graph.signedIn() }
-                    delay(5_000)
+        val status by graph.accountStatus.collectAsStateWithLifecycle()
+        when (val current = status) {
+            AccountStatus.SignedOut -> {
+                val error by graph.signInError.collectAsStateWithLifecycle()
+                SignInScreen(graph.serverUrl, error, allowHttp = BuildConfig.DEBUG, ::startSignIn)
+            }
+            AccountStatus.Confirming ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
-            }
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            return
+            is AccountStatus.Ready -> key(current.session.dbName) { AccountApp(current.session) }
         }
-        key(account.dbName) { AccountApp(account) }
     }
 
     @OptIn(ExperimentalMaterial3AdaptiveApi::class)

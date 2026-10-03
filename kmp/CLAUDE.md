@@ -44,10 +44,14 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   involuntary sign-out doesn't touch them); another account gets a fresh file
   and the previous one is deleted; signing out deletes it (after trying to
   send the unsent changes, and asking before losing any), and then the
-  tokens, before revoking them. Start-up deletes any other account's file
-  (one a sign-out or switch didn't live to finish). A kept account isn't shown
+  tokens, before revoking them. Both end the session one way
+  (`AppGraph.endSession`): narration stops, and the account's cached cloud
+  audio goes with its database. Start-up deletes any other account's file and
+  audio (ones a sign-out or switch didn't live to finish). A kept account isn't shown
   or synced after a new sign-in until `/auth/me` says the tokens are its
-  (`AccountSession.confirmed`): they may be someone else's. A closed session's
+  (`AccountSession.confirmed`): they may be someone else's. `AppGraph` keeps
+  asking until it knows (`accountStatus`), whether or not the app is on
+  screen. A closed session's
   database turns any further use into a cancellation (`SessionDriver`), since
   screens and syncs can still be running on it.
 - **Local state vs. unsent changes.** `entry.read`/`starred` hold the last

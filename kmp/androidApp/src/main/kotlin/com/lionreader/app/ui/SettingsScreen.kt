@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +63,8 @@ import com.lionreader.app.openWebPage
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 private val RETENTION_CHOICES = listOf(7, 14, 30, 90)
@@ -227,18 +230,20 @@ private fun NarrationSettings(
     // Null while loading; empty when this account has none (no speech provider
     // key) or the server can't be reached.
     val account by graph.account.collectAsStateWithLifecycle()
-    val cloud by
-        produceState<VoiceModels?>(null, account) {
-            value =
-                // The picked voice is listed even if the provider no longer offers it.
-                runCatching {
-                    account
-                        ?.connection
-                        ?.api
-                        ?.voiceModels(settings.cloudVoiceModel, settings.cloudVoice)
-                }
-                    .getOrNull() ?: VoiceModels(emptyList(), "")
-        }
+    // What narration last heard (it works offline too), until the server answers again.
+    val known by
+        remember(account) { account?.voiceModels ?: MutableStateFlow(null) }
+            .collectAsStateWithLifecycle()
+    var asked by remember(account) { mutableStateOf(false) }
+    LaunchedEffect(account) {
+        try {
+            account?.fetchVoiceModels(settings.cloudVoiceModel, settings.cloudVoice)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {}
+        asked = true
+    }
+    val cloud = known ?: VoiceModels(emptyList(), "").takeIf { asked }
     Section("Narration voices") {
         val engines =
             if (
@@ -279,10 +284,9 @@ private fun NarrationSettings(
             }
             NarrationEngine.CLOUD -> {
                 val models = cloud?.models.orEmpty()
-                val defaultModel =
-                    models.firstOrNull { it.id == cloud?.defaultModelId } ?: models.firstOrNull()
-                val model = models.firstOrNull { it.id == settings.cloudVoiceModel } ?: defaultModel
-                if (model == null) {
+                val defaultModel = cloud?.defaultModel
+                val resolved = cloud?.resolve(settings.cloudVoiceModel, settings.cloudVoice)
+                if (resolved == null) {
                     Text(
                         if (cloud == null) "Loading cloud voices…"
                         else
@@ -291,6 +295,7 @@ private fun NarrationSettings(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
+                    val (model, voice) = resolved
                     if (models.size > 1) {
                         val defaultLabel = "Default (${modelLabel(defaultModel ?: model)})"
                         // null is "Default": it follows the server's default if that changes.
@@ -318,7 +323,6 @@ private fun NarrationSettings(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    val voice = settings.cloudVoice?.takeIf(model::hasVoice) ?: model.defaultVoice
                     // Only the voice: a model left on the default follows the server's default.
                     Picker(model.voiceName(voice), model.voices, { it.name }) { choice ->
                         update { it.copy(cloudVoice = choice.id) }

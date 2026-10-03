@@ -9,6 +9,7 @@ import com.lionreader.app.AppSettings
 import java.io.File
 import java.io.IOException
 import java.time.Duration
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -58,10 +59,12 @@ class NarratorTest {
             }
         }
 
+    private val settings = MutableStateFlow(AppSettings())
+
     private val narrator =
         Narrator(
             ApplicationProvider.getApplicationContext(),
-            { AppSettings() },
+            settings,
             {
                 if (engineUnreachable) throw SpeechInterrupted("Couldn't reach Lion Reader.")
                 engine
@@ -364,6 +367,23 @@ class NarratorTest {
         assertEquals(3, synthesized.count { it == "One." })
         assertEquals(1, state?.paragraph)
         assertTrue(state!!.playing)
+    }
+
+    @Test
+    fun theSpeedFollowsTheSetting() {
+        settings.value = AppSettings(narrationSpeed = 1.5f)
+        narrator.narrate(article("a", "One.", "Two."))
+        idle()
+        assertEquals(1.5f, narrator.player.playbackParameters.speed)
+
+        settings.value = AppSettings(narrationSpeed = 2f)
+        idle()
+        assertEquals(2f, narrator.player.playbackParameters.speed)
+        // Starting again elsewhere keeps it.
+        narrator.follow("b", "Title b")
+        narrator.supply(article("b", "Three."))
+        idle()
+        assertEquals(2f, narrator.player.playbackParameters.speed)
     }
 
     @Test

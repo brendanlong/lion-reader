@@ -30,7 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -70,7 +72,7 @@ data class NarrationState(
  */
 class Narrator(
     private val context: Context,
-    private val settings: () -> AppSettings,
+    private val settings: StateFlow<AppSettings>,
     private val engineFor: suspend (AppSettings) -> SpeechEngine,
     /**
      * Binds a controller, which starts [NarrationService]: it puts the player in a media session
@@ -112,7 +114,17 @@ class Narrator(
      */
     private val reached = MutableStateFlow(0L)
 
-    val player: ExoPlayer by lazy { buildPlayer() }
+    private val playerInstance = lazy { buildPlayer() }
+    val player: ExoPlayer by playerInstance
+
+    init {
+        scope.launch {
+            settings
+                .map { it.narrationSpeed }
+                .distinctUntilChanged()
+                .collect { if (playerInstance.isInitialized()) player.setPlaybackSpeed(it) }
+        }
+    }
 
     @OptIn(UnstableApi::class)
     private fun buildPlayer(): ExoPlayer =
@@ -135,7 +147,6 @@ class Narrator(
 
     /** What the narrator has of the article it's on; replaced whole when it moves on. */
     private var current: Current = Current.Awaiting
-    private var speed = 1f
     private val playingChunk = MutableStateFlow(0)
     /**
      * Unbinds the media session; kept from one article to the next, so the notification doesn't
@@ -261,12 +272,11 @@ class Narrator(
 
     /** Gets [audio]'s engine and chunks ready, then starts from the state's paragraph. */
     private fun prepare(audio: Current.Article) {
-        speed = settings().narrationSpeed
         if (session == null) session = connectSession()
         audio.preparing = scope.launch {
             val engine =
                 try {
-                    reaching(Starved()) { engineFor(settings()) }
+                    reaching(Starved()) { engineFor(settings.value) }
                 } catch (e: SpeechUnavailable) {
                     return@launch fail(e.message)
                 }
@@ -366,11 +376,6 @@ class Narrator(
      */
     fun awaitingSynthesis(): Boolean = onArticle?.feed?.fed == false
 
-    fun setSpeed(speed: Float) {
-        this.speed = speed
-        player.setPlaybackSpeed(speed)
-    }
-
     fun stop() {
         reset()
         _state.value = null
@@ -410,7 +415,7 @@ class Narrator(
         playingChunk.value = chunk
         val feed = Feed()
         audio.feed = feed
-        player.setPlaybackSpeed(speed)
+        player.setPlaybackSpeed(settings.value.narrationSpeed)
         player.playWhenReady = play
         publish(chunk)
         feed.job = scope.launch {
