@@ -296,6 +296,28 @@ with the release, after checking the version is higher than the last one
 For Play, upload the `.aab` from the run's artifact (a new personal developer
 account needs a closed test with testers for 14 days before production).
 
+### Trying R8 on a device
+
+CI builds the release variant on every pull request, so R8 errors show up
+early, but missing keep rules only fail at run time. To try R8 on a device
+against a dev server, add a throwaway build type (not committed) with release's
+R8 and the debug app's identity, so it installs over the debug app and can
+reach http:
+
+```kotlin
+create("r8test") {
+    initWith(getByName("release"))
+    applicationIdSuffix = ".debug"
+    signingConfig = devSigning
+    matchingFallbacks += listOf("release")
+}
+// after buildTypes:
+sourceSets.getByName("r8test").manifest.srcFile("src/debug/AndroidManifest.xml")
+```
+
+then `./gradlew :androidApp:assembleR8test` from `kmp/`. (Debug builds with R8
+turned on don't test it: debuggable builds skip R8's renaming.)
+
 ## Ongoing Operations
 
 ### Scaling

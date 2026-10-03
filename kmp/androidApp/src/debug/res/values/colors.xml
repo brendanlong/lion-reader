@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Slate, so the debug app is easy to tell from the release one. -->
+    <!-- Slate, so the debug app is easy to tell from the release one (except
+         with themed icons on, which use only the monochrome layer). -->
     <color name="ic_launcher_background">#FF455A64</color>
 </resources>

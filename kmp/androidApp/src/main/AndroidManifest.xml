@@ -28,7 +28,9 @@
             android:exported="true"
             android:launchMode="singleTask">
             <!-- The OAuth redirect, verified against the server's
-                 /.well-known/assetlinks.json so only this app receives it. -->
+                 /.well-known/assetlinks.json (the certificates in the server's
+                 ANDROID_APP_CERT_SHA256, and ANDROID_DEBUG_APP_CERT_SHA256 for the
+                 debug app) so only this app receives it. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

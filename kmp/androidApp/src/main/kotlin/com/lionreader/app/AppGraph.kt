@@ -533,7 +533,10 @@ class AccountSession(
         }
     }
 
-    /** Pulls whenever the server says something changed, until cancelled (see kmp/CLAUDE.md). */
+    /**
+     * Pulls whenever the server says something changed, until cancelled ([followLiveUpdates]). The
+     * app runs it only while on screen; in the background the periodic sync is all there is.
+     */
     suspend fun followServer() =
         withContext(Dispatchers.IO) { followLiveUpdates(connection.api, pull = { sync.sync() }) }
 

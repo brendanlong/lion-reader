@@ -1,6 +1,10 @@
 package com.lionreader.shared.sync
 
-/** How much the offline store keeps. Starred and saved entries are always kept. */
+/**
+ * How much the offline store keeps. Starred and saved entries, and ones with unsent changes, are
+ * always kept, and an entry read within the window counts as in it however old it is (Recently
+ * Read).
+ */
 data class RetentionPolicy(
     /** Entries older than this (by publish time) are dropped. */
     val windowDays: Int = 30,
