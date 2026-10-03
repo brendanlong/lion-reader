@@ -1,6 +1,6 @@
 # Frontend State Management
 
-This document is the contract for how queries, mutations, and SSE events update client state (the local entry store and the React Query cache). Keep it updated when changing queries/mutations/SSE handling.
+This document is the contract for how queries, mutations, and SSE events update client state (the local entry store and the React Query cache). Keep it updated when changing queries/mutations/SSE handling. Flow diagrams: `docs/diagrams/frontend-data-flow.d2`, `docs/diagrams/sse-cache-updates.d2`.
 
 ## Architecture Overview
 
@@ -81,18 +81,18 @@ stored entries matching the view's filters while its first page loads.
 
 ## Core Queries
 
-| Query                           | Used In                                                    | Notes                                                                                                                                                                                                                          |
-| ------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `entries.list` (infinite)       | `EntryList`, `EntryListContainer`, `UnifiedEntriesContent` | Filters: `subscriptionId`, `tagId`, `uncategorized`, `unreadOnly`, `starredOnly`, `sortOrder`, `sortBy` (`"published"` \| `"readChanged"`), `type`, `excludeTypes`, `query` (full-text search), `limit`. `staleTime: Infinity` |
-| `entries.get`                   | `EntryContent`                                             | Single entry with full content (includes `fetchFullContent`, so no separate subscription query needed)                                                                                                                         |
-| `subscriptions.get`             | `UnifiedEntriesContent`                                    | Resolves the route/reader title for `/subscription/[id]`; falls back to the sidebar list cache until it resolves                                                                                                               |
-| `entries.count`                 | `Sidebar`                                                  | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }` badges                                                                                                                                                                   |
-| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar)                            | The sidebar per-tag / per-uncategorized subscription list (`{ tagId }` or `{ uncategorized }`). This is the only remaining consumer of `subscriptions.list`.                                                                   |
-| `tags.list`                     | `Sidebar`, `EditSubscriptionDialog`, `TagManagement`       | All tags with unread + uncategorized counts                                                                                                                                                                                    |
+| Query                           | Used In                                                    | Notes                                                                                                                                                        |
+| ------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `entries.list` (infinite)       | `EntryList`, `EntryListContainer`, `UnifiedEntriesContent` | `staleTime: Infinity`                                                                                                                                        |
+| `entries.get`                   | `EntryContent`                                             | Single entry with full content (includes `fetchFullContent`, so no separate subscription query needed)                                                       |
+| `subscriptions.get`             | `UnifiedEntriesContent`                                    | Resolves the route/reader title for `/subscription/[id]`; falls back to the sidebar list cache until it resolves                                             |
+| `entries.count`                 | `Sidebar`                                                  | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }` badges                                                                                                 |
+| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar)                            | The sidebar per-tag / per-uncategorized subscription list (`{ tagId }` or `{ uncategorized }`). This is the only remaining consumer of `subscriptions.list`. |
+| `tags.list`                     | `Sidebar`, `EditSubscriptionDialog`, `TagManagement`       | All tags with unread + uncategorized counts                                                                                                                  |
 
 `sortBy: "readChanged"` backs the `/recently-read` view (entries sorted by `read_changed_at` rather than publish time; defaults to `unreadOnly=false`). It and search (`query`) lists get **no** live inserts: `insertIntoMatchingLists` (`src/lib/local-db/entry-lists.ts`) skips any list whose input has a `query` or a `sortBy` other than `"published"`, because their ordering (relevance rank / read-time) can't be derived from an entry's fields. Those views instead refresh on navigation like any other list.
 
-`query` backs the entry search UI (#565): the `?q=` URL param (set by the search bar in `EntryPageLayout`, opened via the header toggle or `/`) flows through `parseViewPreferencesFromParams` → `buildEntriesListInput` → `useEntriesListInput`, so search results reuse the same `entries.list` infinite-query machinery scoped to the current view's filters, and `EntryListPage` prefetches them server-side for `?q=` deep links. While a `q` is present, the `unreadOnly` **default** flips to `false` (a search is usually for something already read; the toggle still works) and `sortOrder`/`direction` are canonicalized to `"newest"`/`"forward"` in the input (the backend ranks search results by relevance and ignores sort order — a lingering `?sort=` param must not fragment the cache key).
+Search (`?q=`) is an ordinary `entries.list` scoped to the current view's filters. With a query present, `unreadOnly` defaults to `false` and sort order is canonicalized in the input, since results are ranked by relevance and a stray `?sort=` must not fragment the cache key.
 
 ## Mutations
 
@@ -118,7 +118,7 @@ stored entries matching the view's filters while its first page loads.
 
 Tag mutations (`tags.create/update/delete`) invalidate/patch via their components; the corresponding SSE events keep other tabs in sync.
 
-**No-op re-saves publish nothing** (#1160, "Row Written vs. Value Flipped" in `src/server/CLAUDE.md`): other tabs only see `subscription_updated` for genuine changes; the acting tab still updates its own cache as listed above.
+No-op re-saves publish no `subscription_updated` ("Row Written vs. Value Flipped" in `src/server/CLAUDE.md`); the acting tab still updates its own cache.
 
 ## Real-Time Updates
 
@@ -211,33 +211,10 @@ Opening an entry fires `markRead` once, as soon as `entries.get` data is availab
 
 Mutations return everything cache updates need (the client never derives counts locally); see the procedures' output schemas for the shapes.
 
-`counts` is **absent when no value actually flipped** (a same-value re-assert —
-e.g. marking an already-read entry read again — writes the row to advance the
-last-write-wins watermark but changes nothing the user can see, so the server
-skips the count aggregation; issue #1118). The `onSuccess` handlers apply counts
-only when present; absent counts mean the cached counts are already correct. The
-same rule gates the server's `entry_state_changed` SSE publish, so re-asserts
-emit no event at all.
-
-Re-asserts likewise don't churn delta sync — see "Row Written vs. Value Flipped" in `src/server/CLAUDE.md`.
-
-## Key Files
-
-| File                                               | Purpose                                                             |
-| -------------------------------------------------- | ------------------------------------------------------------------- |
-| `src/lib/local-db/*` (see table above)             | Local entry store, list membership, QueryCache ingestion            |
-| `src/lib/cache/*` (see table above)                | Count/subscription/tag cache operations, SSE event dispatch         |
-| `src/lib/hooks/useEntryMutations.ts`               | Entry mutations: TanStack DB transactions on the entry store        |
-| `src/lib/hooks/useEntryListRefreshOnNavigate.ts`   | Navigation-triggered entry list invalidation (pathname change)      |
-| `src/lib/hooks/useRealtimeUpdates.ts`              | SSE/polling glue feeding the connection machine and sync session    |
-| `src/lib/events/connection-state.ts`               | Pure connection state machine (reconnect/backoff/polling fallback)  |
-| `src/lib/events/sync-session.ts`                   | Pure catch-up sync session (cursor freeze, retry, catch-up start)   |
-| `src/lib/events/cursors.ts`                        | Pure sync-cursor bookkeeping                                        |
-| `src/components/entries/EntryListContainer.tsx`    | Stateful entry list container (query, pagination, keyboard nav)     |
-| `src/components/entries/UnifiedEntriesContent.tsx` | Unified entry page with navigation and pagination                   |
-| `src/components/layout/Sidebar.tsx`                | Subscription delete via `useUnsubscribeMutation`                    |
-| `src/lib/hooks/useUnsubscribeMutation.ts`          | Shared `subscriptions.delete` choreography (sidebar + broken feeds) |
-| `src/lib/trpc/handler-link.ts`                     | In-process tRPC link (component tests, the public demo's store)     |
+`counts` is **absent when no value actually flipped** (a same-value re-assert;
+"Row Written vs. Value Flipped" in `src/server/CLAUDE.md`), and such a write
+publishes no `entry_state_changed`. Apply counts only when present; absent means
+the cached counts are already correct.
 
 ## Adding New Cache Updates
 

@@ -173,9 +173,21 @@ const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Decides whether an article we are seeing for the first time is a **backfill**:
- * something the publisher re-announced out of its archive rather than news.
- * Rationale, threshold and the cases this is deliberately inert in: "Backfill
- * Guard" in `src/server/feed/CLAUDE.md` (issue #1500).
+ * something the publisher re-announced out of its archive rather than news
+ * (issue #1500: one WordPress bulk edit put ~600 four-year-old articles into
+ * subscribers' unread counts). A replay can arrive one WebSub push at a time,
+ * so the signal has to be per entry: a first sighting is a backfill when it was
+ * published well before the previous full fetch — it was already old when we
+ * last saw the whole feed, and it wasn't there. Backfilled entries are fanned
+ * out already read and publish no `new_entry`, but stay in lists and search.
+ *
+ * The month threshold only has to clear ordinary syndication noise (stale CDN
+ * copies, clock skew, mild backdating); archive replays miss it by years. The
+ * guard is inert with no history to judge against: a feed's first fetch, a
+ * subscribe-time forced refresh, a dormant feed polled again, and entries with
+ * no date. Accepted risk: a feed whose dates are systematically wrong or old
+ * has every first sighting marked read, visible only in the fetch's
+ * `backfilledEntries` metadata.
  *
  * The verdict is persisted as `entries.is_backfill` at insert time, because the
  * paths that grant visibility later — the fetch fanout's #952 self-heal, the

@@ -58,6 +58,9 @@ export async function buildBundle({ label, entryPoint, outfile, external = [] })
       bundle: true,
       platform: "node",
       target: "node26",
+      // Not "esm": cjs-module-lexer can't see a native .node binding's exports,
+      // so ESM named imports of external CJS deps (the native addons) throw at
+      // load. dist-cjs-marker.mjs scopes dist/ back to CommonJS.
       format: "cjs",
       outfile: outPath,
 

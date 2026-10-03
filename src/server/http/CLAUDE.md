@@ -1,33 +1,19 @@
-# Outbound HTTP & SSRF Protection (`src/server/http/`)
+# HTTP Helpers (`src/server/http/`)
 
-This file governs the outbound-HTTP helpers: SSRF-protected fetching (`ssrf.ts`), user agent (`user-agent.ts`), CORS, compression, and client IP. One inbound-response concern also lives here: the Content-Security-Policy builders (`csp.ts`, security-critical — the XSS backstop behind the sanitizer). `src/proxy.ts` applies the strict policy per-request with a fresh `script-src` nonce on every dynamic route, and the relaxed static policy (`'unsafe-inline'`, no nonce — issue #1359) on the statically-prerendered public routes, which must render zero user-supplied HTML; directive rationale is documented in `csp.ts` itself, the header wiring and the public-page invariant in SECURITY.md.
+## Outbound fetching
 
-Every outgoing request must send our custom User-Agent (`USER_AGENT`/`buildUserAgent` from `@/server/http/user-agent`).
+- **Fetch user-influenced URLs only through `fetchWithSsrfProtection`** (`ssrf.ts`; SECURITY.md §2). Its header explains the DNS pinning and per-hop redirect checks. `ALLOW_PRIVATE_NETWORK_FETCH=true` (the `.env.test` default) disables the block for local fetches.
+- **Decode fetched, pushed or uploaded bodies with `decodeBody`** (`charset.ts`), never `buffer.toString()`, which turns every legacy windows-1252/Latin-1 page into U+FFFD (#1546). `readResponseWithSizeLimit` already does; callers holding raw bytes must keep the `Content-Type` with them.
 
-Decode fetched (or pushed/uploaded) bodies to text with `decodeBody` (`charset.ts`, precedence documented there) — never `buffer.toString()`, which reads every legacy windows-1252/Latin-1 page or feed as U+FFFD (#1546). `readResponseWithSizeLimit` already does this; callers holding raw bytes must keep the `Content-Type` alongside them.
+## CSP
 
-## CDN (static assets, demo images, recorded narration)
+`csp.ts` builds the Content-Security-Policy (the XSS backstop; directive rationale lives there), and `src/proxy.ts` applies it. The two-tier policy and its public-page invariant are in SECURITY.md §1.
 
-The Bunny pull zone (`ASSET_PREFIX`, set via `[build.args]` in `fly.toml`) wraps the **whole site** as its origin and honors origin `Cache-Control`, so what it actually caches is decided by the headers we send, not by which paths it can reach:
+## CDN
 
-- **`/_next/static`** — content-hashed, served via Next's `assetPrefix` with `immutable`. No purge/deploy coordination; anything `import`ed into the app (images included) lands here and inherits that.
-- **`/api/prerecorded-speech/<key>`** — the demo's recorded narration, which the player fetches through the CDN by `NEXT_PUBLIC_ASSET_PREFIX` (CORS `*`, `immutable`; a key is a hash of what the recording says). Anything else client code wants CDN-cached goes the same way: an absolute CDN URL, a constant CORS header, and `connect-src` (which already allows the CDN).
-- **HTML + RSC** — never CDN-cached. Dynamic pages keep Next's default `private, no-store`. Next stamps `s-maxage=31536000` on the statically-prerendered public pages (issue #1359) and their RSC payloads; `src/proxy.ts` overrides it to `private, no-cache` on the same `isPublicStaticPath` responses where it sets the static CSP. (This works at the source: Next's `sendRenderResult` only stamps its own Cache-Control when none is already set, so the middleware header wins — no custom-server rewrite needed.) That HTML/RSC is build-coupled (hashed chunks vanish on deploy; RSC Flight payloads version-skew), and — since Bunny already keys its cache on `_rsc` and `entry` — an edge-cached copy would also bypass the maintenance gate in `scripts/server.ts` (#1318). `private` keeps it out of shared caches; `no-cache` lets the browser revalidate so a deploy can't leave it booting a stale document (Next doesn't self-heal missing bootstrap chunks on an initial load), and a revalidation during maintenance hits the 503 gate. See docs/DEPLOYMENT.md, "Why HTML and RSC are not CDN-cached".
+The Bunny pull zone (`ASSET_PREFIX`, `terraform/bunny.tf`) fronts the whole site and honors origin `Cache-Control`, so **our headers decide what it caches**:
 
-When `ASSET_PREFIX` is set, `csp.ts` adds its origin to the script/style/font/connect directives (`img-src` already allows any https, so CDN-served demo images need no CSP change).
-
-Our chunks load from the CDN without CORS, and the browser resolves an `import()` in such a script against `about:blank`. So any URL that client code (or a library it configures, like ONNX Runtime's `wasmPaths`) passes to `import()` at runtime must be absolute — `${location.origin}/…` for files in `public/`. A root-relative path works locally and in CI (no `ASSET_PREFIX`) and fails only in production.
-
-## SSRF Protection
-
-All server-side fetches that target user-influenced URLs (feed preview/discover, feed fetching, full-content fetching, WebSub hub callbacks) are guarded against Server-Side Request Forgery to private/internal networks. The shared helper `fetchWithSsrfProtection(url, init)` in `src/server/http/ssrf.ts` performs the fetch and:
-
-0. Rejects any URL whose scheme is not `http:`/`https:` via an explicit allowlist (`assertAllowedScheme`), so `file:`/`ftp:`/`gopher:`/`data:` etc. are blocked by the guard itself rather than left to whatever the underlying fetch happens to accept. Enforced on the initial URL **and every redirect hop**, in both the dispatcher path and the `ALLOW_PRIVATE_NETWORK_FETCH` path.
-1. Rejects literal private/reserved IP hosts up front (e.g. `http://169.254.169.254/`, `http://127.0.0.1/`, IPv4-mapped IPv6 literals, decimal-encoded IPs which WHATWG `URL` normalizes to dotted form). undici skips the custom DNS lookup for IP literals, so they must be checked here.
-2. Attaches a custom undici dispatcher whose DNS `lookup` resolves the hostname, blocks if **any** resolved address is private, and connects only to the vetted address — closing the DNS-rebinding TOCTOU gap.
-
-**Redirects are validated per hop.** Because undici skips the custom `lookup` for IP-literal hosts, letting `fetch` follow redirects internally would connect to a redirect target like `http://169.254.169.254/` with **no** validation. So `fetchWithSsrfProtection` always drives the underlying fetch with `redirect: "manual"` and follows redirects itself in a loop, re-running the literal-IP check (step 1) on every hop's URL before connecting; the dispatcher (step 2) covers hostname hops. Callers that pass `redirect: "manual"` (the feed fetcher, which tracks permanent redirects itself) get the first response back unfollowed and re-enter the helper per hop; `redirect: "error"` throws on the first redirect. The loop follows up to 20 hops and applies the Fetch spec's method downgrade (301/302 on a POST, and 303, become GET with the body dropped). No caller can opt out of per-hop validation.
-
-The helper must perform the fetch itself rather than hand the dispatcher to global `fetch`: the dispatcher is built from the npm `undici` package, while Node's global fetch is a different bundled undici copy that accepts a foreign dispatcher but skips response body decompression with it (observed on Node 26), corrupting every compressed response. `fetchWithSsrfProtection` uses the npm package's own `fetch` so the dispatcher and fetch always come from the same copy.
-
-Blocked ranges cover loopback, RFC 1918 private, carrier-grade NAT, link-local (incl. cloud metadata), documentation/test, multicast, and reserved space for both IPv4 and IPv6 (and IPv4-mapped IPv6). Set `ALLOW_PRIVATE_NETWORK_FETCH=true` to disable the block for dev/test environments that fetch from localhost (this is the default in `.env.test`).
+- `/_next/static` is content-hashed and `immutable`; anything `import`ed into the app lands there.
+- To CDN-cache something else from client code (as `/api/prerecorded-speech/<key>` does), fetch it by an absolute `NEXT_PUBLIC_ASSET_PREFIX` URL, with a constant CORS header and an `immutable` content-addressed key.
+- **HTML and RSC are never CDN-cached.** They reference build-specific chunks that vanish on the next deploy (`?_rsc=` is a router-state cache-buster, not a build id, so it doesn't make them safe either), and an edge copy would also bypass the maintenance gate (#1318). Dynamic pages keep Next's `private, no-store`; on the prerendered public pages `src/proxy.ts` replaces Next's `s-maxage` with `private, no-cache`. Caching HTML would need Next's `deploymentId` and old builds' assets kept available — a new design, not a header change.
+- With `ASSET_PREFIX` set our chunks load cross-origin without CORS, so the browser resolves a runtime `import()` in them against `about:blank`: **any URL client code passes to `import()` (or to a library like ONNX Runtime's `wasmPaths`) must be absolute** (`${location.origin}/…`). Root-relative works locally and in CI and fails only in production.

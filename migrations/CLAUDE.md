@@ -1,15 +1,8 @@
-- We use a custom migration runner, not drizzle-kit. The migration format looks like drizzle-kit's but drizzle-kit is not installed. Never run migrations with drizzle-kit, always use `pnpm db:migrate` or `pnpm db:migrate:test`. See ../scripts/migrate.ts if you need details.
-- Always add new migrations to meta/\_journal.json. Only migrations in the journal will be run (tests/unit/migrations-journal.test.ts enforces that every .sql file is journaled).
-- Never use `CREATE INDEX CONCURRENTLY` in a migration — the runner wraps each migration in a transaction, so it can't run. If an index must be built concurrently on production, apply it manually first, then journal a plain `CREATE INDEX IF NOT EXISTS` migration so other databases get it too.
-- Test new migrations using `pnpm test:integration`
-- Read @schema.sql and keep it up to date with `pnpm db:schema`
+# Migrations
 
-## Expensive migrations on production Postgres
-
-Production runs unmanaged Fly Postgres (`lion-reader-pg`, `shared-cpu-8x`; see `../docs/DEPLOYMENT.md`). Shared CPU is throttled to a ~50%-of-a-core sustained floor once the burst balance drains, which can make a heavy migration crawl. A `machine update` resize is only a **few-second restart**, so temporarily scaling to a dedicated `performance` tier, running the migration, then scaling back is a viable pattern (the web dashboard's scale button is disabled for PG apps — use the CLI). Pick the tier by the migration's **bottleneck**, not by size:
-
-- **Table rewrites are single-threaded.** `ALTER TABLE ... ADD COLUMN ... GENERATED ... STORED` (and most `ALTER TABLE`/backfills) rewrite the table in one backend and can't use extra cores. They want **dedicated CPU, not more of it** — `performance-2x` runs the one hot core un-throttled; 16 cores would sit idle. I/O-bound migrations don't benefit from CPU tier at all (Fly volume IOPS scale with disk size).
-- **Index builds can parallelize.** On PG 18+, B-tree, BRIN, **and GIN** builds use up to `max_parallel_maintenance_workers` (default 2) workers, so a few dedicated cores help — but gains are sublinear (~1.5–1.8× in reported cases for GIN) and go I/O-bound quickly. `maintenance_work_mem` is usually the bigger lever than core count. Set both at session level (`SET ...`) or via `ALTER DATABASE ... SET` before the run; don't persist huge `maintenance_work_mem` (PG 18 has parallel-GIN OOM reports at very large values).
-- **Scale back with explicit memory** — `flyctl machine update <id> --vm-size shared-cpu-8x --vm-memory 2048 --app lion-reader-pg`; a `--vm-size` preset alone won't restore the original RAM.
-- **Do NOT hand-tune `shared_buffers`/`work_mem` for the resize** — flex auto-sizes them from RAM at boot, so leave `postgresql.conf` alone and the scale-back stays safe. After a big rewrite, run `VACUUM (ANALYZE)` on the table (refreshes planner stats + visibility map) before scaling back down.
-- A big generated-column + index migration can be pre-applied by hand under this scaling window; because our migrations are guarded (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, `CREATE OR REPLACE VIEW`), the subsequent deploy's migration run no-ops the heavy parts and only does the cheap remainder (e.g. the view). This pairs with the `CREATE INDEX CONCURRENTLY` rule above.
+- **Every migration must work with the previous release.** Fly runs them in `release_command` before the canary deploy, so old code runs against the new schema during rollout, and keeps doing so after a failed or rolled-back deploy (migrations aren't rolled back). Expand in one release (nullable or defaulted columns, new tables, indexes, views alongside old ones); contract across two (ship code that no longer references a column or table, then drop it). A rename is add + dual-write/backfill + drop across releases, never one `ALTER ... RENAME`.
+- We use a custom runner (`scripts/migrate.ts`), not drizzle-kit, which isn't installed even though the file format looks like its. Run `pnpm db:migrate` / `pnpm db:migrate:test`.
+- Add every migration to `meta/_journal.json`; only journaled migrations run (a unit test checks every `.sql` file is journaled).
+- Never `CREATE INDEX CONCURRENTLY` in a migration — each runs in a transaction. If production needs a concurrent build, apply it by hand first, then journal a plain `CREATE INDEX IF NOT EXISTS`. Heavy migrations on production: `docs/fly-postgres-ops.md`.
+- Test with `pnpm test:integration`.
+- Read @schema.sql and keep it current with `pnpm db:schema`.

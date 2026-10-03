@@ -4,8 +4,7 @@
 //! `cargo test`. The thin napi wrapper crate in the parent directory exposes
 //! [`sanitize_entry_html`] and [`embeds::normalize_embed`] to Node.
 //!
-//! The pipeline mirrors `sanitizeEntryHtml` in the old
-//! `src/server/html/sanitize.ts`:
+//! The pipeline:
 //!
 //! 1. MathJax CHTML → MathML conversion (mathjax.rs), so equations survive
 //!    sanitization. Degrades to "math stripped" on error.
@@ -16,7 +15,7 @@
 //!
 //! A rules change here needs no coordination beyond a deploy: nothing stores a
 //! sanitized copy, so the next read of every entry uses the new rules (see
-//! "Per-read sanitization" in `src/server/html/CLAUDE.md`).
+//! `src/server/html/CLAUDE.md`).
 
 pub mod depth;
 pub mod embeds;

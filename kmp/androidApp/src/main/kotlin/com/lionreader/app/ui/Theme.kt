@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import com.lionreader.app.ThemeChoice
 
-// The web's tokens (src/components/CLAUDE.md): amber accent, zinc neutrals.
+// The web's tokens (src/app/globals.css): amber accent, zinc neutrals.
 private val Amber700 = Color(0xFFB45309)
 private val Amber500 = Color(0xFFF59E0B)
 private val Amber800 = Color(0xFF92400E)
