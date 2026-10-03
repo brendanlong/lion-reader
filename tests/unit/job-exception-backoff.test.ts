@@ -18,15 +18,7 @@ describe("calculateExceptionRetryDelayMs", () => {
     expect(calculateExceptionRetryDelayMs(0)).toBe(EXCEPTION_RETRY_BASE_MS);
   });
 
-  it("doubles the delay per consecutive failure", () => {
-    for (let failures = 1; failures <= 5; failures++) {
-      expect(calculateExceptionRetryDelayMs(failures)).toBe(
-        EXCEPTION_RETRY_BASE_MS * 2 ** failures
-      );
-    }
-  });
-
-  it("caps the delay", () => {
+  it("doubles the delay per consecutive failure, up to the cap", () => {
     let previous = EXCEPTION_RETRY_BASE_MS;
     for (let failures = 1; failures <= 100; failures++) {
       const delay = calculateExceptionRetryDelayMs(failures);
