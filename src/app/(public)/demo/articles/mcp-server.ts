@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Connect Claude or another AI assistant to your reader and ask it to find, triage, organize, and save articles for you.",
   publishedAt: new Date("2026-01-14T12:00:00Z"),
   starred: true,
-  summaryHtml: `<p>Connecting Lion Reader to Claude or another MCP-compatible assistant lets it read, search, star, save, and mark articles, and manage tags, with the same results as using the app yourself. Access is limited to your reader and revocable, and any articles it looks up are shared with the assistant&rsquo;s provider.</p>`,
+  summaryHtml: `<p>Connect Lion Reader to Claude or another AI assistant and ask it, in plain language, to summarize posts, round up newsletters, or save a link &mdash; it gets the same results you&rsquo;d get doing it yourself. Setup is copy-and-paste in Settings, and you can revoke its access to your reader.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `

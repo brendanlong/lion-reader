@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Lion Reader is free and open source. Read the code, run your own copy, or help build it on GitHub.",
   publishedAt: new Date("2025-12-26T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader is <strong>open source</strong> and free to use, hosted or self-run on hardware you control, so it never depends on one company staying in business. Subscriptions export to a standard OPML file, and the app works with existing RSS clients, letting you switch apps without switching services.</p>`,
+  summaryHtml: `<p>Lion Reader is open source under the MIT license, so you can use the free hosted version or run your own copy on hardware you control, without depending on one company to keep it running. Subscriptions export to a standard file any feed reader can import, and self-hosting is inexpensive.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
@@ -23,7 +23,7 @@ const article: DemoArticle = {
 
     <h3>Run Your Own</h3>
 
-    <p>Lion Reader runs affordably at small scale. Features that depend on outside services &mdash; like signing in with Google, AI summaries, or receiving newsletters &mdash; are optional.</p>
+    <p>It&rsquo;s inexpensive to run for yourself or a small group. Features that depend on outside services &mdash; like signing in with Google, AI summaries, or receiving newsletters &mdash; are optional.</p>
 
     <details>
       <summary>What self-hosting needs</summary>

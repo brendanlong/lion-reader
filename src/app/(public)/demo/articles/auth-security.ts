@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Your reading habits stay private: no ads, no tracking, and full control over where you're signed in and what can access your account.",
   publishedAt: new Date("2025-12-26T11:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Lion Reader keeps reading private: no ads, no data selling, and no third-party tracking, with AI features sent only when used. Sign in by email or Google/Apple, review and sign out devices, and revoke any connected app&rsquo;s limited access; articles are cleaned of anything that could run code before display.</p>`,
+  summaryHtml: `<p>Lion Reader keeps reading private &mdash; no ads, no data selling, no third-party tracking script &mdash; and sends an article to an AI provider only when you use a feature. You control sign-in, see every signed-in device, limit what connections can access, and read articles cleaned of anything that could run code.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
@@ -19,7 +19,7 @@ const article: DemoArticle = {
 
     <details>
       <summary>About analytics</summary>
-      <p>The hosted site sends a minimal, cookie-free page count to GoatCounter without loading any tracking script, and reports only the <em>kind</em> of page you opened &mdash; an article list, an article, a settings page &mdash; never which feed or article. Self-hosted copies send nothing at all.</p>
+      <p>The hosted site sends a minimal, cookie-free page count to GoatCounter without loading any tracking script, and reports only the <em>kind</em> of page you opened &mdash; an article list, an article, a settings page &mdash; never which feed or article. Self-hosted copies send nothing unless whoever runs them sets up their own analytics.</p>
     </details>
 
     <p>AI features like <a href="/demo/all?entry=ai-summaries">summaries</a> send an article to an AI provider only when you use them. The <a href="/privacy">privacy policy</a> describes the outside services Lion Reader uses and what each one receives.</p>

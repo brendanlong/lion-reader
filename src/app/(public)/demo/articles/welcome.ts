@@ -15,7 +15,7 @@ const article: DemoArticle = {
   // resolveWelcomePublishedAt for the full rationale.
   publishedAt: resolveWelcomePublishedAt(process.env.NEXT_PUBLIC_BUILD_TIME),
   starred: true,
-  summaryHtml: `<p>Lion Reader brings the sites you follow, email newsletters, and saved articles into one fast, private, <strong>open source</strong> reader that works with existing RSS apps and AI assistants. It has no ads, no data selling, and no tracking, with optional AI features and the essentials &mdash; search, tags, and themes.</p>`,
+  summaryHtml: `<p>Lion Reader brings the sites you follow, your email newsletters, and articles you save for later into one fast, private reader that&rsquo;s free, open source, and works with your existing RSS apps and AI assistants. It runs with no ads, no data selling, and no tracking of what you read.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `
@@ -33,7 +33,7 @@ const article: DemoArticle = {
       <li><strong>All the essentials, done well</strong> &mdash; <a href="/demo/all?entry=full-content">Full articles even when a site only sends a teaser</a>, <a href="/demo/all?entry=search">search</a>, <a href="/demo/all?entry=tags">tags</a>, <a href="/demo/all?entry=keyboard-shortcuts">keyboard shortcuts</a>, <a href="/demo/all?entry=pwa">install it like an app</a>, and <a href="/demo/all?entry=appearance">themes</a> for day, night, and e-ink.</li>
     </ul>
 
-    <p>Lion Reader is designed and built by <a href="https://www.brendanlong.com/pages/about-me.html" target="_blank" rel="noopener noreferrer">Brendan Long</a>. Sign up to start using it, or <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">get the source code on GitHub</a> to run your own copy.</p>
+    <p>Lion Reader is designed and built by <a href="https://www.brendanlong.com/pages/about-me.html" target="_blank" rel="noopener noreferrer">Brendan Long</a>. Sign up to start using it, or <a href="https://github.com/brendanlong/lion-reader" target="_blank" rel="noopener noreferrer">get the source code on GitHub</a>.</p>
   `,
 };
 

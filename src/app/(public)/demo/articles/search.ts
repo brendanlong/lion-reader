@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Find any article you've ever had by a word from its title or text, closest matches first, within whatever list you're looking at.",
   publishedAt: new Date("2025-12-28T10:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Pressing <strong>/</strong> searches the title and full text of everything in your reader, including sites you follow, newsletters, and saved articles already read, with the closest matches first and support for word variations like &ldquo;cook&rdquo; and &ldquo;cooking.&rdquo; Searching from inside a subscription, tag, or saved articles narrows results.</p>`,
+  summaryHtml: `<p>Searching matches both the title and full text across everything in your reader &mdash; the sites you follow, your newsletters, and your saved articles &mdash; and understands word variations like &ldquo;cook&rdquo; and &ldquo;cooking,&rdquo; including articles you&rsquo;ve already read. You can narrow a search to a single subscription, tag, or your saved items.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `

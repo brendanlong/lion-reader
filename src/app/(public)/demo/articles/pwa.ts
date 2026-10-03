@@ -11,7 +11,7 @@ const article: DemoArticle = {
     "Add Lion Reader to your home screen or desktop for an app-like experience, and save links and files from your phone's share menu.",
   publishedAt: new Date("2026-01-08T12:00:00Z"),
   starred: false,
-  summaryHtml: `<p>Install Lion Reader straight from your browser, no app store needed, for its own icon, no address bar, and automatic updates, though it needs an internet connection. On Android it appears in your phone&rsquo;s share menu for saving links and files; on iPhone and iPad, use the free <strong>Wallabag</strong> app.</p>`,
+  summaryHtml: `<p>Install Lion Reader on your phone, tablet, or computer straight from your browser, with no app store needed &mdash; it gets its own icon, opens without the browser&rsquo;s address bar, and updates automatically. On Android, it appears in your phone&rsquo;s share menu, so shared links or files are saved for later.</p>`,
   summaryModelId: "claude-sonnet-5",
   summaryGeneratedAt: new Date("2026-10-03"),
   contentHtml: `

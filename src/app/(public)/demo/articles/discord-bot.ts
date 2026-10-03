@@ -35,7 +35,7 @@ const article: DemoArticle = {
 
     <h3>Setting Up a Server</h3>
 
-    <p>A server admin adds the bot with the invite link in Lion Reader&rsquo;s Settings, then adds the Save image above as a custom emoji named <code>savetolionreader</code>. Direct messages work without the emoji.</p>
+    <p>A server admin adds the bot with the invite link in Lion Reader&rsquo;s Settings, then adds the image labeled <strong>Save</strong> above as a custom emoji named <code>savetolionreader</code>. Direct messages work without the emoji.</p>
 
     <h3>Linking Your Account</h3>
 
