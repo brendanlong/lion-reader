@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -137,18 +136,11 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = search != null) { model.setSearch(null) }
+    // One scroll position per list (its filter and order included), so another list starts at the
+    // top rather than following its top entry by key, and coming back from an article keeps it.
+    val timelineList =
+        rememberSaveable(timeline?.listKey, saver = LazyListState.Saver) { LazyListState() }
     // Apart, so searching doesn't lose the timeline's place; each search starts at the top.
-    val timelineList = rememberLazyListState()
-    // Another list (or this one filtered or ordered differently) starts at the top; coming back
-    // from an article to the same one keeps its place. Once it's composed: before, the list would
-    // follow its first entry by key to wherever the new list has it.
-    val listKey = timeline?.listKey
-    var listShown by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(listKey) {
-        if (listKey == null) return@LaunchedEffect
-        if (listShown != null && listShown != listKey) timelineList.scrollToItem(0)
-        listShown = listKey
-    }
     val searchList = remember(search == null) { LazyListState() }
 
     ModalNavigationDrawer(
