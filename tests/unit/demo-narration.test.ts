@@ -3,26 +3,25 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { DEMO_ENTRIES } from "@/app/(public)/demo/data";
+import { cloudSpeechTexts } from "@/lib/narration/cloud-speech";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
-import {
-  DEMO_NARRATION_MANIFEST_PATH,
-  demoNarrationRecordings,
-  demoNarrationText,
-  toManifest,
-} from "../../scripts/record-demo-narration";
+import { demoNarrationCatalog, demoNarrationText } from "@/server/services/demo-narration";
 
-describe("demo narration", () => {
+describe("demo narration catalog", () => {
   it.each(DEMO_ENTRIES.map((entry) => [entry.id, entry.contentHtml]))(
-    "is recorded from the text the browser narrates: %s",
+    "has the text the browser narrates: %s",
     (_id, html) => {
       expect(demoNarrationText(html)).toBe(htmlToClientNarration(html).narrationText);
     }
   );
 
-  it("is recorded for the articles as they are (run `pnpm demo:narration`)", async () => {
-    const recorded: unknown = JSON.parse(readFileSync(DEMO_NARRATION_MANIFEST_PATH, "utf8"));
-    expect(recorded).toEqual(toManifest(await demoNarrationRecordings()));
+  it("has every chunk the player asks for", async () => {
+    const texts = new Set([...(await demoNarrationCatalog()).values()].map((chunk) => chunk.text));
+    for (const entry of DEMO_ENTRIES) {
+      for (const text of cloudSpeechTexts(htmlToClientNarration(entry.contentHtml).narrationText)) {
+        expect(texts).toContain(text);
+      }
+    }
   });
 });

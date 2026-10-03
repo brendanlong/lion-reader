@@ -20,8 +20,9 @@ export interface EntryContentSlots {
 
 export interface EntryContentOptions {
   /**
-   * Narrate only with recordings made ahead of time in this voice, for where
-   * there's no server to synthesize speech. The visitor's settings still
+   * Narrate only with recordings in this voice
+   * (`@/lib/narration/prerecorded-speech`), for where there's no session to
+   * synthesize speech for. The visitor's settings still
    * decide what applies at playback: whether narration shows, rate, and
    * highlighting.
    */

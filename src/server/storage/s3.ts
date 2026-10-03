@@ -246,6 +246,8 @@ async function putObject(
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=31536000, immutable",
+      // Tigris requires it, and Next's fetch can send a typed array chunked.
+      "Content-Length": String(data.byteLength),
     },
     // aws4fetch hashes the body for the SigV4 signature. Node's Buffer is a
     // Uint8Array subclass, so pass it directly without copying; the cast
@@ -273,14 +275,6 @@ export async function uploadObject(
   contentType: string
 ): Promise<void> {
   await putObject(requireS3Client(), key, data, contentType);
-}
-
-/** Whether an object is stored under `key`. */
-export async function objectExists(key: string): Promise<boolean> {
-  const response = await requireS3Client().fetch(getObjectRequestUrl(key), { method: "HEAD" });
-  if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`S3 HEAD failed with status ${response.status}`);
-  return true;
 }
 
 /**

@@ -276,3 +276,15 @@ IDs) · **Code:** `src/app/api/wallabag/`, `src/app/api/greader.php/`,
   UI only.
 - Post-auth redirect targets from query params must be sanitized to same-origin
   paths (`safeRedirectPath`) to prevent open redirects.
+
+## 10. Unauthenticated paid work (demo narration)
+
+**Code:** `src/app/api/prerecorded-speech/`, `src/server/services/prerecorded-speech.ts`,
+`src/server/services/demo-narration.ts`
+
+- `/api/prerecorded-speech/:key` has no session (the demo plays it) yet can
+  synthesize speech on the server's key. It **only synthesizes keys in the
+  server-built demo catalog**, and stores each result, so the most an anonymous
+  caller can ever cost is one recording of the demo. Never let it accept text,
+  voice or model from the request, and never synthesize uncached outside
+  development.

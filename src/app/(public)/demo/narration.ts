@@ -6,9 +6,9 @@ import {
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 /**
- * The voice the demo narrates in, from recordings (`pnpm demo:narration`
- * makes any that are missing): the app's default cloud voice, as a visitor
- * who signed up would first hear it.
+ * The voice the demo narrates in, from recordings
+ * (`@/server/services/demo-narration`): the app's default cloud voice, as a
+ * visitor who signed up would first hear it.
  */
 export const DEMO_NARRATION_VOICE: PrerecordedVoice = {
   model: DEEPINFRA_KOKORO,

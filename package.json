@@ -33,7 +33,6 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "social-preview": "tsx scripts/generate-social-preview.ts",
-    "demo:narration": "dotenv -- tsx scripts/record-demo-narration.ts",
     "bench:sanitize": "tsx scripts/bench-sanitize.mts",
     "db:migrate": "dotenv -- tsx scripts/migrate.ts",
     "db:schema": "dotenv -- tsx scripts/dump-schema.ts",

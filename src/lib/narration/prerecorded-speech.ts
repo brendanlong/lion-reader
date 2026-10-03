@@ -1,9 +1,9 @@
 /**
- * Narration recorded ahead of time, for where there's no server to synthesize
- * speech on request (the public demo). Each chunk the cloud player would ask
- * the server for is stored under a hash of everything that shapes its audio,
- * so a recording never goes stale: changed text, or a different voice, is a
- * different key that hasn't been recorded yet.
+ * Recorded narration, for where speech can't be synthesized on each request
+ * (the public demo, which has no session to bill it to). Each chunk the cloud
+ * player would ask the server for is recorded once, under a hash of
+ * everything that shapes its audio, so a recording never goes stale: changed
+ * text, or a different voice, is a different key that gets recorded anew.
  *
  * @module narration/prerecorded-speech
  */
