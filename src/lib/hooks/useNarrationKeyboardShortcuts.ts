@@ -21,6 +21,12 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import type { NarrationPhase } from "@/components/narration/useNarrationTypes";
 
+// [ and ] need AltGr (or Option) on many non-US layouts, so modifiers are
+// ignored when matching the produced character, but a Ctrl/Cmd chord without
+// AltGr is someone else's shortcut.
+const isBracketChord = (e: KeyboardEvent) =>
+  e.metaKey || (e.ctrlKey && !e.getModifierState("AltGraph"));
+
 /**
  * Narration control functions.
  */
@@ -108,14 +114,15 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
   useHotkeys(
     "]",
     (e) => {
+      if (isBracketChord(e)) return;
       e.preventDefault();
       skipForward();
     },
     {
       enabled: baseEnabled && canSkipForward,
       enableOnFormTags: false,
-      // Match the produced character: brackets have no layout-independent code.
       useKey: true,
+      ignoreModifiers: true,
     },
     [skipForward, canSkipForward, baseEnabled]
   );
@@ -124,6 +131,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
   useHotkeys(
     "[",
     (e) => {
+      if (isBracketChord(e)) return;
       e.preventDefault();
       skipBackward();
     },
@@ -131,6 +139,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
       enabled: baseEnabled && canSkipBackward,
       enableOnFormTags: false,
       useKey: true,
+      ignoreModifiers: true,
     },
     [skipBackward, canSkipBackward, baseEnabled]
   );

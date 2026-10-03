@@ -38,27 +38,34 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(mockSearch),
 }));
 
+const demoTree = () => (
+  <>
+    <Sidebar />
+    <UnifiedEntriesContent />
+  </>
+);
+
 function renderDemo() {
   const store = createDemoStore();
-  const result = renderWithTrpc(
-    <>
-      <Sidebar />
-      <UnifiedEntriesContent />
-    </>,
-    {
-      handlers: store.handlers,
-      wrapper: (children) => (
-        <AppLocationProvider basePath="/demo">
-          <EntryContentOptionsProvider value={{ renderSlots: demoEntrySlots }}>
-            <AppearanceProvider>
-              <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
-            </AppearanceProvider>
-          </EntryContentOptionsProvider>
-        </AppLocationProvider>
-      ),
-    }
-  );
-  return { ...result, store };
+  const result = renderWithTrpc(demoTree(), {
+    handlers: store.handlers,
+    wrapper: (children) => (
+      <AppLocationProvider basePath="/demo">
+        <EntryContentOptionsProvider value={{ renderSlots: demoEntrySlots }}>
+          <AppearanceProvider>
+            <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
+          </AppearanceProvider>
+        </EntryContentOptionsProvider>
+      </AppLocationProvider>
+    ),
+  });
+  // The pathname is mocked, so client navigation (pushState) has to be fed
+  // back in by hand.
+  const followNavigation = () => {
+    mockPathname = window.location.pathname;
+    result.rerender(demoTree());
+  };
+  return { ...result, store, followNavigation };
 }
 
 const STARRED = DEMO_ENTRIES.filter((e) => e.starred).length;
@@ -69,6 +76,7 @@ describe("demo reader tree", () => {
     stubMemoryLocalStorage();
     mockPathname = "/demo/all";
     mockSearch = "";
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it("lists the demo articles with /demo-prefixed entry links", async () => {
@@ -132,35 +140,37 @@ describe("demo reader tree", () => {
     expect(within(row).getByRole("button", { name: "Remove from starred" })).toBeVisible();
   });
 
-  it("Shift+A asks before marking the current list read", async () => {
-    const { callsFor } = renderDemo();
-    await screen.findByRole("link", { name: "Welcome to Lion Reader" });
-
-    fireEvent.keyDown(document, { key: "A", code: "KeyA", shiftKey: true });
-    fireEvent.click(await screen.findByRole("button", { name: "Mark All Read" }));
-
-    await vi.waitFor(() => expect(callsFor("entries.markAllRead")).toHaveLength(1));
-  });
-
-  it("Shift+J / Shift+K step through the sidebar's visible tags and subscriptions", async () => {
-    Element.prototype.scrollIntoView = vi.fn();
-    mockPathname = "/demo/tag/about";
+  it("Shift+J / Shift+K walk the visible sidebar feeds, continuing past one just marked read", async () => {
+    mockPathname = "/demo/tag/features";
     window.history.replaceState(null, "", mockPathname);
-    renderDemo();
-    const about = await screen.findByRole("link", { name: /^About/ });
-    expect(about).toHaveAttribute("aria-current", "page");
+    const { followNavigation, callsFor } = renderDemo();
+    const press = (key: "J" | "K" | "A") => {
+      fireEvent.keyDown(document, { key, code: `Key${key}`, shiftKey: true });
+      followNavigation();
+    };
 
-    // About is the first entry, so there's nothing before it.
-    fireEvent.keyDown(document, { key: "K", code: "KeyK", shiftKey: true });
+    const features = await screen.findByRole("link", { name: /^Features/ });
+    expect(features).toHaveAttribute("aria-current", "page");
+    fireEvent.click(within(features.parentElement!).getByRole("button", { name: "Expand" }));
+    await screen.findByRole("link", { name: /^Feed Types/ });
+
+    press("K");
     expect(window.location.pathname).toBe("/demo/tag/about");
-
-    // The collapsed About tag's subscriptions are skipped.
-    fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
+    // About is collapsed, so its subscription is skipped.
+    press("J");
     expect(window.location.pathname).toBe("/demo/tag/features");
+    press("J");
+    expect(window.location.pathname).toBe("/demo/subscription/feed-types");
 
-    fireEvent.click(within(about.parentElement!).getByRole("button", { name: "Expand" }));
-    await screen.findByRole("link", { name: /^Lion Reader/ });
-    fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
-    expect(window.location.pathname).toBe("/demo/subscription/lion-reader");
+    // Marking the feed read drops it from the unread-only sidebar.
+    press("A");
+    fireEvent.click(await screen.findByRole("button", { name: "Mark All Read" }));
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("link", { name: /^Feed Types/ })).not.toBeInTheDocument()
+    );
+    expect(callsFor("entries.markAllRead")).toHaveLength(1);
+
+    press("J");
+    expect(window.location.pathname).toBe("/demo/subscription/reading-experience");
   });
 });

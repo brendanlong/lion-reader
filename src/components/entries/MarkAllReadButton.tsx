@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CheckCircleIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { isDialogOpen } from "@/components/ui/dialog";
 
 interface MarkAllReadButtonProps {
   /** Description of what will be marked as read (e.g., "this feed", "all items") */
@@ -38,11 +39,12 @@ export function MarkAllReadButton({
   useHotkeys(
     "shift+a",
     (e) => {
+      if (isDialogOpen()) return;
       e.preventDefault();
       setShowDialog(true);
     },
-    { enabled: shortcutEnabled && !showDialog, enableOnFormTags: false },
-    [shortcutEnabled, showDialog]
+    { enabled: shortcutEnabled, enableOnFormTags: false },
+    [shortcutEnabled]
   );
 
   return (
