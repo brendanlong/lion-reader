@@ -35,6 +35,11 @@ describe("loadNarrationSettings", () => {
 
       expect(settings).toEqual(DEFAULT_NARRATION_SETTINGS);
     });
+
+    it("keeps LLM text processing off by default", () => {
+      // The privacy policy describes sending article text to an AI provider as opt-in.
+      expect(loadNarrationSettings().useLlmNormalization).toBe(false);
+    });
   });
 
   describe("provider validation", () => {

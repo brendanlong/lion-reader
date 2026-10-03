@@ -628,6 +628,30 @@ describe("Saved Articles API", () => {
       expect(result.article.title).toBe("Already Saved Article");
       expect(result.article.url).toBe(existingUrl);
     });
+
+    it("gives another user their own copy instead of the existing article", async () => {
+      const ownerId = await createTestUser();
+      const otherUserId = await createTestUser({ emailPrefix: "other" });
+      const sharedUrl = "https://example.com/shared";
+      const ownerArticleId = await createTestSavedArticle(ownerId, {
+        url: sharedUrl,
+        title: "Owner's Copy",
+      });
+
+      const caller = createCaller(await createAuthContext(otherUserId));
+      const result = await caller.saved.save({
+        url: sharedUrl,
+        html: "<html><head><title>Other User's Copy</title></head><body><p>Body</p></body></html>",
+        refetch: false,
+      });
+
+      expect(result.article.id).not.toBe(ownerArticleId);
+      expect(result.article.title).toBe("Other User's Copy");
+      const ownerCopy = await createCaller(await createAuthContext(ownerId)).entries.get({
+        id: ownerArticleId,
+      });
+      expect(ownerCopy.entry.title).toBe("Owner's Copy");
+    });
   });
 
   describe("saved.save with refetch", () => {

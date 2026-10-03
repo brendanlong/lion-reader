@@ -151,6 +151,18 @@ Content here.`;
     expect(result.content).toBe("\nContent here.");
   });
 
+  it("strips frontmatter from content for non-object YAML", () => {
+    const markdown = `---
+just a string value
+---
+
+Content here.`;
+
+    const result = extractFrontmatter(markdown);
+    expect(result.frontmatter).toBeNull();
+    expect(result.content).toBe("\nContent here.");
+  });
+
   it("closes frontmatter on a `...` end-of-document marker (#1280)", () => {
     // gwern.net / Pandoc close YAML frontmatter with `...`, not `---`. Accepting
     // only `---` made the lazy matcher run past this terminator to the first
@@ -366,6 +378,23 @@ But this paradigm doesn't explain everything.`;
     expect(result.html).toContain("Anomalies");
     // The YAML metadata must not leak into the rendered body.
     expect(result.html).not.toContain("importance:");
+  });
+
+  it("renders GFM footnotes instead of leaking literal syntax", async () => {
+    const markdown = `A claim that needs support.[^src]
+
+Body continues here.
+
+[^src]: The supporting evidence.`;
+
+    const result = await processMarkdown(markdown);
+    // The `fn-` / `fnref-` anchor names are GitHub's own.
+    expect(result.html).toMatch(/<sup[^>]*><a[^>]*href="#fn-src"[^>]*>1<\/a><\/sup>/);
+    expect(result.html).toContain('<section class="footnotes"');
+    expect(result.html).toContain('id="fn-src"');
+    expect(result.html).toContain("The supporting evidence.");
+    expect(result.html).toContain('href="#fnref-src"');
+    expect(result.html).not.toContain("[^src]");
   });
 
   it("numbers multiple footnotes in reference order", async () => {

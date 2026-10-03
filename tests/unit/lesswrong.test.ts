@@ -57,6 +57,14 @@ describe("LessWrong URL detection", () => {
       );
     });
 
+    it.each([
+      "https://www.lesswrong.com/posts/WQFioaudEH8R7fyhm/slug?commentId=abc",
+      "https://lesswrong.com/posts/WQFioaudEH8R7fyhm?ref=foo",
+      "https://www.lesswrong.com/posts/WQFioaudEH8R7fyhm/slug#section",
+    ])("extracts post ID when a query or fragment follows: %s", (url) => {
+      expect(extractPostId(url)).toBe("WQFioaudEH8R7fyhm");
+    });
+
     it("returns null for non-LessWrong URLs", () => {
       expect(extractPostId("https://example.com/article")).toBe(null);
       expect(extractPostId("https://greaterwrong.com/posts/WQFioaudEH8R7fyhm/slug")).toBe(null);
