@@ -4,7 +4,7 @@
  *
  * - `index.html` — open in a browser to browse the export.
  * - `articles/<id>.html` — one standalone page per exported entry (see
- *   `listExportableEntries` for which), with the same sanitized body the app shows.
+ *   `listExportableEntries` for which), with the body the entry view shows.
  * - `entries.json` — the same entries' metadata, for scripts.
  * - `bookmarks.html` — a Netscape bookmark file of saved and starred links,
  *   which browsers, Wallabag, linkding and most read-later services import.
@@ -16,13 +16,11 @@
 import type { db as dbType } from "@/server/db";
 import { ZipWriter } from "@/server/file/zip-writer";
 import { escapeHtml } from "@/server/http/html";
-import { listExportableEntries } from "./entries";
+import { listExportableEntries, type ExportableEntry } from "./entries";
 import { exportSubscriptionsOpml } from "./subscriptions";
 
 /** @testonly */
 export const EXPORT_PAGE_SIZE = 100;
-
-type ExportableEntry = Awaited<ReturnType<typeof listExportableEntries>>[number];
 
 type ExportedKind = "saved" | "upload" | "newsletter" | "feed";
 
@@ -88,12 +86,6 @@ ${body}
 }
 
 function renderArticle(entry: ExportableEntry): string {
-  const content =
-    entry.fullContentCleaned ??
-    entry.fullContentOriginal ??
-    entry.contentCleaned ??
-    entry.contentOriginal ??
-    "";
   const source = entry.siteName ?? entry.feedTitle;
   const url = linkableUrl(entry.url);
   const date = (entry.publishedAt ?? entry.fetchedAt).toISOString().slice(0, 10);
@@ -110,7 +102,7 @@ function renderArticle(entry: ExportableEntry): string {
     `<article>
 <h1>${escapeHtml(displayTitle(entry))}</h1>
 <p class="meta">${meta.join(" · ")}</p>
-${content}
+${entry.contentHtml ?? ""}
 </article>`
   );
 }
@@ -123,7 +115,7 @@ function toMetadata(entry: ExportableEntry): ExportedEntryMetadata {
     title: entry.title,
     author: entry.author,
     siteName: entry.siteName,
-    feedTitle: entry.type === "saved" ? null : entry.feedTitle,
+    feedTitle: entry.feedTitle,
     summary: entry.summary,
     publishedAt: entry.publishedAt?.toISOString() ?? null,
     addedAt: entry.fetchedAt.toISOString(),
@@ -211,17 +203,16 @@ export async function* streamLibraryExport(
   const zip = new ZipWriter();
   const exported: ExportedEntryMetadata[] = [];
 
-  let afterId: string | undefined;
-  for (;;) {
+  let afterId: string | null = null;
+  do {
     const page = await listExportableEntries(db, userId, { afterId, limit: EXPORT_PAGE_SIZE });
-    for (const entry of page) {
+    for (const entry of page.entries) {
       const metadata = toMetadata(entry);
       exported.push(metadata);
       yield await zip.addFile(metadata.file, renderArticle(entry), entry.fetchedAt);
     }
-    if (page.length < EXPORT_PAGE_SIZE) break;
-    afterId = page[page.length - 1].id;
-  }
+    afterId = page.nextAfterId;
+  } while (afterId !== null);
 
   const { opml } = await exportSubscriptionsOpml(db, userId);
   yield await zip.addFile("subscriptions.opml", opml, exportedAt);

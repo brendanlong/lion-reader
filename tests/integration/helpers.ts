@@ -128,6 +128,8 @@ export interface CreateTestEntryOptions extends Partial<typeof entries.$inferIns
    * subscription to this entry's feed.
    */
   userIds?: string[];
+  /** Users from `userIds` who have starred the entry. */
+  starredBy?: string[];
 }
 
 /**
@@ -147,7 +149,7 @@ export async function createTestEntry(
   feedId: string,
   options: CreateTestEntryOptions = {}
 ): Promise<string> {
-  const { userIds, ...overrides } = options;
+  const { userIds, starredBy = [], ...overrides } = options;
   const entryId = overrides.id ?? generateUuidv7();
   const now = new Date();
   const type = overrides.type ?? "web";
@@ -172,9 +174,14 @@ export async function createTestEntry(
   });
 
   if (userIds?.length) {
-    await db
-      .insert(userEntries)
-      .values(userIds.map((userId) => ({ userId, entryId, read: false, starred: false })));
+    await db.insert(userEntries).values(
+      userIds.map((userId) => ({
+        userId,
+        entryId,
+        read: false,
+        starred: starredBy.includes(userId),
+      }))
+    );
   }
 
   return entryId;

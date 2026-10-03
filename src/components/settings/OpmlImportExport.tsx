@@ -16,7 +16,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { SettingsSectionHeading } from "@/components/settings/SettingsSection";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClassName } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { UploadIcon, DownloadIcon, SpinnerIcon } from "@/components/ui/icons";
@@ -576,11 +576,7 @@ function LibraryExportSection() {
         as OPML.
       </p>
 
-      <a
-        href="/api/v1/export"
-        download
-        className="border-edge-input bg-surface text-body hover:bg-surface-muted ui-text-sm inline-flex min-h-[44px] items-center justify-center rounded-md border px-4 font-medium transition-colors"
-      >
+      <a href="/api/v1/export" download className={buttonClassName({ variant: "secondary" })}>
         <DownloadIcon className="mr-2 h-4 w-4" />
         Export library
       </a>

@@ -27,6 +27,25 @@ export interface NarrationContentView {
 }
 
 /**
+ * Whether the entry view shows fetched full content: the subscription asks for
+ * it and a fetch succeeded.
+ */
+export function showsFullContent(entry: {
+  fullContentCleaned?: string | null;
+  fullContentOriginal?: string | null;
+  fullContentFetchedAt?: Date | null;
+  fullContentError?: string | null;
+  fetchFullContent?: boolean | null;
+}): boolean {
+  return Boolean(
+    entry.fetchFullContent &&
+    (entry.fullContentCleaned || entry.fullContentOriginal) &&
+    entry.fullContentFetchedAt &&
+    !entry.fullContentError
+  );
+}
+
+/**
  * Returns the content variant currently displayed, mirroring the priority in
  * `EntryContentBody`: full content > cleaned feed content > original feed
  * content, with "show original" forcing the original variant.

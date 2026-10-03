@@ -21,6 +21,8 @@ const END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 const ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06064b50;
 const ZIP64_END_LOCATOR_SIGNATURE = 0x07064b50;
 const ZIP64_EXTRA_FIELD_ID = 0x0001;
+const EXTENDED_TIMESTAMP_FIELD_ID = 0x5455;
+const EXTENDED_TIMESTAMP_HAS_MTIME = 1;
 
 const VERSION_DEFAULT = 20;
 const VERSION_ZIP64 = 45;
@@ -40,6 +42,20 @@ interface CentralEntry {
   compressedSize: number;
   size: number;
   offset: number;
+  timestampExtra: Buffer;
+}
+
+/**
+ * DOS times have no zone, and most unzip tools read them as local time, so the
+ * Unix mtime goes in an extended-timestamp field too; readers prefer it.
+ */
+function extendedTimestamp(date: Date): Buffer {
+  const field = Buffer.alloc(9);
+  field.writeUInt16LE(EXTENDED_TIMESTAMP_FIELD_ID, 0);
+  field.writeUInt16LE(5, 2);
+  field.writeUInt8(EXTENDED_TIMESTAMP_HAS_MTIME, 4);
+  field.writeUInt32LE(Math.max(0, Math.floor(date.getTime() / 1000)), 5);
+  return field;
 }
 
 function toDosDateTime(date: Date): { dosTime: number; dosDate: number } {
@@ -73,6 +89,7 @@ export class ZipWriter {
       compressedSize: payload.length,
       size: data.length,
       offset: this.#offset,
+      timestampExtra: extendedTimestamp(modified),
     };
 
     const header = Buffer.alloc(30);
@@ -86,9 +103,9 @@ export class ZipWriter {
     header.writeUInt32LE(entry.compressedSize, 18);
     header.writeUInt32LE(entry.size, 22);
     header.writeUInt16LE(entry.name.length, 26);
-    header.writeUInt16LE(0, 28);
+    header.writeUInt16LE(entry.timestampExtra.length, 28);
 
-    const chunk = Buffer.concat([header, entry.name, payload]);
+    const chunk = Buffer.concat([header, entry.name, entry.timestampExtra, payload]);
     this.#entries.push(entry);
     this.#offset += chunk.length;
     return chunk;
@@ -150,12 +167,13 @@ export class ZipWriter {
 
 function centralDirectoryRecord(entry: CentralEntry): Buffer {
   const offsetNeedsZip64 = entry.offset >= UINT32_MAX;
-  const extra = Buffer.alloc(offsetNeedsZip64 ? 12 : 0);
+  const zip64Extra = Buffer.alloc(offsetNeedsZip64 ? 12 : 0);
   if (offsetNeedsZip64) {
-    extra.writeUInt16LE(ZIP64_EXTRA_FIELD_ID, 0);
-    extra.writeUInt16LE(8, 2);
-    extra.writeBigUInt64LE(BigInt(entry.offset), 4);
+    zip64Extra.writeUInt16LE(ZIP64_EXTRA_FIELD_ID, 0);
+    zip64Extra.writeUInt16LE(8, 2);
+    zip64Extra.writeBigUInt64LE(BigInt(entry.offset), 4);
   }
+  const extra = Buffer.concat([zip64Extra, entry.timestampExtra]);
   const version = offsetNeedsZip64 ? VERSION_ZIP64 : VERSION_DEFAULT;
 
   const header = Buffer.alloc(46);

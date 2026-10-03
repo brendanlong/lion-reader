@@ -20,7 +20,7 @@ import { useNarration } from "@/components/narration/useNarration";
 import { getNarrationPhase } from "@/components/narration/useNarrationTypes";
 import { useNarrationHighlight } from "@/components/narration/useNarrationHighlight";
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
-import { selectDisplayedContent } from "@/lib/narration/select-content";
+import { selectDisplayedContent, showsFullContent } from "@/lib/narration/select-content";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
@@ -177,14 +177,13 @@ export function EntryContentBody({
   const contentRef = useRef<HTMLDivElement>(null);
   const actionButtonsRef = useRef<HTMLDivElement>(null);
 
-  // Determine if we're showing full content
-  // Full content is shown if:
-  // 1. User has fetchFullContent enabled for the subscription
-  // 2. Full content has been fetched successfully (no error, has content)
-  const hasFullContent = Boolean(
-    (fullContentCleaned || fullContentOriginal) && fullContentFetchedAt && !fullContentError
-  );
-  const showFullContent = Boolean(fetchFullContent && hasFullContent);
+  const showFullContent = showsFullContent({
+    fullContentCleaned,
+    fullContentOriginal,
+    fullContentFetchedAt,
+    fullContentError,
+    fetchFullContent,
+  });
 
   // Check if both feed content versions are available for toggle
   // Only show this toggle when NOT showing full content

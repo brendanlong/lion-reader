@@ -4,10 +4,12 @@
 
 import JSZip from "jszip";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
+import { createSession } from "../../src/server/auth/session";
+import { RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
+import { GET } from "../../src/app/api/v1/export/route";
 import { EXPORT_PAGE_SIZE, streamLibraryExport } from "../../src/server/services/library-export";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
@@ -21,13 +23,6 @@ async function readText(zip: JSZip, path: string): Promise<string> {
   const file = zip.file(path);
   if (!file) throw new Error(`${path} missing from export`);
   return file.async("string");
-}
-
-async function star(userId: string, entryId: string): Promise<void> {
-  await db
-    .update(userEntries)
-    .set({ starred: true })
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 }
 
 interface ExportedEntry {
@@ -60,8 +55,8 @@ describe("streamLibraryExport", () => {
     const starredEntryId = await createTestEntry(webFeedId, {
       url: "https://blog.example/starred",
       userIds: [userId],
+      starredBy: [userId],
     });
-    await star(userId, starredEntryId);
 
     const savedFeedId = await getOrCreateSavedFeed(db, userId);
     const savedId = await createTestEntry(savedFeedId, {
@@ -87,6 +82,12 @@ describe("streamLibraryExport", () => {
       userIds: [userId],
     });
 
+    await createTestSubscription(otherUserId, webFeedId);
+    const starredByOtherId = await createTestEntry(webFeedId, {
+      userIds: [userId, otherUserId],
+      starredBy: [otherUserId],
+    });
+
     const otherSavedFeedId = await getOrCreateSavedFeed(db, otherUserId);
     const otherUsersId = await createTestEntry(otherSavedFeedId, {
       type: "saved",
@@ -103,7 +104,7 @@ describe("streamLibraryExport", () => {
       [uploadId]: "upload",
       [newsletterId]: "newsletter",
     });
-    for (const excluded of [plainEntryId, spamId, otherUsersId]) {
+    for (const excluded of [plainEntryId, spamId, starredByOtherId, otherUsersId]) {
       expect(zip.file(`articles/${excluded}.html`)).toBeNull();
     }
 
@@ -160,5 +161,82 @@ describe("streamLibraryExport", () => {
 
     const exported: ExportedEntry[] = JSON.parse(await readText(zip, "entries.json"));
     expect(exported.map((entry) => entry.id).sort()).toEqual([...ids].sort());
+  });
+
+  it("exports the body the entry view shows, which is full content only when the subscription asks for it", async () => {
+    const userId = await createTestUser();
+    const fullContent = {
+      contentCleaned: "<p>feed excerpt</p>",
+      fullContentCleaned: "<p>whole article</p>",
+      fullContentFetchedAt: new Date(),
+      starredBy: [userId],
+      userIds: [userId],
+    };
+
+    const fullFeedId = await createTestFeed();
+    await createTestSubscription(userId, fullFeedId, { fetchFullContent: true });
+    const fullId = await createTestEntry(fullFeedId, fullContent);
+
+    const excerptFeedId = await createTestFeed();
+    await createTestSubscription(userId, excerptFeedId, { fetchFullContent: false });
+    const excerptId = await createTestEntry(excerptFeedId, fullContent);
+
+    const failedFeedId = await createTestFeed();
+    await createTestSubscription(userId, failedFeedId, { fetchFullContent: true });
+    const failedId = await createTestEntry(failedFeedId, {
+      ...fullContent,
+      fullContentError: "HTTP 500",
+    });
+
+    const zip = await readExport(userId);
+
+    expect(await readText(zip, `articles/${fullId}.html`)).toContain("whole article");
+    for (const id of [excerptId, failedId]) {
+      const page = await readText(zip, `articles/${id}.html`);
+      expect(page).toContain("feed excerpt");
+      expect(page).not.toContain("whole article");
+    }
+  });
+});
+
+describe("GET /api/v1/export", () => {
+  async function exportRequest(userId?: string): Promise<Response> {
+    const headers = new Headers();
+    if (userId) {
+      const { token } = await createSession(db, { userId });
+      headers.set("cookie", `session=${token}`);
+    }
+    return GET(new Request("http://localhost/api/v1/export", { headers }));
+  }
+
+  afterAll(async () => {
+    await db.delete(users);
+  });
+
+  it("streams a zip download that no cache keeps", async () => {
+    const response = await exportRequest(await createTestUser());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    expect(response.headers.get("content-disposition")).toMatch(/^attachment; filename=".+\.zip"$/);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const zip = await JSZip.loadAsync(Buffer.from(await response.arrayBuffer()));
+    expect(zip.file("index.html")).not.toBeNull();
+  });
+
+  it("refuses requests without a session, or from an unconfirmed account", async () => {
+    expect((await exportRequest()).status).toBe(401);
+    const unconfirmedId = await createTestUser({ tosAgreedAt: null, privacyPolicyAgreedAt: null });
+    expect((await exportRequest(unconfirmedId)).status).toBe(403);
+  });
+
+  it("rate-limits repeated exports per user", async () => {
+    const userId = await createTestUser();
+    for (let i = 0; i < RATE_LIMIT_CONFIGS.libraryExport.capacity; i++) {
+      const response = await exportRequest(userId);
+      expect(response.status).toBe(200);
+      await response.body?.cancel();
+    }
+    expect((await exportRequest(userId)).status).toBe(429);
   });
 });

@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="October 2, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="October 3, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -510,7 +510,8 @@ export default function PrivacyPolicyPage() {
           </li>
           <li>
             <strong>Export:</strong> Download your feed subscriptions in OPML format for import into
-            other RSS readers
+            other RSS readers, and your saved articles, uploads, newsletters and starred entries as
+            a zip archive
           </li>
           <li>
             <strong>Correct:</strong> Update your email address and other account information at any
