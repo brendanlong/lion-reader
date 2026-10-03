@@ -13,13 +13,13 @@ import type { EntryContentSlots } from "@/components/entries/EntryContentOptions
 function WelcomeCallToAction() {
   return (
     <div className="border-edge-strong bg-surface-subtle mb-6 rounded-lg border p-6 text-center">
-      <h2 className="text-body mb-4 text-2xl font-semibold">Get Started</h2>
+      <h2 className="text-body mb-4 text-2xl font-semibold">Get started for free</h2>
       <div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
         <PageLink
           href="/register"
           className="btn-primary ui-text-base inline-flex h-12 w-full items-center justify-center rounded-md px-6 font-medium sm:w-auto"
         >
-          Sign up for free
+          Sign up
         </PageLink>
         <PageLink
           href="/login"
