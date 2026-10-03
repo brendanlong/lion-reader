@@ -54,7 +54,5 @@ export function createPiperSpeechPlayer(voice: () => PiperVoice): MediaSourcePla
     chunkParagraphs: splitIntoSentenceChunks,
     // One WASM model on the device's CPU: one sentence at a time.
     maxConcurrentSyntheses: 1,
-    // Free apart from battery, but a locked phone may synthesize slowly.
-    bufferAheadSeconds: 30,
   });
 }
