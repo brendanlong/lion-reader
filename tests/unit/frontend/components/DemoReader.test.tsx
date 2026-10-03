@@ -106,8 +106,15 @@ describe("demo reader tree", () => {
     mockSearch = "entry=welcome";
     renderDemo();
 
+    const welcome = DEMO_ENTRIES.find((entry) => entry.id === "welcome")!;
+    const summary = new DOMParser().parseFromString(welcome.summaryHtml, "text/html").body
+      .textContent!;
     fireEvent.click(await screen.findByRole("button", { name: "Generate AI summary" }));
-    expect(await screen.findByText(/self-hostable reader that unifies/)).toBeVisible();
+    expect(
+      await screen.findByText((_, element) => element?.textContent === summary, {
+        selector: "p",
+      })
+    ).toBeVisible();
   });
 
   it("starring an article in the list updates the sidebar's Starred count", async () => {

@@ -18,6 +18,14 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { DEMO_ENTRIES, getDemoEntry, getDemoSubscription } from "../../src/app/(public)/demo/data";
+
+// Counts and copy come from the demo data so editing articles doesn't break
+// these tests.
+const TOTAL_ENTRIES = DEMO_ENTRIES.length;
+const welcome = getDemoEntry("welcome")!;
+const welcomeTitle = welcome.title!;
+const performanceTitle = getDemoEntry("performance")!.title!;
 
 /**
  * Collects every console error and page error (hydration mismatches, React
@@ -51,7 +59,7 @@ test("the prerendered article page carries the article and the list", async ({ r
   const html = await response.text();
 
   // The article body is in the HTML (no client-side fetch needed to see it).
-  expect(html).toContain("This interactive demo is the real Lion Reader UI");
+  expect(html).toContain(welcome.contentHtml.match(/<p>(.*?)<\/p>/)![1]);
   expect(html).toContain("Get Started");
   // The (hidden) list under the article is prerendered too, with crawlable
   // links — including the open (now read) entry itself, like the app's list.
@@ -93,15 +101,13 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await page.goto("/demo/all");
 
   const allItems = page.getByRole("link", { name: /^All Items/ });
-  await expect(allItems).toContainText("(23)");
+  await expect(allItems).toContainText(`(${TOTAL_ENTRIES})`);
 
   // Open an article from the list; it auto-marks read and the count drops.
-  await page.getByRole("button", { name: /article: Obsessive Performance/ }).click();
+  await page.getByRole("button", { name: `article: ${performanceTitle}` }).click();
   await expect(page).toHaveURL(/\/demo\/all\?entry=performance$/);
-  await expect(
-    page.getByRole("heading", { name: "Obsessive Performance", level: 1 })
-  ).toBeVisible();
-  await expect(allItems).toContainText("(22)");
+  await expect(page.getByRole("heading", { name: performanceTitle, level: 1 })).toBeVisible();
+  await expect(allItems).toContainText(`(${TOTAL_ENTRIES - 1})`);
 
   // Star it from the reader; the sidebar Starred count follows.
   const starred = page.getByRole("link", { name: /^Starred/ });
@@ -117,13 +123,13 @@ test("reading, starring and navigating work through the real reader", async ({ p
   // navigation).
   await page.getByRole("button", { name: "Back to list" }).click();
   await expect(page).toHaveURL(/\/demo\/all$/);
-  await expect(page.getByRole("button", { name: /article: Obsessive Performance/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: `article: ${performanceTitle}` })).toBeVisible();
 
   // Sidebar navigation keeps the /demo prefix and swaps the list.
   await page.getByRole("link", { name: /^Starred/ }).click();
   await expect(page).toHaveURL(/\/demo\/starred$/);
   await expect(page.getByRole("heading", { name: "Starred" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /article: Welcome to Lion Reader/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: `article: ${welcomeTitle}` })).toBeVisible();
 
   // Search runs against the store, over body text: a term only the performance
   // article contains.
@@ -131,17 +137,16 @@ test("reading, starring and navigating work through the real reader", async ({ p
   await page.getByRole("searchbox").fill("100ms");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/q=100ms/);
-  await expect(page.getByRole("button", { name: /article: Obsessive Performance/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /article: Welcome to Lion Reader/ })).toHaveCount(
-    0
-  );
+  await expect(page.getByRole("button", { name: `article: ${performanceTitle}` })).toBeVisible();
+  await expect(page.getByRole("button", { name: `article: ${welcomeTitle}` })).toHaveCount(0);
 
   expect(apiRequests).toEqual([]);
 });
 
 test("mark all read empties the unread view and the sidebar counts", async ({ page }) => {
   await page.goto("/demo/subscription/organization");
-  await expect(page.getByRole("heading", { name: "Organization & Search" })).toBeVisible();
+  const organization = getDemoSubscription("organization")!;
+  await expect(page.getByRole("heading", { name: organization.title })).toBeVisible();
 
   await page.getByRole("button", { name: /Mark all/i }).click();
   await page
@@ -150,7 +155,9 @@ test("mark all read empties the unread view and the sidebar counts", async ({ pa
     .click();
 
   await expect(page.getByText(/No unread entries in this subscription/)).toBeVisible();
-  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText("(20)");
+  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText(
+    `(${TOTAL_ENTRIES - organization.entryCount})`
+  );
 });
 
 test("the old highlights URL redirects to the starred list", async ({ request }) => {
@@ -171,12 +178,12 @@ test("a direct visit to the internal entry route normalizes to the public URL", 
   const renderErrors = collectRenderErrors(page);
   await page.goto("/demo/entry/welcome");
   await expect(page).toHaveURL(/\/demo\/all\?entry=welcome$/);
-  await expect(
-    page.getByRole("heading", { name: "Welcome to Lion Reader", level: 1 })
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: welcomeTitle, level: 1 })).toBeVisible();
   await page.waitForTimeout(1000);
   expect(renderErrors).toEqual([]);
   // The article stayed open across the normalization (it was never closed and
-  // reopened): its single auto-mark-read leaves the count at 25.
-  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText("(22)");
+  // reopened): its single auto-mark-read drops the count by exactly one.
+  await expect(page.getByRole("link", { name: /^All Items/ })).toContainText(
+    `(${TOTAL_ENTRIES - 1})`
+  );
 });
