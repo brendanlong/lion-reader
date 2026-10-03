@@ -169,7 +169,7 @@ the Compose app. Upcoming work (share targets, narration, iOS) is planned in
   `public/logo.svg` by `scripts/app-icon.py` (its header says how).
   Debug builds get their own background color so they're easy to tell apart,
   except with themed icons on, which use only the monochrome layer.
-  E-ink devices get that monochrome layer black on white instead
+  E-ink devices get a black, white and gray version on white instead
   (`LauncherIcon.kt`), so the launcher entry is an alias per icon. Android
   removes a task when the entry it was started from is disabled, so a launch
   from the hidden entry reopens from the shown one. In code, start
