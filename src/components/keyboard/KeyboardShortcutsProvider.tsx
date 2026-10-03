@@ -57,17 +57,18 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
     setIsModalOpen(false);
   }, []);
 
-  // ? shortcut to open help modal
-  // Note: We use "shift+/" because ? is shift+/ on most keyboards
   useHotkeys(
-    "shift+/",
+    "shift+?",
     (e) => {
       e.preventDefault();
       openShortcutsModal();
     },
+    // useKey matches the produced character (event.key): without it the "?"
+    // would be compared to the physical key code ("slash"), which never matches.
     {
       enabled: enabled && !isModalOpen,
       enableOnFormTags: false,
+      useKey: true,
     },
     [enabled, isModalOpen, openShortcutsModal]
   );
