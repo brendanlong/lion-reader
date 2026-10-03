@@ -7,7 +7,7 @@
  *   `listExportableEntries` for which), with the body the entry view shows.
  * - `entries.json` — the same entries' metadata, for scripts.
  * - `bookmarks.html` — a Netscape bookmark file of saved and starred links,
- *   which browsers, Wallabag, linkding and most read-later services import.
+ *   which browsers and bookmark managers (Raindrop.io, linkding, Linkwarden) import.
  * - `subscriptions.opml` — the subscription list.
  *
  * Streamed one page of entries at a time so a large library never sits in memory.

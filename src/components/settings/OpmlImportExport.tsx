@@ -572,8 +572,8 @@ function LibraryExportSection() {
       <h3 className="ui-text-sm text-body mb-2 font-medium">Export your library</h3>
       <p className="ui-text-sm text-muted mb-4">
         Download a zip of your saved articles, uploads, newsletters and starred entries, with a page
-        for each article, a bookmarks file other read-later apps can import, and your subscriptions
-        as OPML.
+        for each article, a bookmarks file browsers and bookmark managers can import, and your
+        subscriptions as OPML.
       </p>
 
       <a href="/api/v1/export" download className={buttonClassName({ variant: "secondary" })}>
