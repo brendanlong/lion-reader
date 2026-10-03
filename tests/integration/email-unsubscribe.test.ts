@@ -30,7 +30,7 @@ beforeAll(async () => {
     req.on("data", (chunk: Buffer) => (body += chunk.toString()));
     req.on("end", () => {
       received.push({ method: req.method, path: req.url, body });
-      res.writeHead(200).end();
+      res.writeHead(req.url === "/broken" ? 500 : 200).end();
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -75,6 +75,20 @@ describe("attemptUnsubscribe", () => {
     expect(received).toEqual([
       { method: "POST", path: "/unsub", body: "List-Unsubscribe=One-Click" },
     ]);
+  });
+
+  it("does not report a rejected one-click POST as sent", async () => {
+    const feedId = await createEmailFeed();
+    await createTestEntry(feedId, {
+      type: "email",
+      listUnsubscribeHttps: `${baseUrl}/broken`,
+      listUnsubscribePost: true,
+    });
+
+    const result = await attemptUnsubscribe(feedId);
+
+    expect(result.sent).toBe(false);
+    expect(received.map((r) => r.path)).toEqual(["/broken"]);
   });
 
   it("does not report a mailto-only sender as unsubscribed", async () => {

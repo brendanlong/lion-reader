@@ -51,23 +51,16 @@ async function sendUnsubscribePost(url: string): Promise<void> {
     });
 
     if (!response.ok) {
-      logger.warn("One-click unsubscribe POST returned non-OK status", {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-      });
-      // We don't throw here - the request was sent, even if the server didn't accept it
-      // The sender may have already processed the unsubscribe or have different behavior
-    } else {
-      logger.info("One-click unsubscribe POST successful", { url, status: response.status });
+      throw new Error(`Unsubscribe request returned HTTP ${response.status}`);
     }
+    logger.info("One-click unsubscribe POST successful", { url, status: response.status });
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
       logger.warn("One-click unsubscribe POST timed out", { url });
       throw new Error("Unsubscribe request timed out");
     }
 
-    logger.error("One-click unsubscribe POST failed", {
+    logger.warn("One-click unsubscribe POST failed", {
       url,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -119,8 +112,8 @@ export async function attemptUnsubscribe(feedId: string): Promise<UnsubscribeRes
 }
 
 /**
- * Gets the most recent List-Unsubscribe mailto URL for a feed.
- * Used to store the URL in blocked_senders for potential retry.
+ * Gets the most recent List-Unsubscribe mailto URL for a feed, which is
+ * recorded on the blocked_senders row.
  *
  * @param feedId - The feed ID
  * @returns The mailto URL or null if not found
