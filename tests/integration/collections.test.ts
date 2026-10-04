@@ -60,6 +60,15 @@ async function counters(subscriptionId: string) {
   return row;
 }
 
+async function savedEntryCount(userId: string): Promise<number> {
+  const rows = await db
+    .select({ id: entries.id })
+    .from(entries)
+    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+    .where(and(eq(userEntries.userId, userId), eq(entries.type, "saved")));
+  return rows.length;
+}
+
 async function tagUnread(tagId: string): Promise<number> {
   const [row] = await db.select({ unread: tags.unreadCount }).from(tags).where(eq(tags.id, tagId));
   return row.unread;
@@ -245,6 +254,75 @@ describe("collections", () => {
     }
   });
 
+  describe("delta sync", () => {
+    // An article from an unsubscribed feed is visible only through the
+    // collection, so joining or leaving it must reach offline clients.
+    /** A sync cursor strictly before anything written after it returns. */
+    async function cursorNow(): Promise<string> {
+      const now = new Date().toISOString();
+      // Writes stamp updated_at with millisecond JS dates; one in the same
+      // millisecond as the cursor wouldn't sort after it.
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      return now;
+    }
+
+    async function changesSince(userId: string, since: string) {
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.sync.changes({ entries: since, entriesSince: since });
+      return {
+        delivered: result.events.flatMap((e) =>
+          e.type === "entry_state_changed" ? [e.entryId] : []
+        ),
+        hidden: result.deletions.map((d) => d.entryId),
+      };
+    }
+
+    /** entryA in the collection, its feed unsubscribed: visible only through it. */
+    async function setupCollectedOnly() {
+      const world = await setup();
+      await addEntriesToCollection(db, world.userId, world.collectionId, [world.entryA]);
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, world.sourceId));
+      return world;
+    }
+
+    it("re-delivers an article that joins a collection", async () => {
+      const { userId, entryA, collectionId } = await setup();
+      const since = await cursorNow();
+
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      expect((await changesSince(userId, since)).delivered).toEqual([entryA]);
+    });
+
+    it("syncs a change to an article visible only through a collection as visible", async () => {
+      // The sync visibility predicate repeats visible_entries'; without the
+      // membership arm this would come back as hidden.
+      const { userId, entryA } = await setupCollectedOnly();
+      const since = await cursorNow();
+
+      await markEntriesRead(db, userId, [{ id: entryA }], true);
+
+      expect(await changesSince(userId, since)).toEqual({ delivered: [entryA], hidden: [] });
+    });
+
+    it("reports an article hidden when it leaves its only route into view", async () => {
+      const removed = await setupCollectedOnly();
+      let since = await cursorNow();
+      await removeEntriesFromCollection(db, removed.userId, removed.collectionId, [removed.entryA]);
+      expect((await changesSince(removed.userId, since)).hidden).toEqual([removed.entryA]);
+
+      const deleted = await setupCollectedOnly();
+      since = await cursorNow();
+      await createCaller(await createAuthContext(deleted.userId)).subscriptions.delete({
+        id: deleted.collectionId,
+      });
+      expect((await changesSince(deleted.userId, since)).hidden).toEqual([deleted.entryA]);
+    });
+  });
+
   describe("filters", () => {
     it("lists a collection's members and marks only them read", async () => {
       const { userId, entryA, entryB, collectionId } = await setup();
@@ -306,8 +384,12 @@ describe("collections", () => {
     });
 
     it("refuses a membership row pointing at another user's collection", async () => {
-      const { collectionId, entryA } = await setup();
+      // The other user can see the article too, so only the ownership key
+      // (not the user_entries one) can reject the row.
+      const { feedId, collectionId, entryA } = await setup();
       const otherUser = await createTestUser();
+      await createTestSubscription(otherUser, feedId);
+      await db.insert(userEntries).values({ userId: otherUser, entryId: entryA });
 
       await expect(
         db.insert(collectionEntries).values({
@@ -315,7 +397,65 @@ describe("collections", () => {
           userId: otherUser,
           entryId: entryA,
         })
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({
+        cause: { constraint: "collection_entries_subscription_id_user_id_fkey" },
+      });
+    });
+
+    it("skips an article the user has a row for but can't see", async () => {
+      const { userId, sourceId, entryA, collectionId } = await setup();
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, sourceId));
+
+      const result = await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      expect(result.entryIds).toEqual([]);
+      expect(await getEntries(db, userId, [entryA])).toEqual([]);
+    });
+
+    it("rejects adding to a collection that was just deleted", async () => {
+      const { userId, entryA, collectionId } = await setup();
+      await createCaller(await createAuthContext(userId)).subscriptions.delete({
+        id: collectionId,
+      });
+
+      await expect(
+        addEntriesToCollection(db, userId, collectionId, [entryA])
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("checks a save's collections before saving, and needs a reader scope for them", async () => {
+      const { userId, collectionId } = await setup();
+      const other = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+      const html = "<html><head><title>T</title></head><body><p>Body</p></body></html>";
+
+      await expect(
+        caller.saved.save({
+          url: "https://example.com/a",
+          html,
+          collectionIds: [other.collectionId],
+        })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await savedEntryCount(userId)).toBe(0);
+
+      const saveOnly = createCaller({
+        ...(await createAuthContext(userId)),
+        authType: "api_token",
+        scopes: ["saved:write"],
+      });
+      await expect(
+        saveOnly.saved.save({ url: "https://example.com/b", html, collectionIds: [collectionId] })
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      const { article } = await caller.saved.save({
+        url: "https://example.com/c",
+        html,
+        collectionIds: [collectionId],
+      });
+      expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([article.id]);
     });
   });
 

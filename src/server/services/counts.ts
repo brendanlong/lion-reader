@@ -15,8 +15,8 @@
  *   all           = users.all_unread_count
  *
  * Tag, Uncategorized and All count distinct articles: one reachable through
- * both a feed and a collection (#1806) counts once. Migration 0120 defines and
- * maintains them.
+ * both a feed and a collection (#1806) counts once. The database functions
+ * `apply_unread_rows` and `recompute_list_counters` maintain them.
  */
 
 import { eq, and, inArray } from "drizzle-orm";
@@ -45,28 +45,33 @@ export interface TagCount {
 // Service Functions
 // ============================================================================
 
-/** Global unread counts (all + starred + saved) for a user. */
-export async function getGlobalUnreadCounts(
-  db: DbOrTx,
-  userId: string
-): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
+interface UserUnreadCounts {
+  allUnread: number;
+  starredUnread: number;
+  savedUnread: number;
+  uncategorizedUnread: number;
+}
+
+async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<UserUnreadCounts> {
   const [row] = await db
     .select({
       allUnread: users.allUnreadCount,
       starredUnread: users.starredUnreadCount,
       savedUnread: users.savedUnreadCount,
+      uncategorizedUnread: users.uncategorizedUnreadCount,
     })
     .from(users)
     .where(eq(users.id, userId));
-  return row ?? { allUnread: 0, starredUnread: 0, savedUnread: 0 };
+  return row ?? { allUnread: 0, starredUnread: 0, savedUnread: 0, uncategorizedUnread: 0 };
 }
 
-async function getUncategorizedUnreadCount(db: DbOrTx, userId: string): Promise<number> {
-  const [row] = await db
-    .select({ unread: users.uncategorizedUnreadCount })
-    .from(users)
-    .where(eq(users.id, userId));
-  return row?.unread ?? 0;
+/** Global unread counts (all + starred + saved) for a user. */
+export async function getGlobalUnreadCounts(
+  db: DbOrTx,
+  userId: string
+): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
+  const { allUnread, starredUnread, savedUnread } = await getUserUnreadCounts(db, userId);
+  return { allUnread, starredUnread, savedUnread };
 }
 
 /**
@@ -153,8 +158,8 @@ export async function getBulkEntryRelatedCounts(
 
   // The global counter arithmetic runs alongside the subscription counter and
   // tag lookups; the latter are skipped when only saved entries are affected.
-  const [globalCounts, subscriptionCounts, subTags] = await Promise.all([
-    getGlobalUnreadCounts(db, userId),
+  const [userCounts, subscriptionCounts, subTags] = await Promise.all([
+    getUserUnreadCounts(db, userId),
     subscriptionIds.length > 0
       ? db
           .select({
@@ -176,9 +181,9 @@ export async function getBulkEntryRelatedCounts(
   ]);
 
   const baseCounts: BulkUnreadCounts = {
-    all: { unread: globalCounts.allUnread },
-    starred: { unread: globalCounts.starredUnread },
-    saved: { unread: globalCounts.savedUnread },
+    all: { unread: userCounts.allUnread },
+    starred: { unread: userCounts.starredUnread },
+    saved: { unread: userCounts.savedUnread },
     subscriptions: [],
     tags: [],
   };
@@ -201,14 +206,9 @@ export async function getBulkEntryRelatedCounts(
   const subscriptionsWithTags = new Set(subTags.map((t) => t.subscriptionId));
   const hasUncategorized = subscriptionIds.some((id) => !subscriptionsWithTags.has(id));
 
-  const [tagCounts, uncategorizedUnread] = await Promise.all([
-    getTagUnreadCounts(db, userId, tagIds),
-    hasUncategorized ? getUncategorizedUnreadCount(db, userId) : Promise.resolve(null),
-  ]);
-  baseCounts.tags = tagCounts;
-
-  if (uncategorizedUnread !== null) {
-    baseCounts.uncategorized = { unread: uncategorizedUnread };
+  baseCounts.tags = await getTagUnreadCounts(db, userId, tagIds);
+  if (hasUncategorized) {
+    baseCounts.uncategorized = { unread: userCounts.uncategorizedUnread };
   }
 
   return baseCounts;
@@ -233,18 +233,18 @@ export async function getSubscriptionDeletionCounts(
   userId: string,
   formerTagIds: string[]
 ): Promise<BulkUnreadCounts> {
-  const globalCounts = await getGlobalUnreadCounts(db, userId);
+  const userCounts = await getUserUnreadCounts(db, userId);
   const baseCounts: BulkUnreadCounts = {
-    all: { unread: globalCounts.allUnread },
-    starred: { unread: globalCounts.starredUnread },
-    saved: { unread: globalCounts.savedUnread },
+    all: { unread: userCounts.allUnread },
+    starred: { unread: userCounts.starredUnread },
+    saved: { unread: userCounts.savedUnread },
     subscriptions: [],
     tags: [],
   };
 
   if (formerTagIds.length === 0) {
     // Subscription was uncategorized — only Uncategorized's unread changed.
-    baseCounts.uncategorized = { unread: await getUncategorizedUnreadCount(db, userId) };
+    baseCounts.uncategorized = { unread: userCounts.uncategorizedUnread };
     return baseCounts;
   }
 

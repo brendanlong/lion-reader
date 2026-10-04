@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogBody, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { BookmarkIcon, CheckIcon } from "@/components/ui/icons";
+import { COLLECTION_NAME_MAX_LENGTH } from "@/lib/collections";
 
 export function CollectionsButton({ entryId }: { entryId: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -57,16 +58,17 @@ function CollectionsPicker({
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
-    if (!trimmed) return;
-    await membership.createWithEntry(trimmed);
-    setName("");
+    if (!trimmed || membership.isCreating) return;
+    if (await membership.createWithEntry(trimmed)) setName("");
   };
 
   return (
     <>
       <DialogTitle id="collections-picker-title">Collections</DialogTitle>
       <DialogBody>
-        {collectionsQuery.isLoading ? (
+        {membership.membershipStatus === "error" || collectionsQuery.isError ? (
+          <p className="ui-text-sm text-danger">Couldn&apos;t load your collections.</p>
+        ) : collectionsQuery.isLoading || membership.membershipStatus === "pending" ? (
           <div className="bg-fill-muted h-11 animate-pulse rounded-md" />
         ) : collections.length === 0 ? (
           <p className="ui-text-sm text-muted">
@@ -82,8 +84,12 @@ function CollectionsPicker({
                     type="button"
                     role="checkbox"
                     aria-checked={isMember}
-                    onClick={() => membership.setMember(collection.id, !isMember)}
-                    disabled={membership.isUpdating}
+                    // aria-disabled rather than disabled, so the focused row
+                    // keeps focus while the change saves.
+                    onClick={() => {
+                      if (!membership.isUpdating) membership.setMember(collection.id, !isMember);
+                    }}
+                    aria-disabled={membership.isUpdating}
                     className={`ui-text-sm text-body flex min-h-[44px] w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors ${
                       isMember
                         ? "control-outline bg-surface-muted"
@@ -118,9 +124,8 @@ function CollectionsPicker({
               label="New collection"
               placeholder="e.g. Research"
               value={name}
-              maxLength={255}
+              maxLength={COLLECTION_NAME_MAX_LENGTH}
               onChange={(e) => setName(e.target.value)}
-              disabled={membership.isCreating}
             />
           </div>
           <Button type="submit" disabled={!name.trim()} loading={membership.isCreating}>

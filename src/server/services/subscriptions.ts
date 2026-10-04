@@ -154,31 +154,41 @@ export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string
 }
 
 /**
- * Locks a subscription row (and, for a collection, its members' user_entries
- * rows, which deleting it touches) for the rest of the transaction. Call it
- * before changing the subscription's tags or state, so the transaction takes
- * locks in the unread-counter triggers' order (user_entries rows,
- * subscriptions, users, tags) and can't deadlock against a concurrent read of
- * one of its entries.
+ * Locks one of the user's subscription rows for the rest of the transaction,
+ * so a change to its tags or state takes locks in the order `src/server/CLAUDE.md`
+ * requires. Unsubscribing a collection also touches its members' user_entries
+ * rows (the trigger empties it), so `members` locks those first.
  */
-export async function lockSubscriptionRow(tx: DbOrTx, subscriptionId: string): Promise<void> {
-  await tx
-    .select({ entryId: userEntries.entryId })
-    .from(userEntries)
-    .innerJoin(
-      collectionEntries,
-      and(
-        eq(collectionEntries.userId, userEntries.userId),
-        eq(collectionEntries.entryId, userEntries.entryId)
+export async function lockSubscriptionRow(
+  tx: DbOrTx,
+  userId: string,
+  subscriptionId: string,
+  { members = false }: { members?: boolean } = {}
+): Promise<void> {
+  if (members) {
+    await tx
+      .select({ entryId: userEntries.entryId })
+      .from(userEntries)
+      .innerJoin(
+        collectionEntries,
+        and(
+          eq(collectionEntries.userId, userEntries.userId),
+          eq(collectionEntries.entryId, userEntries.entryId)
+        )
       )
-    )
-    .where(eq(collectionEntries.subscriptionId, subscriptionId))
-    .orderBy(userEntries.entryId)
-    .for("no key update", { of: userEntries });
+      .where(
+        and(
+          eq(collectionEntries.subscriptionId, subscriptionId),
+          eq(collectionEntries.userId, userId)
+        )
+      )
+      .orderBy(userEntries.entryId)
+      .for("no key update", { of: userEntries });
+  }
   await tx
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(eq(subscriptions.id, subscriptionId))
+    .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
     .for("update");
 }
 
@@ -500,9 +510,8 @@ export async function createSubscription(
   const defaultFullContent = feedDefaultsToFullContent(feed.url);
 
   // 3–5. Cap check + subscription upsert + user_entries populate, all in ONE
-  //       transaction. Previously these were separate statements: a crash
-  //       between them could leave a half-created subscription, and
-  //       the cap count → insert was check-then-act (issue #952).
+  //       transaction, so a crash can't leave a half-created subscription;
+  //       lockAndCountActiveSubscriptions serializes the cap check (#952).
   const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
 
   interface TxResult {
@@ -715,6 +724,7 @@ export async function setSubscriptionTags(
   subscriptionId: string,
   tagIds: string[]
 ): Promise<void> {
+  tagIds = [...new Set(tagIds)];
   // Verify the subscription exists and belongs to the user
   const existingSubscription = await db
     .select()
@@ -759,7 +769,7 @@ export async function setSubscriptionTags(
   const changed = await db.transaction(async (tx) => {
     // Subscription row first: the counter triggers lock subscriptions, then
     // users, then tags, and the tag changes below reach users and tags.
-    await lockSubscriptionRow(tx, subscriptionId);
+    await lockSubscriptionRow(tx, userId, subscriptionId);
 
     // Delete all existing tags for the subscription. The RETURNING captures
     // the prior tag set race-free (no pre-SELECT TOCTOU window) so we can

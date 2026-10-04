@@ -4,7 +4,7 @@
 -- articles the user can already see, and user_entries.subscription_id keeps
 -- pointing at each article's source.
 --
--- Because an article can now reach a tag (or Uncategorized, or All) by more
+-- Because an article can reach a tag (or Uncategorized, or All) by more
 -- than one route, those badges become stored counters of DISTINCT articles:
 --
 --   tags.unread_count               unread, non-spam articles reachable through
@@ -22,10 +22,10 @@
 --     unsubscribing) recompute the user's counters (recompute_list_counters)
 --     from the subscription counters plus their collection members, never
 --     scanning a feed's history.
--- Lock order, in every path: user_entries rows, then subscriptions, then
--- users (sorted by id), then tags. Every delta and every recompute locks the
--- user's row before touching tags, so a recompute serializes with concurrent
--- deltas for the same user instead of losing one, and nothing deadlocks.
+-- Lock order (src/server/CLAUDE.md, "Unread Counts"): user_entries rows,
+-- subscriptions, users, tags. Every delta and recompute locks the user's row
+-- before touching tags, so a recompute serializes with concurrent deltas for
+-- the same user instead of losing one.
 
 SET LOCAL lock_timeout = '10s';
 --> statement-breakpoint
@@ -87,7 +87,9 @@ BEGIN
 
   -- Lock every affected user, sorted, before any counter write, even when
   -- only tag counters move (see the lock order in the header).
-  PERFORM 1 FROM users WHERE id IN (SELECT unnest(p_user)) ORDER BY id FOR UPDATE;
+  -- NO KEY UPDATE, not UPDATE: every insert referencing a user holds KEY SHARE
+  -- on its row, which FOR UPDATE would conflict with.
+  PERFORM 1 FROM users WHERE id IN (SELECT unnest(p_user)) ORDER BY id FOR NO KEY UPDATE;
 
   WITH c AS (
     SELECT x.*, NOT p_no_members AND EXISTS (
@@ -194,7 +196,7 @@ CREATE FUNCTION recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  PERFORM 1 FROM users WHERE id = p_user FOR UPDATE;
+  PERFORM 1 FROM users WHERE id = p_user FOR NO KEY UPDATE;
 
   UPDATE users u
   SET uncategorized_unread_count = f.uncategorized + m.uncategorized,
@@ -317,7 +319,7 @@ CREATE FUNCTION collection_entries_recompute_lists() RETURNS trigger
     AS $$
 BEGIN
   PERFORM recompute_list_counters(u.user_id)
-  FROM (SELECT DISTINCT user_id FROM changed_rows) u;
+  FROM (SELECT DISTINCT user_id FROM changed_rows ORDER BY user_id) u;
   RETURN NULL;
 END;
 $$;
@@ -335,6 +337,7 @@ BEGIN
   PERFORM recompute_list_counters(u.user_id)
   FROM (
     SELECT DISTINCT s.user_id FROM changed_rows c JOIN subscriptions s ON s.id = c.subscription_id
+    ORDER BY s.user_id
   ) u;
   RETURN NULL;
 END;
@@ -347,23 +350,35 @@ CREATE TRIGGER subscription_tags_recompute_lists_delete_trigger AFTER DELETE ON 
   REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION subscription_tags_recompute_lists();
 --> statement-breakpoint
 -- Subscribing (insert) needs nothing: a new subscription's entries arrive
--- through user_entries inserts. Unsubscribing, resubscribing and deleting do.
--- Row-level for updates: a column-filtered trigger can't have transition
--- tables, and an unfiltered statement trigger would run on every counter
--- update.
+-- through user_entries inserts. Unsubscribing and resubscribing do, for users
+-- in id order (one statement can change many users' subscriptions, as the
+-- feed-merge job does). A trigger filtered to unsubscribed_at can't have
+-- transition tables, so this runs on every update; changed rows are found by
+-- netting old against new in a hash aggregate, never a join (the planner has
+-- no statistics for transition tables).
 CREATE FUNCTION subscriptions_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  PERFORM recompute_list_counters(NEW.user_id);
+  PERFORM recompute_list_counters(u.user_id)
+  FROM (
+    SELECT DISTINCT user_id
+    FROM (
+      SELECT id, user_id, unsubscribed_at, 1 AS side FROM changed_rows
+      UNION ALL
+      SELECT id, user_id, unsubscribed_at, -1 FROM old_rows
+    ) x
+    GROUP BY id, user_id, unsubscribed_at
+    HAVING sum(side) <> 0
+    ORDER BY user_id
+  ) u;
   RETURN NULL;
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER subscriptions_recompute_lists_update_trigger
-  AFTER UPDATE OF unsubscribed_at ON subscriptions
-  FOR EACH ROW WHEN (OLD.unsubscribed_at IS DISTINCT FROM NEW.unsubscribed_at)
-  EXECUTE FUNCTION subscriptions_recompute_lists();
+CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON subscriptions
+  REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION subscriptions_recompute_lists();
 --> statement-breakpoint
 -- Deferred to commit: deleting a subscription sets user_entries.subscription_id
 -- to NULL through its foreign key, and those updates' triggers fire after this

@@ -43,6 +43,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     title: string;
     customTitle: string | null;
     tagIds: string[];
+    isCollection: boolean;
   } | null>(null);
 
   const utils = trpc.useUtils();
@@ -85,6 +86,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     title: string;
     customTitle: string | null;
     tagIds: string[];
+    isCollection: boolean;
   }) => {
     setEditTarget(sub);
   };
@@ -138,6 +140,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         currentTitle={editTarget?.title ?? ""}
         currentCustomTitle={editTarget?.customTitle ?? null}
         currentTagIds={editTarget?.tagIds ?? []}
+        isCollection={editTarget?.isCollection ?? false}
         onClose={() => {
           setEditTarget(null);
           utils.subscriptions.list.invalidate();

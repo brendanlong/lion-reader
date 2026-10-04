@@ -168,7 +168,7 @@ fetches user-influenced URLs and must never be usable to reach internal services
   access**: `addEntriesToCollection` inserts only articles already in the user's
   `visible_entries`, a collection id is accepted only if the user owns it, and the
   `(subscription_id, user_id)` foreign key stops a membership from naming another
-  user's collection (`services/collections.ts`, migration 0120).
+  user's collection (`services/collections.ts`, the `collection_entries` foreign keys).
 - AI summaries are keyed `(user_id, content_hash)`. Narration is a shared cache of a
   deterministic transform of public content, so **only a failure the content causes
   may be recorded on a `narration_content` row** — never one from a user's own key

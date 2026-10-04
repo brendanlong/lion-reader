@@ -19,6 +19,7 @@ import {
   type SidebarSelection,
 } from "@/lib/hooks/useSidebarSelection";
 import { SubscriptionItem } from "./SubscriptionItem";
+import { untitledSubscriptionLabel } from "@/lib/collections";
 
 interface TagSubscriptionListProps {
   /** Tag ID to filter by, or undefined for uncategorized */
@@ -35,6 +36,7 @@ interface TagSubscriptionListProps {
     title: string;
     customTitle: string | null;
     tagIds: string[];
+    isCollection: boolean;
   }) => void;
   /** Callback to unsubscribe */
   onUnsubscribe: (sub: { id: string; title: string; isCollection: boolean }) => void;
@@ -148,15 +150,16 @@ export function TagSubscriptionList({
           onEdit={() =>
             onEdit({
               id: sub.id,
-              title: sub.title || "Untitled Feed",
+              title: sub.title || untitledSubscriptionLabel(sub.type),
               customTitle: sub.title !== sub.originalTitle ? sub.title : null,
               tagIds: sub.tags.map((t) => t.id),
+              isCollection: sub.type === "collection",
             })
           }
           onUnsubscribe={() =>
             onUnsubscribe({
               id: sub.id,
-              title: sub.title || "Untitled Feed",
+              title: sub.title || untitledSubscriptionLabel(sub.type),
               isCollection: sub.type === "collection",
             })
           }

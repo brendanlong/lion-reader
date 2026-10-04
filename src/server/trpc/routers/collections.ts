@@ -14,6 +14,7 @@ import { uuidSchema } from "../validation";
 import { unreadCountsSchema } from "@/lib/events/schemas";
 import * as collectionsService from "@/server/services/collections";
 import { subscriptionOutputSchema } from "./subscriptions";
+import { COLLECTION_NAME_MAX_LENGTH, MAX_COLLECTION_BATCH } from "@/lib/collections";
 
 // Part of the MCP tool surface; the native app uses it too.
 const protectedProcedure = scopedProtectedProcedure(READER_SCOPES);
@@ -22,9 +23,12 @@ const collectionNameSchema = z
   .string()
   .trim()
   .min(1, "Collection name is required")
-  .max(255, "Collection name must be less than 255 characters");
+  .max(
+    COLLECTION_NAME_MAX_LENGTH,
+    `Collection name must be at most ${COLLECTION_NAME_MAX_LENGTH} characters`
+  );
 
-const entryIdsSchema = z.array(uuidSchema).min(1).max(collectionsService.MAX_COLLECTION_BATCH);
+const entryIdsSchema = z.array(uuidSchema).min(1).max(MAX_COLLECTION_BATCH);
 
 const membershipOutputSchema = z.object({
   entryIds: z.array(z.string()),

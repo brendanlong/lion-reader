@@ -4,7 +4,8 @@
  * The denormalized unread counters (subscriptions.unread_count /
  * starred_unread_count, users.saved_unread_count / starred_unread_count from
  * migration 0092; tags.unread_count, users.uncategorized_unread_count /
- * all_unread_count from migration 0120) are maintained by triggers.
+ * all_unread_count, maintained by `apply_unread_rows` / `recompute_list_counters`)
+ * are maintained by triggers.
  * This sweep recomputes them from ground truth and fixes any drift, serving
  * two purposes:
  *
@@ -19,7 +20,7 @@
  * next sweep corrects it, and at this write rate the window is negligible.
  * "Ground truth" mirrors the trigger contribution exactly: unread, non-spam
  * rows; starred subset; NULL subscription_id = saved; a collection's
- * subscription counts its members (collection_entries, migration 0120).
+ * subscription counts its members (collection_entries).
  */
 
 import { sql } from "drizzle-orm";
@@ -31,6 +32,22 @@ export interface ReconcileCountersResult {
   usersFixed: number;
   tagsFixed: number;
 }
+
+/**
+ * Every route from a user to an unread, non-spam article: its active source
+ * subscription, and each collection holding it.
+ */
+const UNREAD_ROUTES = sql`
+  SELECT ue.user_id, ue.entry_id, ue.subscription_id AS route
+  FROM user_entries ue
+  JOIN subscriptions s ON s.id = ue.subscription_id AND s.unsubscribed_at IS NULL
+  WHERE NOT ue.read AND NOT ue.is_spam
+  UNION ALL
+  SELECT ce.user_id, ce.entry_id, ce.subscription_id
+  FROM collection_entries ce
+  JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
+  WHERE NOT ue.read AND NOT ue.is_spam
+`;
 
 export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCountersResult> {
   const subscriptionsResult = await db.execute(sql`
@@ -82,17 +99,7 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
   // saved or starred. Written from that definition, not from the trigger
   // algebra, so it checks the triggers rather than repeating them.
   const tagsResult = await db.execute(sql`
-    WITH routes AS (
-      SELECT ue.user_id, ue.entry_id, ue.subscription_id AS route
-      FROM user_entries ue
-      JOIN subscriptions s ON s.id = ue.subscription_id AND s.unsubscribed_at IS NULL
-      WHERE NOT ue.read AND NOT ue.is_spam
-      UNION ALL
-      SELECT ce.user_id, ce.entry_id, ce.subscription_id
-      FROM collection_entries ce
-      JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
-      WHERE NOT ue.read AND NOT ue.is_spam
-    ),
+    WITH routes AS (${UNREAD_ROUTES}),
     truth AS (
       SELECT st.tag_id, count(DISTINCT r.entry_id)::int AS n
       FROM routes r JOIN subscription_tags st ON st.subscription_id = r.route
@@ -106,17 +113,7 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
   `);
 
   const listUsersResult = await db.execute(sql`
-    WITH routes AS (
-      SELECT ue.user_id, ue.entry_id, ue.subscription_id AS route
-      FROM user_entries ue
-      JOIN subscriptions s ON s.id = ue.subscription_id AND s.unsubscribed_at IS NULL
-      WHERE NOT ue.read AND NOT ue.is_spam
-      UNION ALL
-      SELECT ce.user_id, ce.entry_id, ce.subscription_id
-      FROM collection_entries ce
-      JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
-      WHERE NOT ue.read AND NOT ue.is_spam
-    ),
+    WITH routes AS (${UNREAD_ROUTES}),
     uncategorized AS (
       SELECT r.user_id, count(DISTINCT r.entry_id)::int AS n
       FROM routes r

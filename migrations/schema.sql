@@ -33,7 +33,7 @@ BEGIN
     RETURN;
   END IF;
 
-  PERFORM 1 FROM users WHERE id IN (SELECT unnest(p_user)) ORDER BY id FOR UPDATE;
+  PERFORM 1 FROM users WHERE id IN (SELECT unnest(p_user)) ORDER BY id FOR NO KEY UPDATE;
 
   WITH c AS (
     SELECT x.*, NOT p_no_members AND EXISTS (
@@ -175,7 +175,7 @@ CREATE FUNCTION public.collection_entries_recompute_lists() RETURNS trigger
     AS $$
 BEGIN
   PERFORM recompute_list_counters(u.user_id)
-  FROM (SELECT DISTINCT user_id FROM changed_rows) u;
+  FROM (SELECT DISTINCT user_id FROM changed_rows ORDER BY user_id) u;
   RETURN NULL;
 END;
 $$;
@@ -184,7 +184,7 @@ CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  PERFORM 1 FROM users WHERE id = p_user FOR UPDATE;
+  PERFORM 1 FROM users WHERE id = p_user FOR NO KEY UPDATE;
 
   UPDATE users u
   SET uncategorized_unread_count = f.uncategorized + m.uncategorized,
@@ -258,6 +258,7 @@ BEGIN
   PERFORM recompute_list_counters(u.user_id)
   FROM (
     SELECT DISTINCT s.user_id FROM changed_rows c JOIN subscriptions s ON s.id = c.subscription_id
+    ORDER BY s.user_id
   ) u;
   RETURN NULL;
 END;
@@ -293,7 +294,18 @@ CREATE FUNCTION public.subscriptions_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  PERFORM recompute_list_counters(NEW.user_id);
+  PERFORM recompute_list_counters(u.user_id)
+  FROM (
+    SELECT DISTINCT user_id
+    FROM (
+      SELECT id, user_id, unsubscribed_at, 1 AS side FROM changed_rows
+      UNION ALL
+      SELECT id, user_id, unsubscribed_at, -1 FROM old_rows
+    ) x
+    GROUP BY id, user_id, unsubscribed_at
+    HAVING sum(side) <> 0
+    ORDER BY user_id
+  ) u;
   RETURN NULL;
 END;
 $$;
@@ -1269,7 +1281,7 @@ CREATE TRIGGER subscriptions_empty_unsubscribed_collection_trigger AFTER UPDATE 
 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 
-CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE OF unsubscribed_at ON public.subscriptions FOR EACH ROW WHEN ((old.unsubscribed_at IS DISTINCT FROM new.unsubscribed_at)) EXECUTE FUNCTION public.subscriptions_recompute_lists();
+CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON public.subscriptions REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_recompute_lists();
 
 CREATE TRIGGER user_entries_counters_delete_trigger AFTER DELETE ON public.user_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_delete();
 

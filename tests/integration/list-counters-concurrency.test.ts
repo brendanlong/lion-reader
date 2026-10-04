@@ -1,13 +1,14 @@
 /**
- * Concurrency tests for the unread counters (#1806). Every path takes locks in
- * the order user_entries rows, subscriptions, users, tags (migration 0120), so
- * concurrent writes neither deadlock nor lose a counter update. Each test
+ * Concurrency tests for the unread counters (#1806): with the lock order in
+ * src/server/CLAUDE.md, concurrent writes neither deadlock nor lose a counter
+ * update. Each test
  * asserts only what every interleaving guarantees: all calls succeed and the
  * counters match their definition afterwards.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import pg from "pg";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
@@ -54,6 +55,23 @@ async function expectNoDrift(): Promise<void> {
 async function expectAllFulfilled(promises: Array<Promise<unknown>>): Promise<void> {
   const results = await Promise.allSettled(promises);
   expect(results.filter((r) => r.status === "rejected")).toEqual([]);
+}
+
+async function createUsers(count: number): Promise<string[]> {
+  const userIds: string[] = [];
+  for (let i = 0; i < count; i++) userIds.push(await createTestUser());
+  return userIds;
+}
+
+/** Creates `count` feeds every user subscribes to. */
+async function subscribeAll(userIds: string[], count: number): Promise<string[]> {
+  const feedIds: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const feedId = await createTestFeed();
+    for (const userId of userIds) await createTestSubscription(userId, feedId);
+    feedIds.push(feedId);
+  }
+  return feedIds;
 }
 
 async function feedWithEntries(userId: string, count: number) {
@@ -109,6 +127,47 @@ describe("unread counters under concurrent writes", () => {
         markEntriesRead(db, userId, [{ id }], true),
       ])
     );
+    await expectNoDrift();
+  });
+
+  it("concurrent fan-outs of feeds with shared subscribers all succeed", async () => {
+    // Each fan-out is one statement inserting rows for every subscriber. A
+    // feed fetches one at a time (one job per feed), so the concurrency is
+    // across feeds.
+    const userIds = await createUsers(20);
+    const feeds = await subscribeAll(userIds, 20);
+
+    await expectAllFulfilled(feeds.map((feedId) => createTestEntry(feedId, { userIds })));
+    await expectNoDrift();
+  });
+
+  it("unsubscribing many users at once while their other feed fans out all succeeds", async () => {
+    // The feed-merge job unsubscribes every user of a feed in one statement.
+    const userIds = await createUsers(20);
+    const merged = await createTestFeed();
+    // Subscribe in reverse id order, so the statement meets the rows in an
+    // order other than the users' id order.
+    for (const userId of [...userIds].reverse()) await createTestSubscription(userId, merged);
+    const live = await subscribeAll(userIds, 10);
+    for (const userId of userIds) {
+      await createTestTag(userId, {
+        subscriptionIds: (
+          await db
+            .select({ id: subscriptions.id })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, merged)))
+        ).map((r) => r.id),
+      });
+    }
+
+    const toggles = Array.from({ length: 10 }, (_, i) =>
+      db
+        .update(subscriptions)
+        .set({ unsubscribedAt: i % 2 === 0 ? new Date() : null })
+        .where(eq(subscriptions.feedId, merged))
+    );
+    const fanouts = live.map((feedId) => createTestEntry(feedId, { userIds }));
+    await expectAllFulfilled([...toggles, ...fanouts]);
     await expectNoDrift();
   });
 

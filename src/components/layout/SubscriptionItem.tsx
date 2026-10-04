@@ -10,6 +10,8 @@
 import { IconButton } from "@/components/ui/icon-button";
 import { EditIcon, CloseIcon } from "@/components/ui/icons";
 import { ClientLink } from "@/components/ui/client-link";
+import type { CachedSubscription } from "@/lib/cache/count-cache";
+import { untitledSubscriptionLabel } from "@/lib/collections";
 
 // ============================================================================
 // Types
@@ -18,7 +20,7 @@ import { ClientLink } from "@/components/ui/client-link";
 export interface SubscriptionItemProps {
   subscription: {
     id: string;
-    type: string;
+    type: CachedSubscription["type"];
     title: string | null;
     unreadCount: number;
   };
@@ -44,8 +46,7 @@ export function SubscriptionItem({
   onPrefetch,
 }: SubscriptionItemProps) {
   const isCollection = subscription.type === "collection";
-  const displayTitle =
-    subscription.title || (isCollection ? "Untitled Collection" : "Untitled Feed");
+  const displayTitle = subscription.title || untitledSubscriptionLabel(subscription.type);
   const subHref = `/subscription/${subscription.id}`;
 
   return (

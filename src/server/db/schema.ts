@@ -123,7 +123,7 @@ export const users = pgTable(
     savedUnreadCount: integer("saved_unread_count").notNull().default(0),
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
     // Distinct unread, non-spam articles reachable through untagged active
-    // subscriptions, and visible at all (migration 0120 defines both and keeps
+    // subscriptions, and visible at all (`apply_unread_rows` / `recompute_list_counters` keep
     // them current).
     uncategorizedUnreadCount: integer("uncategorized_unread_count").notNull().default(0),
     allUnreadCount: integer("all_unread_count").notNull().default(0),
@@ -663,7 +663,7 @@ export const tags = pgTable(
     name: text("name").notNull(),
     color: text("color"), // hex color for UI (e.g., "#ff6b6b")
     // Distinct unread, non-spam articles reachable through the tag's active
-    // feeds and collections (trigger-maintained; migration 0120).
+    // feeds and collections (`apply_unread_rows` / `recompute_list_counters`).
     unreadCount: integer("unread_count").notNull().default(0),
 
     // Opaque Google Reader folder sortid (issue #1117, migration 0097). Drawn
@@ -773,7 +773,7 @@ export const subscriptions = pgTable(
  * Trigger-maintained counters on the collection's subscription row count its
  * unread members. (user_id, entry_id) references user_entries through a
  * deferred foreign key; the user_entries delete trigger removes memberships
- * (migration 0120 says why).
+ * (the `collection_entries` table definition in its migration says why).
  */
 export const collectionEntries = pgTable(
   "collection_entries",

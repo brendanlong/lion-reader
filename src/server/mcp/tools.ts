@@ -21,6 +21,11 @@ import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
 import * as collectionsService from "@/server/services/collections";
+import {
+  COLLECTION_NAME_MAX_LENGTH,
+  MAX_COLLECTION_BATCH,
+  MAX_SAVE_COLLECTIONS,
+} from "@/lib/collections";
 
 // ============================================================================
 // Types
@@ -170,7 +175,7 @@ const countEntriesArgs = z.object({
 
 const saveCollectionIdsArg = z
   .array(uuidSchema)
-  .max(100)
+  .max(MAX_SAVE_COLLECTIONS)
   .optional()
   .describe("Optional collection IDs to also add the article to (see create_collection)");
 
@@ -246,6 +251,10 @@ const listSubscriptionsArgs = z.object({
   query: z.string().optional().describe("Case-insensitive title search (substring matching)"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   unreadOnly: z.boolean().optional().describe("Only show feeds with unread items"),
+  type: z
+    .enum(["web", "email", "collection"])
+    .optional()
+    .describe("Only show this kind: web feeds, newsletters, or collections"),
   limit: z
     .number()
     .int()
@@ -269,18 +278,14 @@ const setSubscriptionTagsArgs = z.object({
 });
 
 const createCollectionArgs = z.object({
-  name: z.string().trim().min(1).max(255).describe("Collection name"),
+  name: z.string().trim().min(1).max(COLLECTION_NAME_MAX_LENGTH).describe("Collection name"),
 });
 
 const collectionEntriesArgs = z.object({
   collectionId: uuidSchema.describe(
     "The collection's subscription ID (list_subscriptions shows collections with type 'collection')"
   ),
-  entryIds: z
-    .array(uuidSchema)
-    .min(1)
-    .max(collectionsService.MAX_COLLECTION_BATCH)
-    .describe("Entry IDs"),
+  entryIds: z.array(uuidSchema).min(1).max(MAX_COLLECTION_BATCH).describe("Entry IDs"),
 });
 
 const listTagsArgs = z.object({});
@@ -488,7 +493,7 @@ function buildTools(): Tool[] {
     {
       name: "list_subscriptions",
       description:
-        "List active feed subscriptions with optional filtering and pagination. Supports case-insensitive title search, tag filtering, unread-only filtering, and cursor-based pagination.",
+        "List active subscriptions — feeds, newsletters and collections (type 'collection') — with optional filtering and pagination. Supports case-insensitive title search, tag, type and unread-only filtering, and cursor-based pagination.",
       inputSchema: toInputSchema(listSubscriptionsArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listSubscriptionsArgs, args);

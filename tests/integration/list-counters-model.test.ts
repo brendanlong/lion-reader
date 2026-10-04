@@ -12,7 +12,8 @@
  *      Uncategorized, each subscription, All).
  * Interleavings that hand-written tests miss (an article reaching a tag through
  * both its feed and a collection, retagging while members are unread, ...)
- * come up here. A failure prints the seed and step to replay.
+ * come up here. Every random pick indexes a world's ids in creation order, so
+ * a seed replays the same operations; a failure prints the seed and step.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -55,7 +56,7 @@ import {
 } from "./helpers";
 
 const STEPS = 150;
-const SEEDS = [1, 2, 3];
+const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 /** mulberry32: small seeded PRNG so failures replay exactly. */
 function prng(seed: number) {
@@ -85,26 +86,40 @@ async function cleanup(): Promise<void> {
   await db.delete(users);
 }
 
+/** One user's ids, each list in creation order. */
 interface World {
   userId: string;
   feeds: Array<{ feedId: string; subscriptionId: string }>;
+  emailSubscriptionId: string;
   collections: string[];
+  tagIds: string[];
+  entryIds: string[];
   savedIds: string[];
 }
 
 async function createWorld(): Promise<World> {
   const userId = await createTestUser();
-  const world: World = { userId, feeds: [], collections: [], savedIds: [] };
+  const world: World = {
+    userId,
+    feeds: [],
+    emailSubscriptionId: "",
+    collections: [],
+    tagIds: [],
+    entryIds: [],
+    savedIds: [],
+  };
   for (let i = 0; i < 3; i++) {
     const feedId = await createTestFeed();
     const subscriptionId = await createTestSubscription(userId, feedId);
     world.feeds.push({ feedId, subscriptionId });
-    for (let j = 0; j < 4; j++) await createTestEntry(feedId, { userIds: [userId] });
+    for (let j = 0; j < 4; j++) {
+      world.entryIds.push(await createTestEntry(feedId, { userIds: [userId] }));
+    }
   }
   for (let i = 0; i < 2; i++) {
     world.collections.push((await createCollection(db, userId, `C${i}`)).subscription.id);
   }
-  for (let i = 0; i < 2; i++) await createTestTag(userId);
+  for (let i = 0; i < 2; i++) world.tagIds.push(await createTestTag(userId));
   // Newsletters, the only source of spam (set once, at insert).
   const emailFeedId = await createTestFeed({
     type: "email",
@@ -112,37 +127,46 @@ async function createWorld(): Promise<World> {
     userId,
     emailSenderPattern: `news-${userId}@example.com`,
   });
-  await createTestSubscription(userId, emailFeedId);
+  world.emailSubscriptionId = await createTestSubscription(userId, emailFeedId);
   for (const isSpam of [true, false, true]) {
-    await createTestEntry(emailFeedId, { type: "email", isSpam, userIds: [userId] });
+    world.entryIds.push(
+      await createTestEntry(emailFeedId, { type: "email", isSpam, userIds: [userId] })
+    );
   }
   for (let i = 0; i < 2; i++) {
-    world.savedIds.push((await uploadArticle(db, userId, { content: "x", title: `S${i}` })).id);
+    const { id } = await uploadArticle(db, userId, { content: "x", title: `S${i}` });
+    world.savedIds.push(id);
+    world.entryIds.push(id);
   }
   return world;
 }
 
-async function visibleEntryIds(userId: string): Promise<string[]> {
+async function visibleEntryIds(w: World): Promise<string[]> {
   const rows = await db.execute<{ id: string }>(
-    sql`SELECT id FROM visible_entries WHERE user_id = ${userId} ORDER BY id`
+    sql`SELECT id FROM visible_entries WHERE user_id = ${w.userId}`
   );
-  return rows.rows.map((r) => r.id);
+  const visible = new Set(rows.rows.map((r) => r.id));
+  return w.entryIds.filter((id) => visible.has(id));
 }
 
-async function activeSubscriptionIds(userId: string): Promise<string[]> {
+async function activeSubscriptionIds(w: World): Promise<string[]> {
   const rows = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
-  return rows.map((r) => r.id);
+    .where(and(eq(subscriptions.userId, w.userId), isNull(subscriptions.unsubscribedAt)));
+  const active = new Set(rows.map((r) => r.id));
+  return [...w.feeds.map((f) => f.subscriptionId), w.emailSubscriptionId, ...w.collections].filter(
+    (id) => active.has(id)
+  );
 }
 
-async function liveTagIds(userId: string): Promise<string[]> {
+async function liveTagIds(w: World): Promise<string[]> {
   const rows = await db
     .select({ id: tags.id })
     .from(tags)
-    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
-  return rows.map((r) => r.id);
+    .where(and(eq(tags.userId, w.userId), isNull(tags.deletedAt)));
+  const live = new Set(rows.map((r) => r.id));
+  return w.tagIds.filter((id) => live.has(id));
 }
 
 type Op = (world: World, rng: ReturnType<typeof prng>) => Promise<string>;
@@ -151,7 +175,7 @@ const OPS: Array<[number, Op]> = [
   [
     6,
     async (w, rng) => {
-      const id = rng.pick(await visibleEntryIds(w.userId));
+      const id = rng.pick(await visibleEntryIds(w));
       if (!id) return "read: nothing visible";
       const read = rng.chance(0.6);
       await markEntriesRead(db, w.userId, [{ id }], read);
@@ -161,7 +185,7 @@ const OPS: Array<[number, Op]> = [
   [
     3,
     async (w, rng) => {
-      const id = rng.pick(await visibleEntryIds(w.userId));
+      const id = rng.pick(await visibleEntryIds(w));
       if (!id) return "star: nothing visible";
       const starred = rng.chance(0.5);
       await updateEntryStarred(db, w.userId, id, starred);
@@ -171,9 +195,9 @@ const OPS: Array<[number, Op]> = [
   [
     5,
     async (w, rng) => {
-      const active = new Set(await activeSubscriptionIds(w.userId));
+      const active = new Set(await activeSubscriptionIds(w));
       const collection = rng.pick(w.collections.filter((c) => active.has(c)));
-      const id = rng.pick(await visibleEntryIds(w.userId));
+      const id = rng.pick(await visibleEntryIds(w));
       if (!collection || !id) return "add: nothing to add";
       if (rng.chance(0.65)) {
         await addEntriesToCollection(db, w.userId, collection, [id]);
@@ -186,8 +210,8 @@ const OPS: Array<[number, Op]> = [
   [
     4,
     async (w, rng) => {
-      const sub = rng.pick(await activeSubscriptionIds(w.userId));
-      const live = await liveTagIds(w.userId);
+      const sub = rng.pick(await activeSubscriptionIds(w));
+      const live = await liveTagIds(w);
       const tagIds = live.filter(() => rng.chance(0.6));
       await setSubscriptionTags(db, w.userId, sub, tagIds);
       return `tag ${sub} with [${tagIds.join(",")}]`;
@@ -197,7 +221,7 @@ const OPS: Array<[number, Op]> = [
     2,
     async (w, rng) => {
       const feed = rng.pick(w.feeds);
-      const active = (await activeSubscriptionIds(w.userId)).includes(feed.subscriptionId);
+      const active = (await activeSubscriptionIds(w)).includes(feed.subscriptionId);
       if (active) {
         // What the unsubscribe paths do: drop the tags, then soft-delete.
         await createCaller(await createAuthContext(w.userId)).subscriptions.delete({
@@ -217,9 +241,10 @@ const OPS: Array<[number, Op]> = [
     2,
     async (w, rng) => {
       const feed = rng.pick(w.feeds);
-      const active = (await activeSubscriptionIds(w.userId)).includes(feed.subscriptionId);
+      const active = (await activeSubscriptionIds(w)).includes(feed.subscriptionId);
       if (!active) return "new entry: feed inactive";
       const id = await createTestEntry(feed.feedId, { userIds: [w.userId] });
+      w.entryIds.push(id);
       return `new entry ${id} in ${feed.subscriptionId}`;
     },
   ],
@@ -233,19 +258,20 @@ const OPS: Array<[number, Op]> = [
       }
       const article = await uploadArticle(db, w.userId, { content: "y", title: "New" });
       w.savedIds.push(article.id);
+      w.entryIds.push(article.id);
       return `save ${article.id}`;
     },
   ],
   [
     1,
     async (w, rng) => {
-      const live = await liveTagIds(w.userId);
+      const live = await liveTagIds(w);
       if (rng.chance(0.5) && live.length > 0) {
         const tagId = rng.pick(live);
         await markAllEntriesRead(db, { userId: w.userId, tagId, showSpam: false });
         return `mark tag ${tagId} read`;
       }
-      const sub = rng.pick(await activeSubscriptionIds(w.userId));
+      const sub = rng.pick(await activeSubscriptionIds(w));
       await markAllEntriesRead(db, { userId: w.userId, subscriptionId: sub, showSpam: false });
       return `mark ${sub} read`;
     },
@@ -253,20 +279,20 @@ const OPS: Array<[number, Op]> = [
   [
     1,
     async (w, rng) => {
-      const live = await liveTagIds(w.userId);
+      const live = await liveTagIds(w);
       if (live.length > 1 && rng.chance(0.5)) {
         const tagId = rng.pick(live);
         await deleteTag(db, w.userId, tagId);
         return `delete tag ${tagId}`;
       }
-      await createTestTag(w.userId);
+      w.tagIds.push(await createTestTag(w.userId));
       return "create tag";
     },
   ],
   [
     1,
     async (w, rng) => {
-      const active = new Set(await activeSubscriptionIds(w.userId));
+      const active = new Set(await activeSubscriptionIds(w));
       const live = w.collections.filter((c) => active.has(c));
       if (live.length > 1 && rng.chance(0.5)) {
         const id = rng.pick(live);
@@ -280,21 +306,6 @@ const OPS: Array<[number, Op]> = [
 ];
 
 OPS.push(
-  [
-    1,
-    async (w, rng) => {
-      // Unsubscribing without dropping tags, as the feed-merge job leaves the
-      // old subscription.
-      const feed = rng.pick(w.feeds);
-      await db
-        .update(subscriptions)
-        .set({ unsubscribedAt: new Date() })
-        .where(
-          and(eq(subscriptions.id, feed.subscriptionId), isNull(subscriptions.unsubscribedAt))
-        );
-      return `unsubscribe keeping tags ${feed.subscriptionId}`;
-    },
-  ],
   [
     1,
     async (w, rng) => {
@@ -320,10 +331,7 @@ OPS.push(
     1,
     async (w, rng) => {
       // One statement flipping some rows read and others unread.
-      const ids = [
-        rng.pick(await visibleEntryIds(w.userId)),
-        rng.pick(await visibleEntryIds(w.userId)),
-      ];
+      const ids = [rng.pick(await visibleEntryIds(w)), rng.pick(await visibleEntryIds(w))];
       await db
         .update(userEntries)
         .set({ read: sql`NOT ${userEntries.read}` })

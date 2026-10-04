@@ -28,9 +28,7 @@ import {
   type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/trpc/errors";
-
-/** Most articles one add/remove call may name. */
-export const MAX_COLLECTION_BATCH = 1000;
+import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 
 /** The user's collections holding an entry. */
 export async function listEntryCollectionIds(
@@ -187,6 +185,13 @@ export async function addEntriesToCollection(
     await lockUserEntryRows(tx, userId, entryIds);
     await assertOwnedCollections(tx, userId, [subscriptionId], { lock: true });
     if (entryIds.length === 0) return [];
+    const [{ count }] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(collectionEntries)
+      .where(eq(collectionEntries.subscriptionId, subscriptionId));
+    if (count + entryIds.length > MAX_COLLECTION_ENTRIES) {
+      throw errors.validation(`A collection can hold at most ${MAX_COLLECTION_ENTRIES} articles`);
+    }
     const inserted = await tx
       .insert(collectionEntries)
       .select(
@@ -238,7 +243,12 @@ export async function removeEntriesFromCollection(
   return finishMembershipChange(db, userId, subscriptionId, removed, false);
 }
 
-/** Adds one article to several collections (e.g. right after saving it). */
+/**
+ * Adds a just-saved article to collections the caller already checked with
+ * assertOwnedCollections. Best effort: the save has already happened, so a
+ * collection deleted in between is skipped (and logged) rather than failing
+ * the save.
+ */
 export async function addEntryToCollections(
   db: typeof dbType,
   userId: string,
@@ -246,7 +256,15 @@ export async function addEntryToCollections(
   subscriptionIds: string[]
 ): Promise<void> {
   for (const subscriptionId of new Set(subscriptionIds)) {
-    await addEntriesToCollection(db, userId, subscriptionId, [entryId]);
+    try {
+      await addEntriesToCollection(db, userId, subscriptionId, [entryId]);
+    } catch (err) {
+      logger.warn("Skipped adding a saved article to a collection", {
+        userId,
+        subscriptionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 

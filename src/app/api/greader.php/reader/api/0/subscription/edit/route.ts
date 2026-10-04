@@ -127,7 +127,7 @@ export async function POST(request: Request): Promise<Response> {
       // order (see lockSubscriptionRow).
       const now = new Date();
       await db.transaction(async (tx) => {
-        await lockSubscriptionRow(tx, subscriptionId);
+        await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
 
         // Remove tag associations. `subscriptionId` was resolved user-scoped
         // above, but scope the delete through the user's own subscriptions too

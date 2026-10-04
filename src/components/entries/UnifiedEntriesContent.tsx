@@ -16,6 +16,7 @@
 
 import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { untitledSubscriptionLabel } from "@/lib/collections";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
 import { EntryListContainer, findAdjacentEntries } from "./EntryListContainer";
@@ -171,7 +172,7 @@ function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   }
   return (
     <div className="min-w-0">
-      <TitleText>{sub.title ?? sub.originalTitle ?? "Untitled Feed"}</TitleText>
+      <TitleText>{sub.title ?? sub.originalTitle ?? untitledSubscriptionLabel(sub.type)}</TitleText>
       <FeedSiteLink siteUrl={sub.siteUrl} className="mt-0.5" />
     </div>
   );

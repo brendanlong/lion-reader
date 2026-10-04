@@ -48,19 +48,41 @@ export function useCollectionMembership(entryId: string) {
     mutation.mutate({ id: collectionId, entryIds: [entryId] });
   };
 
-  /** Creates a collection and adds the entry to it. */
-  const createWithEntry = async (name: string) => {
+  /**
+   * Creates a collection and adds the entry to it. The sidebar learns of the
+   * collection only once the entry is in it, so the list it refetches shows
+   * the collection's count. Returns whether creating succeeded.
+   */
+  const createWithEntry = async (name: string): Promise<boolean> => {
+    let created;
     try {
-      const { subscription, counts } = await createMutation.mutateAsync({ name });
-      handleSubscriptionCreated(utils, subscription, queryClient, counts);
-      setMember(subscription.id, true);
+      created = await createMutation.mutateAsync({ name });
     } catch {
       toast.error("Failed to create collection");
+      return false;
     }
+    const { subscription } = created;
+    try {
+      const result = await addMutation.mutateAsync({ id: subscription.id, entryIds: [entryId] });
+      handleSubscriptionCreated(
+        utils,
+        {
+          ...subscription,
+          unreadCount:
+            result.counts?.subscriptions.find((s) => s.id === subscription.id)?.unread ?? 0,
+        },
+        queryClient,
+        result.counts ?? created.counts
+      );
+    } catch {
+      handleSubscriptionCreated(utils, subscription, queryClient, created.counts);
+    }
+    return true;
   };
 
   return {
     collectionIds: membership.data?.collectionIds,
+    membershipStatus: membership.status,
     setMember,
     createWithEntry,
     isCreating: createMutation.isPending,

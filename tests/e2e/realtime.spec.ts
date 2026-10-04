@@ -22,6 +22,10 @@ import {
 } from "../../src/server/redis/pubsub";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
 import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entries";
+import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
+import { setSubscriptionTags } from "../../src/server/services/subscriptions";
+import { entries, tags, userEntries } from "../../src/server/db/schema";
+import { and, eq } from "drizzle-orm";
 import {
   getDb,
   createConfirmedUser,
@@ -475,5 +479,41 @@ test("entry_state_changed for the last unread entry clears subscription and tag 
   // ...while the unaffected Uncategorized list keeps its count.
   await expect(links.uncategorized).toContainText("(1)");
 
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+test("collection_entries_changed updates a tag holding the collection without refetching", async ({
+  page,
+  baseURL,
+}) => {
+  // A collection tagged News; adding the untagged feed's post to it (as
+  // another tab or an assistant would) moves News from 2 to 3 distinct posts.
+  let collectionId = "";
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ user }) => getUserEventsChannel(user.id),
+    {
+      beforeLogin: async ({ user }) => {
+        const db = getDb();
+        collectionId = (await createCollection(db, user.id, "Picks")).subscription.id;
+        const [news] = await db.select({ id: tags.id }).from(tags).where(eq(tags.userId, user.id));
+        await setSubscriptionTags(db, user.id, collectionId, [news.id]);
+      },
+    }
+  );
+  const links = sidebarLinks(page, taggedFeed);
+  await expect(links.newsTag).toContainText("(2)");
+
+  trpcCalls.length = 0;
+  const [untagged] = await getDb()
+    .select({ id: entries.id })
+    .from(entries)
+    .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
+    .where(and(eq(userEntries.userId, user.id), eq(entries.title, "Untagged post")));
+  await addEntriesToCollection(getDb(), user.id, collectionId, [untagged.id]);
+
+  await expect(links.newsTag).toContainText("(3)");
+  await expect(links.uncategorized).toContainText("(1)");
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });

@@ -456,8 +456,7 @@ export function createDemoStore(): DemoStore {
           state.read = input.read;
           state.updatedAt = writtenAt;
           flipped = true;
-          const sub = subscriptionOf(state);
-          if (sub) affected.set(sub.id, sub);
+          for (const sub of containersOf(state)) affected.set(sub.id, sub);
         }
         state.readChangedAt = writtenAt;
         results.push({
@@ -507,7 +506,6 @@ export function createDemoStore(): DemoStore {
         state.starred = input.starred;
         state.updatedAt = new Date();
       }
-      const sub = subscriptionOf(state);
       return {
         entry: {
           id: state.entry.id,
@@ -515,7 +513,7 @@ export function createDemoStore(): DemoStore {
           starred: state.starred,
           updatedAt: state.updatedAt,
         },
-        counts: flipped ? countsForSubscriptions(sub ? [sub] : []) : undefined,
+        counts: flipped ? countsForSubscriptions(containersOf(state)) : undefined,
       };
     },
 

@@ -78,6 +78,10 @@ export async function resolveFeedStreamFilter(
  * free column read per subscription plus one users-row read for the saved
  * feed — so the old `includeUnreadCounts` opt-out (issue #1074) is gone; every
  * caller gets real counts. Spam never counts (the counters exclude it).
+ *
+ * Collections are left out: Google Reader clients file each item under its
+ * `origin` stream, which is the article's source feed, so a collection would
+ * show a count with no items of its own.
  */
 export async function listGreaderSubscriptions(
   db: typeof dbType,
@@ -96,11 +100,17 @@ export async function listGreaderSubscriptions(
   ]);
 
   const streamIdById = new Map(streamIds.map((s) => [s.id, s.greaderStreamId]));
-  const withStreamIds: GreaderSubscription[] = all.map((sub) => ({
-    ...sub,
-    // Present for every active subscription (both queries filter the same set).
-    greaderStreamId: streamIdById.get(sub.id) ?? BigInt(0),
-  }));
+  const withStreamIds: GreaderSubscription[] = all.flatMap((sub) =>
+    sub.type === "collection"
+      ? []
+      : [
+          {
+            ...sub,
+            // Present for every active subscription (both queries filter the same set).
+            greaderStreamId: streamIdById.get(sub.id) ?? BigInt(0),
+          },
+        ]
+  );
 
   return saved ? [...withStreamIds, saved] : withStreamIds;
 }
@@ -200,9 +210,9 @@ export async function getGreaderUnreadCounts(
   // formatUnreadCounts, which emits `feed/{streamId}`. Postgres returns bigint
   // (int8) as a decimal string, which is exactly what the wire id needs.
   const result = await db.execute(sql`
-    SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread,
-           COALESCE(latest.newest, latest_member.newest) AS newest
+    SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread, latest.newest AS newest
     FROM subscriptions s
+    JOIN feeds sf ON sf.id = s.feed_id AND sf.type <> 'collection'
     LEFT JOIN LATERAL (
       SELECT ue.published_or_fetched_at AS newest
       FROM user_entries ue
@@ -210,12 +220,6 @@ export async function getGreaderUnreadCounts(
       ORDER BY ue.published_or_fetched_at DESC, ue.entry_id DESC
       LIMIT 1
     ) latest ON true
-    LEFT JOIN LATERAL (
-      SELECT max(ue.published_or_fetched_at) AS newest
-      FROM collection_entries ce
-      JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
-      WHERE ce.subscription_id = s.id
-    ) latest_member ON true
     WHERE s.user_id = ${userId}::uuid
       AND s.unsubscribed_at IS NULL
 

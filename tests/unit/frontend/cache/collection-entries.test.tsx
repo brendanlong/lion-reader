@@ -89,7 +89,7 @@ function setup(entries: { feed: EntryRow[]; collection: EntryRow[] }) {
         updatedAt: "2024-07-02T00:00:00Z",
       })
     );
-  return { utils, ids, changeMembership };
+  return { utils, queryClient, ids, changeMembership };
 }
 
 describe("collection_entries_changed", () => {
@@ -110,15 +110,43 @@ describe("collection_entries_changed", () => {
     expect(ids("unreadCollection")).toEqual(["newer", "older"]);
   });
 
-  it("removes the entry from the collection's lists but not from its feed", async () => {
+  it("keeps a removed entry in loaded lists until they refresh", async () => {
+    // The reader keeps its place (j/k from the open entry) after taking the
+    // open entry out of the collection being viewed.
     const entry = makeEntry("a", "2024-06-01");
     const { ids, changeMembership } = setup({ feed: [entry], collection: [entry] });
     await waitFor(() => expect(ids("collection")).toEqual(["a"]));
 
     changeMembership(["a"], false);
 
-    await waitFor(() => expect(ids("collection")).toEqual([]));
-    expect(ids("feed")).toEqual(["a"]);
+    expect(ids("collection")).toEqual(["a"]);
+  });
+
+  it("drops a deleted collection from every cached membership", () => {
+    const { utils, queryClient } = setup({ feed: [], collection: [] });
+    act(() => {
+      utils.collections.listForEntry.setData({ entryId: "a" }, { collectionIds: [COLLECTION] });
+      utils.collections.listForEntry.setData(
+        { entryId: "b" },
+        { collectionIds: [COLLECTION, "other"] }
+      );
+    });
+
+    act(() =>
+      handleSyncEvent(utils, queryClient, {
+        type: "subscription_deleted",
+        subscriptionId: COLLECTION,
+        timestamp: "2024-07-02T00:00:00Z",
+        updatedAt: "2024-07-02T00:00:00Z",
+      })
+    );
+
+    expect(utils.collections.listForEntry.getData({ entryId: "a" })).toEqual({
+      collectionIds: [],
+    });
+    expect(utils.collections.listForEntry.getData({ entryId: "b" })).toEqual({
+      collectionIds: ["other"],
+    });
   });
 
   it("updates the entry's cached membership and the counts", () => {

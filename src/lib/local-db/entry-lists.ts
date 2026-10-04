@@ -3,8 +3,9 @@
  * as rows `{ listKey, entryId, order }` joined against the entry store at
  * render time. A list's membership only changes when the list is fetched
  * (a full refetch replaces it, a next page adds to it), when a live event
- * inserts an entry that belongs in it, or when an entry is added to or removed
- * from the collection a list shows — never when an entry's state changes,
+ * inserts an entry that belongs in it, or when an entry is added to the
+ * collection a list shows — never when an entry's state changes or it leaves
+ * a collection,
  * so read entries stay visible in unread-only views until the list refreshes
  * on navigation.
  */
@@ -236,21 +237,6 @@ export function insertIntoCollectionLists(
       input.subscriptionId === collectionId &&
       belongsInList({ ...input, subscriptionId: undefined }, entry, undefined)
   );
-}
-
-/** Takes an entry out of the loaded lists of a collection it was removed from. */
-export function removeFromCollectionLists(
-  lists: EntryLists,
-  entryId: string,
-  collectionId: string
-): void {
-  const keys: string[] = [];
-  for (const [listKey, meta] of lists.meta) {
-    if (meta.input.subscriptionId !== collectionId || !meta.entryIds.delete(entryId)) continue;
-    meta.insertedSinceFetch.delete(entryId);
-    keys.push(listEntryKey(listKey, entryId));
-  }
-  lists.rows.remove(keys);
 }
 
 function insertIntoListsWhere(
