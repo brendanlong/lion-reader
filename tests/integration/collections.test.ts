@@ -274,6 +274,7 @@ describe("collections", () => {
           e.type === "entry_state_changed" ? [e.entryId] : []
         ),
         hidden: result.deletions.map((d) => d.entryId),
+        memberships: result.collectionMemberships,
       };
     }
 
@@ -288,13 +289,25 @@ describe("collections", () => {
       return world;
     }
 
-    it("re-delivers an article that joins a collection", async () => {
+    it("re-delivers an article that joins or leaves a collection with its memberships", async () => {
       const { userId, entryA, collectionId } = await setup();
-      const since = await cursorNow();
+      let since = await cursorNow();
 
       await addEntriesToCollection(db, userId, collectionId, [entryA]);
 
-      expect((await changesSince(userId, since)).delivered).toEqual([entryA]);
+      expect(await changesSince(userId, since)).toMatchObject({
+        delivered: [entryA],
+        memberships: [{ entryId: entryA, subscriptionIds: [collectionId] }],
+      });
+
+      since = await cursorNow();
+      await removeEntriesFromCollection(db, userId, collectionId, [entryA]);
+
+      // Still visible through its feed, so delivered with no collections.
+      expect(await changesSince(userId, since)).toMatchObject({
+        delivered: [entryA],
+        memberships: [{ entryId: entryA, subscriptionIds: [] }],
+      });
     });
 
     it("syncs a change to an article visible only through a collection as visible", async () => {
@@ -305,7 +318,7 @@ describe("collections", () => {
 
       await markEntriesRead(db, userId, [{ id: entryA }], true);
 
-      expect(await changesSince(userId, since)).toEqual({ delivered: [entryA], hidden: [] });
+      expect(await changesSince(userId, since)).toMatchObject({ delivered: [entryA], hidden: [] });
     });
 
     it("reports an article hidden when it leaves its only route into view", async () => {
