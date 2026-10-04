@@ -51,15 +51,15 @@ export function useCollectionMembership(entryId: string) {
   /**
    * Creates a collection and adds the entry to it. The sidebar learns of the
    * collection only once the entry is in it, so the list it refetches shows
-   * the collection's count. Returns whether creating succeeded.
+   * the collection's count. Returns the collection, or null if creating failed.
    */
-  const createWithEntry = async (name: string): Promise<boolean> => {
+  const createWithEntry = async (name: string) => {
     let created;
     try {
       created = await createMutation.mutateAsync({ name });
     } catch {
       toast.error("Failed to create collection");
-      return false;
+      return null;
     }
     const { subscription } = created;
     try {
@@ -77,7 +77,7 @@ export function useCollectionMembership(entryId: string) {
     } catch {
       handleSubscriptionCreated(utils, subscription, queryClient, created.counts);
     }
-    return true;
+    return subscription;
   };
 
   return {
