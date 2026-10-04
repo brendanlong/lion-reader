@@ -19,7 +19,11 @@ import {
 } from "./count-cache";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { insertIntoCollectionLists, setLeftCollectionLists } from "@/lib/local-db/entry-lists";
-import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/hooks/useSidebarSelection";
+import {
+  UNCATEGORIZED_SECTION,
+  compareSidebarOrder,
+  isInSidebarSection,
+} from "@/lib/sidebar-sections";
 
 /**
  * Subscription data for adding to cache.
@@ -348,7 +352,8 @@ export interface BulkUnreadCounts {
   all: { unread: number };
   starred: { unread: number };
   saved: { unread: number };
-  subscriptions: Array<{ id: string; unread: number }>;
+  /** `tagIds` is absent from events a previous release published. */
+  subscriptions: Array<{ id: string; unread: number; tagIds?: string[] }>;
   tags: Array<{ id: string; unread: number }>;
   uncategorized?: { unread: number };
 }
@@ -378,15 +383,12 @@ export function setBulkCounts(
     utils.entries.count.setData({ type: "saved" }, counts.saved);
   }
 
-  // Build subscription updates map for efficient batch update
-  const subscriptionUpdates = new Map(counts.subscriptions.map((s) => [s.id, s.unread]));
-
   // Build set of affected tag IDs to only update those caches
   const affectedTagIds = new Set(counts.tags.map((t) => t.id));
 
   // Batch update all subscription unread counts
   setBulkSubscriptionUnreadCounts(
-    subscriptionUpdates,
+    counts.subscriptions,
     affectedTagIds,
     counts.uncategorized !== undefined,
     queryClient
@@ -452,18 +454,16 @@ export function setEntryRelatedCounts(
  * @param queryClient - React Query client for updating infinite query caches
  */
 function setBulkSubscriptionUnreadCounts(
-  subscriptionUpdates: Map<string, number>,
+  subscriptionCounts: CountedSubscription[],
   affectedTagIds: Set<string>,
   hasUncategorized: boolean,
   queryClient: QueryClient
 ): void {
-  if (subscriptionUpdates.size === 0) return;
+  if (subscriptionCounts.length === 0) return;
+  const subscriptionUpdates = new Map(subscriptionCounts.map((s) => [s.id, s.unread]));
 
   // Update only the affected per-tag infinite query caches
-  const infiniteQueries = queryClient.getQueriesData<{
-    pages: Array<{ items: Array<{ id: string; unreadCount: number; [key: string]: unknown }> }>;
-    pageParams: unknown[];
-  }>({
+  const infiniteQueries = queryClient.getQueriesData<SidebarListData>({
     queryKey: [["subscriptions", "list"]],
   });
 
@@ -483,10 +483,6 @@ function setBulkSubscriptionUnreadCounts(
       }
     }
 
-    if (input?.unreadOnly && missesNewlyUnread(queryClient, input, data, subscriptionUpdates)) {
-      void queryClient.invalidateQueries({ queryKey });
-    }
-
     // Update subscriptions in this cache
     queryClient.setQueryData(queryKey, {
       ...data,
@@ -498,6 +494,12 @@ function setBulkSubscriptionUnreadCounts(
         }),
       })),
     });
+
+    // After the write above, which would clear an inactive list's
+    // invalidation. A refetch already running is left to finish.
+    if (input?.unreadOnly && missesNewlyUnread(queryClient, input, data, subscriptionCounts)) {
+      void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
+    }
   }
 
   // The open subscription's own copy, which the sidebar lists once the
@@ -512,27 +514,43 @@ function setBulkSubscriptionUnreadCounts(
   }
 }
 
+type CountedSubscription = BulkUnreadCounts["subscriptions"][number];
+
+interface SidebarListData {
+  pages: Array<{
+    items: Array<{ id: string; title: string | null; unreadCount: number; [key: string]: unknown }>;
+    nextCursor?: string;
+  }>;
+  pageParams: unknown[];
+}
+
 /**
  * Whether an unread-only sidebar list lacks a subscription that now has
- * unread entries and belongs in it. The list was fetched while that
- * subscription had none, and only a refetch knows where it sorts.
- * A subscription not cached anywhere might belong, so it counts.
+ * unread entries and belongs in its loaded rows. The list was fetched while
+ * that subscription had none, and only a refetch knows its row. One that
+ * can't be placed (no tags known, or it may sort past the loaded pages) is
+ * left out, since the refetch might not include it either and would repeat
+ * on every event.
  */
 function missesNewlyUnread(
   queryClient: QueryClient,
   input: SubscriptionListInput,
-  data: { pages: Array<{ items: Array<{ id: string }> }> },
-  subscriptionUpdates: Map<string, number>
+  data: SidebarListData,
+  subscriptionCounts: CountedSubscription[]
 ): boolean {
   const section = input.uncategorized ? UNCATEGORIZED_SECTION : input.tagId;
   if (!section) return false;
-  const listed = new Set(data.pages.flatMap((page) => page.items.map((s) => s.id)));
-  for (const [id, unread] of subscriptionUpdates) {
-    if (unread === 0 || listed.has(id)) continue;
-    const known = findCachedSubscription(queryClient, id);
-    if (!known || isInSidebarSection(known, section)) return true;
-  }
-  return false;
+  const loaded = data.pages.flatMap((page) => page.items);
+  const listed = new Set(loaded.map((s) => s.id));
+  const last = loaded.at(-1);
+  const hasMorePages = data.pages.at(-1)?.nextCursor !== undefined;
+  return subscriptionCounts.some((counted) => {
+    if (counted.unread === 0 || listed.has(counted.id)) return false;
+    const known = findCachedSubscription(queryClient, counted.id);
+    const tags = counted.tagIds?.map((id) => ({ id })) ?? known?.tags;
+    if (!tags || !isInSidebarSection({ tags }, section)) return false;
+    return !hasMorePages || (!!known && !!last && compareSidebarOrder(known, last) < 0);
+  });
 }
 
 /**

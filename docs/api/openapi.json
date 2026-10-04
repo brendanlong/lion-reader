@@ -4495,6 +4495,12 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
@@ -5317,6 +5323,12 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
@@ -6937,11 +6949,18 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -7291,11 +7310,18 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -7562,11 +7588,18 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -8948,6 +8981,12 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
@@ -9262,6 +9301,12 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
@@ -9475,6 +9520,12 @@
                               },
                               "unread": {
                                 "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [
@@ -12595,6 +12646,12 @@
                                         },
                                         "unread": {
                                           "type": "number"
+                                        },
+                                        "tagIds": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
                                         }
                                       },
                                       "required": [
@@ -12878,6 +12935,12 @@
                                         },
                                         "unread": {
                                           "type": "number"
+                                        },
+                                        "tagIds": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
                                         }
                                       },
                                       "required": [
@@ -13211,6 +13274,12 @@
                                         },
                                         "unread": {
                                           "type": "number"
+                                        },
+                                        "tagIds": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
                                         }
                                       },
                                       "required": [
@@ -13337,6 +13406,12 @@
                                         },
                                         "unread": {
                                           "type": "number"
+                                        },
+                                        "tagIds": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
                                         }
                                       },
                                       "required": [

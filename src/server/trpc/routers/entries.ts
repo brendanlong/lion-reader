@@ -191,7 +191,9 @@ const bulkUnreadCountsSchema = z.object({
   saved: z.object({ unread: z.number() }),
 
   // Per-subscription counts (only subscriptions that were affected)
-  subscriptions: z.array(z.object({ id: z.string(), unread: z.number() })),
+  subscriptions: z.array(
+    z.object({ id: z.string(), unread: z.number(), tagIds: z.array(z.string()) })
+  ),
 
   // Per-tag counts (only tags that were affected)
   tags: z.array(z.object({ id: z.string(), unread: z.number() })),

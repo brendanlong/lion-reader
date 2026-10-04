@@ -15,9 +15,7 @@ import { extractParamsFromPathname } from "@/lib/navigation";
 import type { CachedSubscription } from "@/lib/cache/count-cache";
 import { useAppPathname } from "./useAppLocation";
 import { useExpandedTags } from "./useExpandedTags";
-
-/** Section key for subscriptions without tags. */
-export const UNCATEGORIZED_SECTION = "uncategorized";
+import { isInSidebarSection } from "@/lib/sidebar-sections";
 
 interface ChosenSection {
   href: string;
@@ -90,11 +88,4 @@ export function isSidebarLinkCurrent(
     selection.pathname === href &&
     (section === undefined || selection.section === null || selection.section === section)
   );
-}
-
-/** Whether `subscription` is listed in `section` of the sidebar. */
-export function isInSidebarSection(subscription: CachedSubscription, section: string): boolean {
-  return section === UNCATEGORIZED_SECTION
-    ? subscription.tags.length === 0
-    : subscription.tags.some((tag) => tag.id === section);
 }

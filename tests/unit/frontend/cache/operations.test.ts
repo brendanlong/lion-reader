@@ -43,13 +43,14 @@ function seedSubscription(
     id: string;
     unreadCount: number;
     tags: Array<{ id: string; name: string; color: string | null }>;
+    title?: string;
   }
 ): void {
   addSubscriptionToCache(queryClient, {
     id: sub.id,
     type: "web",
     url: null,
-    title: null,
+    title: sub.title ?? null,
     originalTitle: null,
     description: null,
     siteUrl: null,
@@ -300,59 +301,108 @@ describe("setEntryRelatedCounts in unread-only sidebar lists", () => {
   let invalidateSpy: MockInstance;
 
   const tag = { id: "tag-1", name: "Tag", color: null };
-  const listInput = { tagId: tag.id, unreadOnly: true, limit: 50 };
-  const counts = (subscriptions: Array<{ id: string; unread: number }>) => ({
+  const otherTag = { id: "tag-2", name: "Other", color: null };
+  const tagList = { tagId: tag.id, unreadOnly: true, limit: 50 };
+  const listKey = (input: object) => [["subscriptions", "list"], { input, type: "infinite" }];
+  /** A sidebar list fetched while only "M listed" had unread entries. */
+  const seedList = (input: object, nextCursor?: string) =>
+    queryClient.setQueryData(listKey(input), {
+      pages: [
+        { items: [{ id: "sub-listed", title: "M listed", unreadCount: 1, tags: [] }], nextCursor },
+      ],
+      pageParams: [undefined],
+    });
+  const counts = (subscriptions: Array<{ id: string; unread: number; tagIds?: string[] }>) => ({
     all: { unread: 1 },
     starred: { unread: 0 },
     subscriptions,
     tags: [{ id: tag.id, unread: 1 }],
+    uncategorized: { unread: 1 },
   });
+  const refetchedLists = () =>
+    invalidatedQueries(invalidateSpy)
+      .filter((q) => q.path === "subscriptions.list")
+      .map((q) => q.input);
 
   beforeEach(() => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     utils = createRealTrpcUtils(queryClient);
-    // Fetched while only sub-listed had unread entries.
-    queryClient.setQueryData([["subscriptions", "list"], { input: listInput, type: "infinite" }], {
-      pages: [{ items: [{ id: "sub-listed", unreadCount: 1, tags: [tag] }] }],
-      pageParams: [undefined],
-    });
     invalidateSpy = spyOnInvalidate(queryClient);
   });
 
-  const refetchedLists = () =>
-    invalidatedQueries(invalidateSpy).filter((q) => q.path === "subscriptions.list");
+  it("refetches a list when a subscription it hid gains unread entries", () => {
+    seedList(tagList);
 
-  it("refetches the list when a subscription it hid gains unread entries", () => {
-    seedSubscription(queryClient, { id: "sub-hidden", unreadCount: 0, tags: [tag] });
+    setEntryRelatedCounts(
+      utils,
+      counts([{ id: "sub-hidden", unread: 1, tagIds: [tag.id] }]),
+      queryClient
+    );
 
-    setEntryRelatedCounts(utils, counts([{ id: "sub-hidden", unread: 1 }]), queryClient);
-
-    expect(refetchedLists()).toEqual([{ path: "subscriptions.list", input: listInput }]);
+    expect(refetchedLists()).toEqual([tagList]);
+    // Inactive (collapsed) lists stay marked, so expanding refetches them.
+    expect(queryClient.getQueryState(listKey(tagList))?.isInvalidated).toBe(true);
   });
 
-  it("refetches the list for a newly unread subscription it knows nothing about", () => {
-    setEntryRelatedCounts(utils, counts([{ id: "sub-unknown", unread: 1 }]), queryClient);
-
-    expect(refetchedLists()).toHaveLength(1);
-  });
-
-  it("leaves the list alone for rows it has, read rows, and other tags' rows", () => {
-    seedSubscription(queryClient, {
-      id: "sub-elsewhere",
-      unreadCount: 0,
-      tags: [{ id: "tag-2", name: "Other", color: null }],
-    });
+  it("places a subscription by the tags in the counts, else by its cached tags", () => {
+    const uncategorizedList = { uncategorized: true, unreadOnly: true, limit: 50 };
+    seedList(tagList);
+    seedList(uncategorizedList);
+    seedSubscription(queryClient, { id: "sub-cached", unreadCount: 0, tags: [tag] });
 
     setEntryRelatedCounts(
       utils,
       counts([
-        { id: "sub-listed", unread: 2 },
-        { id: "sub-read", unread: 0 },
-        { id: "sub-elsewhere", unread: 1 },
+        { id: "sub-untagged", unread: 1, tagIds: [] },
+        { id: "sub-cached", unread: 1 },
+      ]),
+      queryClient
+    );
+
+    expect(refetchedLists()).toEqual(expect.arrayContaining([tagList, uncategorizedList]));
+    expect(refetchedLists()).toHaveLength(2);
+  });
+
+  it("leaves a list alone for rows it has, read rows, other sections, and untagged-unknowns", () => {
+    seedList(tagList);
+    seedList({ tagId: tag.id, limit: 50 });
+
+    setEntryRelatedCounts(
+      utils,
+      counts([
+        { id: "sub-listed", unread: 2, tagIds: [tag.id] },
+        { id: "sub-read", unread: 0, tagIds: [tag.id] },
+        { id: "sub-elsewhere", unread: 1, tagIds: [otherTag.id] },
+        // A previous release's event: no tags, and nothing cached to place it.
+        { id: "sub-unknown", unread: 1 },
       ]),
       queryClient
     );
 
     expect(refetchedLists()).toEqual([]);
+  });
+
+  it("with more pages, refetches only for a subscription sorting among the loaded rows", () => {
+    seedList(tagList, "next");
+    seedSubscription(queryClient, { id: "sub-a", unreadCount: 0, tags: [tag], title: "A first" });
+    seedSubscription(queryClient, { id: "sub-z", unreadCount: 0, tags: [tag], title: "Z last" });
+
+    // Past the loaded rows, or unplaceable: its page brings it in later.
+    setEntryRelatedCounts(
+      utils,
+      counts([
+        { id: "sub-z", unread: 1, tagIds: [tag.id] },
+        { id: "sub-unknown", unread: 1, tagIds: [tag.id] },
+      ]),
+      queryClient
+    );
+    expect(refetchedLists()).toEqual([]);
+
+    setEntryRelatedCounts(
+      utils,
+      counts([{ id: "sub-a", unread: 1, tagIds: [tag.id] }]),
+      queryClient
+    );
+    expect(refetchedLists()).toEqual([tagList]);
   });
 });

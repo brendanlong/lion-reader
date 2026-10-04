@@ -120,7 +120,10 @@ export const unreadCountsSchema = z.object({
   all: z.object({ unread: z.number() }),
   starred: z.object({ unread: z.number() }),
   saved: z.object({ unread: z.number() }).optional(),
-  subscriptions: z.array(z.object({ id: z.string(), unread: z.number() })),
+  // tagIds: absent from events a previous release published
+  subscriptions: z.array(
+    z.object({ id: z.string(), unread: z.number(), tagIds: z.array(z.string()).optional() })
+  ),
   tags: z.array(z.object({ id: z.string(), unread: z.number() })),
   uncategorized: z.object({ unread: z.number() }).optional(),
 });

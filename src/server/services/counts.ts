@@ -107,8 +107,9 @@ export interface BulkUnreadCounts {
   starred: { unread: number };
   saved: { unread: number };
 
-  // Per-subscription counts (only subscriptions that were affected)
-  subscriptions: Array<{ id: string; unread: number }>;
+  // Per-subscription counts (only subscriptions that were affected), with
+  // each one's tags so a client can place a subscription it hasn't loaded
+  subscriptions: Array<{ id: string; unread: number; tagIds: string[] }>;
 
   // Per-tag counts (only tags that were affected)
   tags: Array<{ id: string; unread: number }>;
@@ -200,6 +201,7 @@ export async function getBulkEntryRelatedCounts(
   baseCounts.subscriptions = subscriptionIds.map((id) => ({
     id,
     unread: unreadBySubscription.get(id) ?? 0,
+    tagIds: subTags.filter((t) => t.subscriptionId === id).map((t) => t.tagId),
   }));
 
   const tagIds = [...new Set(subTags.map((t) => t.tagId))];

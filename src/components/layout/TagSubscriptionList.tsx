@@ -12,12 +12,15 @@ import { useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
 import type { CachedSubscription } from "@/lib/cache/count-cache";
 import {
-  UNCATEGORIZED_SECTION,
   chooseSidebarSection,
-  isInSidebarSection,
   isSidebarLinkCurrent,
   type SidebarSelection,
 } from "@/lib/hooks/useSidebarSelection";
+import {
+  UNCATEGORIZED_SECTION,
+  compareSidebarOrder,
+  isInSidebarSection,
+} from "@/lib/sidebar-sections";
 import { SubscriptionItem } from "./SubscriptionItem";
 import { untitledSubscriptionLabel } from "@/lib/collections";
 
@@ -59,12 +62,7 @@ function withCurrentSubscription(
 ): CachedSubscription[] {
   if (!current || !isInSidebarSection(current, section)) return loaded;
   if (loaded.some((sub) => sub.id === current.id)) return loaded;
-  const sortKey = (sub: CachedSubscription) => sub.title ?? "";
-  const index = loaded.findIndex(
-    (sub) =>
-      sortKey(sub).localeCompare(sortKey(current)) > 0 ||
-      (sortKey(sub) === sortKey(current) && sub.id > current.id)
-  );
+  const index = loaded.findIndex((sub) => compareSidebarOrder(sub, current) > 0);
   if (index === -1) return hasNextPage ? loaded : [...loaded, current];
   return [...loaded.slice(0, index), current, ...loaded.slice(index)];
 }

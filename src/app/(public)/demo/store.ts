@@ -334,6 +334,7 @@ export function createDemoStore(): DemoStore {
       subscriptions: subs.map((sub) => ({
         id: sub.id,
         unread: unread({ subscriptionId: sub.id }),
+        tagIds: sub.tagIds,
       })),
       tags: tagIds.map((id) => ({ id, unread: unread({ tagId: id }) })),
       uncategorized: subs.some((sub) => sub.tagIds.length === 0)
