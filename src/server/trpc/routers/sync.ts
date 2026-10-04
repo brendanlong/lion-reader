@@ -26,7 +26,7 @@ import {
   tags,
   entryTombstones,
 } from "@/server/db/schema";
-import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
 import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
@@ -536,7 +536,6 @@ async function collectSyncEvents(
         starred: userEntries.starred,
         readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
-        feedId: entries.feedId,
         feedType: entries.type,
         feedTitle: feeds.title,
         visible: sql<boolean>`${visibleEntrySql()}`,
@@ -681,19 +680,18 @@ async function collectSyncEvents(
           allEvents.push({
             type: "subscription_created" as const,
             subscriptionId: subscription.id,
-            feedId: subscription.feedId,
             timestamp: updatedAtIso,
             updatedAt: updatedAtIso,
             subscription: {
               id: subscription.id,
-              feedId: subscription.feedId,
+              feedId: legacyFeedId(subscription.id),
               customTitle: subscription.customTitle,
               subscribedAt: subscription.subscribedAt.toISOString(),
               unreadCount: subscription.unreadCount,
               tags: tagsBySubscription.get(subscription.id) ?? [],
             },
             feed: {
-              id: feed.id,
+              id: legacyFeedId(subscription.id),
               type: feed.type,
               url: feed.url,
               title: feed.title,

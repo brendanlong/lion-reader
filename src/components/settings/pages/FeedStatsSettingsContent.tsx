@@ -34,7 +34,6 @@ const PAGE_SIZE = 50;
 // ============================================================================
 
 interface FeedStats {
-  feedId: string;
   subscriptionId: string;
   title: string | null;
   customTitle: string | null;

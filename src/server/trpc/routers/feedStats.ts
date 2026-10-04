@@ -36,7 +36,6 @@ const feedStatsCursor = createCursorCodec(
  * Feed stats output schema - what we return for each feed's statistics.
  */
 const feedStatsOutputSchema = z.object({
-  feedId: z.string(),
   subscriptionId: z.string(),
   title: z.string().nullable(),
   customTitle: z.string().nullable(),
@@ -141,7 +140,6 @@ export const feedStatsRouter = createTRPCRouter({
       // Get all web feeds the user is subscribed to with their stats
       const feedStats = await ctx.db
         .select({
-          feedId: feeds.id,
           subscriptionId: subscriptions.id,
           title: feeds.title,
           customTitle: subscriptions.customTitle,
@@ -176,7 +174,6 @@ export const feedStatsRouter = createTRPCRouter({
 
       return {
         items: feedStats.map((feed) => ({
-          feedId: feed.feedId,
           subscriptionId: feed.subscriptionId,
           title: feed.title,
           customTitle: feed.customTitle,

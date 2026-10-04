@@ -34,7 +34,6 @@ async function fetchUnreadListData(
     .select({
       id: visibleEntries.id,
       subscriptionId: visibleEntries.subscriptionId,
-      feedId: visibleEntries.feedId,
       feedType: visibleEntries.type,
       url: visibleEntries.url,
       title: visibleEntries.title,
@@ -56,7 +55,6 @@ async function fetchUnreadListData(
     if (!entry) continue;
     result.set(row.id, {
       subscriptionId: row.subscriptionId,
-      feedId: row.feedId,
       feedType: row.feedType,
       entry,
     });

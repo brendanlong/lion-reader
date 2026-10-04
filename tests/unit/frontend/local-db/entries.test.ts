@@ -25,7 +25,6 @@ const t3 = new Date("2026-07-05T00:00:03.000Z");
 function makeEntry(overrides: Partial<EntryRow> = {}): EntryRow {
   return {
     id: "e1",
-    feedId: "feed-1",
     subscriptionId: "sub-1",
     type: "web",
     url: "https://example.com/e1",

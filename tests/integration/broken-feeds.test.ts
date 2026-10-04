@@ -3,8 +3,8 @@
  *
  * `brokenFeeds.retryFetch` is the only endpoint that mutates, and its ownership
  * check is what keeps one user from resetting another user's feed. These tests
- * cover that check's outcome on both sides: a subscribed feed is rescheduled,
- * and anything else is a NOT_FOUND client error rather than a 500.
+ * cover that check's outcome on both sides: the user's own subscription's feed
+ * is rescheduled, and anything else is a NOT_FOUND client error rather than a 500.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -42,16 +42,16 @@ describe("Broken Feeds API", () => {
       lastError: "500 Server Error",
       nextFetchAt: new Date(Date.now() + 60 * 60 * 1000),
     });
-    await createTestSubscription(userId, feedId);
+    const subscriptionId = await createTestSubscription(userId, feedId);
 
     const caller = createCaller(await createAuthContext(userId));
 
     const listed = await caller.brokenFeeds.list();
     expect(listed.items).toHaveLength(1);
-    expect(listed.items[0].feedId).toBe(feedId);
+    expect(listed.items[0].subscriptionId).toBe(subscriptionId);
     expect(listed.items[0].consecutiveFailures).toBe(3);
 
-    const result = await caller.brokenFeeds.retryFetch({ feedId });
+    const result = await caller.brokenFeeds.retryFetch({ subscriptionId });
     expect(result.success).toBe(true);
 
     // The failure counter is cleared and a fetch is due immediately.
@@ -63,38 +63,37 @@ describe("Broken Feeds API", () => {
 
   // The ownership check must produce a real 404, not an unhandled Error that
   // tRPC would surface as a 500 (and report to Sentry as a server bug).
-  it("rejects retrying a feed the user is not subscribed to with a 404", async () => {
+  it("rejects retrying another user's subscription with a 404", async () => {
     const userId = await createTestUser({ emailPrefix: "brokenfeeds-unsub" });
     const otherUserId = await createTestUser({ emailPrefix: "brokenfeeds-other" });
     const feedId = await createTestFeed({ consecutiveFailures: 2 });
-    // Only the *other* user is subscribed.
-    await createTestSubscription(otherUserId, feedId);
+    const otherSubscriptionId = await createTestSubscription(otherUserId, feedId);
 
     const caller = createCaller(await createAuthContext(userId));
 
     let thrown: unknown;
     try {
-      await caller.brokenFeeds.retryFetch({ feedId });
+      await caller.brokenFeeds.retryFetch({ subscriptionId: otherSubscriptionId });
     } catch (error) {
       thrown = error;
     }
 
     expect(thrown).toBeInstanceOf(TRPCError);
     expect(getHTTPStatusCodeFromError(thrown as TRPCError)).toBe(404);
-    expect((thrown as TRPCError).cause).toMatchObject({ code: "FEED_NOT_FOUND" });
+    expect((thrown as TRPCError).cause).toMatchObject({ code: "SUBSCRIPTION_NOT_FOUND" });
 
     // The other user's feed was left untouched.
     const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
     expect(feed.consecutiveFailures).toBe(2);
   });
 
-  it("rejects retrying a feed that does not exist with a 404", async () => {
+  it("rejects retrying a subscription that does not exist with a 404", async () => {
     const userId = await createTestUser({ emailPrefix: "brokenfeeds-missing" });
     const caller = createCaller(await createAuthContext(userId));
 
     let thrown: unknown;
     try {
-      await caller.brokenFeeds.retryFetch({ feedId: generateUuidv7() });
+      await caller.brokenFeeds.retryFetch({ subscriptionId: generateUuidv7() });
     } catch (error) {
       thrown = error;
     }

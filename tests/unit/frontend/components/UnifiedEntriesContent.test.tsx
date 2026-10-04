@@ -176,7 +176,6 @@ describe("UnifiedEntriesContent loading fallback", () => {
       upsertServerEntries(getLocalDb(rendered.queryClient).entries, [
         {
           id: "stored",
-          feedId: "feed-1",
           subscriptionId: "sub-1",
           type: "web",
           url: null,

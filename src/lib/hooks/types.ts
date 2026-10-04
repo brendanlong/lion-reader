@@ -12,7 +12,6 @@ import { type EntryType } from "./useEntryMutations";
  */
 export interface EntryListData {
   id: string;
-  feedId: string;
   subscriptionId: string | null;
   type: EntryType;
   url: string | null;

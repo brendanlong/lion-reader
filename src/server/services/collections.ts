@@ -83,7 +83,6 @@ export async function createCollection(
 
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
   const feedData = {
-    id: feedId,
     type: "collection" as const,
     url: null,
     title: name,
@@ -97,8 +96,6 @@ export async function createCollection(
     subscriptionId,
     now,
     {
-      id: subscriptionId,
-      feedId,
       customTitle: null,
       subscribedAt: now.toISOString(),
       unreadCount: 0,

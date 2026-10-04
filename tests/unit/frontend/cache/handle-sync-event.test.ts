@@ -271,7 +271,6 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         entryId: "entry-live",
         subscriptionId: "sub-1",
-        feedId: "feed-1",
         feedType: "web",
         updatedAt: "2024-07-01T00:00:00.000Z",
         entry: {
@@ -292,7 +291,6 @@ describe("handleSyncEvent - new_entry", () => {
     expect(inserted).toMatchObject({
       id: "entry-live",
       subscriptionId: "sub-1",
-      feedId: "feed-1",
       type: "web",
       title: "Live Entry",
       feedTitle: "Feed One",
@@ -308,7 +306,6 @@ describe("handleSyncEvent - new_entry", () => {
   it("is idempotent: applying the same list-data event twice inserts one row", () => {
     const event = createNewEntryEvent({
       entryId: "entry-live",
-      feedId: "feed-1",
       entry: {
         url: null,
         title: "Live Entry",
@@ -462,7 +459,6 @@ describe("handleSyncEvent - entry_state_changed", () => {
         read: false,
         starred: false,
         subscriptionId: "sub-1",
-        feedId: "feed-1",
         feedType: "web",
         updatedAt: "2024-07-01T00:00:00.000Z",
         entry: {
@@ -484,7 +480,6 @@ describe("handleSyncEvent - entry_state_changed", () => {
     expect(inserted).toMatchObject({
       id: "entry-uncached",
       subscriptionId: "sub-1",
-      feedId: "feed-1",
       type: "web",
       title: "Uncached Entry",
       feedTitle: "Feed One",
@@ -503,7 +498,6 @@ describe("handleSyncEvent - entry_state_changed", () => {
       read: false,
       starred: false,
       subscriptionId: "sub-1",
-      feedId: "feed-1",
       feedType: "web",
       entry: {
         url: null,
@@ -535,7 +529,6 @@ describe("handleSyncEvent - entry_state_changed", () => {
         read: false,
         starred: true,
         subscriptionId: "sub-1",
-        feedId: "feed-1",
         feedType: "web",
         entry: {
           url: null,

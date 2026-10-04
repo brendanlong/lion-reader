@@ -18,6 +18,7 @@ import {
   syncTagSchema,
   subscriptionCreatedDataSchema,
   feedCreatedDataSchema,
+  legacyFeedId,
   unreadCountsSchema,
   type NewEntryListData,
 } from "@/lib/events/schemas";
@@ -127,7 +128,6 @@ const userEventSchema = z.discriminatedUnion("type", [
     // spam), so clients can insert it into cached lists it's missing from —
     // mirroring the new_entry payload (issue #1237).
     subscriptionId: z.string().nullable().optional(),
-    feedId: z.string().optional(),
     feedType: z.enum(["web", "email", "saved"]).optional(),
     entry: newEntryListDataSchema.optional(),
   }),
@@ -231,8 +231,11 @@ export type UserEvent = z.infer<typeof userEventSchema>;
 
 // Sub-types derived from shared schemas
 export type EntryUpdatedMetadata = z.infer<typeof entryMetadataSchema>;
-export type SubscriptionCreatedEventSubscription = z.infer<typeof subscriptionCreatedDataSchema>;
-export type SubscriptionCreatedEventFeed = z.infer<typeof feedCreatedDataSchema>;
+type SubscriptionCreatedEventSubscription = Omit<
+  z.infer<typeof subscriptionCreatedDataSchema>,
+  "id" | "feedId"
+>;
+type SubscriptionCreatedEventFeed = Omit<z.infer<typeof feedCreatedDataSchema>, "id">;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -400,11 +403,11 @@ export async function publishEntryUpdatedFromEntry(
  * 2. Update the subscriptions cache directly with the provided data
  *
  * @param userId - The ID of the user who subscribed
- * @param feedId - The ID of the feed they subscribed to
+ * @param feedId - The ID of the feed they subscribed to (server-side routing only)
  * @param subscriptionId - The ID of the new subscription
  * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param subscription - Full subscription data for optimistic cache update
- * @param feed - Full feed data for optimistic cache update
+ * @param subscription - Subscription data for optimistic cache update
+ * @param feed - Feed data for optimistic cache update
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionCreated(
@@ -423,8 +426,8 @@ export async function publishSubscriptionCreated(
     subscriptionId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-    subscription,
-    feed,
+    subscription: { ...subscription, id: subscriptionId, feedId: legacyFeedId(subscriptionId) },
+    feed: { ...feed, id: legacyFeedId(subscriptionId) },
     counts,
   });
 }
@@ -569,7 +572,6 @@ export async function publishImportCompleted(
  */
 export interface EntryStateListData {
   subscriptionId: string | null;
-  feedId: string;
   feedType: "web" | "email" | "saved";
   entry: NewEntryListData;
 }

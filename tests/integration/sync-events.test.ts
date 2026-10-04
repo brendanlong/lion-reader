@@ -325,7 +325,6 @@ describe("sync.events", () => {
         entryId,
         read: false,
         subscriptionId,
-        feedId,
         feedType: "web",
         entry: expect.objectContaining({ title: "Payload Entry" }),
       });

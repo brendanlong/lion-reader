@@ -1269,7 +1269,6 @@ export interface OpmlImportFeedResult {
   title: string | null;
   status: OpmlImportFeedStatus;
   error?: string;
-  feedId?: string;
   subscriptionId?: string;
 }
 

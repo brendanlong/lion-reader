@@ -471,19 +471,18 @@ export function createSubscriptionCreatedEvent(
   return {
     type: "subscription_created",
     subscriptionId: "sub-new",
-    feedId: "feed-new",
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
     subscription: {
       id: "sub-new",
-      feedId: "feed-new",
+      feedId: "sub-new",
       customTitle: null,
       subscribedAt: defaultTimestamp,
       unreadCount: 7,
       tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
     },
     feed: {
-      id: "feed-new",
+      id: "sub-new",
       type: "web",
       url: "https://example.com/new-feed.xml",
       title: "New Feed",

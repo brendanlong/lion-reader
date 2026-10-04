@@ -77,7 +77,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
     fun upsertEntry(
         id: String,
         subscriptionId: String?,
-        feedId: String?,
         type: FeedType,
         url: String?,
         title: String?,
@@ -98,7 +97,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
         val fetched = parseMillis(fetchedAt)
         entries.insertIgnore(
             id,
-            feedId,
             type.wire(),
             fetched,
             published ?: fetched,
@@ -107,7 +105,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
         )
         entries.updateAll(
             subscription_id = subscriptionId,
-            `value` = feedId,
             type = type.wire(),
             url = url,
             title = title,
@@ -120,7 +117,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
             sort_at = published ?: fetched,
             read = read.toLong(),
             starred = starred.toLong(),
-            value_ = readChangedAt?.let(::parseMillis),
+            `value` = readChangedAt?.let(::parseMillis),
             id = id,
         )
     }
@@ -129,7 +126,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
         upsertEntry(
             item.id,
             item.subscriptionId,
-            item.feedId,
             item.type,
             item.url,
             item.title,

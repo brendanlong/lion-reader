@@ -29,7 +29,6 @@ afterEach(() => {
 function createMockEntry(overrides: Partial<EntryListItemData> = {}): EntryListItemData {
   return {
     id: "entry-1",
-    feedId: "feed-1",
     subscriptionId: "sub-1",
     type: "web",
     url: "https://example.com/article",

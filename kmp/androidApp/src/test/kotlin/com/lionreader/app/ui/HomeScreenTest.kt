@@ -81,15 +81,13 @@ class HomeScreenTest {
         title: String,
         read: Boolean,
         sortAt: Long = 0,
-        feed: String = "feed",
         subscription: String? = null,
         starred: Boolean = false,
     ) {
         val starredFlag = if (starred) 1L else 0L
-        db.entryQueries.insertIgnore(id, feed, "web", 0, sortAt, if (read) 1 else 0, starredFlag)
+        db.entryQueries.insertIgnore(id, "web", 0, sortAt, if (read) 1 else 0, starredFlag)
         db.entryQueries.updateAll(
             subscription,
-            feed,
             "web",
             null,
             title,
@@ -493,8 +491,8 @@ class HomeScreenTest {
                 title,
             )
         }
-        seed("a", "An article", read = false, feed = "feed-1", subscription = "busy")
-        seed("b", "Old news", read = true, feed = "feed-2", subscription = "quiet")
+        seed("a", "An article", read = false, subscription = "busy")
+        seed("b", "Old news", read = true, subscription = "quiet")
         show()
 
         composeRule.onNodeWithContentDescription("Lists").performClick()
@@ -517,7 +515,7 @@ class HomeScreenTest {
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("quiet", "tag")
-        seed("b", "Old news", read = true, feed = "feed-2", subscription = "quiet")
+        seed("b", "Old news", read = true, subscription = "quiet")
         settings.value = settings.value.copy(hideEmptyLists = true)
         show()
         model.select(ListScope.Subscription("quiet"))

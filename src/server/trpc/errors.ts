@@ -16,7 +16,6 @@ const errorCodeToTRPCCode = {
   SIGNUP_CONFIRMATION_REQUIRED: "FORBIDDEN",
   ADMIN_SECRET_NOT_CONFIGURED: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
-  FEED_NOT_FOUND: "NOT_FOUND",
   ENTRY_NOT_FOUND: "NOT_FOUND",
   SUBSCRIPTION_NOT_FOUND: "NOT_FOUND",
   TAG_NOT_FOUND: "NOT_FOUND",
@@ -96,8 +95,6 @@ export const errors = {
     ),
 
   notFound: (resource: string) => createError("NOT_FOUND", `${resource} not found`),
-
-  feedNotFound: () => createError("FEED_NOT_FOUND", "Feed not found"),
 
   entryNotFound: () => createError("ENTRY_NOT_FOUND", "Entry not found"),
 

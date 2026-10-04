@@ -56,7 +56,6 @@ class SyncEngineTest {
         FullEntry(
             id = id,
             subscriptionId = subscriptionId,
-            feedId = "feed-1",
             type = type,
             title = "Title $id",
             publishedAt = Instant.fromEpochMilliseconds(NOW - ageDays * DAY).toString(),
@@ -348,7 +347,6 @@ class SyncEngineTest {
                     SyncEvent.NewEntry(
                         entryId = "c",
                         subscriptionId = "sub-1",
-                        feedId = "feed-1",
                         feedType = FeedType.WEB,
                         entry = EventEntry(title = "New", fetchedAt = "2026-09-29T11:00:00Z"),
                     ),
@@ -382,7 +380,6 @@ class SyncEngineTest {
                     SyncEvent.NewEntry(
                         entryId = "a",
                         subscriptionId = "sub-1",
-                        feedId = "feed-1",
                         feedType = FeedType.WEB,
                         entry = EventEntry(title = "Title a", fetchedAt = "2026-09-28T12:00:00Z"),
                     )
@@ -907,7 +904,7 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.NewEntry("spam", "sub-1", "feed-1", FeedType.WEB, entry = null),
+                    SyncEvent.NewEntry("spam", "sub-1", FeedType.WEB, entry = null),
                     SyncEvent.EntryStateChanged("spam-changed", read = false, starred = false),
                 )
         )
@@ -928,7 +925,6 @@ class SyncEngineTest {
             SyncEvent.NewEntry(
                 id,
                 "sub-1",
-                "feed-1",
                 FeedType.WEB,
                 EventEntry(title = id, fetchedAt = "2026-09-29T11:00:00Z"),
             )

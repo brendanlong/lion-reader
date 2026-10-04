@@ -47,7 +47,6 @@ function renderEntryContent(ui: React.ReactElement, handlers: ProcedureHandlers)
 function createEntry(overrides: Record<string, unknown> = {}) {
   return {
     id: "entry-1",
-    feedId: "feed-1",
     subscriptionId: "sub-1",
     type: "web",
     url: "https://example.com/article",

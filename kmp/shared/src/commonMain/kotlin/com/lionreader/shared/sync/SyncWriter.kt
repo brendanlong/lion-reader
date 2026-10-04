@@ -132,7 +132,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             store.upsertEntry(
                 entry.id,
                 entry.subscriptionId,
-                entry.feedId,
                 entry.type,
                 entry.url,
                 entry.title,
@@ -168,7 +167,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                     store.upsertEntry(
                         event.entryId,
                         event.subscriptionId,
-                        event.feedId,
                         event.feedType,
                         it.url,
                         it.title,
@@ -217,7 +215,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         store.upsertEntry(
                             event.entryId,
                             event.subscriptionId,
-                            event.feedId,
                             event.feedType,
                             entry.url,
                             entry.title,

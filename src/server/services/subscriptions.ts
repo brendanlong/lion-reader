@@ -489,7 +489,6 @@ export interface CreateSubscriptionResult {
   fetchFullContent: boolean;
   /** Feed data (from existing or newly created feed) */
   feed: {
-    id: string;
     type: FeedType;
     url: string | null;
     title: string | null;
@@ -565,7 +564,6 @@ export async function createSubscription(
 
   const feedId = feedRecord.id;
   const feedData = {
-    id: feedId,
     type: feedRecord.type,
     url: feedRecord.url,
     title: feedRecord.title,
@@ -654,7 +652,7 @@ export async function createSubscription(
       // below). The ON CONFLICT row lock keeps it active for this transaction.
       const [sub] = await selectActiveSubscription();
       if (!sub) {
-        throw new Error(`Active subscription vanished after upsert conflict: ${feedId}`);
+        throw new Error("Active subscription vanished after upsert conflict");
       }
       return { kind: "alreadyActive", ...sub };
     }
@@ -723,8 +721,6 @@ export async function createSubscription(
     subscriptionId,
     subscribedAt,
     {
-      id: subscriptionId,
-      feedId,
       customTitle,
       subscribedAt: subscribedAt.toISOString(),
       unreadCount,
@@ -1152,15 +1148,12 @@ export async function mergeSubscriptionIntoFeed(
       survivor.id,
       now,
       {
-        id: survivor.id,
-        feedId: newFeed.id,
         customTitle: survivor.customTitle,
         subscribedAt: survivor.subscribedAt.toISOString(),
         unreadCount: counts.subscriptions.find((s) => s.id === survivor.id)?.unread ?? 0,
         tags: survivorTags,
       },
       {
-        id: newFeed.id,
         type: newFeed.type,
         url: newFeed.url,
         title: newFeed.title,

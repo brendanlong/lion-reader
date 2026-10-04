@@ -350,15 +350,12 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       upsertedSubscription.id,
       upsertedSubscription.updatedAt,
       {
-        id: upsertedSubscription.id,
-        feedId: feed.id,
         customTitle: upsertedSubscription.customTitle,
         subscribedAt: upsertedSubscription.subscribedAt.toISOString(),
         unreadCount: 1,
         tags: [],
       },
       {
-        id: feed.id,
         type: "email",
         url: null,
         title: feed.title,

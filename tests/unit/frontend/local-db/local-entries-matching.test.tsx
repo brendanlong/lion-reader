@@ -23,7 +23,6 @@ afterEach(() => {
 function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow> = {}): EntryRow {
   return {
     id,
-    feedId: "feed-1",
     subscriptionId: "sub-1",
     type: "web",
     url: null,

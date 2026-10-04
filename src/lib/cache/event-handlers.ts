@@ -33,7 +33,6 @@ export type { SyncEvent } from "@/lib/events/schemas";
 /** Builds the entry row for an event's list-item payload. */
 function toEntryRow(
   event: { entryId: string; subscriptionId?: string | null; updatedAt: string },
-  feedId: string,
   type: EntryRow["type"],
   entry: NewEntryListData,
   state: { read: boolean; starred: boolean }
@@ -41,7 +40,6 @@ function toEntryRow(
   return {
     id: event.entryId,
     subscriptionId: event.subscriptionId ?? null,
-    feedId,
     type,
     url: entry.url,
     title: entry.title,
@@ -95,11 +93,11 @@ export function handleSyncEvent(
       // by the catch-up sync path (the entry may have changed state on
       // another device while this client was offline); the live path omits
       // them because a brand-new entry is always unread/unstarred.
-      if (event.entry && event.feedId) {
+      if (event.entry) {
         addServerEntryToLists(
           db,
           queryClient,
-          toEntryRow(event, event.feedId, event.feedType, event.entry, {
+          toEntryRow(event, event.feedType, event.entry, {
             read: event.entry.read ?? false,
             starred: event.entry.starred ?? false,
           })
@@ -134,11 +132,11 @@ export function handleSyncEvent(
       // live (issue #1237). Events without a payload (older servers,
       // star/unstar of an unread entry) fall back to the stored row.
       if (!event.read) {
-        if (event.entry && event.feedId && event.feedType) {
+        if (event.entry && event.feedType) {
           addServerEntryToLists(
             db,
             queryClient,
-            toEntryRow(event, event.feedId, event.feedType, event.entry, state)
+            toEntryRow(event, event.feedType, event.entry, state)
           );
         } else {
           const stored = db.entries.getSynced(event.entryId);

@@ -5,7 +5,7 @@
 /**
  * Unit tests for useShowOriginalPreference hook.
  *
- * Tests the per-feed preference for showing original vs cleaned content.
+ * Tests the per-subscription preference for showing original vs cleaned content.
  *
  * Note: The hook uses module-level caches, so we need to reset modules between
  * tests that read pre-populated localStorage values.
@@ -34,12 +34,12 @@ describe("useShowOriginalPreference", () => {
   describe("default values", () => {
     it("returns false by default when no preference is stored", async () => {
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("default-feed-1"));
+      const { result } = renderHook(() => useShowOriginalPreference("default-key-1"));
 
       expect(result.current[0]).toBe(false);
     });
 
-    it("returns false when feedId is undefined", async () => {
+    it("returns false when the key is undefined", async () => {
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
       const { result } = renderHook(() => useShowOriginalPreference(undefined));
 
@@ -49,11 +49,11 @@ describe("useShowOriginalPreference", () => {
 
   describe("localStorage persistence", () => {
     it("reads existing preference from localStorage", async () => {
-      localStorageMock.setItem("lion-reader:show-original:read-true-feed", JSON.stringify(true));
+      localStorageMock.setItem("lion-reader:show-original:read-true-key", JSON.stringify(true));
       vi.resetModules();
 
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("read-true-feed"));
+      const { result } = renderHook(() => useShowOriginalPreference("read-true-key"));
 
       expect(result.current[0]).toBe(true);
     });
@@ -61,28 +61,28 @@ describe("useShowOriginalPreference", () => {
     it("saves preference to localStorage when changed", async () => {
       vi.resetModules();
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("save-pref-feed"));
+      const { result } = renderHook(() => useShowOriginalPreference("save-pref-key"));
 
       act(() => {
         result.current[1](true);
       });
 
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "lion-reader:show-original:save-pref-feed",
+        "lion-reader:show-original:save-pref-key",
         JSON.stringify(true)
       );
     });
   });
 
-  describe("per-feed preferences", () => {
-    it("stores preferences separately per feed", async () => {
-      localStorageMock.setItem("lion-reader:show-original:per-feed-a", JSON.stringify(true));
-      localStorageMock.setItem("lion-reader:show-original:per-feed-b", JSON.stringify(false));
+  describe("per-key preferences", () => {
+    it("stores preferences separately per key", async () => {
+      localStorageMock.setItem("lion-reader:show-original:per-key-a", JSON.stringify(true));
+      localStorageMock.setItem("lion-reader:show-original:per-key-b", JSON.stringify(false));
       vi.resetModules();
 
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result: resultA } = renderHook(() => useShowOriginalPreference("per-feed-a"));
-      const { result: resultB } = renderHook(() => useShowOriginalPreference("per-feed-b"));
+      const { result: resultA } = renderHook(() => useShowOriginalPreference("per-key-a"));
+      const { result: resultB } = renderHook(() => useShowOriginalPreference("per-key-b"));
 
       expect(resultA.current[0]).toBe(true);
       expect(resultB.current[0]).toBe(false);
@@ -91,11 +91,11 @@ describe("useShowOriginalPreference", () => {
 
   describe("setting preference", () => {
     it("updates state when setShowOriginal is called with false", async () => {
-      localStorageMock.setItem("lion-reader:show-original:set-false-feed", JSON.stringify(true));
+      localStorageMock.setItem("lion-reader:show-original:set-false-key", JSON.stringify(true));
       vi.resetModules();
 
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("set-false-feed"));
+      const { result } = renderHook(() => useShowOriginalPreference("set-false-key"));
 
       expect(result.current[0]).toBe(true);
 
@@ -106,7 +106,7 @@ describe("useShowOriginalPreference", () => {
       expect(result.current[0]).toBe(false);
     });
 
-    it("does nothing when feedId is undefined", async () => {
+    it("does nothing when the key is undefined", async () => {
       vi.resetModules();
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
       const { result } = renderHook(() => useShowOriginalPreference(undefined));
@@ -123,24 +123,33 @@ describe("useShowOriginalPreference", () => {
 
   describe("error handling", () => {
     it("handles invalid JSON gracefully", async () => {
-      localStorageMock.setItem("lion-reader:show-original:invalid-json-feed", "not valid json");
+      localStorageMock.setItem("lion-reader:show-original:invalid-json-key", "not valid json");
       vi.resetModules();
 
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("invalid-json-feed"));
+      const { result } = renderHook(() => useShowOriginalPreference("invalid-json-key"));
 
       expect(result.current[0]).toBe(false);
     });
 
     it("handles non-boolean values gracefully", async () => {
-      localStorageMock.setItem("lion-reader:show-original:non-boolean-feed", JSON.stringify("yes"));
+      localStorageMock.setItem("lion-reader:show-original:non-boolean-key", JSON.stringify("yes"));
       vi.resetModules();
 
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result } = renderHook(() => useShowOriginalPreference("non-boolean-feed"));
+      const { result } = renderHook(() => useShowOriginalPreference("non-boolean-key"));
 
       // Since "yes" !== true, it returns false
       expect(result.current[0]).toBe(false);
+    });
+  });
+
+  describe("showOriginalKey", () => {
+    it("keys by subscription, and entries without one share a key per type", async () => {
+      const { showOriginalKey } = await import("@/lib/hooks/useShowOriginalPreference");
+
+      expect(showOriginalKey({ subscriptionId: "sub-1", type: "web" })).toBe("sub-1");
+      expect(showOriginalKey({ subscriptionId: null, type: "saved" })).toBe("saved");
     });
   });
 
@@ -148,7 +157,7 @@ describe("useShowOriginalPreference", () => {
     it("returns a stable setter function", async () => {
       vi.resetModules();
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
-      const { result, rerender } = renderHook(() => useShowOriginalPreference("stability-feed"));
+      const { result, rerender } = renderHook(() => useShowOriginalPreference("stability-key"));
 
       const firstSetter = result.current[1];
       rerender();
@@ -163,8 +172,8 @@ describe("useShowOriginalPreference", () => {
       vi.resetModules();
       const { useShowOriginalPreference } = await import("@/lib/hooks/useShowOriginalPreference");
 
-      const { result: result1 } = renderHook(() => useShowOriginalPreference("shared-feed"));
-      const { result: result2 } = renderHook(() => useShowOriginalPreference("shared-feed"));
+      const { result: result1 } = renderHook(() => useShowOriginalPreference("shared-key"));
+      const { result: result2 } = renderHook(() => useShowOriginalPreference("shared-key"));
 
       expect(result1.current[0]).toBe(false);
       expect(result2.current[0]).toBe(false);

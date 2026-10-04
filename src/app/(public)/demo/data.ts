@@ -122,12 +122,11 @@ export const DEMO_SUBSCRIPTIONS: DemoSubscription[] = Object.entries(SUBSCRIPTIO
   })
 );
 
-/** Convert an article to a full DemoEntry by deriving feedId, feedTitle, etc. */
+/** Convert an article to a full DemoEntry by deriving feedTitle, etc. */
 function articleToEntry(article: DemoArticle): DemoEntry {
   const config = SUBSCRIPTION_CONFIG[article.subscriptionId];
   return {
     ...article,
-    feedId: article.subscriptionId,
     fetchedAt: article.publishedAt,
     read: false,
     feedTitle: config?.title ?? null,

@@ -24,7 +24,6 @@ import type { FeedIssueInput } from "@/lib/github-issue";
 // ============================================================================
 
 interface BrokenFeed {
-  feedId: string;
   subscriptionId: string;
   title: string | null;
   url: string | null;
@@ -92,7 +91,7 @@ export default function BrokenFeedsSettingsContent() {
         emptyState={<EmptyState />}
         renderItem={(feed) => (
           <BrokenFeedRow
-            key={feed.feedId}
+            key={feed.subscriptionId}
             feed={feed}
             onUnsubscribe={handleUnsubscribe}
             onFileIssue={handleFileIssue}
@@ -163,7 +162,7 @@ function BrokenFeedRow({ feed, onUnsubscribe, onFileIssue }: BrokenFeedRowProps)
   });
 
   const handleRetry = () => {
-    retryMutation.mutate({ feedId: feed.feedId });
+    retryMutation.mutate({ subscriptionId: feed.subscriptionId });
   };
 
   const displayName = getFeedDisplayName(feed);

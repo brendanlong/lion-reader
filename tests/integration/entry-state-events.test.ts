@@ -162,7 +162,7 @@ describe("markEntriesRead SSE publishing", () => {
     expect(event.counts.all.unread).toBe(0);
     // Nothing to insert client-side for a read flip, so no payload is fetched.
     expect(event.entry).toBeUndefined();
-    expect(event.feedId).toBeUndefined();
+    expect(event.feedType).toBeUndefined();
   });
 
   it("attaches the entry list payload when an entry flips to unread (#1237)", async () => {
@@ -186,7 +186,6 @@ describe("markEntriesRead SSE publishing", () => {
     expect(event.entryId).toBe(entryId);
     expect(event.read).toBe(false);
     expect(event.feedType).toBe("web");
-    expect(typeof event.feedId).toBe("string");
     expect(typeof event.subscriptionId).toBe("string");
     expect(event.entry).toMatchObject({
       title: "Entry",
