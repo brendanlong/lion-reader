@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
 import { errors } from "../../src/server/trpc/errors";
 import { toMcpError } from "../../src/server/mcp/tools";
-
-const GENERIC = "An internal error occurred";
 
 describe("toMcpError", () => {
   it("forwards app errors' messages and codes for non-client tRPC codes (#1834)", () => {
@@ -14,8 +12,17 @@ describe("toMcpError", () => {
       message: expect.stringContaining(rateLimited.message),
       data: { code: "UPSTREAM_RATE_LIMITED" },
     });
-    expect(toMcpError(errors.siteBlocked("https://example.com/", 403))).toMatchObject({
-      data: { code: "SITE_BLOCKED" },
+  });
+
+  it("forwards hand-built service errors that carry a cause code", () => {
+    const needsSignin = new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Sign in with Google to save this doc.",
+      cause: { code: "NEEDS_GOOGLE_SIGNIN", details: { url: "https://docs.google.com/x" } },
+    });
+    expect(toMcpError(needsSignin)).toMatchObject({
+      message: expect.stringContaining(needsSignin.message),
+      data: { code: "NEEDS_GOOGLE_SIGNIN" },
     });
   });
 
@@ -27,17 +34,27 @@ describe("toMcpError", () => {
     });
   });
 
-  it("hides the message of internal server errors (#1266)", () => {
-    const internal = toMcpError(errors.feedFetchError("https://example.com/", "secret detail"));
-    expect(internal).toBeInstanceOf(McpError);
-    expect((internal as McpError).message).not.toContain("secret detail");
-    expect(internal).toMatchObject({ code: ErrorCode.InternalError, data: undefined });
+  it("forwards client-input TRPCErrors without an app code as InvalidParams", () => {
+    expect(
+      toMcpError(new TRPCError({ code: "BAD_REQUEST", message: "Invalid cursor" }))
+    ).toMatchObject({
+      code: ErrorCode.InvalidParams,
+      message: expect.stringContaining("Invalid cursor"),
+      data: undefined,
+    });
   });
 
-  it("hides the message of non-client TRPCErrors not built by errors.*", () => {
-    const raw = new TRPCError({ code: "TOO_MANY_REQUESTS", message: "secret detail" });
-    const mapped = toMcpError(raw) as McpError;
-    expect(mapped.message).not.toContain("secret detail");
-    expect(mapped.message).toContain(GENERIC);
+  it("hides the message of internal server errors even with an app code (#1266)", () => {
+    const mapped = toMcpError(errors.feedFetchError("https://example.com/", "secret detail"));
+    expect(mapped).toMatchObject({ code: ErrorCode.InternalError, data: undefined });
+    expect((mapped as Error).message).not.toContain("secret detail");
+  });
+
+  it("hides the message of non-client TRPCErrors without an app code", () => {
+    const mapped = toMcpError(
+      new TRPCError({ code: "TOO_MANY_REQUESTS", message: "secret detail" })
+    );
+    expect(mapped).toMatchObject({ code: ErrorCode.InternalError, data: undefined });
+    expect((mapped as Error).message).not.toContain("secret detail");
   });
 });

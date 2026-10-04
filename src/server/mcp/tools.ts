@@ -66,13 +66,14 @@ function parseArgs<T extends z.ZodType>(schema: T, args: unknown): z.infer<T> {
  * Convert service-layer errors into structured MCP errors. Services throw
  * TRPCErrors (their native error type across all transports).
  *
- * Messages of errors built by `errors.*` (which carry an app code) are written
- * for users, so they're forwarded with the app code in `data.code` — an agent
- * needs to tell "this site is rate limiting us" (#1834) apart from our bug.
- * INTERNAL_SERVER_ERROR and errors not built by `errors.*` get a generic string
- * instead: an unexpected server error's message can leak internal detail
- * (#1266). Callers are responsible for logging the original error server-side
- * before mapping.
+ * Messages of errors carrying an app code (`errors.*` and the services'
+ * hand-built errors with a `cause.code`) are written for users, so they're
+ * forwarded with the app code in `data.code` — an agent needs to tell "this
+ * site is rate limiting us" (#1834) apart from our bug, and JSON-RPC has no
+ * error codes that make that distinction. INTERNAL_SERVER_ERROR and errors
+ * without an app code get a generic string instead: an unexpected server
+ * error's message can leak internal detail (#1266). Callers are responsible
+ * for logging the original error server-side before mapping.
  */
 export function toMcpError(error: unknown): unknown {
   if (error instanceof McpError) {
