@@ -9,11 +9,14 @@ private val CLAUSE_END = Regex("""(?<=[,;:—])\s+""")
 /**
  * Splits paragraphs into chunks of whole sentences up to [maxChars], so the first audio is ready
  * fast and the player can move on while later ones synthesize. Highlighting stays per paragraph, so
- * this doesn't need to match the web's sentence splitting.
+ * this doesn't need to match the web's sentence splitting. Chunks with no letter or digit (a
+ * footnote's "↩", a "* * *" separator) are left out: voices garble them.
  */
 fun speechChunks(paragraphs: List<String>, maxChars: Int = 400): List<SpeechChunk> =
     paragraphs.flatMapIndexed { index, paragraph ->
-        pack(pieces(paragraph.trim(), maxChars), maxChars).map { SpeechChunk(index, it) }
+        pack(pieces(paragraph.trim(), maxChars), maxChars)
+            .filter { chunk -> chunk.any { it.isLetterOrDigit() } }
+            .map { SpeechChunk(index, it) }
     }
 
 /** Sentences, with any longer than [maxChars] broken at clauses, then words. */

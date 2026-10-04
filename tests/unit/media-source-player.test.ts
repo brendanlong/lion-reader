@@ -9,10 +9,17 @@ import {
 } from "@/lib/narration/media-source-player";
 
 describe("splitIntoSpeechChunks", () => {
-  it("keeps short paragraphs whole and skips empty ones without renumbering", () => {
-    expect(splitIntoSpeechChunks(["One.", "  ", "Two."], 100)).toEqual([
+  it("keeps short paragraphs whole and skips unspeakable ones without renumbering", () => {
+    expect(splitIntoSpeechChunks(["One.", "  ", "↩", "* * *", "Two."], 100)).toEqual([
       { paragraph: 0, text: "One." },
-      { paragraph: 2, text: "Two." },
+      { paragraph: 4, text: "Two." },
+    ]);
+  });
+
+  it("keeps paragraphs that are only digits or non-Latin letters", () => {
+    expect(splitIntoSpeechChunks(["1984", "東京"], 100)).toEqual([
+      { paragraph: 0, text: "1984" },
+      { paragraph: 1, text: "東京" },
     ]);
   });
 
@@ -36,11 +43,11 @@ describe("splitIntoSpeechChunks", () => {
 });
 
 describe("splitIntoSentenceChunks", () => {
-  it("makes each sentence its own chunk and skips empty paragraphs", () => {
-    expect(splitIntoSentenceChunks(["One. Two.", " ", "Three."])).toEqual([
+  it("makes each sentence its own chunk and skips unspeakable paragraphs", () => {
+    expect(splitIntoSentenceChunks(["One. Two.", " ", "↩", "Three."])).toEqual([
       { paragraph: 0, text: "One." },
       { paragraph: 0, text: "Two." },
-      { paragraph: 2, text: "Three." },
+      { paragraph: 3, text: "Three." },
     ]);
   });
 });
