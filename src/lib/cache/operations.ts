@@ -23,7 +23,7 @@ import {
  */
 export interface SubscriptionData {
   id: string;
-  type: "web" | "email" | "saved";
+  type: "web" | "email" | "saved" | "collection";
   url: string | null;
   title: string | null;
   originalTitle: string | null;

@@ -142,7 +142,8 @@ export const subscriptionCreatedDataSchema = z.object({
  */
 export const feedCreatedDataSchema = z.object({
   id: z.string(),
-  type: z.enum(["web", "email", "saved"]),
+  // "collection": see subscriptionOutputSchema in the subscriptions router.
+  type: z.enum(["web", "email", "saved", "collection"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
   description: z.string().nullable(),
