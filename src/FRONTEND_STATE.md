@@ -226,10 +226,10 @@ Counts are applied separately from the response (absolute values, see
 
 ### Optimistic remove + invalidate-to-truth
 
-A removal has nothing to reconcile — there is no second concurrent delete and
-no server timestamp to compare — so on error the removed row is written back
-as it was and the caches are invalidated (an unread-only refetch wouldn't
-return a read row by itself). `useUnsubscribeMutation` is the one
+On error the removed row is written back as it was, unless something wrote
+it since (its `subscription_deleted` event can beat a timed-out response), and
+the caches are invalidated; an unread-only refetch wouldn't return a read row
+by itself. `useUnsubscribeMutation` is the one
 implementation; reserve the pattern for removals.
 
 ### No optimistic phase

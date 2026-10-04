@@ -9,6 +9,7 @@ import { getLocalDb } from "@/lib/local-db/local-db";
 import {
   patchLiveSubscription,
   removeLiveSubscriptions,
+  restoreRemovedSubscription,
   sidebarSectionRows,
   type SubscriptionRow,
 } from "@/lib/local-db/subscriptions";
@@ -78,10 +79,13 @@ describe("sidebarSectionRows", () => {
 describe("ingesting subscription queries", () => {
   let queryClient: QueryClient;
   let observer: ReturnType<typeof observeSection>;
-  /** Responses for the section, by page: page 0 is the first. */
-  let responses: Array<() => Promise<SectionPage>>;
-  const sectionInput = { tagId: "tag-1", unreadOnly: true, limit: 50 };
-  const sectionKey = [["subscriptions", "list"], { input: sectionInput, type: "infinite" }];
+  /** Responses by section and page: page 0 is the first. */
+  let responses: Record<string, Array<() => Promise<SectionPage>>>;
+  const sectionKeyFor = (tagId: string) => [
+    ["subscriptions", "list"],
+    { input: { tagId, unreadOnly: true, limit: 50 }, type: "infinite" },
+  ];
+  const sectionKey = sectionKeyFor("tag-1");
   const store = () => getLocalDb(queryClient).subscriptions;
   const stored = (id: string) => store().rows.getSynced(id);
 
@@ -91,13 +95,19 @@ describe("ingesting subscription queries", () => {
    * Starts a fetch of `page` (0: a full refetch) whose response is held until
    * `release` is called.
    */
-  function fetching(page: number, items: SubscriptionRow[], nextCursor?: string) {
+  function fetching(
+    page: number,
+    items: SubscriptionRow[] | Error,
+    nextCursor?: string,
+    section = observer
+  ) {
     let release = () => {};
-    const response = new Promise<SectionPage>((resolve) => {
-      release = () => resolve({ items, nextCursor });
+    const response = new Promise<SectionPage>((resolve, reject) => {
+      release = () => (items instanceof Error ? reject(items) : resolve({ items, nextCursor }));
     });
-    responses[page] = () => response;
-    const done = page === 0 ? observer.refetch() : observer.fetchNextPage();
+    const tagId = (section.options.queryKey[1] as { input: { tagId: string } }).input.tagId;
+    (responses[tagId] ??= [])[page] = () => response;
+    const done = page === 0 ? section.refetch() : section.fetchNextPage();
     return { release, done };
   }
 
@@ -109,14 +119,14 @@ describe("ingesting subscription queries", () => {
   beforeEach(() => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     getLocalDb(queryClient);
-    responses = [];
-    observer = observeSection();
+    responses = {};
+    observer = observeSection("tag-1");
   });
 
-  function observeSection() {
+  function observeSection(tagId: string) {
     return new InfiniteQueryObserver(queryClient, {
-      queryKey: sectionKey,
-      queryFn: ({ pageParam }: { pageParam: number }) => responses[pageParam](),
+      queryKey: sectionKeyFor(tagId),
+      queryFn: ({ pageParam }: { pageParam: number }) => responses[tagId][pageParam](),
       initialPageParam: 0,
       getNextPageParam: (last: SectionPage, all: SectionPage[]) =>
         last.nextCursor ? all.length : undefined,
@@ -202,5 +212,53 @@ describe("ingesting subscription queries", () => {
     queryClient.setQueryData(sectionKey, { pages: [{ items: [] }], pageParams: [0] });
 
     expect(stored("x")?.unreadCount).toBe(1);
+  });
+
+  it("judges a section's pages by the full fetch they came from, not a failed one", async () => {
+    const first = fetching(0, [sub("a", "A")], "more");
+    await settled(first);
+    store().rows.upsert([sub("b", "B", { unreadCount: 0 })]);
+    // Unread since the first page loaded, sorting within it.
+    patchLiveSubscription(store(), "b", { unreadCount: 2 });
+    const failed = fetching(0, new Error("offline"));
+    await settled(failed);
+
+    const last = fetching(1, [sub("m", "M")]);
+    await settled(last);
+    expect(stored("b")?.unreadCount).toBe(2);
+  });
+
+  it("keeps a corrected count when an older fetch of another section lands", async () => {
+    const both = [
+      { id: "tag-1", name: "One", color: null },
+      { id: "tag-2", name: "Two", color: null },
+    ];
+    const other = observeSection("tag-2");
+    await settled(fetching(0, [sub("a", "A", { tags: both, unreadCount: 3 })]));
+    await settled(fetching(0, [sub("a", "A", { tags: both, unreadCount: 3 })], undefined, other));
+
+    // Read without this client being told, between the two refetches below.
+    const olderRefetch = fetching(
+      0,
+      [sub("a", "A", { tags: both, unreadCount: 3 })],
+      undefined,
+      other
+    );
+    await settled(fetching(0, []));
+    await settled(olderRefetch);
+
+    expect(stored("a")?.unreadCount).toBe(0);
+  });
+
+  it("restores an optimistic removal only if nothing wrote the row since", () => {
+    const row = sub("a", "A");
+    store().rows.upsert([row]);
+    const removedAt = removeLiveSubscriptions(store(), ["a"]);
+    // The subscription_deleted event beat the mutation's (failed) response.
+    removeLiveSubscriptions(store(), ["a"]);
+
+    restoreRemovedSubscription(store(), row, removedAt);
+
+    expect(stored("a")).toBeUndefined();
   });
 });

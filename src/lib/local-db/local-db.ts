@@ -75,7 +75,7 @@ function createLocalDb(): LocalDb {
     }),
     versions: new Map(),
     fetchStartedAt: new Map(),
-    fullFetchStartedAt: new Map(),
+    pagesFetchedSince: new Map(),
     clock: { now: 0 },
   };
   return { entries, lists: { rows, meta: new Map() }, subscriptions };
@@ -132,7 +132,8 @@ function ingestSubscriptionPages(
   ingestFetchedSubscriptions(
     db.subscriptions,
     query.queryHash,
-    pages.flatMap((page) => page.items)
+    pages.flatMap((page) => page.items),
+    fetched && mode === "replace"
   );
   const section = sidebarSectionOf(input);
   if (section && input.unreadOnly && fetched) {
@@ -173,11 +174,7 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
       event.action.type === "fetch" &&
       SUBSCRIPTION_QUERIES.has(procedureOf(query) ?? "")
     ) {
-      markSubscriptionFetchStarted(
-        db.subscriptions,
-        query.queryHash,
-        !event.action.meta?.fetchMore
-      );
+      markSubscriptionFetchStarted(db.subscriptions, query.queryHash);
     } else if (
       event.type === "updated" &&
       event.action.type === "fetch" &&

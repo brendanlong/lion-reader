@@ -32,7 +32,7 @@ export interface SubscriptionStore {
   /** By query hash: when its latest fetch started. */
   fetchStartedAt: Map<string, number>;
   /** By query hash: when the full (not next-page) fetch its pages date from started. */
-  fullFetchStartedAt: Map<string, number>;
+  pagesFetchedSince: Map<string, number>;
   clock: { now: number };
 }
 
@@ -70,32 +70,45 @@ export function patchLiveSubscription(
   if (row) writeLiveSubscriptions(store, [{ ...row, ...patch }]);
 }
 
-export function removeLiveSubscriptions(store: SubscriptionStore, ids: string[]): void {
+/** Returns the removal's version, for `restoreRemovedSubscription`. */
+export function removeLiveSubscriptions(store: SubscriptionStore, ids: string[]): number {
   const now = tick(store);
   for (const id of ids) store.versions.set(id, now);
   store.rows.remove(ids);
+  return now;
 }
 
-/** `full`: not a next-page fetch, so every page it leaves dates from it. */
-export function markSubscriptionFetchStarted(
+/**
+ * Undoes an optimistic removal, unless something has written the row since
+ * (say, its `subscription_deleted` event arrived before the mutation failed).
+ */
+export function restoreRemovedSubscription(
   store: SubscriptionStore,
-  queryHash: string,
-  full: boolean
+  row: SubscriptionRow,
+  removedAt: number
 ): void {
-  const now = tick(store);
-  store.fetchStartedAt.set(queryHash, now);
-  if (full) store.fullFetchStartedAt.set(queryHash, now);
+  if (store.versions.get(row.id) === removedAt) writeLiveSubscriptions(store, [row]);
+}
+
+export function markSubscriptionFetchStarted(store: SubscriptionStore, queryHash: string): void {
+  store.fetchStartedAt.set(queryHash, tick(store));
 }
 
 const NEVER = -1;
 
-/** Stores rows a query fetched, except over a newer version. */
+/**
+ * Stores rows a query fetched, except over a newer version. `full`: a
+ * successful fetch of every page (not a next page), which all of the query's
+ * pages now date from.
+ */
 export function ingestFetchedSubscriptions(
   store: SubscriptionStore,
   queryHash: string,
-  rows: SubscriptionRow[]
+  rows: SubscriptionRow[],
+  full = false
 ): void {
   const version = store.fetchStartedAt.get(queryHash) ?? 0;
+  if (full) store.pagesFetchedSince.set(queryHash, version);
   const fresh = rows.filter((row) => (store.versions.get(row.id) ?? NEVER) < version);
   for (const row of fresh) store.versions.set(row.id, version);
   store.rows.upsert(fresh);
@@ -124,7 +137,7 @@ export function settleUnreadOnlySection(
   data: SubscriptionPages
 ): void {
   if (data.pages.at(-1)?.nextCursor !== undefined) return;
-  const since = store.fullFetchStartedAt.get(queryHash) ?? 0;
+  const since = store.pagesFetchedSince.get(queryHash) ?? 0;
   const returned = new Set(data.pages.flatMap((page) => page.items.map((item) => item.id)));
   const stale = store.rows
     .allSynced()
@@ -135,6 +148,8 @@ export function settleUnreadOnlySection(
         isInSidebarSection(row, section) &&
         (store.versions.get(row.id) ?? NEVER) < since
     );
+  // As of the pages, so an older fetch still in flight can't undo it.
+  for (const row of stale) store.versions.set(row.id, since);
   store.rows.upsert(stale.map((row) => ({ ...row, unreadCount: 0 })));
 }
 
