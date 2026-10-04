@@ -363,7 +363,7 @@ test.describe("Wallabag API happy path", () => {
     }
   });
 
-  test("tags/domain_name unsupported filters return empty; sort is accepted (#1062)", async ({
+  test("saving with tags files the article; tag and sort filters work (#1062, #1822)", async ({
     request,
   }) => {
     const { access_token } = await getTokens(request);
@@ -371,18 +371,30 @@ test.describe("Wallabag API happy path", () => {
 
     const { url, close } = await startArticleServer();
     const domain = new URL(url).hostname; // 127.0.0.1
+    const label = `e2e-tag-${Date.now()}`;
     let id: number | undefined;
+    let tagId: number | undefined;
     try {
-      id = (
-        await (
-          await request.post("/api/wallabag/api/entries", { headers: auth, form: { url } })
-        ).json()
-      ).id;
+      const saved = await (
+        await request.post("/api/wallabag/api/entries", {
+          headers: auth,
+          form: { url, tags: label },
+        })
+      ).json();
+      id = saved.id;
+      tagId = saved.tags.find((t: { label: string }) => t.label === label)?.id;
+      expect(tagId).toBeDefined();
 
-      // tags and domain_name are unsupported filters: rather than silently ignore
-      // them (returning an unfiltered list) or run an un-indexed per-user scan, we
-      // return an empty result.
-      for (const query of [`tags=foo`, `domain_name=${domain}`]) {
+      const tagged = await request.get(
+        `/api/wallabag/api/entries?tags=${label}&detail=metadata&perPage=100`,
+        { headers: auth }
+      );
+      expect((await tagged.json())._embedded.items.map((e: { id: number }) => e.id)).toEqual([id]);
+
+      // An unknown tag matches nothing, and domain_name is unsupported: rather than
+      // silently ignore it (returning an unfiltered list) or run an un-indexed
+      // per-user scan, we return an empty result.
+      for (const query of [`tags=${label}-missing`, `domain_name=${domain}`]) {
         const res = await request.get(`/api/wallabag/api/entries?${query}&detail=metadata`, {
           headers: auth,
         });
@@ -408,6 +420,7 @@ test.describe("Wallabag API happy path", () => {
       }
     } finally {
       if (id) await request.delete(`/api/wallabag/api/entries/${id}`, { headers: auth });
+      if (tagId) await request.delete(`/api/wallabag/api/tags/${tagId}`, { headers: auth });
       await close();
     }
   });

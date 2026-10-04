@@ -73,6 +73,7 @@ export interface ListEntriesParams {
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
   updatedAfter?: Date; // Only entries modified at/after this timestamp (GREATEST(entry.updated_at, user_entries.updated_at); powers Wallabag `since` delta sync)
+  collectionIdGroups?: string[][]; // See EntryConditionParams.collectionIdGroups
   showSpam: boolean;
 }
 
@@ -1628,6 +1629,7 @@ export async function countTotalEntries(
     starredOnly?: boolean;
     unstarredOnly?: boolean;
     updatedAfter?: Date;
+    collectionIdGroups?: string[][];
     showSpam: boolean;
   }
 ): Promise<number> {

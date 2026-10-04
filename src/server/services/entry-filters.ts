@@ -49,6 +49,12 @@ export interface EntryConditionParams {
   publishedAfter?: Date;
   publishedBefore?: Date;
   updatedAfter?: Date;
+  /**
+   * Entries in at least one collection of every group (Wallabag's multi-tag
+   * filter, which matches entries carrying all the tags). Callers pass
+   * collection ids already checked to be the user's.
+   */
+  collectionIdGroups?: string[][];
   showSpam: boolean;
 }
 
@@ -324,6 +330,15 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
   // applying, so this deliberately stays a simple residual filter.
   if (params.updatedAfter) {
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
+  }
+
+  for (const group of params.collectionIdGroups ?? []) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM ${collectionEntries}
+      WHERE ${collectionEntries.userId} = ${visibleEntries.userId}
+        AND ${collectionEntries.entryId} = ${visibleEntries.id}
+        AND ${inArray(collectionEntries.subscriptionId, group)}
+    )`);
   }
 
   return conditions;

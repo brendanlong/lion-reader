@@ -14,6 +14,7 @@
 import { requireAuth } from "@/server/wallabag/auth";
 import { jsonResponse, errorResponse, parseEntryListParams } from "@/server/wallabag/parse";
 import { formatEntryListItem, createPaginatedResponse } from "@/server/wallabag/format";
+import { listEntryTags } from "@/server/wallabag/tags";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
 
@@ -48,7 +49,14 @@ export async function GET(request: Request): Promise<Response> {
   const itemsSoFar = (page - 1) * perPage + result.items.length;
   const total = result.nextCursor ? itemsSoFar + 1 : itemsSoFar;
 
-  const items = result.items.map(formatEntryListItem);
+  const tagsByEntry = await listEntryTags(
+    db,
+    auth.userId,
+    result.items.map((e) => e.id)
+  );
+  const items = result.items.map((entry) =>
+    formatEntryListItem(entry, tagsByEntry.get(entry.id) ?? [])
+  );
   const baseUrl = `${url.origin}/api/wallabag/api/search`;
   return jsonResponse(createPaginatedResponse(items, page, perPage, total, baseUrl));
 }

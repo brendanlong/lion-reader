@@ -2,7 +2,7 @@
  * Wallabag API: Single Entry
  *
  * GET    /api/wallabag/api/entries/{entry} - Get a single entry
- * PATCH  /api/wallabag/api/entries/{entry} - Update entry properties
+ * PATCH  /api/wallabag/api/entries/{entry} - Update entry properties (archive, starred, tags)
  * DELETE /api/wallabag/api/entries/{entry} - Delete an entry
  *
  * The {entry} parameter is the Wallabag numeric ID (or a Lion Reader UUID);
@@ -10,8 +10,15 @@
  */
 
 import { requireAuth } from "@/server/wallabag/auth";
-import { jsonResponse, errorResponse, parseBody } from "@/server/wallabag/parse";
-import { formatEntryFull } from "@/server/wallabag/format";
+import {
+  jsonResponse,
+  errorResponse,
+  clientErrorResponse,
+  parseBody,
+  parseTagLabels,
+} from "@/server/wallabag/parse";
+import { formatEntryResponse } from "@/server/wallabag/entry-response";
+import { addEntryTags } from "@/server/wallabag/tags";
 import { resolveWallabagEntry } from "@/server/wallabag/id";
 import * as entriesService from "@/server/services/entries";
 import * as savedService from "@/server/services/saved";
@@ -32,12 +39,7 @@ export async function GET(
     return errorResponse("not_found", "Entry not found", 404);
   }
 
-  try {
-    const entry = await entriesService.getEntry(db, auth.userId, resolved.id);
-    return jsonResponse(formatEntryFull(entry));
-  } catch {
-    return errorResponse("not_found", "Entry not found", 404);
-  }
+  return formatEntryResponse(db, auth.userId, resolved.id);
 }
 
 export async function PATCH(
@@ -54,6 +56,15 @@ export async function PATCH(
     return errorResponse("not_found", "Entry not found", 404);
   }
 
+  // Like Wallabag, `tags` adds to the entry's tags rather than replacing them.
+  try {
+    await addEntryTags(db, auth.userId, resolved.id, parseTagLabels(body.tags));
+  } catch (error) {
+    const response = clientErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
+
   // Handle archive (read) state
   if (body.archive !== undefined) {
     const read = body.archive === "1";
@@ -67,12 +78,7 @@ export async function PATCH(
   }
 
   // Return the updated entry
-  try {
-    const entry = await entriesService.getEntry(db, auth.userId, resolved.id);
-    return jsonResponse(formatEntryFull(entry));
-  } catch {
-    return errorResponse("not_found", "Entry not found", 404);
-  }
+  return formatEntryResponse(db, auth.userId, resolved.id);
 }
 
 export async function DELETE(

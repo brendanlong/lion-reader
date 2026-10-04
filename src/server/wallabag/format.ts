@@ -6,10 +6,9 @@
  * Wallabag entries have numeric integer IDs. Every id a client sees is a
  * stored serial (issue #1117): entry ids are `entries.greader_item_id` (the
  * same global serial the Google Reader API uses for item ids, carried on
- * `EntryFull`/`EntryListItem` as `greaderItemId`), tag ids are
- * `tags.greader_sortid`, and the user id is `users.greader_user_id`. Only
- * entry ids are ever reversed (see src/server/wallabag/id.ts); tag and user
- * ids are opaque.
+ * `EntryFull`/`EntryListItem` as `greaderItemId`), tag ids are the
+ * collection subscription's `greader_stream_id` (tags are collections; see
+ * src/server/wallabag/tags.ts), and the user id is `users.greader_user_id`.
  */
 
 import type { EntryFull, EntryListItem } from "@/server/services/entries";
@@ -92,6 +91,7 @@ interface WallabagEntryInput {
   updatedAt: Date | null;
   publishedAt: Date | null;
   previewPicture: string | null;
+  tags: WallabagTag[];
 }
 
 /**
@@ -109,7 +109,7 @@ function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
     is_archived: input.read ? 1 : 0,
     is_starred: input.starred ? 1 : 0,
     is_public: false,
-    tags: [],
+    tags: input.tags,
     created_at: formatDate(input.createdAt)!,
     updated_at: formatDate(input.updatedAt)!,
     published_at: formatDate(input.publishedAt),
@@ -127,7 +127,7 @@ function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
 /**
  * Formats a full entry as a Wallabag entry.
  */
-export function formatEntryFull(entry: EntryFull): WallabagEntry {
+export function formatEntryFull(entry: EntryFull, tags: WallabagTag[]): WallabagEntry {
   return buildWallabagEntry({
     id: entry.id,
     wallabagId: Number(entry.greaderItemId),
@@ -142,13 +142,14 @@ export function formatEntryFull(entry: EntryFull): WallabagEntry {
     updatedAt: entry.updatedAt,
     publishedAt: entry.publishedAt,
     previewPicture: null,
+    tags,
   });
 }
 
 /**
  * Formats a list entry as a Wallabag entry (no full content).
  */
-export function formatEntryListItem(entry: EntryListItem): WallabagEntry {
+export function formatEntryListItem(entry: EntryListItem, tags: WallabagTag[]): WallabagEntry {
   return buildWallabagEntry({
     id: entry.id,
     wallabagId: Number(entry.greaderItemId),
@@ -162,6 +163,7 @@ export function formatEntryListItem(entry: EntryListItem): WallabagEntry {
     updatedAt: entry.updatedAt,
     publishedAt: entry.publishedAt,
     previewPicture: null,
+    tags,
   });
 }
 
@@ -171,7 +173,11 @@ export function formatEntryListItem(entry: EntryListItem): WallabagEntry {
  * which must stay bigint-free), so the caller passes the Wallabag id looked up
  * via `entryIdToWallabagId`.
  */
-export function formatSavedArticle(article: SavedArticle, wallabagId: number): WallabagEntry {
+export function formatSavedArticle(
+  article: SavedArticle,
+  wallabagId: number,
+  tags: WallabagTag[]
+): WallabagEntry {
   return buildWallabagEntry({
     id: article.id,
     wallabagId,
@@ -185,6 +191,7 @@ export function formatSavedArticle(article: SavedArticle, wallabagId: number): W
     updatedAt: article.savedAt,
     publishedAt: null,
     previewPicture: article.imageUrl,
+    tags,
   });
 }
 
@@ -198,19 +205,12 @@ export interface WallabagTag {
   slug: string;
 }
 
-/**
- * Formats tags for Wallabag. A tag's id is its stored serial
- * (`tags.greader_sortid`), opaque to clients — the Wallabag surface never
- * reverses tag ids (the tags route is list-only).
- */
-export function formatTags(
-  userTags: Array<{ name: string; greaderSortid: bigint }>
-): WallabagTag[] {
-  return userTags.map((tag) => ({
-    id: Number(tag.greaderSortid),
-    label: tag.name,
-    slug: tag.name.toLowerCase().replace(/\s+/g, "-"),
-  }));
+export function formatTag(tag: { id: bigint; label: string }): WallabagTag {
+  return {
+    id: Number(tag.id),
+    label: tag.label,
+    slug: tag.label.toLowerCase().replace(/\s+/g, "-"),
+  };
 }
 
 // ============================================================================
