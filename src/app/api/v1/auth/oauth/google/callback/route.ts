@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
           accessToken: tokens.accessToken,
           ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
           expiresAt: tokens.expiresAt ?? null,
-          scopes,
+          ...(scopes !== undefined ? { scopes } : {}),
         })
         .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
 

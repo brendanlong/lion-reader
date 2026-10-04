@@ -88,9 +88,10 @@ export interface GoogleAuthResult {
   };
   /**
    * Every scope the token carries: Google reports earlier grants too, because the
-   * authorization request sets `include_granted_scopes`.
+   * authorization request sets `include_granted_scopes`. Undefined when Google
+   * omits the list: the requested scopes would understate an earlier grant (#1803).
    */
-  scopes: string[];
+  scopes?: string[];
   /** OAuth flow mode */
   mode: OAuthMode;
   /** Set when this flow is a link: the account it attaches to */
@@ -252,8 +253,7 @@ export async function validateGoogleCallback(
       refreshToken: tokens.refresh_token,
       expiresAt: accessTokenExpiresAt(tokens),
     },
-    // Per RFC 6749 §5.1 an omitted `scope` means exactly the requested ones
-    scopes: tokens.scope ? tokens.scope.split(" ").filter(Boolean) : pkceData.scopes,
+    scopes: tokens.scope?.split(" ").filter(Boolean),
     mode: pkceData.mode,
     link: pkceData.link,
     returnUrl: pkceData.returnUrl,

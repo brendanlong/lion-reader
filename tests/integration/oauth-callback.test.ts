@@ -131,7 +131,7 @@ describe("processOAuthCallback email verification", () => {
       providerAccountId: "returning-google-id",
       accessToken: "old-token",
       refreshToken: "stored-refresh-token",
-      scopes: ["openid", "email", "profile", "docs"],
+      scopes: ["openid", "https://www.googleapis.com/auth/documents.readonly"],
       createdAt: new Date(),
     });
 
@@ -141,7 +141,7 @@ describe("processOAuthCallback email verification", () => {
       email: "returning@example.com",
       emailVerified: true,
       accessToken: "new-token",
-      scopes: ["openid", "email", "profile"],
+      scopes: ["openid"],
     });
 
     const [account] = await db
@@ -151,6 +151,6 @@ describe("processOAuthCallback email verification", () => {
     expect(account.accessToken).toBe("new-token");
     expect(account.refreshToken).toBe("stored-refresh-token");
     // The scope list is Google's report of the token, so it replaces the stored one
-    expect(account.scopes).toEqual(["openid", "email", "profile"]);
+    expect(account.scopes).toEqual(["openid"]);
   });
 });
