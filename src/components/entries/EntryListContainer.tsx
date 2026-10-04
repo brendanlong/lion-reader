@@ -30,6 +30,7 @@ import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
+import { entryListKey } from "@/lib/local-db/entry-lists";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
@@ -63,7 +64,7 @@ export function findAdjacentEntries(
  * or — when closing it took it out of the list (it left the collection being
  * viewed) — the nearest entry that's still listed, preferring the one after it.
  */
-export function entryToReturnTo(
+function entryToReturnTo(
   before: ReadonlyArray<{ id: string }>,
   after: ReadonlyArray<{ id: string }>,
   closedEntryId: string
@@ -135,14 +136,17 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     prevDistanceToEnd.current = distanceToEnd;
   }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // When returning from the entry view to the list, scroll to the entry we
-  // were on and focus it, which makes it the j/k selection.
+  // When returning from the entry view to the same list (not navigating to
+  // another view, which starts at the top), scroll to the entry we were on and
+  // focus it, which makes it the j/k selection.
+  const listKey = entryListKey(queryInput);
   const prevOpenEntryIdRef = useRef<string | null>(null);
   const prevEntriesRef = useRef(entries);
+  const prevListKeyRef = useRef(listKey);
   useLayoutEffect(() => {
     const prevOpenEntryId = prevOpenEntryIdRef.current;
     const returnToId =
-      prevOpenEntryId && !openEntryId
+      prevOpenEntryId && !openEntryId && prevListKeyRef.current === listKey
         ? entryToReturnTo(prevEntriesRef.current, entries, prevOpenEntryId)
         : undefined;
 
@@ -170,7 +174,8 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     // Update refs after the effect runs (this is allowed in effects)
     prevOpenEntryIdRef.current = openEntryId;
     prevEntriesRef.current = entries;
-  }, [openEntryId, entries, scrollContainerRef]);
+    prevListKeyRef.current = listKey;
+  }, [openEntryId, entries, listKey, scrollContainerRef]);
 
   // Navigation callbacks for keyboard shortcuts (j/k when viewing an entry)
   const goToNextEntry = useCallback(() => {

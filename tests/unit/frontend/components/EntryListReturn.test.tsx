@@ -50,8 +50,9 @@ function renderCollection() {
       </AppLocationProvider>
     ),
   });
-  const setOpenEntry = (id: string | null) => {
+  const setOpenEntry = (id: string | null, pathname = mockPathname) => {
     mockSearch = id ? `entry=${id}` : "";
+    mockPathname = pathname;
     rendered.rerender(<UnifiedEntriesContent />);
   };
   const removeFromCollection = (entryId: string) => {
@@ -74,7 +75,7 @@ function renderCollection() {
   };
   const listedIds = () =>
     [...document.querySelectorAll("[data-entry-id]")].map((el) => el.getAttribute("data-entry-id"));
-  const focusedId = () => document.activeElement?.getAttribute("data-entry-id");
+  const focusedId = () => document.activeElement?.getAttribute("data-entry-id") ?? null;
   return { entryIds, setOpenEntry, removeFromCollection, listedIds, focusedId };
 }
 
@@ -82,6 +83,7 @@ describe("returning from an entry to the list", () => {
   beforeEach(() => {
     stubMemoryLocalStorage();
     mockSearch = "";
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it("selects the closed entry", async () => {
@@ -117,5 +119,24 @@ describe("returning from an entry to the list", () => {
     setOpenEntry(null);
 
     expect(focusedId()).toBe(entryIds[1]);
+  });
+
+  it("leaves the selection alone when leaving the entry for another view", async () => {
+    // The new view starts at the top; a row from the old view's position
+    // would be an arbitrary, off-screen selection.
+    const { entryIds, setOpenEntry, listedIds, focusedId } = renderCollection();
+    const collectionPath = mockPathname;
+    await vi.waitFor(() => expect(listedIds()).toEqual(entryIds));
+    // Load the other view first, so it renders straight from cache.
+    setOpenEntry(null, "/demo/all");
+    await vi.waitFor(() => expect(listedIds().length).toBeGreaterThan(entryIds.length));
+    setOpenEntry(null, collectionPath);
+    await vi.waitFor(() => expect(listedIds()).toEqual(entryIds));
+
+    setOpenEntry(entryIds[1]);
+    setOpenEntry(null, "/demo/all");
+    expect(listedIds().length).toBeGreaterThan(entryIds.length);
+
+    expect(focusedId()).toBeNull();
   });
 });
