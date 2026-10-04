@@ -512,6 +512,7 @@ private fun EntryPage(
                     rememberPageTurner(scroll, graph.pageTurns, PageLayer.ARTICLE, active),
                     settings.pageScrolling,
                 )
+                .scrollbar { scroll.scrollIndicatorState }
                 .verticalScroll(scroll, enabled = !settings.pageScrolling)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {

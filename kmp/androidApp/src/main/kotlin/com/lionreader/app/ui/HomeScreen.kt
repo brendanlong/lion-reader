@@ -241,6 +241,7 @@ fun HomeScreen(
                     val text = search
                     EntryList(
                         items = if (text != null) searchResults else timeline?.items,
+                        total = timeline?.total.takeIf { text == null },
                         listState = if (text != null) searchList else timelineList,
                         selectedId = shown.takeIf { showSelection },
                         emptyText =
@@ -608,6 +609,8 @@ private fun DrawerRow(
 @Composable
 private fun EntryList(
     items: List<TimelineItem>?,
+    /** The whole list's length, of which [items] are the first; null if they're all of it. */
+    total: Long?,
     listState: LazyListState,
     selectedId: String?,
     emptyText: String,
@@ -636,9 +639,11 @@ private fun EntryList(
             }
         }
     LaunchedEffect(nearEnd) { if (nearEnd) onLoadMore() }
+    val currentTotal by rememberUpdatedState(total ?: 0L)
+    val indicator = remember(listState) { LongListIndicator(listState) { currentTotal } }
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().scrollbar { indicator },
         userScrollEnabled = !pageScrolling,
     ) {
         items(items, key = { it.id }) { item ->

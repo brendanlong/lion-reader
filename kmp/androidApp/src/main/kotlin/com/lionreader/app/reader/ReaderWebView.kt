@@ -19,6 +19,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.ScrollIndicatorState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -54,6 +55,7 @@ import com.lionreader.app.shareWebPage
 import com.lionreader.app.ui.PAGE_FRACTION
 import com.lionreader.app.ui.PageLayer
 import com.lionreader.app.ui.PageTurns
+import com.lionreader.app.ui.scrollbar
 import com.lionreader.shared.reader.AppearanceTokens
 import com.lionreader.shared.reader.linkTarget
 import kotlin.math.abs
@@ -90,13 +92,17 @@ fun ReaderWebView(
         return
     }
     var linkPress by remember(document) { mutableStateOf<LinkPress?>(null) }
-    Box(modifier) {
+    var scrolled by remember { mutableStateOf<ScrollIndicatorState?>(null) }
+    Box(modifier.scrollbar { scrolled }) {
         key(losses.generation) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
                     ReaderView(context)
-                        .also { shown[0] = it }
+                        .also {
+                            shown[0] = it
+                            scrolled = it.scrollIndicator
+                        }
                         .apply {
                             onLinkLongPress = { linkPress = it }
                             // For our scripts; the CSP keeps anything else from running.
@@ -106,6 +112,7 @@ fun ReaderWebView(
                             settings.allowContentAccess = false
                             settings.domStorageEnabled = false
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            isVerticalScrollBarEnabled = false
                             // Drawn into its own layer, so the pager moving it shifts a
                             // finished picture: on some devices a WebView that's moved
                             // mid-swipe draws a blank frame.
@@ -293,6 +300,26 @@ private class ReaderView(context: Context) : WebView(context) {
 
     /** A long press on a web link; anything else keeps the WebView's own (selecting text). */
     var onLinkLongPress: ((LinkPress) -> Unit)? = null
+
+    private var scrolledTo by mutableIntStateOf(0)
+
+    /** For the page's scrollbar: drawn in Compose, as the lists' are, rather than the WebView's. */
+    val scrollIndicator =
+        object : ScrollIndicatorState {
+            override val scrollOffset: Int
+                get() = scrolledTo
+
+            override val contentSize: Int
+                get() = computeVerticalScrollRange()
+
+            override val viewportSize: Int
+                get() = height
+        }
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        scrolledTo = t
+    }
 
     init {
         setOnLongClickListener { longPressLink() }

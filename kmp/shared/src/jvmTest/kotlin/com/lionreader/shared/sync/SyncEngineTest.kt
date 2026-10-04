@@ -517,6 +517,46 @@ class SyncEngineTest {
     }
 
     @Test
+    fun timelineCountIsTheWholeListPastTheLimit() = runTest {
+        server.subscriptions += subscription("sub-1", tags = listOf(TagRef("tag-1", "News")))
+        server.subscriptions += subscription("sub-2")
+        serve(
+            entry("a", ageDays = 1),
+            entry("b", ageDays = 1, read = true, starred = true),
+            entry("c", ageDays = 2, subscriptionId = "sub-2"),
+            entry("d", ageDays = 3, read = true, subscriptionId = "sub-2")
+                .copy(readChangedAt = minutesAgo(10)),
+            entry("e", ageDays = 4, subscriptionId = null, type = FeedType.SAVED)
+                .copy(readChangedAt = minutesAgo(20)),
+        )
+        engine.sync()
+
+        val scopes =
+            listOf(
+                ListScope.All,
+                ListScope.Starred,
+                ListScope.Saved,
+                ListScope.Subscription("sub-2"),
+                ListScope.Tag("tag-1"),
+                ListScope.Uncategorized,
+                ListScope.RecentlyRead,
+            )
+        for (scope in scopes) {
+            for (unreadOnly in listOf(false, true)) {
+                for (keepIds in listOf(emptySet(), setOf("b", "d"))) {
+                    val all = reader.timeline(scope, unreadOnly, false, keepIds, 1000).first()
+                    assertEquals(
+                        all.size.toLong(),
+                        reader.timelineCount(scope, unreadOnly, keepIds).first(),
+                        "$scope, unreadOnly=$unreadOnly, keepIds=$keepIds",
+                    )
+                }
+            }
+        }
+        assertEquals(5, reader.timelineCount(ListScope.All, false, emptySet()).first())
+    }
+
+    @Test
     fun oldestFirstIsEachListReversedAndPagesFromTheOldest() = runTest {
         server.subscriptions += subscription("sub-1", tags = listOf(TagRef("tag-1", "News")))
         server.subscriptions += subscription("sub-2")
