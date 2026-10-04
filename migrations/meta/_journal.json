@@ -848,6 +848,13 @@
       "when": 1782955200000,
       "tag": "0121_entries_type_not_collection",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1782955260000,
+      "tag": "0122_drop_orphan_subscription_tags",
+      "breakpoints": true
     }
   ]
 }

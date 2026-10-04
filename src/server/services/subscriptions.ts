@@ -16,12 +16,14 @@ import {
   subscriptionTags,
   userEntries,
   userFeeds,
+  type Feed,
   type FeedType,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob } from "@/server/jobs/queue";
+import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { feedDefaultsToFullContent } from "@/server/plugins";
 import {
   publishSubscriptionCreated,
@@ -200,6 +202,50 @@ async function lockSubscriptionRow(
     .from(subscriptions)
     .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
     .for("update");
+}
+
+/**
+ * Gives a new or reactivated subscriber the entries currently in the feed
+ * ("Entry Visibility" in `src/server/CLAUDE.md`). Only for a fresh feed: a
+ * stale feed's cached entries may include ones the publisher has since removed,
+ * so callers schedule a forced refresh (`scheduleFeedRefreshNow`) instead, whose
+ * fanout populates the subscriber from ground truth.
+ */
+async function populateInitialUserEntries(
+  tx: DbOrTx,
+  userId: string,
+  subscriptionId: string,
+  feedId: string
+): Promise<void> {
+  // feeds.last_entries_updated_at is read inside the INSERT (via the JOIN), not
+  // passed in: a feed fetch completing after the caller read the feed bumps it,
+  // so a stale captured value would match zero rows and the new subscriber
+  // would see an empty feed until the next new entry (issue #952).
+  //
+  // `last_seen_at >= last_entries_updated_at` (not `=`) grants visibility to
+  // entries currently in the feed. A forced refresh re-stamps every current
+  // entry to a single generation, so there `>=` behaves like `=`. The `>` arm
+  // covers entries a WebSub hub pushed *since* the last poll: a push stamps
+  // last_seen_at = pushTime but leaves last_entries_updated_at at the last
+  // poll, so those entries would be invisible under strict equality (issue
+  // #1078). Disappeared entries (not re-stamped by a later poll) fall below
+  // last_entries_updated_at and stay excluded.
+  //
+  // An entry stamped `is_backfill` is granted already read, matching the
+  // fetch-time fanout: a WebSub push leaves `last_entries_updated_at` where it
+  // was, so an archive replay sits inside the current generation until the next
+  // backup poll and would otherwise reach a subscriber who joins in that window
+  // as hundreds of unread articles (issue #1500).
+  await tx.execute(sql`
+    INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
+    SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam, e.is_backfill
+    FROM entries e
+    JOIN feeds f ON f.id = e.feed_id
+    WHERE e.feed_id = ${feedId}
+      AND f.last_entries_updated_at IS NOT NULL
+      AND e.last_seen_at >= f.last_entries_updated_at
+    ON CONFLICT DO NOTHING
+  `);
 }
 
 // ============================================================================
@@ -602,48 +648,10 @@ export async function createSubscription(
     const customTitle = upsertedRow.custom_title;
     const fetchFullContent = upsertedRow.fetch_full_content;
 
-    // 5. Populate user_entries using INSERT...SELECT and count unread.
-    //    Re-read feeds.last_entries_updated_at inside the INSERT (via the JOIN)
-    //    rather than using the value captured in feedRecord earlier: a feed fetch
-    //    completing between that read and here bumps last_entries_updated_at, so
-    //    a stale captured value would match zero rows and the new subscriber
-    //    would see an empty feed until the next new entry (issue #952). The JOIN
-    //    reads the current value atomically within this statement.
-    //
-    //    `last_seen_at >= last_entries_updated_at` (not `=`) grants visibility to
-    //    entries currently in the feed. The interactive subscribe path forces a
-    //    refresh of a stale feed first (see the router), which re-stamps every
-    //    current entry to a single generation, so there `>=` behaves like `=`.
-    //    The `>` arm covers entries a WebSub hub pushed *since* the last poll:
-    //    a push stamps last_seen_at = pushTime but leaves last_entries_updated_at
-    //    at the last poll, so those entries would be invisible under strict
-    //    equality (issue #1078). For a non-WebSub feed nothing is ever stamped
-    //    above last_entries_updated_at, so `>=` is exactly `=` and behavior is
-    //    unchanged. Disappeared entries (not re-stamped by a later poll) fall
-    //    below last_entries_updated_at and stay excluded.
-    //
-    //    An entry stamped `is_backfill` is granted already read, matching the
-    //    fetch-time fanout: a WebSub push leaves `last_entries_updated_at` where
-    //    it was, so an archive replay sits inside the current generation until
-    //    the next backup poll and would otherwise reach a subscriber who joins in
-    //    that window as hundreds of unread articles (issue #1500).
-    //
-    //    Skipped for a stale feed (skipInitialPopulate): the caller is scheduling
-    //    an immediate forced refresh whose fanout will populate this subscriber
-    //    from ground truth, so populating here from possibly-stale cached entries
-    //    (which could include an entry the publisher has since removed) is both
-    //    unnecessary and a potential over-share.
+    // 5. Populate user_entries (skipped for a stale feed; see
+    //    CreateSubscriptionOptions).
     if (!skipInitialPopulate) {
-      await tx.execute(sql`
-        INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
-        SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam, e.is_backfill
-        FROM entries e
-        JOIN feeds f ON f.id = e.feed_id
-        WHERE e.feed_id = ${feedId}
-          AND f.last_entries_updated_at IS NOT NULL
-          AND e.last_seen_at >= f.last_entries_updated_at
-        ON CONFLICT DO NOTHING
-      `);
+      await populateInitialUserEntries(tx, userId, subscriptionId, feedId);
     }
 
     return {
@@ -958,4 +966,195 @@ export async function unsubscribe(
   });
 
   return { counts };
+}
+
+/**
+ * Moves one of the user's subscriptions onto another feed, for a permanent
+ * redirect onto a feed that already exists. The user ends up actively
+ * subscribed to `newFeed` (the "survivor": their existing subscription to it,
+ * reactivated or created as needed) with the old subscription's tags, and the
+ * old feed's entries re-attributed to it, so read/starred state carries over.
+ * A survivor that wasn't already active also takes the old subscription's
+ * title and full-content setting, and gets the feed's current entries like a
+ * fresh subscribe if the feed is fresh; otherwise its next poll's fanout
+ * delivers them (no forced refresh, so a merge never pulls a backing-off feed
+ * forward).
+ *
+ * There's no subscription cap check: a merge never raises the user's number of
+ * active subscriptions. Returns false if the old subscription is no longer
+ * active.
+ */
+export async function mergeSubscriptionIntoFeed(
+  db: typeof dbType,
+  userId: string,
+  oldSubscriptionId: string,
+  newFeed: Feed
+): Promise<boolean> {
+  const populate = !shouldRefetchOnSubscribe(newFeed);
+  const defaultFullContent = newFeed.url !== null && feedDefaultsToFullContent(newFeed.url);
+  const now = new Date();
+
+  const merged = await db.transaction(async (tx) => {
+    // Lock order: the user_entries rows the re-stamp moves, then the
+    // subscription rows (see "Unread Counts" in src/server/CLAUDE.md).
+    await tx
+      .select({ entryId: userEntries.entryId })
+      .from(userEntries)
+      .where(and(eq(userEntries.userId, userId), eq(userEntries.subscriptionId, oldSubscriptionId)))
+      .orderBy(userEntries.entryId)
+      .for("no key update");
+
+    const [old] = await tx
+      .select({
+        feedId: subscriptions.feedId,
+        customTitle: subscriptions.customTitle,
+        fetchFullContent: subscriptions.fetchFullContent,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.id, oldSubscriptionId),
+          eq(subscriptions.userId, userId),
+          isNull(subscriptions.unsubscribedAt)
+        )
+      )
+      .for("update");
+    if (!old) {
+      return null;
+    }
+
+    // Insert or reactivate the survivor. An already-active survivor keeps its
+    // own settings; the ON CONFLICT row lock holds it for this transaction.
+    const upserted = await tx.execute<{ id: string }>(sql`
+      INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at, custom_title, fetch_full_content)
+      VALUES (${generateUuidv7()}, ${userId}, ${newFeed.id}, ${now}, ${now}, ${now}, ${old.customTitle}, ${old.fetchFullContent || defaultFullContent})
+      ON CONFLICT (user_id, feed_id) DO UPDATE SET
+        unsubscribed_at = NULL,
+        subscribed_at = EXCLUDED.subscribed_at,
+        updated_at = EXCLUDED.updated_at,
+        custom_title = EXCLUDED.custom_title,
+        fetch_full_content = EXCLUDED.fetch_full_content
+      WHERE subscriptions.unsubscribed_at IS NOT NULL
+      RETURNING id
+    `);
+    const survivorWasActive = upserted.rows.length === 0;
+    const [survivor] = await tx
+      .select({
+        id: subscriptions.id,
+        subscribedAt: subscriptions.subscribedAt,
+        customTitle: subscriptions.customTitle,
+      })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeed.id)));
+
+    if (!survivorWasActive) {
+      // Tags left on an inactive subscription are stale (unsubscribing clears them).
+      await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, survivor.id));
+      if (populate) {
+        await populateInitialUserEntries(tx, userId, survivor.id, newFeed.id);
+      }
+    }
+
+    // Deliberately leaves user_entries.updated_at alone: nothing about the
+    // entries changes, and bumping it would flood the user's delta sync.
+    await tx
+      .update(userEntries)
+      .set({ subscriptionId: survivor.id })
+      .where(
+        and(eq(userEntries.userId, userId), eq(userEntries.subscriptionId, oldSubscriptionId))
+      );
+
+    const movedTags = await tx
+      .delete(subscriptionTags)
+      .where(eq(subscriptionTags.subscriptionId, oldSubscriptionId))
+      .returning({ tagId: subscriptionTags.tagId });
+    const addedTags =
+      movedTags.length === 0
+        ? []
+        : await tx
+            .insert(subscriptionTags)
+            .values(movedTags.map(({ tagId }) => ({ subscriptionId: survivor.id, tagId })))
+            .onConflictDoNothing()
+            .returning({ tagId: subscriptionTags.tagId });
+    if (survivorWasActive && addedTags.length > 0) {
+      await tx
+        .update(subscriptions)
+        .set({ updatedAt: now })
+        .where(eq(subscriptions.id, survivor.id));
+    }
+
+    await tx
+      .update(subscriptions)
+      .set({ unsubscribedAt: now, updatedAt: now })
+      .where(eq(subscriptions.id, oldSubscriptionId));
+
+    const survivorTags = await tx
+      .select({ id: tags.id, name: tags.name, color: tags.color })
+      .from(subscriptionTags)
+      .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
+      .where(eq(subscriptionTags.subscriptionId, survivor.id));
+
+    return {
+      oldFeedId: old.feedId,
+      oldWasUncategorized: movedTags.length === 0,
+      survivor,
+      survivorWasActive,
+      survivorTagsChanged: addedTags.length > 0,
+      survivorTags,
+    };
+  });
+
+  if (!merged) {
+    return false;
+  }
+  const { oldFeedId, oldWasUncategorized, survivor, survivorWasActive, survivorTags } = merged;
+
+  // Unconditional, not just for a new survivor: retention deletes the job of a
+  // feed with no active subscriber, so a merge can be what brings the feed back.
+  await ensureFeedJob(newFeed.id);
+
+  // The survivor's tags include the old subscription's, so its counts cover
+  // every list the merge moved except Uncategorized when only the old one was.
+  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: survivor.id }]);
+  if (oldWasUncategorized && !counts.uncategorized) {
+    counts.uncategorized = (await getSubscriptionDeletionCounts(db, userId, [])).uncategorized;
+  }
+  const onPublishError = (err: unknown) => {
+    logger.error("Failed to publish subscription merge event", { err, userId, oldSubscriptionId });
+  };
+
+  publishSubscriptionDeleted(userId, oldFeedId, oldSubscriptionId, now, counts).catch(
+    onPublishError
+  );
+  if (!survivorWasActive) {
+    publishSubscriptionCreated(
+      userId,
+      newFeed.id,
+      survivor.id,
+      now,
+      {
+        id: survivor.id,
+        feedId: newFeed.id,
+        customTitle: survivor.customTitle,
+        subscribedAt: survivor.subscribedAt.toISOString(),
+        unreadCount: counts.subscriptions.find((s) => s.id === survivor.id)?.unread ?? 0,
+        tags: survivorTags,
+      },
+      {
+        id: newFeed.id,
+        type: newFeed.type,
+        url: newFeed.url,
+        title: newFeed.title,
+        description: newFeed.description,
+        siteUrl: newFeed.siteUrl,
+      },
+      counts
+    ).catch(onPublishError);
+  } else if (merged.survivorTagsChanged) {
+    publishSubscriptionUpdated(userId, survivor.id, now, survivorTags, survivor.customTitle).catch(
+      onPublishError
+    );
+  }
+
+  return true;
 }

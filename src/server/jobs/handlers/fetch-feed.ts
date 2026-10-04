@@ -9,10 +9,9 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNull, inArray, count, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { eq, and, isNull, count, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { feeds, subscriptions, userEntries, type Feed } from "../../db/schema";
+import { feeds, subscriptions, type Feed } from "../../db/schema";
 import { fetchFullContentForNewEntries } from "../../services/full-content";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../../feed/fetcher";
 import type { WebSubLinkHeaders } from "../../feed/link-header";
@@ -20,6 +19,7 @@ import { parseFeed } from "../../feed/parser";
 import { decodeBody } from "../../http/charset";
 import { processEntries } from "../../feed/entry-processor";
 import { calculateNextFetch, type FeedHints } from "../../feed/scheduling";
+import { mergeSubscriptionIntoFeed } from "../../services/subscriptions";
 import {
   canUseWebSub,
   subscribeToHub,
@@ -29,10 +29,9 @@ import {
 import { recordBackupPollNewEntries } from "../../feed/websub-hub-stats";
 import { getDomainFromUrl, isUpdatePeriod } from "../../feed/types";
 import type { ParsedCacheHeaders } from "../../feed/cache-headers";
-import { type JobPayloads, ensureFeedJob } from "../queue";
+import type { JobPayloads } from "../queue";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, type FeedFetchStatus } from "../../metrics/metrics";
-import { generateUuidv7 } from "@/lib/uuidv7";
 import { getFeedPlugin } from "@/server/plugins";
 import {
   findPermanentRedirectUrl,
@@ -969,39 +968,18 @@ async function applyRedirectMigration(
 }
 
 /**
- * Migrates all subscriptions from an old feed to an existing feed at the redirect URL.
- * Used when a permanent redirect is detected and the target URL already has a feed.
- *
- * For each subscriber:
- * 1. Creates or updates subscription to the new feed
- * 2. Re-stamps user_entries.subscription_id from the old subscription to the survivor
- * 3. Unsubscribes from old feed
- *
- * User entries stay linked to entries in the old feed: entry visibility and
- * filtering resolve through user_entries.subscription_id (issue #1117), so the
- * re-stamp is what keeps the old feed's entries attributed to the surviving,
- * active subscription.
- *
- * @param oldFeed - The feed that is being redirected
- * @param newFeed - The existing feed at the redirect URL
+ * Moves every active subscription on `oldFeed` onto `newFeed`, the existing
+ * feed at its permanent redirect target. The old feed's job stops being claimed
+ * once it has no active subscribers.
  */
 export async function migrateSubscriptionsToExistingFeed(
   oldFeed: Feed,
   newFeed: Feed
 ): Promise<void> {
-  // Find all active subscriptions to the old feed
   const activeSubscriptions = await db
-    .select({
-      userId: subscriptions.userId,
-      id: subscriptions.id,
-    })
+    .select({ userId: subscriptions.userId, id: subscriptions.id })
     .from(subscriptions)
     .where(and(eq(subscriptions.feedId, oldFeed.id), isNull(subscriptions.unsubscribedAt)));
-
-  if (activeSubscriptions.length === 0) {
-    logger.debug("No active subscriptions to migrate", { oldFeedId: oldFeed.id });
-    return;
-  }
 
   logger.info("Migrating subscriptions to existing feed", {
     oldFeedId: oldFeed.id,
@@ -1009,122 +987,7 @@ export async function migrateSubscriptionsToExistingFeed(
     subscriptionCount: activeSubscriptions.length,
   });
 
-  const now = new Date();
-  const userIds = activeSubscriptions.map((s) => s.userId);
-  const oldSubIds = activeSubscriptions.map((s) => s.id);
-
-  // Batch query: Get all existing subscriptions to the new feed for affected users
-  const existingNewSubs = await db
-    .select({
-      id: subscriptions.id,
-      userId: subscriptions.userId,
-      unsubscribedAt: subscriptions.unsubscribedAt,
-    })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.feedId, newFeed.id), inArray(subscriptions.userId, userIds)));
-
-  // Build lookup map: userId -> existing subscription to new feed
-  const existingSubByUser = new Map(existingNewSubs.map((s) => [s.userId, s]));
-
-  // Separate users into those with and without existing subscriptions to new feed
-  const usersWithExisting: Array<{
-    userId: string;
-    existingSubId: string;
-    wasUnsubscribed: boolean;
-  }> = [];
-  const usersWithoutExisting: string[] = [];
-
-  for (const sub of activeSubscriptions) {
-    const existing = existingSubByUser.get(sub.userId);
-    if (existing) {
-      usersWithExisting.push({
-        userId: sub.userId,
-        existingSubId: existing.id,
-        wasUnsubscribed: existing.unsubscribedAt !== null,
-      });
-    } else {
-      usersWithoutExisting.push(sub.userId);
-    }
+  for (const { userId, id } of activeSubscriptions) {
+    await mergeSubscriptionIntoFeed(db, userId, id, newFeed);
   }
-
-  // Batch update: reactivate every previously-unsubscribed subscription to the
-  // new feed. The SET is the same for all of them, so one statement does it.
-  const subIdsToReactivate = usersWithExisting
-    .filter((u) => u.wasUnsubscribed)
-    .map((u) => u.existingSubId);
-  if (subIdsToReactivate.length > 0) {
-    await db
-      .update(subscriptions)
-      .set({
-        unsubscribedAt: null,
-        subscribedAt: now,
-        updatedAt: now,
-      })
-      .where(inArray(subscriptions.id, subIdsToReactivate));
-  }
-
-  // Batch insert: For users without existing subscriptions, create new ones
-  if (usersWithoutExisting.length > 0) {
-    await db.insert(subscriptions).values(
-      usersWithoutExisting.map((userId) => ({
-        id: generateUuidv7(),
-        userId,
-        feedId: newFeed.id,
-        subscribedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      }))
-    );
-  }
-
-  // Ensure a job exists for the new feed (will be claimed via data-driven
-  // eligibility). Unconditional, not just for brand-new subscriptions:
-  // retention deletes the `fetch_feed` job of any feed with no active
-  // subscriber, so a user resubscribing via a redirect merge onto a feed they
-  // had previously left can be the one that brings the feed back to life --
-  // with no job, it would never be fetched again. `ensureFeedJob` is an
-  // idempotent upsert that keeps an existing `next_run_at`, so running it for
-  // an already-scheduled feed is a no-op (issue #952).
-  await ensureFeedJob(newFeed.id);
-
-  // Re-stamp user_entries attribution from each old subscription to its survivor.
-  // user_entries.subscription_id is stamped at insert (issue #1117) and is what
-  // visibility and filtering resolve through, so without this the old feed's
-  // entries would vanish with the about-to-be-unsubscribed subscription.
-  // Deliberately leaves updated_at alone: nothing user-visible changes, and
-  // bumping it would flood every affected user's delta sync.
-  // The survivor is looked up by joining the user's subscription to the new
-  // feed (unique per user/feed via uq_subscriptions_user_feed), which is what
-  // the reactivate/insert above just guaranteed exists for every affected user.
-  const survivorSub = alias(subscriptions, "survivor_sub");
-  await db
-    .update(userEntries)
-    .set({ subscriptionId: survivorSub.id })
-    .from(survivorSub)
-    .where(
-      and(
-        inArray(userEntries.subscriptionId, oldSubIds),
-        eq(survivorSub.userId, userEntries.userId),
-        eq(survivorSub.feedId, newFeed.id)
-      )
-    );
-
-  // Batch update: Unsubscribe all old subscriptions at once
-  await db
-    .update(subscriptions)
-    .set({
-      unsubscribedAt: now,
-      updatedAt: now,
-    })
-    .where(inArray(subscriptions.id, oldSubIds));
-
-  logger.debug("Migrated subscriptions", {
-    oldFeedId: oldFeed.id,
-    newFeedId: newFeed.id,
-    withExisting: usersWithExisting.length,
-    newSubscriptions: usersWithoutExisting.length,
-  });
-
-  // Note: The old feed's job will naturally stop being claimed since it has no active
-  // subscribers. In the data-driven model, we don't need to explicitly disable it.
 }

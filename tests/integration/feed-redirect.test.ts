@@ -9,6 +9,7 @@
  *    (attribution via user_entries.subscription_id, re-stamped by the merge job)
  * 4. The surviving feed always ends up with a fetch_feed job, even when no new
  *    subscription row had to be created
+ * 5. The user's tags, title and full-content setting carry over (#1543)
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -20,6 +21,7 @@ import {
   entries,
   subscriptions,
   userEntries,
+  subscriptionTags,
   jobs,
   type Feed,
 } from "../../src/server/db/schema";
@@ -29,6 +31,7 @@ import {
   createTestEntry,
   createTestFeed,
   createTestSubscription,
+  createTestTag,
   createTestUser,
 } from "./helpers";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
@@ -338,6 +341,88 @@ describe("Feed Redirect Handling", () => {
       expect(newSub).not.toBeNull();
       expect(newSub!.unsubscribedAt).toBeNull(); // Reactivated
       expect(await getStampedSubscriptionId(userId, oldEntry)).toBe(newSub!.id);
+    });
+  });
+
+  describe("Subscription settings carried to the survivor (#1543)", () => {
+    async function getTagIds(subscriptionId: string): Promise<string[]> {
+      const rows = await db
+        .select({ tagId: subscriptionTags.tagId })
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subscriptionId));
+      return rows.map((r) => r.tagId).sort();
+    }
+
+    async function createFeedPair(): Promise<{ oldFeedId: string; newFeedId: string }> {
+      const fetchTime = new Date();
+      const fresh = {
+        lastFetchedAt: fetchTime,
+        lastEntriesUpdatedAt: fetchTime,
+        nextFetchAt: new Date(fetchTime.getTime() + 60 * 60 * 1000),
+      };
+      return {
+        oldFeedId: await createTestFeed({ url: "https://old-domain.com/feed.xml", ...fresh }),
+        newFeedId: await createTestFeed({ url: "https://new-domain.com/feed.xml", ...fresh }),
+      };
+    }
+
+    it("moves tags, title and full-content setting to a new survivor and shows its entries", async () => {
+      const userId = await createTestUser();
+      const { oldFeedId, newFeedId } = await createFeedPair();
+      const oldSubId = await createTestSubscription(userId, oldFeedId, {
+        customTitle: "My Name",
+        fetchFullContent: true,
+      });
+      const tagId = await createTestTag(userId, { subscriptionIds: [oldSubId] });
+      const newFeed = await getFeed(newFeedId);
+      const currentEntry = await createTestEntry(newFeedId, {
+        fetchedAt: newFeed.lastEntriesUpdatedAt!,
+      });
+
+      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), newFeed);
+
+      const [survivor] = await db
+        .select()
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeedId)));
+      expect(survivor.unsubscribedAt).toBeNull();
+      expect(survivor.customTitle).toBe("My Name");
+      expect(survivor.fetchFullContent).toBe(true);
+      expect(await getTagIds(survivor.id)).toEqual([tagId]);
+      expect(await getTagIds(oldSubId)).toEqual([]);
+      expect(await getStampedSubscriptionId(userId, currentEntry)).toBe(survivor.id);
+    });
+
+    it("drops stale tags from a reactivated survivor", async () => {
+      const userId = await createTestUser();
+      const { oldFeedId, newFeedId } = await createFeedPair();
+      await createTestSubscription(userId, oldFeedId);
+      const newSubId = await createTestSubscription(userId, newFeedId, {
+        unsubscribedAt: new Date(),
+      });
+      await createTestTag(userId, { subscriptionIds: [newSubId] });
+
+      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+
+      expect(await getTagIds(newSubId)).toEqual([]);
+    });
+
+    it("adds the old tags to an already-active survivor, keeping its own title", async () => {
+      const userId = await createTestUser();
+      const { oldFeedId, newFeedId } = await createFeedPair();
+      const oldSubId = await createTestSubscription(userId, oldFeedId, { customTitle: "Old" });
+      const newSubId = await createTestSubscription(userId, newFeedId, { customTitle: "New" });
+      const sharedTag = await createTestTag(userId, { subscriptionIds: [oldSubId, newSubId] });
+      const oldOnlyTag = await createTestTag(userId, { subscriptionIds: [oldSubId] });
+
+      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+
+      const [survivor] = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.id, newSubId));
+      expect(survivor.customTitle).toBe("New");
+      expect(await getTagIds(newSubId)).toEqual([sharedTag, oldOnlyTag].sort());
     });
   });
 
