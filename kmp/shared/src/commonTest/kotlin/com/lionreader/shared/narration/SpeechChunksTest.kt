@@ -14,6 +14,14 @@ class SpeechChunksTest {
     }
 
     @Test
+    fun unspeakableParagraphsAreSkippedWithoutRenumbering() {
+        assertEquals(
+            listOf(SpeechChunk(0, "One."), SpeechChunk(4, "1984"), SpeechChunk(5, "東京")),
+            speechChunks(listOf("One.", "  ", "↩", "* * *", "1984", "東京")),
+        )
+    }
+
+    @Test
     fun longParagraphsSplitBetweenSentences() {
         val sentence = "This sentence is about forty characters. "
         val chunks = speechChunks(listOf(sentence.repeat(20)), maxChars = 100)
@@ -53,14 +61,9 @@ class SpeechChunksTest {
 
     @Test
     fun aCutNeverSplitsASurrogatePair() {
-        val emoji = "😀".repeat(30)
+        val emoji = "a😀".repeat(20)
         val chunks = speechChunks(listOf(emoji), maxChars = 7)
         assertTrue(chunks.all { it.text.length <= 7 && !it.text.last().isHighSurrogate() })
         assertEquals(emoji, chunks.joinToString("") { it.text })
-    }
-
-    @Test
-    fun blankParagraphsSayNothing() {
-        assertEquals(listOf(SpeechChunk(1, "Hi.")), speechChunks(listOf("  ", "Hi.")))
     }
 }

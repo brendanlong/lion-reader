@@ -101,10 +101,20 @@ export interface SpeechChunk {
   text: string;
 }
 
+/**
+ * Whether `text` has a letter or digit to say. Voices garble text that's only
+ * symbols (a footnote's "↩", a "* * *" separator), so it isn't synthesized.
+ */
+function isSpeakable(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
+}
+
 /** One chunk per sentence, for synthesis that's slow enough to want the first audio fast. */
 export function splitIntoSentenceChunks(paragraphs: string[]): SpeechChunk[] {
   return paragraphs.flatMap((paragraph, index) =>
-    splitIntoSentences(paragraph.trim()).map((text) => ({ paragraph: index, text }))
+    splitIntoSentences(paragraph.trim())
+      .filter(isSpeakable)
+      .map((text) => ({ paragraph: index, text }))
   );
 }
 
@@ -114,33 +124,36 @@ export function splitIntoSentenceChunks(paragraphs: string[]): SpeechChunk[] {
  * waiting for a whole long paragraph.
  */
 export function splitIntoSpeechChunks(paragraphs: string[], maxChars: number): SpeechChunk[] {
-  return paragraphs.flatMap((paragraph, index) => {
-    const text = paragraph.trim();
-    if (!text) return [];
-    if (text.length <= maxChars) return [{ paragraph: index, text }];
+  return paragraphs
+    .flatMap((paragraph, index) => splitParagraph(paragraph, index, maxChars))
+    .filter((chunk) => isSpeakable(chunk.text));
+}
 
-    const chunks: SpeechChunk[] = [];
-    let current = "";
-    // Sentences are word-split at a much smaller size, but a run without
-    // whitespace (a long URL, unspaced CJK text) can still exceed the limit.
-    const pieces = splitIntoSentences(text).flatMap((sentence) => {
-      const slices: string[] = [];
-      for (let start = 0; start < sentence.length; start += maxChars) {
-        slices.push(sentence.slice(start, start + maxChars));
-      }
-      return slices;
-    });
-    for (const sentence of pieces) {
-      if (current && current.length + 1 + sentence.length > maxChars) {
-        chunks.push({ paragraph: index, text: current });
-        current = sentence;
-      } else {
-        current = current ? `${current} ${sentence}` : sentence;
-      }
+function splitParagraph(paragraph: string, index: number, maxChars: number): SpeechChunk[] {
+  const text = paragraph.trim();
+  if (text.length <= maxChars) return [{ paragraph: index, text }];
+
+  const chunks: SpeechChunk[] = [];
+  let current = "";
+  // Sentences are word-split at a much smaller size, but a run without
+  // whitespace (a long URL, unspaced CJK text) can still exceed the limit.
+  const pieces = splitIntoSentences(text).flatMap((sentence) => {
+    const slices: string[] = [];
+    for (let start = 0; start < sentence.length; start += maxChars) {
+      slices.push(sentence.slice(start, start + maxChars));
     }
-    if (current) chunks.push({ paragraph: index, text: current });
-    return chunks;
+    return slices;
   });
+  for (const sentence of pieces) {
+    if (current && current.length + 1 + sentence.length > maxChars) {
+      chunks.push({ paragraph: index, text: current });
+      current = sentence;
+    } else {
+      current = current ? `${current} ${sentence}` : sentence;
+    }
+  }
+  if (current) chunks.push({ paragraph: index, text: current });
+  return chunks;
 }
 
 /**

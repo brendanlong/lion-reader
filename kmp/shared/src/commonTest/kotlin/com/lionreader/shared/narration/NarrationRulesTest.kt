@@ -19,7 +19,7 @@ class NarrationRulesTest {
 
     @Test
     fun beforeThenTheArticlesParagraphsWithSomethingToSay() {
-        assertEquals(listOf(0, 2), spokenParagraphs(null, listOf("A", " ", "C")))
+        assertEquals(listOf(0, 2), spokenParagraphs(null, listOf("A", " ", "C", "↩")))
         assertNull(spokenParagraphs(null, null))
     }
 

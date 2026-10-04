@@ -153,11 +153,20 @@ class NarratorTest {
     }
 
     @Test
+    fun startingAfterTheLastParagraphWithSomethingToSayPlaysTheLastOne() {
+        narrator.narrate(article("a", "One.", "Two.", "↩"), fromParagraph = 2)
+        idle()
+
+        assertEquals(listOf("Two."), synthesized)
+        assertEquals(1, state?.paragraph)
+    }
+
+    @Test
     fun anArticleWithNothingToSayLeavesNarrationOnForTheNext() {
         narrator.narrate(article("a", "One."))
         idle()
         narrator.follow("b", "Title b")
-        narrator.supply(article("b", " "))
+        narrator.supply(article("b", " ", "↩"))
         idle()
 
         assertEquals("b", state?.entryId)
