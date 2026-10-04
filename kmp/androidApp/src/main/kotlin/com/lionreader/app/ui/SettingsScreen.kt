@@ -96,7 +96,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             modifier =
                 Modifier.padding(padding)
                     .fillMaxSize()
-                    .scrollbar(scroll)
+                    .scrollbar { scroll.scrollIndicatorState }
                     .verticalScroll(scroll)
                     .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),

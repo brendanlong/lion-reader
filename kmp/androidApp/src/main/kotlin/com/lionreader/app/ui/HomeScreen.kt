@@ -643,7 +643,7 @@ private fun EntryList(
     val indicator = remember(listState) { LongListIndicator(listState) { currentTotal } }
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize().scrollbar(listState, indicator),
+        modifier = modifier.fillMaxSize().scrollbar { indicator },
         userScrollEnabled = !pageScrolling,
     ) {
         items(items, key = { it.id }) { item ->

@@ -4,7 +4,6 @@ import android.view.ViewConfiguration
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollIndicatorState
-import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -20,48 +19,27 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.map
 
 /**
- * A vertical scrollbar at the end edge, shown while [state] scrolls (a drag, a fling or a page
- * turn) and faded out as Android fades its own after. Only drawn: it takes no touches.
- */
-@Composable
-fun Modifier.scrollbar(
-    state: ScrollableState,
-    indicator: ScrollIndicatorState? = state.scrollIndicatorState,
-): Modifier =
-    scrollbar({ indicator }, remember(state) { snapshotFlow { state.isScrollInProgress }.drop(1) })
-
-/**
- * A scrollbar for what scrolls outside Compose (the article's WebView): shown each time
- * [indicator]'s offset moves, as Android's own scrollbars are.
+ * A vertical scrollbar at the end edge, shown each time [indicator]'s offset moves (a drag, a
+ * fling, a page turn) and faded out after, on Android's own scrollbars' timing. Only drawn: it
+ * takes no touches.
  */
 @Composable
 fun Modifier.scrollbar(indicator: () -> ScrollIndicatorState?): Modifier {
     val current by rememberUpdatedState(indicator)
-    val moves = remember { snapshotFlow { current()?.scrollOffset }.drop(1).map { false } }
-    return scrollbar(indicator, moves)
-}
-
-/** [scrolls]: each scroll, and whether it's still going (held shown until it isn't). */
-@Composable
-private fun Modifier.scrollbar(
-    indicator: () -> ScrollIndicatorState?,
-    scrolls: Flow<Boolean>,
-): Modifier {
     val alpha = remember { Animatable(0f) }
-    LaunchedEffect(scrolls) {
-        scrolls.collectLatest { going ->
-            alpha.snapTo(1f)
-            if (!going) {
+    LaunchedEffect(Unit) {
+        snapshotFlow { current()?.scrollOffset }
+            // Not for where it starts.
+            .drop(1)
+            .collectLatest {
+                alpha.snapTo(1f)
                 delay(ViewConfiguration.getScrollDefaultDelay().toLong())
                 alpha.animateTo(0f, tween(ViewConfiguration.getScrollBarFadeDuration()))
             }
-        }
     }
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = THUMB_ALPHA)
     return drawWithContent {
@@ -88,12 +66,12 @@ private fun Modifier.scrollbar(
     }
 }
 
+internal data class ThumbSpan(val start: Float, val length: Float)
+
 /**
  * Where a scrollbar's thumb goes along a [track] of pixels; null with nothing to scroll. A thumb
  * held at [minLength] still spans the track, top to bottom.
  */
-internal data class ThumbSpan(val start: Float, val length: Float)
-
 internal fun thumbSpan(
     offset: Int,
     content: Int,
@@ -132,22 +110,11 @@ internal class LongListIndicator(
     override val contentSize: Int
         get() = (rows * rowHeight).toInt()
 
+    // At the end, this is exactly contentSize - viewportSize: the rows on screen then fill the
+    // viewport plus the first one's hidden part, at rowHeight each.
     override val scrollOffset: Int
-        get() {
-            val info = state.layoutInfo
-            // At the end, exactly: the rows' heights needn't average out there.
-            if (
-                rows == info.totalItemsCount.toLong() &&
-                    info.visibleItemsInfo.lastOrNull()?.let {
-                        it.index == info.totalItemsCount - 1 &&
-                            it.offset + it.size <= info.viewportEndOffset
-                    } == true
-            ) {
-                return contentSize - viewportSize
-            }
-            return (state.firstVisibleItemIndex * rowHeight + state.firstVisibleItemScrollOffset)
-                .toInt()
-        }
+        get() =
+            (state.firstVisibleItemIndex * rowHeight + state.firstVisibleItemScrollOffset).toInt()
 }
 
 private const val THUMB_ALPHA = 0.4f

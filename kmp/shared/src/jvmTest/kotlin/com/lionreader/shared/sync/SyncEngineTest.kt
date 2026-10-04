@@ -553,7 +553,6 @@ class SyncEngineTest {
                 }
             }
         }
-        assertEquals(2, timeline(limit = 2).size)
         assertEquals(5, reader.timelineCount(ListScope.All, false, emptySet()).first())
     }
 

@@ -115,11 +115,7 @@ class Reader(
         limit: Long,
     ): Flow<List<TimelineItem>> {
         val queries = db.entryQueries
-        val subscriptionId = (scope as? ListScope.Subscription)?.id
-        val tagId = (scope as? ListScope.Tag)?.id
-        val starredOnly = if (scope == ListScope.Starred) 1L else 0L
-        val savedOnly = if (scope == ListScope.Saved) 1L else 0L
-        val uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L
+        val filter = ScopeFilter(scope)
         val unread = if (unreadOnly) 1L else 0L
         val query =
             if (scope == ListScope.RecentlyRead) {
@@ -128,11 +124,11 @@ class Reader(
                 else queries.selectRecentlyRead(limit, ::timelineItem)
             } else if (oldestFirst) {
                 queries.selectTimelineOldestFirst(
-                    subscriptionId = subscriptionId,
-                    tagId = tagId,
-                    starredOnly = starredOnly,
-                    savedOnly = savedOnly,
-                    uncategorizedOnly = uncategorizedOnly,
+                    subscriptionId = filter.subscriptionId,
+                    tagId = filter.tagId,
+                    starredOnly = filter.starredOnly,
+                    savedOnly = filter.savedOnly,
+                    uncategorizedOnly = filter.uncategorizedOnly,
                     unreadOnly = unread,
                     keepIds = keepIds,
                     limit = limit,
@@ -140,11 +136,11 @@ class Reader(
                 )
             } else {
                 queries.selectTimeline(
-                    subscriptionId = subscriptionId,
-                    tagId = tagId,
-                    starredOnly = starredOnly,
-                    savedOnly = savedOnly,
-                    uncategorizedOnly = uncategorizedOnly,
+                    subscriptionId = filter.subscriptionId,
+                    tagId = filter.tagId,
+                    starredOnly = filter.starredOnly,
+                    savedOnly = filter.savedOnly,
+                    uncategorizedOnly = filter.uncategorizedOnly,
                     unreadOnly = unread,
                     keepIds = keepIds,
                     limit = limit,
@@ -161,15 +157,16 @@ class Reader(
         keepIds: Collection<String>,
     ): Flow<Long> {
         val queries = db.entryQueries
+        val filter = ScopeFilter(scope)
         val query =
             if (scope == ListScope.RecentlyRead) queries.countRecentlyRead()
             else
                 queries.countTimeline(
-                    subscriptionId = (scope as? ListScope.Subscription)?.id,
-                    tagId = (scope as? ListScope.Tag)?.id,
-                    starredOnly = if (scope == ListScope.Starred) 1L else 0L,
-                    savedOnly = if (scope == ListScope.Saved) 1L else 0L,
-                    uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L,
+                    subscriptionId = filter.subscriptionId,
+                    tagId = filter.tagId,
+                    starredOnly = filter.starredOnly,
+                    savedOnly = filter.savedOnly,
+                    uncategorizedOnly = filter.uncategorizedOnly,
                     unreadOnly = if (unreadOnly) 1L else 0L,
                     keepIds = keepIds,
                 )
@@ -336,15 +333,26 @@ class Reader(
     suspend fun unreadIds(scope: ListScope): List<String> =
         withContext(context) { queryUnreadIds(scope) }
 
-    private fun queryUnreadIds(scope: ListScope): List<String> =
-        db.entryQueries
+    private fun queryUnreadIds(scope: ListScope): List<String> {
+        val filter = ScopeFilter(scope)
+        return db.entryQueries
             .unreadIdsInScope(
-                subscriptionId = (scope as? ListScope.Subscription)?.id,
-                tagId = (scope as? ListScope.Tag)?.id,
-                starredOnly = if (scope == ListScope.Starred) 1L else 0L,
-                savedOnly = if (scope == ListScope.Saved) 1L else 0L,
-                uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L,
+                subscriptionId = filter.subscriptionId,
+                tagId = filter.tagId,
+                starredOnly = filter.starredOnly,
+                savedOnly = filter.savedOnly,
+                uncategorizedOnly = filter.uncategorizedOnly,
                 recentlyReadOnly = if (scope == ListScope.RecentlyRead) 1L else 0L,
             )
             .executeAsList()
+    }
+}
+
+/** A list's filter arguments to the queries over one list (`selectTimeline` and the rest). */
+private class ScopeFilter(scope: ListScope) {
+    val subscriptionId = (scope as? ListScope.Subscription)?.id
+    val tagId = (scope as? ListScope.Tag)?.id
+    val starredOnly = if (scope == ListScope.Starred) 1L else 0L
+    val savedOnly = if (scope == ListScope.Saved) 1L else 0L
+    val uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L
 }

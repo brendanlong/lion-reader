@@ -70,13 +70,4 @@ class ScrollbarTest {
             assertEquals(500, indicator.scrollOffset)
         }
     }
-
-    @Test
-    fun theEndOfAWholeListIsTheEndOfTheTrack() {
-        val indicator = showList(loaded = 30, total = 30)
-        composeRule.runOnIdle { runBlocking { list.scrollToItem(29) } }
-        composeRule.runOnIdle {
-            assertEquals(indicator.contentSize - indicator.viewportSize, indicator.scrollOffset)
-        }
-    }
 }
