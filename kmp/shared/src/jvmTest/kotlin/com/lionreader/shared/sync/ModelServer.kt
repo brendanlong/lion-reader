@@ -310,7 +310,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                         SyncEvent.NewEntry(
                             e.id,
                             e.subscriptionId,
-                            "feed",
                             e.type,
                             e.eventEntry(),
                         )
@@ -332,7 +331,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.starred,
                                 e.readChangedAt?.let { e.time(it) },
                                 e.subscriptionId,
-                                "feed",
                                 e.type,
                                 if (e.read) null else e.eventEntry(),
                             )
@@ -435,7 +433,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         EntryListItem(
             id = id,
             subscriptionId = subscriptionId,
-            feedId = "feed",
             type = type,
             title = id,
             publishedAt = time(published),
@@ -449,7 +446,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         FullEntry(
             id = id,
             subscriptionId = subscriptionId,
-            feedId = "feed",
             type = type,
             title = id,
             publishedAt = time(published),

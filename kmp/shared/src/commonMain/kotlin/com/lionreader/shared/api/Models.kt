@@ -20,7 +20,6 @@ enum class FeedType {
 data class EntryListItem(
     val id: String,
     val subscriptionId: String? = null,
-    val feedId: String,
     val type: FeedType,
     val url: String? = null,
     val title: String? = null,
@@ -43,7 +42,6 @@ data class EntryListPage(val items: List<EntryListItem>, val nextCursor: String?
 data class FullEntry(
     val id: String,
     val subscriptionId: String? = null,
-    val feedId: String,
     val type: FeedType,
     val url: String? = null,
     val title: String? = null,
@@ -199,7 +197,6 @@ sealed interface SyncEvent {
     data class NewEntry(
         val entryId: String,
         val subscriptionId: String? = null,
-        val feedId: String? = null,
         val feedType: FeedType,
         /** Absent for spam, which the server's lists leave out. */
         val entry: EventEntry? = null,
@@ -217,7 +214,6 @@ sealed interface SyncEvent {
         val starred: Boolean,
         val readChangedAt: String? = null,
         val subscriptionId: String? = null,
-        val feedId: String? = null,
         val feedType: FeedType? = null,
         val entry: EventEntry? = null,
     ) : SyncEvent

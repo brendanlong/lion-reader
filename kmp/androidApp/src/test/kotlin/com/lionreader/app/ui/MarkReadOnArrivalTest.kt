@@ -41,7 +41,7 @@ class MarkReadOnArrivalTest {
 
     @Test
     fun anEntryMarkedUnreadStaysUnreadWhenTheScreenIsRestored() {
-        db.entryQueries.insertIgnore("a", "feed", "web", 0, 0, 0, 0)
+        db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
         val restoration = StateRestorationTester(composeRule)
         restoration.setContent { MarkReadOnArrival(reader, "a") {} }
         composeRule.waitUntil { read("a") }
@@ -55,7 +55,7 @@ class MarkReadOnArrivalTest {
 
     @Test
     fun arrivingAtAReadEntryMovesItToTheTopOfRecentlyRead() {
-        db.entryQueries.insertIgnore("a", "feed", "web", 0, 0, 1, 0)
+        db.entryQueries.insertIgnore("a", "web", 0, 0, 1, 0)
         composeRule.setContent { MarkReadOnArrival(reader, "a") {} }
         composeRule.waitUntil { db.outboxQueries.countStates().executeAsOne() == 1L }
         val recentlyRead = runBlocking {
@@ -74,8 +74,8 @@ class MarkReadOnArrivalTest {
 
     @Test
     fun arrivingAgainMarksReadAgain() {
-        db.entryQueries.insertIgnore("a", "feed", "web", 0, 0, 0, 0)
-        db.entryQueries.insertIgnore("b", "feed", "web", 0, 0, 0, 0)
+        db.entryQueries.insertIgnore("a", "web", 0, 0, 0, 0)
+        db.entryQueries.insertIgnore("b", "web", 0, 0, 0, 0)
         val shown = mutableStateOf("a")
         composeRule.setContent { MarkReadOnArrival(reader, shown.value) {} }
         composeRule.waitUntil { read("a") }

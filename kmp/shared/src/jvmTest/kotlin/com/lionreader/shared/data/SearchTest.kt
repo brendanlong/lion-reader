@@ -35,7 +35,6 @@ class SearchTest {
             FullEntry(
                 id = id,
                 subscriptionId = "sub-1",
-                feedId = "feed-1",
                 type = FeedType.WEB,
                 title = title,
                 author = "Ada Lovelace",

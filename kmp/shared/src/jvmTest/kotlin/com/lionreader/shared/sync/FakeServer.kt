@@ -333,7 +333,6 @@ fun FullEntry.listItem() =
     EntryListItem(
         id = id,
         subscriptionId = subscriptionId,
-        feedId = feedId,
         type = type,
         url = url,
         title = title,

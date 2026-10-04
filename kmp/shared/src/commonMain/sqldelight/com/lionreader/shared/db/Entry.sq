@@ -4,6 +4,8 @@
 CREATE TABLE entry (
   id TEXT NOT NULL PRIMARY KEY,
   subscription_id TEXT,
+  -- Unused (the server sends only subscription ids); SQLite 3.18 can't drop a
+  -- column without rebuilding the table.
   feed_id TEXT,
   type TEXT NOT NULL,
   url TEXT,
@@ -58,13 +60,13 @@ LEFT JOIN outbox_state s ON s.entry_id = e.id AND s.field = 'starred';
 -- predates ON CONFLICT DO UPDATE (and INSERT OR REPLACE would drop the body).
 insertIgnore {
   UPDATE body_version_seq SET value = value + 1;
-  INSERT OR IGNORE INTO entry(id, feed_id, type, fetched_at, sort_at, read, starred, body_version)
-  VALUES (:id, :feedId, :type, :fetchedAt, :sortAt, :read, :starred, (SELECT value FROM body_version_seq));
+  INSERT OR IGNORE INTO entry(id, type, fetched_at, sort_at, read, starred, body_version)
+  VALUES (:id, :type, :fetchedAt, :sortAt, :read, :starred, (SELECT value FROM body_version_seq));
 }
 
 updateAll:
 UPDATE entry SET
-  subscription_id = ?, feed_id = COALESCE(?, feed_id), type = ?, url = ?, title = ?, author = ?,
+  subscription_id = ?, type = ?, url = ?, title = ?, author = ?,
     summary = ?, site_name = ?, feed_title = ?, published_at = ?, fetched_at = ?, sort_at = ?,
   read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at)
 WHERE id = ?;
