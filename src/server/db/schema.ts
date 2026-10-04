@@ -642,6 +642,7 @@ export const entries = pgTable(
     // - entries_unsubscribe_only_email: unsubscribe fields only for email entries
     // - entries_saved_metadata_only_saved: site_name/image_url only for saved entries
     // - entries_last_seen_only_fetched: last_seen_at required for web feeds, NULL for email/saved
+    // - entries_type_not_collection: no entry is a collection (migration 0121)
   ]
 );
 

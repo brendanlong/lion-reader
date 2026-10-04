@@ -1014,6 +1014,9 @@ ALTER TABLE ONLY public.discord_api_token_links
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
 
+ALTER TABLE public.entries
+    ADD CONSTRAINT entries_type_not_collection CHECK ((type <> 'collection'::public.feed_type)) NOT VALID;
+
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
 

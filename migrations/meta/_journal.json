@@ -841,6 +841,13 @@
       "when": 1782955140000,
       "tag": "0120_collections",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1782955200000,
+      "tag": "0121_entries_type_not_collection",
+      "breakpoints": true
     }
   ]
 }
