@@ -647,17 +647,38 @@ describe("handleSyncEvent - entry_state_changed", () => {
 // ============================================================================
 
 describe("handleSyncEvent - mark_all_read", () => {
-  it("invalidates entry lists and counts (mirrors the acting tab)", () => {
+  it("sets the counts it carries and refetches only the entry lists", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createMarkAllReadEvent({
+        counts: {
+          all: { unread: 3 },
+          starred: { unread: 0 },
+          saved: { unread: 0 },
+          subscriptions: [{ id: "sub-1", unread: 0, tagIds: ["tag-1"] }],
+          tags: [{ id: "tag-1", unread: 10 }],
+        },
+      })
+    );
+
+    expect(getSidebarUnreadCount("sub-1")).toBe(0);
+    expect(getTagsList()?.items.find((tag) => tag.id === "tag-1")?.unreadCount).toBe(10);
+    expect(getEntriesCount()).toEqual({ unread: 3 });
+    // The one SSE event that deliberately refetches entries.list.
+    expect(invalidatedProcedures(invalidateSpy)).toEqual(["entries.list"]);
+  });
+
+  it("refetches the counts instead for a previous release's event, which has none", () => {
     handleSyncEvent(utils, queryClient, createMarkAllReadEvent());
 
-    const invalidated = invalidatedProcedures(invalidateSpy);
-    // The one SSE event that deliberately refetches entries.list.
-    expect(invalidated).toContain("entries.list");
-    expect(invalidated).toContain("entries.count");
-    expect(invalidated).toContain("tags.list");
-    expect(invalidated).toContain("subscriptions.list");
-    // The sidebar keeps listing the open subscription from this.
-    expect(invalidated).toContain("subscriptions.get");
+    expect(invalidatedProcedures(invalidateSpy).sort()).toEqual([
+      "entries.count",
+      "entries.list",
+      "subscriptions.get",
+      "subscriptions.list",
+      "tags.list",
+    ]);
   });
 
   it("does not touch entry read state directly (invalidation handles it)", () => {

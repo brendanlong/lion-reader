@@ -176,6 +176,28 @@ export function handleSubscriptionDeleted(
   utils.entries.list.invalidate();
 }
 
+/**
+ * Applies a mark-all-read, from its mutation response or its event: the
+ * absolute counts it carries, and a refetch of the entry lists, whose read
+ * state it changed for possibly thousands of entries. A previous release sent
+ * no counts; then the count caches are refetched instead.
+ */
+export function handleMarkAllRead(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  counts: EntryRelatedCounts | undefined
+): void {
+  if (counts) {
+    setEntryRelatedCounts(utils, counts, queryClient);
+  } else {
+    utils.entries.count.invalidate();
+    utils.tags.list.invalidate();
+    utils.subscriptions.list.invalidate();
+    utils.subscriptions.get.invalidate();
+  }
+  utils.entries.list.invalidate();
+}
+
 // ============================================================================
 // Absolute Count Updates (Server-Provided Counts)
 // ============================================================================

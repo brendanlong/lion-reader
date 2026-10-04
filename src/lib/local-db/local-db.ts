@@ -34,9 +34,6 @@ import { createSyncedCollection } from "./synced-collection";
 import {
   ingestFetchedSubscriptions,
   markSubscriptionFetchStarted,
-  settleUnreadOnlySection,
-  sidebarSectionOf,
-  type SubscriptionListInput,
   type SubscriptionPages,
   type SubscriptionRow,
   type SubscriptionStore,
@@ -75,7 +72,6 @@ function createLocalDb(): LocalDb {
     }),
     versions: new Map(),
     fetchStartedAt: new Map(),
-    pagesFetchedSince: new Map(),
     clock: { now: 0 },
   };
   return { entries, lists: { rows, meta: new Map() }, subscriptions };
@@ -91,12 +87,7 @@ function inputOf(query: Query): Record<string, unknown> {
   return meta?.input ?? {};
 }
 
-/**
- * `append`: the data's last page was just fetched and the rest is unchanged.
- * `fetched`: the data comes from a fetch (not a manual write or hydration),
- * so what it leaves out, the server no longer has.
- */
-function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append", fetched = false): void {
+function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append"): void {
   const data = query.state.data;
   if (!data) return;
   switch (procedureOf(query)) {
@@ -110,7 +101,7 @@ function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append", fetc
       // Infinite (the sidebar, the collection picker) or a single page.
       const list = data as SubscriptionPages | SubscriptionPages["pages"][number];
       const pages = "pages" in list ? list : { pages: [list] };
-      ingestSubscriptionPages(db, query, pages, mode, fetched);
+      ingestSubscriptionPages(db, query, pages, mode);
       break;
     }
     case "subscriptions.get":
@@ -123,22 +114,15 @@ function ingestSubscriptionPages(
   db: LocalDb,
   query: Query,
   data: SubscriptionPages,
-  mode: "replace" | "append",
-  fetched: boolean
+  mode: "replace" | "append"
 ): void {
-  const input = inputOf(query) as SubscriptionListInput;
   // The earlier pages are older than this fetch: don't write them again.
   const pages = mode === "append" ? data.pages.slice(-1) : data.pages;
   ingestFetchedSubscriptions(
     db.subscriptions,
     query.queryHash,
-    pages.flatMap((page) => page.items),
-    fetched && mode === "replace"
+    pages.flatMap((page) => page.items)
   );
-  const section = sidebarSectionOf(input);
-  if (section && input.unreadOnly && fetched) {
-    settleUnreadOnlySection(db.subscriptions, query.queryHash, section, data);
-  }
 }
 
 const SUBSCRIPTION_QUERIES = new Set(["subscriptions.list", "subscriptions.get"]);
@@ -189,7 +173,7 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
       // replace. (Hydrating over an existing query is a `setState`, which
       // isn't ingested: the SPA only hydrates on its first load.)
       const isNextPage = !!query.state.fetchMeta?.fetchMore && !event.action.manual;
-      ingestQuery(db, query, isNextPage ? "append" : "replace", !event.action.manual);
+      ingestQuery(db, query, isNextPage ? "append" : "replace");
     }
   });
 }

@@ -31,8 +31,6 @@ export interface SubscriptionStore {
   versions: Map<string, number>;
   /** By query hash: when its latest fetch started. */
   fetchStartedAt: Map<string, number>;
-  /** By query hash: when the full (not next-page) fetch its pages date from started. */
-  pagesFetchedSince: Map<string, number>;
   clock: { now: number };
 }
 
@@ -96,19 +94,13 @@ export function markSubscriptionFetchStarted(store: SubscriptionStore, queryHash
 
 const NEVER = -1;
 
-/**
- * Stores rows a query fetched, except over a newer version. `full`: a
- * successful fetch of every page (not a next page), which all of the query's
- * pages now date from.
- */
+/** Stores rows a query fetched, except over a newer version. */
 export function ingestFetchedSubscriptions(
   store: SubscriptionStore,
   queryHash: string,
-  rows: SubscriptionRow[],
-  full = false
+  rows: SubscriptionRow[]
 ): void {
   const version = store.fetchStartedAt.get(queryHash) ?? 0;
-  if (full) store.pagesFetchedSince.set(queryHash, version);
   const fresh = rows.filter((row) => (store.versions.get(row.id) ?? NEVER) < version);
   for (const row of fresh) store.versions.set(row.id, version);
   store.rows.upsert(fresh);
@@ -121,36 +113,6 @@ export function ingestFetchedSubscriptions(
 export function sidebarSectionOf(input: SubscriptionListInput): string | undefined {
   if (input.query || input.type) return undefined;
   return input.uncategorized ? UNCATEGORIZED_SECTION : input.tagId;
-}
-
-/**
- * Corrects stored counts once an unread-only section's pages cover all of it:
- * a stored row in the section that they don't return, and that's no newer
- * than they are, has no unread entries now (a change this client wasn't told
- * about, such as mark-all-read). Sections with pages still unloaded are left
- * alone, since only the server's collation says which rows those pages cover.
- */
-export function settleUnreadOnlySection(
-  store: SubscriptionStore,
-  queryHash: string,
-  section: string,
-  data: SubscriptionPages
-): void {
-  if (data.pages.at(-1)?.nextCursor !== undefined) return;
-  const since = store.pagesFetchedSince.get(queryHash) ?? 0;
-  const returned = new Set(data.pages.flatMap((page) => page.items.map((item) => item.id)));
-  const stale = store.rows
-    .allSynced()
-    .filter(
-      (row) =>
-        row.unreadCount > 0 &&
-        !returned.has(row.id) &&
-        isInSidebarSection(row, section) &&
-        (store.versions.get(row.id) ?? NEVER) < since
-    );
-  // As of the pages, so an older fetch still in flight can't undo it.
-  for (const row of stale) store.versions.set(row.id, since);
-  store.rows.upsert(stale.map((row) => ({ ...row, unreadCount: 0 })));
 }
 
 interface LoadedWindow {

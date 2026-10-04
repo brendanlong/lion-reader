@@ -235,9 +235,9 @@ const entryStateChangedEventSchema = z.object({
 const markAllReadEventSchema = z.object({
   type: z.literal("mark_all_read"),
   // Mark-all-read is unbounded, so instead of a per-entry event or a huge id
-  // list, the server sends this single signal and the client invalidates its
-  // entry lists + counts (see handleSyncEvent). `updatedAt` is the
-  // mark-all-read timestamp, used to advance the entries cursor.
+  // list, the server sends this single signal with the absolute counts, and
+  // the client invalidates its entry lists (see handleSyncEvent). `updatedAt`
+  // is the mark-all-read timestamp, used to advance the entries cursor.
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
   // The largest entry id among the marked rows: the entries keyset cursor
@@ -245,6 +245,8 @@ const markAllReadEventSchema = z.object({
   // catch-up while still admitting an unrelated entry written in the same
   // millisecond (#1102).
   entryId: z.string(),
+  // Absent from a previous release's events.
+  counts: unreadCountsSchema.optional(),
 });
 
 const subscriptionCreatedEventSchema = z.object({

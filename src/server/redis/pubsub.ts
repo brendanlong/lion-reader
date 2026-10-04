@@ -23,6 +23,7 @@ import {
 } from "@/lib/events/schemas";
 import { ANNOUNCEMENT_LEVELS, type Announcement } from "@/server/services/site-status";
 import { toEntryMetadata } from "@/server/services/entry-sync-events";
+import type { BulkUnreadCounts } from "@/server/services/counts";
 
 // ============================================================================
 // Event Schemas (single source of truth for both publishing and parsing)
@@ -132,8 +133,8 @@ const userEventSchema = z.discriminatedUnion("type", [
   }),
   // Mark-all-read signal. Mark-all-read is unbounded, so instead of shipping
   // every affected id (or one entry_state_changed per entry, which would storm
-  // every connection), we publish a single lightweight event and let each
-  // client invalidate its entry lists + counts. `updatedAt` is the mark-all-read
+  // every connection), we publish a single event with the absolute counts and
+  // let each client invalidate its entry lists. `updatedAt` is the mark-all-read
   // timestamp, used to advance the entries sync cursor so a reconnect catch-up
   // doesn't re-deliver every marked entry.
   z.object({
@@ -148,6 +149,8 @@ const userEventSchema = z.discriminatedUnion("type", [
     // earlier-created marked entry — stays past the cursor, so a catch-up can
     // still deliver it (#1102).
     entryId: z.string(),
+    // Absent from a previous release's events.
+    counts: unreadCountsSchema.optional(),
   }),
   z.object({
     type: z.literal("tag_created"),
@@ -612,9 +615,9 @@ export async function publishEntryStateChanged(
  * Unlike markRead (which publishes one entry_state_changed per entry),
  * mark-all-read is unbounded, so a per-entry fan-out would storm every one of
  * the user's connections and shipping every affected id could mean a huge
- * payload. Instead this single lightweight signal tells each connection to
- * invalidate its entry lists + counts — the same thing the acting tab does on
- * success.
+ * payload. Instead this single signal carries the absolute counts and tells
+ * each connection to invalidate its entry lists — the same thing the acting
+ * tab does on success.
  *
  * @param userId - The ID of the user whose entries were marked read
  * @param updatedAt - The mark-all-read timestamp, used to advance the entries
@@ -623,12 +626,14 @@ export async function publishEntryStateChanged(
  *   `updatedAt` it forms the exact keyset position past the marked rows, so the
  *   cursor doesn't also skip an unrelated entry written in the same
  *   millisecond (#1102)
+ * @param counts - Absolute counts for every list the marked entries reached
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishMarkAllRead(
   userId: string,
   updatedAt: Date,
-  maxEntryId: string
+  maxEntryId: string,
+  counts: BulkUnreadCounts
 ): Promise<number> {
   return publishUserEvent({
     type: "mark_all_read",
@@ -636,6 +641,7 @@ export async function publishMarkAllRead(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     entryId: maxEntryId,
+    counts,
   });
 }
 

@@ -17,7 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createTransaction } from "@tanstack/db";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { setBulkCounts } from "@/lib/cache/operations";
+import { handleMarkAllRead, setBulkCounts } from "@/lib/cache/operations";
 import { setServerEntryState, type EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb, insertEntryIntoLists, type LocalDb } from "@/lib/local-db/local-db";
 
@@ -203,27 +203,9 @@ export function useEntryMutations(): UseEntryMutationsResult {
     [db, queryClient, utils, sendSetStarred]
   );
 
-  // markAllRead mutation - invalidates caches based on what could be affected
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
-    onSuccess: (_data, variables) => {
-      utils.entries.list.invalidate();
-      utils.subscriptions.list.invalidate();
-      // Corrects the open subscription's stored count; the sidebar sections
-      // correct theirs when they refetch.
-      utils.subscriptions.get.invalidate();
-      utils.tags.list.invalidate();
-
-      // All Articles count is always affected
-      utils.entries.count.invalidate({});
-
-      // Starred count is always affected since starred entries can exist in any view
-      utils.entries.count.invalidate({ starredOnly: true });
-
-      // Invalidate saved count if saved entries could be affected
-      // (either type: "saved" was set, or no type filter means all including saved)
-      if (variables.type === "saved" || !variables.type) {
-        utils.entries.count.invalidate({ type: "saved" });
-      }
+    onSuccess: (data) => {
+      if (data.count > 0) handleMarkAllRead(utils, queryClient, data.counts);
     },
     onError: () => {
       toast.error("Failed to mark all as read");

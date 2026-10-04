@@ -257,6 +257,25 @@ describe("useEntryMutations markAllRead", () => {
     expect(input.changedAt).toBeInstanceOf(Date);
   });
 
+  it("applies the counts in the response", async () => {
+    const { result } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      {
+        handlers: {
+          "entries.markAllRead": () => ({ count: 2, counts: bulkCounts({ all: { unread: 5 } }) }),
+        },
+      }
+    );
+
+    act(() => {
+      result.current.mutations.markAllRead();
+    });
+
+    await waitFor(() =>
+      expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 5 })
+    );
+  });
+
   it("shows a toast when markAllRead fails", async () => {
     const { result } = renderHookWithTrpc(() => useEntryMutations(), {
       handlers: {

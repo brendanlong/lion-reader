@@ -85,7 +85,6 @@ describe("ingesting subscription queries", () => {
     ["subscriptions", "list"],
     { input: { tagId, unreadOnly: true, limit: 50 }, type: "infinite" },
   ];
-  const sectionKey = sectionKeyFor("tag-1");
   const store = () => getLocalDb(queryClient).subscriptions;
   const stored = (id: string) => store().rows.getSynced(id);
 
@@ -97,13 +96,13 @@ describe("ingesting subscription queries", () => {
    */
   function fetching(
     page: number,
-    items: SubscriptionRow[] | Error,
+    items: SubscriptionRow[],
     nextCursor?: string,
     section = observer
   ) {
     let release = () => {};
-    const response = new Promise<SectionPage>((resolve, reject) => {
-      release = () => (items instanceof Error ? reject(items) : resolve({ items, nextCursor }));
+    const response = new Promise<SectionPage>((resolve) => {
+      release = () => resolve({ items, nextCursor });
     });
     const tagId = (section.options.queryKey[1] as { input: { tagId: string } }).input.tagId;
     (responses[tagId] ??= [])[page] = () => response;
@@ -168,84 +167,15 @@ describe("ingesting subscription queries", () => {
     expect(stored("c")).toBeDefined();
   });
 
-  it("zeroes rows a fully loaded unread-only section no longer returns", async () => {
-    const first = fetching(0, [sub("a", "A"), sub("b", "B"), sub("c", "C")]);
-    await settled(first);
-    // Read elsewhere (say, mark-all-read): the refetch no longer returns them.
-    const refetch = fetching(0, []);
-    // Unread again after the refetch started, by an event or another fetch;
-    // the refetch can't know.
-    patchLiveSubscription(store(), "b", { unreadCount: 2 });
-    await queryClient.fetchQuery({
-      queryKey: [["subscriptions", "get"], { input: { id: "c" }, type: "query" }],
-      queryFn: () => sub("c", "C", { unreadCount: 5 }),
-    });
-    await settled(refetch);
-
-    expect(stored("a")?.unreadCount).toBe(0);
-    expect(stored("b")?.unreadCount).toBe(2);
-    expect(stored("c")?.unreadCount).toBe(5);
-  });
-
-  it("corrects counts only once the last page has loaded", async () => {
-    // Stored before the section loaded, and read since without this client
-    // being told: no page returns it.
-    store().rows.upsert([sub("x", "X")]);
-    const first = fetching(0, [sub("a", "A")], "more");
-    await settled(first);
-    expect(stored("x")?.unreadCount).toBe(1);
-    // Unread since the first page loaded, sorting within it: no page returns it.
-    await queryClient.fetchQuery({
-      queryKey: [["subscriptions", "get"], { input: { id: "y" }, type: "query" }],
-      queryFn: () => sub("y", "B"),
-    });
-
-    const last = fetching(1, [sub("m", "M")]);
-    await settled(last);
-    expect(stored("x")?.unreadCount).toBe(0);
-    expect(stored("y")?.unreadCount).toBe(1);
-  });
-
-  it("leaves counts alone when a manual write, not a fetch, replaces the pages", async () => {
-    store().rows.upsert([sub("x", "X")]);
-
-    queryClient.setQueryData(sectionKey, { pages: [{ items: [] }], pageParams: [0] });
-
-    expect(stored("x")?.unreadCount).toBe(1);
-  });
-
-  it("judges a section's pages by the full fetch they came from, not a failed one", async () => {
-    const first = fetching(0, [sub("a", "A")], "more");
-    await settled(first);
-    store().rows.upsert([sub("b", "B", { unreadCount: 0 })]);
-    // Unread since the first page loaded, sorting within it.
-    patchLiveSubscription(store(), "b", { unreadCount: 2 });
-    const failed = fetching(0, new Error("offline"));
-    await settled(failed);
-
-    const last = fetching(1, [sub("m", "M")]);
-    await settled(last);
-    expect(stored("b")?.unreadCount).toBe(2);
-  });
-
-  it("keeps a corrected count when an older fetch of another section lands", async () => {
+  it("keeps a row from a newer fetch when an older fetch of another section lands", async () => {
     const both = [
       { id: "tag-1", name: "One", color: null },
       { id: "tag-2", name: "Two", color: null },
     ];
     const other = observeSection("tag-2");
-    await settled(fetching(0, [sub("a", "A", { tags: both, unreadCount: 3 })]));
-    await settled(fetching(0, [sub("a", "A", { tags: both, unreadCount: 3 })], undefined, other));
-
-    // Read without this client being told, between the two refetches below.
-    const olderRefetch = fetching(
-      0,
-      [sub("a", "A", { tags: both, unreadCount: 3 })],
-      undefined,
-      other
-    );
-    await settled(fetching(0, []));
-    await settled(olderRefetch);
+    const older = fetching(0, [sub("a", "A", { tags: both, unreadCount: 3 })], undefined, other);
+    await settled(fetching(0, [sub("a", "A", { tags: both, unreadCount: 0 })]));
+    await settled(older);
 
     expect(stored("a")?.unreadCount).toBe(0);
   });

@@ -363,7 +363,7 @@ describe("collections", () => {
 
       expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([entryA]);
 
-      const marked = await markAllEntriesRead(db, {
+      const { entryIds: marked } = await markAllEntriesRead(db, {
         userId,
         subscriptionId: collectionId,
         showSpam: false,

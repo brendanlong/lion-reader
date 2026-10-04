@@ -19,7 +19,7 @@
  * `apply_unread_rows` and `recompute_list_counters` maintain them.
  */
 
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   collectionEntries,
@@ -143,7 +143,9 @@ export async function getBulkEntryRelatedCounts(
             .where(
               and(
                 eq(collectionEntries.userId, userId),
-                inArray(collectionEntries.entryId, entryIds)
+                // One array parameter: a mark-all-read can pass more ids than a
+                // statement takes parameters.
+                sql`${collectionEntries.entryId} = ANY(${`{${entryIds.join(",")}}`}::uuid[])`
               )
             )
         ).map((row) => row.id)

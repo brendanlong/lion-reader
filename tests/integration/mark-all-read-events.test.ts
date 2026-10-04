@@ -2,8 +2,8 @@
  * Integration tests for the SSE event published by mark-all-read.
  *
  * markRead publishes one entry_state_changed per entry, but mark-all-read is
- * unbounded, so it emits a single lightweight `mark_all_read` signal and each
- * client invalidates its entry lists + counts. Published inside the
+ * unbounded, so it emits a single `mark_all_read` signal carrying the absolute
+ * counts, and each client invalidates its entry lists. Published inside the
  * markAllEntriesRead service, so both the tRPC mutation and the Google Reader
  * route notify other tabs. This test subscribes to the user's Redis channel and
  * verifies the mutation publishes it.
@@ -17,12 +17,14 @@ import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
-import { expectNoMessage, waitForMessage } from "../utils/pubsub";
+import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
+import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import {
   createAuthContext,
   createTestEntry,
   createTestFeed,
   createTestSubscription,
+  createTestTag,
   createTestUser,
 } from "./helpers";
 
@@ -51,10 +53,13 @@ afterAll(async () => {
 
 beforeEach(cleanup);
 
-async function seedUnreadEntries(userId: string, count: number): Promise<string[]> {
+async function seedUnreadEntries(
+  userId: string,
+  count: number
+): Promise<{ subscriptionId: string; entryIds: string[] }> {
   const now = new Date();
   const feedId = await createTestFeed({ lastFetchedAt: now, lastEntriesUpdatedAt: now });
-  await createTestSubscription(userId, feedId);
+  const subscriptionId = await createTestSubscription(userId, feedId);
 
   const entryIds: string[] = [];
   for (let i = 0; i < count; i++) {
@@ -62,13 +67,13 @@ async function seedUnreadEntries(userId: string, count: number): Promise<string[
       await createTestEntry(feedId, { title: `Entry ${i}`, fetchedAt: now, userIds: [userId] })
     );
   }
-  return entryIds;
+  return { subscriptionId, entryIds };
 }
 
 describe("entries.markAllRead SSE publishing", () => {
   it("publishes a mark_all_read signal carrying a cursor timestamp and the max marked id", async () => {
     const userId = await createTestUser({ emailPrefix: "mark-all" });
-    const entryIds = await seedUnreadEntries(userId, 3);
+    const { entryIds } = await seedUnreadEntries(userId, 3);
 
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
@@ -100,5 +105,41 @@ describe("entries.markAllRead SSE publishing", () => {
       const result = await caller.entries.markAllRead({});
       expect(result.count).toBe(0);
     });
+  });
+
+  it("returns and publishes the absolute counts of every list it reached", async () => {
+    const userId = await createTestUser({ emailPrefix: "mark-all-counts" });
+    const { subscriptionId, entryIds } = await seedUnreadEntries(userId, 2);
+    const tagId = await createTestTag(userId, { name: "News", subscriptionIds: [subscriptionId] });
+    const channel = getUserEventsChannel(userId);
+    let collectionId = "";
+    // Creating the collection and adding to it publish one event each.
+    await subscribeAndDrain(
+      subscriber,
+      channel,
+      async () => {
+        collectionId = (await createCollection(db, userId, "Picks")).subscription.id;
+        await addEntriesToCollection(db, userId, collectionId, [entryIds[0]]);
+      },
+      2
+    );
+    const messagePromise = waitForMessage(subscriber, channel);
+
+    const caller = createCaller(await createAuthContext(userId));
+    const { counts } = await caller.entries.markAllRead({});
+
+    expect(counts).toEqual({
+      all: { unread: 0 },
+      starred: { unread: 0 },
+      saved: { unread: 0 },
+      subscriptions: expect.arrayContaining([
+        { id: subscriptionId, unread: 0, tagIds: [tagId] },
+        { id: collectionId, unread: 0, tagIds: [] },
+      ]),
+      tags: [{ id: tagId, unread: 0 }],
+      uncategorized: { unread: 0 },
+    });
+    expect(counts?.subscriptions).toHaveLength(2);
+    expect(JSON.parse(await messagePromise).counts).toEqual(counts);
   });
 });

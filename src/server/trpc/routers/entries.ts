@@ -501,7 +501,7 @@ export const entriesRouter = createTRPCRouter({
         clientSentAt: clientSentAtSchema,
       })
     )
-    .output(z.object({ count: z.number() }))
+    .output(z.object({ count: z.number(), counts: bulkUnreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
@@ -531,14 +531,14 @@ export const entriesRouter = createTRPCRouter({
       // markAllEntriesRead publishes the mark_all_read SSE signal itself (so the
       // Google Reader mark-all-as-read route notifies other tabs too).
       const { clientSentAt, ...filters } = input;
-      const entryIds = await entriesService.markAllEntriesRead(ctx.db, {
+      const { entryIds, counts } = await entriesService.markAllEntriesRead(ctx.db, {
         ...filters,
         changedAt: toServerTime(input.changedAt, clientSentAt),
         userId,
         showSpam: ctx.session.user.showSpam,
       });
 
-      return { count: entryIds.length };
+      return { count: entryIds.length, counts };
     }),
 
   /**
