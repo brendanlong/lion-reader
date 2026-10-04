@@ -14,6 +14,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { feeds, subscriptions, users } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { getGlobalUnreadCounts } from "@/server/services/counts";
 import type { ListEntriesParams } from "@/server/services/entries";
 import { SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { resolveFeedStream } from "./id";
@@ -189,8 +190,10 @@ export async function getGreaderUnreadCounts(
   db: typeof dbType,
   userId: string
 ): Promise<{
-  subscriptions: Array<{ streamId: string; unreadCount: number; isCollection: boolean }>;
+  subscriptions: Array<{ streamId: string; unreadCount: number }>;
   newestItemAtByStreamId: Map<string, Date>;
+  /** The All badge, for the reading-list total. */
+  readingListUnread: number;
 }> {
   // Key both arms by the Google Reader feed stream id — the subscription's
   // greader_stream_id, or the saved feed's — so the result feeds straight into
@@ -198,10 +201,8 @@ export async function getGreaderUnreadCounts(
   // (int8) as a decimal string, which is exactly what the wire id needs.
   const result = await db.execute(sql`
     SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread,
-           COALESCE(latest.newest, latest_member.newest) AS newest,
-           f.type = 'collection' AS is_collection
+           COALESCE(latest.newest, latest_member.newest) AS newest
     FROM subscriptions s
-    JOIN feeds f ON f.id = s.feed_id
     LEFT JOIN LATERAL (
       SELECT ue.published_or_fetched_at AS newest
       FROM user_entries ue
@@ -220,8 +221,7 @@ export async function getGreaderUnreadCounts(
 
     UNION ALL
 
-    SELECT f.greader_stream_id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest,
-           false AS is_collection
+    SELECT f.greader_stream_id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest
     FROM feeds f
     JOIN users u ON u.id = f.user_id
     LEFT JOIN LATERAL (
@@ -235,21 +235,17 @@ export async function getGreaderUnreadCounts(
     WHERE f.type = 'saved' AND f.user_id = ${userId}::uuid
   `);
 
-  const subscriptions: Array<{ streamId: string; unreadCount: number; isCollection: boolean }> = [];
+  const subscriptions: Array<{ streamId: string; unreadCount: number }> = [];
   const newestItemAtByStreamId = new Map<string, Date>();
   for (const row of result.rows as Array<{
     stream_id: string;
     unread: number;
     newest: Date | null;
-    is_collection: boolean;
   }>) {
-    subscriptions.push({
-      streamId: row.stream_id,
-      unreadCount: row.unread,
-      isCollection: row.is_collection,
-    });
+    subscriptions.push({ streamId: row.stream_id, unreadCount: row.unread });
     if (row.newest) newestItemAtByStreamId.set(row.stream_id, new Date(row.newest));
   }
 
-  return { subscriptions, newestItemAtByStreamId };
+  const { allUnread } = await getGlobalUnreadCounts(db, userId);
+  return { subscriptions, newestItemAtByStreamId, readingListUnread: allUnread };
 }
