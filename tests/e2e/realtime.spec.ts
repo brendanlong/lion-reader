@@ -37,6 +37,7 @@ import {
   loginAs,
   waitForChannelSubscriber,
   recordTrpcProcedures,
+  trpcProcedures,
   closeTestConnections,
   type TestUser,
   type TestFeed,
@@ -114,10 +115,10 @@ async function seedAndOpenAll(
     { timeout: 90_000 }
   );
   // Each SSE connect runs a sync.events catch-up. If its query lands after a
-  // test writes its entry, it replays the event and (legitimately) refetches
-  // tags.list, which the tests would count as a stray refetch (#1831).
+  // test's write, it replays the change and (legitimately) refetches the
+  // sidebar lists, which the tests would count as stray refetches (#1831).
   const catchUpResponse = page.waitForResponse(
-    (response) => response.url().includes("/api/trpc/sync.events"),
+    (response) => trpcProcedures(response.url()).includes("sync.events"),
     { timeout: 90_000 }
   );
 
