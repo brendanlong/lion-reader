@@ -36,7 +36,7 @@ test("adds an article to a new collection and lists it there", async ({ page, ba
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("combobox", { name: "Search or create a collection" }).fill("Research");
   await dialog.getByRole("option", { name: "Create “Research”" }).click();
-  await expect(dialog.getByRole("option", { name: "Research" })).toHaveAttribute(
+  await expect(dialog.getByRole("option", { name: "Research", exact: true })).toHaveAttribute(
     "aria-selected",
     "true"
   );

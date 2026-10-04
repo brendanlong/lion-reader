@@ -124,7 +124,7 @@ describe("demo reader tree", () => {
 
     // Typing a new name offers to create it; Enter does, with the article in it.
     fireEvent.change(search, { target: { value: "Research" } });
-    expect(within(dialog).getByRole("option", { name: "Create “Research”" })).toBeVisible();
+    expect(await within(dialog).findByRole("option", { name: "Create “Research”" })).toBeVisible();
     fireEvent.keyDown(search, { key: "Enter" });
 
     await vi.waitFor(() =>
@@ -141,9 +141,12 @@ describe("demo reader tree", () => {
     fireEvent.change(search, { target: { value: "research" } });
     expect(within(dialog).queryByRole("option", { name: /^Create/ })).toBeNull();
     fireEvent.change(search, { target: { value: "rese" } });
-    expect(within(dialog).getByRole("option", { name: "Create “rese”" })).toBeVisible();
+    expect(await within(dialog).findByRole("option", { name: "Create “rese”" })).toBeVisible();
 
-    // Enter on an exact match toggles it: here, out of the collection.
+    // Enter before the results for the typed name arrive (the list still
+    // shows another search's) toggles the existing collection: no duplicate.
+    fireEvent.change(search, { target: { value: "zzz" } });
+    await within(dialog).findByRole("option", { name: "Create “zzz”" });
     fireEvent.change(search, { target: { value: "Research" } });
     fireEvent.keyDown(search, { key: "Enter" });
     await vi.waitFor(() =>
@@ -153,6 +156,48 @@ describe("demo reader tree", () => {
       )
     );
     expect(screen.getByRole("button", { name: "Add to Collection" })).toBeVisible();
+    expect(callsFor("collections.create")).toHaveLength(1);
+  });
+
+  it("keeps rows and the keyboard highlight in place when toggling", async () => {
+    mockSearch = "entry=welcome";
+    renderDemo();
+
+    const openPicker = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /Collection/ }));
+      const dialog = await screen.findByRole("dialog");
+      return {
+        dialog,
+        search: within(dialog).getByRole("combobox", { name: "Search or create a collection" }),
+      };
+    };
+    const { dialog, search } = await openPicker();
+    for (const name of ["Beta", "Alpha"]) {
+      fireEvent.change(search, { target: { value: name } });
+      await within(dialog).findByRole("option", { name: `Create “${name}”` });
+      fireEvent.keyDown(search, { key: "Enter" });
+      await vi.waitFor(() => expect(search).toHaveValue(""));
+    }
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Reopened: both are members, so neither moves when one is toggled.
+    const reopened = await openPicker();
+    await vi.waitFor(() => expect(within(reopened.dialog).getAllByRole("option")).toHaveLength(2));
+    const [first, last] = within(reopened.dialog).getAllByRole("option");
+    const highlighted = () => reopened.search.getAttribute("aria-activedescendant");
+
+    fireEvent.keyDown(reopened.search, { key: "ArrowUp" });
+    expect(highlighted()).toBe(last.id);
+    fireEvent.keyDown(reopened.search, { key: "ArrowDown" });
+    expect(highlighted()).toBe(first.id);
+
+    fireEvent.keyDown(reopened.search, { key: "Enter" });
+    await vi.waitFor(() => expect(first).toHaveAttribute("aria-selected", "false"));
+    expect(within(reopened.dialog).getAllByRole("option")).toEqual([first, last]);
+    fireEvent.keyDown(reopened.search, { key: "Enter" });
+    await vi.waitFor(() => expect(first).toHaveAttribute("aria-selected", "true"));
+    expect(last).toHaveAttribute("aria-selected", "true");
   });
 
   it("shows the canned summary through the real summarize flow", async () => {
