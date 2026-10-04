@@ -81,6 +81,7 @@ const SSE_EVENT_NAMES = [
   "tag_created",
   "tag_updated",
   "tag_deleted",
+  "collection_entries_changed",
   "import_progress",
   "import_completed",
   "announcement_changed",
@@ -175,6 +176,15 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
           cursors: action.cursors,
         });
         for (const event of events) handleSyncEvent(utils, queryClient, event);
+        // Membership changes are SSE-only (collection_entries_changed isn't
+        // replayed): re-check cached memberships, and the sidebar counts of a
+        // collection an article left while disconnected, which no replayed
+        // event carries.
+        if (events.length > 0) {
+          void utils.collections.listForEntry.invalidate();
+          void utils.subscriptions.list.invalidate();
+          void utils.tags.list.invalidate();
+        }
         result = { type: "sync-result", epoch: action.epoch, ok: true, events, hasMore };
       } catch (error) {
         console.error("Sync failed:", error);

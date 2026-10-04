@@ -14,6 +14,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { feeds, subscriptions, users } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
+import { getGlobalUnreadCounts } from "@/server/services/counts";
 import type { ListEntriesParams } from "@/server/services/entries";
 import { SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 import { resolveFeedStream } from "./id";
@@ -77,6 +78,10 @@ export async function resolveFeedStreamFilter(
  * free column read per subscription plus one users-row read for the saved
  * feed — so the old `includeUnreadCounts` opt-out (issue #1074) is gone; every
  * caller gets real counts. Spam never counts (the counters exclude it).
+ *
+ * Collections are left out: Google Reader clients file each item under its
+ * `origin` stream, which is the article's source feed, so a collection would
+ * show a count with no items of its own.
  */
 export async function listGreaderSubscriptions(
   db: typeof dbType,
@@ -95,11 +100,17 @@ export async function listGreaderSubscriptions(
   ]);
 
   const streamIdById = new Map(streamIds.map((s) => [s.id, s.greaderStreamId]));
-  const withStreamIds: GreaderSubscription[] = all.map((sub) => ({
-    ...sub,
-    // Present for every active subscription (both queries filter the same set).
-    greaderStreamId: streamIdById.get(sub.id) ?? BigInt(0),
-  }));
+  const withStreamIds: GreaderSubscription[] = all.flatMap((sub) =>
+    sub.type === "collection"
+      ? []
+      : [
+          {
+            ...sub,
+            // Present for every active subscription (both queries filter the same set).
+            greaderStreamId: streamIdById.get(sub.id) ?? BigInt(0),
+          },
+        ]
+  );
 
   return saved ? [...withStreamIds, saved] : withStreamIds;
 }
@@ -191,6 +202,8 @@ export async function getGreaderUnreadCounts(
 ): Promise<{
   subscriptions: Array<{ streamId: string; unreadCount: number }>;
   newestItemAtByStreamId: Map<string, Date>;
+  /** The All badge, for the reading-list total. */
+  readingListUnread: number;
 }> {
   // Key both arms by the Google Reader feed stream id — the subscription's
   // greader_stream_id, or the saved feed's — so the result feeds straight into
@@ -199,6 +212,7 @@ export async function getGreaderUnreadCounts(
   const result = await db.execute(sql`
     SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread, latest.newest AS newest
     FROM subscriptions s
+    JOIN feeds sf ON sf.id = s.feed_id AND sf.type <> 'collection'
     LEFT JOIN LATERAL (
       SELECT ue.published_or_fetched_at AS newest
       FROM user_entries ue
@@ -236,5 +250,6 @@ export async function getGreaderUnreadCounts(
     if (row.newest) newestItemAtByStreamId.set(row.stream_id, new Date(row.newest));
   }
 
-  return { subscriptions, newestItemAtByStreamId };
+  const { allUnread } = await getGlobalUnreadCounts(db, userId);
+  return { subscriptions, newestItemAtByStreamId, readingListUnread: allUnread };
 }

@@ -203,8 +203,10 @@ interface GoogleReaderUnreadCount {
 /**
  * Formats unread counts per subscription for the Google Reader unread-count
  * endpoint. The saved-articles feed arrives as a synthetic subscription in
- * `subscriptions` (issue #730), so it is counted and folded into the
- * reading-list total exactly like a real feed — no special case here.
+ * `subscriptions` (issue #730), so it gets a line like a real feed. The
+ * reading-list total is the All badge (`readingListUnread`), not a sum of the
+ * lines: an article can appear in more than one of them (a feed and a
+ * collection), and starred articles of unsubscribed feeds appear in none.
  *
  * `newestItemTimestampUsec` is the newest visible item's time (from
  * `getGreaderUnreadCounts`, keyed by the same feed-stream id), in microseconds.
@@ -228,7 +230,8 @@ interface GoogleReaderUnreadCount {
  */
 export function formatUnreadCounts(
   subscriptions: Array<{ streamId: string; unreadCount: number }>,
-  newestItemAtByStreamId: Map<string, Date>
+  newestItemAtByStreamId: Map<string, Date>,
+  readingListUnread: number
 ): {
   max: number;
   unreadcounts: GoogleReaderUnreadCount[];
@@ -237,7 +240,6 @@ export function formatUnreadCounts(
 
   const toUsec = (ms: number): string => (ms * 1000).toString();
 
-  let totalUnread = 0;
   let newestOverallMs = 0;
   for (const sub of subscriptions) {
     if (sub.unreadCount > 0) {
@@ -247,17 +249,16 @@ export function formatUnreadCounts(
         count: sub.unreadCount,
         newestItemTimestampUsec: toUsec(newestMs),
       });
-      totalUnread += sub.unreadCount;
       newestOverallMs = Math.max(newestOverallMs, newestMs);
     }
   }
 
   // Add total unread count for reading-list
-  if (totalUnread > 0) {
+  if (readingListUnread > 0) {
     unreadcounts.push({
       id: stateStreamId("reading-list"),
-      count: totalUnread,
-      newestItemTimestampUsec: toUsec(newestOverallMs),
+      count: readingListUnread,
+      newestItemTimestampUsec: toUsec(newestOverallMs || Date.now()),
     });
   }
 

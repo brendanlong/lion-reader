@@ -22,6 +22,7 @@ import { db } from "@/server/db";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
+import { lockSubscriptionRow } from "@/server/services/subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -121,33 +122,37 @@ export async function POST(request: Request): Promise<Response> {
         return textResponse("OK"); // Already unsubscribed
       }
 
-      // Soft delete the subscription
+      // Soft delete the subscription. One transaction that locks the
+      // subscription first, so it takes locks in the unread-counter triggers'
+      // order (see lockSubscriptionRow).
       const now = new Date();
+      await db.transaction(async (tx) => {
+        await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
 
-      // Remove tag associations. `subscriptionId` was resolved user-scoped
-      // above, but scope the delete through the user's own subscriptions too so
-      // it is self-evidently user-scoped in isolation (defense-in-depth).
-      await db.delete(subscriptionTags).where(
-        inArray(
-          subscriptionTags.subscriptionId,
-          db
-            .select({ id: subscriptions.id })
-            .from(subscriptions)
-            .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
-        )
-      );
-
-      // Set unsubscribedAt
-      await db
-        .update(subscriptions)
-        .set({ unsubscribedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(subscriptions.id, subscriptionId),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
+        // Remove tag associations. `subscriptionId` was resolved user-scoped
+        // above, but scope the delete through the user's own subscriptions too
+        // so it is self-evidently user-scoped in isolation (defense-in-depth).
+        await tx.delete(subscriptionTags).where(
+          inArray(
+            subscriptionTags.subscriptionId,
+            tx
+              .select({ id: subscriptions.id })
+              .from(subscriptions)
+              .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
           )
         );
+
+        await tx
+          .update(subscriptions)
+          .set({ unsubscribedAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(subscriptions.id, subscriptionId),
+              eq(subscriptions.userId, userId),
+              isNull(subscriptions.unsubscribedAt)
+            )
+          );
+      });
 
       return textResponse("OK");
     }

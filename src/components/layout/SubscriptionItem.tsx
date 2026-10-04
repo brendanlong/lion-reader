@@ -10,6 +10,8 @@
 import { IconButton } from "@/components/ui/icon-button";
 import { EditIcon, CloseIcon } from "@/components/ui/icons";
 import { ClientLink } from "@/components/ui/client-link";
+import type { CachedSubscription } from "@/lib/cache/count-cache";
+import { untitledSubscriptionLabel } from "@/lib/collections";
 
 // ============================================================================
 // Types
@@ -18,6 +20,7 @@ import { ClientLink } from "@/components/ui/client-link";
 export interface SubscriptionItemProps {
   subscription: {
     id: string;
+    type: CachedSubscription["type"];
     title: string | null;
     unreadCount: number;
   };
@@ -42,7 +45,8 @@ export function SubscriptionItem({
   onUnsubscribe,
   onPrefetch,
 }: SubscriptionItemProps) {
-  const displayTitle = subscription.title || "Untitled Feed";
+  const isCollection = subscription.type === "collection";
+  const displayTitle = subscription.title || untitledSubscriptionLabel(subscription.type);
   const subHref = `/subscription/${subscription.id}`;
 
   return (
@@ -75,7 +79,7 @@ export function SubscriptionItem({
         <IconButton
           icon={<EditIcon />}
           aria-label={`Edit ${displayTitle}`}
-          title="Edit subscription"
+          title={isCollection ? "Edit collection" : "Edit subscription"}
           size="sm"
           variant="subtle"
           onClick={(e) => {
@@ -85,8 +89,8 @@ export function SubscriptionItem({
         />
         <IconButton
           icon={<CloseIcon className="h-3.5 w-3.5" />}
-          aria-label={`Unsubscribe from ${displayTitle}`}
-          title="Unsubscribe"
+          aria-label={isCollection ? `Delete ${displayTitle}` : `Unsubscribe from ${displayTitle}`}
+          title={isCollection ? "Delete collection" : "Unsubscribe"}
           size="sm"
           variant="subtle"
           onClick={(e) => {

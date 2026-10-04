@@ -17,6 +17,8 @@ import {
   removeSubscriptionFromCache,
   findCachedSubscription,
 } from "./count-cache";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { insertIntoCollectionLists } from "@/lib/local-db/entry-lists";
 
 /**
  * Subscription data for adding to cache.
@@ -228,8 +230,51 @@ export function handleSubscriptionCreated(
     subscription.tags.map((t) => t.id),
     subscription.tags.length === 0
   );
+  if (subscription.type === "collection") {
+    void utils.subscriptions.list.invalidate({ type: "collection" });
+  }
 
   applySubscriptionCounts(utils, counts, queryClient);
+}
+
+/**
+ * Applies articles being added to or removed from a collection: the absolute
+ * counts, each article's cached `collections.listForEntry`, and (for adds) the
+ * collection's loaded entry lists. A removed article stays in lists already
+ * on screen until they refresh, like a read one, so the reader keeps its
+ * place. Idempotent, so the acting tab can apply both its mutation response
+ * and the SSE event.
+ */
+export function applyCollectionEntriesChange(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  change: {
+    subscriptionId: string;
+    entryIds: string[];
+    added: boolean;
+    counts?: EntryRelatedCounts;
+  }
+): void {
+  const { subscriptionId, entryIds, added, counts } = change;
+  if (counts) setEntryRelatedCounts(utils, counts, queryClient);
+  const db = getLocalDb(queryClient);
+  for (const entryId of entryIds) {
+    const old = utils.collections.listForEntry.getData({ entryId });
+    if (old) {
+      const others = old.collectionIds.filter((id) => id !== subscriptionId);
+      utils.collections.listForEntry.setData(
+        { entryId },
+        { collectionIds: added ? [...others, subscriptionId] : others }
+      );
+    } else {
+      // Not loaded (or failed): the rest of its membership is unknown.
+      void utils.collections.listForEntry.invalidate({ entryId });
+    }
+    if (added) {
+      const stored = db.entries.getSynced(entryId);
+      if (stored) insertIntoCollectionLists(db.lists, stored, subscriptionId);
+    }
+  }
 }
 
 /**
@@ -280,6 +325,12 @@ export function handleSubscriptionDeleted(
   // list refetch just re-filters), so they run unconditionally regardless of
   // whether the subscription was cached.
   applySubscriptionCounts(utils, counts, queryClient);
+
+  // A deleted collection no longer holds anything.
+  queryClient.setQueriesData<{ collectionIds: string[] }>(
+    { queryKey: [["collections", "listForEntry"]] },
+    (old) => old && { collectionIds: old.collectionIds.filter((id) => id !== subscriptionId) }
+  );
   forgetDeletedSubscription(utils, subscriptionId);
 
   // Always invalidate entries.list - entries from this subscription should be filtered out

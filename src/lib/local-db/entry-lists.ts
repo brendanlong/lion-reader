@@ -2,8 +2,10 @@
  * Entry list membership: which entries each loaded `entries.list` view shows,
  * as rows `{ listKey, entryId, order }` joined against the entry store at
  * render time. A list's membership only changes when the list is fetched
- * (a full refetch replaces it, a next page adds to it) or when a live event
- * inserts an entry that belongs in it — never when an entry's state changes,
+ * (a full refetch replaces it, a next page adds to it), when a live event
+ * inserts an entry that belongs in it, or when an entry is added to the
+ * collection a list shows — never when an entry's state changes or it leaves
+ * a collection,
  * so read entries stay visible in unread-only views until the list refreshes
  * on navigation.
  */
@@ -214,6 +216,34 @@ export function insertIntoMatchingLists(
   entry: EntryRow,
   scope: EntryTagScope | undefined
 ): void {
+  insertIntoListsWhere(lists, entry, (input) => belongsInList(input, entry, scope));
+}
+
+/**
+ * Inserts an entry into the loaded lists of a collection it was just added
+ * to. A collection's membership isn't one of the entry's fields, so
+ * `insertIntoMatchingLists` can't place it; tag lists the collection is in
+ * pick it up on their next refresh.
+ */
+export function insertIntoCollectionLists(
+  lists: EntryLists,
+  entry: EntryRow,
+  collectionId: string
+): void {
+  insertIntoListsWhere(
+    lists,
+    entry,
+    (input) =>
+      input.subscriptionId === collectionId &&
+      belongsInList({ ...input, subscriptionId: undefined }, entry, undefined)
+  );
+}
+
+function insertIntoListsWhere(
+  lists: EntryLists,
+  entry: EntryRow,
+  belongs: (input: EntryListMeta["input"]) => boolean
+): void {
   const rows: ListEntryRow[] = [];
   for (const [listKey, meta] of lists.meta) {
     const { input } = meta;
@@ -221,7 +251,7 @@ export function insertIntoMatchingLists(
     const hasUnknownFilter = Object.keys(input).some(
       (key) => input[key] !== undefined && !INSERT_SUPPORTED_FILTER_KEYS.has(key)
     );
-    if (hasUnknownFilter || !belongsInList(input, entry, scope)) continue;
+    if (hasUnknownFilter || !belongs(input)) continue;
 
     const order = listOrder(input, entry, 0);
     if (meta.hasMore && order > meta.lastOrder) continue;

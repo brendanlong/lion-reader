@@ -26,7 +26,7 @@
  */
 
 import { db } from "@/server/db";
-import { subscriptions } from "@/server/db/schema";
+import { feeds, subscriptions } from "@/server/db/schema";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
@@ -42,7 +42,7 @@ import {
   type PubSubSubscription,
   type UserEvent,
 } from "@/server/redis/pubsub";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, ne } from "drizzle-orm";
 import {
   incrementSSEConnections,
   decrementSSEConnections,
@@ -66,6 +66,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
  * Gets a mapping of feedId -> subscriptionId for a user's active subscriptions.
  * This lets the SSE endpoint transform feed events (which use feedId) into
  * subscription-centric events (which use subscriptionId) for the client.
+ * Collections are left out: their feeds never publish.
  */
 async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, string>> {
   const rows = await db
@@ -74,7 +75,14 @@ async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, s
       subscriptionId: subscriptions.id,
     })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        ne(feeds.type, "collection")
+      )
+    );
 
   const map = new Map<string, string>();
   for (const row of rows) {
@@ -367,7 +375,7 @@ export async function GET(req: Request): Promise<Response> {
           // new_entry are computed from the DB, so no tag bookkeeping is needed.
           // (Done synchronously, outside the send chain, so channel membership
           // updates aren't delayed behind pending count queries.)
-          if (event.type === "subscription_created") {
+          if (event.type === "subscription_created" && event.feed.type !== "collection") {
             subscribeToFeed(event.feedId, event.subscriptionId);
           } else if (event.type === "subscription_deleted") {
             unsubscribeFromFeed(event.feedId);
@@ -412,9 +420,7 @@ export async function GET(req: Request): Promise<Response> {
             enqueueSend(async () => {
               let counts: BulkUnreadCounts | undefined;
               try {
-                counts = await getBulkEntryRelatedCounts(db, userId, [
-                  { subscriptionId, type: event.feedType },
-                ]);
+                counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
               } catch (err) {
                 // Leave counts off; the client skips the count update and it
                 // self-heals on the next count-bearing event or refetch.

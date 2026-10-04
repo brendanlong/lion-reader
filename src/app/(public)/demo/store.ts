@@ -61,6 +61,19 @@ export type DemoProcedures = {
     Inputs["subscriptions"]["delete"],
     Outputs["subscriptions"]["delete"]
   >;
+  "collections.create": Handler<Inputs["collections"]["create"], Outputs["collections"]["create"]>;
+  "collections.addEntries": Handler<
+    Inputs["collections"]["addEntries"],
+    Outputs["collections"]["addEntries"]
+  >;
+  "collections.removeEntries": Handler<
+    Inputs["collections"]["removeEntries"],
+    Outputs["collections"]["removeEntries"]
+  >;
+  "collections.listForEntry": Handler<
+    Inputs["collections"]["listForEntry"],
+    Outputs["collections"]["listForEntry"]
+  >;
   "summarization.isAvailable": Handler<
     Inputs["summarization"]["isAvailable"],
     Outputs["summarization"]["isAvailable"]
@@ -88,12 +101,15 @@ interface EntryState {
 
 interface SubscriptionState {
   id: string;
+  /** A collection's entries are its `members`; a feed's are those it published. */
+  type: "web" | "collection";
   title: string;
   originalTitle: string;
   description: string;
   tagIds: string[];
   fetchFullContent: boolean;
   deleted: boolean;
+  members: Set<string>;
 }
 
 /** All demo subscriptions predate every article. */
@@ -148,12 +164,14 @@ export function createDemoStore(): DemoStore {
       sub.id,
       {
         id: sub.id,
+        type: "web",
         title: sub.title,
         originalTitle: sub.title,
         description: sub.description,
         tagIds: [sub.tagId],
         fetchFullContent: false,
         deleted: false,
+        members: new Set(),
       },
     ])
   );
@@ -182,17 +200,34 @@ export function createDemoStore(): DemoStore {
     return sub && !sub.deleted ? sub : undefined;
   }
 
-  /** Starred entries stay visible after unsubscribing, like the app. */
+  /** The live subscriptions containing the entry: its feed and any collections holding it. */
+  function containersOf(state: EntryState): SubscriptionState[] {
+    const feed = subscriptionOf(state);
+    const collections = liveSubscriptions().filter((sub) => sub.members.has(state.entry.id));
+    return feed ? [feed, ...collections] : collections;
+  }
+
+  /** Starred and collected entries stay visible after unsubscribing, like the app. */
   function isVisible(state: EntryState): boolean {
-    return subscriptionOf(state) !== undefined || state.starred;
+    return containersOf(state).length > 0 || state.starred;
   }
 
   function matches(state: EntryState, filter: EntryFilter): boolean {
     if (!isVisible(state)) return false;
-    const sub = subscriptionOf(state);
-    if (filter.subscriptionId !== undefined && sub?.id !== filter.subscriptionId) return false;
-    if (filter.tagId !== undefined && !sub?.tagIds.includes(filter.tagId)) return false;
-    if (filter.uncategorized && (!sub || sub.tagIds.length > 0)) return false;
+    const containers = containersOf(state);
+    if (
+      filter.subscriptionId !== undefined &&
+      !containers.some((sub) => sub.id === filter.subscriptionId)
+    ) {
+      return false;
+    }
+    if (
+      filter.tagId !== undefined &&
+      !containers.some((sub) => sub.tagIds.includes(filter.tagId ?? ""))
+    ) {
+      return false;
+    }
+    if (filter.uncategorized && !containers.some((sub) => sub.tagIds.length === 0)) return false;
     if (filter.type !== undefined && state.entry.type !== filter.type) return false;
     if (filter.excludeTypes?.includes(state.entry.type)) return false;
     if (filter.unreadOnly && state.read) return false;
@@ -267,7 +302,7 @@ export function createDemoStore(): DemoStore {
   function toSubscription(sub: SubscriptionState): Subscription {
     return {
       id: sub.id,
-      type: "web",
+      type: sub.type,
       url: null,
       title: sub.title,
       originalTitle: sub.originalTitle,
@@ -317,6 +352,31 @@ export function createDemoStore(): DemoStore {
     const sub = subscriptions.get(id);
     if (!sub || sub.deleted) throw procedureError("NOT_FOUND", "Subscription not found");
     return sub;
+  }
+
+  function requireCollection(id: string): SubscriptionState {
+    const sub = requireSubscription(id);
+    if (sub.type !== "collection") throw procedureError("NOT_FOUND", "Subscription not found");
+    return sub;
+  }
+
+  function changeMembership(
+    collectionId: string,
+    entryIds: string[],
+    added: boolean
+  ): Outputs["collections"]["addEntries"] {
+    const collection = requireCollection(collectionId);
+    const changed = entryIds.filter((id) => {
+      const state = entries.get(id);
+      if (!state || !isVisible(state) || collection.members.has(id) === added) return false;
+      if (added) collection.members.add(id);
+      else collection.members.delete(id);
+      return true;
+    });
+    return {
+      entryIds: changed,
+      counts: changed.length > 0 ? countsForSubscriptions([collection]) : undefined,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -396,8 +456,7 @@ export function createDemoStore(): DemoStore {
           state.read = input.read;
           state.updatedAt = writtenAt;
           flipped = true;
-          const sub = subscriptionOf(state);
-          if (sub) affected.set(sub.id, sub);
+          for (const sub of containersOf(state)) affected.set(sub.id, sub);
         }
         state.readChangedAt = writtenAt;
         results.push({
@@ -447,7 +506,6 @@ export function createDemoStore(): DemoStore {
         state.starred = input.starred;
         state.updatedAt = new Date();
       }
-      const sub = subscriptionOf(state);
       return {
         entry: {
           id: state.entry.id,
@@ -455,7 +513,7 @@ export function createDemoStore(): DemoStore {
           starred: state.starred,
           updatedAt: state.updatedAt,
         },
-        counts: flipped ? countsForSubscriptions(sub ? [sub] : []) : undefined,
+        counts: flipped ? countsForSubscriptions(containersOf(state)) : undefined,
       };
     },
 
@@ -486,6 +544,7 @@ export function createDemoStore(): DemoStore {
         .filter((sub) => input?.tagId === undefined || sub.tagIds.includes(input.tagId))
         .filter((sub) => !input?.uncategorized || sub.tagIds.length === 0)
         .filter((sub) => !input?.unreadOnly || unread({ subscriptionId: sub.id }) > 0)
+        .filter((sub) => input?.type === undefined || sub.type === input.type)
         .filter((sub) => !needle || sub.title.toLowerCase().includes(needle));
       const after = input?.cursor ? matching.findIndex((s) => s.id === input.cursor) : -1;
       // A cursor that no longer matches (unsubscribed meanwhile) ends the list.
@@ -520,8 +579,35 @@ export function createDemoStore(): DemoStore {
     "subscriptions.delete": (input) => {
       const sub = requireSubscription(input.id);
       sub.deleted = true;
+      sub.members.clear();
       return { success: true, counts: countsForSubscriptions([sub]) };
     },
+
+    "collections.create": (input) => {
+      const sub: SubscriptionState = {
+        id: crypto.randomUUID(),
+        type: "collection",
+        title: input.name,
+        originalTitle: input.name,
+        description: "",
+        tagIds: [],
+        fetchFullContent: false,
+        deleted: false,
+        members: new Set(),
+      };
+      subscriptions.set(sub.id, sub);
+      return { subscription: toSubscription(sub), counts: countsForSubscriptions([sub]) };
+    },
+
+    "collections.addEntries": (input) => changeMembership(input.id, input.entryIds, true),
+
+    "collections.removeEntries": (input) => changeMembership(input.id, input.entryIds, false),
+
+    "collections.listForEntry": (input) => ({
+      collectionIds: liveSubscriptions()
+        .filter((sub) => sub.members.has(input.entryId))
+        .map((sub) => sub.id),
+    }),
 
     "summarization.isAvailable": () => ({ available: true }),
 

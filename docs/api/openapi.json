@@ -4649,6 +4649,19 @@
           },
           {
             "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "email",
+                "saved",
+                "collection"
+              ]
+            }
+          },
+          {
+            "in": "query",
             "name": "cursor",
             "schema": {
               "type": "string"
@@ -8749,6 +8762,820 @@
         }
       }
     },
+    "/collections": {
+      "post": {
+        "operationId": "collections-create",
+        "summary": "Create a collection",
+        "tags": [
+          "Collections"
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "subscription": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "web",
+                            "email",
+                            "saved",
+                            "collection"
+                          ]
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "title": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "originalTitle": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "description": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "siteUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "subscribedAt": {
+                          "type": "string"
+                        },
+                        "unreadCount": {
+                          "type": "number"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "color": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "color"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "fetchFullContent": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type",
+                        "url",
+                        "title",
+                        "originalTitle",
+                        "description",
+                        "siteUrl",
+                        "subscribedAt",
+                        "unreadCount",
+                        "tags",
+                        "fetchFullContent"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "all": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "starred": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "saved": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "all",
+                        "starred",
+                        "subscriptions",
+                        "tags"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "subscription",
+                    "counts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.BAD_REQUEST"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authorization not provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.UNAUTHORIZED"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.FORBIDDEN"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.INTERNAL_SERVER_ERROR"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/entries/{entryId}/collections": {
+      "get": {
+        "operationId": "collections-listForEntry",
+        "summary": "List the collections holding an article",
+        "tags": [
+          "Collections"
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entryId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "collectionIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "collectionIds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.BAD_REQUEST"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authorization not provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.UNAUTHORIZED"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.FORBIDDEN"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.NOT_FOUND"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.INTERNAL_SERVER_ERROR"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{id}/entries": {
+      "post": {
+        "operationId": "collections-addEntries",
+        "summary": "Add articles to a collection",
+        "tags": [
+          "Collections"
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entryIds": {
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "entryIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entryIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "all": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "starred": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "saved": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "all",
+                        "starred",
+                        "subscriptions",
+                        "tags"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "entryIds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.BAD_REQUEST"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authorization not provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.UNAUTHORIZED"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.FORBIDDEN"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.INTERNAL_SERVER_ERROR"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{id}/entries/remove": {
+      "post": {
+        "operationId": "collections-removeEntries",
+        "summary": "Remove articles from a collection",
+        "tags": [
+          "Collections"
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entryIds": {
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "entryIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entryIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "all": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "starred": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "saved": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "all",
+                        "starred",
+                        "subscriptions",
+                        "tags"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "entryIds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.BAD_REQUEST"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authorization not provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.UNAUTHORIZED"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.FORBIDDEN"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error.INTERNAL_SERVER_ERROR"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/saved": {
       "post": {
         "operationId": "saved-save",
@@ -8792,6 +9619,15 @@
                   },
                   "force": {
                     "type": "boolean"
+                  },
+                  "collectionIds": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
                   }
                 },
                 "required": [
@@ -9096,6 +9932,15 @@
                   },
                   "title": {
                     "type": "string"
+                  },
+                  "collectionIds": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
                   }
                 },
                 "required": [

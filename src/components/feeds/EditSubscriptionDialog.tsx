@@ -26,6 +26,7 @@ import { ClientLink } from "@/components/ui/client-link";
 interface EditSubscriptionFormProps {
   subscriptionId: string;
   currentTitle: string;
+  isCollection: boolean;
   currentCustomTitle: string | null;
   currentTagIds: string[];
   onClose: () => void;
@@ -50,7 +51,7 @@ export function EditSubscriptionDialog({ isOpen, ...formProps }: EditSubscriptio
     <Dialog
       isOpen={isOpen}
       onClose={formProps.onClose}
-      title="Edit Subscription"
+      title={formProps.isCollection ? "Edit Collection" : "Edit Subscription"}
       titleId="edit-subscription-title"
     >
       <EditSubscriptionForm key={formProps.subscriptionId} {...formProps} />
@@ -65,6 +66,7 @@ export function EditSubscriptionDialog({ isOpen, ...formProps }: EditSubscriptio
 function EditSubscriptionForm({
   subscriptionId,
   currentTitle,
+  isCollection,
   currentCustomTitle,
   currentTagIds,
   onClose,
@@ -124,11 +126,14 @@ function EditSubscriptionForm({
 
   return (
     <>
-      <DialogTitle id="edit-subscription-title">Edit Subscription</DialogTitle>
+      <DialogTitle id="edit-subscription-title">
+        {isCollection ? "Edit Collection" : "Edit Subscription"}
+      </DialogTitle>
 
       <DialogBody>
         <p className="ui-text-sm text-muted mb-4">
-          Feed: <span className="text-body font-medium">{currentTitle}</span>
+          {isCollection ? "Collection" : "Feed"}:{" "}
+          <span className="text-body font-medium">{currentTitle}</span>
         </p>
 
         {error && (
@@ -142,7 +147,11 @@ function EditSubscriptionForm({
           <Input
             id="custom-title"
             label="Custom Title (optional)"
-            placeholder="Leave empty to use feed's default title"
+            placeholder={
+              isCollection
+                ? "Leave empty to use the collection's name"
+                : "Leave empty to use feed's default title"
+            }
             value={customTitle}
             onChange={(e) => setCustomTitle(e.target.value)}
             disabled={isPending}

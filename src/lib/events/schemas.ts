@@ -142,7 +142,6 @@ export const subscriptionCreatedDataSchema = z.object({
  */
 export const feedCreatedDataSchema = z.object({
   id: z.string(),
-  // "collection": see subscriptionOutputSchema in the subscriptions router.
   type: z.enum(["web", "email", "saved", "collection"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -303,6 +302,18 @@ const tagDeletedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
+// Articles added to or removed from a collection. SSE-only: delta sync
+// re-delivers each changed entry through its user_entries.updated_at instead.
+const collectionEntriesChangedEventSchema = z.object({
+  type: z.literal("collection_entries_changed"),
+  subscriptionId: z.string(),
+  entryIds: z.array(z.string()),
+  added: z.boolean(),
+  counts: unreadCountsSchema,
+  timestamp: timestampWithDefault,
+  updatedAt: z.string(),
+});
+
 const importProgressEventSchema = z
   .object({
     type: z.literal("import_progress"),
@@ -359,6 +370,7 @@ const coreEventSchema = z.discriminatedUnion("type", [
   tagCreatedEventSchema,
   tagUpdatedEventSchema,
   tagDeletedEventSchema,
+  collectionEntriesChangedEventSchema,
 ]);
 
 /**

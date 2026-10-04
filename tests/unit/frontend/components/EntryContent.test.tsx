@@ -79,6 +79,7 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
     "entries.get": (input) => ({ entry: createEntry({ id: (input as { id: string }).id }) }),
     "summarization.isAvailable": () => ({ available: false }),
+    "collections.listForEntry": () => ({ collectionIds: [] }),
     "entries.markRead": (input) => {
       const entries = (input as { entries: { id: string }[] }).entries;
       return {

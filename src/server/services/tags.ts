@@ -4,9 +4,9 @@
  * Business logic for tag operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, sql, isNull } from "drizzle-orm";
+import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { tags, subscriptionTags, subscriptions } from "@/server/db/schema";
+import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
 import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -46,43 +46,6 @@ export interface UpdateTagParams {
 }
 
 // ============================================================================
-// Helper: Per-Tag Unread Counts
-// ============================================================================
-
-/**
- * Builds a grouped subquery of per-tag unread counts for a user.
- *
- * The tag badge is SUM of the trigger-maintained `subscriptions.unread_count`
- * counters (migration 0092, spam excluded) over each tag's ACTIVE
- * subscriptions — starred entries from unsubscribed feeds belong to Starred,
- * not to a tag's unread badge, so inactive subscriptions are excluded.
- * subscription_tags is unique per (tag, subscription), so each subscription's
- * counter contributes exactly once per tag.
- *
- * Computing all tags in one grouped aggregation (instead of a correlated
- * subquery per tag row) keeps listTags to a single query (#831); updateTag
- * reuses this for a single tag by filtering on tag_id.
- */
-function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
-  return db
-    .select({
-      tagId: subscriptionTags.tagId,
-      unreadCount: sql<number>`sum(${subscriptions.unreadCount})::int`.as("unread_count"),
-    })
-    .from(subscriptionTags)
-    .innerJoin(
-      subscriptions,
-      and(
-        eq(subscriptions.id, subscriptionTags.subscriptionId),
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
-      )
-    )
-    .groupBy(subscriptionTags.tagId)
-    .as("tag_unread_counts");
-}
-
-// ============================================================================
 // Service Functions
 // ============================================================================
 
@@ -91,8 +54,6 @@ function tagUnreadCountsQuery(db: typeof dbType, userId: string) {
  * Also returns uncategorized subscription counts.
  */
 export async function listTags(db: typeof dbType, userId: string): Promise<ListTagsResult> {
-  const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
-
   const [userTags, uncategorizedFeedCount, uncategorizedUnread] = await Promise.all([
     db
       .select({
@@ -105,10 +66,9 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
           FROM ${subscriptionTags}
           WHERE ${subscriptionTags.tagId} = "tags"."id"
         )`,
-        unreadCount: sql<number>`COALESCE(${tagUnreadCounts.unreadCount}, 0)`,
+        unreadCount: tags.unreadCount,
       })
       .from(tags)
-      .leftJoin(tagUnreadCounts, eq(tagUnreadCounts.tagId, tags.id))
       .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)))
       .orderBy(tags.name),
     // Uncategorized feed count: active subscriptions with no tags. This needs no
@@ -126,22 +86,10 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
           )`
         )
       ),
-    // Uncategorized unread count: SUM of the unread counters over active
-    // subscriptions with no tags. Active-only excludes starred orphans
-    // (entries kept visible after unsubscribe), which aren't "uncategorized".
     db
-      .select({ unreadCount: sql<number>`COALESCE(sum(${subscriptions.unreadCount}), 0)::int` })
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          isNull(subscriptions.unsubscribedAt),
-          sql`NOT EXISTS (
-            SELECT 1 FROM ${subscriptionTags}
-            WHERE ${subscriptionTags.subscriptionId} = ${subscriptions.id}
-          )`
-        )
-      ),
+      .select({ unreadCount: users.uncategorizedUnreadCount })
+      .from(users)
+      .where(eq(users.id, userId)),
   ]);
 
   return {
@@ -290,27 +238,21 @@ export async function updateTag(
   }
 
   // Get updated tag with feed count and unread count
-  const tagUnreadCounts = tagUnreadCountsQuery(db, userId);
-  const [updatedTag, unreadResult] = await Promise.all([
-    db
-      .select({
-        id: tags.id,
-        name: tags.name,
-        color: tags.color,
-        createdAt: tags.createdAt,
-        updatedAt: tags.updatedAt,
-        feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
-      })
-      .from(tags)
-      .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
-      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
-      .groupBy(tags.id)
-      .limit(1),
-    db
-      .select({ unreadCount: tagUnreadCounts.unreadCount })
-      .from(tagUnreadCounts)
-      .where(eq(tagUnreadCounts.tagId, tagId)),
-  ]);
+  const updatedTag = await db
+    .select({
+      id: tags.id,
+      name: tags.name,
+      color: tags.color,
+      createdAt: tags.createdAt,
+      updatedAt: tags.updatedAt,
+      unreadCount: tags.unreadCount,
+      feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
+    })
+    .from(tags)
+    .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
+    .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+    .groupBy(tags.id)
+    .limit(1);
 
   if (updatedTag.length === 0) {
     throw errors.tagNotFound();
@@ -336,7 +278,7 @@ export async function updateTag(
     name: tag.name,
     color: tag.color,
     feedCount: tag.feedCount,
-    unreadCount: unreadResult[0]?.unreadCount ?? 0,
+    unreadCount: tag.unreadCount,
     createdAt: tag.createdAt,
   };
 }
@@ -357,6 +299,23 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
   // (which would silently drop subscriptions from "Uncategorized" while the tag
   // is invisible in listTags).
   const updatedAt = await db.transaction(async (tx) => {
+    // Associations first (scoped to the user's live tag): removing them
+    // recomputes the user's counters, which locks the users row before the
+    // tags rows, and tombstoning the tag first would invert that order.
+    // They aren't synced, so a hard delete is fine.
+    await tx.delete(subscriptionTags).where(
+      and(
+        eq(subscriptionTags.tagId, tagId),
+        inArray(
+          subscriptionTags.tagId,
+          tx
+            .select({ id: tags.id })
+            .from(tags)
+            .where(and(eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
+        )
+      )
+    );
+
     const deleted = await tx
       .update(tags)
       .set({ deletedAt: now, updatedAt: now })
@@ -366,9 +325,6 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
     if (deleted.length === 0) {
       throw errors.tagNotFound();
     }
-
-    // Remove subscription_tags associations (these aren't synced, so hard delete is fine)
-    await tx.delete(subscriptionTags).where(eq(subscriptionTags.tagId, tagId));
 
     return deleted[0].updatedAt;
   });

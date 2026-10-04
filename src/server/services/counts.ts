@@ -4,32 +4,30 @@
  * Provides queries for fetching unread counts related to entries.
  * Used by mutations and SSE events to return absolute counts for cache updates.
  *
- * All unread badges are computed from the trigger-maintained counters
- * (migration 0092: `subscriptions.unread_count` / `starred_unread_count`,
- * `users.saved_unread_count` / `starred_unread_count`) — O(subscriptions)
- * arithmetic instead of an O(unread-entries) scan over visible_entries.
- * Spam is permanently excluded from the counters, so it never counts toward
- * a badge. The badge algebra:
+ * Every unread badge is a trigger-maintained counter (spam excluded), read
+ * directly — never a scan:
  *
- *   subscription  = s.unread_count
- *   tag           = SUM(unread_count) over the tag's ACTIVE subscriptions
- *   uncategorized = SUM(unread_count) over ACTIVE untagged subscriptions
- *   saved         = u.saved_unread_count
- *   starred       = u.starred_unread_count
- *   all           = SUM(unread_count)         over ACTIVE subscriptions
- *                 + u.saved_unread_count
- *                 + SUM(starred_unread_count) over INACTIVE subscriptions
+ *   subscription  = subscriptions.unread_count (a collection's counts its members)
+ *   tag           = tags.unread_count
+ *   uncategorized = users.uncategorized_unread_count
+ *   saved         = users.saved_unread_count
+ *   starred       = users.starred_unread_count
+ *   all           = users.all_unread_count
  *
- * The last term of `all` is the starred-orphans correction: starred entries
- * of unsubscribed subscriptions stay visible, and their (still trigger-
- * maintained) counters live on the dead subscription rows. Deriving the term
- * from `unsubscribed_at` at read time means unsubscribe/resubscribe/merge
- * need zero counter writes.
+ * Tag, Uncategorized and All count distinct articles: one reachable through
+ * both a feed and a collection (#1806) counts once. The database functions
+ * `apply_unread_rows` and `recompute_list_counters` maintain them.
  */
 
-import { eq, and, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
-import { subscriptionTags, subscriptions, users } from "@/server/db/schema";
+import {
+  collectionEntries,
+  subscriptionTags,
+  subscriptions,
+  tags,
+  users,
+} from "@/server/db/schema";
 
 // ============================================================================
 // Types
@@ -47,66 +45,39 @@ export interface TagCount {
 // Service Functions
 // ============================================================================
 
-/**
- * Global unread counts (all + starred + saved) for a user, computed with the
- * badge algebra (see the file header): one arithmetic query over the user's
- * subscription rows LEFT-JOINed to the users row. LEFT JOIN so a user with no
- * subscriptions still gets their saved/starred counters back.
- */
+interface UserUnreadCounts {
+  allUnread: number;
+  starredUnread: number;
+  savedUnread: number;
+  uncategorizedUnread: number;
+}
+
+async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<UserUnreadCounts> {
+  const [row] = await db
+    .select({
+      allUnread: users.allUnreadCount,
+      starredUnread: users.starredUnreadCount,
+      savedUnread: users.savedUnreadCount,
+      uncategorizedUnread: users.uncategorizedUnreadCount,
+    })
+    .from(users)
+    .where(eq(users.id, userId));
+  return row ?? { allUnread: 0, starredUnread: 0, savedUnread: 0, uncategorizedUnread: 0 };
+}
+
+/** Global unread counts (all + starred + saved) for a user. */
 export async function getGlobalUnreadCounts(
   db: DbOrTx,
   userId: string
 ): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
-  const result = await db
-    .select({
-      allUnread: sql<number>`(
-        COALESCE(sum(${subscriptions.unreadCount}) FILTER (WHERE ${subscriptions.unsubscribedAt} IS NULL), 0)
-        + ${users.savedUnreadCount}
-        + COALESCE(sum(${subscriptions.starredUnreadCount}) FILTER (WHERE ${subscriptions.unsubscribedAt} IS NOT NULL), 0)
-      )::int`,
-      starredUnread: users.starredUnreadCount,
-      savedUnread: users.savedUnreadCount,
-    })
-    .from(users)
-    .leftJoin(subscriptions, eq(subscriptions.userId, users.id))
-    .where(eq(users.id, userId))
-    .groupBy(users.id, users.savedUnreadCount, users.starredUnreadCount);
-  return result[0] ?? { allUnread: 0, starredUnread: 0, savedUnread: 0 };
+  const { allUnread, starredUnread, savedUnread } = await getUserUnreadCounts(db, userId);
+  return { allUnread, starredUnread, savedUnread };
 }
 
 /**
- * Uncategorized unread count: SUM of unread counters over the user's ACTIVE
- * subscriptions with no subscription_tags row. Aggregate without GROUP BY, so
- * it always returns exactly one row (COALESCEd to 0 when no rows match).
- */
-function uncategorizedUnreadQuery(db: DbOrTx, userId: string) {
-  return db
-    .select({
-      unread: sql<number>`COALESCE(sum(${subscriptions.unreadCount}), 0)::int`,
-    })
-    .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt),
-        sql`NOT EXISTS (
-          SELECT 1 FROM subscription_tags st
-          WHERE st.subscription_id = ${subscriptions.id}
-        )`
-      )
-    );
-}
-
-/**
- * Per-tag unread counts: SUM of unread counters over each tag's ACTIVE
- * subscriptions (starred orphans on unsubscribed feeds belong to Starred, not
- * to a tag's badge). subscription_tags is unique per (tag, subscription), so
- * each subscription's counter contributes exactly once per tag.
- *
- * Every requested tag is returned, zero-filled: a tag whose unread count
- * dropped to zero (or whose subscriptions are all inactive) produces no grouped
- * row, and the client sets these counts absolutely, so an omitted tag would
- * keep its stale badge.
+ * Per-tag unread counts. Every requested tag is returned, zero-filled: the
+ * client sets these counts absolutely, so an omitted tag would keep its stale
+ * badge.
  */
 async function getTagUnreadCounts(
   db: DbOrTx,
@@ -117,21 +88,9 @@ async function getTagUnreadCounts(
     return [];
   }
   const tagCounts = await db
-    .select({
-      tagId: subscriptionTags.tagId,
-      unread: sql<number>`sum(${subscriptions.unreadCount})::int`,
-    })
-    .from(subscriptionTags)
-    .innerJoin(
-      subscriptions,
-      and(
-        eq(subscriptions.id, subscriptionTags.subscriptionId),
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
-      )
-    )
-    .where(inArray(subscriptionTags.tagId, tagIds))
-    .groupBy(subscriptionTags.tagId);
+    .select({ tagId: tags.id, unread: tags.unreadCount })
+    .from(tags)
+    .where(and(eq(tags.userId, userId), inArray(tags.id, tagIds)));
 
   const unreadByTag = new Map(tagCounts.map((t) => [t.tagId, t.unread]));
   return tagIds.map((id) => ({ id, unread: unreadByTag.get(id) ?? 0 }));
@@ -164,23 +123,43 @@ export interface BulkUnreadCounts {
  *
  * @param db - Database instance
  * @param userId - User ID
- * @param entries - Entries with their context (subscriptionId, type)
+ * @param entries - Each entry's source subscription, plus its id when it may
+ *   already be in collections (whose counts are then included too)
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
   db: DbOrTx,
   userId: string,
-  entries: Array<{ subscriptionId: string | null; type: "web" | "email" | "saved" }>
+  entries: Array<{ id?: string; subscriptionId: string | null }>
 ): Promise<BulkUnreadCounts> {
+  const entryIds = entries.map((e) => e.id).filter((id) => id !== undefined);
+  const collectionIds =
+    entryIds.length > 0
+      ? (
+          await db
+            .selectDistinct({ id: collectionEntries.subscriptionId })
+            .from(collectionEntries)
+            .where(
+              and(
+                eq(collectionEntries.userId, userId),
+                inArray(collectionEntries.entryId, entryIds)
+              )
+            )
+        ).map((row) => row.id)
+      : [];
+
   // Collect unique subscription IDs (excluding null for saved articles)
   const subscriptionIds = [
-    ...new Set(entries.map((e) => e.subscriptionId).filter((id) => id !== null)),
-  ] as string[];
+    ...new Set([
+      ...entries.map((e) => e.subscriptionId).filter((id) => id !== null),
+      ...collectionIds,
+    ]),
+  ];
 
   // The global counter arithmetic runs alongside the subscription counter and
   // tag lookups; the latter are skipped when only saved entries are affected.
-  const [globalCounts, subscriptionCounts, subTags] = await Promise.all([
-    getGlobalUnreadCounts(db, userId),
+  const [userCounts, subscriptionCounts, subTags] = await Promise.all([
+    getUserUnreadCounts(db, userId),
     subscriptionIds.length > 0
       ? db
           .select({
@@ -202,9 +181,9 @@ export async function getBulkEntryRelatedCounts(
   ]);
 
   const baseCounts: BulkUnreadCounts = {
-    all: { unread: globalCounts.allUnread },
-    starred: { unread: globalCounts.starredUnread },
-    saved: { unread: globalCounts.savedUnread },
+    all: { unread: userCounts.allUnread },
+    starred: { unread: userCounts.starredUnread },
+    saved: { unread: userCounts.savedUnread },
     subscriptions: [],
     tags: [],
   };
@@ -227,15 +206,9 @@ export async function getBulkEntryRelatedCounts(
   const subscriptionsWithTags = new Set(subTags.map((t) => t.subscriptionId));
   const hasUncategorized = subscriptionIds.some((id) => !subscriptionsWithTags.has(id));
 
-  // Tag sums and the uncategorized sum in parallel
-  const [tagCounts, uncategorizedResult] = await Promise.all([
-    getTagUnreadCounts(db, userId, tagIds),
-    hasUncategorized ? uncategorizedUnreadQuery(db, userId) : Promise.resolve(null),
-  ]);
-  baseCounts.tags = tagCounts;
-
-  if (uncategorizedResult) {
-    baseCounts.uncategorized = { unread: uncategorizedResult[0]?.unread ?? 0 };
+  baseCounts.tags = await getTagUnreadCounts(db, userId, tagIds);
+  if (hasUncategorized) {
+    baseCounts.uncategorized = { unread: userCounts.uncategorizedUnread };
   }
 
   return baseCounts;
@@ -248,8 +221,7 @@ export async function getBulkEntryRelatedCounts(
  *
  * Driven by explicit `formerTagIds` rather than a subscription ID because the
  * subscription's tag associations are deleted before this runs. Must be called
- * AFTER the subscription is soft-deleted so its counter no longer contributes
- * to the active-subscription sums. `subscriptions` is always empty (the
+ * after the subscription is soft-deleted. `subscriptions` is always empty (the
  * subscription is gone).
  *
  * @param db - Database instance
@@ -261,22 +233,18 @@ export async function getSubscriptionDeletionCounts(
   userId: string,
   formerTagIds: string[]
 ): Promise<BulkUnreadCounts> {
-  // Reuse the shared global arithmetic (see getGlobalUnreadCounts). Must run
-  // AFTER the subscription is soft-deleted so its unread counter drops out of
-  // the active sum (only its starred orphans keep counting toward `all`).
-  const globalCounts = await getGlobalUnreadCounts(db, userId);
+  const userCounts = await getUserUnreadCounts(db, userId);
   const baseCounts: BulkUnreadCounts = {
-    all: { unread: globalCounts.allUnread },
-    starred: { unread: globalCounts.starredUnread },
-    saved: { unread: globalCounts.savedUnread },
+    all: { unread: userCounts.allUnread },
+    starred: { unread: userCounts.starredUnread },
+    saved: { unread: userCounts.savedUnread },
     subscriptions: [],
     tags: [],
   };
 
   if (formerTagIds.length === 0) {
     // Subscription was uncategorized — only Uncategorized's unread changed.
-    const uncategorizedResult = await uncategorizedUnreadQuery(db, userId);
-    baseCounts.uncategorized = { unread: uncategorizedResult[0]?.unread ?? 0 };
+    baseCounts.uncategorized = { unread: userCounts.uncategorizedUnread };
     return baseCounts;
   }
 

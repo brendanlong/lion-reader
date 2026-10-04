@@ -170,6 +170,16 @@ const userEventSchema = z.discriminatedUnion("type", [
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
+  z.object({
+    type: z.literal("collection_entries_changed"),
+    userId: z.string(),
+    subscriptionId: z.string(),
+    entryIds: z.array(z.string()),
+    added: z.boolean(),
+    counts: unreadCountsSchema,
+    timestamp: z.string(),
+    updatedAt: z.string(),
+  }),
   // Server-internal signal that a user's saved-articles feed was just created.
   // It tells already-open SSE connections to subscribe to the new feed's channel
   // so the first saved article is broadcast live (the saved feed didn't exist
@@ -413,6 +423,30 @@ export async function publishSubscriptionCreated(
     subscription,
     feed,
     counts,
+  });
+}
+
+/**
+ * Publishes a collection_entries_changed event after articles are added to or
+ * removed from a collection, so the user's other tabs update its counts.
+ */
+export async function publishCollectionEntriesChanged(
+  userId: string,
+  subscriptionId: string,
+  entryIds: string[],
+  added: boolean,
+  updatedAt: Date,
+  counts: z.infer<typeof unreadCountsSchema>
+): Promise<number> {
+  return publishUserEvent({
+    type: "collection_entries_changed",
+    userId,
+    subscriptionId,
+    entryIds,
+    added,
+    counts,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
   });
 }
 
