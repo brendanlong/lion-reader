@@ -827,6 +827,27 @@
       "when": 1782955020000,
       "tag": "0118_drop_legacy_api_key_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1782955080000,
+      "tag": "0119_collection_feed_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1782955140000,
+      "tag": "0120_collections",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1782955200000,
+      "tag": "0121_entries_type_not_collection",
+      "breakpoints": true
     }
   ]
 }

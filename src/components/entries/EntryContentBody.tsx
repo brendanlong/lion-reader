@@ -12,6 +12,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
+import { CollectionsButton } from "@/components/entries/CollectionsButton";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
 import { NarrationControls } from "@/components/narration";
 import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
@@ -386,6 +387,7 @@ export function EntryContentBody({
           {/* Star + Read/Unread toggles (shared with the fallback and demo readers) */}
           <StarButton starred={starred} onToggle={onToggleStar} />
           <ReadToggleButton read={read} onToggle={onToggleRead} />
+          <CollectionsButton entryId={articleId} />
 
           {/* Content view toggle - only show when both versions exist and not showing full content */}
           {hasBothVersions && (

@@ -25,7 +25,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
-import { API_TOKEN_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
+import { API_TOKEN_SCOPES, READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
+import { MAX_SAVE_COLLECTIONS } from "@/lib/collections";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "../errors";
 import { uuidSchema } from "../validation";
@@ -34,6 +35,7 @@ import { logger } from "@/lib/logger";
 import type { DbOrTx } from "@/server/db";
 import { getGlobalUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
+import * as collectionsService from "@/server/services/collections";
 import {
   convertUploadedFile,
   detectFileType,
@@ -105,6 +107,26 @@ async function getSavedUnreadCounts(
   };
 }
 
+/** Collections to put a newly saved article in; checked before saving. */
+const collectionIdsSchema = z.array(uuidSchema).max(MAX_SAVE_COLLECTIONS).optional();
+
+/**
+ * Changing collections needs a reader scope; the save-only `saved:write`
+ * token may save but not file the article into collections.
+ */
+function assertMayChangeCollections(
+  ctx: { authType: string | null; scopes: readonly string[] },
+  collectionIds: string[] | undefined
+): void {
+  if (!collectionIds?.length || ctx.authType === "session") return;
+  if (!READER_SCOPES.some((scope) => ctx.scopes.includes(scope))) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Adding to collections requires the 'mcp' or 'reader:full-access' scope",
+    });
+  }
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -158,11 +180,14 @@ export const savedRouter = createTRPCRouter({
         refetch: z.boolean().default(true),
         /** When true with refetch, update even if new content appears lower quality */
         force: z.boolean().optional(),
+        collectionIds: collectionIdsSchema,
       })
     )
     .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      assertMayChangeCollections(ctx, input.collectionIds);
+      await collectionsService.assertOwnedCollections(ctx.db, userId, input.collectionIds ?? []);
 
       const article = await savedService.saveArticle(ctx.db, userId, {
         url: input.url,
@@ -177,6 +202,12 @@ export const savedRouter = createTRPCRouter({
         // drive prompts; the app can't, so it gets the readable messages.
         googleDocsAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
+      await collectionsService.addEntryToCollections(
+        ctx.db,
+        userId,
+        article.id,
+        input.collectionIds ?? []
+      );
 
       return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
     }),
@@ -252,11 +283,13 @@ export const savedRouter = createTRPCRouter({
           ),
         filename: z.string().min(1, "Filename is required"),
         title: z.string().optional(),
+        collectionIds: collectionIdsSchema,
       })
     )
     .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      await collectionsService.assertOwnedCollections(ctx.db, userId, input.collectionIds ?? []);
 
       // Validate file type
       const fileType = detectFileType(input.filename);
@@ -314,6 +347,12 @@ export const savedRouter = createTRPCRouter({
         fileType: converted.fileType,
         title: article.title,
       });
+      await collectionsService.addEntryToCollections(
+        ctx.db,
+        userId,
+        article.id,
+        input.collectionIds ?? []
+      );
 
       return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
     }),

@@ -33,7 +33,9 @@ import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry
 import {
   buildEntrySubscriptionFilter,
   buildEntryFilterConditions,
+  buildEntriesInSubscriptionsCondition,
   buildTaggedSubscriptionIdsSubquery,
+  verifySubscriptionOwnership,
   buildUncategorizedSubscriptionIdsSubquery,
 } from "./entry-filters";
 
@@ -1206,25 +1208,20 @@ export async function markAllEntriesRead(
     conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
   }
 
-  // Filter by subscriptionId, matching the entry's stamped attribution. The
-  // subscriptions subquery (active-only, user-scoped) validates ownership
-  // inside the statement, so a foreign or unsubscribed subscription id matches
-  // nothing. (The user_feeds view is display-only — scoping checks query the
-  // subscriptions table directly.)
+  // Filter by subscriptionId: a foreign or unsubscribed subscription matches
+  // nothing. (Scoping checks query the subscriptions table, never the
+  // display-only user_feeds view.)
+  const columns = { entryId: userEntries.entryId, subscriptionId: userEntries.subscriptionId };
   if (params.subscriptionId) {
+    if (!(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))) {
+      return [];
+    }
     conditions.push(
-      inArray(
-        userEntries.subscriptionId,
-        db
-          .select({ id: subscriptions.id })
-          .from(subscriptions)
-          .where(
-            and(
-              eq(subscriptions.id, params.subscriptionId),
-              eq(subscriptions.userId, params.userId),
-              isNull(subscriptions.unsubscribedAt)
-            )
-          )
+      await buildEntriesInSubscriptionsCondition(
+        db,
+        params.userId,
+        [params.subscriptionId],
+        columns
       )
     );
   }
@@ -1232,9 +1229,11 @@ export async function markAllEntriesRead(
   // Filter by tag (ownership enforced by the shared subquery's tags.userId join)
   if (params.tagId) {
     conditions.push(
-      inArray(
-        userEntries.subscriptionId,
-        buildTaggedSubscriptionIdsSubquery(db, params.tagId, params.userId)
+      await buildEntriesInSubscriptionsCondition(
+        db,
+        params.userId,
+        buildTaggedSubscriptionIdsSubquery(db, params.tagId, params.userId),
+        columns
       )
     );
   }
@@ -1243,9 +1242,11 @@ export async function markAllEntriesRead(
   // stays in sync with buildEntrySubscriptionFilter (listEntries/countEntries).
   if (params.uncategorized) {
     conditions.push(
-      inArray(
-        userEntries.subscriptionId,
-        buildUncategorizedSubscriptionIdsSubquery(db, params.userId)
+      await buildEntriesInSubscriptionsCondition(
+        db,
+        params.userId,
+        buildUncategorizedSubscriptionIdsSubquery(db, params.userId),
+        columns
       )
     );
   }

@@ -16,6 +16,7 @@
 
 import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { untitledSubscriptionLabel } from "@/lib/collections";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
 import { EntryListContainer, findAdjacentEntries } from "./EntryListContainer";
@@ -171,7 +172,7 @@ function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   }
   return (
     <div className="min-w-0">
-      <TitleText>{sub.title ?? sub.originalTitle ?? "Untitled Feed"}</TitleText>
+      <TitleText>{sub.title ?? sub.originalTitle ?? untitledSubscriptionLabel(sub.type)}</TitleText>
       <FeedSiteLink siteUrl={sub.siteUrl} className="mt-0.5" />
     </div>
   );
@@ -262,12 +263,20 @@ function UnifiedEntriesContentInner() {
         markAllReadDescription: tag?.name ? `the "${tag.name}" tag` : "this tag",
       };
     }
+    if (subscriptionQuery.data?.type === "collection") {
+      return {
+        emptyMessageUnread: "No unread articles in this collection. Toggle to show all items.",
+        emptyMessageAll:
+          'Nothing in this collection yet. Open any article and use "Add to Collection".',
+        markAllReadDescription: "this collection",
+      };
+    }
     return {
       emptyMessageUnread: routeInfo.emptyMessageUnread,
       emptyMessageAll: routeInfo.emptyMessageAll,
       markAllReadDescription: routeInfo.markAllReadDescription,
     };
-  }, [routeInfo, tagsQuery.data]);
+  }, [routeInfo, tagsQuery.data, subscriptionQuery.data?.type]);
 
   // Mark-all-read acts on the current view, so it reuses the route's query
   // filters. `sortBy` only orders the list, so it isn't one of them.

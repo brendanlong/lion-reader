@@ -5,9 +5,28 @@
  * countEntries, and markAllRead.
  */
 
-import { eq, and, inArray, isNull, notInArray, sql, type SQL } from "drizzle-orm";
+import {
+  eq,
+  and,
+  exists,
+  inArray,
+  isNull,
+  notInArray,
+  or,
+  sql,
+  type AnyColumn,
+  type SQL,
+  type SQLWrapper,
+} from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { subscriptionTags, subscriptions, tags, visibleEntries } from "@/server/db/schema";
+import {
+  collectionEntries,
+  feeds,
+  subscriptionTags,
+  subscriptions,
+  tags,
+  visibleEntries,
+} from "@/server/db/schema";
 
 // ============================================================================
 // Types
@@ -61,11 +80,13 @@ export async function verifySubscriptionOwnership(
 }
 
 /**
- * Builds a subquery for subscription IDs associated with a tag.
+ * Builds a subquery for the active subscription IDs associated with a tag.
  * The join with tags table ensures the tag belongs to the user (and is not
  * soft-deleted), eliminating the need for a separate tag ownership validation
  * query. Excluding tombstoned tags means a client can't filter/mark-read
- * entries through a tag that no longer appears in listTags.
+ * entries through a tag that no longer appears in listTags. Active only, like
+ * the tag's badge: an unsubscribed feed can keep its tags (the feed-merge job
+ * leaves them), and its starred leftovers belong to Starred, not the tag.
  */
 export function buildTaggedSubscriptionIdsSubquery(
   db: typeof dbType,
@@ -78,6 +99,13 @@ export function buildTaggedSubscriptionIdsSubquery(
     .innerJoin(
       tags,
       and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId), isNull(tags.deletedAt))
+    )
+    .innerJoin(
+      subscriptions,
+      and(
+        eq(subscriptions.id, subscriptionTags.subscriptionId),
+        isNull(subscriptions.unsubscribedAt)
+      )
     )
     .where(eq(subscriptionTags.tagId, tagId));
 }
@@ -105,6 +133,51 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
     );
 }
 
+/**
+ * Matches entries contained in any of the given subscriptions: a feed's
+ * entries through their stamped `subscription_id`, a collection's through
+ * `collection_entries`. The collection arm is added only when a collection is
+ * among them, so a feed-only filter keeps the plain form its indexes serve.
+ */
+export async function buildEntriesInSubscriptionsCondition(
+  db: typeof dbType,
+  userId: string,
+  subscriptionIds: string[] | SQLWrapper,
+  columns: { entryId: AnyColumn; subscriptionId: AnyColumn }
+): Promise<SQL> {
+  const collections = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        eq(feeds.type, "collection"),
+        inArray(subscriptions.id, subscriptionIds)
+      )
+    );
+  const feedArm = inArray(columns.subscriptionId, subscriptionIds);
+  if (collections.length === 0) {
+    return feedArm;
+  }
+  const collectionIds = collections.map((c) => c.id);
+  const collectionArm = exists(
+    db
+      .select({ one: sql`1` })
+      .from(collectionEntries)
+      .where(
+        and(
+          eq(collectionEntries.userId, userId),
+          eq(collectionEntries.entryId, columns.entryId),
+          inArray(collectionEntries.subscriptionId, collectionIds)
+        )
+      )
+  );
+  const onlyCollections =
+    Array.isArray(subscriptionIds) && subscriptionIds.every((id) => collectionIds.includes(id));
+  return onlyCollections ? collectionArm : or(feedArm, collectionArm)!;
+}
+
 // ============================================================================
 // Main Filter Builder
 // ============================================================================
@@ -113,11 +186,12 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
  * Builds the subscription filter condition for entry queries.
  *
  * This function handles the three main subscription-based filters:
- * 1. subscriptionId - Filter to entries attributed to a specific subscription
- * 2. tagId - Filter to entries attributed to tagged subscriptions
- * 3. uncategorized - Filter to entries attributed to untagged subscriptions
+ * 1. subscriptionId - Filter to entries in a specific subscription
+ * 2. tagId - Filter to entries in tagged subscriptions
+ * 3. uncategorized - Filter to entries in untagged subscriptions
  *
- * Entries are attributed to exactly one subscription via
+ * Collections contain their members (buildEntriesInSubscriptionsCondition).
+ * Otherwise entries are attributed to exactly one subscription via
  * `user_entries.subscription_id` (surfaced as `visible_entries.subscription_id`),
  * which survives feed redirects/merges via the merge-job re-stamp — so
  * subscription-ID filtering always agrees with what the visibility view
@@ -133,24 +207,31 @@ export async function buildEntrySubscriptionFilter(
   userId: string
 ): Promise<SQL | undefined | null> {
   // Filter by subscriptionId - validates ownership, early-exits when invalid
+  const columns = { entryId: visibleEntries.id, subscriptionId: visibleEntries.subscriptionId };
   if (params.subscriptionId) {
     const owned = await verifySubscriptionOwnership(db, params.subscriptionId, userId);
-    return owned ? inArray(visibleEntries.subscriptionId, [params.subscriptionId]) : null;
+    return owned
+      ? buildEntriesInSubscriptionsCondition(db, userId, [params.subscriptionId], columns)
+      : null;
   }
 
   // Filter by tagId - uses join to validate tag ownership, returns subquery
   // The subquery will return no rows if the tag doesn't exist or belongs to another user
   if (params.tagId) {
-    return inArray(
-      visibleEntries.subscriptionId,
-      buildTaggedSubscriptionIdsSubquery(db, params.tagId, userId)
+    return buildEntriesInSubscriptionsCondition(
+      db,
+      userId,
+      buildTaggedSubscriptionIdsSubquery(db, params.tagId, userId),
+      columns
     );
   }
 
   if (params.uncategorized) {
-    return inArray(
-      visibleEntries.subscriptionId,
-      buildUncategorizedSubscriptionIdsSubquery(db, userId)
+    return buildEntriesInSubscriptionsCondition(
+      db,
+      userId,
+      buildUncategorizedSubscriptionIdsSubquery(db, userId),
+      columns
     );
   }
 

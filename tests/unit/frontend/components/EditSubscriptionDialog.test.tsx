@@ -54,6 +54,7 @@ function defaultProps(
     isOpen: true,
     subscriptionId: "sub-1",
     currentTitle: "Feed One",
+    isCollection: false,
     currentCustomTitle: null,
     currentTagIds: [] as string[],
     onClose: vi.fn(),
