@@ -12786,7 +12786,8 @@
                               "updatedAt",
                               "feedType"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "new_entry"
                           },
                           {
                             "type": "object",
@@ -12862,7 +12863,8 @@
                               "updatedAt",
                               "metadata"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "entry_updated"
                           },
                           {
                             "type": "object",
@@ -13096,7 +13098,8 @@
                               "timestamp",
                               "updatedAt"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "entry_state_changed"
                           },
                           {
                             "type": "object",
@@ -13339,7 +13342,8 @@
                               "subscription",
                               "feed"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "subscription_created"
                           },
                           {
                             "type": "object",
@@ -13468,7 +13472,8 @@
                               "timestamp",
                               "updatedAt"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "subscription_deleted"
                           },
                           {
                             "type": "object",
@@ -13527,7 +13532,8 @@
                               "timestamp",
                               "updatedAt"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "subscription_updated"
                           },
                           {
                             "type": "object",
@@ -13572,7 +13578,8 @@
                               "timestamp",
                               "updatedAt"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "tag_created"
                           },
                           {
                             "type": "object",
@@ -13617,7 +13624,8 @@
                               "timestamp",
                               "updatedAt"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "tag_updated"
                           },
                           {
                             "type": "object",
@@ -13642,7 +13650,8 @@
                               "timestamp",
                               "updatedAt"
                             ],
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "title": "tag_deleted"
                           }
                         ],
                         "type": "object"

@@ -428,14 +428,17 @@ export type SyncEvent = z.infer<typeof syncEventSchema>;
  * This also excludes import events which are SSE-only (not returned by sync.events).
  */
 const strictTimestamp = { timestamp: z.string() };
+// Each member is titled with its type so the OpenAPI breaking-change check
+// matches a changed event to its old version rather than reporting it as a
+// new member of the union.
 export const serverSyncEventSchema = z.discriminatedUnion("type", [
-  newEntryEventSchema.extend(strictTimestamp),
-  entryUpdatedEventSchema.extend(strictTimestamp),
-  entryStateChangedEventSchema.extend(strictTimestamp),
-  subscriptionCreatedEventSchema.extend(strictTimestamp),
-  subscriptionDeletedEventSchema.extend(strictTimestamp),
-  subscriptionUpdatedEventSchema.extend(strictTimestamp),
-  tagCreatedEventSchema.extend(strictTimestamp),
-  tagUpdatedEventSchema.extend(strictTimestamp),
-  tagDeletedEventSchema.extend(strictTimestamp),
+  newEntryEventSchema.extend(strictTimestamp).meta({ title: "new_entry" }),
+  entryUpdatedEventSchema.extend(strictTimestamp).meta({ title: "entry_updated" }),
+  entryStateChangedEventSchema.extend(strictTimestamp).meta({ title: "entry_state_changed" }),
+  subscriptionCreatedEventSchema.extend(strictTimestamp).meta({ title: "subscription_created" }),
+  subscriptionDeletedEventSchema.extend(strictTimestamp).meta({ title: "subscription_deleted" }),
+  subscriptionUpdatedEventSchema.extend(strictTimestamp).meta({ title: "subscription_updated" }),
+  tagCreatedEventSchema.extend(strictTimestamp).meta({ title: "tag_created" }),
+  tagUpdatedEventSchema.extend(strictTimestamp).meta({ title: "tag_updated" }),
+  tagDeletedEventSchema.extend(strictTimestamp).meta({ title: "tag_deleted" }),
 ]);
