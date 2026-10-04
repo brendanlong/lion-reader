@@ -160,14 +160,19 @@ describe("unread counters under concurrent writes", () => {
       });
     }
 
-    const toggles = Array.from({ length: 10 }, (_, i) =>
-      db
-        .update(subscriptions)
-        .set({ unsubscribedAt: i % 2 === 0 ? new Date() : null })
-        .where(eq(subscriptions.feedId, merged))
-    );
+    // One merge runs per feed at a time, so the unsubscribes run one after
+    // another (two multi-row UPDATEs of the same rows can deadlock with each
+    // other in Postgres itself); it's the fan-outs that run alongside them.
+    const toggles = (async () => {
+      for (let i = 0; i < 10; i++) {
+        await db
+          .update(subscriptions)
+          .set({ unsubscribedAt: i % 2 === 0 ? new Date() : null })
+          .where(eq(subscriptions.feedId, merged));
+      }
+    })();
     const fanouts = live.map((feedId) => createTestEntry(feedId, { userIds }));
-    await expectAllFulfilled([...toggles, ...fanouts]);
+    await expectAllFulfilled([toggles, ...fanouts]);
     await expectNoDrift();
   });
 
