@@ -91,13 +91,21 @@ async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, s
   return map;
 }
 
+/** A user event's `feedId` only routes feed channels here: clients only ever see subscription IDs. */
+function withoutFeedId(event: UserEvent): object {
+  if (!("feedId" in event)) return event;
+  const clientEvent: Partial<typeof event> = { ...event };
+  delete clientEvent.feedId;
+  return clientEvent;
+}
+
 /**
  * Formats an SSE event message for user events.
  * Includes an `id` field with server timestamp for client sync cursor tracking.
  */
 function formatSSEUserEvent(event: UserEvent): string {
   const cursor = new Date().toISOString();
-  return `event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(event)}\n\n`;
+  return `event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(withoutFeedId(event))}\n\n`;
 }
 
 /**
@@ -435,7 +443,6 @@ export async function GET(req: Request): Promise<Response> {
                   timestamp: event.timestamp,
                   updatedAt: event.updatedAt,
                   feedType: event.feedType,
-                  feedId: event.feedId,
                   ...(counts ? { counts } : {}),
                   // List-item data (absent from events published by a previous
                   // release) lets the client insert the entry into cached lists.

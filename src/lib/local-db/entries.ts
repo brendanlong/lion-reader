@@ -21,7 +21,6 @@ import type { SyncedCollection } from "./synced-collection";
 /** An entry's list-item fields as the server sends them. */
 export type EntryRow = {
   id: string;
-  feedId: string;
   subscriptionId: string | null;
   type: "web" | "email" | "saved";
   url: string | null;
@@ -59,7 +58,6 @@ export type EntryWrite =
 export function toEntryRow(entry: EntryRow): EntryRow {
   return {
     id: entry.id,
-    feedId: entry.feedId,
     subscriptionId: entry.subscriptionId,
     type: entry.type,
     url: entry.url,

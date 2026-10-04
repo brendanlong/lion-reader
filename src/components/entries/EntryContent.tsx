@@ -17,7 +17,7 @@ import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
-import { useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
+import { showOriginalKey, useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useTrackEntryView } from "@/lib/analytics/useTrackEntryView";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
@@ -112,8 +112,9 @@ function EntryContentInner({
   // the displayed entry, so the neighbour prefetches below aren't counted.
   useTrackEntryView(entry?.id, entry?.type);
 
-  // Show original preference is stored per-feed in localStorage
-  const [showOriginal, setShowOriginal] = useShowOriginalPreference(entry?.feedId);
+  const [showOriginal, setShowOriginal] = useShowOriginalPreference(
+    entry && showOriginalKey(entry)
+  );
 
   // Prefetch next and previous entries - use regular useQuery since these are optional
   // and should not suspend the UI

@@ -24,7 +24,6 @@ function makeListItem(overrides: Partial<EntryListItem> = {}): EntryListItem {
     subscriptionGreaderStreamId: null,
     feedGreaderStreamId: BigInt(7),
     subscriptionId: null,
-    feedId: "01912345-0000-7000-8000-0000000000fe",
     type: "saved",
     url: "https://example.com/article",
     title: "An Article",

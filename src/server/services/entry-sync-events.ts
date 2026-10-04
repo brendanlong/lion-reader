@@ -80,7 +80,6 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   starred: boolean;
   readChangedAt: Date | null;
   subscriptionId: string | null;
-  feedId: string;
   feedType: FeedType;
   feedTitle: string | null;
   /** The entry's content changed (or it was created) since the catch-up's start. */
@@ -120,7 +119,6 @@ export function entryRowToSyncEvents(
         entryId: row.id,
         ...stamps,
         feedType: row.feedType,
-        feedId: row.feedId,
         ...announcement,
         ...(counts.newEntry && { counts: counts.newEntry }),
       });
@@ -148,7 +146,6 @@ export function entryRowToSyncEvents(
       ...(payload
         ? {
             subscriptionId: row.subscriptionId,
-            feedId: row.feedId,
             feedType: row.feedType,
             entry: payload,
           }

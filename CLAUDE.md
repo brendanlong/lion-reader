@@ -93,6 +93,7 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 
 - **Pagination**: Always cursor-based (never offset)
 - **tRPC naming**: `noun.verb` (e.g., `entries.list`, `entries.markRead`)
+- **IDs**: clients only ever see subscription IDs, never feed IDs (a feed is shared by every subscriber), in tRPC/REST inputs and outputs, SSE and sync events alike. Feed IDs stay server-side (Redis channels, jobs); admin pages are the only exception.
 - **Authorization**: tRPC procedures are session-only by default; token access is explicit opt-in (`src/server/auth/CLAUDE.md`)
 
 ## Untrusted Content

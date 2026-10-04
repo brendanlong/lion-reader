@@ -109,7 +109,6 @@ export interface EntryListItem {
   subscriptionGreaderStreamId: bigint | null;
   feedGreaderStreamId: bigint;
   subscriptionId: string | null;
-  feedId: string;
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -139,7 +138,6 @@ export interface EntryFull {
   subscriptionGreaderStreamId: bigint | null;
   feedGreaderStreamId: bigint;
   subscriptionId: string | null;
-  feedId: string;
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -212,7 +210,6 @@ interface EntryListRow {
   subscriptionGreaderStreamId: bigint | null;
   feedGreaderStreamId: bigint;
   subscriptionId: string | null;
-  feedId: string;
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -238,7 +235,6 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     subscriptionGreaderStreamId: row.subscriptionGreaderStreamId,
     feedGreaderStreamId: row.feedGreaderStreamId,
     subscriptionId: row.subscriptionId,
-    feedId: row.feedId,
     type: row.type,
     url: row.url,
     title: row.title,
@@ -291,7 +287,6 @@ const entryListSelectFields = {
   greaderItemId: visibleEntries.greaderItemId,
   subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
   feedGreaderStreamId: feeds.greaderStreamId,
-  feedId: visibleEntries.feedId,
   type: visibleEntries.type,
   url: visibleEntries.url,
   title: visibleEntries.title,
@@ -321,7 +316,6 @@ const entryFullSelectFields = {
   // feeds join every entry read performs (used for saved articles).
   subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
   feedGreaderStreamId: feeds.greaderStreamId,
-  feedId: visibleEntries.feedId,
   type: visibleEntries.type,
   url: visibleEntries.url,
   title: visibleEntries.title,

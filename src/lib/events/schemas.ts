@@ -7,7 +7,7 @@
  * - sync.events endpoint output validation (server-side)
  * - Cache event handlers (type derivation)
  *
- * SSE events from the server may include extra fields (userId, feedId) that
+ * SSE events from the server may include extra fields (userId) that
  * aren't relevant to the client. Using Zod's default strip behavior, these
  * extra fields are ignored during parsing.
  */
@@ -31,7 +31,7 @@ export const entryMetadataSchema = z.object({
 
 /**
  * Entry list-item data for new_entry events. Carries everything (beyond the
- * event's own entryId/subscriptionId/feedId/feedType/updatedAt) needed to
+ * event's own entryId/subscriptionId/feedType/updatedAt) needed to
  * insert the entry into cached entries.list pages without a refetch. Extends
  * entryMetadataSchema (the entry_updated payload) with the extra list fields.
  *
@@ -129,11 +129,26 @@ export const unreadCountsSchema = z.object({
 });
 
 /**
+ * Clients only ever see subscription IDs, never feed IDs. Released Android
+ * builds (up to v0.5.1) still require a `feedId` on entries, and
+ * `subscription.feedId` and `feed.id` on subscription_created events, though
+ * they never read them, so those keys carry `legacyFeedId(subscriptionId)`.
+ */
+export const legacyFeedIdSchema = z.string().meta({
+  deprecated: true,
+  description: "Unused placeholder: the subscription ID, or empty when there is none.",
+});
+
+export function legacyFeedId(subscriptionId: string | null): string {
+  return subscriptionId ?? "";
+}
+
+/**
  * Subscription data for subscription_created events.
  */
 export const subscriptionCreatedDataSchema = z.object({
   id: z.string(),
-  feedId: z.string(),
+  feedId: legacyFeedIdSchema,
   customTitle: z.string().nullable(),
   subscribedAt: z.string(),
   unreadCount: z.number(),
@@ -144,7 +159,7 @@ export const subscriptionCreatedDataSchema = z.object({
  * Feed data for subscription_created events.
  */
 export const feedCreatedDataSchema = z.object({
-  id: z.string(),
+  id: legacyFeedIdSchema,
   type: z.enum(["web", "email", "saved", "collection"]),
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -194,7 +209,6 @@ const newEntryEventSchema = z.object({
   // entries.list pages directly. Optional for the same deploy-window reason
   // as counts; when absent, the entry appears on the next list refresh
   // (navigation-triggered invalidation) instead of live.
-  feedId: z.string().optional(),
   entry: newEntryListDataSchema.optional(),
 });
 
@@ -227,7 +241,6 @@ const entryStateChangedEventSchema = z.object({
   // (nothing to insert) and on events from servers predating this field; the
   // client then falls back to restoring from another cached list's copy.
   subscriptionId: z.string().nullable().optional(),
-  feedId: z.string().optional(),
   feedType: z.enum(["web", "email", "saved"]).optional(),
   entry: newEntryListDataSchema.optional(),
 });
@@ -252,7 +265,6 @@ const markAllReadEventSchema = z.object({
 const subscriptionCreatedEventSchema = z.object({
   type: z.literal("subscription_created"),
   subscriptionId: z.string(),
-  feedId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
   subscription: subscriptionCreatedDataSchema,

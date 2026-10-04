@@ -1,0 +1,3 @@
+GET /broken-feeds removed the required property `items/items/feedId` from the response with the `200` status
+GET /feed-stats removed the required property `items/items/feedId` from the response with the `200` status
+GET /sync/changes removed the required property `events/items/oneOf[subschema #4: subscription_created]/feedId` from the response with the `200` status

@@ -27,7 +27,6 @@ const importResultSchema = z.object({
   title: z.string().nullable(),
   status: z.enum(["pending", "imported", "skipped", "failed"]),
   error: z.string().optional(),
-  feedId: z.string().optional(),
   subscriptionId: z.string().optional(),
 });
 

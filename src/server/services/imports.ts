@@ -431,7 +431,6 @@ export async function processOpmlImport(
         });
 
         const subscriptionId = subscriptionResult.subscriptionId;
-        const feedId = subscriptionResult.feed.id;
 
         await applyImportTags(
           db,
@@ -449,7 +448,6 @@ export async function processOpmlImport(
           url: feedUrl,
           title: feedTitle,
           status: "imported",
-          feedId,
           subscriptionId,
         });
         counts.imported++;

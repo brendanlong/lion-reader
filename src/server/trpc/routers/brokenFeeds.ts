@@ -20,7 +20,6 @@ import { feeds, subscriptions, jobs } from "@/server/db/schema";
  * Broken feed output schema - what we return for a broken feed.
  */
 const brokenFeedOutputSchema = z.object({
-  feedId: z.string(),
   subscriptionId: z.string(),
   title: z.string().nullable(),
   url: z.string().nullable(),
@@ -65,7 +64,6 @@ export const brokenFeedsRouter = createTRPCRouter({
       // Get all broken feeds the user is subscribed to
       const brokenFeeds = await ctx.db
         .select({
-          feedId: feeds.id,
           subscriptionId: subscriptions.id,
           title: feeds.title,
           url: feeds.url,
@@ -90,7 +88,6 @@ export const brokenFeedsRouter = createTRPCRouter({
 
       return {
         items: brokenFeeds.map((feed) => ({
-          feedId: feed.feedId,
           subscriptionId: feed.subscriptionId,
           title: feed.title,
           url: feed.url,
@@ -106,44 +103,43 @@ export const brokenFeedsRouter = createTRPCRouter({
    * Retry fetching a broken feed.
    *
    * Resets the failure counter and schedules an immediate fetch.
-   * Only works for feeds the user is subscribed to.
+   * Only works for the user's own active subscriptions.
    *
-   * @param feedId - The feed ID to retry
+   * @param subscriptionId - The subscription whose feed to retry
    * @returns Success status
    */
   retryFetch: protectedProcedure
     .meta({
       openapi: {
         method: "POST",
-        path: "/broken-feeds/{feedId}/retry",
+        path: "/broken-feeds/{subscriptionId}/retry",
         tags: ["Broken Feeds"],
         summary: "Retry fetching a broken feed",
       },
     })
     .input(
       z.object({
-        feedId: z.string().uuid("Invalid feed ID"),
+        subscriptionId: z.string().uuid("Invalid subscription ID"),
       })
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Verify the user is subscribed to this feed
-      const subscription = await ctx.db
-        .select()
+      const [subscription] = await ctx.db
+        .select({ feedId: subscriptions.feedId })
         .from(subscriptions)
         .where(
           and(
+            eq(subscriptions.id, input.subscriptionId),
             eq(subscriptions.userId, userId),
-            eq(subscriptions.feedId, input.feedId),
             isNull(subscriptions.unsubscribedAt)
           )
         )
         .limit(1);
 
-      if (subscription.length === 0) {
-        throw errors.feedNotFound();
+      if (!subscription) {
+        throw errors.subscriptionNotFound();
       }
 
       const now = new Date();
@@ -157,7 +153,7 @@ export const brokenFeedsRouter = createTRPCRouter({
           nextFetchAt: now,
           updatedAt: now,
         })
-        .where(eq(feeds.id, input.feedId));
+        .where(eq(feeds.id, subscription.feedId));
 
       // Also update the job to run immediately
       await ctx.db
@@ -168,7 +164,9 @@ export const brokenFeedsRouter = createTRPCRouter({
           nextRunAt: now,
           updatedAt: now,
         })
-        .where(sql`${jobs.payload}->>'feedId' = ${input.feedId} AND ${jobs.type} = 'fetch_feed'`);
+        .where(
+          sql`${jobs.payload}->>'feedId' = ${subscription.feedId} AND ${jobs.type} = 'fetch_feed'`
+        );
 
       return { success: true };
     }),

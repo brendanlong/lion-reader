@@ -32,7 +32,6 @@ function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
     starred: false,
     readChangedAt: null,
     subscriptionId: "sub-1",
-    feedId: "feed-1",
     feedType: "web",
     feedTitle: "Example feed",
     metadataChanged: true,
@@ -56,7 +55,6 @@ describe("entryRowToSyncEvents", () => {
       timestamp: updatedAt,
       updatedAt,
       feedType: "web",
-      feedId: "feed-1",
       entry: {
         title: "A post",
         author: "Someone",
@@ -95,7 +93,6 @@ describe("entryRowToSyncEvents", () => {
     expect(unread[0]).toMatchObject({
       type: "entry_state_changed",
       subscriptionId: "sub-1",
-      feedId: "feed-1",
       feedType: "web",
       entry: { title: "A post" },
     });
@@ -104,7 +101,7 @@ describe("entryRowToSyncEvents", () => {
       allCounts
     );
     expect(read[0]).not.toHaveProperty("entry");
-    expect(read[0]).not.toHaveProperty("feedId");
+    expect(read[0]).not.toHaveProperty("feedType");
   });
 
   it("reports the entry's edit as entry_updated metadata", () => {

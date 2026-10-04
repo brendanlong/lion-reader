@@ -5914,7 +5914,9 @@
                             ]
                           },
                           "feedId": {
-                            "type": "string"
+                            "type": "string",
+                            "deprecated": true,
+                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
                           },
                           "type": {
                             "type": "string",
@@ -6302,7 +6304,9 @@
                           ]
                         },
                         "feedId": {
-                          "type": "string"
+                          "type": "string",
+                          "deprecated": true,
+                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
                         },
                         "type": {
                           "type": "string",
@@ -6576,7 +6580,9 @@
                             ]
                           },
                           "feedId": {
-                            "type": "string"
+                            "type": "string",
+                            "deprecated": true,
+                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
                           },
                           "type": {
                             "type": "string",
@@ -7853,7 +7859,9 @@
                           ]
                         },
                         "feedId": {
-                          "type": "string"
+                          "type": "string",
+                          "deprecated": true,
+                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
                         },
                         "type": {
                           "type": "string",
@@ -11830,9 +11838,6 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "feedId": {
-                            "type": "string"
-                          },
                           "subscriptionId": {
                             "type": "string"
                           },
@@ -11871,7 +11876,6 @@
                           }
                         },
                         "required": [
-                          "feedId",
                           "subscriptionId",
                           "title",
                           "url",
@@ -11945,7 +11949,7 @@
         }
       }
     },
-    "/broken-feeds/{feedId}/retry": {
+    "/broken-feeds/{subscriptionId}/retry": {
       "post": {
         "operationId": "brokenFeeds-retryFetch",
         "summary": "Retry fetching a broken feed",
@@ -11960,7 +11964,7 @@
         "parameters": [
           {
             "in": "path",
-            "name": "feedId",
+            "name": "subscriptionId",
             "schema": {
               "type": "string",
               "format": "uuid",
@@ -12076,9 +12080,6 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "feedId": {
-                            "type": "string"
-                          },
                           "subscriptionId": {
                             "type": "string"
                           },
@@ -12162,7 +12163,6 @@
                           }
                         },
                         "required": [
-                          "feedId",
                           "subscriptionId",
                           "title",
                           "customTitle",
@@ -12328,9 +12328,6 @@
                             ]
                           },
                           "error": {
-                            "type": "string"
-                          },
-                          "feedId": {
                             "type": "string"
                           },
                           "subscriptionId": {
@@ -12807,9 +12804,6 @@
                                 ],
                                 "additionalProperties": false
                               },
-                              "feedId": {
-                                "type": "string"
-                              },
                               "entry": {
                                 "type": "object",
                                 "properties": {
@@ -13110,9 +13104,6 @@
                                   "null"
                                 ]
                               },
-                              "feedId": {
-                                "type": "string"
-                              },
                               "feedType": {
                                 "type": "string",
                                 "enum": [
@@ -13217,9 +13208,6 @@
                               "subscriptionId": {
                                 "type": "string"
                               },
-                              "feedId": {
-                                "type": "string"
-                              },
                               "timestamp": {
                                 "type": "string"
                               },
@@ -13233,7 +13221,9 @@
                                     "type": "string"
                                   },
                                   "feedId": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "deprecated": true,
+                                    "description": "Unused placeholder: the subscription ID, or empty when there is none."
                                   },
                                   "customTitle": {
                                     "type": [
@@ -13288,7 +13278,9 @@
                                 "type": "object",
                                 "properties": {
                                   "id": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "deprecated": true,
+                                    "description": "Unused placeholder: the subscription ID, or empty when there is none."
                                   },
                                   "type": {
                                     "type": "string",
@@ -13442,7 +13434,6 @@
                             "required": [
                               "type",
                               "subscriptionId",
-                              "feedId",
                               "timestamp",
                               "updatedAt",
                               "subscription",

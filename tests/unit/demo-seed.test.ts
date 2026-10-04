@@ -45,7 +45,7 @@ describe("buildDemoDehydratedState", () => {
       limit: number;
     };
     const featureEntries = DEMO_ENTRIES.filter(
-      (e) => getDemoSubscription(e.feedId)?.tagId === "features"
+      (e) => getDemoSubscription(e.subscriptionId ?? "")?.tagId === "features"
     );
     expect(list.pages[0].items).toHaveLength(Math.min(limit, featureEntries.length));
     expect(list.pages[0].items.every((i) => i.id !== "welcome")).toBe(true);

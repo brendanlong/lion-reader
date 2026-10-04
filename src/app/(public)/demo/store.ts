@@ -17,6 +17,7 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
+import { legacyFeedId } from "@/lib/events/schemas";
 import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS, type DemoEntry } from "./data";
 
 type Inputs = inferRouterInputs<AppRouter>;
@@ -265,7 +266,7 @@ export function createDemoStore(): DemoStore {
     return {
       id: entry.id,
       subscriptionId: sub?.id ?? null,
-      feedId: entry.feedId,
+      feedId: legacyFeedId(sub?.id ?? null),
       type: entry.type,
       url: entry.url,
       title: entry.title,

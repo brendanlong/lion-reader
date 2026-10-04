@@ -66,7 +66,6 @@ function seedEntry(queryClient: QueryClient, overrides: Partial<EntryRow> = {}):
   upsertServerEntries(getLocalDb(queryClient).entries, [
     {
       id: "e1",
-      feedId: "feed-1",
       subscriptionId: "sub-1",
       type: "web",
       url: null,

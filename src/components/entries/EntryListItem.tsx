@@ -20,7 +20,6 @@ import { getItemClasses } from "./entryItemClasses";
  */
 export interface EntryListItemData {
   id: string;
-  feedId: string;
   subscriptionId: string | null;
   type: EntryType;
   url: string | null;

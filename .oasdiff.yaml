@@ -5,3 +5,7 @@
 # doesn't know (`parseSyncEvent`). New response enum values stay errors, since
 # the app decodes those into closed Kotlin enums.
 severity-levels: .github/oasdiff-severity-levels.txt
+# Breaking changes checked against every released app build's models and found
+# safe (the app never declared what they remove). Each line is one change as
+# oasdiff prints it, matched literally, so it only waives that exact change.
+err-ignore: .github/oasdiff-err-ignore.txt
