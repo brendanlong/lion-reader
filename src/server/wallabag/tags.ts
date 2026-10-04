@@ -14,7 +14,7 @@ import { collectionEntries, entries, feeds, subscriptions } from "@/server/db/sc
 import { isInt64 } from "@/server/google-reader/id";
 import {
   addEntriesToCollection,
-  createCollection,
+  findOrCreateCollection,
   removeEntriesFromCollection,
 } from "@/server/services/collections";
 import { unsubscribe } from "@/server/services/subscriptions";
@@ -132,7 +132,7 @@ function groupByLabel(collections: CollectionTag[]): Map<string, string[]> {
 
 /**
  * Adds an entry to the collections named by `labels`, creating the missing
- * ones. Where several collections share a name, the oldest is used.
+ * ones (see findOrCreateCollection).
  */
 export async function addEntryTags(
   db: typeof dbType,
@@ -143,52 +143,45 @@ export async function addEntryTags(
   if (labels.length > MAX_SAVE_COLLECTIONS) {
     throw errors.validation(`At most ${MAX_SAVE_COLLECTIONS} tags can be added at once`);
   }
-  const tooLong = labels.find((label) => label.length > COLLECTION_NAME_MAX_LENGTH);
-  if (tooLong !== undefined) {
+  if (labels.some((label) => label.length > COLLECTION_NAME_MAX_LENGTH)) {
     throw errors.validation(`Tags must be at most ${COLLECTION_NAME_MAX_LENGTH} characters`);
   }
-  const byLabel = groupByLabel(await listCollectionTags(db, userId));
   for (const label of labels) {
-    // UUIDv7 ids sort by creation time.
-    const existing = byLabel.get(label.toLowerCase())?.toSorted()[0];
-    const subscriptionId = existing ?? (await createCollection(db, userId, label)).subscription.id;
+    const subscriptionId = await findOrCreateCollection(db, userId, label);
     await addEntriesToCollection(db, userId, subscriptionId, [entryId]);
   }
 }
 
 /**
  * Deleting a tag removes it from every saved article. The collection itself is
- * deleted only once that leaves it empty: it may also hold feed articles,
- * which a Wallabag client never sees and so can't have meant to remove.
+ * deleted only when it holds nothing else: it may also hold feed articles,
+ * which a Wallabag client never sees and so can't have meant to remove. Such
+ * a collection stays in the tag list.
  */
 export async function deleteWallabagTag(
   db: typeof dbType,
   userId: string,
   tag: CollectionTag
 ): Promise<void> {
-  const savedMembers = await db
-    .select({ entryId: collectionEntries.entryId })
+  const members = await db
+    .select({ entryId: collectionEntries.entryId, type: entries.type })
     .from(collectionEntries)
     .innerJoin(entries, eq(entries.id, collectionEntries.entryId))
     .where(
       and(
         eq(collectionEntries.subscriptionId, tag.subscriptionId),
-        eq(collectionEntries.userId, userId),
-        eq(entries.type, "saved")
+        eq(collectionEntries.userId, userId)
       )
     );
+  if (members.every((member) => member.type === "saved")) {
+    // Unsubscribing a collection empties it.
+    await unsubscribe(db, userId, tag.subscriptionId);
+    return;
+  }
   await removeEntriesFromCollection(
     db,
     userId,
     tag.subscriptionId,
-    savedMembers.map((row) => row.entryId)
+    members.filter((member) => member.type === "saved").map((member) => member.entryId)
   );
-  const [remaining] = await db
-    .select({ entryId: collectionEntries.entryId })
-    .from(collectionEntries)
-    .where(eq(collectionEntries.subscriptionId, tag.subscriptionId))
-    .limit(1);
-  if (!remaining) {
-    await unsubscribe(db, userId, tag.subscriptionId);
-  }
 }

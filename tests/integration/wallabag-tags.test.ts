@@ -5,12 +5,20 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { collectionEntries, entries, subscriptions, users } from "../../src/server/db/schema";
+import {
+  collectionEntries,
+  entries,
+  feeds,
+  subscriptions,
+  users,
+} from "../../src/server/db/schema";
 import { createTokens } from "../../src/server/oauth/service";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
+import { unsubscribe } from "../../src/server/services/subscriptions";
+import { COLLECTION_NAME_MAX_LENGTH, MAX_SAVE_COLLECTIONS } from "../../src/lib/collections";
 import { GET as listTags } from "../../src/app/api/wallabag/api/tags/route";
 import { DELETE as deleteTag } from "../../src/app/api/wallabag/api/tags/[tag]/route";
 import { GET as listEntries } from "../../src/app/api/wallabag/api/entries/route";
@@ -104,6 +112,21 @@ async function listedIds(user: TestUser, query: string): Promise<number[]> {
   return body._embedded.items.map((item) => item.id).sort();
 }
 
+async function activeCollectionIds(user: TestUser): Promise<string[]> {
+  const rows = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
+    .where(
+      and(
+        eq(subscriptions.userId, user.id),
+        isNull(subscriptions.unsubscribedAt),
+        eq(feeds.type, "collection")
+      )
+    );
+  return rows.map((row) => row.id);
+}
+
 async function memberIds(subscriptionId: string): Promise<string[]> {
   const rows = await db
     .select({ entryId: collectionEntries.entryId })
@@ -113,11 +136,14 @@ async function memberIds(subscriptionId: string): Promise<string[]> {
 }
 
 describe("GET /api/tags", () => {
-  it("lists the user's own collections with their stream serials as ids", async () => {
+  it("lists the user's own active collections with their stream serials as ids", async () => {
     const user = await createUser();
     const other = await createUser();
     const reading = await createCollectionTag(user, "To Read");
     await createCollectionTag(other, "Someone else's");
+    await createTestSubscription(user.id, await createTestFeed());
+    const deleted = await createCollectionTag(user, "Deleted");
+    await unsubscribe(db, user.id, deleted.subscriptionId);
 
     const res = await listTags(request(user, "tags"));
 
@@ -148,6 +174,54 @@ describe("entry tags", () => {
       "New One",
       "Reading",
     ]);
+  });
+
+  it("rejects more tags, or longer labels, than a collection allows", async () => {
+    const user = await createUser();
+    const article = await createSaved(user);
+    const entry = String(article.wallabagId);
+    const tooMany = Array.from({ length: MAX_SAVE_COLLECTIONS + 1 }, (_, i) => `t${i}`).join(",");
+
+    for (const labels of [tooMany, "x".repeat(COLLECTION_NAME_MAX_LENGTH + 1)]) {
+      const res = await addEntryTags(
+        formRequest(user, `entries/${entry}/tags`, "POST", `tags=${labels}`),
+        params({ entry })
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(await activeCollectionIds(user)).toEqual([]);
+  });
+
+  it("creates one collection when concurrent requests add the same new tag", async () => {
+    const user = await createUser();
+    const articles = await Promise.all([createSaved(user), createSaved(user)]);
+
+    await Promise.all(
+      articles.map((article) =>
+        addEntryTags(
+          formRequest(user, `entries/${article.wallabagId}/tags`, "POST", "tags=fresh"),
+          params({ entry: String(article.wallabagId) })
+        )
+      )
+    );
+
+    expect(await activeCollectionIds(user)).toHaveLength(1);
+  });
+
+  it("uses the oldest of several same-named collections", async () => {
+    const user = await createUser();
+    const article = await createSaved(user);
+    const oldest = await createCollectionTag(user, "Dup");
+    const newer = await createCollectionTag(user, "dup");
+    const entry = String(article.wallabagId);
+
+    await addEntryTags(
+      formRequest(user, `entries/${entry}/tags`, "POST", "tags=DUP"),
+      params({ entry })
+    );
+
+    expect(await memberIds(oldest.subscriptionId)).toEqual([article.id]);
+    expect(await memberIds(newer.subscriptionId)).toEqual([]);
   });
 
   it("adds tags through PATCH", async () => {
@@ -202,6 +276,16 @@ describe("GET /api/entries?tags=", () => {
     expect(await listedIds(user, "tags=A,missing")).toEqual([]);
   });
 
+  it("matches a label shared by several collections through any of them", async () => {
+    const user = await createUser();
+    const first = await createSaved(user);
+    const second = await createSaved(user);
+    await createCollectionTag(user, "Dup", [first.id]);
+    await createCollectionTag(user, "Dup", [second.id]);
+
+    expect(await listedIds(user, "tags=dup")).toEqual([first.wallabagId, second.wallabagId].sort());
+  });
+
   it("reports each entry's tags in the list", async () => {
     const user = await createUser();
     const article = await createSaved(user);
@@ -223,7 +307,7 @@ describe("DELETE /api/tags/{tag}", () => {
     const [row] = await db
       .select({ unsubscribedAt: subscriptions.unsubscribedAt })
       .from(subscriptions)
-      .where(and(eq(subscriptions.id, subscriptionId)));
+      .where(eq(subscriptions.id, subscriptionId));
     return row.unsubscribedAt === null;
   }
 
