@@ -1181,8 +1181,8 @@ export async function saveArticle(
   // Check if URL is already saved (guid = normalized URL for saved articles).
   // A placeholder (a failed-save stand-in, see savePlaceholderArticle) always
   // refetches on re-save so a transiently-failed URL self-heals into the real
-  // article — even for the no-refetch callers (a plain Wallabag re-share, MCP
-  // save_article). A real saved article still returns instantly unless the
+  // article — even for the no-refetch callers (a plain Wallabag re-share, a
+  // plain MCP save_article). A real saved article still returns instantly unless the
   // caller opted into refetch. See #1256.
   const existingEntry = await selectExistingSavedRow(db, userId, savedFeedId, normalizedUrl);
   if (existingEntry && !params.refetch && !existingEntry.entry.isPlaceholder) {
@@ -1240,14 +1240,14 @@ export async function saveArticle(
         });
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "REFETCH_CONTENT_WORSE",
+          message:
+            "The refetched content appears significantly shorter than the original. This often happens when a private document is refetched without authentication. Use force=true to override.",
           cause: {
             code: "REFETCH_CONTENT_WORSE",
             details: {
               url: normalizedUrl,
               oldLength: oldTextLength,
               newLength: newTextLength,
-              hint: "The refetched content appears significantly shorter than the original. This often happens when a private document is refetched without authentication. Use force=true to override.",
             },
           },
         });
@@ -1385,7 +1385,7 @@ export async function saveArticle(
  * Self-heal (#1256): the placeholder is stored under `guid = normalized URL`, so
  * a later save of the same URL matches it. Because it's flagged, {@link
  * saveArticle} always **refetches** a placeholder on re-save (even for the
- * no-refetch callers — a plain Wallabag re-share, MCP `save_article`) and, on
+ * no-refetch callers — a plain Wallabag re-share or MCP `save_article`) and, on
  * success, replaces it with the real article. So a transiently-failed URL
  * (`UPSTREAM_RATE_LIMITED`, `SITE_BLOCKED`) heals on the next re-share instead of
  * being stuck behind the placeholder. Only *this* function's own conflict

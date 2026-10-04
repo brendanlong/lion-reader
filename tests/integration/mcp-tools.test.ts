@@ -8,15 +8,21 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createServer, type Server } from "node:http";
+import { type AddressInfo } from "node:net";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
-import { registerTools } from "../../src/server/mcp/tools";
+import { registerTools, toMcpError } from "../../src/server/mcp/tools";
 
 let userId: string;
 let otherUserId: string;
 let entryId: string;
+let pageServer: Server;
+let pageUrl: string;
+/** The Markdown served at `pageUrl`; tests change it to simulate a revised page. */
+let pageBody = "";
 
 function tool(name: string) {
   const found = registerTools().find((t) => t.name === name);
@@ -36,9 +42,18 @@ beforeAll(async () => {
   });
   await createTestSubscription(userId, feedId);
   entryId = await createTestEntry(feedId, { title: "MCP visible entry", userIds: [userId] });
+
+  // Loopback page for save_article (`.env.test` sets ALLOW_PRIVATE_NETWORK_FETCH).
+  pageServer = createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
+    res.end(pageBody);
+  });
+  await new Promise<void>((resolve) => pageServer.listen(0, "127.0.0.1", resolve));
+  pageUrl = `http://127.0.0.1:${(pageServer.address() as AddressInfo).port}/report.md`;
 });
 
 afterAll(async () => {
+  await new Promise<void>((resolve) => pageServer.close(() => resolve()));
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptions);
@@ -141,5 +156,37 @@ describe("MCP tool results", () => {
     expect(result).not.toHaveProperty("contentCleaned");
     expect(result).toMatchObject({ title: "MCP upload", excerpt: "Short summary" });
     expect(result.id).toEqual(expect.any(String));
+  });
+
+  it("refetches an already-saved URL only when asked, honoring force (#1836)", async () => {
+    const paragraph = "A paragraph of the report, long enough to count as real article text. ";
+    const content = async (id: string) =>
+      ((await tool("get_entry").handler(db, userId, { entryId: id })) as { contentCleaned: string })
+        .contentCleaned;
+
+    pageBody = `# Report\n\nFirst draft. ${paragraph.repeat(20)}`;
+    const original = (await tool("save_article").handler(db, userId, { url: pageUrl })) as {
+      id: string;
+    };
+
+    pageBody = "# Report\n\nRevised.";
+    await tool("save_article").handler(db, userId, { url: pageUrl });
+    expect(await content(original.id)).toContain("First draft.");
+
+    // The guard's hint must reach MCP callers, who can't see the error's cause.
+    const rejected = await tool("save_article")
+      .handler(db, userId, { url: pageUrl, refetch: true })
+      .then(() => undefined, toMcpError);
+    expect(rejected).toBeInstanceOf(McpError);
+    expect(rejected).toMatchObject({ data: { code: "REFETCH_CONTENT_WORSE" } });
+    expect((rejected as McpError).message).toContain("force=true");
+
+    const forced = (await tool("save_article").handler(db, userId, {
+      url: pageUrl,
+      refetch: true,
+      force: true,
+    })) as { id: string };
+    expect(forced.id).toBe(original.id);
+    expect(await content(original.id)).toContain("Revised.");
   });
 });
