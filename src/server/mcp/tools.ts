@@ -107,10 +107,6 @@ function stripGreaderIds<
 }
 
 /**
- * Derives the advertised MCP inputSchema from the Zod schema so the schema
- * clients see is exactly the one the handler enforces.
- */
-/**
  * Drops the article body from save/upload results: agents need the id and
  * metadata, and a long page's body can exceed client tool-output limits
  * (#1835). `get_entry` returns the full content.
@@ -123,6 +119,10 @@ function withoutContent<T extends savedService.SavedArticle>(
   return rest;
 }
 
+/**
+ * Derives the advertised MCP inputSchema from the Zod schema so the schema
+ * clients see is exactly the one the handler enforces.
+ */
 function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
   const json = z.toJSONSchema(schema) as Record<string, unknown>;
   delete json.$schema;

@@ -145,8 +145,9 @@ export interface SavedArticle {
   author: string | null;
   imageUrl: string | null;
   /**
-   * Sanitized article body. Service results are returned verbatim by the
-   * Wallabag POST response, so raw fetched HTML must never appear here.
+   * Sanitized article body. The Wallabag POST response sends it to clients as
+   * `content` (via `formatSavedArticle`), so raw fetched HTML must never appear
+   * here.
    */
   contentCleaned: string | null;
   excerpt: string | null;
@@ -547,9 +548,9 @@ async function insertSavedEntry(
     entryListPayload(values, SAVED_FEED_TITLE)
   ).catch(() => {});
 
-  // Sanitize the body for the returned SavedArticle: it is returned verbatim by
-  // service consumers (e.g. Wallabag POST), so raw fetched HTML must
-  // not leave the service layer here either.
+  // Sanitize the body for the returned SavedArticle: callers like the Wallabag
+  // POST response send it to clients, so raw fetched HTML must not leave the
+  // service layer here either.
   const contentCleaned = await sanitizeEntryHtmlAsync(params.contentCleaned);
 
   return {

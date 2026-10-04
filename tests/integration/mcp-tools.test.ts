@@ -1,5 +1,5 @@
 /**
- * Integration tests for MCP tool argument validation.
+ * Integration tests for MCP tool argument validation and result shapes.
  *
  * Tool handlers validate client-supplied arguments with Zod before calling
  * the services layer (issue #956): unknown keys (internal service params,
@@ -129,7 +129,9 @@ describe("MCP tool argument validation", () => {
     };
     expect(legit.items.map((e) => e.id)).toContain(entryId);
   });
+});
 
+describe("MCP tool results", () => {
   it("returns save results without the article body (#1835)", async () => {
     const result = (await tool("upload_article").handler(db, userId, {
       title: "MCP upload",
