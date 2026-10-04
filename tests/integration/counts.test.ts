@@ -221,7 +221,7 @@ describe("Entry counts service", () => {
       const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId }]);
 
       expect(counts.all).toEqual({ unread: 0 });
-      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
+      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0, tagIds: [tagId] }]);
       expect(counts.tags).toEqual([{ id: tagId, unread: 0 }]);
     });
 
@@ -244,7 +244,7 @@ describe("Entry counts service", () => {
       const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subIdA }]);
 
       expect(counts.all).toEqual({ unread: 1 });
-      expect(counts.subscriptions).toEqual([{ id: subIdA, unread: 0 }]);
+      expect(counts.subscriptions).toEqual([{ id: subIdA, unread: 0, tagIds: [tagId] }]);
       expect(counts.tags).toEqual([{ id: tagId, unread: 1 }]);
     });
 
@@ -257,7 +257,7 @@ describe("Entry counts service", () => {
 
       const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId }]);
 
-      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
+      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0, tagIds: [] }]);
       expect(counts.tags).toEqual([]);
       expect(counts.uncategorized).toEqual({ unread: 0 });
     });

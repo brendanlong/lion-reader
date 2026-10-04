@@ -635,7 +635,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
 
       expect(result.counts?.all.unread).toBe(3);
       expect(result.counts?.uncategorized?.unread).toBe(3);
-      expect(result.counts?.subscriptions).toContainEqual({ id: result.id, unread: 3 });
+      expect(result.counts?.subscriptions).toContainEqual({ id: result.id, unread: 3, tagIds: [] });
       expect(result.counts?.tags).toEqual([]);
     });
 

@@ -185,8 +185,8 @@ describe("collections", () => {
 
       expect(counts?.subscriptions).toEqual(
         expect.arrayContaining([
-          { id: sourceId, unread: 1 },
-          { id: collectionId, unread: 0 },
+          { id: sourceId, unread: 1, tagIds: [] },
+          { id: collectionId, unread: 0, tagIds: [] },
         ])
       );
     });
