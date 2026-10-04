@@ -309,8 +309,8 @@ OPS.push(
   [
     1,
     async (w, rng) => {
-      // A redirect merge onto a new feed: re-stamps the entries, unsubscribes
-      // the old subscription (keeping its tags) and subscribes to the new one.
+      // A redirect merge onto a new feed: re-stamps the entries, moves the
+      // tags, unsubscribes the old subscription and subscribes to the new one.
       const index = w.feeds.indexOf(rng.pick(w.feeds));
       const old = w.feeds[index];
       const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, old.feedId));

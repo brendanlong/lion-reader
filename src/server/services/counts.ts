@@ -52,7 +52,7 @@ interface UserUnreadCounts {
   uncategorizedUnread: number;
 }
 
-async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<UserUnreadCounts> {
+export async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<UserUnreadCounts> {
   const [row] = await db
     .select({
       allUnread: users.allUnreadCount,

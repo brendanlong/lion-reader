@@ -25,14 +25,14 @@ An entry is visible iff a `user_entries` row exists for `(user, entry)` and the 
 
 **The insert paths, not the view, keep pre-subscription content private**, so any new path that creates `user_entries` rows must only cover entries currently in the feed:
 
-- **Subscribe time** (`createSubscription`): entries with `last_seen_at >= feeds.last_entries_updated_at` (`>=` so WebSub-pushed entries count; #1078). A stale feed instead gets a forced background refresh that fans out from a fresh fetch.
+- **Subscribe time** (`populateInitialUserEntries`, for `createSubscription` and a redirect merge's survivor): entries with `last_seen_at >= feeds.last_entries_updated_at` (`>=` so WebSub-pushed entries count; #1078). A stale feed instead gets a forced background refresh that fans out from a fresh fetch.
 - **Fetch time** (`entry-processor.ts`): every entry in the current fetch, idempotently, so a crash between insert and fanout self-heals on the next fetch. Archive re-announcements fan out already read ("Backfill Guard" in `feed/CLAUDE.md`).
 
 Starring is itself a visibility arm, so **never read a star write back through `visible_entries`** — unstarring an entry from an unsubscribed feed drops it from the view and the write looks like "not found". Read back from `user_entries` (`selectStarredEntryStates`).
 
 ## Subscription Attribution
 
-`user_entries.subscription_id` (NULL for saved/uploaded articles) is the **sole** link from an entry to its source subscription; `visible_entries` and every subscription/tag filter resolve through it. Bulk insert paths set it inline, a `BEFORE INSERT` trigger fills it (and `is_spam` and the timeline sort key) for everything else, and the feed-merge job re-stamps it. Don't reintroduce a junction table for sources: the column exists to avoid the `DISTINCT` dedup a junction forces (#1117).
+`user_entries.subscription_id` (NULL for saved/uploaded articles) is the **sole** link from an entry to its source subscription; `visible_entries` and every subscription/tag filter resolve through it. Bulk insert paths set it inline, a `BEFORE INSERT` trigger fills it (and `is_spam` and the timeline sort key) for everything else, and a feed-redirect merge (`mergeSubscriptionIntoFeed`) re-stamps it. Don't reintroduce a junction table for sources: the column exists to avoid the `DISTINCT` dedup a junction forces (#1117).
 
 A **collection** (#1806) is a subscription to a per-user feed of type `collection` that has no entries of its own; its members live in `collection_entries`. Filter "entries in these subscriptions" with `buildEntriesInSubscriptionsCondition` (`services/entry-filters.ts`), which adds the membership arm as an `EXISTS` (no row fan-out, so still no `DISTINCT`). Membership changes move `user_entries.updated_at`, so delta sync re-delivers the entry.
 
