@@ -60,9 +60,9 @@ interface RealtimeSetup {
  * - a feed tagged "News" with two unread entries (optionally starring "Second post")
  * - an untagged feed with one unread entry (exercises the Uncategorized list)
  *
- * Then logs in, opens /all, waits for the SSE connection plus its Redis
- * channel subscriptions, and (unless expandTag is false) expands the News
- * tag so the per-subscription unread count is visible.
+ * Then logs in, opens /all, waits for the SSE connection, its Redis channel
+ * subscriptions and its catch-up sync, and (unless expandTag is false)
+ * expands the News tag so the per-subscription unread count is visible.
  */
 async function seedAndOpenAll(
   page: Page,
@@ -113,6 +113,13 @@ async function seedAndOpenAll(
     (response) => response.url().includes("/api/v1/events"),
     { timeout: 90_000 }
   );
+  // Each SSE connect runs a sync.events catch-up. If its query lands after a
+  // test writes its entry, it replays the event and (legitimately) refetches
+  // tags.list, which the tests would count as a stray refetch (#1831).
+  const catchUpResponse = page.waitForResponse(
+    (response) => response.url().includes("/api/trpc/sync.events"),
+    { timeout: 90_000 }
+  );
 
   await page.goto("/all");
   await expect(page.locator('[aria-label*="article: First post"]')).toBeVisible();
@@ -131,6 +138,7 @@ async function seedAndOpenAll(
   // The SSE handler subscribes to Redis channels asynchronously after the
   // response starts; wait until it's actually listening before publishing.
   await waitForChannelSubscriber(channelFor({ user, taggedFeed }));
+  await catchUpResponse;
 
   return { user, taggedFeed, tagId, taggedEntries, trpcCalls };
 }
