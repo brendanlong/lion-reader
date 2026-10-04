@@ -121,4 +121,36 @@ describe("processOAuthCallback email verification", () => {
       ).length
     ).toBe(1);
   });
+
+  it("keeps the stored refresh token when a returning sign-in sends none (#1803)", async () => {
+    const userId = await createTestUser({ email: "returning@example.com" });
+    await db.insert(oauthAccounts).values({
+      id: generateUuidv7(),
+      userId,
+      provider: "google",
+      providerAccountId: "returning-google-id",
+      accessToken: "old-token",
+      refreshToken: "stored-refresh-token",
+      scopes: ["openid", "email", "profile", "docs"],
+      createdAt: new Date(),
+    });
+
+    await processOAuthCallback({
+      provider: "google",
+      providerAccountId: "returning-google-id",
+      email: "returning@example.com",
+      emailVerified: true,
+      accessToken: "new-token",
+      scopes: ["openid", "email", "profile"],
+    });
+
+    const [account] = await db
+      .select()
+      .from(oauthAccounts)
+      .where(eq(oauthAccounts.providerAccountId, "returning-google-id"));
+    expect(account.accessToken).toBe("new-token");
+    expect(account.refreshToken).toBe("stored-refresh-token");
+    // The scope list is Google's report of the token, so it replaces the stored one
+    expect(account.scopes).toEqual(["openid", "email", "profile"]);
+  });
 });

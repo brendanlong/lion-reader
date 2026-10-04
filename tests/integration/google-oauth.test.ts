@@ -140,6 +140,8 @@ describe("Google OAuth", () => {
       expect(url.searchParams.get("code_challenge_method")).toBe("S256");
       expect(url.searchParams.get("code_challenge")).toBeTruthy();
       expect(url.searchParams.get("scope")).toBe("openid email profile");
+      // So a plain sign-in's token keeps an earlier Docs/Drive grant (#1803)
+      expect(url.searchParams.get("include_granted_scopes")).toBe("true");
       expect(result.state).not.toBe("");
 
       // Verify PKCE verifier is stored in Redis (as JSON with verifier and scopes)
@@ -170,6 +172,21 @@ describe("Google OAuth", () => {
       // PKCE verifier should be consumed (deleted)
       const storedVerifier = await redis.get(`oauth:pkce:${state}`);
       expect(storedVerifier).toBeNull();
+    });
+
+    it("reports the scopes Google granted, not just the ones requested (#1803)", async () => {
+      const { createGoogleAuthUrl, validateGoogleCallback, GOOGLE_DOCS_READONLY_SCOPE } =
+        await import("../../src/server/auth/oauth/google");
+
+      const originalScope = mockTokenResponse.scope;
+      mockTokenResponse.scope = `openid email profile ${GOOGLE_DOCS_READONLY_SCOPE}`;
+      try {
+        const { state } = await createGoogleAuthUrl();
+        const result = await validateGoogleCallback("mock-auth-code", state);
+        expect(result.scopes).toEqual(["openid", "email", "profile", GOOGLE_DOCS_READONLY_SCOPE]);
+      } finally {
+        mockTokenResponse.scope = originalScope;
+      }
     });
 
     it("fails with invalid state (PKCE verifier not found)", async () => {

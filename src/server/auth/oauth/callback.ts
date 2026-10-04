@@ -53,7 +53,7 @@ export interface ProcessOAuthCallbackParams {
   refreshToken?: string;
   /** Token expiration time */
   expiresAt?: Date;
-  /** OAuth scopes (for Google) */
+  /** Every scope the token carries (Google only); replaces the stored list */
   scopes?: string[];
   /** Invite token for new user registration */
   inviteToken?: string;
@@ -129,12 +129,13 @@ export async function processOAuthCallback(
       throw new Error("User account not found");
     }
 
-    // Update OAuth tokens and scopes
+    // Keep the stored refresh token when the provider sends none: a returning
+    // sign-in usually doesn't, and the stored one still works (#1803).
     await db
       .update(oauthAccounts)
       .set({
         accessToken,
-        refreshToken: refreshToken ?? null,
+        ...(refreshToken ? { refreshToken } : {}),
         expiresAt: expiresAt ?? null,
         ...(scopes !== undefined ? { scopes } : {}),
       })
