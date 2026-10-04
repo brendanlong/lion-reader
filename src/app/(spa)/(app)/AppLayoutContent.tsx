@@ -39,8 +39,8 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
       // The server cleared the httpOnly session cookie on the logout response.
       // Hard-navigate to /login (a standalone page outside the SPA shell) rather
       // than a router soft-nav: the full page load both drops all in-memory
-      // caches — the browser QueryClient and the subscription lookup map are
-      // module-level singletons that outlive the session, so a different account
+      // caches — the browser QueryClient and its local store are module-level
+      // singletons that outlive the session, so a different account
       // signing in on the same tab must never be served the previous user's
       // article bodies, lists, counts, or subscription titles — and avoids an
       // RSC soft-nav into a CDN-cacheable page (a version-skew source).

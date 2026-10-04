@@ -4,22 +4,23 @@ This document is the contract for how queries, mutations, and SSE events update 
 
 ## Architecture Overview
 
-React Query (via tRPC) is the network layer for everything. Entries additionally
-live in a **local normalized store** (TanStack DB, `src/lib/local-db/`), which is
-what entry lists, the reader, and the loading fallbacks render from:
+React Query (via tRPC) is the network layer for everything. Entries and
+subscriptions additionally live in a **local normalized store** (TanStack DB,
+`src/lib/local-db/`), which is what entry lists, the reader, the loading
+fallbacks, and the sidebar's subscription rows render from:
 
-| Data                    | Lives in                                   | Updated by                                                                           |
-| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Entry list-item fields  | Local store: one row per entry             | Ingested fetches, mutation responses, SSE — newest `updatedAt` wins, per field group |
-| Entry list membership   | Local store: `{ listKey, entryId, order }` | Ingested fetches; live inserts of new/newly-unread entries                           |
-| Entry content           | React Query `entries.get`                  | Fetch; `fetchFullContent` response                                                   |
-| Subscription/tag counts | React Query (absolute values)              | Direct update from responses and events                                              |
-| Subscription list       | React Query (sidebar `subscriptions.list`) | Direct update (add/remove)                                                           |
+| Data                   | Lives in                                     | Updated by                                                                           |
+| ---------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Entry list-item fields | Local store: one row per entry               | Ingested fetches, mutation responses, SSE — newest `updatedAt` wins, per field group |
+| Entry list membership  | Local store: `{ listKey, entryId, order }`   | Ingested fetches; live inserts of new/newly-unread entries                           |
+| Entry content          | React Query `entries.get`                    | Fetch; `fetchFullContent` response                                                   |
+| Subscriptions          | Local store: one row per loaded subscription | Ingested fetches, responses and events; counts set its `unreadCount`                 |
+| Tag/global counts      | React Query (absolute values)                | Direct update from responses and events                                              |
 
 **Ingestion.** `getLocalDb(queryClient)` (one store per QueryClient — never
 module-global, since the server has one QueryClient per request) subscribes to
-the QueryCache and ingests every `entries.list` and `entries.get` result as it
-lands: SSR-hydrated, prefetched, fetched, and `setQueryData`'d data all take the
+the QueryCache and ingests every `entries.list`, `entries.get`,
+`subscriptions.list` and `subscriptions.get` result as it lands: SSR-hydrated, prefetched, fetched, and `setQueryData`'d data all take the
 same path. `entries.list` pages are written to the entry store and to the list's
 membership; a next-page fetch (`fetchMeta.fetchMore`, not a manual write)
 appends, anything else replaces the list's membership — except entries inserted
@@ -68,32 +69,53 @@ entry while the other still applies (`mergeServerEntry`).
 | `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes)                      |
 | `entries.ts`           | Entry rows and their server writes, all through `mergeServerEntry` (per-group `updatedAt` guard): `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata` |
 | `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (filter targeting, pagination window), `entryListKey`                                                   |
+| `subscriptions.ts`     | Subscription rows: live writes (`writeLiveSubscriptions`, `patchLiveSubscription`, `removeLiveSubscriptions`), fetch ingestion, and `sidebarSectionRows`                   |
 | `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion), `insertEntryIntoLists` / `addServerEntryToLists`                                                              |
 
 Components read it through `src/lib/hooks/useLocalEntries.ts`:
 `useEntryListEntries(input)` (a list, in order), `useLocalEntry(id)`, and
 `useLocalEntriesMatching(filters)` — the entry-list loading fallback, which shows
-stored entries matching the view's filters while its first page loads.
+stored entries matching the view's filters while its first page loads — and
+`src/lib/hooks/useLocalSubscriptions.ts`.
+
+**Subscriptions.** The store holds only the subscriptions something loaded,
+not every one the user has (users can have many collections). Each sidebar section is derived
+from it (`sidebarSectionRows`): rows in the section, with unread entries when
+unread-only (plus the open subscription), within what the section's own
+`subscriptions.list` pages cover. So counts, renames and tag changes move rows
+in and out of sections with no list refetch. These rules keep it complete and current:
+
+- A subscription the store lacks is fetched (`subscriptions.get`) when counts
+  give it unread entries or an event moves it into a section, if a loaded
+  section may list it (`loadSubscriptionForSidebar`; counts carry each
+  subscription's `tagIds` so collapsed sections cost nothing).
+- A fetch that started before a row's last live write (event, response,
+  counts) leaves that row alone, and a full refetch of an unread-only section
+  zeroes the count of a stored row it should have returned but didn't (a
+  change this client wasn't told about, like mark-all-read).
+
+Rows a section loaded keep the server's order (its collation); others are
+placed by title among them.
 
 ## Cache Helpers (`src/lib/cache/`)
 
-| File                | Role                                                                                                                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `operations.ts`     | High-level operations (primary API): `setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `removeSubscriptionFromCaches`                 |
-| `count-cache.ts`    | Session-created subscription map + tag helpers: `addSubscriptionToCache`, `updateSubscriptionInCache`, `removeSubscriptionFromCache`, `findCachedSubscription`, `applySyncTagChanges`, `removeSyncTags` |
-| `event-handlers.ts` | `handleSyncEvent` — dispatches SSE/sync events to the local store and the operations above                                                                                                              |
+| File                | Role                                                                                                                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operations.ts`     | High-level operations (primary API): `setBulkCounts`/`setEntryRelatedCounts` (absolute counts), `handleSubscriptionCreated`/`handleSubscriptionDeleted`, `removeSubscriptionFromCaches` |
+| `tag-cache.ts`      | Tag event helpers: `applySyncTagChanges`, `removeSyncTags`                                                                                                                              |
+| `event-handlers.ts` | `handleSyncEvent` — dispatches SSE/sync events to the local store and the operations above                                                                                              |
 
 ## Core Queries
 
-| Query                           | Used In                                                    | Notes                                                                                                                                                                                                                                                                                             |
-| ------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entries.list` (infinite)       | `EntryList`, `EntryListContainer`, `UnifiedEntriesContent` | `staleTime: Infinity`                                                                                                                                                                                                                                                                             |
-| `entries.get`                   | `EntryContent`                                             | Single entry with full content (includes `fetchFullContent`, so no separate subscription query needed)                                                                                                                                                                                            |
-| `subscriptions.get`             | `UnifiedEntriesContent`, `useSidebarSelection`             | Resolves the route/reader title for `/subscription/[id]`; falls back to the sidebar list cache until it resolves. The sidebar lists the open subscription from it once the unread-only filter drops it, so absolute counts update its `unreadCount` too, and deleting the subscription resets it. |
-| `entries.count`                 | `Sidebar`                                                  | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }` badges                                                                                                                                                                                                                                      |
-| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar)                            | The sidebar per-tag / per-uncategorized subscription list (`{ tagId }` or `{ uncategorized }`). `CollectionsButton` also lists collections with `{ type: "collection" }`.                                                                                                                         |
-| `collections.listForEntry`      | `CollectionsButton`                                        | The collections holding an entry. Kept out of the entry store and `entries.get`; written by `applyCollectionEntriesChange`, and invalidated after a catch-up sync (membership events aren't replayed).                                                                                            |
-| `tags.list`                     | `Sidebar`, `EditSubscriptionDialog`, `TagManagement`       | All tags with unread + uncategorized counts                                                                                                                                                                                                                                                       |
+| Query                           | Used In                                                    | Notes                                                                                                                                                                                                                                                            |
+| ------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entries.list` (infinite)       | `EntryList`, `EntryListContainer`, `UnifiedEntriesContent` | `staleTime: Infinity`                                                                                                                                                                                                                                            |
+| `entries.get`                   | `EntryContent`                                             | Single entry with full content (includes `fetchFullContent`, so no separate subscription query needed)                                                                                                                                                           |
+| `subscriptions.get`             | `UnifiedEntriesContent`, `useSidebarSelection`             | Loads one subscription into the store (the route title and the open subscription render from the store); deleting the subscription resets it.                                                                                                                    |
+| `entries.count`                 | `Sidebar`                                                  | `{}`, `{ type: "saved" }`, or `{ starredOnly: true }` badges                                                                                                                                                                                                     |
+| `subscriptions.list` (infinite) | `TagSubscriptionList` (sidebar)                            | Loads a sidebar section's pages (`{ tagId }` or `{ uncategorized }`) into the store; the section renders from the store, limited to what these pages cover. Never written directly. `CollectionsButton` also searches collections with `{ type: "collection" }`. |
+| `collections.listForEntry`      | `CollectionsButton`                                        | The collections holding an entry. Kept out of the entry store and `entries.get`; written by `applyCollectionEntriesChange`, and invalidated after a catch-up sync (membership events aren't replayed).                                                           |
+| `tags.list`                     | `Sidebar`, `EditSubscriptionDialog`, `TagManagement`       | All tags with unread + uncategorized counts                                                                                                                                                                                                                      |
 
 `sortBy: "readChanged"` backs the `/recently-read` view (entries sorted by `read_changed_at` rather than publish time; defaults to `unreadOnly=false`). It and search (`query`) lists get **no** live inserts: `insertIntoMatchingLists` (`src/lib/local-db/entry-lists.ts`) skips any list whose input has a `query` or a `sortBy` other than `"published"`, because their ordering (relevance rank / read-time) can't be derived from an entry's fields. Those views instead refresh on navigation like any other list.
 
@@ -114,7 +136,7 @@ Search (`?q=`) is an ordinary `entries.list` scoped to the current view's filter
 
 | Mutation                | Used In                                  | Cache Updates                                                                                                                                 |
 | ----------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `subscriptions.create`  | Subscribe page                           | `handleSubscriptionCreated`: add to `subscriptions.list` + set absolute `counts` from response (`onSuccess`)                                  |
+| `subscriptions.create`  | Subscribe page                           | `handleSubscriptionCreated`: add to the store + set absolute `counts` from response (`onSuccess`)                                             |
 | `subscriptions.update`  | `EntryContent`, `EditSubscriptionDialog` | Invalidate `subscriptions.list`; `EntryContent` also patches `entries.get` for `fetchFullContent` changes                                     |
 | `subscriptions.delete`  | `Sidebar`, Broken feeds                  | Optimistic remove (`onMutate`); set absolute `counts` from response + invalidate `entries.list` + reset its `subscriptions.get` (`onSuccess`) |
 | `subscriptions.setTags` | `EditSubscriptionDialog`                 | (handled by dialog close)                                                                                                                     |
@@ -145,9 +167,9 @@ No-op re-saves publish no `subscription_updated` ("Row Written vs. Value Flipped
 | `entry_updated`              | Direct: the stored entry's metadata (title, author, summary, url, publishedAt; skipped when older than the stored metadata), which the reader renders too. No invalidation — avoids a race when the entry is open.                                                                                                                                                                                                                                                                                                                                               |
 | `entry_state_changed`        | Direct: the stored entry's read/starred (skipped when older than the stored state); absolute counts via `setEntryRelatedCounts`. Entries becoming unread are inserted into the lists missing them: events for unread flips carry a list-item payload (like `new_entry`; omitted for spam) — so the entry appears even when the store doesn't hold it (marked unread on another device/MCP, issue #1237); payload-less events (older servers, star/unstar of an unread entry) fall back to the stored row.                                                        |
 | `mark_all_read`              | A `markAllRead` happened on another tab/device. Invalidate `entries.list`, `entries.count`, `tags.list`, `subscriptions.list`, `subscriptions.get` — the same thing the acting tab does on success. This is the **one** deliberate `entries.list` refetch (see Key principle above). Advances the entries cursor so a reconnect catch-up doesn't re-deliver every marked entry.                                                                                                                                                                                  |
-| `subscription_created`       | Add to `subscriptions.list`; absolute counts from server `counts` (live path). The sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                                                                                                                                                                                                                                                                                                                                    |
-| `subscription_updated`       | Patch subscription in lookup map/list caches; invalidate `tags.list` + `subscriptions.list` (tag membership may have changed).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `subscription_deleted`       | Remove from `subscriptions.list` and reset its `subscriptions.get`; absolute counts (live path) or invalidate `tags.list` + `entries.count` (catch-up). The count update **and** `entries.list` invalidation always run — even when the subscription isn't cached (optimistically removed, or never loaded with tags collapsed); only the structural removal is gated on the subscription being cached (#1081).                                                                                                                                                  |
+| `subscription_created`       | Add to the store; absolute counts from server `counts` (live path). The sync.events catch-up path omits `counts`, so the client invalidates `tags.list` + `entries.count` instead.                                                                                                                                                                                                                                                                                                                                                                               |
+| `subscription_updated`       | Patch the stored row's tags and title (it moves between sections), or load it if a loaded section may now list it; invalidate `tags.list` (feed counts).                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `subscription_deleted`       | Remove from the store and reset its `subscriptions.get`; absolute counts (live path) or invalidate `tags.list` + `entries.count` (catch-up). Runs in full even when the store doesn't hold it (optimistically removed, or never loaded with tags collapsed; #1081).                                                                                                                                                                                                                                                                                              |
 | `collection_entries_changed` | `applyCollectionEntriesChange`: absolute counts, each entry's `collections.listForEntry` (invalidated when not loaded), and the collection's loaded lists (adds inserted from the stored row; removals hidden, see "Membership never follows state"). SSE-only: a catch-up sync re-delivers the entries as `entry_state_changed` and invalidates `collections.listForEntry`, `subscriptions.list` and `tags.list` (a collection an article left gets no replayed count); the collection's lists catch up on navigation.                                          |
 | `tag_created`                | `applySyncTagChanges` — add to `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `tag_updated`                | `applySyncTagChanges` — patch in `tags.list`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -227,7 +249,8 @@ the cached counts are already correct.
 ## Adding New Cache Updates
 
 1. **Entries**: write the local store through the `updatedAt`-guarded functions in `src/lib/local-db/entries.ts`, and add entries to lists with `insertEntryIntoLists`/`addServerEntryToLists`; never write entry state to `entries.list`/`entries.get`, and never trigger a list refetch from an event — lists refresh on navigation (`useEntryListRefreshOnNavigate`).
-2. **Everything else: can we update directly?** (full data available, simple key) — Yes → cache helpers in `src/lib/cache/`; No → invalidate.
-3. **Unread counts**: set absolute server-provided counts via `setBulkCounts` / `setEntryRelatedCounts` (idempotent — never deltas).
-4. **Handle races**: check existence before add/remove; SSE may deliver the same update as the mutation response.
-5. **Update this document** and add unit tests in `tests/unit/frontend/local-db/` or `tests/unit/frontend/cache/`.
+2. **Subscriptions**: write the store through `src/lib/local-db/subscriptions.ts`'s live writes; never write `subscriptions.list`/`subscriptions.get` data.
+3. **Everything else: can we update directly?** (full data available, simple key) — Yes → cache helpers in `src/lib/cache/`; No → invalidate.
+4. **Unread counts**: set absolute server-provided counts via `setBulkCounts` / `setEntryRelatedCounts` (idempotent — never deltas).
+5. **Handle races**: check existence before add/remove; SSE may deliver the same update as the mutation response.
+6. **Update this document** and add unit tests in `tests/unit/frontend/local-db/` or `tests/unit/frontend/cache/`.

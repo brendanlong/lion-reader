@@ -12,140 +12,20 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import {
-  addSubscriptionToCache,
-  removeSubscriptionFromCache,
-  findCachedSubscription,
-} from "./count-cache";
 import { getLocalDb } from "@/lib/local-db/local-db";
+import {
+  patchLiveSubscription,
+  removeLiveSubscriptions,
+  writeLiveSubscriptions,
+  sidebarSectionOf,
+  type SubscriptionListInput,
+  type SubscriptionRow,
+} from "@/lib/local-db/subscriptions";
+import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
 import { insertIntoCollectionLists, setLeftCollectionLists } from "@/lib/local-db/entry-lists";
 
-/**
- * Subscription data for adding to cache.
- */
-export interface SubscriptionData {
-  id: string;
-  type: "web" | "email" | "saved" | "collection";
-  url: string | null;
-  title: string | null;
-  originalTitle: string | null;
-  description: string | null;
-  siteUrl: string | null;
-  subscribedAt: Date;
-  unreadCount: number;
-  tags: Array<{ id: string; name: string; color: string | null }>;
-  fetchFullContent: boolean;
-}
-
-// ============================================================================
-// Private Helpers
-// ============================================================================
-
-/**
- * Query key input type for subscriptions.list.
- */
-interface SubscriptionListInput {
-  tagId?: string;
-  uncategorized?: boolean;
-  query?: string;
-  unreadOnly?: boolean;
-  cursor?: string;
-  limit?: number;
-}
-
-/**
- * Invalidates subscription list queries for specific tags.
- * More targeted than invalidating all subscription lists.
- *
- * @param queryClient - React Query client
- * @param tagIds - Tag IDs to invalidate queries for
- * @param includeUncategorized - Whether to also invalidate the uncategorized query
- */
-function invalidateSubscriptionListsForTags(
-  queryClient: QueryClient,
-  tagIds: string[],
-  includeUncategorized: boolean
-): void {
-  const tagIdSet = new Set(tagIds);
-
-  // Get all subscription list queries
-  const queries = queryClient.getQueriesData<unknown>({
-    queryKey: [["subscriptions", "list"]],
-  });
-
-  for (const [queryKey] of queries) {
-    // Query key structure: [["subscriptions", "list"], { input: {...}, type: "query"|"infinite" }]
-    const keyData = queryKey[1] as { input?: SubscriptionListInput; type?: string } | undefined;
-    const input = keyData?.input;
-
-    // Skip queries without input (no unparameterized query to invalidate)
-    if (!input) continue;
-
-    // Invalidate if this query is for one of the affected tags
-    if (input.tagId && tagIdSet.has(input.tagId)) {
-      queryClient.invalidateQueries({ queryKey });
-      continue;
-    }
-
-    // Invalidate uncategorized query if needed
-    if (includeUncategorized && input.uncategorized === true) {
-      queryClient.invalidateQueries({ queryKey });
-    }
-  }
-}
-
-/**
- * Page structure in subscription infinite query cache.
- */
-interface CachedSubscriptionPage {
-  items: Array<{ id: string; [key: string]: unknown }>;
-  nextCursor?: string;
-}
-
-/**
- * Infinite query data structure for subscriptions.
- */
-interface SubscriptionInfiniteData {
-  pages: CachedSubscriptionPage[];
-  pageParams: unknown[];
-}
-
-/**
- * Rewrites the items of every cached subscriptions.list infinite query that
- * contains the given subscription, leaving the other caches untouched.
- */
-function mapSubscriptionListsContaining(
-  queryClient: QueryClient,
-  subscriptionId: string,
-  mapItems: (items: CachedSubscriptionPage["items"]) => CachedSubscriptionPage["items"]
-): void {
-  const infiniteQueries = queryClient.getQueriesData<SubscriptionInfiniteData>({
-    queryKey: [["subscriptions", "list"]],
-  });
-
-  for (const [queryKey, data] of infiniteQueries) {
-    // Only update infinite queries (they have pages array) containing the subscription
-    if (!data?.pages?.some((page) => page.items.some((s) => s.id === subscriptionId))) continue;
-
-    queryClient.setQueryData<SubscriptionInfiniteData>(queryKey, {
-      ...data,
-      pages: data.pages.map((page) => ({ ...page, items: mapItems(page.items) })),
-    });
-  }
-}
-
-/**
- * Removes a subscription from all infinite query caches.
- * Used when unsubscribing to immediately remove from sidebar lists.
- */
-function removeSubscriptionFromInfiniteQueries(
-  queryClient: QueryClient,
-  subscriptionId: string
-): void {
-  mapSubscriptionListsContaining(queryClient, subscriptionId, (items) =>
-    items.filter((s) => s.id !== subscriptionId)
-  );
-}
+/** A subscription as the server returns it. */
+export type SubscriptionData = SubscriptionRow;
 
 /**
  * Drops a deleted subscription's `subscriptions.get` data, which the sidebar
@@ -157,17 +37,15 @@ export function forgetDeletedSubscription(utils: TRPCClientUtils, subscriptionId
 }
 
 /**
- * Structurally removes a subscription from all caches (the lookup map and any
- * cached infinite-query pages) without touching unread counts. Used for the
- * optimistic unsubscribe in onMutate, where the server-absolute counts are
- * applied later in onSuccess.
+ * Removes a subscription from the local store, and so from the sidebar,
+ * without touching unread counts. Used for the optimistic unsubscribe in
+ * onMutate, where the server-absolute counts are applied later in onSuccess.
  */
 export function removeSubscriptionFromCaches(
   subscriptionId: string,
   queryClient: QueryClient
 ): void {
-  removeSubscriptionFromCache(queryClient, subscriptionId);
-  removeSubscriptionFromInfiniteQueries(queryClient, subscriptionId);
+  removeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [subscriptionId]);
 }
 
 /**
@@ -193,12 +71,8 @@ function applySubscriptionCounts(
 }
 
 /**
- * Handles a new subscription being created.
- *
- * Updates:
- * - the subscription lookup map (add subscription)
- * - subscriptions.list per-tag infinite queries (only affected tags, or uncategorized if no tags)
- * - unread counts (set absolutely from server-provided `counts`)
+ * Handles a new subscription being created: adds it to the local store (and so
+ * to the sidebar) and applies the counts.
  *
  * @param utils - tRPC utils for cache access
  * @param subscription - The new subscription data
@@ -213,23 +87,14 @@ export function handleSubscriptionCreated(
   queryClient: QueryClient,
   counts?: EntryRelatedCounts
 ): void {
+  const store = getLocalDb(queryClient).subscriptions;
   // Guard against duplicate subscription events (e.g. the subscribing tab gets
-  // both the mutation response and the SSE event). Absolute counts are
-  // idempotent, but the structural list refresh should only run once (#680).
-  const alreadyExists = findCachedSubscription(queryClient, subscription.id) !== undefined;
+  // both the mutation response and the SSE event): the second would write the
+  // creation-time count over a newer one (#680).
+  if (store.rows.getSynced(subscription.id)) return;
 
-  addSubscriptionToCache(queryClient, subscription);
-
-  // Skip the structural list refresh if the subscription was already cached.
-  if (alreadyExists) return;
-
-  // Refresh only the affected per-tag / uncategorized subscription list queries
-  // so the new subscription appears.
-  invalidateSubscriptionListsForTags(
-    queryClient,
-    subscription.tags.map((t) => t.id),
-    subscription.tags.length === 0
-  );
+  // The sidebar sections render from the store, so this is all it takes to list it.
+  writeLiveSubscriptions(store, [subscription]);
   if (subscription.type === "collection") {
     void utils.subscriptions.list.invalidate({ type: "collection" });
   }
@@ -277,13 +142,8 @@ export function applyCollectionEntriesChange(
 }
 
 /**
- * Handles a subscription being deleted.
- *
- * Updates:
- * - subscriptions.list (remove subscription from caches)
- * - subscriptions.list per-tag infinite queries (only affected tags, or uncategorized)
- * - entries.list (invalidated - entries may be filtered out)
- * - unread counts (set absolutely from server-provided `counts`)
+ * Handles a subscription being deleted: removes it from the local store,
+ * applies the counts, and invalidates `entries.list` (its entries drop out).
  *
  * @param utils - tRPC utils for cache access
  * @param subscriptionId - ID of the deleted subscription
@@ -299,30 +159,11 @@ export function handleSubscriptionDeleted(
   queryClient: QueryClient,
   counts?: EntryRelatedCounts
 ): void {
-  // Look up the cached subscription before removing it, so we can target the
-  // affected subscription-list queries and know whether a structural removal is
-  // needed at all.
-  const subscription = findCachedSubscription(queryClient, subscriptionId);
+  // Run whether or not the store holds it: an optimistic unsubscribe already
+  // removed it, or it was never loaded (its tag collapsed), and the counts and
+  // entries below still changed (#1081).
+  removeSubscriptionFromCaches(subscriptionId, queryClient);
 
-  // Structural removal only runs when the subscription is actually cached. A
-  // subscription may be uncached because the acting tab already removed it
-  // optimistically, or because it was never loaded (e.g. tags collapsed, so the
-  // per-tag subscriptions.list was never fetched). In the latter case the event
-  // still carries real state changes, so the count/entries updates below must
-  // still run — they were previously skipped entirely, leaving inflated counts
-  // and the deleted feed's entries in the list until an unrelated event (#1081).
-  if (subscription) {
-    removeSubscriptionFromCaches(subscriptionId, queryClient);
-    invalidateSubscriptionListsForTags(
-      queryClient,
-      subscription.tags.map((t) => t.id),
-      subscription.tags.length === 0
-    );
-  }
-
-  // Counts and the entries.list refresh are idempotent (absolute counts; the
-  // list refetch just re-filters), so they run unconditionally regardless of
-  // whether the subscription was cached.
   applySubscriptionCounts(utils, counts, queryClient);
 
   // A deleted collection no longer holds anything.
@@ -347,7 +188,8 @@ export interface BulkUnreadCounts {
   all: { unread: number };
   starred: { unread: number };
   saved: { unread: number };
-  subscriptions: Array<{ id: string; unread: number }>;
+  /** `tagIds` is absent from events a previous release published. */
+  subscriptions: Array<{ id: string; unread: number; tagIds?: string[] }>;
   tags: Array<{ id: string; unread: number }>;
   uncategorized?: { unread: number };
 }
@@ -377,19 +219,7 @@ export function setBulkCounts(
     utils.entries.count.setData({ type: "saved" }, counts.saved);
   }
 
-  // Build subscription updates map for efficient batch update
-  const subscriptionUpdates = new Map(counts.subscriptions.map((s) => [s.id, s.unread]));
-
-  // Build set of affected tag IDs to only update those caches
-  const affectedTagIds = new Set(counts.tags.map((t) => t.id));
-
-  // Batch update all subscription unread counts
-  setBulkSubscriptionUnreadCounts(
-    subscriptionUpdates,
-    affectedTagIds,
-    counts.uncategorized !== undefined,
-    queryClient
-  );
+  setSubscriptionUnreadCounts(utils, queryClient, counts.subscriptions);
 
   // Set tag unread counts
   for (const tag of counts.tags) {
@@ -439,72 +269,52 @@ export function setEntryRelatedCounts(
 }
 
 /**
- * Sets unread counts for multiple subscriptions, only updating affected tag caches.
- *
- * Instead of scanning ALL cached tag queries for each subscription, this function
- * uses the known affected tag IDs to only iterate through relevant caches.
- *
- * @param utils - tRPC utils for cache access
- * @param subscriptionUpdates - Map of subscriptionId -> new unread count
- * @param affectedTagIds - Set of tag IDs that were affected (only these caches need updating)
- * @param hasUncategorized - Whether uncategorized subscriptions were affected
- * @param queryClient - React Query client for updating infinite query caches
+ * Sets stored subscriptions' unread counts. A subscription the store lacks
+ * that now has unread entries is loaded (`loadSubscriptionForSidebar`), so an
+ * unread-only sidebar section that hid it can list it.
  */
-function setBulkSubscriptionUnreadCounts(
-  subscriptionUpdates: Map<string, number>,
-  affectedTagIds: Set<string>,
-  hasUncategorized: boolean,
-  queryClient: QueryClient
+function setSubscriptionUnreadCounts(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  subscriptions: BulkUnreadCounts["subscriptions"]
 ): void {
-  if (subscriptionUpdates.size === 0) return;
+  const store = getLocalDb(queryClient).subscriptions;
+  for (const { id, unread, tagIds } of subscriptions) {
+    const row = store.rows.getSynced(id);
+    if (row) {
+      if (row.unreadCount !== unread) patchLiveSubscription(store, id, { unreadCount: unread });
+    } else if (unread > 0) {
+      loadSubscriptionForSidebar(utils, queryClient, id, tagIds);
+    }
+  }
+}
 
-  // Update only the affected per-tag infinite query caches
-  const infiniteQueries = queryClient.getQueriesData<{
-    pages: Array<{ items: Array<{ id: string; unreadCount: number; [key: string]: unknown }> }>;
-    pageParams: unknown[];
-  }>({
-    queryKey: [["subscriptions", "list"]],
+/**
+ * Fetches a subscription the store lacks into it, when a loaded sidebar
+ * section may list it: one with these tags (unknown tags count as maybe).
+ * One that only collapsed tags would list isn't fetched; expanding them loads it.
+ */
+export function loadSubscriptionForSidebar(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  id: string,
+  tagIds: string[] | undefined
+): void {
+  if (tagIds && !isSidebarSectionLoaded(queryClient, tagIds)) return;
+  utils.subscriptions.get.fetch({ id }, { staleTime: 0 }).catch(() => {
+    // Gone already, or offline: nothing to list.
   });
+}
 
-  for (const [queryKey, data] of infiniteQueries) {
-    if (!data?.pages) continue;
-
-    // Check if this query is for an affected tag
-    const keyData = queryKey[1] as { input?: SubscriptionListInput } | undefined;
-    const input = keyData?.input;
-
-    // Skip queries that aren't for affected tags or uncategorized
-    if (input) {
-      const isAffectedTag = input.tagId && affectedTagIds.has(input.tagId);
-      const isAffectedUncategorized = hasUncategorized && input.uncategorized === true;
-      if (!isAffectedTag && !isAffectedUncategorized) {
-        continue;
-      }
-    }
-
-    // Update subscriptions in this cache
-    queryClient.setQueryData(queryKey, {
-      ...data,
-      pages: data.pages.map((page) => ({
-        ...page,
-        items: page.items.map((s) => {
-          const newUnread = subscriptionUpdates.get(s.id);
-          return newUnread !== undefined ? { ...s, unreadCount: newUnread } : s;
-        }),
-      })),
+function isSidebarSectionLoaded(queryClient: QueryClient, tagIds: string[]): boolean {
+  return queryClient
+    .getQueriesData({ queryKey: [["subscriptions", "list"]] })
+    .some(([queryKey]) => {
+      const input = (queryKey[1] as { input?: SubscriptionListInput } | undefined)?.input;
+      const section = input && sidebarSectionOf(input);
+      if (section === undefined) return false;
+      return section === UNCATEGORIZED_SECTION ? tagIds.length === 0 : tagIds.includes(section);
     });
-  }
-
-  // The open subscription's own copy, which the sidebar lists once the
-  // unread-only filter drops it from subscriptions.list.
-  for (const [queryKey, data] of queryClient.getQueriesData<{ id: string; unreadCount: number }>({
-    queryKey: [["subscriptions", "get"]],
-  })) {
-    const newUnread = data && subscriptionUpdates.get(data.id);
-    if (newUnread !== undefined) {
-      queryClient.setQueryData(queryKey, { ...data, unreadCount: newUnread });
-    }
-  }
 }
 
 /**

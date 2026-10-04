@@ -12,6 +12,7 @@ import {
   applyCollectionEntriesChange,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
+  loadSubscriptionForSidebar,
   setEntryRelatedCounts,
 } from "./operations";
 import {
@@ -20,12 +21,8 @@ import {
   type EntryRow,
 } from "@/lib/local-db/entries";
 import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
-import {
-  applySyncTagChanges,
-  removeSyncTags,
-  updateSubscriptionInCache,
-  type CachedSubscription,
-} from "./count-cache";
+import { applySyncTagChanges, removeSyncTags } from "./tag-cache";
+import { patchLiveSubscription } from "@/lib/local-db/subscriptions";
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
@@ -195,25 +192,20 @@ export function handleSyncEvent(
     }
 
     case "subscription_updated": {
-      // Update the subscription's tags and title in cache, then invalidate
-      // tag-related queries to get fresh feedCount/unreadCount
-      const subUpdates: Partial<Pick<CachedSubscription, "tags" | "title">> = {
-        tags: event.tags,
-      };
-      if (event.customTitle !== null) {
-        // Custom title set - use it as the resolved title
-        subUpdates.title = event.customTitle;
+      // The stored row moves between sidebar sections with its tags. A
+      // cleared custom title falls back to the feed's own, which the row has.
+      const stored = db.subscriptions.rows.getSynced(event.subscriptionId);
+      if (stored) {
+        patchLiveSubscription(db.subscriptions, event.subscriptionId, {
+          tags: event.tags,
+          title: event.customTitle ?? stored.originalTitle,
+        });
       } else {
-        // Custom title cleared - revert to originalTitle from cache
-        const cached = utils.subscriptions.get.getData({ id: event.subscriptionId });
-        if (cached) {
-          subUpdates.title = cached.originalTitle;
-        }
-        // If not cached, the invalidation below will correct it
+        const tagIds = event.tags.map((tag) => tag.id);
+        loadSubscriptionForSidebar(utils, queryClient, event.subscriptionId, tagIds);
       }
-      updateSubscriptionInCache(utils, queryClient, event.subscriptionId, subUpdates);
+      // Tag feed counts changed.
       utils.tags.list.invalidate();
-      utils.subscriptions.list.invalidate();
       break;
     }
 

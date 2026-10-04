@@ -9,9 +9,9 @@
 
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { findCachedSubscriptionIds } from "@/lib/cache/count-cache";
 import { useLocalEntriesMatching } from "@/lib/hooks/useLocalEntries";
+import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
+import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/sidebar-sections";
 import type { EntryListFilters } from "@/lib/local-db/entry-lists";
 import { useAppearance } from "@/lib/appearance/AppearanceProvider";
 import { EntryListItem } from "./EntryListItem";
@@ -27,17 +27,15 @@ interface EntryListFallbackProps {
 
 /**
  * Tag and uncategorized views depend on subscription tags: narrow them to the
- * cached subscriptions that qualify, or `null` (skeleton) when no
- * subscriptions are cached, rather than showing unfiltered entries.
+ * stored subscriptions that qualify, or `null` (skeleton) when none are
+ * stored, rather than showing unfiltered entries.
  */
 function useSubscriptionScope(filters: EntryListFilters): string[] | undefined | null {
-  const queryClient = useQueryClient();
-  const { tagId, uncategorized } = filters;
-  if (!tagId && !uncategorized) return undefined;
-  const ids = findCachedSubscriptionIds(queryClient, (subscription) =>
-    tagId ? subscription.tags.some((tag) => tag.id === tagId) : subscription.tags.length === 0
-  );
-  return ids ?? null;
+  const stored = useLocalSubscriptions();
+  const section = filters.tagId ?? (filters.uncategorized ? UNCATEGORIZED_SECTION : undefined);
+  if (section === undefined) return undefined;
+  if (stored.length === 0) return null;
+  return stored.filter((row) => isInSidebarSection(row, section)).map((row) => row.id);
 }
 
 export function EntryListFallback({ filters, onEntryClick }: EntryListFallbackProps) {

@@ -15,12 +15,8 @@ import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { ColorDot } from "@/components/ui/color-picker";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { SIDEBAR_FEEDS_ATTRIBUTE } from "./sidebar-feed-navigation";
-import {
-  UNCATEGORIZED_SECTION,
-  isInSidebarSection,
-  isSidebarLinkCurrent,
-  useSidebarSelection,
-} from "@/lib/hooks/useSidebarSelection";
+import { isSidebarLinkCurrent, useSidebarSelection } from "@/lib/hooks/useSidebarSelection";
+import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/sidebar-sections";
 import { TagSubscriptionList } from "./TagSubscriptionList";
 
 interface TagListProps {

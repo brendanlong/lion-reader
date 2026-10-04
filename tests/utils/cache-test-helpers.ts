@@ -10,7 +10,6 @@ import { vi, type MockInstance } from "vitest";
 import { createTRPCClient, httpLink } from "@trpc/client";
 import { createTRPCQueryUtils } from "@trpc/react-query";
 import superjson from "superjson";
-import { addSubscriptionToCache } from "@/lib/cache/count-cache";
 import type { SyncEvent } from "@/lib/events/schemas";
 import type { AppRouter } from "@/server/trpc/root";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
@@ -356,14 +355,8 @@ export function seedCacheState(
   const starredUnread = options.starredUnread ?? 2;
   const savedUnread = options.savedUnread ?? 1;
 
-  // Seed subscriptions into the subscription lookup map
-  for (const sub of subs) {
-    addSubscriptionToCache(queryClient, sub);
-  }
-
-  // Seed the sidebar's per-tag / uncategorized subscriptions.list pages (the
-  // infinite queries TagSubscriptionList renders, and where per-subscription
-  // unread counts live)
+  // Seed the sidebar's per-tag / uncategorized subscriptions.list pages, which
+  // the local store ingests
   const seedSidebarList = (input: { tagId: string } | { uncategorized: true }, items: unknown[]) =>
     (utils.subscriptions.list as unknown as { setInfiniteData: SetInfiniteData }).setInfiniteData(
       { ...input, limit: 50 },
