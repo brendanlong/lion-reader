@@ -19,6 +19,7 @@ import { createCaller } from "../../src/server/trpc/root";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
+import { setSubscriptionTags } from "../../src/server/services/subscriptions";
 import {
   createAuthContext,
   createTestEntry,
@@ -141,5 +142,36 @@ describe("entries.markAllRead SSE publishing", () => {
     });
     expect(counts?.subscriptions).toHaveLength(2);
     expect(JSON.parse(await messagePromise).counts).toEqual(counts);
+  });
+
+  it("counts the collections and tags its scope reaches through membership", async () => {
+    const userId = await createTestUser({ emailPrefix: "mark-all-scoped" });
+    const news = await seedUnreadEntries(userId, 1);
+    const other = await seedUnreadEntries(userId, 1);
+    const newsTag = await createTestTag(userId, { subscriptionIds: [news.subscriptionId] });
+    const otherTag = await createTestTag(userId, { subscriptionIds: [other.subscriptionId] });
+    const picksTag = await createTestTag(userId);
+    const channel = getUserEventsChannel(userId);
+    let picksId = "";
+    // Creating the collection, adding to it, and tagging it publish one event each.
+    await subscribeAndDrain(
+      subscriber,
+      channel,
+      async () => {
+        picksId = (await createCollection(db, userId, "Picks")).subscription.id;
+        await addEntriesToCollection(db, userId, picksId, [news.entryIds[0]]);
+        await setSubscriptionTags(db, userId, picksId, [picksTag]);
+      },
+      3
+    );
+
+    const caller = createCaller(await createAuthContext(userId));
+    const { counts } = await caller.entries.markAllRead({ tagId: newsTag });
+
+    expect(counts?.subscriptions.map((sub) => sub.id).sort()).toEqual(
+      [news.subscriptionId, picksId].sort()
+    );
+    expect(counts?.tags.map((tag) => tag.id).sort()).toEqual([newsTag, picksTag].sort());
+    expect(counts?.tags.some((tag) => tag.id === otherTag)).toBe(false);
   });
 });

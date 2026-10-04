@@ -25,6 +25,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
+import { refreshStoredCollections } from "@/lib/cache/operations";
 import {
   connectionStatusForPhase,
   INITIAL_CONNECTION_STATE,
@@ -178,12 +179,13 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         for (const event of events) handleSyncEvent(utils, queryClient, event);
         // Membership changes are SSE-only (collection_entries_changed isn't
         // replayed): re-check cached memberships, and the sidebar counts of a
-        // collection an article left while disconnected, which no replayed
-        // event carries.
+        // collection an article joined or left while disconnected, which no
+        // replayed event carries.
         if (events.length > 0) {
           void utils.collections.listForEntry.invalidate();
           void utils.subscriptions.list.invalidate();
           void utils.tags.list.invalidate();
+          refreshStoredCollections(utils, queryClient);
         }
         result = { type: "sync-result", epoch: action.epoch, ok: true, events, hasMore };
       } catch (error) {

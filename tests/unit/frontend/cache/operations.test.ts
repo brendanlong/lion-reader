@@ -19,6 +19,7 @@ import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
+  refreshStoredCollections,
   setEntryRelatedCounts,
 } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
@@ -292,5 +293,39 @@ describe("setEntryRelatedCounts for subscriptions", () => {
     );
 
     expect(fetchedIds()).toEqual(["sub-in-loaded", "sub-untold"]);
+  });
+});
+
+describe("refreshStoredCollections", () => {
+  it("refetches the stored collections with unread entries", () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const utils = createRealTrpcUtils(queryClient);
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue(undefined);
+    const collection = (id: string, unreadCount: number) => ({
+      id,
+      type: "collection" as const,
+      url: null,
+      title: id,
+      originalTitle: id,
+      description: null,
+      siteUrl: null,
+      subscribedAt: new Date(),
+      unreadCount,
+      tags: [],
+      fetchFullContent: false,
+    });
+    writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
+      collection("col-unread", 2),
+      collection("col-read", 0),
+    ]);
+    seedSubscription(queryClient, { id: "feed-unread", unreadCount: 3, tags: [] });
+
+    refreshStoredCollections(utils, queryClient);
+
+    expect(
+      fetchSpy.mock.calls.map(
+        ([options]) => (options.queryKey[1] as { input: { id: string } }).input.id
+      )
+    ).toEqual(["col-unread"]);
   });
 });

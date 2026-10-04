@@ -205,7 +205,10 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
     onSuccess: (data) => {
+      // Nothing marked means no counts changed, but the list may still show
+      // entries read elsewhere.
       if (data.count > 0) handleMarkAllRead(utils, queryClient, data.counts);
+      else utils.entries.list.invalidate();
     },
     onError: () => {
       toast.error("Failed to mark all as read");

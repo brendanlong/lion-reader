@@ -182,6 +182,18 @@ describe("Entry counts service", () => {
   });
 
   describe("getBulkEntryRelatedCounts", () => {
+    it("takes more entries than a statement takes parameters (a big mark-all-read)", async () => {
+      const userId = await createTestUser();
+      const many = Array.from({ length: 70_000 }, () => ({
+        id: generateUuidv7(),
+        subscriptionId: null,
+      }));
+
+      const counts = await getBulkEntryRelatedCounts(db, userId, many);
+
+      expect(counts.subscriptions).toEqual([]);
+    });
+
     it("deduplicates tag counts for entries reachable through multiple subscriptions", async () => {
       const userId = await createTestUser();
       const { subId1, subId2 } = await createOverlappingSubscriptions(userId);

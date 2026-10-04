@@ -198,6 +198,22 @@ export function handleMarkAllRead(
   utils.entries.list.invalidate();
 }
 
+/**
+ * Refetches the stored collections that have unread entries, after a catch-up
+ * sync: an article that left a collection while this client was disconnected
+ * isn't replayed, and a refetch of an unread-only section can't say a row it
+ * left out went to zero.
+ */
+export function refreshStoredCollections(utils: TRPCClientUtils, queryClient: QueryClient): void {
+  for (const row of getLocalDb(queryClient).subscriptions.rows.allSynced()) {
+    if (row.type === "collection" && row.unreadCount > 0) {
+      utils.subscriptions.get.fetch({ id: row.id }, { staleTime: 0 }).catch(() => {
+        // Deleted meanwhile: its subscription_deleted event removes it.
+      });
+    }
+  }
+}
+
 // ============================================================================
 // Absolute Count Updates (Server-Provided Counts)
 // ============================================================================
