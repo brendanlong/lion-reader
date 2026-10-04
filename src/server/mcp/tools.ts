@@ -226,6 +226,22 @@ const saveArticleArgs = z.object({
         "text (NOT Markdown or HTML). Do NOT HTML-escape it — write & not &amp;, since " +
         "it is rendered as literal text. Clipped to ~300 characters."
     ),
+  refetch: z
+    .boolean()
+    .optional()
+    .describe(
+      "If the URL is already saved, fetch it again and update the article in place, " +
+        "keeping its ID, starred state and collections (it is marked unread). Without " +
+        "this, an already-saved URL is returned unchanged."
+    ),
+  force: z
+    .boolean()
+    .optional()
+    .describe(
+      "With refetch, update even if the new content looks much shorter than the saved " +
+        "copy (by default that refetch is rejected, since it usually means an error or " +
+        "access-denied page)."
+    ),
   collectionIds: saveCollectionIdsArg,
 });
 
@@ -446,7 +462,7 @@ function buildTools(): Tool[] {
     {
       name: "save_article",
       description:
-        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article's metadata and excerpt (not its content; use get_entry for that), including when it was already saved. Private Google Docs are supported when the user has linked their Google account and granted Google Docs access in the web app; otherwise a clear error explains how to authorize.",
+        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article's metadata and excerpt (not its content; use get_entry for that), including when it was already saved (pass refetch=true to fetch an already-saved URL again and update it). Private Google Docs are supported when the user has linked their Google account and granted Google Docs access in the web app; otherwise a clear error explains how to authorize.",
       inputSchema: toInputSchema(saveArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(saveArticleArgs, args);
@@ -456,6 +472,8 @@ function buildTools(): Tool[] {
           title: params.title,
           author: params.author,
           excerpt: params.summary,
+          refetch: params.refetch,
+          force: params.force,
           // Use the user's stored Google credentials for private Google Docs
           // when already linked/granted; otherwise throw a clear error telling
           // them to authorize Google Docs access in the web app (an MCP client
