@@ -35,9 +35,9 @@ event-sources: Event Sources {
     saved-updated: publishEntryUpdated(savedFeedId, entryId)
   }
 
-  subscriptions-router: Subscriptions Router {
+  subscriptions-service: Subscriptions Service {
     style.fill: "#e0e7ff"
-    tooltip: "src/server/trpc/routers/subscriptions.ts"
+    tooltip: "src/server/services/subscriptions.ts"
 
     sub-created: publishSubscriptionCreated(userId, feedId, subscriptionId, subscription, feed)
     sub-deleted: publishSubscriptionDeleted(userId, feedId, subscriptionId)
@@ -292,10 +292,10 @@ event-sources.saved-service.saved-updated -> redis.feed-channels: entry_updated 
   style.stroke: "#2563eb"
 }
 
-event-sources.subscriptions-router.sub-created -> redis.user-channels: subscription_created {
+event-sources.subscriptions-service.sub-created -> redis.user-channels: subscription_created {
   style.stroke: "#7c3aed"
 }
-event-sources.subscriptions-router.sub-deleted -> redis.user-channels: subscription_deleted {
+event-sources.subscriptions-service.sub-deleted -> redis.user-channels: subscription_deleted {
   style.stroke: "#7c3aed"
 }
 event-sources.job-handlers.import-sub-created -> redis.user-channels: subscription_created {

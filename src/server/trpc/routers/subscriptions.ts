@@ -19,8 +19,7 @@ import { READER_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
 import { fetchUrl, HttpFetchError, isHtmlContent } from "@/server/http/fetch";
-import { feeds, subscriptions, tags, subscriptionTags, blockedSenders } from "@/server/db/schema";
-import { generateUuidv7 } from "@/lib/uuidv7";
+import { feeds, subscriptions, tags, subscriptionTags } from "@/server/db/schema";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
@@ -32,12 +31,10 @@ import {
 import { OpmlParseError } from "@/server/feed/opml";
 import { scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
-import { publishSubscriptionDeleted, publishSubscriptionUpdated } from "@/server/redis/pubsub";
-import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
+import { publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { importOpml } from "@/server/services/imports";
-import { getSubscriptionDeletionCounts } from "@/server/services/counts";
 import { unreadCountsSchema } from "@/lib/events/schemas";
 
 // Endpoints exposed via the MCP tool surface; the native app uses them too.
@@ -523,10 +520,6 @@ export const subscriptionsRouter = createTRPCRouter({
    *
    * Sets unsubscribedAt timestamp instead of deleting the record.
    * This allows users to resubscribe later while preserving their read state.
-   *
-   * For email feeds, this also:
-   * 1. Attempts to send an unsubscribe request (mailto or HTTPS)
-   * 2. Adds the sender to the blocked_senders table
    */
   delete: protectedProcedure
     .meta({
@@ -544,121 +537,11 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(z.object({ success: z.boolean(), counts: unreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Verify the subscription exists and belongs to the user, and get feed info
-      const existing = await ctx.db
-        .select({
-          subscription: subscriptions,
-          feed: feeds,
-        })
-        .from(subscriptions)
-        .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-        .where(
-          and(
-            eq(subscriptions.id, input.id),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .limit(1);
-
-      if (existing.length === 0) {
+      const result = await subscriptionsService.unsubscribe(ctx.db, ctx.session.user.id, input.id);
+      if (!result) {
         throw errors.subscriptionNotFound();
       }
-
-      const { feed } = existing[0];
-      const now = new Date();
-
-      // Handle email feed unsubscription. The unsubscribe request and mailto
-      // lookup involve network/side-effecting work, so they run BEFORE the
-      // transaction — only the resulting blocked_senders row is written inside it.
-      let blockedSenderValues: typeof blockedSenders.$inferInsert | null = null;
-      if (feed.type === "email" && feed.emailSenderPattern) {
-        // 1. Attempt to send unsubscribe request
-        const unsubscribeResult = await attemptUnsubscribe(feed.id);
-
-        logger.info("Email unsubscribe attempt completed", {
-          feedId: feed.id,
-          userId,
-          senderEmail: feed.emailSenderPattern,
-          sent: unsubscribeResult.sent,
-          method: unsubscribeResult.method,
-        });
-
-        // 2. Record the sender's mailto unsubscribe URL on the blocked sender
-        const listUnsubscribeMailto = await getLatestUnsubscribeMailto(feed.id);
-
-        blockedSenderValues = {
-          id: generateUuidv7(),
-          userId,
-          senderEmail: feed.emailSenderPattern,
-          blockedAt: now,
-          listUnsubscribeMailto,
-          unsubscribeSentAt: unsubscribeResult.sent ? now : null,
-        };
-      }
-
-      // Group the block + tag removal + soft-delete into one transaction so a
-      // crash can't half-apply the unsubscribe (e.g. tags removed but the
-      // subscription still active, or vice versa) (issue #952).
-      const formerTagIds = await ctx.db.transaction(async (tx) => {
-        await subscriptionsService.lockSubscriptionRow(tx, userId, input.id, { members: true });
-
-        // 3. Add sender to blocked_senders table (email feeds only)
-        if (blockedSenderValues) {
-          await tx.insert(blockedSenders).values(blockedSenderValues).onConflictDoNothing(); // Handle case where sender is already blocked
-
-          logger.info("Added sender to blocked list", {
-            userId,
-            senderEmail: feed.emailSenderPattern,
-          });
-        }
-
-        // Capture the subscription's tags BEFORE removing the associations, so we
-        // can compute the affected tags' post-delete absolute counts (an empty
-        // list means the subscription was uncategorized).
-        const formerTagRows = await tx
-          .select({ tagId: subscriptionTags.tagId })
-          .from(subscriptionTags)
-          .where(eq(subscriptionTags.subscriptionId, input.id));
-
-        // Remove all tag associations so resubscribing starts fresh
-        await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, input.id));
-
-        // Soft delete by setting unsubscribedAt. Scope by userId too — the
-        // ownership SELECT above already guarantees it, but keeping the
-        // predicate makes the mutation self-evidently user-scoped in isolation.
-        await tx
-          .update(subscriptions)
-          .set({
-            unsubscribedAt: now,
-            updatedAt: now,
-          })
-          .where(and(eq(subscriptions.id, input.id), eq(subscriptions.userId, userId)));
-
-        return formerTagRows.map((r) => r.tagId);
-      });
-
-      // Compute absolute counts for the affected lists AFTER the soft-delete so
-      // they reflect the subscription's removal. The client sets these directly
-      // (the sync.events catch-up path can't recompute the former tags, so it
-      // omits counts and the client invalidates instead).
-      const counts = await getSubscriptionDeletionCounts(ctx.db, userId, formerTagIds);
-
-      // Publish subscription_deleted event so other tabs/windows can update
-      publishSubscriptionDeleted(userId, feed.id, input.id, now, counts).catch((err) => {
-        logger.error("Failed to publish subscription_deleted event", {
-          err,
-          userId,
-          feedId: feed.id,
-        });
-      });
-
-      // Note: In the data-driven model, we don't need to disable the job.
-      // The job will simply not be claimed if there are no active subscribers.
-
-      return { success: true, counts };
+      return { success: true, counts: result.counts };
     }),
 
   /**
