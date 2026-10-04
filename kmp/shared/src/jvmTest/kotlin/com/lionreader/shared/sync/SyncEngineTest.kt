@@ -3,6 +3,7 @@ package com.lionreader.shared.sync
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.api.ApiException
+import com.lionreader.shared.api.COLLECTION_TYPE
 import com.lionreader.shared.api.EntryMetadata
 import com.lionreader.shared.api.EventEntry
 import com.lionreader.shared.api.FeedType
@@ -444,6 +445,99 @@ class SyncEngineTest {
         engine.sync(downloadContent = false)
 
         assertEquals(listOf("b"), timeline())
+    }
+
+    /** sub-1 and the collection col-1 tagged t-1; col-1 holds a (of sub-1) and c (of no feed). */
+    private fun serveCollection() {
+        val tag = TagRef("t-1", "Tag")
+        server.subscriptions += subscription("sub-1", title = "Feed", tags = listOf(tag))
+        server.subscriptions +=
+            Subscription("col-1", type = COLLECTION_TYPE, title = "Col", tags = listOf(tag))
+        // c is older than the window: a collection's articles are kept anyway.
+        serve(entry("a"), entry("b", ageDays = 2), entry("c", ageDays = 400, subscriptionId = null))
+        server.collections["col-1"] = mutableSetOf("a", "c")
+    }
+
+    private suspend fun unread(scope: ListScope) = timeline(scope, unreadOnly = true)
+
+    @Test
+    fun aCollectionListsAndCountsItsArticles() = runTest {
+        serveCollection()
+
+        engine.sync()
+
+        assertEquals(listOf("a", "c"), timeline(ListScope.Subscription("col-1")))
+        assertEquals(listOf("a", "b"), timeline(ListScope.Subscription("sub-1")))
+        assertEquals(listOf("a", "b", "c"), timeline(ListScope.Tag("t-1")))
+        assertEquals("<p>Body c</p>", reader.entry("c").first()?.content)
+        val nav = reader.navigation().first()
+        assertEquals(2, nav.subscriptions.single { it.id == "col-1" }.unread)
+        // a is in both of the tag's subscriptions and counts once.
+        assertEquals(3, nav.tags.single().unread)
+        assertEquals(listOf("a", "c"), reader.unreadIds(ListScope.Subscription("col-1")).sorted())
+    }
+
+    @Test
+    fun syncFollowsArticlesJoiningAndLeavingACollection() = runTest {
+        serveCollection()
+        engine.sync()
+
+        server.queueChanges(
+            events =
+                listOf("a", "b").map {
+                    SyncEvent.EntryStateChanged(it, read = false, starred = false)
+                },
+            memberships = mapOf("a" to emptyList(), "b" to listOf("col-1")),
+        )
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("b", "c"), unread(ListScope.Subscription("col-1")))
+        assertEquals(3, reader.navigation().first().tags.single().unread)
+    }
+
+    @Test
+    fun unsubscribingKeepsEntriesInACollection() = runTest {
+        serveCollection()
+        engine.sync()
+
+        server.queueChanges(events = listOf(SyncEvent.SubscriptionDeleted("sub-1")))
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("a", "c"), timeline())
+    }
+
+    @Test
+    fun deletingACollectionForgetsItsArticles() = runTest {
+        serveCollection()
+        engine.sync()
+
+        // The server reports what the collection alone kept visible.
+        server.queueChanges(
+            events = listOf(SyncEvent.SubscriptionDeleted("col-1")),
+            deletions = listOf("c"),
+        )
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("a", "b"), timeline())
+        assertEquals(emptyList(), timeline(ListScope.Subscription("col-1")))
+    }
+
+    @Test
+    fun aDatabaseThatPredatesCollectionsListsThemOnce() = runTest {
+        serveCollection()
+        engine.sync()
+        db.appMetadataQueries.delete("collections_listed")
+        server.collections["col-1"] = mutableSetOf("b")
+        server.requests.clear()
+
+        engine.sync(downloadContent = false)
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("b"), timeline(ListScope.Subscription("col-1")))
+        assertEquals(
+            1,
+            server.requests.count { it.url.parameters["subscriptionId"] == "col-1" },
+        )
     }
 
     @Test

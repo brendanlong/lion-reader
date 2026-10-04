@@ -1,6 +1,7 @@
 package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.BulkStateResponse
+import com.lionreader.shared.api.CollectionMembership
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.Subscription
@@ -17,6 +18,7 @@ import com.lionreader.shared.db.Outbox_state
 internal class PulledPage(
     val events: List<SyncEvent>,
     val deletedIds: List<String>,
+    val collectionMemberships: List<CollectionMembership>,
     val cursors: SyncCursors,
     val hasMore: Boolean,
     /** The cursors the catch-up this page is part of started from. */
@@ -35,10 +37,10 @@ internal class PulledPage(
  * suspends: whatever a commit needs is fetched before it by [SyncEngine], so a cursor can never be
  * committed ahead of data a later request was supposed to bring.
  *
- * Table ownership: `entry` state and metadata, subscriptions, tags and cursors are written here
- * under the sync lock; bodies only by [storeBodies] and summaries only by [storeSummary] (both
- * outside the lock, version-guarded, and deleted here with their entry); the outbox by `Reader`
- * (and cleared here once sent).
+ * Table ownership: `entry` state and metadata, collection membership, subscriptions, tags and
+ * cursors are written here under the sync lock; bodies only by [storeBodies] and summaries only by
+ * [storeSummary] (both outside the lock, version-guarded, and deleted here with their entry); the
+ * outbox by `Reader` (and cleared here once sent).
  */
 internal class SyncWriter(private val db: LionReaderDatabase) {
     private val store = LocalStore(db)
@@ -70,6 +72,24 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     fun saveEntries(items: List<EntryListItem>) = db.transaction {
         items.forEach(store::upsertEntry)
     }
+
+    val collectionsListed: Boolean
+        get() = store.collectionsListed
+
+    /**
+     * Saves a page of a collection's articles, with their membership in it. The [first] page
+     * replaces what the device had for the collection.
+     */
+    fun saveCollectionPage(collectionId: String, items: List<EntryListItem>, first: Boolean) =
+        db.transaction {
+            if (first) db.collectionEntryQueries.deleteForSubscription(collectionId)
+            for (item in items) {
+                store.upsertEntry(item)
+                db.collectionEntryQueries.insertIgnore(collectionId, item.id)
+            }
+        }
+
+    fun finishCollections() = db.transaction { store.collectionsListed = true }
 
     var recentlyReadSeen: Long?
         get() = store.recentlyReadSeen
@@ -106,6 +126,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     private fun commitPageInTransaction(page: PulledPage, texts: Map<String, String>, now: Long) {
         page.deletedIds.forEach(store::deleteEntry)
         page.events.forEach(::apply)
+        page.collectionMemberships.forEach { store.setCollections(it.entryId, it.subscriptionIds) }
         for (entry in page.fetchedEntries) {
             store.upsertEntry(
                 entry.id,

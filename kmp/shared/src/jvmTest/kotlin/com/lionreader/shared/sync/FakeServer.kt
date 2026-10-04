@@ -2,6 +2,7 @@ package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.BulkStateResponse
+import com.lionreader.shared.api.CollectionMembership
 import com.lionreader.shared.api.Deletion
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.EntryListPage
@@ -51,6 +52,9 @@ import kotlinx.serialization.json.jsonObject
 class FakeServer {
     val entries = linkedMapOf<String, FullEntry>()
     val subscriptions = mutableListOf<Subscription>()
+
+    /** Each collection's article ids, by its subscription id. */
+    val collections = mutableMapOf<String, MutableSet<String>>()
 
     /** Summaries the server would generate, by entry id; others fail (500). */
     val summaries = mutableMapOf<String, String>()
@@ -126,6 +130,8 @@ class FakeServer {
         times: Int = 1,
         deletions: List<String> = emptyList(),
         resyncRequired: Boolean = false,
+        /** Entry id to the collections holding it. */
+        memberships: Map<String, List<String>> = emptyMap(),
         hasMore: Boolean = false,
         /** The page's next entries cursor. */
         entriesCursor: String = "2026-02-01T00:00:00Z",
@@ -151,6 +157,10 @@ class FakeServer {
                     hasMore = hasMore,
                     cursors = cursors.copy(entries = entriesCursor),
                     deletions = deletions.map { Deletion(it, "2026-02-01T00:00:00Z") },
+                    collectionMemberships =
+                        memberships.map { (id, collections) ->
+                            CollectionMembership(id, collections)
+                        },
                     resyncRequired = resyncRequired,
                 )
             )
@@ -195,8 +205,10 @@ class FakeServer {
                             params["type"] == null || it.type.name.lowercase() == params["type"]
                         }
                         .filter {
-                            params["subscriptionId"] == null ||
-                                it.subscriptionId == params["subscriptionId"]
+                            val subscriptionId = params["subscriptionId"]
+                            subscriptionId == null ||
+                                it.subscriptionId == subscriptionId ||
+                                collections[subscriptionId]?.contains(it.id) == true
                         }
                         .sortedByDescending {
                             if (recentlyRead) it.readChangedAt else it.publishedAt ?: it.fetchedAt

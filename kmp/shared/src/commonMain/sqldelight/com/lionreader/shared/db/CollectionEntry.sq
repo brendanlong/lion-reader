@@ -1,0 +1,23 @@
+-- Which collections (subscriptions of type 'collection') hold which entries.
+-- A collection's articles keep their own feed's subscription_id, so lists and
+-- counts reach them through this table, as the server's do through
+-- collection_entries. Rows may name an entry the device doesn't have.
+CREATE TABLE collection_entry (
+  subscription_id TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  PRIMARY KEY (subscription_id, entry_id)
+);
+
+CREATE INDEX collection_entry_entry ON collection_entry(entry_id);
+
+insertIgnore:
+INSERT OR IGNORE INTO collection_entry(subscription_id, entry_id) VALUES (?, ?);
+
+deleteForEntry:
+DELETE FROM collection_entry WHERE entry_id = ?;
+
+deleteForSubscription:
+DELETE FROM collection_entry WHERE subscription_id = ?;
+
+deleteAll:
+DELETE FROM collection_entry;
