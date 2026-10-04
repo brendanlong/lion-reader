@@ -58,6 +58,24 @@ export function findAdjacentEntries(
   };
 }
 
+/**
+ * The row to put the reader back on when an entry closes: the entry itself,
+ * or — when closing it took it out of the list (it left the collection being
+ * viewed) — the nearest entry that's still listed, preferring the one after it.
+ */
+export function entryToReturnTo(
+  before: ReadonlyArray<{ id: string }>,
+  after: ReadonlyArray<{ id: string }>,
+  closedEntryId: string
+): string | undefined {
+  const listed = new Set(after.map((e) => e.id));
+  if (listed.has(closedEntryId)) return closedEntryId;
+  const index = before.findIndex((e) => e.id === closedEntryId);
+  if (index === -1) return undefined;
+  const isListed = (e: { id: string }) => listed.has(e.id);
+  return (before.slice(index + 1).find(isListed) ?? before.slice(0, index).findLast(isListed))?.id;
+}
+
 export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
@@ -117,15 +135,19 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     prevDistanceToEnd.current = distanceToEnd;
   }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Scroll to last viewed entry when returning from entry view to list
-  // We track the previous openEntryId to know which entry to scroll to
+  // When returning from the entry view to the list, scroll to the entry we
+  // were on and focus it, which makes it the j/k selection.
   const prevOpenEntryIdRef = useRef<string | null>(null);
+  const prevEntriesRef = useRef(entries);
   useLayoutEffect(() => {
     const prevOpenEntryId = prevOpenEntryIdRef.current;
-    const isClosing = prevOpenEntryId && !openEntryId;
+    const returnToId =
+      prevOpenEntryId && !openEntryId
+        ? entryToReturnTo(prevEntriesRef.current, entries, prevOpenEntryId)
+        : undefined;
 
-    if (isClosing) {
-      const element = document.querySelector(`[data-entry-id="${prevOpenEntryId}"]`);
+    if (returnToId) {
+      const element = document.querySelector<HTMLElement>(`[data-entry-id="${returnToId}"]`);
       if (element) {
         const scrollContainer = scrollContainerRef?.current;
         const rect = element.getBoundingClientRect();
@@ -141,12 +163,14 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
         if (!isInView) {
           element.scrollIntoView({ behavior: "instant", block: "center" });
         }
+        element.focus({ preventScroll: true });
       }
     }
 
-    // Update ref after the effect runs (this is allowed in effects)
+    // Update refs after the effect runs (this is allowed in effects)
     prevOpenEntryIdRef.current = openEntryId;
-  }, [openEntryId, scrollContainerRef]);
+    prevEntriesRef.current = entries;
+  }, [openEntryId, entries, scrollContainerRef]);
 
   // Navigation callbacks for keyboard shortcuts (j/k when viewing an entry)
   const goToNextEntry = useCallback(() => {
