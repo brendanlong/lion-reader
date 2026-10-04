@@ -154,8 +154,12 @@ function useRouteInfo(): RouteInfo {
  */
 function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   const canRenderFromCache = useCanRenderFromCache();
-  trpc.subscriptions.get.useQuery({ id: subscriptionId }, { throwOnError: true });
-  const sub = useLocalSubscription(subscriptionId);
+  const { data: fetched } = trpc.subscriptions.get.useQuery(
+    { id: subscriptionId },
+    { throwOnError: true }
+  );
+  // The fetched copy covers an optimistic unsubscribe, which removes the row.
+  const sub = useLocalSubscription(subscriptionId) ?? fetched;
 
   if (!canRenderFromCache || !sub) {
     return <TitleSkeleton />;

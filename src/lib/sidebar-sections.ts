@@ -15,10 +15,17 @@ export function isInSidebarSection(
     : subscription.tags.some((tag) => tag.id === section);
 }
 
-/** The order of a section's rows: `subscriptions.list` sorts by title, then id. */
+/**
+ * Approximately the order `subscriptions.list` returns a section in: by title
+ * under the database's en_US collation, then id. For placing rows the section
+ * didn't load; the ones it did keep the server's order.
+ */
 export function compareSidebarOrder(
   a: { id: string; title: string | null },
   b: { id: string; title: string | null }
 ): number {
-  return (a.title ?? "").localeCompare(b.title ?? "") || (a.id > b.id ? 1 : a.id < b.id ? -1 : 0);
+  return (
+    (a.title ?? "").localeCompare(b.title ?? "", "en-US") ||
+    (a.id > b.id ? 1 : a.id < b.id ? -1 : 0)
+  );
 }

@@ -14,13 +14,17 @@
  *   - expanding a section loads its subscriptions,
  *   - confirming the unsubscribe dialog fires `subscriptions.delete` and
  *     optimistically removes the feed from the sidebar,
- *   - the open subscription stays listed and only its chosen copy is current.
+ *   - the open subscription stays listed and only its chosen copy is current,
+ *   - a feed the unread-only filter hid appears once counts give it unread entries.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, within } from "@testing-library/react";
+import { act, screen, fireEvent, within } from "@testing-library/react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { setEntryRelatedCounts } from "@/lib/cache/operations";
+import { trpc, type TRPCClientUtils } from "@/lib/trpc/client";
 import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
 import {
   renderWithTrpc,
@@ -252,5 +256,67 @@ describe("Sidebar", () => {
     );
     expect(screen.getByRole("link", { name: /Feed One/ })).toHaveAttribute("aria-current", "page");
     window.history.replaceState(null, "", "/");
+  });
+
+  it("lists a feed the unread-only filter hid once counts give it unread entries (#1806)", async () => {
+    const picks = { ...FEED_ONE, id: "sub-2", type: "collection", title: "Picks", unreadCount: 1 };
+    let caches: { utils: TRPCClientUtils; queryClient: QueryClient } | undefined;
+    function CaptureCaches() {
+      caches = { utils: trpc.useUtils(), queryClient: useQueryClient() };
+      return null;
+    }
+    const { callsFor } = renderWithTrpc(
+      <>
+        <Sidebar />
+        <CaptureCaches />
+      </>,
+      { handlers: baseHandlers({ "subscriptions.get": () => picks }) }
+    );
+    await expandTechTag();
+    await screen.findByText("Feed One");
+    expect(screen.queryByText("Picks")).not.toBeInTheDocument();
+
+    // An article in the (read, so unlisted) collection was marked unread.
+    act(() =>
+      setEntryRelatedCounts(
+        caches!.utils,
+        {
+          all: { unread: 19 },
+          starred: { unread: 2 },
+          subscriptions: [{ id: "sub-2", unread: 1, tagIds: [TECH_TAG.id] }],
+          tags: [{ id: TECH_TAG.id, unread: 6 }],
+        },
+        caches!.queryClient
+      )
+    );
+
+    expect(await screen.findByRole("link", { name: /^Picks/ })).toHaveTextContent("(1)");
+    expect(callsFor("subscriptions.get").map((call) => call.input)).toEqual([{ id: "sub-2" }]);
+  });
+
+  it("lists the open, read subscription again when unsubscribing from it fails", async () => {
+    const readFeed = { ...FEED_ONE, unreadCount: 0 };
+    mockPathname.mockReturnValue("/subscription/sub-1");
+    const { callsFor } = renderWithTrpc(<Sidebar />, {
+      handlers: baseHandlers({
+        // The unread-only filter leaves the read feed out; only being open lists it.
+        "subscriptions.list": (input) => ({
+          items: (input as { unreadOnly?: boolean }).unreadOnly ? [] : [readFeed],
+          nextCursor: undefined,
+        }),
+        "subscriptions.get": () => readFeed,
+        "subscriptions.delete": () => {
+          throw trpcError("INTERNAL_SERVER_ERROR", "Database unavailable");
+        },
+      }),
+    });
+    await expandTechTag();
+    fireEvent.click(await screen.findByRole("button", { name: "Unsubscribe from Feed One" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Unsubscribe" })
+    );
+
+    await vi.waitFor(() => expect(callsFor("subscriptions.delete")).toHaveLength(1));
+    expect(await screen.findByRole("link", { name: "Feed One" })).toBeInTheDocument();
   });
 });

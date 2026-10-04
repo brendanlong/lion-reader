@@ -204,8 +204,9 @@ export function handleSyncEvent(
         const tagIds = event.tags.map((tag) => tag.id);
         loadSubscriptionForSidebar(utils, queryClient, event.subscriptionId, tagIds);
       }
-      // Tag feed counts changed.
+      // Tag feed counts changed, and the collection picker searches by title.
       utils.tags.list.invalidate();
+      void utils.subscriptions.list.invalidate({ type: "collection" });
       break;
     }
 

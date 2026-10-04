@@ -6,9 +6,10 @@
  * count, title or tags changing moves it in or out of a section with no list
  * refetch.
  *
- * Live writes (events, mutation responses, counts) are stamped from a local
- * clock, and a fetch that started before a row's last live write leaves that
- * row alone when it lands: its server snapshot is older.
+ * Every write is versioned by a local clock: a live write (event, mutation
+ * response, counts) by when it happened, a fetched row by when its fetch
+ * started. A fetched row is stored only over an older version, so a fetch that
+ * started before a newer write (or a removal) can't undo it when it lands.
  */
 
 import type { TRPCClientUtils } from "@/lib/trpc/client";
@@ -26,10 +27,12 @@ export type SubscriptionRow = NonNullable<
 
 export interface SubscriptionStore {
   rows: SyncedCollection<SubscriptionRow>;
-  /** Clock reading of each subscription's last live write or removal. */
-  liveWriteAt: Map<string, number>;
-  /** Clock reading when each query's latest fetch started, by query hash. */
+  /** The version of each subscription's stored row, kept after it's removed. */
+  versions: Map<string, number>;
+  /** By query hash: when its latest fetch started. */
   fetchStartedAt: Map<string, number>;
+  /** By query hash: when the full (not next-page) fetch its pages date from started. */
+  fullFetchStartedAt: Map<string, number>;
   clock: { now: number };
 }
 
@@ -53,7 +56,7 @@ function tick(store: SubscriptionStore): number {
 /** Writes rows from an event or mutation response. */
 export function writeLiveSubscriptions(store: SubscriptionStore, rows: SubscriptionRow[]): void {
   const now = tick(store);
-  for (const row of rows) store.liveWriteAt.set(row.id, now);
+  for (const row of rows) store.versions.set(row.id, now);
   store.rows.upsert(rows);
 }
 
@@ -69,25 +72,33 @@ export function patchLiveSubscription(
 
 export function removeLiveSubscriptions(store: SubscriptionStore, ids: string[]): void {
   const now = tick(store);
-  for (const id of ids) store.liveWriteAt.set(id, now);
+  for (const id of ids) store.versions.set(id, now);
   store.rows.remove(ids);
 }
 
-export function markSubscriptionFetchStarted(store: SubscriptionStore, queryHash: string): void {
-  store.fetchStartedAt.set(queryHash, tick(store));
+/** `full`: not a next-page fetch, so every page it leaves dates from it. */
+export function markSubscriptionFetchStarted(
+  store: SubscriptionStore,
+  queryHash: string,
+  full: boolean
+): void {
+  const now = tick(store);
+  store.fetchStartedAt.set(queryHash, now);
+  if (full) store.fullFetchStartedAt.set(queryHash, now);
 }
 
-function writtenSinceFetch(store: SubscriptionStore, id: string, queryHash: string): boolean {
-  return (store.liveWriteAt.get(id) ?? 0) > (store.fetchStartedAt.get(queryHash) ?? 0);
-}
+const NEVER = -1;
 
-/** Stores fetched rows, except those written live since the fetch started. */
+/** Stores rows a query fetched, except over a newer version. */
 export function ingestFetchedSubscriptions(
   store: SubscriptionStore,
   queryHash: string,
   rows: SubscriptionRow[]
 ): void {
-  store.rows.upsert(rows.filter((row) => !writtenSinceFetch(store, row.id, queryHash)));
+  const version = store.fetchStartedAt.get(queryHash) ?? 0;
+  const fresh = rows.filter((row) => (store.versions.get(row.id) ?? NEVER) < version);
+  for (const row of fresh) store.versions.set(row.id, version);
+  store.rows.upsert(fresh);
 }
 
 /**
@@ -100,10 +111,11 @@ export function sidebarSectionOf(input: SubscriptionListInput): string | undefin
 }
 
 /**
- * Corrects stored counts after a complete refetch of an unread-only section:
- * a stored row it should have returned but didn't has no unread entries now
- * (a change this client wasn't told about, such as mark-all-read). Only for
- * full refetches, which read every loaded page after the fetch started.
+ * Corrects stored counts once an unread-only section's pages cover all of it:
+ * a stored row in the section that they don't return, and that's no newer
+ * than they are, has no unread entries now (a change this client wasn't told
+ * about, such as mark-all-read). Sections with pages still unloaded are left
+ * alone, since only the server's collation says which rows those pages cover.
  */
 export function settleUnreadOnlySection(
   store: SubscriptionStore,
@@ -111,16 +123,17 @@ export function settleUnreadOnlySection(
   section: string,
   data: SubscriptionPages
 ): void {
-  const window = loadedWindow(data);
+  if (data.pages.at(-1)?.nextCursor !== undefined) return;
+  const since = store.fullFetchStartedAt.get(queryHash) ?? 0;
+  const returned = new Set(data.pages.flatMap((page) => page.items.map((item) => item.id)));
   const stale = store.rows
     .allSynced()
     .filter(
       (row) =>
         row.unreadCount > 0 &&
-        !window.rank.has(row.id) &&
+        !returned.has(row.id) &&
         isInSidebarSection(row, section) &&
-        isInWindow(window, row) &&
-        !writtenSinceFetch(store, row.id, queryHash)
+        (store.versions.get(row.id) ?? NEVER) < since
     );
   store.rows.upsert(stale.map((row) => ({ ...row, unreadCount: 0 })));
 }

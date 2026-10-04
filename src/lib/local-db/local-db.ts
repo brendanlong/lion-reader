@@ -73,8 +73,9 @@ function createLocalDb(): LocalDb {
       id: `subscriptions-${dbId}`,
       getKey: (row) => row.id,
     }),
-    liveWriteAt: new Map(),
+    versions: new Map(),
     fetchStartedAt: new Map(),
+    fullFetchStartedAt: new Map(),
     clock: { now: 0 },
   };
   return { entries, lists: { rows, meta: new Map() }, subscriptions };
@@ -91,15 +92,11 @@ function inputOf(query: Query): Record<string, unknown> {
 }
 
 /**
- * `fullFetch`: the data is a complete fetch (not a next page, a manual write,
- * or hydration), so it also says what the server no longer returns.
+ * `append`: the data's last page was just fetched and the rest is unchanged.
+ * `fetched`: the data comes from a fetch (not a manual write or hydration),
+ * so what it leaves out, the server no longer has.
  */
-function ingestQuery(
-  db: LocalDb,
-  query: Query,
-  mode: "replace" | "append",
-  fullFetch = false
-): void {
+function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append", fetched = false): void {
   const data = query.state.data;
   if (!data) return;
   switch (procedureOf(query)) {
@@ -113,7 +110,7 @@ function ingestQuery(
       // Infinite (the sidebar, the collection picker) or a single page.
       const list = data as SubscriptionPages | SubscriptionPages["pages"][number];
       const pages = "pages" in list ? list : { pages: [list] };
-      ingestSubscriptionPages(db, query, pages, fullFetch);
+      ingestSubscriptionPages(db, query, pages, mode, fetched);
       break;
     }
     case "subscriptions.get":
@@ -126,16 +123,19 @@ function ingestSubscriptionPages(
   db: LocalDb,
   query: Query,
   data: SubscriptionPages,
-  fullFetch: boolean
+  mode: "replace" | "append",
+  fetched: boolean
 ): void {
   const input = inputOf(query) as SubscriptionListInput;
+  // The earlier pages are older than this fetch: don't write them again.
+  const pages = mode === "append" ? data.pages.slice(-1) : data.pages;
   ingestFetchedSubscriptions(
     db.subscriptions,
     query.queryHash,
-    data.pages.flatMap((page) => page.items)
+    pages.flatMap((page) => page.items)
   );
   const section = sidebarSectionOf(input);
-  if (section && input.unreadOnly && fullFetch) {
+  if (section && input.unreadOnly && fetched) {
     settleUnreadOnlySection(db.subscriptions, query.queryHash, section, data);
   }
 }
@@ -173,7 +173,11 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
       event.action.type === "fetch" &&
       SUBSCRIPTION_QUERIES.has(procedureOf(query) ?? "")
     ) {
-      markSubscriptionFetchStarted(db.subscriptions, query.queryHash);
+      markSubscriptionFetchStarted(
+        db.subscriptions,
+        query.queryHash,
+        !event.action.meta?.fetchMore
+      );
     } else if (
       event.type === "updated" &&
       event.action.type === "fetch" &&
@@ -188,12 +192,7 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
       // replace. (Hydrating over an existing query is a `setState`, which
       // isn't ingested: the SPA only hydrates on its first load.)
       const isNextPage = !!query.state.fetchMeta?.fetchMore && !event.action.manual;
-      ingestQuery(
-        db,
-        query,
-        isNextPage ? "append" : "replace",
-        !event.action.manual && !query.state.fetchMeta?.fetchMore
-      );
+      ingestQuery(db, query, isNextPage ? "append" : "replace", !event.action.manual);
     }
   });
 }
@@ -222,8 +221,8 @@ function entryTagScope(queryClient: QueryClient, entry: EntryRow): EntryTagScope
 
 /**
  * Inserts an entry into the loaded lists it belongs in, judged by `entry`'s
- * fields. Tag/uncategorized membership comes from the cached subscription;
- * when that isn't cached, those lists are skipped and pick the entry up on
+ * fields. Tag/uncategorized membership comes from the stored subscription;
+ * when that isn't stored, those lists are skipped and pick the entry up on
  * their next refresh.
  */
 export function insertEntryIntoLists(db: LocalDb, queryClient: QueryClient, entry: EntryRow): void {

@@ -89,10 +89,15 @@ in and out of sections with no list refetch. These rules keep it complete and cu
   give it unread entries or an event moves it into a section, if a loaded
   section may list it (`loadSubscriptionForSidebar`; counts carry each
   subscription's `tagIds` so collapsed sections cost nothing).
-- A fetch that started before a row's last live write (event, response,
-  counts) leaves that row alone, and a full refetch of an unread-only section
-  zeroes the count of a stored row it should have returned but didn't (a
-  change this client wasn't told about, like mark-all-read).
+- Every write is versioned: a live write (event, response, counts) by when it
+  happened, a fetched row by when its fetch started. A fetched row is stored
+  only over an older version, so a fetch can't undo a newer write or a
+  removal, and a next page stores only its own rows.
+- Once an unread-only section's pages cover all of it, a stored row in the
+  section that they don't return, and that's no newer than they are, gets an
+  unread count of 0 (a change this client wasn't told about, like
+  mark-all-read). Sections with unloaded pages are left alone: only the
+  server's collation says which rows those pages cover.
 
 Rows a section loaded keep the server's order (its collation); others are
 placed by title among them.
@@ -222,9 +227,10 @@ Counts are applied separately from the response (absolute values, see
 ### Optimistic remove + invalidate-to-truth
 
 A removal has nothing to reconcile — there is no second concurrent delete and
-no server timestamp to compare — so on error the caches are invalidated rather
-than the row hand-restored. `useUnsubscribeMutation` is the one implementation;
-reserve the pattern for removals.
+no server timestamp to compare — so on error the removed row is written back
+as it was and the caches are invalidated (an unread-only refetch wouldn't
+return a read row by itself). `useUnsubscribeMutation` is the one
+implementation; reserve the pattern for removals.
 
 ### No optimistic phase
 

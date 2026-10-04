@@ -836,36 +836,32 @@ describe("handleSyncEvent - subscription_updated", () => {
     expect((sub1 as Record<string, unknown>)?.title).toBe("Custom Name");
   });
 
-  it("reverts to originalTitle when customTitle is cleared", () => {
-    // First seed subscriptions.get with originalTitle
-    setUtilsData(
-      utils.subscriptions.get,
-      { id: "sub-1" },
-      {
-        ...DEFAULT_SUBSCRIPTIONS[0],
-        originalTitle: "Feed One Original",
-      }
-    );
+  it("reverts to the feed's own title when customTitle is cleared", () => {
+    const update = (customTitle: string | null) =>
+      handleSyncEvent(
+        utils,
+        queryClient,
+        createSubscriptionUpdatedEvent({
+          subscriptionId: "sub-1",
+          tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
+          customTitle,
+        })
+      );
 
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createSubscriptionUpdatedEvent({
-        subscriptionId: "sub-1",
-        tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
-        customTitle: null,
-      })
-    );
+    update("Custom Name");
+    update(null);
 
-    const sub1 = findSubscription("sub-1");
-    expect((sub1 as Record<string, unknown>)?.title).toBe("Feed One Original");
+    expect(findSubscription("sub-1")?.title).toBe(DEFAULT_SUBSCRIPTIONS[0].originalTitle);
   });
 
-  it("refetches tag feed counts but not the sidebar lists, which follow the stored row", () => {
+  it("refetches tag feed counts and the collection picker, not the sidebar sections", () => {
     invalidateSpy.mockClear();
     handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent());
 
-    expect(invalidatedProcedures(invalidateSpy)).toEqual(["tags.list"]);
+    expect(invalidatedQueries(invalidateSpy)).toEqual([
+      { path: "tags.list", input: undefined },
+      { path: "subscriptions.list", input: { type: "collection" } },
+    ]);
   });
 
   it("loads an unstored subscription it moves into a loaded section, not into a collapsed one", () => {

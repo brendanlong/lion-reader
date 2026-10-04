@@ -24,13 +24,9 @@ import {
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
 import { insertIntoCollectionLists, setLeftCollectionLists } from "@/lib/local-db/entry-lists";
 
-/** A subscription as the server returns it. */
-export type SubscriptionData = SubscriptionRow;
-
 /**
- * Drops a deleted subscription's `subscriptions.get` data, which the sidebar
- * would otherwise keep listing while its page is open. Run once the server has
- * deleted it: the reset refetches (now NOT_FOUND) any open page.
+ * Drops a deleted subscription's `subscriptions.get` data. Run once the server
+ * has deleted it: the reset refetches (now NOT_FOUND) any open page.
  */
 export function forgetDeletedSubscription(utils: TRPCClientUtils, subscriptionId: string): void {
   void utils.subscriptions.get.reset({ id: subscriptionId });
@@ -83,7 +79,7 @@ function applySubscriptionCounts(
  */
 export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
-  subscription: SubscriptionData,
+  subscription: SubscriptionRow,
   queryClient: QueryClient,
   counts?: EntryRelatedCounts
 ): void {
@@ -166,6 +162,8 @@ export function handleSubscriptionDeleted(
 
   applySubscriptionCounts(utils, counts, queryClient);
 
+  // The collection picker searches on the server, so it refetches.
+  void utils.subscriptions.list.invalidate({ type: "collection" });
   // A deleted collection no longer holds anything.
   queryClient.setQueriesData<{ collectionIds: string[] }>(
     { queryKey: [["collections", "listForEntry"]] },

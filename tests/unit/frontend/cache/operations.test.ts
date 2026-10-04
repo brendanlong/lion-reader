@@ -20,7 +20,6 @@ import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   setEntryRelatedCounts,
-  type SubscriptionData,
 } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { writeLiveSubscriptions, type SubscriptionRow } from "@/lib/local-db/subscriptions";
@@ -67,7 +66,7 @@ describe("handleSubscriptionCreated", () => {
     invalidateSpy = spyOnInvalidate(queryClient);
   });
 
-  function createSubscription(overrides: Partial<SubscriptionData> = {}): SubscriptionData {
+  function createSubscription(overrides: Partial<SubscriptionRow> = {}): SubscriptionRow {
     return {
       id: "sub-1",
       type: "web",

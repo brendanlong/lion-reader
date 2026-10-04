@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import {
   patchLiveSubscription,
@@ -77,28 +77,31 @@ describe("sidebarSectionRows", () => {
 
 describe("ingesting subscription queries", () => {
   let queryClient: QueryClient;
+  let observer: ReturnType<typeof observeSection>;
+  /** Responses for the section, by page: page 0 is the first. */
+  let responses: Array<() => Promise<SectionPage>>;
   const sectionInput = { tagId: "tag-1", unreadOnly: true, limit: 50 };
   const sectionKey = [["subscriptions", "list"], { input: sectionInput, type: "infinite" }];
   const store = () => getLocalDb(queryClient).subscriptions;
   const stored = (id: string) => store().rows.getSynced(id);
 
-  /** Fetches the section, resolving with `items` once `release` is called. */
-  function fetchSection(items: SubscriptionRow[], nextCursor?: string) {
+  type SectionPage = { items: SubscriptionRow[]; nextCursor?: string };
+
+  /**
+   * Starts a fetch of `page` (0: a full refetch) whose response is held until
+   * `release` is called.
+   */
+  function fetching(page: number, items: SubscriptionRow[], nextCursor?: string) {
     let release = () => {};
-    const done = queryClient.fetchInfiniteQuery({
-      queryKey: sectionKey,
-      queryFn: () =>
-        new Promise<{ items: SubscriptionRow[]; nextCursor?: string }>((resolve) => {
-          release = () => resolve({ items, nextCursor });
-        }),
-      initialPageParam: undefined,
-      staleTime: 0,
+    const response = new Promise<SectionPage>((resolve) => {
+      release = () => resolve({ items, nextCursor });
     });
-    return { release: () => release(), done };
+    responses[page] = () => response;
+    const done = page === 0 ? observer.refetch() : observer.fetchNextPage();
+    return { release, done };
   }
 
-  async function fetchedSection(items: SubscriptionRow[], nextCursor?: string) {
-    const fetch = fetchSection(items, nextCursor);
+  async function settled(fetch: { release: () => void; done: Promise<unknown> }) {
     fetch.release();
     await fetch.done;
   }
@@ -106,49 +109,98 @@ describe("ingesting subscription queries", () => {
   beforeEach(() => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     getLocalDb(queryClient);
+    responses = [];
+    observer = observeSection();
   });
 
-  it("stores fetched rows, except over a live write made while the fetch ran", async () => {
-    await fetchedSection([sub("a", "A", { unreadCount: 3 })]);
-    const refetch = fetchSection([sub("a", "A", { unreadCount: 3 })]);
+  function observeSection() {
+    return new InfiniteQueryObserver(queryClient, {
+      queryKey: sectionKey,
+      queryFn: ({ pageParam }: { pageParam: number }) => responses[pageParam](),
+      initialPageParam: 0,
+      getNextPageParam: (last: SectionPage, all: SectionPage[]) =>
+        last.nextCursor ? all.length : undefined,
+      enabled: false,
+    });
+  }
+
+  it("stores fetched rows, except over a write made while the fetch ran", async () => {
+    const first = fetching(0, [sub("a", "A", { unreadCount: 3 })]);
+    await settled(first);
+    const refetch = fetching(0, [sub("a", "A", { unreadCount: 3 })]);
     patchLiveSubscription(store(), "a", { unreadCount: 4 });
-    refetch.release();
-    await refetch.done;
+    await settled(refetch);
 
     expect(stored("a")?.unreadCount).toBe(4);
   });
 
   it("doesn't bring back a row removed while the fetch ran", async () => {
-    await fetchedSection([sub("a", "A")]);
-    const refetch = fetchSection([sub("a", "A")]);
+    const first = fetching(0, [sub("a", "A")]);
+    await settled(first);
+    const refetch = fetching(0, [sub("a", "A")]);
     removeLiveSubscriptions(store(), ["a"]);
-    refetch.release();
-    await refetch.done;
+    await settled(refetch);
 
     expect(stored("a")).toBeUndefined();
   });
 
-  it("zeroes rows an unread-only refetch no longer returns, within its loaded pages", async () => {
+  it("stores only the new page of a next-page fetch", async () => {
+    const first = fetching(0, [sub("a", "A", { unreadCount: 3 }), sub("b", "B")], "more");
+    await settled(first);
+    // Read, and unsubscribed, before the next page loads.
+    patchLiveSubscription(store(), "a", { unreadCount: 0 });
+    removeLiveSubscriptions(store(), ["b"]);
+    const next = fetching(1, [sub("c", "C")]);
+    await settled(next);
+
+    expect(stored("a")?.unreadCount).toBe(0);
+    expect(stored("b")).toBeUndefined();
+    expect(stored("c")).toBeDefined();
+  });
+
+  it("zeroes rows a fully loaded unread-only section no longer returns", async () => {
+    const first = fetching(0, [sub("a", "A"), sub("b", "B"), sub("c", "C")]);
+    await settled(first);
     // Read elsewhere (say, mark-all-read): the refetch no longer returns them.
-    await fetchedSection([sub("a", "A"), sub("b", "B"), sub("m", "M")], "next");
-    const refetch = fetchSection([sub("m", "M")], "next");
-    // Unread again after the refetch started; the refetch can't know.
+    const refetch = fetching(0, []);
+    // Unread again after the refetch started, by an event or another fetch;
+    // the refetch can't know.
     patchLiveSubscription(store(), "b", { unreadCount: 2 });
-    // Past the loaded pages: not the refetch's to judge.
-    store().rows.upsert([sub("z", "Z")]);
-    refetch.release();
-    await refetch.done;
+    await queryClient.fetchQuery({
+      queryKey: [["subscriptions", "get"], { input: { id: "c" }, type: "query" }],
+      queryFn: () => sub("c", "C", { unreadCount: 5 }),
+    });
+    await settled(refetch);
 
     expect(stored("a")?.unreadCount).toBe(0);
     expect(stored("b")?.unreadCount).toBe(2);
-    expect(stored("z")?.unreadCount).toBe(1);
+    expect(stored("c")?.unreadCount).toBe(5);
+  });
+
+  it("corrects counts only once the last page has loaded", async () => {
+    // Stored before the section loaded, and read since without this client
+    // being told: no page returns it.
+    store().rows.upsert([sub("x", "X")]);
+    const first = fetching(0, [sub("a", "A")], "more");
+    await settled(first);
+    expect(stored("x")?.unreadCount).toBe(1);
+    // Unread since the first page loaded, sorting within it: no page returns it.
+    await queryClient.fetchQuery({
+      queryKey: [["subscriptions", "get"], { input: { id: "y" }, type: "query" }],
+      queryFn: () => sub("y", "B"),
+    });
+
+    const last = fetching(1, [sub("m", "M")]);
+    await settled(last);
+    expect(stored("x")?.unreadCount).toBe(0);
+    expect(stored("y")?.unreadCount).toBe(1);
   });
 
   it("leaves counts alone when a manual write, not a fetch, replaces the pages", async () => {
-    await fetchedSection([sub("a", "A")]);
+    store().rows.upsert([sub("x", "X")]);
 
-    queryClient.setQueryData(sectionKey, { pages: [{ items: [] }], pageParams: [undefined] });
+    queryClient.setQueryData(sectionKey, { pages: [{ items: [] }], pageParams: [0] });
 
-    expect(stored("a")?.unreadCount).toBe(1);
+    expect(stored("x")?.unreadCount).toBe(1);
   });
 });

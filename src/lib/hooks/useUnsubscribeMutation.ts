@@ -28,6 +28,8 @@ import {
   removeSubscriptionFromCaches,
   setEntryRelatedCounts,
 } from "@/lib/cache/operations";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 
 export interface UseUnsubscribeMutationOptions {
   /** Extra work after the optimistic cache removal (e.g. close a dialog). */
@@ -46,8 +48,10 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
     onMutate: (variables) => {
       // Optimistically remove the subscription from the sidebar/lists. Counts
       // are applied from the server response in onSuccess.
+      const removed = getLocalDb(queryClient).subscriptions.rows.getSynced(variables.id);
       removeSubscriptionFromCaches(variables.id, queryClient);
       options?.onMutate?.();
+      return { removed };
     },
     onSuccess: (data, variables) => {
       // Apply the server-absolute counts for the affected lists, and drop the
@@ -59,9 +63,13 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
       forgetDeletedSubscription(utils, variables.id);
       options?.onSuccess?.();
     },
-    onError: () => {
+    onError: (_error, _variables, context) => {
       toast.error("Failed to unsubscribe from feed");
-      // On error, invalidate to refetch correct state.
+      // Put the row back (an unread-only refetch wouldn't return a read one),
+      // then refetch to correct anything else.
+      if (context?.removed) {
+        writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [context.removed]);
+      }
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
       utils.entries.count.invalidate();
