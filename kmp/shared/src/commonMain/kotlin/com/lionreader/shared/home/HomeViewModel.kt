@@ -37,6 +37,8 @@ data class Timeline(
     val unreadOnly: Boolean,
     val oldestFirst: Boolean,
     val items: List<TimelineItem>,
+    /** How many entries the whole list has, of which [items] are the first. */
+    val total: Long,
 ) {
     /** Which list this is, in what order: a change is a new list, which starts at the top. */
     val listKey: String
@@ -101,8 +103,11 @@ class HomeViewModel(
             )
             .flatMapLatest { (view, filters) ->
                 val (unreadOnly, oldestFirst) = filters
-                reader.timeline(view.scope, unreadOnly, oldestFirst, view.keepIds, view.limit).map {
-                    Timeline(view.scope, unreadOnly, oldestFirst, it)
+                combine(
+                    reader.timeline(view.scope, unreadOnly, oldestFirst, view.keepIds, view.limit),
+                    reader.timelineCount(view.scope, unreadOnly, view.keepIds),
+                ) { items, total ->
+                    Timeline(view.scope, unreadOnly, oldestFirst, items, total)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

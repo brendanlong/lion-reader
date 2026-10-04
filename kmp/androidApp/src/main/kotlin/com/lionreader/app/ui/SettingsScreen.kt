@@ -91,11 +91,13 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
             )
         }
     ) { padding ->
+        val scroll = rememberScrollState()
         Column(
             modifier =
                 Modifier.padding(padding)
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .scrollbar(scroll)
+                    .verticalScroll(scroll)
                     .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

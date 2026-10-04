@@ -154,6 +154,28 @@ class Reader(
         return query.asFlow().mapToList(context)
     }
 
+    /** How long [timeline]'s list is with no limit: all of it on the device. */
+    fun timelineCount(
+        scope: ListScope,
+        unreadOnly: Boolean,
+        keepIds: Collection<String>,
+    ): Flow<Long> {
+        val queries = db.entryQueries
+        val query =
+            if (scope == ListScope.RecentlyRead) queries.countRecentlyRead()
+            else
+                queries.countTimeline(
+                    subscriptionId = (scope as? ListScope.Subscription)?.id,
+                    tagId = (scope as? ListScope.Tag)?.id,
+                    starredOnly = if (scope == ListScope.Starred) 1L else 0L,
+                    savedOnly = if (scope == ListScope.Saved) 1L else 0L,
+                    uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L,
+                    unreadOnly = if (unreadOnly) 1L else 0L,
+                    keepIds = keepIds,
+                )
+        return query.asFlow().mapToOne(context)
+    }
+
     @Suppress("UNUSED_PARAMETER")
     private fun timelineItem(
         id: String,
