@@ -1,0 +1,7 @@
+# Read by the `openapi-breaking` CI job (oasdiff runs from the repo root).
+#
+# A new member of a response oneOf is not breaking for our clients: the only
+# oneOf is the sync event union, and the native app skips event types it
+# doesn't know (`parseSyncEvent`). New response enum values stay errors, since
+# the app decodes those into closed Kotlin enums.
+severity-levels: .github/oasdiff-severity-levels.txt

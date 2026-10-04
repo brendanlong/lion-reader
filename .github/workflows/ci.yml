@@ -225,6 +225,7 @@ jobs:
     # docs/api/openapi.json is the contract installed native apps are built
     # against; they lag the server by months, so a breaking change strands them.
     # (Staleness of the snapshot itself is checked by the integration tests.)
+    # Rule severities we override are in .oasdiff.yaml.
     name: OpenAPI Breaking Changes
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
