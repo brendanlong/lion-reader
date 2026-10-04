@@ -837,7 +837,7 @@ describe("Saved Articles API", () => {
           html: shortHtml,
           refetch: true,
         })
-      ).rejects.toThrow("REFETCH_CONTENT_WORSE");
+      ).rejects.toMatchObject({ cause: { code: "REFETCH_CONTENT_WORSE" } });
     });
 
     it("allows refetch with force=true even when content is shorter", async () => {

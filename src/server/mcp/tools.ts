@@ -231,8 +231,9 @@ const saveArticleArgs = z.object({
     .optional()
     .describe(
       "If the URL is already saved, fetch it again and update the article in place, " +
-        "keeping its ID, starred state and collections (it is marked unread). Without " +
-        "this, an already-saved URL is returned unchanged."
+        "keeping its ID, starred state and collections (it is marked unread). Title, " +
+        "author and summary come from the new fetch, so pass any overrides again. " +
+        "Without this, an already-saved article is returned unchanged."
     ),
   force: z
     .boolean()

@@ -14,7 +14,7 @@ import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
-import { registerTools } from "../../src/server/mcp/tools";
+import { registerTools, toMcpError } from "../../src/server/mcp/tools";
 
 let userId: string;
 let otherUserId: string;
@@ -173,10 +173,13 @@ describe("MCP tool results", () => {
     await tool("save_article").handler(db, userId, { url: pageUrl });
     expect(await content(original.id)).toContain("First draft.");
 
-    await expect(
-      tool("save_article").handler(db, userId, { url: pageUrl, refetch: true })
-    ).rejects.toThrow("REFETCH_CONTENT_WORSE");
-    expect(await content(original.id)).toContain("First draft.");
+    // The guard's hint must reach MCP callers, who can't see the error's cause.
+    const rejected = await tool("save_article")
+      .handler(db, userId, { url: pageUrl, refetch: true })
+      .then(() => undefined, toMcpError);
+    expect(rejected).toBeInstanceOf(McpError);
+    expect(rejected).toMatchObject({ data: { code: "REFETCH_CONTENT_WORSE" } });
+    expect((rejected as McpError).message).toContain("force=true");
 
     const forced = (await tool("save_article").handler(db, userId, {
       url: pageUrl,
