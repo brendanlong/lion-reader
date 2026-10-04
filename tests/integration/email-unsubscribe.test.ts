@@ -1,6 +1,6 @@
 /**
  * Integration tests for sending List-Unsubscribe requests to newsletter senders
- * (#1770), and for unsubscribe paths sending them (#1819). A local HTTP server stands in for the sender's one-click endpoint
+ * (#1770) from every unsubscribe path (#1819). A local HTTP server stands in for the sender's one-click endpoint
  * (`.env.test` sets ALLOW_PRIVATE_NETWORK_FETCH).
  */
 

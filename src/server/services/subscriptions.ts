@@ -896,6 +896,23 @@ export async function unsubscribe(
   const formerTagIds = await db.transaction(async (tx) => {
     await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
 
+    // Re-checked under the lock: a concurrent unsubscribe may have finished
+    // since the check above.
+    const softDeleted = await tx
+      .update(subscriptions)
+      .set({ unsubscribedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(subscriptions.id, subscriptionId),
+          eq(subscriptions.userId, userId),
+          isNull(subscriptions.unsubscribedAt)
+        )
+      )
+      .returning({ id: subscriptions.id });
+    if (softDeleted.length === 0) {
+      return null;
+    }
+
     if (blockedSenderValues) {
       await tx.insert(blockedSenders).values(blockedSenderValues).onConflictDoNothing();
       logger.info("Added sender to blocked list", {
@@ -909,16 +926,23 @@ export async function unsubscribe(
     // the subscription was uncategorized).
     const formerTagRows = await tx
       .delete(subscriptionTags)
-      .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+      .where(
+        inArray(
+          subscriptionTags.subscriptionId,
+          tx
+            .select({ id: subscriptions.id })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
+        )
+      )
       .returning({ tagId: subscriptionTags.tagId });
-
-    await tx
-      .update(subscriptions)
-      .set({ unsubscribedAt: now, updatedAt: now })
-      .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)));
 
     return formerTagRows.map((r) => r.tagId);
   });
+
+  if (!formerTagIds) {
+    return null;
+  }
 
   // Computed after the soft-delete so they reflect the removal. The client sets
   // these directly (the sync.events catch-up path can't recompute the former
