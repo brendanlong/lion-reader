@@ -128,7 +128,9 @@ export function ingestEntryListPages(
       listKey,
       entryId: entry.id,
       order: listOrder(input, entry, index),
-      removed: removedSinceFetch.has(entry.id),
+      removed:
+        removedSinceFetch.has(entry.id) ||
+        (mode === "append" && !!lists.rows.getSynced(listEntryKey(listKey, entry.id))?.removed),
     }));
 
   const hasMore = pages.at(-1)?.nextCursor !== undefined;
@@ -248,7 +250,6 @@ export function insertIntoCollectionLists(
   entry: EntryRow,
   collectionId: string
 ): void {
-  setRemovedFromCollectionLists(lists, entry.id, collectionId, false);
   insertIntoListsWhere(
     lists,
     entry,
@@ -259,38 +260,31 @@ export function insertIntoCollectionLists(
 }
 
 /**
- * Hides an entry that left a collection from the collection's loaded lists
- * (every one, whatever its other filters: they can only narrow the
- * collection). Its row stays, so the list keeps its place while the entry is
- * open; see `ListEntryRow.removed`.
+ * Marks an entry as having left (or rejoined) a collection in every loaded
+ * list of it, whatever its other filters (they can only narrow the
+ * collection). Recorded even where the entry isn't loaded yet, so a page
+ * already in flight can't show it.
  */
-export function removeFromCollectionLists(
-  lists: EntryLists,
-  entryId: string,
-  collectionId: string
-): void {
-  setRemovedFromCollectionLists(lists, entryId, collectionId, true);
-}
-
-function setRemovedFromCollectionLists(
+export function setLeftCollectionLists(
   lists: EntryLists,
   entryId: string,
   collectionId: string,
-  removed: boolean
+  left: boolean
 ): void {
   const rows: ListEntryRow[] = [];
   for (const [listKey, meta] of lists.meta) {
     if (meta.input.subscriptionId !== collectionId) continue;
-    const row = lists.rows.getSynced(listEntryKey(listKey, entryId));
-    if (!row || row.removed === removed) continue;
-    if (removed) {
+    if (left) {
       meta.insertedSinceFetch.delete(entryId);
       meta.removedSinceFetch.add(entryId);
     } else {
       meta.removedSinceFetch.delete(entryId);
-      meta.insertedSinceFetch.add(entryId);
     }
-    rows.push({ ...row, removed });
+    const row = lists.rows.getSynced(listEntryKey(listKey, entryId));
+    if (!row || row.removed === left) continue;
+    // A rejoined row is a live change the next fetch may predate.
+    if (!left) meta.insertedSinceFetch.add(entryId);
+    rows.push({ ...row, removed: left });
   }
   lists.rows.upsert(rows);
 }

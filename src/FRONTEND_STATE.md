@@ -35,7 +35,8 @@ list shows (`applyCollectionEntriesChange`) — never when an entry's read/starr
 state changes — so read entries stay visible (and j/k keeps working from the
 open one) until the list refreshes. Leaving a collection is the user saying they
 don't want the entry there, so it hides at once, except as the open entry
-(`useEntryListEntries` takes `openEntryId`) so j/k keeps its place. Lists sort by `order ASC` plus an id tiebreak: `order` is the negated
+(`useEntryListEntries` takes `openEntryId`) so j/k keeps its place. Lists sort
+by `order ASC` plus an id tiebreak: `order` is the negated
 (newest-first) or plain (oldest-first) `COALESCE(publishedAt, fetchedAt)` in ms,
 or the fetch position for search and Recently Read, whose order entries can't
 reproduce.

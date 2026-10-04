@@ -197,6 +197,92 @@ describe("collection_entries_changed", () => {
     expect(ids()).toEqual([]);
   });
 
+  describe("pagination", () => {
+    const first = makeEntry("first", "2024-06-02");
+    const second = makeEntry("second", "2024-06-01");
+
+    /** A two-page collection list; `pageTwo`/`refetch` control later fetches. */
+    function renderPagedList(handlers: { pageTwo: () => unknown; refetch?: () => unknown }) {
+      let pageOneCalls = 0;
+      const rendered = renderHookWithTrpc(
+        () => ({
+          query: trpc.entries.list.useInfiniteQuery(COLLECTION_LIST, {
+            getNextPageParam: (page) => page.nextCursor,
+            retry: false,
+          }),
+          entries: useEntryListEntries(COLLECTION_LIST, null),
+        }),
+        {
+          handlers: {
+            "entries.list": (input) => {
+              if ((input as { cursor?: string }).cursor) return handlers.pageTwo();
+              pageOneCalls++;
+              if (pageOneCalls > 1 && handlers.refetch) return handlers.refetch();
+              return { items: [first], nextCursor: "c1" };
+            },
+          },
+        }
+      );
+      const { queryClient } = rendered;
+      const remove = (entryId: string) =>
+        act(() =>
+          applyCollectionEntriesChange(createRealTrpcUtils(queryClient), queryClient, {
+            subscriptionId: COLLECTION,
+            entryIds: [entryId],
+            added: false,
+          })
+        );
+      const ids = () => rendered.result.current.entries.map((e) => e.id);
+      return { ...rendered, remove, ids };
+    }
+
+    it("hides an entry removed before its page loaded", async () => {
+      let releasePageTwo: (() => void) | undefined;
+      const { result, remove, ids } = renderPagedList({
+        pageTwo: () =>
+          new Promise((resolve) => {
+            releasePageTwo = () => resolve({ items: [second] });
+          }),
+      });
+      await waitFor(() => expect(ids()).toEqual(["first"]));
+
+      let nextPage: Promise<unknown> | undefined;
+      act(() => {
+        nextPage = result.current.query.fetchNextPage();
+      });
+      await waitFor(() => expect(releasePageTwo).toBeDefined());
+      remove("second");
+      await act(async () => {
+        releasePageTwo?.();
+        await nextPage;
+      });
+
+      expect(ids()).toEqual(["first"]);
+    });
+
+    it("keeps an entry removed through a failed refetch and a next page", async () => {
+      // The failed refetch's start cleared the list's record of live removals.
+      const { result, remove, ids } = renderPagedList({
+        pageTwo: () => ({ items: [second] }),
+        refetch: () => {
+          throw new Error("offline");
+        },
+      });
+      await waitFor(() => expect(ids()).toEqual(["first"]));
+      remove("first");
+      await waitFor(() => expect(ids()).toEqual([]));
+
+      await act(async () => {
+        await result.current.query.refetch();
+      });
+      await act(async () => {
+        await result.current.query.fetchNextPage();
+      });
+
+      await waitFor(() => expect(ids()).toEqual(["second"]));
+    });
+  });
+
   it("drops a deleted collection from every cached membership", () => {
     const { utils, queryClient } = setup({ feed: [], collection: [] });
     act(() => {

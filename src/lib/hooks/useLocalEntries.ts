@@ -7,9 +7,10 @@
 
 "use client";
 
+import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
-import { coalesce, eq, inArray, or } from "@tanstack/db";
+import { coalesce, eq, inArray } from "@tanstack/db";
 import { getLocalDb, type LocalDb } from "@/lib/local-db/local-db";
 import { entryListKey, isNewestFirst, type EntryListFilters } from "@/lib/local-db/entry-lists";
 import type { EntryRow } from "@/lib/local-db/entries";
@@ -19,9 +20,8 @@ function useLocalDb(): LocalDb {
 }
 
 /**
- * The entries of a loaded `entries.list` view, in list order. An entry that
- * left the collection the list shows is still included while it's the open
- * one, so j/k navigation keeps its place.
+ * The entries of a loaded `entries.list` view, in list order. `openEntryId`
+ * is listed even if it left the list's collection (`ListEntryRow.removed`).
  */
 export function useEntryListEntries(
   input: EntryListFilters,
@@ -30,12 +30,12 @@ export function useEntryListEntries(
   const db = useLocalDb();
   const listKey = entryListKey(input);
   const newestFirst = isNewestFirst(input);
+  // Filtered outside the live query so opening another entry doesn't rebuild it.
   const { data } = useLiveQuery({
     query: (q) =>
       q
         .from({ member: db.lists.rows.collection })
         .where(({ member }) => eq(member.listKey, listKey))
-        .where(({ member }) => or(eq(member.removed, false), eq(member.entryId, openEntryId ?? "")))
         .join(
           { entry: db.entries.collection },
           ({ member, entry }) => eq(member.entryId, entry.id),
@@ -43,9 +43,13 @@ export function useEntryListEntries(
         )
         .orderBy(({ member }) => member.order, "asc")
         .orderBy(({ member }) => member.entryId, newestFirst ? "desc" : "asc")
-        .select(({ entry }) => entry),
+        .select(({ member, entry }) => ({ removed: member.removed, entry })),
   });
-  return data;
+  return useMemo(
+    () =>
+      data.filter((row) => !row.removed || row.entry.id === openEntryId).map((row) => row.entry),
+    [data, openEntryId]
+  );
 }
 
 /** One entry's list-item fields, or undefined when the store doesn't hold it. */

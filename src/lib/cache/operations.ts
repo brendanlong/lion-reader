@@ -18,7 +18,7 @@ import {
   findCachedSubscription,
 } from "./count-cache";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { insertIntoCollectionLists, removeFromCollectionLists } from "@/lib/local-db/entry-lists";
+import { insertIntoCollectionLists, setLeftCollectionLists } from "@/lib/local-db/entry-lists";
 
 /**
  * Subscription data for adding to cache.
@@ -268,11 +268,10 @@ export function applyCollectionEntriesChange(
       // Not loaded (or failed): the rest of its membership is unknown.
       void utils.collections.listForEntry.invalidate({ entryId });
     }
+    setLeftCollectionLists(db.lists, entryId, subscriptionId, !added);
     if (added) {
       const stored = db.entries.getSynced(entryId);
       if (stored) insertIntoCollectionLists(db.lists, stored, subscriptionId);
-    } else {
-      removeFromCollectionLists(db.lists, entryId, subscriptionId);
     }
   }
 }
