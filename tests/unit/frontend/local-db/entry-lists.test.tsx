@@ -84,7 +84,7 @@ function seedList(
 function renderLists(inputs: Record<string, ListInput>) {
   const names = Object.keys(inputs);
   const rendered = renderHookWithTrpc(() =>
-    Object.fromEntries(names.map((name) => [name, useEntryListEntries(inputs[name])]))
+    Object.fromEntries(names.map((name) => [name, useEntryListEntries(inputs[name], null)]))
   );
   const ids = (name: string) => rendered.result.current[name].map((entry) => entry.id);
   const insert = (entry: EntryRow) =>
@@ -128,7 +128,7 @@ describe("list ingestion", () => {
           { limit: 1, unreadOnly: true, sortOrder: "newest" },
           { getNextPageParam: (page) => page.nextCursor }
         ),
-        entries: useEntryListEntries({ limit: 1, unreadOnly: true, sortOrder: "newest" }),
+        entries: useEntryListEntries({ limit: 1, unreadOnly: true, sortOrder: "newest" }, null),
       }),
       {
         handlers: {
@@ -163,7 +163,7 @@ describe("list ingestion", () => {
         query: trpc.entries.list.useInfiniteQuery(input, {
           getNextPageParam: (page) => page.nextCursor,
         }),
-        entries: useEntryListEntries(input),
+        entries: useEntryListEntries(input, null),
       }),
       {
         handlers: {
@@ -197,7 +197,7 @@ describe("list ingestion", () => {
           query: trpc.entries.list.useInfiniteQuery(input, {
             getNextPageParam: (page) => page.nextCursor,
           }),
-          entries: useEntryListEntries(input),
+          entries: useEntryListEntries(input, null),
         }),
         {
           handlers: {

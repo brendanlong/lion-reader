@@ -7,6 +7,7 @@
 
 "use client";
 
+import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
 import { coalesce, eq, inArray } from "@tanstack/db";
@@ -18,11 +19,18 @@ function useLocalDb(): LocalDb {
   return getLocalDb(useQueryClient());
 }
 
-/** The entries of a loaded `entries.list` view, in list order. */
-export function useEntryListEntries(input: EntryListFilters): EntryRow[] {
+/**
+ * The entries of a loaded `entries.list` view, in list order. `openEntryId`
+ * is listed even if it left the list's collection (`ListEntryRow.removed`).
+ */
+export function useEntryListEntries(
+  input: EntryListFilters,
+  openEntryId: string | null
+): EntryRow[] {
   const db = useLocalDb();
   const listKey = entryListKey(input);
   const newestFirst = isNewestFirst(input);
+  // Filtered outside the live query so opening another entry doesn't rebuild it.
   const { data } = useLiveQuery({
     query: (q) =>
       q
@@ -35,9 +43,13 @@ export function useEntryListEntries(input: EntryListFilters): EntryRow[] {
         )
         .orderBy(({ member }) => member.order, "asc")
         .orderBy(({ member }) => member.entryId, newestFirst ? "desc" : "asc")
-        .select(({ entry }) => entry),
+        .select(({ member, entry }) => ({ removed: member.removed, entry })),
   });
-  return data;
+  return useMemo(
+    () =>
+      data.filter((row) => !row.removed || row.entry.id === openEntryId).map((row) => row.entry),
+    [data, openEntryId]
+  );
 }
 
 /** One entry's list-item fields, or undefined when the store doesn't hold it. */

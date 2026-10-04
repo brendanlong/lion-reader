@@ -18,7 +18,7 @@ import {
   findCachedSubscription,
 } from "./count-cache";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { insertIntoCollectionLists } from "@/lib/local-db/entry-lists";
+import { insertIntoCollectionLists, setLeftCollectionLists } from "@/lib/local-db/entry-lists";
 
 /**
  * Subscription data for adding to cache.
@@ -239,11 +239,9 @@ export function handleSubscriptionCreated(
 
 /**
  * Applies articles being added to or removed from a collection: the absolute
- * counts, each article's cached `collections.listForEntry`, and (for adds) the
- * collection's loaded entry lists. A removed article stays in lists already
- * on screen until they refresh, like a read one, so the reader keeps its
- * place. Idempotent, so the acting tab can apply both its mutation response
- * and the SSE event.
+ * counts, each article's cached `collections.listForEntry`, and the
+ * collection's loaded entry lists. Idempotent, so the acting tab can apply
+ * both its mutation response and the SSE event.
  */
 export function applyCollectionEntriesChange(
   utils: TRPCClientUtils,
@@ -270,6 +268,7 @@ export function applyCollectionEntriesChange(
       // Not loaded (or failed): the rest of its membership is unknown.
       void utils.collections.listForEntry.invalidate({ entryId });
     }
+    setLeftCollectionLists(db.lists, entryId, subscriptionId, !added);
     if (added) {
       const stored = db.entries.getSynced(entryId);
       if (stored) insertIntoCollectionLists(db.lists, stored, subscriptionId);

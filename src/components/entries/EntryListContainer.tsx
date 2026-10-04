@@ -30,6 +30,7 @@ import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
+import { entryListKey } from "@/lib/local-db/entry-lists";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
@@ -56,6 +57,24 @@ export function findAdjacentEntries(
     previousEntryId: entries[currentIndex - 1]?.id,
     distanceToEnd: entries.length - 1 - currentIndex,
   };
+}
+
+/**
+ * The row to put the reader back on when an entry closes: the entry itself,
+ * or — when closing it took it out of the list (it left the collection being
+ * viewed) — the nearest entry that's still listed, preferring the one after it.
+ */
+function entryToReturnTo(
+  before: ReadonlyArray<{ id: string }>,
+  after: ReadonlyArray<{ id: string }>,
+  closedEntryId: string
+): string | undefined {
+  const listed = new Set(after.map((e) => e.id));
+  if (listed.has(closedEntryId)) return closedEntryId;
+  const index = before.findIndex((e) => e.id === closedEntryId);
+  if (index === -1) return undefined;
+  const isListed = (e: { id: string }) => listed.has(e.id);
+  return (before.slice(index + 1).find(isListed) ?? before.slice(0, index).findLast(isListed))?.id;
 }
 
 export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
@@ -91,7 +110,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // which the fetched pages are ingested into (src/lib/local-db/). Entry
   // state lives there too, so a next-page fetch can't clobber a read/starred
   // change made while it was in flight.
-  const entries = useEntryListEntries(queryInput);
+  const entries = useEntryListEntries(queryInput, openEntryId);
 
   // Next/previous entry IDs for keyboard navigation, and how close we are to
   // the pagination boundary
@@ -117,15 +136,22 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     prevDistanceToEnd.current = distanceToEnd;
   }, [distanceToEnd, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Scroll to last viewed entry when returning from entry view to list
-  // We track the previous openEntryId to know which entry to scroll to
+  // When returning from the entry view to the same list (not navigating to
+  // another view, which starts at the top), scroll to the entry we were on and
+  // focus it, which makes it the j/k selection.
+  const listKey = entryListKey(queryInput);
   const prevOpenEntryIdRef = useRef<string | null>(null);
+  const prevEntriesRef = useRef(entries);
+  const prevListKeyRef = useRef(listKey);
   useLayoutEffect(() => {
     const prevOpenEntryId = prevOpenEntryIdRef.current;
-    const isClosing = prevOpenEntryId && !openEntryId;
+    const returnToId =
+      prevOpenEntryId && !openEntryId && prevListKeyRef.current === listKey
+        ? entryToReturnTo(prevEntriesRef.current, entries, prevOpenEntryId)
+        : undefined;
 
-    if (isClosing) {
-      const element = document.querySelector(`[data-entry-id="${prevOpenEntryId}"]`);
+    if (returnToId) {
+      const element = document.querySelector<HTMLElement>(`[data-entry-id="${returnToId}"]`);
       if (element) {
         const scrollContainer = scrollContainerRef?.current;
         const rect = element.getBoundingClientRect();
@@ -141,12 +167,15 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
         if (!isInView) {
           element.scrollIntoView({ behavior: "instant", block: "center" });
         }
+        element.focus({ preventScroll: true });
       }
     }
 
-    // Update ref after the effect runs (this is allowed in effects)
+    // Update refs after the effect runs (this is allowed in effects)
     prevOpenEntryIdRef.current = openEntryId;
-  }, [openEntryId, scrollContainerRef]);
+    prevEntriesRef.current = entries;
+    prevListKeyRef.current = listKey;
+  }, [openEntryId, entries, listKey, scrollContainerRef]);
 
   // Navigation callbacks for keyboard shortcuts (j/k when viewing an entry)
   const goToNextEntry = useCallback(() => {
