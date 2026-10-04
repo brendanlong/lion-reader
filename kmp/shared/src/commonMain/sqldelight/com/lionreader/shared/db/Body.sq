@@ -42,11 +42,13 @@ totalSize:
 SELECT COALESCE(SUM(size), 0) FROM entry_body;
 
 -- Budget eviction order: read before unread, oldest first; starred and saved
--- bodies are kept. Entries opened since :openedSince go last: opening one marks
+-- bodies, and those of collections' articles, are kept (selectMissingContent
+-- would download them again). Entries opened since :openedSince go last: opening one marks
 -- it read, and it may still be on screen.
 evictionCandidates:
 SELECT b.entry_id, b.size
 FROM entry_body b
 JOIN entry_view v ON v.id = b.entry_id
 WHERE v.type != 'saved' AND v.effective_starred = 0
+  AND v.id NOT IN (SELECT entry_id FROM collection_entry)
 ORDER BY COALESCE(v.last_opened_at >= :openedSince, 0), v.effective_read DESC, v.sort_at ASC;

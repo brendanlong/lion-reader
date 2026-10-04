@@ -313,12 +313,32 @@ describe("collections", () => {
     it("syncs a change to an article visible only through a collection as visible", async () => {
       // The sync visibility predicate repeats visible_entries'; without the
       // membership arm this would come back as hidden.
-      const { userId, entryA } = await setupCollectedOnly();
+      const { userId, entryA, collectionId } = await setupCollectedOnly();
       const since = await cursorNow();
 
       await markEntriesRead(db, userId, [{ id: entryA }], true);
 
-      expect(await changesSince(userId, since)).toMatchObject({ delivered: [entryA], hidden: [] });
+      expect(await changesSince(userId, since)).toEqual({
+        delivered: [entryA],
+        hidden: [],
+        memberships: [{ entryId: entryA, subscriptionIds: [collectionId] }],
+      });
+    });
+
+    it("reports only the user's own collections holding an article", async () => {
+      const { userId, feedId, entryA, collectionId } = await setup();
+      const otherId = await createTestUser();
+      await createTestSubscription(otherId, feedId);
+      await db.insert(userEntries).values({ userId: otherId, entryId: entryA });
+      const other = await createCollection(db, otherId, "Theirs");
+      await addEntriesToCollection(db, otherId, other.subscription.id, [entryA]);
+      const since = await cursorNow();
+
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+
+      expect((await changesSince(userId, since)).memberships).toEqual([
+        { entryId: entryA, subscriptionIds: [collectionId] },
+      ]);
     });
 
     it("reports an article hidden when it leaves its only route into view", async () => {

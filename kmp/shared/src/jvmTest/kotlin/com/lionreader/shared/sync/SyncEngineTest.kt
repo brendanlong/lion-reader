@@ -500,10 +500,34 @@ class SyncEngineTest {
         serveCollection()
         engine.sync()
 
-        server.queueChanges(events = listOf(SyncEvent.SubscriptionDeleted("sub-1")))
+        // b joins the collection in the same page as its feed's unsubscribe.
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.EntryStateChanged("b", read = false, starred = false),
+                    SyncEvent.SubscriptionDeleted("sub-1"),
+                ),
+            memberships = mapOf("b" to listOf("col-1")),
+        )
         engine.sync(downloadContent = false)
 
-        assertEquals(listOf("a", "c"), timeline())
+        assertEquals(listOf("a", "b", "c"), timeline())
+        // Their feed is gone, and the collection is tagged.
+        assertEquals(emptyList(), timeline(ListScope.Uncategorized))
+    }
+
+    @Test
+    fun theBudgetKeepsCollectionArticlesBodies() = runTest {
+        serveCollection()
+        engine.sync()
+        reader.setRead(listOf("a", "b", "c"), true)
+
+        policy = RetentionPolicy(contentBudgetBytes = ("<p>Body c</p>" + "Body c").length.toLong())
+        engine.sync()
+
+        assertEquals("<p>Body c</p>", reader.entry("c").first()?.content)
+        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
+        assertNull(reader.entry("b").first()?.content)
     }
 
     @Test

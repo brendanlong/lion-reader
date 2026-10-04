@@ -125,8 +125,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     private fun commitPageInTransaction(page: PulledPage, texts: Map<String, String>, now: Long) {
         page.deletedIds.forEach(store::deleteEntry)
-        page.events.forEach(::apply)
+        // Before the events: an unsubscribe in the same page keeps what's in a collection.
         page.collectionMemberships.forEach { store.setCollections(it.entryId, it.subscriptionIds) }
+        page.events.forEach(::apply)
         for (entry in page.fetchedEntries) {
             store.upsertEntry(
                 entry.id,

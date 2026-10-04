@@ -106,7 +106,8 @@ WHERE v.id = ?;
 
 -- Timeline for one list. Each filter argument is ignored when null. A
 -- collection, and a tag or Uncategorized holding one, lists its members
--- (collection_entry) as well as entries of its feeds.
+-- (collection_entry) as well as entries of its feeds. Uncategorized is the
+-- untagged subscriptions on the device, all of them active.
 selectTimeline:
 SELECT id, subscription_id, type, url, title, author, summary, site_name, feed_title,
   sort_at, effective_read, effective_starred
@@ -118,8 +119,8 @@ WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId
       JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)
-    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)))
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))))
   AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
 ORDER BY sort_at DESC, id DESC
 LIMIT :limit;
@@ -138,8 +139,8 @@ WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId
       JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)
-    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)))
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))))
   AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
 ORDER BY sort_at ASC, id ASC
 LIMIT :limit;
@@ -156,8 +157,8 @@ WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId
       JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)
-    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)))
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))))
   AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds);
 
 bumpBodyVersion {
@@ -209,8 +210,8 @@ WHERE effective_read = 0
       JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)
-    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id NOT IN (SELECT subscription_id FROM subscription_tag)));
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))));
 
 -- Unread counts come from the device's entries, not the server (Reader.navigation).
 unreadTotals:
