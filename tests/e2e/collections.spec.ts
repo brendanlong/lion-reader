@@ -34,13 +34,13 @@ test("adds an article to a new collection and lists it there", async ({ page, ba
 
   await page.getByRole("button", { name: "Add to Collection" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("New collection").fill("Research");
-  await dialog.getByRole("button", { name: "Create" }).click();
-  await expect(dialog.getByRole("checkbox", { name: "Research" })).toHaveAttribute(
-    "aria-checked",
+  await dialog.getByRole("combobox", { name: "Search or create a collection" }).fill("Research");
+  await dialog.getByRole("option", { name: "Create “Research”" }).click();
+  await expect(dialog.getByRole("option", { name: "Research" })).toHaveAttribute(
+    "aria-selected",
     "true"
   );
-  await dialog.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Collections (1)" })).toBeVisible();
 
   // Opening the article marked it read; unread again, it shows in the
