@@ -367,10 +367,13 @@ export async function waitForChannelSubscriber(channel: string, timeoutMs = 15_0
 export function recordTrpcProcedures(page: Page): string[] {
   const calls: string[] = [];
   page.on("request", (request) => {
-    const match = request.url().match(/\/api\/trpc\/([^?]+)/);
-    if (match) {
-      calls.push(...decodeURIComponent(match[1]).split(","));
-    }
+    calls.push(...trpcProcedures(request.url()));
   });
   return calls;
+}
+
+/** The tRPC procedures a (possibly batched) request URL calls. */
+export function trpcProcedures(url: string): string[] {
+  const match = url.match(/\/api\/trpc\/([^?]+)/);
+  return match ? decodeURIComponent(match[1]).split(",") : [];
 }
