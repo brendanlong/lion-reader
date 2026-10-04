@@ -2,11 +2,13 @@ package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.ApiFailure
+import com.lionreader.shared.api.COLLECTION_TYPE
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.ListFilter
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
+import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncChanges
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
@@ -61,6 +63,7 @@ class SyncEngine(
         val flushFailure = mutex.withLock {
             tryFlush().also {
                 if (writer.cursors == null) bootstrap()
+                else if (!writer.collectionsListed) listCollections(listSubscriptions())
                 pull()
                 refreshRecentlyRead(policy())
                 writer.evict(policy(), now())
@@ -176,13 +179,9 @@ class SyncEngine(
         val policy = policy()
         val windowStart = now() - policy.windowMillis
 
-        var subscriptionCursor: String? = null
-        do {
-            val page = api.listSubscriptions(subscriptionCursor)
-            writer.saveSubscriptions(page.items)
-            subscriptionCursor = page.nextCursor
-        } while (subscriptionCursor != null)
+        val subscriptions = listSubscriptions()
         writer.saveTags(api.listTags())
+        listCollections(subscriptions)
 
         for (filter in ListFilter.entries) {
             var cursor: String? = null
@@ -201,6 +200,36 @@ class SyncEngine(
         }
 
         writer.finishBootstrap(start)
+    }
+
+    private suspend fun listSubscriptions(): List<Subscription> {
+        val all = mutableListOf<Subscription>()
+        var cursor: String? = null
+        do {
+            val page = api.listSubscriptions(cursor)
+            writer.saveSubscriptions(page.items)
+            all += page.items
+            cursor = page.nextCursor
+        } while (cursor != null)
+        return all
+    }
+
+    /**
+     * Every collection's articles (whatever their age: retention keeps them), with their
+     * membership. Done once per database (a bootstrap, or the first sync of a database that
+     * predates collections); after that `sync.changes` reports each change to an entry's
+     * collections.
+     */
+    private suspend fun listCollections(subscriptions: List<Subscription>) {
+        for (collection in subscriptions.filter { it.type == COLLECTION_TYPE }) {
+            var cursor: String? = null
+            do {
+                val page = api.listEntries(ListFilter.ALL, cursor, collection.id)
+                writer.saveCollectionPage(collection.id, page.items, first = cursor == null)
+                cursor = page.nextCursor
+            } while (cursor != null)
+        }
+        writer.finishCollections()
     }
 
     /**
@@ -299,6 +328,7 @@ class SyncEngine(
         return PulledPage(
             events = events,
             deletedIds = changes.deletions.map { it.entryId },
+            collectionMemberships = changes.collectionMemberships,
             cursors = changes.cursors,
             hasMore = changes.hasMore,
             catchUpStart = start,

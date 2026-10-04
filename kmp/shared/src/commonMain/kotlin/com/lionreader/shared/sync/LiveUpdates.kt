@@ -28,6 +28,7 @@ private val DATA_EVENTS =
         "tag_created",
         "tag_updated",
         "tag_deleted",
+        "collection_entries_changed",
     )
 
 /**

@@ -104,9 +104,17 @@ data class EntryState(
 
 @Serializable data class TagRef(val id: String, val name: String, val color: String? = null)
 
+/**
+ * [Subscription.type] of a collection: a list of articles from other feeds (see
+ * CollectionEntry.sq).
+ */
+const val COLLECTION_TYPE = "collection"
+
 @Serializable
 data class Subscription(
     val id: String,
+    /** A string rather than [FeedType], so a type newer than this app still decodes. */
+    val type: String? = null,
     val url: String? = null,
     /** The custom title if there is one, else [originalTitle]. */
     val title: String? = null,
@@ -133,6 +141,10 @@ data class SyncCursors(
 
 @Serializable data class Deletion(val entryId: String, val deletedAt: String)
 
+/** The collections holding an entry now; empty when it's in none. */
+@Serializable
+data class CollectionMembership(val entryId: String, val subscriptionIds: List<String>)
+
 @Serializable
 data class SyncChanges(
     /** Raw, so an event type newer than this app is skipped; see [parseSyncEvent]. */
@@ -141,6 +153,8 @@ data class SyncChanges(
     val cursors: SyncCursors,
     val deletions: List<Deletion>,
     val resyncRequired: Boolean,
+    /** For every entry whose state the page re-delivers (membership is part of it). */
+    val collectionMemberships: List<CollectionMembership> = emptyList(),
 )
 
 @Serializable

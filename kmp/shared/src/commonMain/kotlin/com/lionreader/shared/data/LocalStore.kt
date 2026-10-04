@@ -13,6 +13,7 @@ private const val CURSORS_KEY = "sync_cursors"
 private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
 private const val CATCH_UP_START_KEY = "catch_up_start"
 private const val RECENTLY_READ_KEY = "recently_read_seen"
+private const val COLLECTIONS_LISTED_KEY = "collections_listed"
 
 internal fun FeedType.wire(): String =
     when (this) {
@@ -45,6 +46,14 @@ internal class LocalStore(val db: LionReaderDatabase) {
         set(value) {
             if (value != null) meta.upsert(RECENTLY_READ_KEY, "$value")
             else meta.delete(RECENTLY_READ_KEY)
+        }
+
+    /** Whether every collection's articles have been listed since the database was cleared. */
+    var collectionsListed: Boolean
+        get() = meta.selectValue(COLLECTIONS_LISTED_KEY).executeAsOneOrNull() != null
+        set(value) {
+            if (value) meta.upsert(COLLECTIONS_LISTED_KEY, "1")
+            else meta.delete(COLLECTIONS_LISTED_KEY)
         }
 
     /** The cursors a catch-up still in progress (more pages follow) started from. */
@@ -139,6 +148,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
 
     fun deleteEntry(id: String) {
         entries.deleteById(id)
+        db.collectionEntryQueries.deleteForEntry(id)
         db.bodyQueries.deleteForEntry(id)
         db.summaryQueries.deleteForEntry(id)
         db.outboxQueries.deleteStatesForEntry(id)
@@ -175,9 +185,17 @@ internal class LocalStore(val db: LionReaderDatabase) {
     fun deleteSubscription(id: String) {
         subs.deleteSubscription(id)
         subs.clearSubscriptionTags(id)
+        // A deleted collection's members that it alone kept visible arrive as
+        // deletions (the server moves their state when it empties it).
+        db.collectionEntryQueries.deleteForSubscription(id)
         entries.deleteUnstarredForSubscription(id)
         db.bodyQueries.pruneOrphans()
         db.summaryQueries.pruneOrphans()
+    }
+
+    fun setCollections(entryId: String, subscriptionIds: List<String>) {
+        db.collectionEntryQueries.deleteForEntry(entryId)
+        subscriptionIds.forEach { db.collectionEntryQueries.insertIgnore(it, entryId) }
     }
 
     fun upsertTag(tag: TagRef) {
@@ -200,6 +218,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
         subs.deleteAllSubscriptions()
         subs.deleteAllTags()
         subs.deleteAllSubscriptionTags()
+        db.collectionEntryQueries.deleteAll()
         meta.deleteAll()
     }
 }

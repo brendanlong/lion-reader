@@ -107,6 +107,9 @@ const syncChangesOutputSchema = z.object({
     deletions: z.string().optional(),
   }),
   deletions: z.array(z.object({ entryId: z.string(), deletedAt: z.string() })),
+  collectionMemberships: z.array(
+    z.object({ entryId: z.string(), subscriptionIds: z.array(z.string()) })
+  ),
   resyncRequired: z.boolean(),
 });
 
@@ -277,6 +280,31 @@ function visibleEntrySql(): SQL {
     OR EXISTS (SELECT 1 FROM ${collectionEntries} ce WHERE ce.user_id = ${userEntries.userId} AND ce.entry_id = ${userEntries.entryId}))`;
 }
 
+/**
+ * Each entry's collections, empty for one in none. Membership is per-user
+ * entry state (changing it moves `user_entries.updated_at`), so an offline
+ * store replaces an entry's memberships whenever its state is re-delivered.
+ */
+async function listCollectionMemberships(
+  db: Database,
+  userId: string,
+  entryIds: string[]
+): Promise<Array<{ entryId: string; subscriptionIds: string[] }>> {
+  if (entryIds.length === 0) return [];
+  const rows = await db
+    .select({
+      entryId: collectionEntries.entryId,
+      subscriptionId: collectionEntries.subscriptionId,
+    })
+    .from(collectionEntries)
+    .where(and(eq(collectionEntries.userId, userId), inArray(collectionEntries.entryId, entryIds)));
+  const byEntry = new Map<string, string[]>(entryIds.map((id) => [id, []]));
+  for (const row of rows) {
+    byEntry.get(row.entryId)?.push(row.subscriptionId);
+  }
+  return [...byEntry].map(([entryId, subscriptionIds]) => ({ entryId, subscriptionIds }));
+}
+
 /** Per-entity-type cursors, as a client sends them back. */
 interface SyncCursorsInput {
   entries?: string;
@@ -334,6 +362,8 @@ async function collectSyncEvents(
   hasMore: boolean;
   next: SyncCursorsInput;
   hidden: Array<{ entryId: string; deletedAt: string }>;
+  /** Visible entries whose per-user state (collection membership included) changed. */
+  stateChangedIds: string[];
 }> {
   // Keep cursors as strings to preserve Postgres µs precision (#680)
   const entriesCursor = cursors.entries ?? null;
@@ -350,7 +380,7 @@ async function collectSyncEvents(
   };
   const hidden: Array<{ entryId: string; deletedAt: string }> = [];
   if (!entriesCursor && !subscriptionsCursor && !tagsCursor) {
-    return { events: [], hasMore: false, next, hidden };
+    return { events: [], hasMore: false, next, hidden, stateChangedIds: [] };
   }
 
   // Collect all events with their timestamps for sorting. _sortTime is a
@@ -361,6 +391,7 @@ async function collectSyncEvents(
 
   // Track if we hit any limits
   let hasMore = false;
+  let stateChangedIds: string[] = [];
 
   // ========================================================================
   // Entry changes (metadata and/or state) - combined query using GREATEST
@@ -562,6 +593,7 @@ async function collectSyncEvents(
 
     // Collect entries with state changes for batch count computation
     const stateChangedEntries = visibleRows.filter((row) => row.stateChanged);
+    stateChangedIds = stateChangedEntries.map((row) => row.id);
 
     // Entries created after the catch-up's start emit new_entry events. Compute one
     // absolute-count snapshot covering all of them so each new_entry event
@@ -765,7 +797,7 @@ async function collectSyncEvents(
     typeof serverSyncEventSchema
   >[];
 
-  return { events, hasMore, next, hidden };
+  return { events, hasMore, next, hidden, stateChangedIds };
 }
 
 // ============================================================================
@@ -815,7 +847,8 @@ export const syncRouter = createTRPCRouter({
    * store needs that the web client doesn't): server-computed next cursors,
    * `deletions` (entries the user can no longer see: tombstones of hard-deleted
    * saved articles, and entries that left their view through a state change),
-   * and `resyncRequired` when the deletions cursor predates the tombstone
+   * `collectionMemberships` (see listCollectionMemberships) for every entry
+   * whose state the page re-delivers, and `resyncRequired` when the deletions cursor predates the tombstone
    * retention window.
    *
    * Called with no cursors, it returns no changes and the cursors to start
@@ -862,6 +895,7 @@ export const syncRouter = createTRPCRouter({
             deletions: safeDeletionsCursor.toString(),
           },
           deletions: [],
+          collectionMemberships: [],
           resyncRequired: false,
         };
       }
@@ -876,13 +910,22 @@ export const syncRouter = createTRPCRouter({
           hasMore: false,
           cursors: { ...cursors, deletions: deletionsCursor },
           deletions: [],
+          collectionMemberships: [],
           resyncRequired: true,
         };
       }
 
-      const { events, hasMore, next, hidden } = await collectSyncEvents(ctx.db, userId, cursors, {
-        reportHidden: true,
-      });
+      const { events, hasMore, next, hidden, stateChangedIds } = await collectSyncEvents(
+        ctx.db,
+        userId,
+        cursors,
+        { reportHidden: true }
+      );
+      const collectionMemberships = await listCollectionMemberships(
+        ctx.db,
+        userId,
+        stateChangedIds
+      );
 
       const tombstones = deletionsCursor
         ? await ctx.db
@@ -930,6 +973,7 @@ export const syncRouter = createTRPCRouter({
           })),
           ...hidden,
         ],
+        collectionMemberships,
         resyncRequired: false,
       };
     }),

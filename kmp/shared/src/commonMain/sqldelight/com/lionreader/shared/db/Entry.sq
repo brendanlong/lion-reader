@@ -89,11 +89,13 @@ DELETE FROM entry WHERE id = ?;
 deleteAll:
 DELETE FROM entry;
 
--- Visibility after an unsubscribe: the web keeps starred entries visible.
+-- Visibility after an unsubscribe: the web keeps starred entries, and those in
+-- a collection, visible.
 deleteUnstarredForSubscription:
 DELETE FROM entry
 WHERE subscription_id = ?
-  AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1);
+  AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1)
+  AND id NOT IN (SELECT entry_id FROM collection_entry);
 
 selectById:
 SELECT v.*, b.content, s.html AS ai_summary
@@ -102,16 +104,23 @@ LEFT JOIN entry_body b ON b.entry_id = v.id
 LEFT JOIN entry_summary s ON s.entry_id = v.id
 WHERE v.id = ?;
 
--- Timeline for one list. Each filter argument is ignored when null.
+-- Timeline for one list. Each filter argument is ignored when null. A
+-- collection, and a tag or Uncategorized holding one, lists its members
+-- (collection_entry) as well as entries of its feeds. Uncategorized is the
+-- untagged subscriptions on the device, all of them active.
 selectTimeline:
 SELECT id, subscription_id, type, url, title, author, summary, site_name, feed_title,
   sort_at, effective_read, effective_starred
 FROM entry_view
-WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
-  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
+WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id = :subscriptionId))
+  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId)
+    OR id IN (SELECT ce.entry_id FROM collection_entry ce
+      JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag))
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))))
   AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
 ORDER BY sort_at DESC, id DESC
 LIMIT :limit;
@@ -123,11 +132,15 @@ selectTimelineOldestFirst:
 SELECT id, subscription_id, type, url, title, author, summary, site_name, feed_title,
   sort_at, effective_read, effective_starred
 FROM entry_view
-WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
-  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
+WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id = :subscriptionId))
+  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId)
+    OR id IN (SELECT ce.entry_id FROM collection_entry ce
+      JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag))
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))))
   AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds)
 ORDER BY sort_at ASC, id ASC
 LIMIT :limit;
@@ -137,11 +150,15 @@ LIMIT :limit;
 countTimeline:
 SELECT count(*)
 FROM entry_view
-WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
-  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
+WHERE (:subscriptionId IS NULL OR subscription_id = :subscriptionId
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id = :subscriptionId))
+  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId)
+    OR id IN (SELECT ce.entry_id FROM collection_entry ce
+      JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1 OR id IN :keepIds)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag))
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))))
   AND (:unreadOnly = 0 OR effective_read = 0 OR id IN :keepIds);
 
 bumpBodyVersion {
@@ -177,7 +194,8 @@ SELECT body_version FROM entry WHERE id = ?;
 selectMissingContent:
 SELECT id, body_version FROM entry_view
 WHERE id NOT IN (SELECT entry_id FROM entry_body)
-  AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved')
+  AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved'
+    OR id IN (SELECT entry_id FROM collection_entry))
 ORDER BY sort_at DESC, id DESC
 LIMIT ?;
 
@@ -185,11 +203,15 @@ unreadIdsInScope:
 SELECT id FROM entry_view
 WHERE effective_read = 0
   AND (:recentlyReadOnly = 0 OR effective_read_changed_at IS NOT NULL)
-  AND (:subscriptionId IS NULL OR subscription_id = :subscriptionId)
-  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId))
+  AND (:subscriptionId IS NULL OR subscription_id = :subscriptionId
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id = :subscriptionId))
+  AND (:tagId IS NULL OR subscription_id IN (SELECT subscription_id FROM subscription_tag WHERE tag_id = :tagId)
+    OR id IN (SELECT ce.entry_id FROM collection_entry ce
+      JOIN subscription_tag st ON st.subscription_id = ce.subscription_id WHERE st.tag_id = :tagId))
   AND (:starredOnly = 0 OR effective_starred = 1)
   AND (:savedOnly = 0 OR type = 'saved')
-  AND (:uncategorizedOnly = 0 OR subscription_id IS NOT NULL AND subscription_id NOT IN (SELECT subscription_id FROM subscription_tag));
+  AND (:uncategorizedOnly = 0 OR subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))
+    OR id IN (SELECT entry_id FROM collection_entry WHERE subscription_id IN (SELECT id FROM subscription WHERE id NOT IN (SELECT subscription_id FROM subscription_tag))));
 
 -- Unread counts come from the device's entries, not the server (Reader.navigation).
 unreadTotals:
@@ -199,25 +221,42 @@ SELECT
   COALESCE(SUM(effective_read = 0 AND type = 'saved'), 0) AS saved_unread
 FROM entry_view;
 
+-- A collection counts its members; an entry in a feed and a collection of one
+-- tag counts once toward it, as on the server.
 unreadBySubscription:
 SELECT subscription_id, count(*) AS unread
-FROM entry_view
-WHERE effective_read = 0 AND subscription_id IS NOT NULL
+FROM (
+  SELECT subscription_id FROM entry_view
+  WHERE effective_read = 0 AND subscription_id IS NOT NULL
+  UNION ALL
+  SELECT ce.subscription_id FROM entry_view v
+  JOIN collection_entry ce ON ce.entry_id = v.id
+  WHERE v.effective_read = 0
+)
 GROUP BY subscription_id;
 
 unreadByTag:
-SELECT st.tag_id, count(*) AS unread
-FROM entry_view v
-JOIN subscription_tag st ON st.subscription_id = v.subscription_id
-WHERE v.effective_read = 0
-GROUP BY st.tag_id;
+SELECT tag_id, count(DISTINCT entry_id) AS unread
+FROM (
+  SELECT st.tag_id, v.id AS entry_id FROM entry_view v
+  JOIN subscription_tag st ON st.subscription_id = v.subscription_id
+  WHERE v.effective_read = 0
+  UNION ALL
+  SELECT st.tag_id, v.id AS entry_id FROM entry_view v
+  JOIN collection_entry ce ON ce.entry_id = v.id
+  JOIN subscription_tag st ON st.subscription_id = ce.subscription_id
+  WHERE v.effective_read = 0
+)
+GROUP BY tag_id;
 
--- Retention: drop entries outside the window unless starred, saved, read (or
--- unread) within it (Recently Read), or with an unsent change.
+-- Retention: drop entries outside the window unless starred, saved, in a
+-- collection, read (or unread) within it (Recently Read), or with an unsent
+-- change.
 evictOutsideWindow:
 DELETE FROM entry
 WHERE sort_at < :windowStart
   AND type != 'saved'
+  AND id NOT IN (SELECT entry_id FROM collection_entry)
   AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1)
   AND id NOT IN (SELECT id FROM entry_view WHERE effective_read_changed_at >= :windowStart)
   AND id NOT IN (SELECT entry_id FROM outbox_state);
@@ -230,6 +269,7 @@ WHERE id IN (
   SELECT id FROM entry_view
   WHERE type != 'saved' AND effective_starred = 0 AND effective_read = 1
     AND id NOT IN (SELECT entry_id FROM outbox_state)
+    AND id NOT IN (SELECT entry_id FROM collection_entry)
   ORDER BY MAX(sort_at, COALESCE(effective_read_changed_at, 0)) DESC
   LIMIT -1 OFFSET ?
 );
