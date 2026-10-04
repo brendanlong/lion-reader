@@ -43,12 +43,15 @@ test("adds an article to a new collection and lists it there", async ({ page, ba
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Collections (1)" })).toBeVisible();
 
-  // Opening the article marked it read; unread again, it shows in the
-  // collection's badge and in its (unread-only) view.
-  await page.getByRole("button", { name: "Mark as unread" }).click();
+  // Opening the article marked it read, so the unread-only sidebar hides the
+  // collection. Unread again, it appears with its badge without a refetch of
+  // its own, and lists the article in its (unread-only) view.
   const uncategorized = page.getByRole("listitem").filter({ hasText: "Uncategorized" });
   await uncategorized.getByRole("button", { name: "Expand" }).click();
+  await expect(page.getByRole("link", { name: new RegExp(`^${feed.title}`) })).toBeVisible();
   const research = page.getByRole("link", { name: /^Research/ });
+  await expect(research).toBeHidden();
+  await page.getByRole("button", { name: "Mark as unread" }).click();
   await expect(research).toContainText("(1)");
 
   await research.click();

@@ -19,6 +19,7 @@ import {
 } from "./count-cache";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { insertIntoCollectionLists, setLeftCollectionLists } from "@/lib/local-db/entry-lists";
+import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/hooks/useSidebarSelection";
 
 /**
  * Subscription data for adding to cache.
@@ -482,6 +483,10 @@ function setBulkSubscriptionUnreadCounts(
       }
     }
 
+    if (input?.unreadOnly && missesNewlyUnread(queryClient, input, data, subscriptionUpdates)) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+
     // Update subscriptions in this cache
     queryClient.setQueryData(queryKey, {
       ...data,
@@ -505,6 +510,29 @@ function setBulkSubscriptionUnreadCounts(
       queryClient.setQueryData(queryKey, { ...data, unreadCount: newUnread });
     }
   }
+}
+
+/**
+ * Whether an unread-only sidebar list lacks a subscription that now has
+ * unread entries and belongs in it. The list was fetched while that
+ * subscription had none, and only a refetch knows where it sorts.
+ * A subscription not cached anywhere might belong, so it counts.
+ */
+function missesNewlyUnread(
+  queryClient: QueryClient,
+  input: SubscriptionListInput,
+  data: { pages: Array<{ items: Array<{ id: string }> }> },
+  subscriptionUpdates: Map<string, number>
+): boolean {
+  const section = input.uncategorized ? UNCATEGORIZED_SECTION : input.tagId;
+  if (!section) return false;
+  const listed = new Set(data.pages.flatMap((page) => page.items.map((s) => s.id)));
+  for (const [id, unread] of subscriptionUpdates) {
+    if (unread === 0 || listed.has(id)) continue;
+    const known = findCachedSubscription(queryClient, id);
+    if (!known || isInSidebarSection(known, section)) return true;
+  }
+  return false;
 }
 
 /**
