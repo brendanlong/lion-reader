@@ -24,6 +24,7 @@ import { addEntriesToCollection, createCollection } from "../../src/server/servi
 import { markEntriesRead } from "../../src/server/services/entries";
 import { setSubscriptionTags } from "../../src/server/services/subscriptions";
 import { deleteTag } from "../../src/server/services/tags";
+import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import {
   createTestEntry,
@@ -141,12 +142,11 @@ describe("unread counters under concurrent writes", () => {
     await expectNoDrift();
   });
 
-  it("unsubscribing many users at once while their other feed fans out all succeeds", async () => {
-    // The feed-merge job unsubscribes every user of a feed in one statement.
+  it("a redirect merge of many users while their other feeds fan out all succeeds", async () => {
     const userIds = await createUsers(20);
     const merged = await createTestFeed();
-    // Subscribe in reverse id order, so the statement meets the rows in an
-    // order other than the users' id order.
+    // Subscribe in reverse id order, so the merge meets the users in an order
+    // other than their id order.
     for (const userId of [...userIds].reverse()) await createTestSubscription(userId, merged);
     const live = await subscribeAll(userIds, 10);
     for (const userId of userIds) {
@@ -159,20 +159,16 @@ describe("unread counters under concurrent writes", () => {
         ).map((r) => r.id),
       });
     }
+    await createTestEntry(merged, { userIds });
+    const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, merged));
+    const [newFeed] = await db
+      .select()
+      .from(feeds)
+      .where(eq(feeds.id, await createTestFeed()));
 
-    // One merge runs per feed at a time, so the unsubscribes run one after
-    // another (two multi-row UPDATEs of the same rows can deadlock with each
-    // other in Postgres itself); it's the fan-outs that run alongside them.
-    const toggles = (async () => {
-      for (let i = 0; i < 10; i++) {
-        await db
-          .update(subscriptions)
-          .set({ unsubscribedAt: i % 2 === 0 ? new Date() : null })
-          .where(eq(subscriptions.feedId, merged));
-      }
-    })();
+    const merge = migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
     const fanouts = live.map((feedId) => createTestEntry(feedId, { userIds }));
-    await expectAllFulfilled([toggles, ...fanouts]);
+    await expectAllFulfilled([merge, ...fanouts]);
     await expectNoDrift();
   });
 

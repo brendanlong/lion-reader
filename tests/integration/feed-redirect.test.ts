@@ -393,6 +393,27 @@ describe("Feed Redirect Handling", () => {
       expect(await getStampedSubscriptionId(userId, currentEntry)).toBe(survivor.id);
     });
 
+    it("doesn't give the survivor a second copy of an article the old feed delivered", async () => {
+      const userId = await createTestUser();
+      const { oldFeedId, newFeedId } = await createFeedPair();
+      await createTestSubscription(userId, oldFeedId);
+      const newFeed = await getFeed(newFeedId);
+      const oldCopy = await createTestEntry(oldFeedId, {
+        guid: "http://example.com/post",
+        userIds: [userId],
+      });
+      const newCopy = await createTestEntry(newFeedId, {
+        guid: "https://example.com/post",
+        fetchedAt: newFeed.lastEntriesUpdatedAt!,
+      });
+
+      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), newFeed);
+
+      const survivor = await getSubscription(userId, newFeedId);
+      expect(await getStampedSubscriptionId(userId, oldCopy)).toBe(survivor!.id);
+      expect(await getStampedSubscriptionId(userId, newCopy)).toBeNull();
+    });
+
     it("drops stale tags from a reactivated survivor", async () => {
       const userId = await createTestUser();
       const { oldFeedId, newFeedId } = await createFeedPair();
@@ -479,15 +500,16 @@ describe("Feed Redirect Handling", () => {
         url: "https://old-domain.com/feed.xml",
         title: "Old Feed",
       });
+      // The new feed has a live subscriber and is scheduled well into the future.
+      const scheduledFor = new Date(Date.now() + 6 * 60 * 60 * 1000);
       const newFeedId = await createTestFeed({
         url: "https://new-domain.com/feed.xml",
         title: "New Feed",
+        lastFetchedAt: new Date(),
+        nextFetchAt: scheduledFor,
       });
-
-      // The new feed has a live subscriber and is scheduled well into the future.
       const otherUserId = await createTestUser({ emailPrefix: "other" });
       await createTestSubscription(otherUserId, newFeedId);
-      const scheduledFor = new Date(Date.now() + 6 * 60 * 60 * 1000);
       await ensureFeedJob(newFeedId, scheduledFor);
 
       await createTestSubscription(userId, oldFeedId);

@@ -22,8 +22,9 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
-import { ensureFeedJob } from "@/server/jobs/queue";
+import { ensureFeedJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
+import { canonicalGuidSql } from "@/server/feed/guid-identity";
 import { feedDefaultsToFullContent } from "@/server/plugins";
 import {
   publishSubscriptionCreated,
@@ -34,6 +35,7 @@ import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/u
 import {
   getBulkEntryRelatedCounts,
   getSubscriptionDeletionCounts,
+  getUserUnreadCounts,
   type BulkUnreadCounts,
 } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
@@ -236,6 +238,11 @@ async function populateInitialUserEntries(
   // was, so an archive replay sits inside the current generation until the next
   // backup poll and would otherwise reach a subscriber who joins in that window
   // as hundreds of unread articles (issue #1500).
+  //
+  // Skips an entry the subscription already has under another feed by GUID, as
+  // the fetch-time fanout (`createUserEntriesForFeed`) does: a redirect merge
+  // re-attributes the old feed's entries to the subscription, and the new feed
+  // usually republishes the same articles.
   await tx.execute(sql`
     INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
     SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam, e.is_backfill
@@ -244,6 +251,15 @@ async function populateInitialUserEntries(
     WHERE e.feed_id = ${feedId}
       AND f.last_entries_updated_at IS NOT NULL
       AND e.last_seen_at >= f.last_entries_updated_at
+      AND NOT EXISTS (
+        SELECT 1
+        FROM user_entries ue_existing
+        JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
+        WHERE ue_existing.user_id = ${userId}
+          AND ue_existing.subscription_id = ${subscriptionId}
+          AND e_prev.feed_id != e.feed_id
+          AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
+      )
     ON CONFLICT DO NOTHING
   `);
 }
@@ -976,9 +992,7 @@ export async function unsubscribe(
  * old feed's entries re-attributed to it, so read/starred state carries over.
  * A survivor that wasn't already active also takes the old subscription's
  * title and full-content setting, and gets the feed's current entries like a
- * fresh subscribe if the feed is fresh; otherwise its next poll's fanout
- * delivers them (no forced refresh, so a merge never pulls a backing-off feed
- * forward).
+ * fresh subscribe (a stale feed gets a forced refresh instead).
  *
  * There's no subscription cap check: a merge never raises the user's number of
  * active subscriptions. Returns false if the old subscription is no longer
@@ -1047,14 +1061,6 @@ export async function mergeSubscriptionIntoFeed(
       .from(subscriptions)
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeed.id)));
 
-    if (!survivorWasActive) {
-      // Tags left on an inactive subscription are stale (unsubscribing clears them).
-      await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, survivor.id));
-      if (populate) {
-        await populateInitialUserEntries(tx, userId, survivor.id, newFeed.id);
-      }
-    }
-
     // Deliberately leaves user_entries.updated_at alone: nothing about the
     // entries changes, and bumping it would flood the user's delta sync.
     await tx
@@ -1063,6 +1069,15 @@ export async function mergeSubscriptionIntoFeed(
       .where(
         and(eq(userEntries.userId, userId), eq(userEntries.subscriptionId, oldSubscriptionId))
       );
+
+    if (!survivorWasActive) {
+      // Tags left on an inactive subscription are stale (unsubscribing clears them).
+      await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, survivor.id));
+      // After the re-stamp, so the populate's GUID check sees the old feed's entries.
+      if (populate) {
+        await populateInitialUserEntries(tx, userId, survivor.id, newFeed.id);
+      }
+    }
 
     const movedTags = await tx
       .delete(subscriptionTags)
@@ -1111,13 +1126,17 @@ export async function mergeSubscriptionIntoFeed(
 
   // Unconditional, not just for a new survivor: retention deletes the job of a
   // feed with no active subscriber, so a merge can be what brings the feed back.
-  await ensureFeedJob(newFeed.id);
+  if (!survivorWasActive && !populate) {
+    await scheduleFeedRefreshNow(newFeed.id);
+  } else {
+    await ensureFeedJob(newFeed.id);
+  }
 
   // The survivor's tags include the old subscription's, so its counts cover
   // every list the merge moved except Uncategorized when only the old one was.
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: survivor.id }]);
   if (oldWasUncategorized && !counts.uncategorized) {
-    counts.uncategorized = (await getSubscriptionDeletionCounts(db, userId, [])).uncategorized;
+    counts.uncategorized = { unread: (await getUserUnreadCounts(db, userId)).uncategorizedUnread };
   }
   const onPublishError = (err: unknown) => {
     logger.error("Failed to publish subscription merge event", { err, userId, oldSubscriptionId });
