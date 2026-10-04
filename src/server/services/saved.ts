@@ -746,6 +746,7 @@ async function fetchPrivateGoogleDocWithAuth(
       throw new TRPCError({
         code: "FORBIDDEN",
         message: "You don't have permission to access this Google Doc.",
+        cause: { code: "GOOGLE_PERMISSION_DENIED" },
       });
     }
     if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {

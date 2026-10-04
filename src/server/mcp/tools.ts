@@ -16,6 +16,7 @@ import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
+import { getAppErrorCode } from "@/server/trpc/errors";
 import * as entriesService from "@/server/services/entries";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
@@ -62,24 +63,31 @@ function parseArgs<T extends z.ZodType>(schema: T, args: unknown): z.infer<T> {
 }
 
 /**
- * Convert service-layer errors into structured MCP errors so clients receive
- * a parseable InvalidParams instead of an opaque internal error. Services
- * throw TRPCErrors (their native error type across all transports); bad IDs
- * and invalid cursors surface as BAD_REQUEST/NOT_FOUND.
+ * Convert service-layer errors into structured MCP errors. Services throw
+ * TRPCErrors (their native error type across all transports).
  *
- * Client-error branches (BAD_REQUEST/NOT_FOUND) forward the message — it
- * describes the caller's own bad input and is safe to surface. The
- * InternalError branch does NOT: an unexpected server error's message can leak
- * internal detail, so it's replaced with a generic string (issue #1266). Callers
- * are responsible for logging the original error server-side before mapping.
+ * Messages of errors carrying an app code (`errors.*` and the services'
+ * hand-built errors with a `cause.code`) are written for users, so they're
+ * forwarded with the app code in `data.code` — an agent needs to tell "this
+ * site is rate limiting us" (#1834) apart from our bug, and JSON-RPC has no
+ * error codes that make that distinction. INTERNAL_SERVER_ERROR and errors
+ * without an app code get a generic string instead: an unexpected server
+ * error's message can leak internal detail (#1266). Callers are responsible
+ * for logging the original error server-side before mapping.
  */
 export function toMcpError(error: unknown): unknown {
   if (error instanceof McpError) {
     return error;
   }
   if (error instanceof TRPCError) {
-    if (error.code === "BAD_REQUEST" || error.code === "NOT_FOUND") {
-      return new McpError(ErrorCode.InvalidParams, error.message);
+    const isClientInput = error.code === "BAD_REQUEST" || error.code === "NOT_FOUND";
+    const mcpCode = isClientInput ? ErrorCode.InvalidParams : ErrorCode.InternalError;
+    const appCode = getAppErrorCode(error);
+    if (appCode !== undefined && error.code !== "INTERNAL_SERVER_ERROR") {
+      return new McpError(mcpCode, error.message, { code: appCode });
+    }
+    if (isClientInput) {
+      return new McpError(mcpCode, error.message);
     }
     return new McpError(ErrorCode.InternalError, "An internal error occurred");
   }
