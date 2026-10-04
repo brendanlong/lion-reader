@@ -21,7 +21,7 @@ data class PlayerSnapshot(val playbackState: PlaybackState, val itemCount: Int, 
  */
 fun spokenParagraphs(chunks: List<SpeechChunk>?, paragraphs: List<String>?): List<Int>? =
     chunks?.map { it.paragraph }?.distinct()
-        ?: paragraphs?.withIndex()?.filter { it.value.isNotBlank() }?.map { it.index }
+        ?: paragraphs?.withIndex()?.filter { isSpeakable(it.value) }?.map { it.index }
 
 /**
  * The paragraph of [spoken] [delta] paragraphs from [from], or null past either end. With no place

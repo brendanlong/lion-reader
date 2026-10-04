@@ -25,6 +25,7 @@ import com.lionreader.shared.narration.SpeechInterrupted
 import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.narration.derive
 import com.lionreader.shared.narration.finished
+import com.lionreader.shared.narration.isSpeakable
 import com.lionreader.shared.narration.paragraphAfter
 import com.lionreader.shared.narration.shouldSynthesize
 import com.lionreader.shared.narration.speechChunks
@@ -178,8 +179,11 @@ class Narrator(
         val offsets: IntArray =
             chunks.runningFold(0) { total, chunk -> total + chunk.text.length }.toIntArray()
 
-        fun firstChunkOf(paragraph: Int): Int =
-            chunks.indexOfFirst { it.paragraph >= paragraph }.takeIf { it >= 0 } ?: 0
+        /** Or of the next paragraph with something to say; past the last one, the last one's. */
+        fun firstChunkOf(paragraph: Int): Int {
+            val spoken = minOf(paragraph, chunks.last().paragraph)
+            return chunks.indexOfFirst { it.paragraph >= spoken }
+        }
     }
 
     /** Synthesis from one chunk on; a seek starts another. */
@@ -240,7 +244,7 @@ class Narrator(
     fun supply(article: NarratedArticle) {
         val state = _state.value ?: return
         if (state.entryId != article.entryId || current != Current.Awaiting) return
-        if (article.paragraphs.all { it.isBlank() }) {
+        if (article.paragraphs.none(::isSpeakable)) {
             current = Current.Silent
             publish(state.copy(title = article.title))
             return
