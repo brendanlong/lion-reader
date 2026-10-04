@@ -86,8 +86,12 @@ export interface GoogleAuthResult {
     refreshToken?: string;
     expiresAt?: Date;
   };
-  /** OAuth scopes that were granted */
-  scopes: string[];
+  /**
+   * Every scope the token carries: Google reports earlier grants too, because the
+   * authorization request sets `include_granted_scopes`. Undefined when Google
+   * omits the list: the requested scopes would understate an earlier grant (#1803).
+   */
+  scopes?: string[];
   /** OAuth flow mode */
   mode: OAuthMode;
   /** Set when this flow is a link: the account it attaches to */
@@ -189,6 +193,9 @@ export async function createGoogleAuthUrl(
     state,
     code_challenge: await client.calculatePKCECodeChallenge(codeVerifier),
     code_challenge_method: "S256",
+    // Without this, a plain sign-in's token would carry only the sign-in scopes and
+    // we'd record the Docs/Drive grant as lost (#1803).
+    include_granted_scopes: "true",
   });
 
   return {
@@ -246,7 +253,7 @@ export async function validateGoogleCallback(
       refreshToken: tokens.refresh_token,
       expiresAt: accessTokenExpiresAt(tokens),
     },
-    scopes: pkceData.scopes,
+    scopes: tokens.scope?.split(" ").filter(Boolean),
     mode: pkceData.mode,
     link: pkceData.link,
     returnUrl: pkceData.returnUrl,

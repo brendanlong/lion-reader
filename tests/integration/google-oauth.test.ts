@@ -11,7 +11,14 @@ import { generateKeyPair, SignJWT } from "jose";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { redis } from "../../src/server/redis";
-import { OAUTH_STATE_TTL_SECONDS } from "../../src/server/auth/oauth/state-cookie";
+import { eq } from "drizzle-orm";
+import { NextRequest } from "next/server";
+import {
+  OAUTH_STATE_COOKIE_NAME,
+  OAUTH_STATE_TTL_SECONDS,
+} from "../../src/server/auth/oauth/state-cookie";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { createTestUser } from "./helpers";
 
 const GOOGLE_ISSUER = "https://accounts.google.com";
 const GOOGLE_CLIENT_ID = "test-client-id";
@@ -34,6 +41,10 @@ async function signGoogleIdToken(overrides: { iss?: string; aud?: string } = {})
     .sign(privateKey);
 }
 
+// How Google's token response spells the sign-in scopes we request as "openid email profile"
+const GOOGLE_GRANTED_SIGN_IN_SCOPE =
+  "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+
 // What Google's token endpoint returns for our mocked authorization code. Stubbing at
 // the HTTP boundary (rather than mocking the OAuth client) keeps the real code exchange,
 // including PKCE, state and id_token handling, under test.
@@ -42,7 +53,7 @@ const mockTokenResponse: Record<string, unknown> = {
   token_type: "Bearer",
   expires_in: 3600,
   refresh_token: "mock-refresh-token",
-  scope: "openid email profile",
+  scope: GOOGLE_GRANTED_SIGN_IN_SCOPE,
 };
 
 // Mock Google user info fetch
@@ -140,6 +151,8 @@ describe("Google OAuth", () => {
       expect(url.searchParams.get("code_challenge_method")).toBe("S256");
       expect(url.searchParams.get("code_challenge")).toBeTruthy();
       expect(url.searchParams.get("scope")).toBe("openid email profile");
+      // So a plain sign-in's token keeps an earlier Docs/Drive grant (#1803)
+      expect(url.searchParams.get("include_granted_scopes")).toBe("true");
       expect(result.state).not.toBe("");
 
       // Verify PKCE verifier is stored in Redis (as JSON with verifier and scopes)
@@ -170,6 +183,24 @@ describe("Google OAuth", () => {
       // PKCE verifier should be consumed (deleted)
       const storedVerifier = await redis.get(`oauth:pkce:${state}`);
       expect(storedVerifier).toBeNull();
+    });
+
+    it("reports the scopes Google granted, not just the ones requested (#1803)", async () => {
+      const { createGoogleAuthUrl, validateGoogleCallback, GOOGLE_DOCS_READONLY_SCOPE } =
+        await import("../../src/server/auth/oauth/google");
+
+      const originalScope = mockTokenResponse.scope;
+      mockTokenResponse.scope = `${GOOGLE_GRANTED_SIGN_IN_SCOPE} ${GOOGLE_DOCS_READONLY_SCOPE}`;
+      try {
+        const { state } = await createGoogleAuthUrl();
+        const result = await validateGoogleCallback("mock-auth-code", state);
+        expect(result.scopes).toEqual([
+          ...GOOGLE_GRANTED_SIGN_IN_SCOPE.split(" "),
+          GOOGLE_DOCS_READONLY_SCOPE,
+        ]);
+      } finally {
+        mockTokenResponse.scope = originalScope;
+      }
     });
 
     it("fails with invalid state (PKCE verifier not found)", async () => {
@@ -226,6 +257,52 @@ describe("Google OAuth", () => {
       const { state } = await createGoogleAuthUrl();
 
       await expect(validateGoogleCallback("mock-auth-code", state)).rejects.toThrow();
+    });
+  });
+
+  describe("save-mode callback", () => {
+    it("keeps the stored refresh token when Google sends none (#1803)", async () => {
+      const { createGoogleAuthUrl, GOOGLE_DOCS_READONLY_SCOPE } =
+        await import("../../src/server/auth/oauth/google");
+      const { GET } = await import("../../src/app/api/v1/auth/oauth/google/callback/route");
+
+      const userId = await createTestUser();
+      await db.insert(oauthAccounts).values({
+        id: generateUuidv7(),
+        userId,
+        provider: "google",
+        providerAccountId: mockGoogleUserInfo.sub,
+        accessToken: "old-access-token",
+        refreshToken: "stored-refresh-token",
+        createdAt: new Date(),
+      });
+
+      const { state } = await createGoogleAuthUrl({
+        mode: "save",
+        additionalScopes: [GOOGLE_DOCS_READONLY_SCOPE],
+      });
+      const original = { ...mockTokenResponse };
+      delete mockTokenResponse.refresh_token;
+      mockTokenResponse.scope = `${GOOGLE_GRANTED_SIGN_IN_SCOPE} ${GOOGLE_DOCS_READONLY_SCOPE}`;
+      try {
+        const response = await GET(
+          new NextRequest(
+            `http://localhost:3000/api/v1/auth/oauth/google/callback?code=mock-auth-code&state=${state}`,
+            { headers: { cookie: `${OAUTH_STATE_COOKIE_NAME}=${state}` } }
+          )
+        );
+        expect(new URL(response.headers.get("location")!).pathname).toBe("/save");
+      } finally {
+        Object.assign(mockTokenResponse, original);
+      }
+
+      const [account] = await db
+        .select()
+        .from(oauthAccounts)
+        .where(eq(oauthAccounts.userId, userId));
+      expect(account.accessToken).toBe("mock-access-token");
+      expect(account.refreshToken).toBe("stored-refresh-token");
+      expect(account.scopes).toContain(GOOGLE_DOCS_READONLY_SCOPE);
     });
   });
 

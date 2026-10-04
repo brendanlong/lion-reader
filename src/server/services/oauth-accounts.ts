@@ -78,11 +78,12 @@ export async function linkOAuthAccount(
   const label = PROVIDER_LABELS[provider];
 
   // What the provider omits is not the same as what it cleared. A re-consent
-  // typically returns no refresh token and no scope list, and dropping either
-  // would lose access we still hold — so both are only written when present
-  // (the same rule `refreshGoogleToken` follows). `expiresAt` is the exception
-  // and is always written: it belongs to the access token in this response, so
-  // keeping a stale one next to a fresh token would re-refresh forever.
+  // typically returns no refresh token, Apple and Discord report no scope list,
+  // and dropping either would lose access we still hold — so both are only
+  // written when present (the same rule `refreshGoogleToken` follows).
+  // `expiresAt` is the exception and is always written: it belongs to the access
+  // token in this response, so keeping a stale one next to a fresh token would
+  // re-refresh forever.
   const tokenColumns = {
     accessToken,
     expiresAt: expiresAt ?? null,
