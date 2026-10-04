@@ -230,7 +230,7 @@ function UnifiedEntriesContentInner() {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
-  const entries = useEntryListEntries(queryInput);
+  const entries = useEntryListEntries(queryInput, openEntryId);
 
   // Fetch subscription data for validation. A genuinely missing subscription
   // throws NOT_FOUND, which we render as a NotFoundCard below; any other error

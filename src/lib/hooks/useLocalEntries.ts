@@ -9,7 +9,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
-import { coalesce, eq, inArray } from "@tanstack/db";
+import { coalesce, eq, inArray, or } from "@tanstack/db";
 import { getLocalDb, type LocalDb } from "@/lib/local-db/local-db";
 import { entryListKey, isNewestFirst, type EntryListFilters } from "@/lib/local-db/entry-lists";
 import type { EntryRow } from "@/lib/local-db/entries";
@@ -18,8 +18,15 @@ function useLocalDb(): LocalDb {
   return getLocalDb(useQueryClient());
 }
 
-/** The entries of a loaded `entries.list` view, in list order. */
-export function useEntryListEntries(input: EntryListFilters): EntryRow[] {
+/**
+ * The entries of a loaded `entries.list` view, in list order. An entry that
+ * left the collection the list shows is still included while it's the open
+ * one, so j/k navigation keeps its place.
+ */
+export function useEntryListEntries(
+  input: EntryListFilters,
+  openEntryId: string | null
+): EntryRow[] {
   const db = useLocalDb();
   const listKey = entryListKey(input);
   const newestFirst = isNewestFirst(input);
@@ -28,6 +35,7 @@ export function useEntryListEntries(input: EntryListFilters): EntryRow[] {
       q
         .from({ member: db.lists.rows.collection })
         .where(({ member }) => eq(member.listKey, listKey))
+        .where(({ member }) => or(eq(member.removed, false), eq(member.entryId, openEntryId ?? "")))
         .join(
           { entry: db.entries.collection },
           ({ member, entry }) => eq(member.entryId, entry.id),

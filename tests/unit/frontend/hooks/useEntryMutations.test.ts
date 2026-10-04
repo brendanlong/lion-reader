@@ -641,7 +641,7 @@ describe("useEntryMutations concurrent mutations", () => {
   it("inserts an entry marked unread into the unread-only lists missing it", async () => {
     const unreadOnly = { unreadOnly: true, sortOrder: "newest", limit: 10 } as const;
     const { result, queryClient } = renderHookWithTrpc(
-      () => ({ mutations: useEntryMutations(), list: useEntryListEntries(unreadOnly) }),
+      () => ({ mutations: useEntryMutations(), list: useEntryListEntries(unreadOnly, null) }),
       {
         handlers: {
           "entries.markRead": () => markReadResponse("e1", { read: false, starred: false }, t1),

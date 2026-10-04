@@ -91,7 +91,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // which the fetched pages are ingested into (src/lib/local-db/). Entry
   // state lives there too, so a next-page fetch can't clobber a read/starred
   // change made while it was in flight.
-  const entries = useEntryListEntries(queryInput);
+  const entries = useEntryListEntries(queryInput, openEntryId);
 
   // Next/previous entry IDs for keyboard navigation, and how close we are to
   // the pagination boundary

@@ -3,11 +3,10 @@
  * as rows `{ listKey, entryId, order }` joined against the entry store at
  * render time. A list's membership only changes when the list is fetched
  * (a full refetch replaces it, a next page adds to it), when a live event
- * inserts an entry that belongs in it, or when an entry is added to the
- * collection a list shows — never when an entry's state changes or it leaves
- * a collection,
- * so read entries stay visible in unread-only views until the list refreshes
- * on navigation.
+ * inserts an entry that belongs in it, or when an entry joins or leaves the
+ * collection a list shows — never when an entry's state changes, so read
+ * entries stay visible in unread-only views until the list refreshes on
+ * navigation.
  */
 
 import { hashKey } from "@tanstack/react-query";
@@ -20,6 +19,11 @@ export type ListEntryRow = {
   entryId: string;
   /** Ascending sort position within the list (see `listOrder`). */
   order: number;
+  /**
+   * Left the collection the list shows. The row stays so the list keeps its
+   * place while the entry is open, but renders only as the open entry.
+   */
+  removed: boolean;
 };
 
 /** The `entries.list` input keys that decide membership (plus the page size). */
@@ -48,6 +52,8 @@ export interface EntryListMeta {
    * lands and replaces the list they are kept rather than dropped.
    */
   insertedSinceFetch: Set<string>;
+  /** Likewise, entries removed live since then stay removed when it lands. */
+  removedSinceFetch: Set<string>;
 }
 
 export interface EntryLists {
@@ -94,14 +100,17 @@ export function isNewestFirst(input: EntryListFilters): boolean {
 
 /** Call when a full (not next-page) fetch of the list starts. */
 export function markEntryListFetchStarted(lists: EntryLists, input: Record<string, unknown>): void {
-  lists.meta.get(entryListKey(input))?.insertedSinceFetch.clear();
+  const meta = lists.meta.get(entryListKey(input));
+  meta?.insertedSinceFetch.clear();
+  meta?.removedSinceFetch.clear();
 }
 
 /**
  * Records a fetched list. `replace` (initial load, refetch) drops entries the
  * server no longer returned, except those inserted live after the fetch
  * started; `append` (next page) keeps everything already in the list,
- * including entries inserted live while the page was loading.
+ * including entries inserted live while the page was loading. Either way,
+ * entries removed live after the fetch started stay removed.
  */
 export function ingestEntryListPages(
   lists: EntryLists,
@@ -111,6 +120,7 @@ export function ingestEntryListPages(
 ): void {
   const listKey = entryListKey(input);
   const previous = lists.meta.get(listKey);
+  const removedSinceFetch = previous?.removedSinceFetch ?? new Set<string>();
   const rows = pages
     .flatMap((page) => page.items)
     .map((entry, index): ListEntryRow => ({
@@ -118,6 +128,7 @@ export function ingestEntryListPages(
       listKey,
       entryId: entry.id,
       order: listOrder(input, entry, index),
+      removed: removedSinceFetch.has(entry.id),
     }));
 
   const hasMore = pages.at(-1)?.nextCursor !== undefined;
@@ -139,13 +150,20 @@ export function ingestEntryListPages(
     );
   }
 
-  lists.rows.upsert(rows.filter((row) => lists.rows.getSynced(row.key)?.order !== row.order));
+  lists.rows.upsert(
+    rows.filter((row) => {
+      const stored = lists.rows.getSynced(row.key);
+      return stored?.order !== row.order || stored.removed !== row.removed;
+    })
+  );
+  const keepsLiveChanges = mode === "append" && previous;
   lists.meta.set(listKey, {
     input,
     hasMore,
     lastOrder,
     entryIds,
-    insertedSinceFetch: mode === "append" && previous ? previous.insertedSinceFetch : new Set(),
+    insertedSinceFetch: keepsLiveChanges ? previous.insertedSinceFetch : new Set(),
+    removedSinceFetch: keepsLiveChanges ? previous.removedSinceFetch : new Set(),
   });
 }
 
@@ -230,6 +248,7 @@ export function insertIntoCollectionLists(
   entry: EntryRow,
   collectionId: string
 ): void {
+  setRemovedFromCollectionLists(lists, entry.id, collectionId, false);
   insertIntoListsWhere(
     lists,
     entry,
@@ -237,6 +256,43 @@ export function insertIntoCollectionLists(
       input.subscriptionId === collectionId &&
       belongsInList({ ...input, subscriptionId: undefined }, entry, undefined)
   );
+}
+
+/**
+ * Hides an entry that left a collection from the collection's loaded lists
+ * (every one, whatever its other filters: they can only narrow the
+ * collection). Its row stays, so the list keeps its place while the entry is
+ * open; see `ListEntryRow.removed`.
+ */
+export function removeFromCollectionLists(
+  lists: EntryLists,
+  entryId: string,
+  collectionId: string
+): void {
+  setRemovedFromCollectionLists(lists, entryId, collectionId, true);
+}
+
+function setRemovedFromCollectionLists(
+  lists: EntryLists,
+  entryId: string,
+  collectionId: string,
+  removed: boolean
+): void {
+  const rows: ListEntryRow[] = [];
+  for (const [listKey, meta] of lists.meta) {
+    if (meta.input.subscriptionId !== collectionId) continue;
+    const row = lists.rows.getSynced(listEntryKey(listKey, entryId));
+    if (!row || row.removed === removed) continue;
+    if (removed) {
+      meta.insertedSinceFetch.delete(entryId);
+      meta.removedSinceFetch.add(entryId);
+    } else {
+      meta.removedSinceFetch.delete(entryId);
+      meta.insertedSinceFetch.add(entryId);
+    }
+    rows.push({ ...row, removed });
+  }
+  lists.rows.upsert(rows);
 }
 
 function insertIntoListsWhere(
@@ -258,7 +314,13 @@ function insertIntoListsWhere(
 
     meta.entryIds.add(entry.id);
     meta.insertedSinceFetch.add(entry.id);
-    rows.push({ key: listEntryKey(listKey, entry.id), listKey, entryId: entry.id, order });
+    rows.push({
+      key: listEntryKey(listKey, entry.id),
+      listKey,
+      entryId: entry.id,
+      order,
+      removed: false,
+    });
   }
   lists.rows.upsert(rows);
 }

@@ -13,6 +13,8 @@ import { act, cleanup, waitFor } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
+import { applyCollectionEntriesChange } from "@/lib/cache/operations";
+import { trpc } from "@/lib/trpc/client";
 import type { EntryRow } from "@/lib/local-db/entries";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 import { createRealTrpcUtils } from "../../../utils/cache-test-helpers";
@@ -63,10 +65,11 @@ const COUNTS = {
 };
 
 function setup(entries: { feed: EntryRow[]; collection: EntryRow[] }) {
+  let openEntryId: string | null = null;
   const rendered = renderHookWithTrpc(() => ({
-    feed: useEntryListEntries(FEED_LIST),
-    collection: useEntryListEntries(COLLECTION_LIST),
-    unreadCollection: useEntryListEntries(UNREAD_COLLECTION_LIST),
+    feed: useEntryListEntries(FEED_LIST, openEntryId),
+    collection: useEntryListEntries(COLLECTION_LIST, openEntryId),
+    unreadCollection: useEntryListEntries(UNREAD_COLLECTION_LIST, openEntryId),
   }));
   const { queryClient } = rendered;
   const utils = createRealTrpcUtils(queryClient);
@@ -89,7 +92,11 @@ function setup(entries: { feed: EntryRow[]; collection: EntryRow[] }) {
         updatedAt: "2024-07-02T00:00:00Z",
       })
     );
-  return { utils, queryClient, ids, changeMembership };
+  const openEntry = (id: string | null) => {
+    openEntryId = id;
+    rendered.rerender();
+  };
+  return { utils, queryClient, ids, changeMembership, openEntry };
 }
 
 describe("collection_entries_changed", () => {
@@ -110,16 +117,84 @@ describe("collection_entries_changed", () => {
     expect(ids("unreadCollection")).toEqual(["newer", "older"]);
   });
 
-  it("keeps a removed entry in loaded lists until they refresh", async () => {
-    // The reader keeps its place (j/k from the open entry) after taking the
-    // open entry out of the collection being viewed.
+  it("hides a removed entry from the collection's lists once it's no longer open", async () => {
+    const entries = [
+      makeEntry("c", "2024-06-03"),
+      makeEntry("b", "2024-06-02"),
+      makeEntry("a", "2024-06-01"),
+    ];
+    const { ids, changeMembership, openEntry } = setup({ feed: entries, collection: entries });
+    await waitFor(() => expect(ids("collection")).toEqual(["c", "b", "a"]));
+    openEntry("b");
+
+    changeMembership(["b"], false);
+    // Still listed while open, so j/k from it keeps its place.
+    expect(ids("collection")).toEqual(["c", "b", "a"]);
+
+    openEntry("a");
+    await waitFor(() => expect(ids("collection")).toEqual(["c", "a"]));
+    expect(ids("unreadCollection")).toEqual(["c", "a"]);
+    expect(ids("feed")).toEqual(["c", "b", "a"]);
+  });
+
+  it("shows a removed entry again when it's re-added", async () => {
     const entry = makeEntry("a", "2024-06-01");
     const { ids, changeMembership } = setup({ feed: [entry], collection: [entry] });
     await waitFor(() => expect(ids("collection")).toEqual(["a"]));
-
     changeMembership(["a"], false);
+    await waitFor(() => expect(ids("collection")).toEqual([]));
 
-    expect(ids("collection")).toEqual(["a"]);
+    changeMembership(["a"], true);
+
+    await waitFor(() => expect(ids("collection")).toEqual(["a"]));
+  });
+
+  it("keeps an entry removed when a fetch that started before the removal lands", async () => {
+    const entry = makeEntry("a", "2024-06-01");
+    let release: (() => void) | undefined;
+    let calls = 0;
+    const rendered = renderHookWithTrpc(
+      () => ({
+        query: trpc.entries.list.useInfiniteQuery(COLLECTION_LIST, {
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+        entries: useEntryListEntries(COLLECTION_LIST, null),
+      }),
+      {
+        handlers: {
+          // The refetch's snapshot predates the removal.
+          "entries.list": () => {
+            calls++;
+            if (calls === 1) return { items: [entry] };
+            return new Promise((resolve) => {
+              release = () => resolve({ items: [entry] });
+            });
+          },
+        },
+      }
+    );
+    const { queryClient } = rendered;
+    const ids = () => rendered.result.current.entries.map((e) => e.id);
+    await waitFor(() => expect(ids()).toEqual(["a"]));
+
+    let refetched: Promise<unknown> | undefined;
+    act(() => {
+      refetched = rendered.result.current.query.refetch();
+    });
+    await waitFor(() => expect(release).toBeDefined());
+    act(() =>
+      applyCollectionEntriesChange(createRealTrpcUtils(queryClient), queryClient, {
+        subscriptionId: COLLECTION,
+        entryIds: ["a"],
+        added: false,
+      })
+    );
+    await act(async () => {
+      release?.();
+      await refetched;
+    });
+
+    expect(ids()).toEqual([]);
   });
 
   it("drops a deleted collection from every cached membership", () => {
