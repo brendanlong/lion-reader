@@ -5650,7 +5650,6 @@
                 "type": "object",
                 "properties": {
                   "tagIds": {
-                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string",

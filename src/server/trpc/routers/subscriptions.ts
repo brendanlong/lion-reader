@@ -770,7 +770,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .input(
       z.object({
         id: uuidSchema,
-        tagIds: z.array(z.string().uuid("Invalid tag ID")).max(100),
+        tagIds: z.array(z.string().uuid("Invalid tag ID")),
       })
     )
     .output(z.object({}))
