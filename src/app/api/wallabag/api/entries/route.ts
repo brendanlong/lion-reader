@@ -160,7 +160,7 @@ export async function POST(request: Request): Promise<Response> {
       await entriesService.updateEntryStarred(db, auth.userId, article.id, true);
     }
 
-    // SavedArticle doesn't carry the entry serial (it's returned verbatim by
+    // SavedArticle doesn't carry the entry serial (it's also returned by
     // MCP save_article, which must stay bigint-free), so look it up — a
     // user-scoped seek on the entry we just saved.
     const wallabagId = await entryIdToWallabagId(db, auth.userId, article.id);

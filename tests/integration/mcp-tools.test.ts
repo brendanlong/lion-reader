@@ -129,4 +129,15 @@ describe("MCP tool argument validation", () => {
     };
     expect(legit.items.map((e) => e.id)).toContain(entryId);
   });
+
+  it("returns save results without the article body (#1835)", async () => {
+    const result = (await tool("upload_article").handler(db, userId, {
+      title: "MCP upload",
+      content: "# Heading\n\nThe body of the uploaded article.",
+      summary: "Short summary",
+    })) as Record<string, unknown>;
+    expect(result).not.toHaveProperty("contentCleaned");
+    expect(result).toMatchObject({ title: "MCP upload", excerpt: "Short summary" });
+    expect(result.id).toEqual(expect.any(String));
+  });
 });

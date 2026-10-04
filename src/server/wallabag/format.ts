@@ -166,7 +166,7 @@ export function formatEntryListItem(entry: EntryListItem): WallabagEntry {
 
 /**
  * Formats a saved article as a Wallabag entry. `SavedArticle` deliberately
- * doesn't carry the entry serial (it's returned verbatim by MCP save_article,
+ * doesn't carry the entry serial (it's also returned by MCP save_article,
  * which must stay bigint-free), so the caller passes the Wallabag id looked up
  * via `entryIdToWallabagId`.
  */

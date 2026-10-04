@@ -110,6 +110,19 @@ function stripGreaderIds<
  * Derives the advertised MCP inputSchema from the Zod schema so the schema
  * clients see is exactly the one the handler enforces.
  */
+/**
+ * Drops the article body from save/upload results: agents need the id and
+ * metadata, and a long page's body can exceed client tool-output limits
+ * (#1835). `get_entry` returns the full content.
+ */
+function withoutContent<T extends savedService.SavedArticle>(
+  article: T
+): Omit<T, "contentCleaned"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { contentCleaned, ...rest } = article;
+  return rest;
+}
+
 function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
   const json = z.toJSONSchema(schema) as Record<string, unknown>;
   delete json.$schema;
@@ -425,7 +438,7 @@ function buildTools(): Tool[] {
     {
       name: "save_article",
       description:
-        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article if already saved. Private Google Docs are supported when the user has linked their Google account and granted Google Docs access in the web app; otherwise a clear error explains how to authorize.",
+        "Save a URL for later reading. Fetches the page, extracts clean content using Readability, and stores it. Returns the saved article's metadata and excerpt (not its content; use get_entry for that), including when it was already saved. Private Google Docs are supported when the user has linked their Google account and granted Google Docs access in the web app; otherwise a clear error explains how to authorize.",
       inputSchema: toInputSchema(saveArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(saveArticleArgs, args);
@@ -447,7 +460,7 @@ function buildTools(): Tool[] {
           article.id,
           params.collectionIds ?? []
         );
-        return article;
+        return withoutContent(article);
       },
     },
 
@@ -465,7 +478,7 @@ function buildTools(): Tool[] {
     {
       name: "upload_article",
       description:
-        "Upload an article with Markdown content directly, without a URL. Useful for saving content you've written or collected.",
+        "Upload an article with Markdown content directly, without a URL. Useful for saving content you've written or collected. Returns the saved article's metadata and excerpt (not its content).",
       inputSchema: toInputSchema(uploadArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(uploadArticleArgs, args);
@@ -482,7 +495,7 @@ function buildTools(): Tool[] {
           article.id,
           params.collectionIds ?? []
         );
-        return article;
+        return withoutContent(article);
       },
     },
 
