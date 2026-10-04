@@ -8,6 +8,7 @@ import { z } from "zod";
 import { eq, and, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
+  blockedSenders,
   collectionEntries,
   feeds,
   subscriptions,
@@ -22,8 +23,17 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob } from "@/server/jobs/queue";
 import { feedDefaultsToFullContent } from "@/server/plugins";
-import { publishSubscriptionCreated, publishSubscriptionUpdated } from "@/server/redis/pubsub";
-import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
+import {
+  publishSubscriptionCreated,
+  publishSubscriptionDeleted,
+  publishSubscriptionUpdated,
+} from "@/server/redis/pubsub";
+import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
+import {
+  getBulkEntryRelatedCounts,
+  getSubscriptionDeletionCounts,
+  type BulkUnreadCounts,
+} from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import { errors } from "@/server/trpc/errors";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
@@ -159,7 +169,7 @@ export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string
  * requires. Unsubscribing a collection also touches its members' user_entries
  * rows (the trigger empties it), so `members` locks those first.
  */
-export async function lockSubscriptionRow(
+async function lockSubscriptionRow(
   tx: DbOrTx,
   userId: string,
   subscriptionId: string,
@@ -821,4 +831,107 @@ export async function setSubscriptionTags(
       });
     });
   }
+}
+
+/**
+ * Unsubscribes (soft-deletes) one of the user's active subscriptions, returning
+ * the affected lists' post-delete absolute counts, or null if there is no such
+ * active subscription. Every unsubscribe path goes through here so they all do
+ * the same thing: for an email feed, send the sender's list-unsubscribe request
+ * and block the sender; then remove its tags, soft-delete it, and publish
+ * subscription_deleted.
+ */
+export async function unsubscribe(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string
+): Promise<{ counts: BulkUnreadCounts } | null> {
+  const [existing] = await db
+    .select({ feed: feeds })
+    .from(subscriptions)
+    .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+    .where(
+      and(
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
+    .limit(1);
+
+  if (!existing) {
+    return null;
+  }
+
+  const { feed } = existing;
+  const now = new Date();
+
+  // The unsubscribe request and mailto lookup are network/side-effecting work,
+  // so they run BEFORE the transaction; only the blocked_senders row is written
+  // inside it.
+  let blockedSenderValues: typeof blockedSenders.$inferInsert | null = null;
+  if (feed.type === "email" && feed.emailSenderPattern) {
+    const unsubscribeResult = await attemptUnsubscribe(feed.id);
+
+    logger.info("Email unsubscribe attempt completed", {
+      feedId: feed.id,
+      userId,
+      senderEmail: feed.emailSenderPattern,
+      sent: unsubscribeResult.sent,
+      method: unsubscribeResult.method,
+    });
+
+    blockedSenderValues = {
+      id: generateUuidv7(),
+      userId,
+      senderEmail: feed.emailSenderPattern,
+      blockedAt: now,
+      listUnsubscribeMailto: await getLatestUnsubscribeMailto(feed.id),
+      unsubscribeSentAt: unsubscribeResult.sent ? now : null,
+    };
+  }
+
+  // One transaction so a crash can't half-apply the unsubscribe (e.g. tags
+  // removed but the subscription still active) (issue #952).
+  const formerTagIds = await db.transaction(async (tx) => {
+    await lockSubscriptionRow(tx, userId, subscriptionId, { members: true });
+
+    if (blockedSenderValues) {
+      await tx.insert(blockedSenders).values(blockedSenderValues).onConflictDoNothing();
+      logger.info("Added sender to blocked list", {
+        userId,
+        senderEmail: feed.emailSenderPattern,
+      });
+    }
+
+    // Remove the tag associations so resubscribing starts fresh. RETURNING
+    // captures the former tags for the post-delete counts (an empty list means
+    // the subscription was uncategorized).
+    const formerTagRows = await tx
+      .delete(subscriptionTags)
+      .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+      .returning({ tagId: subscriptionTags.tagId });
+
+    await tx
+      .update(subscriptions)
+      .set({ unsubscribedAt: now, updatedAt: now })
+      .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)));
+
+    return formerTagRows.map((r) => r.tagId);
+  });
+
+  // Computed after the soft-delete so they reflect the removal. The client sets
+  // these directly (the sync.events catch-up path can't recompute the former
+  // tags, so it omits counts and the client invalidates instead).
+  const counts = await getSubscriptionDeletionCounts(db, userId, formerTagIds);
+
+  publishSubscriptionDeleted(userId, feed.id, subscriptionId, now, counts).catch((err) => {
+    logger.error("Failed to publish subscription_deleted event", {
+      err,
+      userId,
+      feedId: feed.id,
+    });
+  });
+
+  return { counts };
 }

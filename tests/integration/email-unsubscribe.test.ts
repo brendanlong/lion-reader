@@ -1,17 +1,27 @@
 /**
  * Integration tests for sending List-Unsubscribe requests to newsletter senders
- * (#1770). A local HTTP server stands in for the sender's one-click endpoint
+ * (#1770), and for unsubscribe paths sending them (#1819). A local HTTP server stands in for the sender's one-click endpoint
  * (`.env.test` sets ALLOW_PRIVATE_NETWORK_FETCH).
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users } from "../../src/server/db/schema";
+import { blockedSenders, subscriptions, subscriptionTags, users } from "../../src/server/db/schema";
 import { attemptUnsubscribe } from "../../src/server/email/unsubscribe";
-import { createTestEntry, createTestFeed, createTestUser } from "./helpers";
+import { createSession } from "../../src/server/auth/session";
+import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
+import { feedStreamId } from "../../src/server/google-reader/id";
+import { POST as greaderSubscriptionEdit } from "../../src/app/api/greader.php/reader/api/0/subscription/edit/route";
+import {
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestTag,
+  createTestUser,
+} from "./helpers";
 
 interface ReceivedRequest {
   method: string | undefined;
@@ -48,15 +58,19 @@ beforeEach(() => {
   received = [];
 });
 
-async function createEmailFeed(): Promise<string> {
-  const userId = await createTestUser();
-  createdUserIds.push(userId);
+async function createEmailFeedForUser(userId: string): Promise<string> {
   return createTestFeed({
     type: "email",
     userId,
     url: null,
     emailSenderPattern: `sender-${userId}@example.com`,
   });
+}
+
+async function createEmailFeed(): Promise<string> {
+  const userId = await createTestUser();
+  createdUserIds.push(userId);
+  return createEmailFeedForUser(userId);
 }
 
 describe("attemptUnsubscribe", () => {
@@ -134,5 +148,66 @@ describe("attemptUnsubscribe", () => {
 
     expect(result).toEqual({ sent: true, method: "https" });
     expect(received.map((r) => r.path)).toEqual(["/older"]);
+  });
+});
+
+describe("Google Reader subscription/edit ac=unsubscribe", () => {
+  it("unsubscribes from the newsletter and blocks the sender like the web app (#1819)", async () => {
+    const userId = await createTestUser();
+    createdUserIds.push(userId);
+    const feedId = await createEmailFeedForUser(userId);
+    await createTestEntry(feedId, {
+      type: "email",
+      listUnsubscribeHttps: `${baseUrl}/unsub`,
+      listUnsubscribePost: true,
+    });
+    const subscriptionId = await createTestSubscription(userId, feedId);
+    await createTestTag(userId, { subscriptionIds: [subscriptionId] });
+    const [{ greaderStreamId }] = await db
+      .select({ greaderStreamId: subscriptions.greaderStreamId })
+      .from(subscriptions)
+      .where(eq(subscriptions.id, subscriptionId));
+    const { token } = await createSession(db, {
+      userId,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+
+    const response = await greaderSubscriptionEdit(
+      new Request("https://example.com/api/greader.php/reader/api/0/subscription/edit", {
+        method: "POST",
+        headers: {
+          authorization: `GoogleLogin auth=${token}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          ac: "unsubscribe",
+          s: feedStreamId(greaderStreamId),
+        }).toString(),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(received.map((r) => r.path)).toEqual(["/unsub"]);
+    const [blocked] = await db
+      .select()
+      .from(blockedSenders)
+      .where(
+        and(
+          eq(blockedSenders.userId, userId),
+          eq(blockedSenders.senderEmail, `sender-${userId}@example.com`)
+        )
+      );
+    expect(blocked?.unsubscribeSentAt).not.toBeNull();
+    const [subscription] = await db
+      .select({ unsubscribedAt: subscriptions.unsubscribedAt })
+      .from(subscriptions)
+      .where(eq(subscriptions.id, subscriptionId));
+    expect(subscription.unsubscribedAt).not.toBeNull();
+    expect(
+      await db
+        .select()
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+    ).toEqual([]);
   });
 });
