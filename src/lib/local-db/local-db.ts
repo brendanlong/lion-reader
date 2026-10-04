@@ -1,9 +1,10 @@
 /**
- * The client-side normalized store (TanStack DB) for entries and entry list
- * membership. React Query remains the network layer: `entries.list` and
- * `entries.get` results are ingested from the query cache as they land (a
- * QueryCache subscription, so SSR-hydrated, prefetched and fetched data all
- * take the same path), and components render from the store.
+ * The client-side normalized store (TanStack DB) for entries, entry list
+ * membership, and subscriptions. React Query remains the network layer:
+ * `entries.*` and `subscriptions.list/get` results are ingested from the query
+ * cache as they land (a QueryCache subscription, so SSR-hydrated, prefetched
+ * and fetched data all take the same path), and components render from the
+ * store.
  *
  * One store per QueryClient, never module-global: on the server each request
  * has its own QueryClient, and a shared store would leak one user's entries
@@ -29,12 +30,19 @@ import {
   type EntryTagScope,
   type ListEntryRow,
 } from "./entry-lists";
-import { findCachedSubscription } from "@/lib/cache/count-cache";
 import { createSyncedCollection } from "./synced-collection";
+import {
+  ingestFetchedSubscriptions,
+  markSubscriptionFetchStarted,
+  type SubscriptionPages,
+  type SubscriptionRow,
+  type SubscriptionStore,
+} from "./subscriptions";
 
 export interface LocalDb {
   entries: EntryStore;
   lists: EntryLists;
+  subscriptions: SubscriptionStore;
 }
 
 interface EntriesListData {
@@ -57,7 +65,16 @@ function createLocalDb(): LocalDb {
   });
   rows.collection.createIndex((row) => row.listKey, { indexType: BasicIndex });
   rows.collection.createIndex((row) => row.entryId, { indexType: BasicIndex });
-  return { entries, lists: { rows, meta: new Map() } };
+  const subscriptions: SubscriptionStore = {
+    rows: createSyncedCollection<SubscriptionRow>({
+      id: `subscriptions-${dbId}`,
+      getKey: (row) => row.id,
+    }),
+    versions: new Map(),
+    fetchStartedAt: new Map(),
+    clock: { now: 0 },
+  };
+  return { entries, lists: { rows, meta: new Map() }, subscriptions };
 }
 
 function procedureOf(query: Query): string | undefined {
@@ -80,8 +97,35 @@ function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append"): voi
     case "entries.get":
       upsertServerEntries(db.entries, [toEntryRow((data as { entry: EntryRow }).entry)]);
       break;
+    case "subscriptions.list": {
+      // Infinite (the sidebar, the collection picker) or a single page.
+      const list = data as SubscriptionPages | SubscriptionPages["pages"][number];
+      const pages = "pages" in list ? list : { pages: [list] };
+      ingestSubscriptionPages(db, query, pages, mode);
+      break;
+    }
+    case "subscriptions.get":
+      ingestFetchedSubscriptions(db.subscriptions, query.queryHash, [data as SubscriptionRow]);
+      break;
   }
 }
+
+function ingestSubscriptionPages(
+  db: LocalDb,
+  query: Query,
+  data: SubscriptionPages,
+  mode: "replace" | "append"
+): void {
+  // The earlier pages are older than this fetch: don't write them again.
+  const pages = mode === "append" ? data.pages.slice(-1) : data.pages;
+  ingestFetchedSubscriptions(
+    db.subscriptions,
+    query.queryHash,
+    pages.flatMap((page) => page.items)
+  );
+}
+
+const SUBSCRIPTION_QUERIES = new Set(["subscriptions.list", "subscriptions.get"]);
 
 function ingestListData(
   db: LocalDb,
@@ -109,6 +153,12 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
     }
     if (event.type === "added") {
       ingestQuery(db, query, "replace");
+    } else if (
+      event.type === "updated" &&
+      event.action.type === "fetch" &&
+      SUBSCRIPTION_QUERIES.has(procedureOf(query) ?? "")
+    ) {
+      markSubscriptionFetchStarted(db.subscriptions, query.queryHash);
     } else if (
       event.type === "updated" &&
       event.action.type === "fetch" &&
@@ -142,7 +192,7 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
 
 function entryTagScope(queryClient: QueryClient, entry: EntryRow): EntryTagScope | undefined {
   if (!entry.subscriptionId) return { tagIds: new Set(), uncategorized: false };
-  const subscription = findCachedSubscription(queryClient, entry.subscriptionId);
+  const subscription = getLocalDb(queryClient).subscriptions.rows.getSynced(entry.subscriptionId);
   if (!subscription) return undefined;
   return {
     tagIds: new Set(subscription.tags.map((tag) => tag.id)),
@@ -152,8 +202,8 @@ function entryTagScope(queryClient: QueryClient, entry: EntryRow): EntryTagScope
 
 /**
  * Inserts an entry into the loaded lists it belongs in, judged by `entry`'s
- * fields. Tag/uncategorized membership comes from the cached subscription;
- * when that isn't cached, those lists are skipped and pick the entry up on
+ * fields. Tag/uncategorized membership comes from the stored subscription;
+ * when that isn't stored, those lists are skipped and pick the entry up on
  * their next refresh.
  */
 export function insertEntryIntoLists(db: LocalDb, queryClient: QueryClient, entry: EntryRow): void {

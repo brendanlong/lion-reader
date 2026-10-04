@@ -29,6 +29,7 @@ import {
   renderHookWithTrpc,
   type RenderWithTrpcOptions,
 } from "../../../utils/component-test-helpers";
+import { invalidatedProcedures, spyOnInvalidate } from "../../../utils/cache-test-helpers";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -255,6 +256,38 @@ describe("useEntryMutations markAllRead", () => {
     expect(input.subscriptionId).toBe("sub-1");
     expect(input.type).toBe("web");
     expect(input.changedAt).toBeInstanceOf(Date);
+  });
+
+  it("applies the counts in the response", async () => {
+    const { result } = renderHookWithTrpc(
+      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
+      {
+        handlers: {
+          "entries.markAllRead": () => ({ count: 2, counts: bulkCounts({ all: { unread: 5 } }) }),
+        },
+      }
+    );
+
+    act(() => {
+      result.current.mutations.markAllRead();
+    });
+
+    await waitFor(() =>
+      expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 5 })
+    );
+  });
+
+  it("still refreshes the entry lists when nothing was marked", async () => {
+    const { result, queryClient } = renderHookWithTrpc(() => useEntryMutations(), {
+      handlers: { "entries.markAllRead": () => ({ count: 0 }) },
+    });
+    const invalidate = spyOnInvalidate(queryClient);
+
+    act(() => {
+      result.current.markAllRead();
+    });
+
+    await waitFor(() => expect(invalidatedProcedures(invalidate)).toEqual(["entries.list"]));
   });
 
   it("shows a toast when markAllRead fails", async () => {

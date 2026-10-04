@@ -195,7 +195,9 @@ cache-ops: Cache Operations {
 
     updates: |
       Sets absolute counts from event.counts (no refetch):
-      - subscriptions.list: unreadCount
+      - stored subscriptions: unreadCount (one the store
+        lacks that now has unread entries is fetched when
+        a loaded sidebar section may list it)
       - tags.list: unreadCount (works even when the
         subscription isn't cached, #892)
       - entries.count({}) / ({ type: "saved" })
@@ -231,8 +233,8 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Structural: add subscription to subscriptions.list
-      (targeted per-tag query invalidation)
+      Structural: write the subscription to the local
+      store (the sidebar sections derive from it)
 
       Counts (live path): set absolute counts from
       event.counts via setEntryRelatedCounts.
@@ -245,7 +247,8 @@ cache-ops: Cache Operations {
     style.fill: "#fed7aa"
 
     updates: |
-      Structural: remove subscription from subscriptions.list
+      Structural: remove the subscription from the
+      local store
 
       Counts (live path): set absolute counts from
       event.counts. Sync catch-up path can't recompute

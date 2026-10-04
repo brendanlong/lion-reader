@@ -8,9 +8,8 @@
  * cache helpers run against genuine React Query key hashing, not a fake.
  */
 
-import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
+import { describe, it, expect, beforeEach, vi, type MockInstance } from "vitest";
 import { handleSyncEvent } from "@/lib/cache/event-handlers";
-import { findCachedSubscription } from "@/lib/cache/count-cache";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   createSeededQueryClient,
@@ -60,30 +59,14 @@ beforeEach(() => {
 // Helper Functions
 // ============================================================================
 
-/** A subscription as the client knows it (lookup map, else the sidebar lists). */
+/** A subscription as the local store holds it (what the sidebar renders). */
 function findSubscription(id: string): Record<string, unknown> | undefined {
-  return findCachedSubscription(queryClient, id);
+  return getLocalDb(queryClient).subscriptions.rows.getSynced(id);
 }
 
-/**
- * The unread count the sidebar shows for a subscription: its row in the cached
- * per-tag / uncategorized `subscriptions.list` pages. A subscription in
- * several tags must show the same count in each.
- */
+/** The unread count the sidebar shows for a subscription. */
 function getSidebarUnreadCount(id: string): number | undefined {
-  const queries = queryClient.getQueriesData<{
-    pages: Array<{ items: Array<{ id: string; unreadCount: number }> }>;
-  }>({ queryKey: [["subscriptions", "list"]] });
-  const counts = new Set<number>();
-  for (const [, data] of queries) {
-    for (const page of data?.pages ?? []) {
-      for (const sub of page.items) {
-        if (sub.id === id) counts.add(sub.unreadCount);
-      }
-    }
-  }
-  expect(counts.size).toBeLessThanOrEqual(1);
-  return counts.size === 0 ? undefined : [...counts][0];
+  return getLocalDb(queryClient).subscriptions.rows.getSynced(id)?.unreadCount;
 }
 
 function getTagsList():
@@ -664,17 +647,38 @@ describe("handleSyncEvent - entry_state_changed", () => {
 // ============================================================================
 
 describe("handleSyncEvent - mark_all_read", () => {
-  it("invalidates entry lists and counts (mirrors the acting tab)", () => {
+  it("sets the counts it carries and refetches only the entry lists", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createMarkAllReadEvent({
+        counts: {
+          all: { unread: 3 },
+          starred: { unread: 0 },
+          saved: { unread: 0 },
+          subscriptions: [{ id: "sub-1", unread: 0, tagIds: ["tag-1"] }],
+          tags: [{ id: "tag-1", unread: 10 }],
+        },
+      })
+    );
+
+    expect(getSidebarUnreadCount("sub-1")).toBe(0);
+    expect(getTagsList()?.items.find((tag) => tag.id === "tag-1")?.unreadCount).toBe(10);
+    expect(getEntriesCount()).toEqual({ unread: 3 });
+    // The one SSE event that deliberately refetches entries.list.
+    expect(invalidatedProcedures(invalidateSpy)).toEqual(["entries.list"]);
+  });
+
+  it("refetches the counts instead for a previous release's event, which has none", () => {
     handleSyncEvent(utils, queryClient, createMarkAllReadEvent());
 
-    const invalidated = invalidatedProcedures(invalidateSpy);
-    // The one SSE event that deliberately refetches entries.list.
-    expect(invalidated).toContain("entries.list");
-    expect(invalidated).toContain("entries.count");
-    expect(invalidated).toContain("tags.list");
-    expect(invalidated).toContain("subscriptions.list");
-    // The sidebar keeps listing the open subscription from this.
-    expect(invalidated).toContain("subscriptions.get");
+    expect(invalidatedProcedures(invalidateSpy).sort()).toEqual([
+      "entries.count",
+      "entries.list",
+      "subscriptions.get",
+      "subscriptions.list",
+      "tags.list",
+    ]);
   });
 
   it("does not touch entry read state directly (invalidation handles it)", () => {
@@ -853,38 +857,60 @@ describe("handleSyncEvent - subscription_updated", () => {
     expect((sub1 as Record<string, unknown>)?.title).toBe("Custom Name");
   });
 
-  it("reverts to originalTitle when customTitle is cleared", () => {
-    // First seed subscriptions.get with originalTitle
-    setUtilsData(
-      utils.subscriptions.get,
-      { id: "sub-1" },
-      {
-        ...DEFAULT_SUBSCRIPTIONS[0],
-        originalTitle: "Feed One Original",
-      }
-    );
+  it("reverts to the feed's own title when customTitle is cleared", () => {
+    const update = (customTitle: string | null) =>
+      handleSyncEvent(
+        utils,
+        queryClient,
+        createSubscriptionUpdatedEvent({
+          subscriptionId: "sub-1",
+          tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
+          customTitle,
+        })
+      );
+
+    update("Custom Name");
+    update(null);
+
+    expect(findSubscription("sub-1")?.title).toBe(DEFAULT_SUBSCRIPTIONS[0].originalTitle);
+  });
+
+  it("refetches tag feed counts and the collection picker, not the sidebar sections", () => {
+    invalidateSpy.mockClear();
+    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent());
+
+    expect(invalidatedQueries(invalidateSpy)).toEqual([
+      { path: "tags.list", input: undefined },
+      { path: "subscriptions.list", input: { type: "collection" } },
+    ]);
+  });
+
+  it("loads an unstored subscription it moves into a loaded section, not into a collapsed one", () => {
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue(undefined);
+    const fetchedIds = () =>
+      fetchSpy.mock.calls.map(
+        ([options]) => (options.queryKey[1] as { input: { id: string } }).input.id
+      );
 
     handleSyncEvent(
       utils,
       queryClient,
       createSubscriptionUpdatedEvent({
-        subscriptionId: "sub-1",
-        tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
-        customTitle: null,
+        subscriptionId: "sub-new",
+        tags: [{ id: "tag-x", name: "X", color: null }],
       })
     );
+    expect(fetchedIds()).toEqual([]);
 
-    const sub1 = findSubscription("sub-1");
-    expect((sub1 as Record<string, unknown>)?.title).toBe("Feed One Original");
-  });
-
-  it("invalidates tags.list and subscriptions.list", () => {
-    invalidateSpy.mockClear();
-    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent());
-
-    const paths = invalidatedProcedures(invalidateSpy);
-    expect(paths).toContain("tags.list");
-    expect(paths).toContain("subscriptions.list");
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createSubscriptionUpdatedEvent({
+        subscriptionId: "sub-new",
+        tags: [{ id: "tag-1", name: "Tech", color: null }],
+      })
+    );
+    expect(fetchedIds()).toEqual(["sub-new"]);
   });
 });
 
@@ -978,66 +1004,6 @@ describe("handleSyncEvent - subscription_deleted", () => {
     );
 
     expect(getEntriesCount({})?.unread).toBe(countAfterFirst);
-  });
-
-  it("processes delete for subscription only in infinite queries (not in lookup map)", () => {
-    // Simulate a pre-existing subscription that was loaded by the sidebar's
-    // infinite query but never seen via an SSE subscription_created event,
-    // so it's only in the QueryClient's infinite query cache, not the lookup map.
-    const preExistingSub = {
-      id: "sub-preexisting",
-      type: "web",
-      url: "https://example.com/preexisting.xml",
-      title: "Pre-existing Feed",
-      originalTitle: "Pre-existing Feed",
-      description: null,
-      siteUrl: null,
-      subscribedAt: new Date("2024-01-01"),
-      unreadCount: 4,
-      tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
-      fetchFullContent: false,
-    };
-
-    // Seed ONLY into the QueryClient's infinite query (not the lookup map)
-    queryClient.setQueryData(
-      [["subscriptions", "list"], { input: { tagId: "tag-1" }, type: "infinite" }],
-      {
-        pages: [{ items: [preExistingSub], nextCursor: undefined }],
-        pageParams: [undefined],
-      }
-    );
-
-    // Seed tags/counts so we can verify targeted cleanup
-    setUtilsData(utils.tags.list, undefined, {
-      items: [
-        { id: "tag-1", name: "Tech", color: "#ff0000", feedCount: 3, unreadCount: 19 },
-        { id: "tag-2", name: "Science", color: "#00ff00", feedCount: 1, unreadCount: 10 },
-      ],
-      uncategorized: { feedCount: 1, unreadCount: 3 },
-    });
-    setUtilsData(utils.entries.count, {}, { unread: 22 });
-
-    invalidateSpy.mockClear();
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createSubscriptionDeletedEvent({
-        subscriptionId: "sub-preexisting",
-      })
-    );
-
-    // Should NOT be treated as "already removed" — it should be processed.
-    const paths = invalidatedProcedures(invalidateSpy);
-    expect(paths).toContain("entries.list");
-    // No counts on the event (sync path) → the count caches are invalidated.
-    expect(paths).toContain("tags.list");
-    expect(paths).toContain("entries.count");
-
-    // The subscription is removed from the infinite-query cache.
-    const remaining = queryClient.getQueryData<{
-      pages: Array<{ items: Array<{ id: string }> }>;
-    }>([["subscriptions", "list"], { input: { tagId: "tag-1" }, type: "infinite" }]);
-    expect(remaining?.pages[0]?.items.some((s) => s.id === "sub-preexisting")).toBe(false);
   });
 
   it("still applies counts + invalidates entries.list when the subscription is not cached (#1081)", () => {

@@ -19,7 +19,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
 import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
-import { addSubscriptionToCache } from "@/lib/cache/count-cache";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 
 afterEach(() => {
@@ -31,19 +31,21 @@ function seedSubscription(
   id: string,
   tags: Array<{ id: string; name: string }> = []
 ): void {
-  addSubscriptionToCache(queryClient, {
-    id,
-    type: "web",
-    url: `https://example.com/${id}.xml`,
-    title: `Feed ${id}`,
-    originalTitle: `Feed ${id}`,
-    description: null,
-    siteUrl: null,
-    subscribedAt: new Date("2024-01-01T00:00:00Z"),
-    unreadCount: 0,
-    tags: tags.map((tag) => ({ ...tag, color: null })),
-    fetchFullContent: false,
-  });
+  writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
+    {
+      id,
+      type: "web",
+      url: `https://example.com/${id}.xml`,
+      title: `Feed ${id}`,
+      originalTitle: `Feed ${id}`,
+      description: null,
+      siteUrl: null,
+      subscribedAt: new Date("2024-01-01T00:00:00Z"),
+      unreadCount: 0,
+      tags: tags.map((tag) => ({ ...tag, color: null })),
+      fetchFullContent: false,
+    },
+  ]);
 }
 
 function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow> = {}): EntryRow {

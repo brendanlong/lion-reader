@@ -795,7 +795,11 @@ describe("Entries", () => {
       await createTestSubscription(attackerId, feedId);
       await createUserEntry(attackerId, entryId, { read: false });
 
-      const marked = await markAllEntriesRead(db, { userId: attackerId, tagId, showSpam: false });
+      const { entryIds: marked } = await markAllEntriesRead(db, {
+        userId: attackerId,
+        tagId,
+        showSpam: false,
+      });
       expect(marked).toEqual([]);
 
       const attackerEntries = await db
@@ -805,7 +809,11 @@ describe("Entries", () => {
       expect(attackerEntries).toEqual([{ read: false }]);
 
       // The owner can still mark through their tag
-      const ownMarked = await markAllEntriesRead(db, { userId: victimId, tagId, showSpam: false });
+      const { entryIds: ownMarked } = await markAllEntriesRead(db, {
+        userId: victimId,
+        tagId,
+        showSpam: false,
+      });
       expect(ownMarked).toEqual([entryId]);
     });
 
@@ -823,7 +831,7 @@ describe("Entries", () => {
       await createUserEntry(userId, spamId, { read: false });
 
       // With spam hidden, only the non-spam entry is marked.
-      const marked = await markAllEntriesRead(db, { userId, showSpam: false });
+      const { entryIds: marked } = await markAllEntriesRead(db, { userId, showSpam: false });
       expect(marked).toEqual([normalId]);
 
       const spamState = await db
@@ -833,7 +841,7 @@ describe("Entries", () => {
       expect(spamState).toEqual([{ read: false }]);
 
       // With showSpam, the spam entry is marked too.
-      const markedWithSpam = await markAllEntriesRead(db, { userId, showSpam: true });
+      const { entryIds: markedWithSpam } = await markAllEntriesRead(db, { userId, showSpam: true });
       expect(markedWithSpam).toEqual([spamId]);
     });
   });

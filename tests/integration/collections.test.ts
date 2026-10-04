@@ -185,8 +185,8 @@ describe("collections", () => {
 
       expect(counts?.subscriptions).toEqual(
         expect.arrayContaining([
-          { id: sourceId, unread: 1 },
-          { id: collectionId, unread: 0 },
+          { id: sourceId, unread: 1, tagIds: [] },
+          { id: collectionId, unread: 0, tagIds: [] },
         ])
       );
     });
@@ -363,7 +363,7 @@ describe("collections", () => {
 
       expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([entryA]);
 
-      const marked = await markAllEntriesRead(db, {
+      const { entryIds: marked } = await markAllEntriesRead(db, {
         userId,
         subscriptionId: collectionId,
         showSpam: false,

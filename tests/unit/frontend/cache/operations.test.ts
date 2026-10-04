@@ -6,7 +6,7 @@
  * and on which queries were invalidated.
  */
 
-import { describe, it, expect, beforeEach, type MockInstance } from "vitest";
+import { describe, it, expect, beforeEach, vi, type MockInstance } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   createRealTrpcUtils,
@@ -19,53 +19,37 @@ import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
+  refreshStoredCollections,
   setEntryRelatedCounts,
-  type SubscriptionData,
 } from "@/lib/cache/operations";
-import {
-  addSubscriptionToCache,
-  findCachedSubscription,
-  type CachedSubscription,
-} from "@/lib/cache/count-cache";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { writeLiveSubscriptions, type SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-/**
- * Seeds a subscription into the lookup map (the canonical source for
- * subscription data used by count calculations and event handlers).
- */
 function seedSubscription(
   queryClient: QueryClient,
-  sub: {
-    id: string;
-    unreadCount: number;
-    tags: Array<{ id: string; name: string; color: string | null }>;
-  }
+  sub: Pick<SubscriptionRow, "id" | "unreadCount" | "tags">
 ): void {
-  addSubscriptionToCache(queryClient, {
-    id: sub.id,
-    type: "web",
-    url: null,
-    title: null,
-    originalTitle: null,
-    description: null,
-    siteUrl: null,
-    subscribedAt: new Date(),
-    fetchFullContent: false,
-    unreadCount: sub.unreadCount,
-    tags: sub.tags,
-  } as CachedSubscription & {
-    type: "web";
-    url: null;
-    title: null;
-    originalTitle: null;
-    description: null;
-    siteUrl: null;
-    subscribedAt: Date;
-    fetchFullContent: false;
-  });
+  writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
+    {
+      type: "web",
+      url: null,
+      title: null,
+      originalTitle: null,
+      description: null,
+      siteUrl: null,
+      subscribedAt: new Date(),
+      fetchFullContent: false,
+      ...sub,
+    },
+  ]);
+}
+
+function stored(queryClient: QueryClient, id: string): SubscriptionRow | undefined {
+  return getLocalDb(queryClient).subscriptions.rows.getSynced(id);
 }
 
 // ============================================================================
@@ -83,7 +67,7 @@ describe("handleSubscriptionCreated", () => {
     invalidateSpy = spyOnInvalidate(queryClient);
   });
 
-  function createSubscription(overrides: Partial<SubscriptionData> = {}): SubscriptionData {
+  function createSubscription(overrides: Partial<SubscriptionRow> = {}): SubscriptionRow {
     return {
       id: "sub-1",
       type: "web",
@@ -100,17 +84,19 @@ describe("handleSubscriptionCreated", () => {
     };
   }
 
-  it("adds subscription to lookup map", () => {
-    const subscription = createSubscription();
+  it("adds the subscription to the local store", () => {
+    const subscription = createSubscription({
+      tags: [{ id: "tag-1", name: "News", color: "#ff0000" }],
+    });
     handleSubscriptionCreated(utils, subscription, queryClient);
 
-    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(true);
+    expect(stored(queryClient, "sub-1")).toEqual(subscription);
   });
 
-  it("keeps the lookup map to its own QueryClient (a new client starts empty)", () => {
+  it("keeps the store to its own QueryClient (a new client starts empty)", () => {
     handleSubscriptionCreated(utils, createSubscription(), queryClient);
 
-    expect(findCachedSubscription(new QueryClient(), "sub-1")).toBeUndefined();
+    expect(stored(new QueryClient(), "sub-1")).toBeUndefined();
   });
 
   it("sets absolute counts directly when the event provides them", () => {
@@ -155,20 +141,6 @@ describe("handleSubscriptionCreated", () => {
     expect(paths).toContain("entries.count");
   });
 
-  it("adds subscription with tags to lookup map", () => {
-    const subscription = createSubscription({
-      tags: [
-        { id: "tag-1", name: "News", color: "#ff0000" },
-        { id: "tag-2", name: "Tech", color: null },
-      ],
-    });
-    handleSubscriptionCreated(utils, subscription, queryClient);
-
-    const cached = findCachedSubscription(queryClient, "sub-1");
-    expect(cached).toBeDefined();
-    expect(cached?.tags).toHaveLength(2);
-  });
-
   it("does not cause count inflation for duplicate events", () => {
     setUtilsData(utils.entries.count, {}, { unread: 10 });
     const subscription = createSubscription({ unreadCount: 5 });
@@ -208,32 +180,23 @@ describe("handleSubscriptionDeleted", () => {
     expect(invalidatedProcedures(invalidateSpy).filter((p) => p === "tags.list")).toHaveLength(1);
   });
 
-  it("removes subscription from lookup map when present", () => {
+  it("removes the subscription from the local store", () => {
     seedSubscription(queryClient, { id: "sub-1", unreadCount: 5, tags: [] });
     seedSubscription(queryClient, { id: "sub-2", unreadCount: 10, tags: [] });
 
     handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
-    expect(findCachedSubscription(queryClient, "sub-1") !== undefined).toBe(false);
-    expect(findCachedSubscription(queryClient, "sub-2") !== undefined).toBe(true);
+    expect(stored(queryClient, "sub-1")).toBeUndefined();
+    expect(stored(queryClient, "sub-2")).toBeDefined();
   });
 
   it("drops the deleted subscription's subscriptions.get data", () => {
-    // Otherwise the sidebar keeps listing it while its page is open.
+    // So its open page refetches it and finds it gone.
     setUtilsData(utils.subscriptions.get, { id: "sub-1" }, { id: "sub-1", unreadCount: 5 });
 
     handleSubscriptionDeleted(utils, "sub-1", queryClient);
 
     expect(getUtilsData(utils.subscriptions.get, { id: "sub-1" })).toBeUndefined();
-  });
-
-  it("handles deletion of non-existent subscription gracefully", () => {
-    seedSubscription(queryClient, { id: "sub-2", unreadCount: 10, tags: [] });
-
-    // Should not throw
-    handleSubscriptionDeleted(utils, "sub-1", queryClient);
-
-    expect(findCachedSubscription(queryClient, "sub-2") !== undefined).toBe(true);
   });
 });
 
@@ -270,25 +233,99 @@ describe("setEntryRelatedCounts saved-count handling", () => {
     expect(utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 4 });
   });
 
-  it("updates the open subscription's subscriptions.get unread count", () => {
-    // The sidebar lists the open subscription from this once it's read.
-    setUtilsData(utils.subscriptions.get, { id: "sub-1" }, { id: "sub-1", unreadCount: 5 });
-
-    setEntryRelatedCounts(
-      utils,
-      { ...baseCounts, subscriptions: [{ id: "sub-1", unread: 2 }] },
-      queryClient
-    );
-
-    expect(getUtilsData(utils.subscriptions.get, { id: "sub-1" })).toEqual({
-      id: "sub-1",
-      unreadCount: 2,
-    });
-  });
-
   it("writes the saved count when the event provides one", () => {
     setEntryRelatedCounts(utils, { ...baseCounts, saved: { unread: 7 } }, queryClient);
 
     expect(utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 7 });
+  });
+});
+
+describe("setEntryRelatedCounts for subscriptions", () => {
+  let queryClient: QueryClient;
+  let utils: TRPCClientUtils;
+  let fetchedIds: () => string[];
+
+  const counts = (subscriptions: Array<{ id: string; unread: number; tagIds?: string[] }>) => ({
+    all: { unread: 1 },
+    starred: { unread: 0 },
+    subscriptions,
+    tags: [],
+  });
+
+  beforeEach(() => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    utils = createRealTrpcUtils(queryClient);
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue(undefined);
+    fetchedIds = () =>
+      fetchSpy.mock.calls.map(
+        ([options]) => (options.queryKey[1] as { input: { id: string } }).input.id
+      );
+    // The sidebar has loaded Tag 1's section (Tag 2 is collapsed).
+    setUtilsData(
+      utils.subscriptions.list,
+      { tagId: "tag-1", unreadOnly: true, limit: 50 },
+      {
+        items: [],
+      }
+    );
+  });
+
+  it("sets a stored subscription's count", () => {
+    seedSubscription(queryClient, { id: "sub-1", unreadCount: 5, tags: [] });
+
+    setEntryRelatedCounts(utils, counts([{ id: "sub-1", unread: 2, tagIds: [] }]), queryClient);
+
+    expect(stored(queryClient, "sub-1")?.unreadCount).toBe(2);
+    expect(fetchedIds()).toEqual([]);
+  });
+
+  it("loads a newly unread subscription only a loaded section could list", () => {
+    setEntryRelatedCounts(
+      utils,
+      counts([
+        { id: "sub-in-loaded", unread: 1, tagIds: ["tag-1"] },
+        { id: "sub-in-collapsed", unread: 1, tagIds: ["tag-2"] },
+        { id: "sub-still-read", unread: 0, tagIds: ["tag-1"] },
+        // A previous release's event: its tags are unknown, so it may be listed.
+        { id: "sub-untold", unread: 1 },
+      ]),
+      queryClient
+    );
+
+    expect(fetchedIds()).toEqual(["sub-in-loaded", "sub-untold"]);
+  });
+});
+
+describe("refreshStoredCollections", () => {
+  it("refetches the stored collections with unread entries", () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const utils = createRealTrpcUtils(queryClient);
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue(undefined);
+    const collection = (id: string, unreadCount: number) => ({
+      id,
+      type: "collection" as const,
+      url: null,
+      title: id,
+      originalTitle: id,
+      description: null,
+      siteUrl: null,
+      subscribedAt: new Date(),
+      unreadCount,
+      tags: [],
+      fetchFullContent: false,
+    });
+    writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
+      collection("col-unread", 2),
+      collection("col-read", 0),
+    ]);
+    seedSubscription(queryClient, { id: "feed-unread", unreadCount: 3, tags: [] });
+
+    refreshStoredCollections(utils, queryClient);
+
+    expect(
+      fetchSpy.mock.calls.map(
+        ([options]) => (options.queryKey[1] as { input: { id: string } }).input.id
+      )
+    ).toEqual(["col-unread"]);
   });
 });

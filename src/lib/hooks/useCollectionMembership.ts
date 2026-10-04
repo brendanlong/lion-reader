@@ -50,8 +50,8 @@ export function useCollectionMembership(entryId: string) {
 
   /**
    * Creates a collection and adds the entry to it. The sidebar learns of the
-   * collection only once the entry is in it, so the list it refetches shows
-   * the collection's count. Returns the collection, or null if creating failed.
+   * collection only once the entry is in it, so it shows the collection's
+   * count. Returns the collection, or null if creating failed.
    */
   const createWithEntry = async (name: string) => {
     let created;

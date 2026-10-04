@@ -11,7 +11,8 @@
  * - onMutate: optimistically remove the subscription from all caches.
  * - onSuccess: apply the server-absolute counts and invalidate entries.list so
  *   the removed feed's entries are re-filtered out.
- * - onError: toast + invalidate subscription/tag/count caches to refetch truth.
+ * - onError: toast, put the removed subscription back, and invalidate the
+ *   subscription/tag/count caches to refetch truth.
  *
  * Callers pass extra callbacks for their own UI concerns (closing a dialog,
  * showing a success toast, invalidating a page-specific list). These run in
@@ -28,6 +29,8 @@ import {
   removeSubscriptionFromCaches,
   setEntryRelatedCounts,
 } from "@/lib/cache/operations";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { restoreRemovedSubscription } from "@/lib/local-db/subscriptions";
 
 export interface UseUnsubscribeMutationOptions {
   /** Extra work after the optimistic cache removal (e.g. close a dialog). */
@@ -46,8 +49,10 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
     onMutate: (variables) => {
       // Optimistically remove the subscription from the sidebar/lists. Counts
       // are applied from the server response in onSuccess.
-      removeSubscriptionFromCaches(variables.id, queryClient);
+      const removed = getLocalDb(queryClient).subscriptions.rows.getSynced(variables.id);
+      const removedAt = removeSubscriptionFromCaches(variables.id, queryClient);
       options?.onMutate?.();
+      return { removed, removedAt };
     },
     onSuccess: (data, variables) => {
       // Apply the server-absolute counts for the affected lists, and drop the
@@ -59,9 +64,14 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
       forgetDeletedSubscription(utils, variables.id);
       options?.onSuccess?.();
     },
-    onError: () => {
+    onError: (_error, _variables, context) => {
       toast.error("Failed to unsubscribe from feed");
-      // On error, invalidate to refetch correct state.
+      // Put the row back (an unread-only refetch wouldn't return a read one),
+      // then refetch to correct anything else.
+      if (context?.removed) {
+        const store = getLocalDb(queryClient).subscriptions;
+        restoreRemovedSubscription(store, context.removed, context.removedAt);
+      }
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
       utils.entries.count.invalidate();

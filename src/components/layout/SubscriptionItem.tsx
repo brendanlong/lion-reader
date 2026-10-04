@@ -10,7 +10,7 @@
 import { IconButton } from "@/components/ui/icon-button";
 import { EditIcon, CloseIcon } from "@/components/ui/icons";
 import { ClientLink } from "@/components/ui/client-link";
-import type { CachedSubscription } from "@/lib/cache/count-cache";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 import { untitledSubscriptionLabel } from "@/lib/collections";
 
 // ============================================================================
@@ -20,7 +20,7 @@ import { untitledSubscriptionLabel } from "@/lib/collections";
 export interface SubscriptionItemProps {
   subscription: {
     id: string;
-    type: CachedSubscription["type"];
+    type: SubscriptionRow["type"];
     title: string | null;
     unreadCount: number;
   };

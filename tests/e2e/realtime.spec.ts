@@ -391,12 +391,12 @@ test("entry_state_changed event inserts an entry marked unread elsewhere into th
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
 
-// mark_all_read is the ONE realtime event that deliberately refetches (see
-// src/FRONTEND_STATE.md): mark-all-read is unbounded, so the server sends a
-// lightweight signal and the client invalidates its lists + counts instead of
-// patching. This test locks in both the behavior (unread view empties, badges
-// clear) and the boundary (a refetch IS expected here, unlike every test above).
-test("mark_all_read event empties the unread list and clears badges via a refetch", async ({
+// mark_all_read is the ONE realtime event that deliberately refetches entry
+// lists (see src/FRONTEND_STATE.md): mark-all-read is unbounded, so the server
+// sends one signal with the absolute counts, and the client refetches its lists
+// rather than patching every entry. This locks in the behavior (unread view
+// empties, badges clear) and the boundary (only entries.list refetches).
+test("mark_all_read event clears badges from its counts and refetches the unread list", async ({
   page,
   baseURL,
 }) => {
@@ -428,8 +428,9 @@ test("mark_all_read event empties the unread list and clears badges via a refetc
   await expect(links.subscriptionRow).toBeHidden();
   await expect(links.uncategorized).toBeHidden();
 
-  // ...and, unlike every other realtime event, this one refetched entries.list.
-  expect(refetchProcedures(trpcCalls)).toContain("entries.list");
+  // ...and, unlike every other realtime event, this one refetched entries.list
+  // (the counts came with the event).
+  expect([...new Set(refetchProcedures(trpcCalls))]).toEqual(["entries.list"]);
 });
 
 // Regression test: when the LAST unread entry of a subscription is read, the
@@ -482,7 +483,7 @@ test("entry_state_changed for the last unread entry clears subscription and tag 
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
 
-test("collection_entries_changed updates a tag holding the collection without refetching", async ({
+test("collection_entries_changed updates a tag holding the collection without refetching counts", async ({
   page,
   baseURL,
 }) => {
@@ -515,5 +516,7 @@ test("collection_entries_changed updates a tag holding the collection without re
 
   await expect(links.newsTag).toContainText("(3)");
   await expect(links.uncategorized).toContainText("(1)");
-  expect(refetchProcedures(trpcCalls)).toEqual([]);
+  // The unread-only sidebar hid the empty collection; it loads just that row.
+  await expect(page.getByRole("link", { name: /^Picks/ })).toContainText("(1)");
+  expect(refetchProcedures(trpcCalls)).toEqual(["subscriptions.get"]);
 });

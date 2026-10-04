@@ -95,7 +95,8 @@ export function SubscribeContent() {
     onSuccess: (data) => {
       // Use centralized cache operation for consistent behavior with SSE events.
       // data.counts carries the server-absolute counts for the affected lists.
-      handleSubscriptionCreated(utils, data, queryClient, data.counts);
+      const { counts, ...subscription } = data;
+      handleSubscriptionCreated(utils, subscription, queryClient, counts);
       clientPush("/all");
     },
     onError: () => {

@@ -1172,7 +1172,7 @@ export async function markAllEntriesRead(
      */
     showSpam: boolean;
   }
-): Promise<string[]> {
+): Promise<{ entryIds: string[]; counts?: BulkUnreadCounts }> {
   const changedAt = params.changedAt ?? new Date();
 
   const conditions: SQL[] = [
@@ -1214,7 +1214,7 @@ export async function markAllEntriesRead(
   const columns = { entryId: userEntries.entryId, subscriptionId: userEntries.subscriptionId };
   if (params.subscriptionId) {
     if (!(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))) {
-      return [];
+      return { entryIds: [] };
     }
     conditions.push(
       await buildEntriesInSubscriptionsCondition(
@@ -1286,14 +1286,18 @@ export async function markAllEntriesRead(
       updatedAt,
     })
     .where(and(...conditions))
-    .returning({ entryId: userEntries.entryId });
+    .returning({ id: userEntries.entryId, subscriptionId: userEntries.subscriptionId });
 
-  const entryIds = result.map((r) => r.entryId);
+  const entryIds = result.map((r) => r.id);
+  if (entryIds.length === 0) return { entryIds };
+  // Absolute counts for every list the marked entries reached, so clients
+  // set them rather than refetching and guessing which lists went to zero.
+  const counts = await getBulkEntryRelatedCounts(db, params.userId, result);
 
   // Notify the user's other tabs/devices. Mark-all-read is unbounded, so rather
   // than emitting a per-entry event (or shipping every affected id), we publish
-  // one lightweight signal and let each connection invalidate its entry lists +
-  // counts — the same thing the acting tab already does on success. Published
+  // one signal with the counts and let each connection invalidate its entry
+  // lists — the same thing the acting tab already does on success. Published
   // here (not in the router) so every caller — the tRPC mutation and the Google
   // Reader mark-all-as-read route — notifies other tabs. Fire and forget.
   //
@@ -1301,22 +1305,21 @@ export async function markAllEntriesRead(
   // callers pass the global `db`, so that's always post-commit. If a future
   // caller runs this inside a transaction, move the publish to after the commit
   // so a rolled-back mark-all-read can't emit a phantom event.
-  if (entryIds.length > 0) {
-    // The largest marked entry id rides along so the client's entries keyset
-    // cursor lands exactly past the marked rows rather than past the whole
-    // tied-timestamp group: an unrelated entry written in the same millisecond
-    // as `updatedAt` has a UUIDv7 id above every earlier-created marked entry
-    // (the ordering comes from the UUIDv7 ms-timestamp prefix; marked entries
-    // exist before the mark-all-read), so a catch-up sync can still deliver it
-    // if its live event was missed (#1102). UUIDs are lowercase, so string
-    // comparison matches Postgres uuid ordering.
-    const maxEntryId = entryIds.reduce((max, id) => (id > max ? id : max));
-    void publishMarkAllRead(params.userId, updatedAt, maxEntryId).catch(() => {
-      // Ignore publish errors - SSE is best-effort
-    });
-  }
+  //
+  // The largest marked entry id rides along so the client's entries keyset
+  // cursor lands exactly past the marked rows rather than past the whole
+  // tied-timestamp group: an unrelated entry written in the same millisecond
+  // as `updatedAt` has a UUIDv7 id above every earlier-created marked entry
+  // (the ordering comes from the UUIDv7 ms-timestamp prefix; marked entries
+  // exist before the mark-all-read), so a catch-up sync can still deliver it
+  // if its live event was missed (#1102). UUIDs are lowercase, so string
+  // comparison matches Postgres uuid ordering.
+  const maxEntryId = entryIds.reduce((max, id) => (id > max ? id : max));
+  void publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts).catch(() => {
+    // Ignore publish errors - SSE is best-effort
+  });
 
-  return entryIds;
+  return { entryIds, counts };
 }
 
 /**

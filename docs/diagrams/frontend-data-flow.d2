@@ -55,7 +55,7 @@ client: {
   }
 
   local_db: {
-    label: Local Entry Store (TanStack DB)
+    label: Local Store (TanStack DB)
     shape: cylinder
     style.fill: "#80cbc4"
 
@@ -63,6 +63,7 @@ client: {
       **src/lib/local-db/**
       - entries (one row per entry, updatedAt-guarded)
       - list membership (listKey, entryId, order)
+      - subscriptions (one row per loaded subscription; sidebar sections derive from them)
     |
   }
 

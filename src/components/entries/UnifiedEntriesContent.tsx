@@ -15,7 +15,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { untitledSubscriptionLabel } from "@/lib/collections";
 import { EntryPageLayout, TitleSkeleton, TitleText } from "./EntryPageLayout";
 import { EntryContent } from "./EntryContent";
@@ -37,7 +36,7 @@ import {
 } from "@/lib/navigation";
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
-import { findCachedSubscription } from "@/lib/cache/count-cache";
+import { useLocalSubscription } from "@/lib/hooks/useLocalSubscriptions";
 import { type MarkAllReadOptions } from "@/lib/hooks/useEntryMutations";
 
 /**
@@ -149,25 +148,20 @@ function useRouteInfo(): RouteInfo {
 /**
  * Title component for subscription pages. Non-suspending (to avoid React's
  * 300ms fallback throttle): renders a deterministic skeleton until hydrated,
- * then the title from subscriptions.get, falling back to the sidebar list cache
- * so the real title shows even before subscriptions.get resolves. Renders the
+ * then the title from the local subscription store (filled by the sidebar, or by
+ * subscriptions.get when nothing else loaded it). Renders the
  * feed's website link beneath the title when the feed advertises one.
  */
 function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
   const canRenderFromCache = useCanRenderFromCache();
-  const queryClient = useQueryClient();
-  const { data: subscription } = trpc.subscriptions.get.useQuery(
+  const { data: fetched } = trpc.subscriptions.get.useQuery(
     { id: subscriptionId },
     { throwOnError: true }
   );
+  // The fetched copy covers an optimistic unsubscribe, which removes the row.
+  const sub = useLocalSubscription(subscriptionId) ?? fetched;
 
-  if (!canRenderFromCache) {
-    return <TitleSkeleton />;
-  }
-  // Prefer the freshly fetched subscription; fall back to the sidebar list cache
-  // so the real title shows even before subscriptions.get resolves.
-  const sub = subscription ?? findCachedSubscription(queryClient, subscriptionId);
-  if (!sub) {
+  if (!canRenderFromCache || !sub) {
     return <TitleSkeleton />;
   }
   return (

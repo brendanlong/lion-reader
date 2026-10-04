@@ -156,6 +156,6 @@ describe("unread counts exclude spam on every surface", () => {
     expect(result.alreadyActive).toBe(false);
     expect(result.unreadCount).toBe(await listedUnreadCount(userId, subscriptionId));
     // The bulk counts published alongside the SSE event must agree too.
-    expect(result.counts?.subscriptions).toEqual([{ id: subscriptionId, unread: 1 }]);
+    expect(result.counts?.subscriptions).toEqual([{ id: subscriptionId, unread: 1, tagIds: [] }]);
   });
 });

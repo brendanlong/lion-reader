@@ -12,6 +12,8 @@ import {
   applyCollectionEntriesChange,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
+  handleMarkAllRead,
+  loadSubscriptionForSidebar,
   setEntryRelatedCounts,
 } from "./operations";
 import {
@@ -20,12 +22,8 @@ import {
   type EntryRow,
 } from "@/lib/local-db/entries";
 import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
-import {
-  applySyncTagChanges,
-  removeSyncTags,
-  updateSubscriptionInCache,
-  type CachedSubscription,
-} from "./count-cache";
+import { applySyncTagChanges, removeSyncTags } from "./tag-cache";
+import { patchLiveSubscription } from "@/lib/local-db/subscriptions";
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
@@ -154,21 +152,9 @@ export function handleSyncEvent(
     }
 
     case "mark_all_read":
-      // Mark-all-read on another tab/device. Mark-all-read is unbounded, so
-      // rather than patch (potentially thousands of) entries, we invalidate the
-      // entry lists + counts — mirroring what the acting tab does on success
-      // (useEntryMutations.markAllRead), just broader: the event carries no
-      // filter, so we invalidate every entries.count variant rather than the
-      // specific ones the acting tab knows were affected. This is the one SSE
-      // event that deliberately refetches entries.list: the whole point of
-      // mark-all-read is that the user is done with the list, so a refetch of a
-      // list they've cleared is an acceptable, rare cost. Counts refetch to
-      // their new values.
-      utils.entries.list.invalidate();
-      utils.entries.count.invalidate();
-      utils.tags.list.invalidate();
-      utils.subscriptions.list.invalidate();
-      utils.subscriptions.get.invalidate();
+      // The one SSE event that deliberately refetches entries.list: the user
+      // is done with the list, so refetching it is an acceptable, rare cost.
+      handleMarkAllRead(utils, queryClient, event.counts);
       break;
 
     case "subscription_created": {
@@ -195,25 +181,21 @@ export function handleSyncEvent(
     }
 
     case "subscription_updated": {
-      // Update the subscription's tags and title in cache, then invalidate
-      // tag-related queries to get fresh feedCount/unreadCount
-      const subUpdates: Partial<Pick<CachedSubscription, "tags" | "title">> = {
-        tags: event.tags,
-      };
-      if (event.customTitle !== null) {
-        // Custom title set - use it as the resolved title
-        subUpdates.title = event.customTitle;
+      // The stored row moves between sidebar sections with its tags. A
+      // cleared custom title falls back to the feed's own, which the row has.
+      const stored = db.subscriptions.rows.getSynced(event.subscriptionId);
+      if (stored) {
+        patchLiveSubscription(db.subscriptions, event.subscriptionId, {
+          tags: event.tags,
+          title: event.customTitle ?? stored.originalTitle,
+        });
       } else {
-        // Custom title cleared - revert to originalTitle from cache
-        const cached = utils.subscriptions.get.getData({ id: event.subscriptionId });
-        if (cached) {
-          subUpdates.title = cached.originalTitle;
-        }
-        // If not cached, the invalidation below will correct it
+        const tagIds = event.tags.map((tag) => tag.id);
+        loadSubscriptionForSidebar(utils, queryClient, event.subscriptionId, tagIds);
       }
-      updateSubscriptionInCache(utils, queryClient, event.subscriptionId, subUpdates);
+      // Tag feed counts changed, and the collection picker searches by title.
       utils.tags.list.invalidate();
-      utils.subscriptions.list.invalidate();
+      void utils.subscriptions.list.invalidate({ type: "collection" });
       break;
     }
 

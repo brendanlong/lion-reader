@@ -17,6 +17,8 @@ export interface SyncedCollection<T extends object> {
   collection: Collection<T, string>;
   /** The last server value written for `key` (never the optimistic view). */
   getSynced: (key: string) => T | undefined;
+  /** Every row's last server value. */
+  allSynced: () => T[];
   /** Inserts or replaces rows in the synced layer, in one transaction. */
   upsert: (rows: T[]) => void;
   remove: (keys: string[]) => void;
@@ -52,6 +54,7 @@ export function createSyncedCollection<T extends object>(options: {
   return {
     collection,
     getSynced: (key) => synced.get(key),
+    allSynced: () => [...synced.values()],
     upsert: (rows) => {
       if (rows.length === 0) return;
       const { begin, write, commit } = getParams();

@@ -21,8 +21,8 @@
  * href.
  *
  * Note: logout is deliberately NOT a PageLink — it uses a full `window.location`
- * navigation so the reload wipes the module-level per-user caches (QueryClient,
- * subscription lookup map). See `AppLayoutContent`.
+ * navigation so the reload wipes the module-level per-user caches (the
+ * QueryClient and its local store). See `AppLayoutContent`.
  *
  * Not a client component itself (no `"use client"`, no handlers), so it can
  * render inside server components like the legal pages; `<Link>` is a client

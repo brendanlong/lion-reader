@@ -182,6 +182,18 @@ describe("Entry counts service", () => {
   });
 
   describe("getBulkEntryRelatedCounts", () => {
+    it("takes more entries than a statement takes parameters (a big mark-all-read)", async () => {
+      const userId = await createTestUser();
+      const many = Array.from({ length: 70_000 }, () => ({
+        id: generateUuidv7(),
+        subscriptionId: null,
+      }));
+
+      const counts = await getBulkEntryRelatedCounts(db, userId, many);
+
+      expect(counts.subscriptions).toEqual([]);
+    });
+
     it("deduplicates tag counts for entries reachable through multiple subscriptions", async () => {
       const userId = await createTestUser();
       const { subId1, subId2 } = await createOverlappingSubscriptions(userId);
@@ -221,7 +233,7 @@ describe("Entry counts service", () => {
       const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId }]);
 
       expect(counts.all).toEqual({ unread: 0 });
-      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
+      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0, tagIds: [tagId] }]);
       expect(counts.tags).toEqual([{ id: tagId, unread: 0 }]);
     });
 
@@ -244,7 +256,7 @@ describe("Entry counts service", () => {
       const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subIdA }]);
 
       expect(counts.all).toEqual({ unread: 1 });
-      expect(counts.subscriptions).toEqual([{ id: subIdA, unread: 0 }]);
+      expect(counts.subscriptions).toEqual([{ id: subIdA, unread: 0, tagIds: [tagId] }]);
       expect(counts.tags).toEqual([{ id: tagId, unread: 1 }]);
     });
 
@@ -257,7 +269,7 @@ describe("Entry counts service", () => {
 
       const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId }]);
 
-      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0 }]);
+      expect(counts.subscriptions).toEqual([{ id: subId, unread: 0, tagIds: [] }]);
       expect(counts.tags).toEqual([]);
       expect(counts.uncategorized).toEqual({ unread: 0 });
     });

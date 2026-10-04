@@ -12,12 +12,11 @@
 import { useSyncExternalStore } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { extractParamsFromPathname } from "@/lib/navigation";
-import type { CachedSubscription } from "@/lib/cache/count-cache";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
+import { isInSidebarSection } from "@/lib/sidebar-sections";
 import { useAppPathname } from "./useAppLocation";
 import { useExpandedTags } from "./useExpandedTags";
-
-/** Section key for subscriptions without tags. */
-export const UNCATEGORIZED_SECTION = "uncategorized";
+import { useLocalSubscription } from "./useLocalSubscriptions";
 
 interface ChosenSection {
   href: string;
@@ -48,7 +47,7 @@ export interface SidebarSelection {
    */
   section: string | null;
   /** The open subscription, so the sidebar keeps listing it once it's read */
-  subscription: CachedSubscription | undefined;
+  subscription: SubscriptionRow | undefined;
 }
 
 export function useSidebarSelection(): SidebarSelection {
@@ -60,13 +59,10 @@ export function useSidebarSelection(): SidebarSelection {
   );
   const { isExpanded } = useExpandedTags();
   const { subscriptionId } = extractParamsFromPathname(pathname);
-  // The subscription page fetches this too, so it's normally a cache hit.
-  const { data: subscription } = trpc.subscriptions.get.useQuery(
-    { id: subscriptionId ?? "" },
-    { enabled: !!subscriptionId }
-  );
-
-  const current = subscriptionId ? subscription : undefined;
+  // Loads it into the store (the subscription page fetches it too, so it's
+  // normally a cache hit).
+  trpc.subscriptions.get.useQuery({ id: subscriptionId ?? "" }, { enabled: !!subscriptionId });
+  const current = useLocalSubscription(subscriptionId);
   const chosenCopyShown =
     chosenSection?.href === pathname &&
     isExpanded(chosenSection.section) &&
@@ -90,11 +86,4 @@ export function isSidebarLinkCurrent(
     selection.pathname === href &&
     (section === undefined || selection.section === null || selection.section === section)
   );
-}
-
-/** Whether `subscription` is listed in `section` of the sidebar. */
-export function isInSidebarSection(subscription: CachedSubscription, section: string): boolean {
-  return section === UNCATEGORIZED_SECTION
-    ? subscription.tags.length === 0
-    : subscription.tags.some((tag) => tag.id === section);
 }
