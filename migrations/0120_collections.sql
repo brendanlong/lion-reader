@@ -22,11 +22,16 @@
 --     unsubscribing) recompute the user's counters (recompute_list_counters)
 --     from the subscription counters plus their collection members, never
 --     scanning a feed's history.
--- Lock order is subscriptions, then users, then tags, in every path, so the
--- recompute (which locks the users row first) serializes with concurrent
--- deltas for the same user instead of losing one.
+-- Lock order, in every path: user_entries rows, then subscriptions, then
+-- users (sorted by id), then tags. Every delta and every recompute locks the
+-- user's row before touching tags, so a recompute serializes with concurrent
+-- deltas for the same user instead of losing one, and nothing deadlocks.
 
 SET LOCAL lock_timeout = '10s';
+--> statement-breakpoint
+-- Writers wait for the migration, so no write runs the old trigger bodies
+-- against the new counters and the backfill below starts exact.
+LOCK TABLE user_entries IN SHARE MODE;
 --> statement-breakpoint
 ALTER TABLE feeds DROP CONSTRAINT feed_type_user_id;
 --> statement-breakpoint
@@ -66,7 +71,9 @@ ALTER TABLE users
 -- flag as of that contribution, to the tag, Uncategorized and All counters.
 -- An article counts once per target however many routes reach it: its active
 -- source subscription and every collection holding it.
-CREATE FUNCTION apply_unread_rows(p_sign integer[], p_user uuid[], p_entry uuid[], p_sub uuid[], p_starred boolean[])
+CREATE FUNCTION apply_unread_rows(
+    p_sign integer[], p_user uuid[], p_entry uuid[], p_sub uuid[], p_starred boolean[],
+    p_no_members boolean DEFAULT false)
     RETURNS void
     LANGUAGE plpgsql
     AS $$
@@ -78,8 +85,12 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Lock every affected user, sorted, before any counter write, even when
+  -- only tag counters move (see the lock order in the header).
+  PERFORM 1 FROM users WHERE id IN (SELECT unnest(p_user)) ORDER BY id FOR UPDATE;
+
   WITH c AS (
-    SELECT x.*, EXISTS (
+    SELECT x.*, NOT p_no_members AND EXISTS (
       SELECT 1 FROM collection_entries ce WHERE ce.user_id = x.user_id AND ce.entry_id = x.entry_id
     ) AS member
     FROM unnest(p_sign, p_user, p_entry, p_sub, p_starred) AS x(sign, user_id, entry_id, subscription_id, starred)
@@ -354,17 +365,21 @@ CREATE TRIGGER subscriptions_recompute_lists_update_trigger
   FOR EACH ROW WHEN (OLD.unsubscribed_at IS DISTINCT FROM NEW.unsubscribed_at)
   EXECUTE FUNCTION subscriptions_recompute_lists();
 --> statement-breakpoint
+-- Deferred to commit: deleting a subscription sets user_entries.subscription_id
+-- to NULL through its foreign key, and those updates' triggers fire after this
+-- statement's, so an immediate recompute would see the rows half-moved.
 CREATE FUNCTION subscriptions_deleted_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  PERFORM recompute_list_counters(u.user_id) FROM (SELECT DISTINCT user_id FROM old_rows) u;
+  PERFORM recompute_list_counters(OLD.user_id);
   RETURN NULL;
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON subscriptions
-  REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION subscriptions_deleted_recompute_lists();
+CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON subscriptions
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION subscriptions_deleted_recompute_lists();
 --> statement-breakpoint
 -- Unsubscribing a collection, by any path, empties it, so its members stop
 -- being visible through it and its counters drop to zero. Each removed
@@ -422,6 +437,12 @@ BEGIN
   ) d
   WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
 
+  -- Runs while the memberships still exist, so it sees every route.
+  PERFORM apply_unread_rows(array_agg(-1), array_agg(user_id), array_agg(entry_id),
+                            array_agg(subscription_id), array_agg(starred))
+  FROM old_rows
+  WHERE NOT read AND NOT is_spam;
+
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count - d.sv,
       starred_unread_count = usr.starred_unread_count - d.st
@@ -433,12 +454,6 @@ BEGIN
     GROUP BY user_id
   ) d
   WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
-
-  -- Runs while the memberships still exist, so it sees every route.
-  PERFORM apply_unread_rows(array_agg(-1), array_agg(user_id), array_agg(entry_id),
-                            array_agg(subscription_id), array_agg(starred))
-  FROM old_rows
-  WHERE NOT read AND NOT is_spam;
 
   -- Already taken off above, so the membership triggers find no user_entries
   -- row left to count.
@@ -466,6 +481,13 @@ BEGIN
   ) d
   WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
 
+  -- A new user_entries row can't be in a collection yet (membership needs it),
+  -- so collection counters don't move here.
+  PERFORM apply_unread_rows(array_agg(1), array_agg(user_id), array_agg(entry_id),
+                            array_agg(subscription_id), array_agg(starred), true)
+  FROM new_rows
+  WHERE NOT read AND NOT is_spam;
+
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count + d.sv,
       starred_unread_count = usr.starred_unread_count + d.st
@@ -477,13 +499,6 @@ BEGIN
     GROUP BY user_id
   ) d
   WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
-
-  -- A new user_entries row can't be in a collection yet (membership needs it),
-  -- so collection counters don't move here.
-  PERFORM apply_unread_rows(array_agg(1), array_agg(user_id), array_agg(entry_id),
-                            array_agg(subscription_id), array_agg(starred))
-  FROM new_rows
-  WHERE NOT read AND NOT is_spam;
   RETURN NULL;
 END;
 $$;
@@ -545,6 +560,23 @@ BEGIN
   ) d
   WHERE s.id = d.subscription_id;
 
+  -- Old contribution out, new one in; rows whose counted state and source
+  -- didn't change net to zero and drop out.
+  PERFORM apply_unread_rows(array_agg(x.n), array_agg(x.user_id), array_agg(x.entry_id),
+                            array_agg(x.subscription_id), array_agg(x.starred))
+  FROM (
+    SELECT user_id, entry_id, subscription_id, starred, sum(sign)::int AS n
+    FROM (
+      SELECT 1 AS sign, user_id, entry_id, subscription_id, starred
+      FROM new_rows WHERE NOT read AND NOT is_spam
+      UNION ALL
+      SELECT -1, user_id, entry_id, subscription_id, starred
+      FROM old_rows WHERE NOT read AND NOT is_spam
+    ) y
+    GROUP BY user_id, entry_id, subscription_id, starred
+    HAVING sum(sign) <> 0
+  ) x;
+
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count + d.sv,
       starred_unread_count = usr.starred_unread_count + d.st
@@ -565,30 +597,11 @@ BEGIN
     HAVING sum(sv) <> 0 OR sum(st) <> 0
   ) d
   WHERE usr.id = d.user_id;
-
-  -- Old contribution out, new one in; rows whose counted state and source
-  -- didn't change net to zero and drop out.
-  PERFORM apply_unread_rows(array_agg(x.n), array_agg(x.user_id), array_agg(x.entry_id),
-                            array_agg(x.subscription_id), array_agg(x.starred))
-  FROM (
-    SELECT user_id, entry_id, subscription_id, starred, sum(sign)::int AS n
-    FROM (
-      SELECT 1 AS sign, user_id, entry_id, subscription_id, starred
-      FROM new_rows WHERE NOT read AND NOT is_spam
-      UNION ALL
-      SELECT -1, user_id, entry_id, subscription_id, starred
-      FROM old_rows WHERE NOT read AND NOT is_spam
-    ) y
-    GROUP BY user_id, entry_id, subscription_id, starred
-    HAVING sum(sign) <> 0
-  ) x;
   RETURN NULL;
 END;
 $$;
 --> statement-breakpoint
--- Backfill. CREATE TRIGGER above holds SHARE ROW EXCLUSIVE on user_entries,
--- subscriptions and subscription_tags until commit, so writers wait and the
--- counters start exact.
+-- Backfill (writers are locked out; see the top).
 SELECT recompute_list_counters(id) FROM users;
 --> statement-breakpoint
 -- Articles in one of the user's collections stay visible after the user

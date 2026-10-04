@@ -4,7 +4,7 @@
  * Business logic for tag operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, sql, isNull } from "drizzle-orm";
+import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
@@ -299,6 +299,23 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
   // (which would silently drop subscriptions from "Uncategorized" while the tag
   // is invisible in listTags).
   const updatedAt = await db.transaction(async (tx) => {
+    // Associations first (scoped to the user's live tag): removing them
+    // recomputes the user's counters, which locks the users row before the
+    // tags rows, and tombstoning the tag first would invert that order.
+    // They aren't synced, so a hard delete is fine.
+    await tx.delete(subscriptionTags).where(
+      and(
+        eq(subscriptionTags.tagId, tagId),
+        inArray(
+          subscriptionTags.tagId,
+          tx
+            .select({ id: tags.id })
+            .from(tags)
+            .where(and(eq(tags.id, tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
+        )
+      )
+    );
+
     const deleted = await tx
       .update(tags)
       .set({ deletedAt: now, updatedAt: now })
@@ -308,9 +325,6 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
     if (deleted.length === 0) {
       throw errors.tagNotFound();
     }
-
-    // Remove subscription_tags associations (these aren't synced, so hard delete is fine)
-    await tx.delete(subscriptionTags).where(eq(subscriptionTags.tagId, tagId));
 
     return deleted[0].updatedAt;
   });

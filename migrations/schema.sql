@@ -22,7 +22,7 @@ CREATE TYPE public.websub_state AS ENUM (
     'unsubscribed'
 );
 
-CREATE FUNCTION public.apply_unread_rows(p_sign integer[], p_user uuid[], p_entry uuid[], p_sub uuid[], p_starred boolean[]) RETURNS void
+CREATE FUNCTION public.apply_unread_rows(p_sign integer[], p_user uuid[], p_entry uuid[], p_sub uuid[], p_starred boolean[], p_no_members boolean DEFAULT false) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -33,8 +33,10 @@ BEGIN
     RETURN;
   END IF;
 
+  PERFORM 1 FROM users WHERE id IN (SELECT unnest(p_user)) ORDER BY id FOR UPDATE;
+
   WITH c AS (
-    SELECT x.*, EXISTS (
+    SELECT x.*, NOT p_no_members AND EXISTS (
       SELECT 1 FROM collection_entries ce WHERE ce.user_id = x.user_id AND ce.entry_id = x.entry_id
     ) AS member
     FROM unnest(p_sign, p_user, p_entry, p_sub, p_starred) AS x(sign, user_id, entry_id, subscription_id, starred)
@@ -265,7 +267,7 @@ CREATE FUNCTION public.subscriptions_deleted_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  PERFORM recompute_list_counters(u.user_id) FROM (SELECT DISTINCT user_id FROM old_rows) u;
+  PERFORM recompute_list_counters(OLD.user_id);
   RETURN NULL;
 END;
 $$;
@@ -326,6 +328,11 @@ BEGIN
   ) d
   WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
 
+  PERFORM apply_unread_rows(array_agg(-1), array_agg(user_id), array_agg(entry_id),
+                            array_agg(subscription_id), array_agg(starred))
+  FROM old_rows
+  WHERE NOT read AND NOT is_spam;
+
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count - d.sv,
       starred_unread_count = usr.starred_unread_count - d.st
@@ -337,11 +344,6 @@ BEGIN
     GROUP BY user_id
   ) d
   WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
-
-  PERFORM apply_unread_rows(array_agg(-1), array_agg(user_id), array_agg(entry_id),
-                            array_agg(subscription_id), array_agg(starred))
-  FROM old_rows
-  WHERE NOT read AND NOT is_spam;
 
   DELETE FROM collection_entries ce
   USING old_rows o
@@ -367,6 +369,11 @@ BEGIN
   ) d
   WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
 
+  PERFORM apply_unread_rows(array_agg(1), array_agg(user_id), array_agg(entry_id),
+                            array_agg(subscription_id), array_agg(starred), true)
+  FROM new_rows
+  WHERE NOT read AND NOT is_spam;
+
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count + d.sv,
       starred_unread_count = usr.starred_unread_count + d.st
@@ -378,11 +385,6 @@ BEGIN
     GROUP BY user_id
   ) d
   WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
-
-  PERFORM apply_unread_rows(array_agg(1), array_agg(user_id), array_agg(entry_id),
-                            array_agg(subscription_id), array_agg(starred))
-  FROM new_rows
-  WHERE NOT read AND NOT is_spam;
   RETURN NULL;
 END;
 $$;
@@ -441,6 +443,21 @@ BEGIN
   ) d
   WHERE s.id = d.subscription_id;
 
+  PERFORM apply_unread_rows(array_agg(x.n), array_agg(x.user_id), array_agg(x.entry_id),
+                            array_agg(x.subscription_id), array_agg(x.starred))
+  FROM (
+    SELECT user_id, entry_id, subscription_id, starred, sum(sign)::int AS n
+    FROM (
+      SELECT 1 AS sign, user_id, entry_id, subscription_id, starred
+      FROM new_rows WHERE NOT read AND NOT is_spam
+      UNION ALL
+      SELECT -1, user_id, entry_id, subscription_id, starred
+      FROM old_rows WHERE NOT read AND NOT is_spam
+    ) y
+    GROUP BY user_id, entry_id, subscription_id, starred
+    HAVING sum(sign) <> 0
+  ) x;
+
   UPDATE users usr
   SET saved_unread_count = usr.saved_unread_count + d.sv,
       starred_unread_count = usr.starred_unread_count + d.st
@@ -461,21 +478,6 @@ BEGIN
     HAVING sum(sv) <> 0 OR sum(st) <> 0
   ) d
   WHERE usr.id = d.user_id;
-
-  PERFORM apply_unread_rows(array_agg(x.n), array_agg(x.user_id), array_agg(x.entry_id),
-                            array_agg(x.subscription_id), array_agg(x.starred))
-  FROM (
-    SELECT user_id, entry_id, subscription_id, starred, sum(sign)::int AS n
-    FROM (
-      SELECT 1 AS sign, user_id, entry_id, subscription_id, starred
-      FROM new_rows WHERE NOT read AND NOT is_spam
-      UNION ALL
-      SELECT -1, user_id, entry_id, subscription_id, starred
-      FROM old_rows WHERE NOT read AND NOT is_spam
-    ) y
-    GROUP BY user_id, entry_id, subscription_id, starred
-    HAVING sum(sign) <> 0
-  ) x;
   RETURN NULL;
 END;
 $$;
@@ -1265,7 +1267,7 @@ CREATE TRIGGER subscription_tags_recompute_lists_insert_trigger AFTER INSERT ON 
 
 CREATE TRIGGER subscriptions_empty_unsubscribed_collection_trigger AFTER UPDATE OF unsubscribed_at ON public.subscriptions FOR EACH ROW WHEN (((old.unsubscribed_at IS NULL) AND (new.unsubscribed_at IS NOT NULL))) EXECUTE FUNCTION public.subscriptions_empty_unsubscribed_collection();
 
-CREATE TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
+CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 
 CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE OF unsubscribed_at ON public.subscriptions FOR EACH ROW WHEN ((old.unsubscribed_at IS DISTINCT FROM new.unsubscribed_at)) EXECUTE FUNCTION public.subscriptions_recompute_lists();
 

@@ -80,11 +80,13 @@ export async function verifySubscriptionOwnership(
 }
 
 /**
- * Builds a subquery for subscription IDs associated with a tag.
+ * Builds a subquery for the active subscription IDs associated with a tag.
  * The join with tags table ensures the tag belongs to the user (and is not
  * soft-deleted), eliminating the need for a separate tag ownership validation
  * query. Excluding tombstoned tags means a client can't filter/mark-read
- * entries through a tag that no longer appears in listTags.
+ * entries through a tag that no longer appears in listTags. Active only, like
+ * the tag's badge: an unsubscribed feed can keep its tags (the feed-merge job
+ * leaves them), and its starred leftovers belong to Starred, not the tag.
  */
 export function buildTaggedSubscriptionIdsSubquery(
   db: typeof dbType,
@@ -97,6 +99,13 @@ export function buildTaggedSubscriptionIdsSubquery(
     .innerJoin(
       tags,
       and(eq(subscriptionTags.tagId, tags.id), eq(tags.userId, userId), isNull(tags.deletedAt))
+    )
+    .innerJoin(
+      subscriptions,
+      and(
+        eq(subscriptions.id, subscriptionTags.subscriptionId),
+        isNull(subscriptions.unsubscribedAt)
+      )
     )
     .where(eq(subscriptionTags.tagId, tagId));
 }

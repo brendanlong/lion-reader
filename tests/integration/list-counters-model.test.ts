@@ -2,9 +2,10 @@
  * Randomized model test for the unread counters (#1806).
  *
  * Runs seeded random sequences of the operations that move counters — read,
- * star, collection membership, tagging, unsubscribing, new and deleted
- * articles, mark-all-read, deleting tags and collections — through the
- * services the app calls. After every step it checks that:
+ * star, collection membership, tagging, unsubscribing (with and without
+ * dropping tags) and resubscribing, feed merges, spam, new and deleted
+ * articles, mark-all-read, statements moving rows both ways, deleting tags,
+ * collections and users — through the code the app runs. After every step it checks that:
  *   1. the reconcile job, which recomputes every counter from its definition,
  *      finds nothing to fix, and
  *   2. every badge equals the number of unread articles its list shows (tag,
@@ -15,7 +16,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
@@ -38,7 +39,8 @@ import {
   markEntriesRead,
   updateEntryStarred,
 } from "../../src/server/services/entries";
-import { setSubscriptionTags } from "../../src/server/services/subscriptions";
+import { createSubscription, setSubscriptionTags } from "../../src/server/services/subscriptions";
+import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { deleteTag } from "../../src/server/services/tags";
 import { deleteSavedArticle, uploadArticle } from "../../src/server/services/saved";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
@@ -87,13 +89,12 @@ interface World {
   userId: string;
   feeds: Array<{ feedId: string; subscriptionId: string }>;
   collections: string[];
-  tagIds: string[];
   savedIds: string[];
 }
 
 async function createWorld(): Promise<World> {
   const userId = await createTestUser();
-  const world: World = { userId, feeds: [], collections: [], tagIds: [], savedIds: [] };
+  const world: World = { userId, feeds: [], collections: [], savedIds: [] };
   for (let i = 0; i < 3; i++) {
     const feedId = await createTestFeed();
     const subscriptionId = await createTestSubscription(userId, feedId);
@@ -103,7 +104,18 @@ async function createWorld(): Promise<World> {
   for (let i = 0; i < 2; i++) {
     world.collections.push((await createCollection(db, userId, `C${i}`)).subscription.id);
   }
-  for (let i = 0; i < 2; i++) world.tagIds.push(await createTestTag(userId));
+  for (let i = 0; i < 2; i++) await createTestTag(userId);
+  // Newsletters, the only source of spam (set once, at insert).
+  const emailFeedId = await createTestFeed({
+    type: "email",
+    url: null,
+    userId,
+    emailSenderPattern: `news-${userId}@example.com`,
+  });
+  await createTestSubscription(userId, emailFeedId);
+  for (const isSpam of [true, false, true]) {
+    await createTestEntry(emailFeedId, { type: "email", isSpam, userIds: [userId] });
+  }
   for (let i = 0; i < 2; i++) {
     world.savedIds.push((await uploadArticle(db, userId, { content: "x", title: `S${i}` })).id);
   }
@@ -112,7 +124,7 @@ async function createWorld(): Promise<World> {
 
 async function visibleEntryIds(userId: string): Promise<string[]> {
   const rows = await db.execute<{ id: string }>(
-    sql`SELECT id FROM visible_entries WHERE user_id = ${userId}`
+    sql`SELECT id FROM visible_entries WHERE user_id = ${userId} ORDER BY id`
   );
   return rows.rows.map((r) => r.id);
 }
@@ -193,10 +205,11 @@ const OPS: Array<[number, Op]> = [
         });
         return `unsubscribe ${feed.subscriptionId}`;
       }
-      await db
-        .update(subscriptions)
-        .set({ unsubscribedAt: null })
-        .where(eq(subscriptions.id, feed.subscriptionId));
+      const [{ url }] = await db
+        .select({ url: feeds.url })
+        .from(feeds)
+        .where(eq(feeds.id, feed.feedId));
+      await createSubscription(db, w.userId, { url: url! });
       return `resubscribe ${feed.subscriptionId}`;
     },
   ],
@@ -246,7 +259,7 @@ const OPS: Array<[number, Op]> = [
         await deleteTag(db, w.userId, tagId);
         return `delete tag ${tagId}`;
       }
-      w.tagIds.push(await createTestTag(w.userId));
+      await createTestTag(w.userId);
       return "create tag";
     },
   ],
@@ -265,6 +278,60 @@ const OPS: Array<[number, Op]> = [
     },
   ],
 ];
+
+OPS.push(
+  [
+    1,
+    async (w, rng) => {
+      // Unsubscribing without dropping tags, as the feed-merge job leaves the
+      // old subscription.
+      const feed = rng.pick(w.feeds);
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(
+          and(eq(subscriptions.id, feed.subscriptionId), isNull(subscriptions.unsubscribedAt))
+        );
+      return `unsubscribe keeping tags ${feed.subscriptionId}`;
+    },
+  ],
+  [
+    1,
+    async (w, rng) => {
+      // A redirect merge onto a new feed: re-stamps the entries, unsubscribes
+      // the old subscription (keeping its tags) and subscribes to the new one.
+      const index = w.feeds.indexOf(rng.pick(w.feeds));
+      const old = w.feeds[index];
+      const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, old.feedId));
+      const [newFeed] = await db
+        .select()
+        .from(feeds)
+        .where(eq(feeds.id, await createTestFeed()));
+      await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
+      const [survivor] = await db
+        .select({ id: subscriptions.id })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, w.userId), eq(subscriptions.feedId, newFeed.id)));
+      if (survivor) w.feeds[index] = { feedId: newFeed.id, subscriptionId: survivor.id };
+      return `merge ${old.feedId} into ${newFeed.id}`;
+    },
+  ],
+  [
+    1,
+    async (w, rng) => {
+      // One statement flipping some rows read and others unread.
+      const ids = [
+        rng.pick(await visibleEntryIds(w.userId)),
+        rng.pick(await visibleEntryIds(w.userId)),
+      ];
+      await db
+        .update(userEntries)
+        .set({ read: sql`NOT ${userEntries.read}` })
+        .where(and(eq(userEntries.userId, w.userId), inArray(userEntries.entryId, ids)));
+      return `flip ${ids.join(",")}`;
+    },
+  ]
+);
 
 function pickOp(rng: ReturnType<typeof prng>): Op {
   const weighted = OPS.flatMap(([weight, op]) => Array.from({ length: weight }, () => op));
@@ -318,7 +385,15 @@ describe("unread counters under random operations", () => {
 
       const history: string[] = [];
       for (let step = 0; step < STEPS; step++) {
-        const world = rng.pick(worlds);
+        const index = rng.chance(0.5) ? 0 : 1;
+        if (rng.chance(0.01)) {
+          // Deleting a user (with whatever collections and members it has)
+          // must leave everyone else's counters exact.
+          await db.delete(users).where(eq(users.id, worlds[index].userId));
+          worlds[index] = await createWorld();
+          history.push(`delete user, new world ${worlds[index].userId}`);
+        }
+        const world = worlds[index];
         history.push(await pickOp(rng)(world, rng));
         const context = `seed ${seed}, step ${step}:\n${history.slice(-5).join("\n")}`;
         expect(await reconcileCounters(db), context).toEqual({

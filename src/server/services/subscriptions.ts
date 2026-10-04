@@ -8,10 +8,12 @@ import { z } from "zod";
 import { eq, and, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
+  collectionEntries,
   feeds,
   subscriptions,
   tags,
   subscriptionTags,
+  userEntries,
   userFeeds,
   type FeedType,
 } from "@/server/db/schema";
@@ -152,12 +154,27 @@ export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string
 }
 
 /**
- * Locks a subscription row for the rest of the transaction. Call it before
- * changing the subscription's tags or state, so this transaction takes locks
- * in the same order as the unread-counter triggers (subscriptions, users,
- * tags) and can't deadlock against a concurrent read of one of its entries.
+ * Locks a subscription row (and, for a collection, its members' user_entries
+ * rows, which deleting it touches) for the rest of the transaction. Call it
+ * before changing the subscription's tags or state, so the transaction takes
+ * locks in the unread-counter triggers' order (user_entries rows,
+ * subscriptions, users, tags) and can't deadlock against a concurrent read of
+ * one of its entries.
  */
 export async function lockSubscriptionRow(tx: DbOrTx, subscriptionId: string): Promise<void> {
+  await tx
+    .select({ entryId: userEntries.entryId })
+    .from(userEntries)
+    .innerJoin(
+      collectionEntries,
+      and(
+        eq(collectionEntries.userId, userEntries.userId),
+        eq(collectionEntries.entryId, userEntries.entryId)
+      )
+    )
+    .where(eq(collectionEntries.subscriptionId, subscriptionId))
+    .orderBy(userEntries.entryId)
+    .for("no key update", { of: userEntries });
   await tx
     .select({ id: subscriptions.id })
     .from(subscriptions)

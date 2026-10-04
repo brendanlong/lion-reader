@@ -132,7 +132,7 @@ export async function createCollection(
 
 /**
  * Throws unless every id is one of the user's active collections, the only
- * kind of subscription articles can be added to. With `lock`, holds a share
+ * kind of subscription articles can be added to. With `lock`, holds a row
  * lock on them until the transaction ends, so a concurrent delete (which
  * empties the collection) can't run before an add commits and strand a
  * member in a deleted collection.
@@ -157,7 +157,9 @@ export async function assertOwnedCollections(
         eq(feeds.type, "collection")
       )
     );
-  const rows = lock ? await query.for("share", { of: subscriptions }) : await query;
+  // Not FOR SHARE: the membership triggers update this row's counters, and two
+  // adds upgrading their share locks would deadlock.
+  const rows = lock ? await query.for("no key update", { of: subscriptions }) : await query;
   if (rows.length !== unique.length) {
     throw errors.subscriptionNotFound();
   }
@@ -182,6 +184,7 @@ export async function addEntriesToCollection(
   entryIds: string[]
 ): Promise<CollectionEntriesChangeResult> {
   const added = await db.transaction(async (tx) => {
+    await lockUserEntryRows(tx, userId, entryIds);
     await assertOwnedCollections(tx, userId, [subscriptionId], { lock: true });
     if (entryIds.length === 0) return [];
     const inserted = await tx
@@ -213,12 +216,10 @@ export async function removeEntriesFromCollection(
   subscriptionId: string,
   entryIds: string[]
 ): Promise<CollectionEntriesChangeResult> {
-  await assertOwnedCollections(db, userId, [subscriptionId]);
-  if (entryIds.length === 0) {
-    return { entryIds: [] };
-  }
-
   const removed = await db.transaction(async (tx) => {
+    await lockUserEntryRows(tx, userId, entryIds);
+    await assertOwnedCollections(tx, userId, [subscriptionId], { lock: true });
+    if (entryIds.length === 0) return [];
     const deleted = await tx
       .delete(collectionEntries)
       .where(
@@ -247,6 +248,22 @@ export async function addEntryToCollections(
   for (const subscriptionId of new Set(subscriptionIds)) {
     await addEntriesToCollection(db, userId, subscriptionId, [entryId]);
   }
+}
+
+/**
+ * Locks the user's rows for these entries before anything else, matching the
+ * unread-counter triggers' lock order (user_entries rows, subscriptions,
+ * users, tags); marking one of them read concurrently would otherwise
+ * deadlock against this transaction.
+ */
+async function lockUserEntryRows(tx: Transaction, userId: string, entryIds: string[]) {
+  if (entryIds.length === 0) return;
+  await tx
+    .select({ entryId: userEntries.entryId })
+    .from(userEntries)
+    .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)))
+    .orderBy(userEntries.entryId)
+    .for("no key update");
 }
 
 /**
