@@ -641,7 +641,7 @@ export const subscriptionsRouter = createTRPCRouter({
    * @param tagIds - Array of tag IDs to set
    * @returns Empty object on success
    */
-  setTags: protectedProcedure
+  setTags: readerProcedure
     .meta({
       openapi: {
         method: "POST",
