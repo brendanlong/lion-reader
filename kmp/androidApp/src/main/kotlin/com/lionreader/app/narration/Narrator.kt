@@ -403,6 +403,7 @@ class Narrator(
             feed.lastAdded,
             prepared.offsets,
             prepared.engine.lookaheadChars,
+            settings.value.narrationSpeed,
         )
 
     private suspend fun feed(
@@ -425,7 +426,8 @@ class Narrator(
                 inFlight.addLast(index to async { synthesizeOrSkip(feed, prepared, index) })
             }
             if (inFlight.isEmpty()) {
-                playingChunk.first { wanted(next, prepared, feed) }
+                // A faster speed reaches further ahead, so it's asked again on either changing.
+                combine(playingChunk, settings) { _, _ -> }.first { wanted(next, prepared, feed) }
                 continue
             }
             val (index, result) = inFlight.removeFirst()

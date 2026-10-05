@@ -73,9 +73,10 @@ fun derive(
 
 /**
  * Whether [chunk] is close enough to the [playing] one to synthesize now: up to the next one, and
- * on within [lookaheadChars] of it ([offsets]: the characters before each chunk). Always, when
- * nothing is queued past what's playing ([lastAdded]: the last chunk queued): skipped chunks can
- * leave a gap wider than the lookahead, and the player would sit at the end of the queue waiting.
+ * on within [lookaheadChars] of it at 1x, more at a faster [speed] so the lookahead stays as long
+ * in listening time ([offsets]: the characters before each chunk). Always, when nothing is queued
+ * past what's playing ([lastAdded]: the last chunk queued): skipped chunks can leave a gap wider
+ * than the lookahead, and the player would sit at the end of the queue waiting.
  */
 fun shouldSynthesize(
     chunk: Int,
@@ -83,11 +84,12 @@ fun shouldSynthesize(
     lastAdded: Int?,
     offsets: IntArray,
     lookaheadChars: Int,
+    speed: Float,
 ): Boolean {
     val next = playing + 1
     return chunk <= next ||
         (lastAdded ?: -1) <= playing ||
-        offsets[chunk] - offsets[next] <= lookaheadChars
+        offsets[chunk] - offsets[next] <= lookaheadChars * speed
 }
 
 /** Whether the last chunk there'll ever be ([lastAdded], once [fed]) has played. */
