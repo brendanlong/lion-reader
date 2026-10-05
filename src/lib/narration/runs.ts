@@ -38,7 +38,10 @@ import { isBlockTag, isNonProseTag, narrationTargets } from "./block-elements";
 export interface NarrationVoice {
   /** Read `<pre>` contents aloud, rather than skipping code blocks entirely. */
   speakCodeBlocks: boolean;
-  /** Announce structure: quote and table wrappers, list bullets, inline code. */
+  /**
+   * Announce structure: quote and table wrappers, list bullets, inline code,
+   * and superscripts and subscripts (see {@link withoutScriptMarkers}).
+   */
   structuralMarkers: boolean;
   /** Announce an image that has no alt text, which describes nothing. */
   speakUndescribedImages: boolean;
@@ -57,6 +60,18 @@ export const DIRECT_TTS_VOICE: NarrationVoice = {
   structuralMarkers: false,
   speakUndescribedImages: false,
 };
+
+const SCRIPT_MARKER = /<\/?su[bp]>/g;
+
+/**
+ * `text` without the `<sup>`/`<sub>` marks of {@link LLM_INPUT_VOICE}, for
+ * speaking it without the LLM's rewrite. The marks tell the LLM a footnote
+ * ("2019.<sup>1</sup>") from an exponent ("mc<sup>2</sup>"); unmarked, both
+ * read as the digits they hold, as the page's text does.
+ */
+export function withoutScriptMarkers(text: string): string {
+  return text.replace(SCRIPT_MARKER, "");
+}
 
 /** One spoken paragraph and the element it highlights. */
 export interface NarrationRun {
@@ -304,15 +319,21 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       appendWords(flatText(el, voice, consumed));
       return;
     }
-    if (tagName === "code" && voice.structuralMarkers) {
+    if (voice.structuralMarkers && (tagName === "code" || tagName === "sup" || tagName === "sub")) {
       // Wrapped after the fact rather than read from `textContent`, so whatever
       // is inside (an image's alt text) is still spoken.
       const before = text.length;
       const runsBefore = runs.length;
       visitChildren(el, depth);
-      const code = text.slice(before).replaceAll(BREAK, " ");
-      if (code.trim() && !code.includes("`") && runs.length === runsBefore) {
-        text = `${text.slice(0, before)}\`${code.trim()}\``;
+      const inner = text.slice(before).replaceAll(BREAK, " ").trim();
+      if (!inner || runs.length !== runsBefore) return;
+      if (tagName !== "code") {
+        // Nested scripts (`x<sup>2<sup>n</sup></sup>`) keep only the inner marks.
+        if (withoutScriptMarkers(inner) === inner) {
+          text = `${text.slice(0, before)}<${tagName}>${inner}</${tagName}>`;
+        }
+      } else if (!inner.includes("`")) {
+        text = `${text.slice(0, before)}\`${inner}\``;
       }
       return;
     }

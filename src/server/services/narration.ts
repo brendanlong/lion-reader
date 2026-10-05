@@ -31,6 +31,7 @@ import {
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
 import { htmlToNarrationInput } from "@/lib/narration/html-to-narration-input";
+import { withoutScriptMarkers } from "@/lib/narration/runs";
 import { buildAlignedNarration, type ParagraphMapEntry } from "@/lib/narration/paragraph-map";
 import type { NarrationInputParagraph } from "@/lib/narration/html-to-narration-input";
 import { trackNarrationHighlightFallback } from "@/server/metrics/metrics";
@@ -79,7 +80,11 @@ RULES:
   - "6'" → "6 feet", "6\"" → "6 inches" when describing height/length; "$6B" → "6 billion dollars", "6M users" → "6 million users"; "4x faster" → "4 times faster"
   - Leave it literal when the suffix is part of a name or its meaning is unclear: "5900X" (AMD chip) stays as-is (the X is read as a letter), "Model X" stays as-is
   - If you can't tell from context what a suffix means, leave it unchanged so TTS reads it literally rather than inventing a meaning
-- Bracketed footnote/citation markers are spoken in parentheses: "[1]" → "(footnote 1)". Only reference markers: leave other brackets ("[sic]", "arr[0]") as they are
+- Superscripts and subscripts are marked <sup>…</sup> and <sub>…</sub>. Never output these tags: say what each one means
+  - Footnote and citation markers become "(footnote N)": "It shipped in 2019.<sup>1</sup>" → "It shipped in 2019 (footnote 1).", "a claim [3]" → "a claim (footnote 3)"
+  - Exponents and chemical formulas are read out: "10 m<sup>2</sup>" → "10 square meters", "H<sub>2</sub>O" → "H 2 O"
+  - If you can't tell what one means, keep its text as it is, without the tags; leave other square brackets alone ("[sic]", "arr[0]")
+- Write out equations as they are spoken: "E=mc<sup>2</sup>" → "E equals m c squared", "x + y = 2" → "x plus y equals 2"
 - Image alt text is already speakable - clean up if needed, don't rephrase
 - Skip garbage content (ellipsis, ads, junk) using empty string: "text": ""
 - Keep content faithful - do NOT summarize or editorialize
@@ -95,7 +100,7 @@ INPUT:
     { "id": 4, "text": "The rocket is 6' tall and 4x faster." },
     { "id": 5, "text": "The Ryzen 5900X is fast." },
     { "id": 6, "text": "..." },
-    { "id": 7, "text": "It shipped in 2019.[2]" }
+    { "id": 7, "text": "It shipped in 2019.<sup>2</sup> It runs on E=mc<sup>2</sup>." }
   ]
 }
 
@@ -109,7 +114,7 @@ OUTPUT:
     { "id": 4, "text": "The rocket is 6 feet tall and 4 times faster." },
     { "id": 5, "text": "The Ryzen 5900X is fast." },
     { "id": 6, "text": "" },
-    { "id": 7, "text": "It shipped in 2019 (footnote 2)." }
+    { "id": 7, "text": "It shipped in 2019 (footnote 2). It runs on E equals m c squared." }
   ]
 }
 
@@ -157,7 +162,7 @@ export function buildFallbackNarration(
   inputParagraphs: NarrationInputParagraph[]
 ): GenerateNarrationResult {
   const { narrationText, paragraphMap } = buildAlignedNarration(
-    inputParagraphs.map((p) => ({ o: p.o, text: p.text }))
+    inputParagraphs.map((p) => ({ o: p.o, text: withoutScriptMarkers(p.text) }))
   );
   return {
     text: narrationText,
@@ -304,7 +309,8 @@ export function narrationFromLlmOutput(
   const { narrationText, paragraphMap } = buildAlignedNarration(
     inputParagraphs.map((inputPara) => ({
       o: inputPara.o,
-      text: llmTextMap.get(inputPara.id) ?? inputPara.text,
+      // Also the model's own text, should it keep a mark.
+      text: withoutScriptMarkers(llmTextMap.get(inputPara.id) ?? inputPara.text),
     }))
   );
   return { text: narrationText, source: "llm", paragraphMap };

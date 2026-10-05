@@ -314,6 +314,25 @@ describe("htmlToNarrationInput", () => {
     });
   });
 
+  describe("superscripts and subscripts", () => {
+    it("marks them, so the model can tell a footnote from an exponent", () => {
+      const html =
+        '<p>It shipped in 2019.<sup><a href="#fn1">1</a></sup> E=mc<sup>2</sup>, H<sub>2</sub>O.</p>';
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual([
+        "It shipped in 2019.<sup>1</sup> E=mc<sup>2</sup>, H<sub>2</sub>O.",
+      ]);
+    });
+
+    it("keeps only the innermost marks of nested scripts", () => {
+      const html = "<p>x<sup>2<sup>n</sup></sup></p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["x2<sup>n</sup>"]);
+    });
+  });
+
   describe("link handling", () => {
     it("preserves link text", () => {
       const html = '<p>Check out <a href="https://example.com">this link</a>.</p>';

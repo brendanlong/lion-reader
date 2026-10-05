@@ -102,6 +102,10 @@
     structuralMarkers: false,
     speakUndescribedImages: false
   };
+  var SCRIPT_MARKER = /<\/?su[bp]>/g;
+  function withoutScriptMarkers(text) {
+    return text.replace(SCRIPT_MARKER, "");
+  }
   var BREAK = "\0";
   var ELEMENT_NODE = 1;
   var TEXT_NODE = 3;
@@ -236,13 +240,18 @@
         appendWords(flatText(el, voice, consumed));
         return;
       }
-      if (tagName === "code" && voice.structuralMarkers) {
+      if (voice.structuralMarkers && (tagName === "code" || tagName === "sup" || tagName === "sub")) {
         const before = text.length;
         const runsBefore = runs.length;
         visitChildren(el, depth2);
-        const code = text.slice(before).replaceAll(BREAK, " ");
-        if (code.trim() && !code.includes("`") && runs.length === runsBefore) {
-          text = `${text.slice(0, before)}\`${code.trim()}\``;
+        const inner = text.slice(before).replaceAll(BREAK, " ").trim();
+        if (!inner || runs.length !== runsBefore) return;
+        if (tagName !== "code") {
+          if (withoutScriptMarkers(inner) === inner) {
+            text = `${text.slice(0, before)}<${tagName}>${inner}</${tagName}>`;
+          }
+        } else if (!inner.includes("`")) {
+          text = `${text.slice(0, before)}\`${inner}\``;
         }
         return;
       }
