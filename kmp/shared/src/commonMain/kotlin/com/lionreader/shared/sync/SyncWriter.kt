@@ -163,22 +163,25 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     private fun apply(event: SyncEvent) {
         when (event) {
             is SyncEvent.NewEntry -> {
-                event.entry?.let {
+                val entry = event.entry
+                val type = event.entryType
+                // Without its type, SyncEngine fetches the entry whole instead.
+                if (entry != null && type != null) {
                     store.upsertEntry(
                         event.entryId,
                         event.subscriptionId,
-                        event.feedType,
-                        it.url,
-                        it.title,
-                        it.author,
-                        it.summary,
-                        it.siteName,
-                        it.feedTitle,
-                        it.publishedAt,
-                        it.fetchedAt,
-                        it.read ?: false,
-                        it.starred ?: false,
-                        it.readChangedAt,
+                        type,
+                        entry.url,
+                        entry.title,
+                        entry.author,
+                        entry.summary,
+                        entry.siteName,
+                        entry.feedTitle,
+                        entry.publishedAt,
+                        entry.fetchedAt,
+                        entry.read ?: false,
+                        entry.starred ?: false,
+                        entry.readChangedAt,
                     )
                 }
             }
@@ -203,6 +206,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 }
             is SyncEvent.EntryStateChanged -> {
                 val entry = event.entry
+                val type = event.entryType
                 when {
                     store.entryExists(event.entryId) ->
                         db.entryQueries.updateServerState(
@@ -211,11 +215,11 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                             event.readChangedAt?.let(::parseMillis),
                             event.entryId,
                         )
-                    entry != null && event.feedType != null ->
+                    entry != null && type != null ->
                         store.upsertEntry(
                             event.entryId,
                             event.subscriptionId,
-                            event.feedType,
+                            type,
                             entry.url,
                             entry.title,
                             entry.author,

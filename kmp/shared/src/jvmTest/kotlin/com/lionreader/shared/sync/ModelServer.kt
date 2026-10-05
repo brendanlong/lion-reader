@@ -7,7 +7,6 @@ import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.EntryListPage
 import com.lionreader.shared.api.EntryState
 import com.lionreader.shared.api.EventEntry
-import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
@@ -58,7 +57,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     class Entry(
         val id: String,
         val subscriptionId: String?,
-        val type: FeedType,
+        val type: String,
         val published: Long,
         var read: Boolean,
         var starred: Boolean,
@@ -138,7 +137,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         return Entry(
                 id = id,
                 subscriptionId = subscriptionId,
-                type = if (subscriptionId == null) FeedType.SAVED else FeedType.WEB,
+                type = if (subscriptionId == null) "saved" else "web",
                 published = now,
                 read = read,
                 starred = starred,
@@ -193,7 +192,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         Counts(
             all = visible.count { !it.read },
             starred = visible.count { !it.read && it.starred },
-            saved = visible.count { !it.read && it.type == FeedType.SAVED },
+            saved = visible.count { !it.read && it.type == "saved" },
             bySubscription =
                 subscriptions.associateWith { sub ->
                     visible.count { !it.read && it.subscriptionId == sub }
@@ -371,7 +370,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val matching =
             visible
                 .filter { !starredOnly || it.starred }
-                .filter { type != "saved" || it.type == FeedType.SAVED }
+                .filter { type != "saved" || it.type == "saved" }
                 .filter { subscriptionId == null || it.subscriptionId == subscriptionId }
                 .filter { !recentlyRead || it.readChangedAt != null }
                 .sortedWith(

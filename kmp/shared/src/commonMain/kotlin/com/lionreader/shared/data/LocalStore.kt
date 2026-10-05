@@ -2,7 +2,6 @@ package com.lionreader.shared.data
 
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.EntryListItem
-import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.Tag
@@ -14,13 +13,6 @@ private const val BOOTSTRAP_CURSORS_KEY = "bootstrap_cursors"
 private const val CATCH_UP_START_KEY = "catch_up_start"
 private const val RECENTLY_READ_KEY = "recently_read_seen"
 private const val COLLECTIONS_LISTED_KEY = "collections_listed"
-
-internal fun FeedType.wire(): String =
-    when (this) {
-        FeedType.WEB -> "web"
-        FeedType.EMAIL -> "email"
-        FeedType.SAVED -> "saved"
-    }
 
 /** Row-level writes shared by [com.lionreader.shared.sync.SyncWriter]; no transactions here. */
 internal class LocalStore(val db: LionReaderDatabase) {
@@ -77,7 +69,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
     fun upsertEntry(
         id: String,
         subscriptionId: String?,
-        type: FeedType,
+        type: String,
         url: String?,
         title: String?,
         author: String?,
@@ -97,7 +89,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
         val fetched = parseMillis(fetchedAt)
         entries.insertIgnore(
             id,
-            type.wire(),
+            type,
             fetched,
             published ?: fetched,
             read.toLong(),
@@ -105,7 +97,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
         )
         entries.updateAll(
             subscription_id = subscriptionId,
-            type = type.wire(),
+            type = type,
             url = url,
             title = title,
             author = author,
