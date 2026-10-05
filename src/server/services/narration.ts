@@ -79,7 +79,7 @@ RULES:
   - "6'" → "6 feet", "6\"" → "6 inches" when describing height/length; "$6B" → "6 billion dollars", "6M users" → "6 million users"; "4x faster" → "4 times faster"
   - Leave it literal when the suffix is part of a name or its meaning is unclear: "5900X" (AMD chip) stays as-is (the X is read as a letter), "Model X" stays as-is
   - If you can't tell from context what a suffix means, leave it unchanged so TTS reads it literally rather than inventing a meaning
-- Footnote markers are spoken in parentheses: "[1]" or "¹" → "(footnote 1)"; other square brackets become parentheses: "[sic]" → "(sic)"
+- Bracketed footnote/citation markers are spoken in parentheses: "[1]" → "(footnote 1)". Only reference markers: leave other brackets ("[sic]", "arr[0]") as they are
 - Image alt text is already speakable - clean up if needed, don't rephrase
 - Skip garbage content (ellipsis, ads, junk) using empty string: "text": ""
 - Keep content faithful - do NOT summarize or editorialize
