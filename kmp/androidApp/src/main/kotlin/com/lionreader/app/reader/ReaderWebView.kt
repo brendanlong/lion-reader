@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -73,11 +74,13 @@ import org.json.JSONObject
 @Composable
 fun ReaderWebView(
     document: String,
+    position: ReadingPosition,
     modifier: Modifier = Modifier,
     narration: ReaderNarration = ReaderNarration(),
     paging: ReaderPaging = ReaderPaging(),
 ) {
     val current by rememberUpdatedState(narration)
+    val currentPosition by rememberUpdatedState(position)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
     val losses = remember { RendererLosses() }
     val turns = paging.turns
@@ -127,7 +130,9 @@ fun ReaderWebView(
                                     "lionReader",
                                     setOf(ASSET_ORIGIN),
                                 ) { _, message, _, isMainFrame, _ ->
-                                    if (isMainFrame) onPageMessage(message.data ?: "", current)
+                                    if (isMainFrame) {
+                                        onPageMessage(message.data ?: "", current, currentPosition)
+                                    }
                                 }
                             }
                             webViewClient =
@@ -166,6 +171,26 @@ fun ReaderWebView(
             )
         }
         linkPress?.let { LinkMenu(it) { linkPress = null } }
+    }
+}
+
+/**
+ * Where the reader is in an article: the article element at the top of the screen ([element], as
+ * narration numbers them) and how far through it ([offset], a fraction of its height; negative
+ * above it). Kept outside the WebView, which can be replaced (the system reclaims renderers of apps
+ * in the background) or reloaded (an edited article), so the page comes back here, not to the top.
+ */
+data class ReadingAnchor(val element: Int, val offset: Double)
+
+class ReadingPosition(var anchor: ReadingAnchor? = null) {
+    companion object {
+        val Saver: Saver<ReadingPosition, DoubleArray> =
+            Saver(
+                save = { position ->
+                    position.anchor?.let { doubleArrayOf(it.element.toDouble(), it.offset) }
+                },
+                restore = { ReadingPosition(ReadingAnchor(it[0].toInt(), it[1])) },
+            )
     }
 }
 
@@ -356,7 +381,7 @@ private class ReaderView(context: Context) : WebView(context) {
         return handled
     }
 
-    fun onPageMessage(data: String, narration: ReaderNarration) {
+    fun onPageMessage(data: String, narration: ReaderNarration, position: ReadingPosition) {
         if (data.startsWith("[")) {
             sideScrollers = parseRects(data)
             return
@@ -367,10 +392,19 @@ private class ReaderView(context: Context) : WebView(context) {
                 val paragraphs = message.optJSONArray("paragraphs") ?: return
                 narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
                 pageReady = true
+                // Before the highlight, which then scrolls only if its paragraph is off screen.
+                position.anchor?.let {
+                    evaluateJavascript(
+                        "window.lionPosition && lionPosition.restore(${it.element}, ${it.offset})",
+                        null,
+                    )
+                }
                 shown = null
                 highlight(wanted, scroll)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
+            // Not until this load is restored: a report from before it would replace the place.
+            "position" -> if (pageReady) position.anchor = parseAnchor(message.optJSONObject("at"))
         }
     }
 
@@ -553,6 +587,12 @@ private class SideScroller(
 )
 
 private const val LISTEN_FROM_HERE = 0x4c52
+
+private fun parseAnchor(at: JSONObject?): ReadingAnchor? {
+    val element = at?.optInt("element", -1) ?: return null
+    val offset = at.optDouble("offset")
+    return if (element >= 0 && offset.isFinite()) ReadingAnchor(element, offset) else null
+}
 
 private fun parseRects(json: String?): List<SideScroller> = runCatching {
     val rects = JSONArray(json)

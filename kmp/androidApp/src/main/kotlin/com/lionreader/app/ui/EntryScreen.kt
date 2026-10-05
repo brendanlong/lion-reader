@@ -69,6 +69,7 @@ import com.lionreader.app.reader.ASSET_ORIGIN
 import com.lionreader.app.reader.ReaderNarration
 import com.lionreader.app.reader.ReaderPaging
 import com.lionreader.app.reader.ReaderWebView
+import com.lionreader.app.reader.ReadingPosition
 import com.lionreader.app.reader.appearanceTokens
 import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.shareWebPage
@@ -465,7 +466,7 @@ private fun EntryPage(
             )
             .joinToString(" · ")
     val title = current.title ?: "Untitled"
-    val content = current.content
+    val content = rememberShownBody(entryId, current.content)
     if (content != null) {
         val colors = MaterialTheme.colorScheme
         val readerColors =
@@ -494,6 +495,7 @@ private fun EntryPage(
             }
         ReaderWebView(
             document,
+            rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() },
             Modifier.fillMaxSize(),
             narration,
             ReaderPaging(
@@ -561,6 +563,18 @@ private fun SummaryButton(
             )
         }
     }
+}
+
+/**
+ * The body to show: [content], or while it's missing, the one shown before. An edited article's
+ * body is deleted until it's downloaded again (SyncWriter), and an unchanged one mustn't take the
+ * page down to a spinner and back, reloading it, meanwhile.
+ */
+@Composable
+internal fun rememberShownBody(entryId: String, content: String?): String? {
+    val shown = remember(entryId) { arrayOfNulls<String>(1) }
+    if (content != null) shown[0] = content
+    return shown[0]
 }
 
 /** Whether the page's body download failed, and a way to try it again. */

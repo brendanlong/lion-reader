@@ -98,7 +98,8 @@ class ReaderDocumentTest {
         val csp = html.substringAfter("Content-Security-Policy\" content=\"").substringBefore('"')
         assertTrue(csp.startsWith("default-src 'none'; "))
         assertTrue(
-            "script-src $ORIGIN/assets/reader/scroll-detect.js $ORIGIN/assets/reader/narration.js;" in
+            "script-src $ORIGIN/assets/reader/scroll-detect.js " +
+                "$ORIGIN/assets/reader/reading-position.js $ORIGIN/assets/reader/narration.js;" in
                 csp
         )
     }

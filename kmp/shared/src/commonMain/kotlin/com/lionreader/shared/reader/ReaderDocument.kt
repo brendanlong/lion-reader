@@ -43,6 +43,7 @@ data class ReaderColors(
 private fun contentSecurityPolicy(assetOrigin: String) =
     "default-src 'none'; " +
         "script-src $assetOrigin/assets/reader/scroll-detect.js " +
+        "$assetOrigin/assets/reader/reading-position.js " +
         "$assetOrigin/assets/reader/narration.js; " +
         "base-uri 'none'; form-action 'none'; " +
         "style-src 'unsafe-inline'; font-src $assetOrigin; " +
@@ -99,6 +100,7 @@ fun readerDocument(
         <meta name="referrer" content="no-referrer">
         <meta http-equiv="Content-Security-Policy" content="${contentSecurityPolicy(assetOrigin)}">
         <script defer src="$assetOrigin/assets/reader/scroll-detect.js"></script>
+        <script defer src="$assetOrigin/assets/reader/reading-position.js"></script>
         <script defer src="$assetOrigin/assets/reader/narration.js"></script>
         <style>
         ${fontFaces(assetOrigin)}
