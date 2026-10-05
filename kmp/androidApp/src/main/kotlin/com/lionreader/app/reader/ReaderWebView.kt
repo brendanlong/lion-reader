@@ -66,10 +66,10 @@ import org.json.JSONObject
 
 /**
  * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
- * SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
- * than file:// access. The only WebView in the app (entry HTML can hold MathML, SVG, tables and
- * embeds), with the article's header in it too. It fills the page and scrolls itself: sized to its
- * content inside a scrolling layout, a WebView stays blank until it has measured.
+ * SECURITY.md §1 requires. Bundled fonts and scripts come through [WebViewAssetLoader] rather than
+ * file:// access. The only WebView in the app (entry HTML can hold MathML, SVG, tables and embeds),
+ * with the article's header in it too. It fills the page and scrolls itself: sized to its content
+ * inside a scrolling layout, a WebView stays blank until it has measured.
  */
 @Composable
 fun ReaderWebView(
@@ -175,13 +175,16 @@ fun ReaderWebView(
 }
 
 /**
- * Where the reader is in an article: the article element at the top of the screen ([element], as
- * narration numbers them) and how far through it ([offset], a fraction of its height; negative
- * above it). Kept outside the WebView, which can be replaced (the system reclaims renderers of apps
- * in the background) or reloaded (an edited article), so the page comes back here, not to the top.
+ * The article element at the top of the screen ([element], as narration numbers them) and how far
+ * through it ([offset], a fraction of its height; negative above it).
  */
 data class ReadingAnchor(val element: Int, val offset: Double)
 
+/**
+ * Where the reader is in an article, kept outside the WebView, which can be replaced (the system
+ * reclaims renderers of apps in the background) or reloaded (an edited article), so the page comes
+ * back here, not to the top.
+ */
 class ReadingPosition(var anchor: ReadingAnchor? = null) {
     companion object {
         val Saver: Saver<ReadingPosition, DoubleArray> =
@@ -392,18 +395,21 @@ private class ReaderView(context: Context) : WebView(context) {
                 val paragraphs = message.optJSONArray("paragraphs") ?: return
                 narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
                 pageReady = true
-                // Before the highlight, which then scrolls only if its paragraph is off screen.
-                position.anchor?.let {
+                val restored = position.anchor
+                restored?.let {
                     evaluateJavascript(
                         "window.lionPosition && lionPosition.restore(${it.element}, ${it.offset})",
                         null,
                     )
                 }
                 shown = null
-                highlight(wanted, scroll)
+                // The reader's place wins over paused narration's; playing, the next paragraph
+                // scrolls to it.
+                highlight(wanted, scroll && restored == null)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
-            // Not until this load is restored: a report from before it would replace the place.
+            // Not before this load's narration message, when the place is restored: an earlier
+            // report is the top of a page not yet restored.
             "position" -> if (pageReady) position.anchor = parseAnchor(message.optJSONObject("at"))
         }
     }
@@ -588,7 +594,7 @@ private class SideScroller(
 
 private const val LISTEN_FROM_HERE = 0x4c52
 
-private fun parseAnchor(at: JSONObject?): ReadingAnchor? {
+internal fun parseAnchor(at: JSONObject?): ReadingAnchor? {
     val element = at?.optInt("element", -1) ?: return null
     val offset = at.optDouble("offset")
     return if (element >= 0 && offset.isFinite()) ReadingAnchor(element, offset) else null

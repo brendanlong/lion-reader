@@ -433,6 +433,8 @@ private fun EntryPage(
     val article by
         remember(entryId) { account.reader.article(entryId) }.collectAsStateWithLifecycle(null)
     val entry = (article as? ArticleState.Shown)?.entry
+    // Up here, so it outlasts the page showing no article for a while (e.g. a fresh sync).
+    val position = rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() }
     // Null once it's gone (e.g. deleted) or can't be read, and when the page
     // leaves: the top bar shows only what's on a page now.
     LaunchedEffect(entry) { onEntry(entryId, entry) }
@@ -495,7 +497,7 @@ private fun EntryPage(
             }
         ReaderWebView(
             document,
-            rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() },
+            position,
             Modifier.fillMaxSize(),
             narration,
             ReaderPaging(
@@ -568,7 +570,8 @@ private fun SummaryButton(
 /**
  * The body to show: [content], or while it's missing, the one shown before. An edited article's
  * body is deleted until it's downloaded again (SyncWriter), and an unchanged one mustn't take the
- * page down to a spinner and back, reloading it, meanwhile.
+ * page down to a spinner and back, reloading it, meanwhile. If that download fails, the old body
+ * stays rather than the failure showing: it's still the article.
  */
 @Composable
 internal fun rememberShownBody(entryId: String, content: String?): String? {
