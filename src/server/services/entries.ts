@@ -546,6 +546,47 @@ export interface ExportableEntry {
 }
 
 /**
+ * The fetched full article, for reads that serve the variant the entry view
+ * shows rather than both families. Needs `subscriptions` LEFT JOINed on the
+ * entry's subscription. The body is raw (untrusted) and loaded only for
+ * subscriptions that fetch full content, reduced to the variant served so a
+ * whole-page original is never loaded alongside its cleaned version.
+ */
+const shownFullContentSelectFields = {
+  fullContent: sql<
+    string | null
+  >`CASE WHEN ${subscriptions.fetchFullContent} THEN COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal}) END`,
+  fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+  fullContentError: visibleEntries.fullContentError,
+  fetchFullContent: subscriptions.fetchFullContent,
+};
+
+interface ShownFullContentFields {
+  fullContent: string | null;
+  fullContentFetchedAt: Date | null;
+  fullContentError: string | null;
+  fetchFullContent: boolean | null;
+}
+
+/**
+ * Splits a row selected with `shownFullContentSelectFields` into the raw full
+ * content the entry view shows (null when it shows feed content, per
+ * `showsFullContent`) and the rest of the row.
+ */
+function takeShownFullContent<T extends ShownFullContentFields>(
+  row: T
+): [string | null, Omit<T, keyof ShownFullContentFields>] {
+  const { fullContent, fullContentFetchedAt, fullContentError, fetchFullContent, ...rest } = row;
+  const shown = showsFullContent({
+    fullContentCleaned: fullContent,
+    fullContentFetchedAt,
+    fullContentError,
+    fetchFullContent,
+  });
+  return [shown ? fullContent : null, rest];
+}
+
+/**
  * One page of the entries an account export keeps (`library-export.ts`): saved
  * and uploaded articles, newsletter issues, and starred entries of any type,
  * limited like every read to what `visible_entries` shows. Pages are keyed on
@@ -578,9 +619,8 @@ export async function listExportableEntries(
     .limit(limit);
   if (idRows.length === 0) return { entries: [], nextAfterId: null };
 
-  // Each family is reduced to the variant the view shows by default (cleaned,
-  // falling back to original), so a whole-page original is never loaded
-  // alongside its cleaned version.
+  // Feed content is reduced to the variant the view shows by default (cleaned,
+  // falling back to original), like full content.
   const rows = await db
     .select({
       id: visibleEntries.id,
@@ -600,12 +640,7 @@ export async function listExportableEntries(
       content: sql<
         string | null
       >`COALESCE(${visibleEntries.contentCleaned}, ${visibleEntries.contentOriginal})`,
-      fullContent: sql<
-        string | null
-      >`COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal})`,
-      fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
-      fullContentError: visibleEntries.fullContentError,
-      fetchFullContent: subscriptions.fetchFullContent,
+      ...shownFullContentSelectFields,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
@@ -624,24 +659,9 @@ export async function listExportableEntries(
   const exportable = await mapWithConcurrency(
     rows,
     GET_ENTRIES_SANITIZE_CONCURRENCY,
-    async ({
-      content,
-      fullContent,
-      fullContentFetchedAt,
-      fullContentError,
-      fetchFullContent,
-      ...rest
-    }) => {
-      const showFull = showsFullContent({
-        fullContentCleaned: fullContent,
-        fullContentFetchedAt,
-        fullContentError,
-        fetchFullContent,
-      });
-      return {
-        ...rest,
-        contentHtml: await sanitizeEntryHtmlAsync(showFull ? fullContent : content),
-      };
+    async (row) => {
+      const [fullContent, { content, ...rest }] = takeShownFullContent(row);
+      return { ...rest, contentHtml: await sanitizeEntryHtmlAsync(fullContent ?? content) };
     }
   );
 
@@ -883,28 +903,14 @@ async function searchEntries(
 async function toEntryFull(
   row: Awaited<ReturnType<typeof selectEntryFullRows>>[number]
 ): Promise<EntryFull> {
-  const {
-    contentOriginal,
-    contentCleaned,
-    fullContent,
-    fullContentFetchedAt,
-    fullContentError,
-    fetchFullContent,
-    ...rest
-  } = row;
+  const [fullContent, { contentOriginal, contentCleaned, ...rest }] = takeShownFullContent(row);
 
-  const showFull = showsFullContent({
-    fullContentCleaned: fullContent,
-    fullContentFetchedAt,
-    fullContentError,
-    fetchFullContent,
-  });
   const [content, sanitizedFullContent] = await Promise.all([
     sanitizeEntryContentFamily("content", {
       original: contentOriginal,
       cleaned: contentCleaned,
     }),
-    sanitizeEntryHtmlAsync(showFull ? fullContent : null),
+    sanitizeEntryHtmlAsync(fullContent),
   ]);
 
   return {
@@ -919,15 +925,7 @@ function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
   return db
     .select({
       ...entryFullSelectFields,
-      // Raw (untrusted); loaded only for subscriptions that show it, and reduced
-      // to the variant served so a whole-page original is never loaded
-      // alongside its cleaned version.
-      fullContent: sql<
-        string | null
-      >`CASE WHEN ${subscriptions.fetchFullContent} THEN COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal}) END`,
-      fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
-      fullContentError: visibleEntries.fullContentError,
-      fetchFullContent: subscriptions.fetchFullContent,
+      ...shownFullContentSelectFields,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
