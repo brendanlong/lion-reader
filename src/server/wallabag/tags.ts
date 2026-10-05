@@ -17,7 +17,7 @@ import {
   findOrCreateCollection,
   removeEntriesFromCollection,
 } from "@/server/services/collections";
-import { unsubscribe } from "@/server/services/subscriptions";
+import { isCollectionSubscription, unsubscribe } from "@/server/services/subscriptions";
 import { COLLECTION_NAME_MAX_LENGTH, MAX_SAVE_COLLECTIONS } from "@/lib/collections";
 import { errors } from "@/server/trpc/errors";
 import { formatTag, type WallabagTag } from "./format";
@@ -38,7 +38,7 @@ function activeCollectionsOf(userId: string) {
   return and(
     eq(subscriptions.userId, userId),
     isNull(subscriptions.unsubscribedAt),
-    eq(feeds.type, "collection")
+    isCollectionSubscription()
   );
 }
 

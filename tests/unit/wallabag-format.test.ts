@@ -123,7 +123,7 @@ function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
 describe("formatEntryFull", () => {
   // Issue #1787: clients got the feed teaser when the full article was fetched.
   it("serves the fetched full article over the feed content", () => {
-    expect(formatEntryFull(makeFullEntry({ fullContent: "<p>full</p>" })).content).toBe(
+    expect(formatEntryFull(makeFullEntry({ fullContent: "<p>full</p>" }), []).content).toBe(
       "<p>full</p>"
     );
   });
