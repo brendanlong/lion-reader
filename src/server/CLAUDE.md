@@ -34,7 +34,7 @@ Starring is itself a visibility arm, so **never read a star write back through `
 
 `user_entries.subscription_id` (NULL for saved/uploaded articles) is the **sole** link from an entry to its source subscription; `visible_entries` and every subscription/tag filter resolve through it. Bulk insert paths set it inline, a `BEFORE INSERT` trigger fills it (and `is_spam` and the timeline sort key) for everything else, and a feed-redirect merge (`mergeSubscriptionIntoFeed`) re-stamps it. Don't reintroduce a junction table for sources: the column exists to avoid the `DISTINCT` dedup a junction forces (#1117).
 
-A **collection** (#1806) is a subscription to a per-user feed of type `collection` that has no entries of its own; its members live in `collection_entries`. Filter "entries in these subscriptions" with `buildEntriesInSubscriptionsCondition` (`services/entry-filters.ts`), which adds the membership arm as an `EXISTS` (no row fan-out, so still no `DISTINCT`). Membership changes move `user_entries.updated_at`, so delta sync re-delivers the entry.
+A **collection** (#1806) is a subscription to a per-user feed of type `collection` that has no entries of its own; its members live in `collection_entries`. Test for one with `isCollectionSubscription()` (`services/subscriptions.ts`), never by joining `feeds` and checking its type, so the rule lives in one place. Filter "entries in these subscriptions" with `buildEntriesInSubscriptionsCondition` (`services/entry-filters.ts`), which adds the membership arm as an `EXISTS` (no row fan-out, so still no `DISTINCT`). Membership changes move `user_entries.updated_at`, so delta sync re-delivers the entry.
 
 ## Unread Counts
 

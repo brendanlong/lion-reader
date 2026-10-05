@@ -26,7 +26,8 @@
  */
 
 import { db } from "@/server/db";
-import { feeds, subscriptions } from "@/server/db/schema";
+import { subscriptions } from "@/server/db/schema";
+import { isCollectionSubscription } from "@/server/services/subscriptions";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { getSavedFeedId } from "@/server/feed/saved-feed";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
@@ -42,7 +43,7 @@ import {
   type PubSubSubscription,
   type UserEvent,
 } from "@/server/redis/pubsub";
-import { eq, and, isNull, ne } from "drizzle-orm";
+import { eq, and, isNull, not } from "drizzle-orm";
 import {
   incrementSSEConnections,
   decrementSSEConnections,
@@ -75,12 +76,11 @@ async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, s
       subscriptionId: subscriptions.id,
     })
     .from(subscriptions)
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        ne(feeds.type, "collection")
+        not(isCollectionSubscription())
       )
     );
 

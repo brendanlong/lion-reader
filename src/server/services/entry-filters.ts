@@ -21,12 +21,12 @@ import {
 import type { db as dbType } from "@/server/db";
 import {
   collectionEntries,
-  feeds,
   subscriptionTags,
   subscriptions,
   tags,
   visibleEntries,
 } from "@/server/db/schema";
+import { isCollectionSubscription } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Types
@@ -148,11 +148,10 @@ export async function buildEntriesInSubscriptionsCondition(
   const collections = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(
       and(
         eq(subscriptions.userId, userId),
-        eq(feeds.type, "collection"),
+        isCollectionSubscription(),
         inArray(subscriptions.id, subscriptionIds)
       )
     );

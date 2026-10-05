@@ -210,18 +210,20 @@ export async function getGreaderUnreadCounts(
   // formatUnreadCounts, which emits `feed/{streamId}`. Postgres returns bigint
   // (int8) as a decimal string, which is exactly what the wire id needs.
   const result = await db.execute(sql`
-    SELECT s.greader_stream_id AS stream_id, s.unread_count AS unread, latest.newest AS newest
-    FROM subscriptions s
-    JOIN feeds sf ON sf.id = s.feed_id AND sf.type <> 'collection'
+    SELECT subscriptions.greader_stream_id AS stream_id,
+      subscriptions.unread_count AS unread,
+      latest.newest AS newest
+    FROM subscriptions
     LEFT JOIN LATERAL (
       SELECT ue.published_or_fetched_at AS newest
       FROM user_entries ue
-      WHERE ue.subscription_id = s.id
+      WHERE ue.subscription_id = subscriptions.id
       ORDER BY ue.published_or_fetched_at DESC, ue.entry_id DESC
       LIMIT 1
     ) latest ON true
-    WHERE s.user_id = ${userId}::uuid
-      AND s.unsubscribed_at IS NULL
+    WHERE subscriptions.user_id = ${userId}::uuid
+      AND subscriptions.unsubscribed_at IS NULL
+      AND NOT ${subscriptionsService.isCollectionSubscription()}
 
     UNION ALL
 
