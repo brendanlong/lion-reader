@@ -26,7 +26,7 @@
  */
 
 import { db } from "@/server/db";
-import { subscriptions } from "@/server/db/schema";
+import { subscriptions, type EntryType } from "@/server/db/schema";
 import { isWebSubscription } from "@/server/services/subscriptions";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
@@ -115,8 +115,6 @@ function withCustomFeedTitle(
   return customTitle == null ? entry : { ...entry, feedTitle: customTitle };
 }
 
-type FeedType = "web" | "email" | "saved";
-
 /**
  * The fields of an entry event the client receives, whichever channel it came
  * from: a web feed's (with the subscription looked up here) or, for email and
@@ -127,7 +125,7 @@ interface ClientEntryEvent {
   entryId: string;
   timestamp: string;
   updatedAt: string;
-  feedType?: FeedType;
+  feedType?: EntryType;
 }
 
 /** A user event's `feedId` only routes feed channels here: clients only ever see subscription IDs. */
@@ -391,7 +389,7 @@ export async function GET(req: Request): Promise<Response> {
        * (email, saved) the user's channel.
        */
       function sendNewEntry(
-        event: ClientEntryEvent & { feedType: FeedType; entry?: NewEntryListData }
+        event: ClientEntryEvent & { feedType: EntryType; entry?: NewEntryListData }
       ): void {
         // Compute this user's absolute unread counts and send them with the
         // event so the client sets counts directly instead of applying a +1

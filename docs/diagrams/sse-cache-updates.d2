@@ -83,8 +83,9 @@ redis: Redis Pub/Sub {
       Pattern: user:{userId}:events
 
       Events:
-      - new_entry / entry_updated for email and saved entries
-        (subscriptionId, null for saved, + the feed-channel fields)
+      - new_entry for email and saved entries, entry_updated
+        for saved (subscriptionId, null for saved; feedType;
+        no feedId)
       - subscription_created (full subscription + feed data + counts)
       - subscription_updated (tags, customTitle)
       - subscription_deleted (subscriptionId + counts, live path only)
