@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import {
+  buildFallbackNarration,
   narrationCacheOwner,
   narrationContentHash,
   narrationFailureScope,
@@ -77,6 +78,17 @@ describe("narrationFromLlmOutput", () => {
     ]);
   });
 
+  it("drops the superscript marks the model kept, or never saw when it skipped a paragraph", () => {
+    const result = narrationFromLlmOutput(
+      [
+        { id: 0, o: 0, text: "E=mc<sup>2</sup>" },
+        { id: 1, o: 1, text: "H<sub>2</sub>O" },
+      ],
+      answer([{ id: 0, text: "E equals m c<sup>2</sup>" }])
+    );
+    expect(result?.text).toBe("E equals m c2\n\nH2O");
+  });
+
   it.each([
     ["empty", ""],
     ["not JSON", "Sure! Here's the narration:"],
@@ -84,6 +96,14 @@ describe("narrationFromLlmOutput", () => {
     ["with paragraphs of the wrong shape", answer([{ id: 0 }])],
   ])("is null for output %s", (_, raw) => {
     expect(narrationFromLlmOutput(input, raw)).toBeNull();
+  });
+});
+
+describe("buildFallbackNarration", () => {
+  it("speaks the input without its superscript marks", () => {
+    expect(buildFallbackNarration([{ id: 0, o: 0, text: "2019.<sup>1</sup>" }]).text).toBe(
+      "2019.1"
+    );
   });
 });
 

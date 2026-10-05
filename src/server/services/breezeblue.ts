@@ -177,6 +177,15 @@ export async function findBreezeBlueVoice(
 }
 
 /**
+ * Square brackets are BreezeBlue's vocal-event markup in Chinese (`[笑]` is a
+ * laugh), and in English text they can turn the speech to gibberish. English
+ * reads them fine as parentheses ("[sic]", "[1]").
+ */
+function bracketsAsParentheses(text: string): string {
+  return text.replaceAll("[", "(").replaceAll("]", ")");
+}
+
+/**
  * Speech as PCM, streamed as it's generated. `enable_logging=false` keeps it
  * out of the key owner's generation history; it's documented only for
  * realtime sessions, but this endpoint honours it too.
@@ -194,7 +203,7 @@ export async function breezeBlueSpeech(
       method: "POST",
       headers: { ...headers(apiKey), "Content-Type": "application/json" },
       signal,
-      body: JSON.stringify({ text, model_id: model }),
+      body: JSON.stringify({ text: bracketsAsParentheses(text), model_id: model }),
     }
   );
   if (!response.ok || !response.body) throw await providerError("BreezeBlue", response);

@@ -347,6 +347,20 @@ describe("BreezeBlue speech", () => {
     expect(speechRequests.length).toBe(before + 1);
   });
 
+  it("sends square brackets as parentheses", async () => {
+    const stream = await streamSpeech(
+      { breezeblue: randomUUID() },
+      {
+        model: "breezeblue:breeze-tts-2",
+        userId: randomUUID(),
+        voice: null,
+        text: "It shipped [sic] in 2019.[2]",
+      }
+    );
+    await new Response(stream).arrayBuffer();
+    expect(speechRequests.at(-1)?.body).toMatchObject({ text: "It shipped (sic) in 2019.(2)" });
+  });
+
   it("speaks a picked voice that has left the list", async () => {
     const picked = `library-${randomUUID()}`;
     const stream = await streamSpeech(

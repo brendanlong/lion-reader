@@ -102,6 +102,10 @@
     structuralMarkers: false,
     speakUndescribedImages: false
   };
+  var SCRIPT_MARKER = /<\/?su[bp]>/g;
+  function withoutScriptMarkers(text) {
+    return text.replace(SCRIPT_MARKER, "");
+  }
   var BREAK = "\0";
   var ELEMENT_NODE = 1;
   var TEXT_NODE = 3;
@@ -131,6 +135,7 @@
     let images = 0;
     let firstImage = null;
     let spokeWords = false;
+    let flushes = 0;
     const push = (highlight, value) => {
       for (const segment of value.replace(/\s*\u0000\s*/g, BREAK).split(/\u0000{2,}/)) {
         const paragraph = segment.replace(/[\s\u0000]+/g, " ").trim();
@@ -140,6 +145,7 @@
     const flush = () => {
       const highlight = images === 1 && !spokeWords && firstImage ? firstImage : owner;
       push(highlight, text);
+      flushes += 1;
       text = "";
       images = 0;
       firstImage = null;
@@ -236,13 +242,18 @@
         appendWords(flatText(el, voice, consumed));
         return;
       }
-      if (tagName === "code" && voice.structuralMarkers) {
+      if (voice.structuralMarkers && (tagName === "code" || tagName === "sup" || tagName === "sub")) {
         const before = text.length;
-        const runsBefore = runs.length;
+        const flushesBefore = flushes;
         visitChildren(el, depth2);
-        const code = text.slice(before).replaceAll(BREAK, " ");
-        if (code.trim() && !code.includes("`") && runs.length === runsBefore) {
-          text = `${text.slice(0, before)}\`${code.trim()}\``;
+        if (flushes !== flushesBefore) return;
+        const content = text.slice(before).replaceAll(BREAK, " ");
+        const inner = content.trim();
+        const wrapped = tagName === "code" ? !inner.includes("`") && `\`${inner}\`` : withoutScriptMarkers(inner) === inner && `<${tagName}>${inner}</${tagName}>`;
+        if (inner && wrapped) {
+          const lead = content.slice(0, content.length - content.trimStart().length);
+          const trail = content.slice(content.trimEnd().length);
+          text = `${text.slice(0, before)}${lead}${wrapped}${trail}`;
         }
         return;
       }
@@ -436,9 +447,9 @@
   }
   function linkTarget(href) {
     try {
-      return `[link to ${new URL(href).hostname}]`;
+      return `(link to ${new URL(href).hostname})`;
     } catch {
-      return `[link to ${href}]`;
+      return `(link to ${href})`;
     }
   }
   function listItemMarker(li) {
