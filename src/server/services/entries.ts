@@ -103,9 +103,9 @@ export interface EntryListItem {
   greaderItemId: bigint;
   // Google Reader feed stream ids (stored serials), used only by the compat
   // layer to build each item's origin stream: the entry's subscription
-  // (null for saved/uploaded and orphaned-starred entries) and its feed (used
-  // for saved articles, which have no subscription — issue #730). Stripped from
-  // main-app and MCP responses.
+  // (null for saved/uploaded articles) and its feed (used for saved articles,
+  // which have no subscription — issue #730). Stripped from main-app and MCP
+  // responses.
   subscriptionGreaderStreamId: bigint | null;
   feedGreaderStreamId: bigint;
   subscriptionId: string | null;
@@ -318,7 +318,7 @@ const entryFullSelectFields = {
   id: visibleEntries.id,
   greaderItemId: visibleEntries.greaderItemId,
   // Google Reader feed stream ids (compat layer only). The subscription's comes
-  // from the view's LEFT JOIN (null for saved/orphaned); the feed's from the
+  // from the view's LEFT JOIN (null for saved); the feed's from the
   // feeds join every entry read performs (used for saved articles).
   subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
   feedGreaderStreamId: feeds.greaderStreamId,
@@ -1183,7 +1183,6 @@ export async function markAllEntriesRead(
   db: typeof dbType,
   params: {
     userId: string;
-    feedIds?: string[];
     subscriptionId?: string;
     tagId?: string;
     uncategorized?: boolean;
@@ -1225,16 +1224,6 @@ export async function markAllEntriesRead(
         .where(and(...visibleConditions))
     )
   );
-
-  // Filter by explicit feed IDs (used by GReader route after stream resolution)
-  if (params.feedIds) {
-    const entryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(inArray(entries.feedId, params.feedIds));
-
-    conditions.push(inArray(userEntries.entryId, entryIdsSubquery));
-  }
 
   // Filter by subscriptionId: a foreign or unsubscribed subscription matches
   // nothing. (Scoping checks query the subscriptions table, never the
