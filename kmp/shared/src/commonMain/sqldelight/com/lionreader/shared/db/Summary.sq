@@ -2,16 +2,24 @@
 -- kept for offline reading while their entry is on the device.
 CREATE TABLE entry_summary (
   entry_id TEXT NOT NULL PRIMARY KEY,
-  html TEXT NOT NULL
+  html TEXT NOT NULL,
+  -- The entry's body_version it was asked for at. Last, as the migration adds
+  -- it (4.sqm).
+  body_version INTEGER NOT NULL DEFAULT 0
 );
 
 -- Only while the entry is still on the device at the :bodyVersion it had when
 -- the request started, like bodies: a summary requested before an edit is of
 -- the old text.
 putIfCurrent:
-INSERT OR REPLACE INTO entry_summary(entry_id, html)
-SELECT :entryId, :html
+INSERT OR REPLACE INTO entry_summary(entry_id, html, body_version)
+SELECT :entryId, :html, :bodyVersion
 WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVersion);
+
+-- When a changed body arrives at :bodyVersion: a summary asked for before the
+-- edit is of the old text.
+deleteOutdated:
+DELETE FROM entry_summary WHERE entry_id = :entryId AND body_version != :bodyVersion;
 
 deleteForEntry:
 DELETE FROM entry_summary WHERE entry_id = ?;

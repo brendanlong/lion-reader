@@ -35,8 +35,8 @@ class AccountStorageTest {
         )
         execute(
             null,
-            "INSERT INTO entry_body(entry_id, content, size, downloaded_at, search_text) " +
-                "VALUES ('a', ?, 0, 0, '')",
+            "INSERT INTO entry_body(entry_id, content, size, downloaded_at, search_text, " +
+                "body_version) VALUES ('a', ?, 0, 0, '', 1)",
             1,
         ) {
             bindString(0, body)
@@ -74,7 +74,7 @@ class AccountStorageTest {
 
             assertEquals(1L, bodies.matches("a", body).executeAsOne())
             assertEquals(0L, bodies.matches("a", "<p>Revised</p>").executeAsOne())
-            assertEquals(1L, bodies.exists("a").executeAsOne())
+            assertEquals(1L, bodies.existsCurrent("a").executeAsOne())
         }
     }
 }

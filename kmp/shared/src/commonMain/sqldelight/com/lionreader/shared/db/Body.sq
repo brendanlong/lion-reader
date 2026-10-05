@@ -1,7 +1,9 @@
 -- Downloaded article bodies (sanitized HTML), apart from entry so that the body
 -- downloader, which runs outside the sync lock, can never touch read/starred
 -- state. An empty body means "downloaded, nothing to show" (or no longer
--- visible), so it isn't asked for again.
+-- visible), so it isn't asked for again. A body behind its entry's
+-- body_version (an edit) is out of date: it's shown until the new one replaces
+-- it, so an open article never goes blank and reloads.
 CREATE TABLE entry_body (
   entry_id TEXT NOT NULL PRIMARY KEY,
   content TEXT NOT NULL,
@@ -9,15 +11,19 @@ CREATE TABLE entry_body (
   downloaded_at INTEGER NOT NULL,
   -- The body as plain text, only until a trigger moves it into the search
   -- index (SearchIndex.kt), which empties it.
-  search_text TEXT NOT NULL
+  search_text TEXT NOT NULL,
+  -- The entry's body_version it was downloaded at. Last, as the migration adds
+  -- it (4.sqm).
+  body_version INTEGER NOT NULL DEFAULT 0
 );
 
--- Stores a body fetched at the entry's :bodyVersion, only while the entry is
--- still on the device at that version: a download racing a deletion or an edit
--- can't leave a missing or stale body behind (pruneOrphans catches the rest).
+-- Stores a body fetched at the entry's :bodyVersion, in place of any older one,
+-- only while the entry is still on the device at that version: a download
+-- racing a deletion or an edit can't leave a missing or stale body behind
+-- (pruneOrphans catches the rest).
 putIfCurrent:
-INSERT OR REPLACE INTO entry_body(entry_id, content, size, downloaded_at, search_text)
-SELECT :entryId, :content, :size, :downloadedAt, :searchText
+INSERT OR REPLACE INTO entry_body(entry_id, content, size, downloaded_at, search_text, body_version)
+SELECT :entryId, :content, :size, :downloadedAt, :searchText, :bodyVersion
 WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVersion);
 
 deleteForEntry:
@@ -28,8 +34,9 @@ DELETE FROM entry_body WHERE entry_id = ?;
 matches:
 SELECT count(*) FROM entry_body WHERE entry_id = :entryId AND content = :content;
 
-exists:
-SELECT count(*) FROM entry e JOIN entry_body b ON b.entry_id = e.id WHERE e.id = ?;
+existsCurrent:
+SELECT count(*) FROM entry e JOIN entry_body b ON b.entry_id = e.id
+WHERE e.id = ? AND b.body_version = e.body_version;
 
 -- Bodies whose entry is gone (retention, deletions, unsubscribes).
 pruneOrphans:

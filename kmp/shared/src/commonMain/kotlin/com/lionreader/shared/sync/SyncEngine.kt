@@ -89,18 +89,18 @@ class SyncEngine(
     }
 
     /**
-     * Downloads one entry's body now (opening an entry the sync hasn't reached); whether the entry
-     * now has one. Not behind [contentMutex]: the user is waiting, and a background download can
-     * take minutes.
+     * Downloads one entry's body now (opening an entry the sync hasn't reached, or one edited since
+     * its body was downloaded); whether the entry now has a current one. Not behind [contentMutex]:
+     * the user is waiting, and a background download can take minutes.
      */
     suspend fun ensureContent(entryId: String): Boolean {
-        // Again if the entry was edited mid-download, which discards the old body.
+        // Again if the entry was edited mid-download, which makes that body out of date.
         repeat(ENSURE_ATTEMPTS) {
-            if (writer.hasBody(entryId)) return true
+            if (writer.hasCurrentBody(entryId)) return true
             val version = writer.bodyVersion(entryId) ?: return false
             fetchBodies(mapOf(entryId to version))
         }
-        return writer.hasBody(entryId)
+        return writer.hasCurrentBody(entryId)
     }
 
     /** Whether the server can summarize for this user (it has an AI provider to use). */

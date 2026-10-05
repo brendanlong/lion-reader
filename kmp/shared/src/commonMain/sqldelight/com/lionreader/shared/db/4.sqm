@@ -1,0 +1,10 @@
+-- Bodies and summaries remember the body version they're of, so an edit marks
+-- them out of date rather than deleting them. Every one on the device is
+-- current here: an edit used to delete them.
+ALTER TABLE entry_body ADD COLUMN body_version INTEGER NOT NULL DEFAULT 0;
+UPDATE entry_body SET body_version = COALESCE(
+  (SELECT body_version FROM entry WHERE id = entry_body.entry_id), 0);
+
+ALTER TABLE entry_summary ADD COLUMN body_version INTEGER NOT NULL DEFAULT 0;
+UPDATE entry_summary SET body_version = COALESCE(
+  (SELECT body_version FROM entry WHERE id = entry_summary.entry_id), 0);

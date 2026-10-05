@@ -468,7 +468,7 @@ private fun EntryPage(
             )
             .joinToString(" · ")
     val title = current.title ?: "Untitled"
-    val content = rememberShownBody(entryId, current.content)
+    val content = current.content
     if (content != null) {
         val colors = MaterialTheme.colorScheme
         val readerColors =
@@ -567,27 +567,15 @@ private fun SummaryButton(
     }
 }
 
-/**
- * The body to show: [content], or while it's missing, the one shown before. An edited article's
- * body is deleted until it's downloaded again (SyncWriter), and an unchanged one mustn't take the
- * page down to a spinner and back, reloading it, meanwhile. If that download fails, the old body
- * stays rather than the failure showing: it's still the article.
- */
-@Composable
-internal fun rememberShownBody(entryId: String, content: String?): String? {
-    val shown = remember(entryId) { arrayOfNulls<String>(1) }
-    if (content != null) shown[0] = content
-    return shown[0]
-}
-
 /** Whether the page's body download failed, and a way to try it again. */
 internal class BodyDownload(val failed: Boolean, val retry: () -> Unit)
 
 /**
- * Downloads the entry's body when it's loaded without one. Keyed on "loaded and missing", because
- * the entry is null until its query answers: keyed on a missing body alone, the effect would run
- * against the null entry and not again when it loads. Nothing else fetches it, either: opening an
- * entry marks it read, and the background download skips read entries.
+ * Downloads the entry's body when it's loaded without one, or with one an edit made out of date
+ * (shown meanwhile, so the page reloads only if the body changed). Keyed on "loaded and missing",
+ * because the entry is null until its query answers: keyed on a missing body alone, the effect
+ * would run against the null entry and not again when it loads. Nothing else fetches a missing one:
+ * opening an entry marks it read, and the background download skips read entries.
  */
 @Composable
 internal fun rememberBodyDownload(
@@ -595,7 +583,7 @@ internal fun rememberBodyDownload(
     entry: EntryDetail?,
     download: suspend () -> Boolean,
 ): BodyDownload {
-    val missing = entry != null && entry.content == null
+    val missing = entry != null && (entry.content == null || entry.contentOutdated)
     var failed by remember(entryId) { mutableStateOf(false) }
     var attempt by remember(entryId) { mutableIntStateOf(0) }
     val currentDownload by rememberUpdatedState(download)
