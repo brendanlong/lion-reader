@@ -529,7 +529,7 @@ export function updateBusinessMetrics(counts: {
   })?.set(counts.entries);
   getOrCreate(Gauge, {
     name: "feeds_total",
-    help: "Total number of feeds",
+    help: "Total number of web feeds (the feeds we fetch)",
   })?.set(counts.feeds);
 }
 

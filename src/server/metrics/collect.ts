@@ -43,7 +43,9 @@ async function collectBusinessMetrics(): Promise<void> {
     countRows(users),
     countRows(subscriptions, sql`${subscriptions.unsubscribedAt} IS NULL`),
     estimateRows(entries),
-    countRows(feeds),
+    // Only web feeds are shared and fetched; email, saved and collection feeds
+    // are per-user containers, already reflected in users/subscriptions.
+    countRows(feeds, sql`${feeds.type} = 'web'`),
   ]);
 
   updateBusinessMetrics({
