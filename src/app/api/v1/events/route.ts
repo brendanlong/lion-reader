@@ -125,7 +125,7 @@ interface ClientEntryEvent {
   entryId: string;
   timestamp: string;
   updatedAt: string;
-  feedType?: EntryType;
+  feedType: EntryType;
 }
 
 /** A user event's `feedId` only routes feed channels here: clients only ever see subscription IDs. */
@@ -388,9 +388,7 @@ export async function GET(req: Request): Promise<Response> {
        * Sends a new_entry event, whether it came from a web feed's channel or
        * (email, saved) the user's channel.
        */
-      function sendNewEntry(
-        event: ClientEntryEvent & { feedType: EntryType; entry?: NewEntryListData }
-      ): void {
+      function sendNewEntry(event: ClientEntryEvent & { entry?: NewEntryListData }): void {
         // Compute this user's absolute unread counts and send them with the
         // event so the client sets counts directly instead of applying a +1
         // delta. That makes new_entry idempotent: a reconnect catch-up sync
@@ -522,7 +520,7 @@ export async function GET(req: Request): Promise<Response> {
           if (event.type === "new_entry") {
             sendNewEntry({ ...event, subscriptionId });
           } else {
-            sendEntryUpdated({ ...event, subscriptionId });
+            sendEntryUpdated({ ...event, subscriptionId, feedType: "web" });
           }
         }
       }
