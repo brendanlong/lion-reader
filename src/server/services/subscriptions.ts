@@ -71,11 +71,25 @@ export interface Subscription {
 // ============================================================================
 
 /**
- * Matches `subscriptions` rows that are collections. It correlates with the
- * unaliased `subscriptions` table of the enclosing query, so no join is needed.
+ * Matches `subscriptions` rows whose feed has the given type. It correlates
+ * with the unaliased `subscriptions` table of the enclosing query, so no join
+ * is needed.
  */
+function isSubscriptionOfType(type: FeedType): SQL {
+  return sql`EXISTS (SELECT 1 FROM ${feeds} WHERE ${feeds.id} = ${subscriptions.feedId} AND ${feeds.type} = ${type})`;
+}
+
+/** Matches `subscriptions` rows that are collections (see isSubscriptionOfType). */
 export function isCollectionSubscription(): SQL {
-  return sql`EXISTS (SELECT 1 FROM ${feeds} WHERE ${feeds.id} = ${subscriptions.feedId} AND ${feeds.type} = 'collection')`;
+  return isSubscriptionOfType("collection");
+}
+
+/**
+ * Matches `subscriptions` rows to web feeds, the only feeds shared between
+ * users (see isSubscriptionOfType).
+ */
+export function isWebSubscription(): SQL {
+  return isSubscriptionOfType("web");
 }
 
 /**

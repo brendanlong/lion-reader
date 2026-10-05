@@ -21,7 +21,7 @@ import {
   type NewEntry,
 } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
-import { publishNewEntry, publishSubscriptionCreated } from "../redis/pubsub";
+import { publishUserNewEntry, publishSubscriptionCreated } from "../redis/pubsub";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -464,14 +464,16 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // check and return early — leaving the newsletter permanently invisible to the
   // user (issue #952). Wrapping both writes in one transaction means a crash
   // rolls back the entry too, so the retry re-inserts both cleanly.
-  await db.transaction(async (tx) => {
+  const entrySubscriptionId = await db.transaction(async (tx) => {
     await tx.insert(entries).values(newEntry);
 
-    // Create user_entry to make it visible to the user
-    await tx.insert(userEntries).values({
-      userId,
-      entryId,
-    });
+    // Create user_entry to make it visible to the user. Its subscription_id
+    // (filled by the insert trigger) is the email subscription's, for the event.
+    const [userEntry] = await tx
+      .insert(userEntries)
+      .values({ userId, entryId })
+      .returning({ subscriptionId: userEntries.subscriptionId });
+    return userEntry.subscriptionId;
   });
 
   logger.info("Email processed successfully", {
@@ -486,15 +488,18 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // 9. Publish real-time event via Redis
   // Fire and forget - we don't want publishing failures to affect email processing.
   // A spam entry's event still fires, for the counts.
-  publishNewEntry(feed.id, entryId, now, "email", entryListPayload(newEntry, feed.title)).catch(
-    (err) => {
-      logger.error("Failed to publish new_entry event for email", {
-        feedId: feed.id,
-        entryId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  );
+  publishUserNewEntry(
+    { userId, subscriptionId: entrySubscriptionId, feedId: feed.id, feedType: "email" },
+    entryId,
+    now,
+    entryListPayload(newEntry, feed.title)
+  ).catch((err) => {
+    logger.error("Failed to publish new_entry event for email", {
+      feedId: feed.id,
+      entryId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 
   return {
     success: true,

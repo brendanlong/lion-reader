@@ -16,6 +16,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import {
   publishNewEntry,
+  publishUserNewEntry,
   publishEntryStateChanged,
   getFeedEventsChannel,
   getUserEventsChannel,
@@ -32,6 +33,7 @@ import {
   createSubscribedFeed,
   createTagOnSubscription,
   createUnreadEntry,
+  createSavedArticle,
   starEntry,
   markEntryRead,
   loginAs,
@@ -297,6 +299,43 @@ test("new_entry event updates a collapsed tag's unread count", async ({ page, ba
   await expect(links.allItems).toContainText("(4)");
   // Intended behavior: the collapsed tag's badge should update too
   await expect(links.newsTag).toContainText("(3)");
+
+  expect(refetchProcedures(trpcCalls)).toEqual([]);
+});
+
+// Saved articles (like email) have one recipient, so their new_entry goes on
+// the user's channel and carries no subscription (#1846).
+test("a saved article's new_entry from the user channel inserts it and updates counts", async ({
+  page,
+  baseURL,
+}) => {
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(page, baseURL!, ({ user }) =>
+    getUserEventsChannel(user.id)
+  );
+  const links = sidebarLinks(page, taggedFeed);
+  const savedLink = page.getByRole("link", { name: /^Saved( \(\d+\))?$/ });
+
+  await expect(links.allItems).toContainText("(3)");
+  await expect(savedLink).not.toContainText("(");
+
+  trpcCalls.length = 0;
+
+  const db = getDb();
+  const { savedFeedId, entry } = await createSavedArticle(db, {
+    userId: user.id,
+    title: "Saved realtime post",
+  });
+  await publishUserNewEntry(
+    { userId: user.id, subscriptionId: null, feedId: savedFeedId, feedType: "saved" },
+    entry.id,
+    entry.updatedAt,
+    { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }
+  );
+
+  await expect(page.locator('[aria-label*="article: Saved realtime post"]')).toBeVisible();
+  await expect(links.allItems).toContainText("(4)");
+  await expect(savedLink).toContainText("(1)");
+  await expect(links.uncategorized).toContainText("(1)");
 
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });

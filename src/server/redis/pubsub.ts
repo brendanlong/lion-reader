@@ -64,6 +64,30 @@ const feedEventSchema = z.discriminatedUnion("type", [
  * to stay in sync with the client-side event definitions.
  */
 const userEventSchema = z.discriminatedUnion("type", [
+  // Entry events for sources with exactly one recipient (email, saved), which
+  // go to that user's channel instead of a feed channel. They carry what the
+  // SSE route adds to a web feed's events itself: the user's subscriptionId
+  // (null for saved articles).
+  z.object({
+    type: z.literal("new_entry"),
+    userId: z.string(),
+    subscriptionId: z.string().nullable(),
+    entryId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+    feedType: z.enum(["email", "saved"]),
+    entry: newEntryListDataSchema.optional(),
+  }),
+  z.object({
+    type: z.literal("entry_updated"),
+    userId: z.string(),
+    subscriptionId: z.string().nullable(),
+    entryId: z.string(),
+    timestamp: z.string(),
+    updatedAt: z.string(),
+    feedType: z.enum(["email", "saved"]),
+    metadata: entryMetadataSchema,
+  }),
   z.object({
     type: z.literal("subscription_created"),
     userId: z.string(),
@@ -183,10 +207,9 @@ const userEventSchema = z.discriminatedUnion("type", [
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
-  // Server-internal signal that a user's saved-articles feed was just created.
-  // It tells already-open SSE connections to subscribe to the new feed's channel
-  // so the first saved article is broadcast live (the saved feed didn't exist
-  // when the connection was established). Not forwarded to the client.
+  // Server-internal signal that a user's saved-articles feed was just created,
+  // for SSE servers from the previous release, which subscribe to the saved
+  // feed's channel. Current servers ignore it. Not forwarded to the client.
   z.object({
     type: z.literal("saved_feed_created"),
     userId: z.string(),
@@ -239,8 +262,10 @@ type SubscriptionCreatedEventFeed = Omit<z.infer<typeof feedCreatedDataSchema>, 
 
 /**
  * Returns the channel name for feed-specific events.
- * Each feed has its own channel so servers only receive events for feeds
- * their connected users are subscribed to.
+ * Each web feed has its own channel so one publish reaches every subscriber,
+ * and servers only receive events for feeds their connected users are
+ * subscribed to. Email and saved entries have a single recipient and go to
+ * the user's channel instead.
  *
  * @param feedId - The feed's ID
  * @returns The channel name for the feed's events
@@ -313,7 +338,8 @@ async function publishSiteStatusEvent(event: SiteStatusEvent): Promise<number> {
 }
 
 /**
- * Publishes a new_entry event when an entry is created.
+ * Publishes a new_entry event for a web feed's entry on the feed's channel.
+ * Email and saved entries use publishUserNewEntry.
  *
  * @param feedId - The ID of the feed containing the entry
  * @param entryId - The ID of the newly created entry
@@ -340,6 +366,83 @@ export async function publishNewEntry(
     feedType,
     ...(entry ? { entry } : {}),
   });
+}
+
+/** Where an email or saved entry's events go: its one recipient. */
+interface UserEntryTarget {
+  userId: string;
+  /** The email subscription's id; null for saved articles. */
+  subscriptionId: string | null;
+  /**
+   * The entry's feed, only for the transitional feed-channel copy (#1846):
+   * SSE servers from the previous release listen for email and saved entries
+   * on the feed's channel. Remove with that copy once this release is deployed
+   * (follow-up: brendanlong/realtime-user-channel-cleanup).
+   */
+  feedId: string;
+  feedType: "email" | "saved";
+}
+
+/**
+ * Publishes a new_entry event for an email or saved entry on its user's
+ * channel (no other user can receive it, so no feed channel is needed).
+ *
+ * @param target - The entry's recipient and source
+ * @param entryId - The ID of the newly created entry
+ * @param updatedAt - The database updated_at timestamp for cursor tracking
+ * @param entry - List-item data, as for publishNewEntry (undefined for spam)
+ * @returns The number of the user's subscribers that received the message
+ */
+export async function publishUserNewEntry(
+  target: UserEntryTarget,
+  entryId: string,
+  updatedAt: Date,
+  entry: NewEntryListData | undefined
+): Promise<number> {
+  const [received] = await Promise.all([
+    publishUserEvent({
+      type: "new_entry",
+      userId: target.userId,
+      subscriptionId: target.subscriptionId,
+      entryId,
+      timestamp: new Date().toISOString(),
+      updatedAt: updatedAt.toISOString(),
+      feedType: target.feedType,
+      ...(entry ? { entry } : {}),
+    }),
+    // Transitional copy for previous-release SSE servers (see UserEntryTarget.feedId).
+    publishNewEntry(target.feedId, entryId, updatedAt, target.feedType, entry),
+  ]);
+  return received;
+}
+
+/**
+ * Publishes an entry_updated event for an email or saved entry on its user's
+ * channel. See publishUserNewEntry.
+ *
+ * @param target - The entry's recipient and source
+ * @param entry - The entry object (from database)
+ * @returns The number of the user's subscribers that received the message
+ */
+export async function publishUserEntryUpdated(
+  target: UserEntryTarget,
+  entry: EntryLike
+): Promise<number> {
+  const [received] = await Promise.all([
+    publishUserEvent({
+      type: "entry_updated",
+      userId: target.userId,
+      subscriptionId: target.subscriptionId,
+      entryId: entry.id,
+      timestamp: new Date().toISOString(),
+      updatedAt: entry.updatedAt.toISOString(),
+      feedType: target.feedType,
+      metadata: toEntryMetadata(entry),
+    }),
+    // Transitional copy for previous-release SSE servers (see UserEntryTarget.feedId).
+    publishEntryUpdatedFromEntry(target.feedId, entry),
+  ]);
+  return received;
 }
 
 /**
@@ -715,9 +818,11 @@ export async function publishTagDeleted(
 
 /**
  * Publishes a saved_feed_created event when a user's saved-articles feed is
- * first created. Lets already-open SSE connections subscribe to the new feed's
- * channel so the very first saved article broadcasts live instead of only after
- * the next reconnect. Not forwarded to the client.
+ * first created. Lets already-open SSE connections from the previous release
+ * subscribe to the new feed's channel so the very first saved article
+ * broadcasts live. Transitional (#1846): current SSE servers get saved entries
+ * on the user's channel and ignore this; remove it once this release is
+ * deployed (follow-up: brendanlong/realtime-user-channel-cleanup).
  *
  * @param userId - The ID of the user whose saved feed was created
  * @param feedId - The ID of the newly created saved feed

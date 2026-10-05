@@ -27,6 +27,7 @@ import {
   subscriptionTags,
   tags,
   userEntries,
+  ingestAddresses,
   oauthAccounts,
   oauthClients,
 } from "../../src/server/db/schema";
@@ -210,6 +211,23 @@ export async function createTestTag(
       .values(subscriptionIds.map((subscriptionId) => ({ tagId, subscriptionId })));
   }
   return tagId;
+}
+
+// ============================================================================
+// Email ingest addresses
+// ============================================================================
+
+/**
+ * Inserts an ingest address for `userId`; mail to `{token}@<ingest domain>`
+ * reaches it. Pass `token` to know what to address. Returns its id.
+ */
+export async function createTestIngestAddress(
+  userId: string,
+  overrides: Partial<typeof ingestAddresses.$inferInsert> = {}
+): Promise<string> {
+  const id = overrides.id ?? generateUuidv7();
+  await db.insert(ingestAddresses).values({ id, userId, token: `token-${id}`, ...overrides });
+  return id;
 }
 
 // ============================================================================

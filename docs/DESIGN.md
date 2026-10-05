@@ -98,7 +98,7 @@ Per-source behavior (YouTube, LessWrong, Bluesky, Google Docs, …) lives in cap
 
 Workers publish to Redis; each app process forwards events over SSE; the client writes them straight into its local store and caches without refetching ([sse-cache-updates.d2](diagrams/sse-cache-updates.d2), `src/FRONTEND_STATE.md`).
 
-- **Two channel patterns**, so servers receive only what they need: `feed:{feedId}:events` (shared by the feed's subscribers) and `user:{userId}:events` (per-user state). Event types are in `src/server/redis/pubsub.ts`.
+- **Two channel patterns**, so servers receive only what they need: `feed:{feedId}:events` for a web feed's entries (one publish per fetch reaches every subscriber), and `user:{userId}:events` for everything with a single recipient — per-user state, and email and saved entries. Event types are in `src/server/redis/pubsub.ts`.
 - **One connection per tab** to `/api/v1/events`; if SSE is unavailable (a 503), the client polls the sync endpoint instead.
 - **One Redis subscriber per app process**, with channel subscriptions ref-counted across SSE connections, so Redis connections don't grow with users.
 
