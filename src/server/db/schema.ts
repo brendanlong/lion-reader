@@ -984,7 +984,9 @@ export const visibleEntries = pgView("visible_entries", {
   fullContentError: text("full_content_error"),
   read: boolean("read").notNull(),
   starred: boolean("starred").notNull(),
-  subscriptionId: uuid("subscription_id"), // nullable - null for orphaned starred entries
+  // NULL only for saved/uploaded articles. Subscriptions are soft-deleted, so
+  // an unsubscribed feed's starred entries keep theirs.
+  subscriptionId: uuid("subscription_id"),
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(), // denormalized timeline sort key (temporalTimestamp: µs-precise cursor sort key)
@@ -993,9 +995,9 @@ export const visibleEntries = pgView("visible_entries", {
   // Doubles as the Wallabag entry id (reversed by resolveWallabagEntry).
   greaderItemId: bigint("greader_item_id", { mode: "bigint" }).notNull(),
   // The entry's subscription Google Reader stream id (subscriptions.greader_stream_id
-  // via the view's LEFT JOIN; migration 0097). NULL for saved/uploaded articles
-  // and orphaned starred entries — the Google Reader layer falls back to the
-  // feed's stream id for saved entries. Compat id; stripped from main-app/MCP.
+  // via the view's LEFT JOIN; migration 0097). NULL for saved/uploaded articles,
+  // where the Google Reader layer falls back to the feed's stream id. Compat id;
+  // stripped from main-app/MCP.
   subscriptionGreaderStreamId: bigint("subscription_greader_stream_id", { mode: "bigint" }),
   // Stored full-text search vector (entries.search_vector; migration 0105).
   // searchEntries uses it for the `@@` match and the ts_rank sort — it is never

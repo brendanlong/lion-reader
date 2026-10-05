@@ -1414,7 +1414,10 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
   });
 
   // --------------------------------------------------------------------------
-  // Orphaned starred entries (subscriptionId=null, starred)
+  // Starred entries outside any cached subscription. The fixture uses
+  // subscriptionId=null; the server sends a web entry's unsubscribed
+  // subscription id instead (NULL is only for saved articles), which no
+  // cached subscription or tag matches either.
   // --------------------------------------------------------------------------
 
   it("decrements starred count when Tab A marks an orphaned starred entry read", () => {
@@ -1442,7 +1445,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     // All Articles: was 18 → 17
     expect(getEntriesCount({})?.unread).toBe(17);
 
-    // Subscription/tag/saved counts unchanged (orphaned entry has no subscription)
+    // Subscription/tag/saved counts unchanged (no cached subscription holds the entry)
     expect(getSidebarUnreadCount("sub-1")).toBe(5);
     const tagsList = getTagsList();
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(15);

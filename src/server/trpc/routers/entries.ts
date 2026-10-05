@@ -111,7 +111,7 @@ const booleanQueryParam = z
  */
 const entryListItemSchema = z.object({
   id: z.string(),
-  subscriptionId: z.string().nullable(), // null for orphaned starred entries
+  subscriptionId: z.string().nullable(), // null only for saved/uploaded articles
   feedId: legacyFeedIdSchema,
   type: feedTypeSchema,
   url: z.string().nullable(),
@@ -133,7 +133,7 @@ const entryListItemSchema = z.object({
  */
 const entryFullSchema = z.object({
   id: z.string(),
-  subscriptionId: z.string().nullable(), // null for orphaned starred entries
+  subscriptionId: z.string().nullable(), // null only for saved/uploaded articles
   feedId: legacyFeedIdSchema,
   type: feedTypeSchema,
   url: z.string().nullable(),
