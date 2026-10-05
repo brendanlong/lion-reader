@@ -19,6 +19,7 @@ import {
 import {
   patchServerEntryMetadata,
   setServerEntryState,
+  setSubscriptionEntriesFeedTitle,
   type EntryRow,
 } from "@/lib/local-db/entries";
 import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
@@ -182,6 +183,12 @@ export function handleSyncEvent(
       // The stored row moves between sidebar sections with its tags. A
       // cleared custom title falls back to the feed's own, which the row has.
       const stored = db.subscriptions.rows.getSynced(event.subscriptionId);
+      // Its entries show the same title (the server sends it as their
+      // feedTitle), so a rename carries over to the ones already loaded.
+      const title = event.customTitle ?? stored?.originalTitle;
+      if (title !== undefined) {
+        setSubscriptionEntriesFeedTitle(db.entries, event.subscriptionId, title);
+      }
       if (stored) {
         patchLiveSubscription(db.subscriptions, event.subscriptionId, {
           tags: event.tags,

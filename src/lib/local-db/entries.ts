@@ -177,3 +177,22 @@ export function patchServerEntryMetadata(
   const next = mergeServerEntry(store.getSynced(id), { kind: "metadata", metadata, updatedAt });
   if (next) store.upsert([next]);
 }
+
+/**
+ * Sets the source name of every stored entry from a subscription, after a
+ * rename (`subscription_updated`). The server sends an entry's `feedTitle` as
+ * its subscription's displayed title, but a rename doesn't touch the entries,
+ * so no entry event or delta re-delivers them.
+ */
+export function setSubscriptionEntriesFeedTitle(
+  store: EntryStore,
+  subscriptionId: string,
+  feedTitle: string | null
+): void {
+  store.upsert(
+    store
+      .allSynced()
+      .filter((row) => row.subscriptionId === subscriptionId && row.feedTitle !== feedTitle)
+      .map((row) => ({ ...row, feedTitle }))
+  );
+}

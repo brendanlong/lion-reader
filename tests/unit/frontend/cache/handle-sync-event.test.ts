@@ -868,6 +868,27 @@ describe("handleSyncEvent - subscription_updated", () => {
     expect(findSubscription("sub-1")?.title).toBe(DEFAULT_SUBSCRIPTIONS[0].originalTitle);
   });
 
+  it("renames the source on the subscription's loaded entries, and only its", () => {
+    const update = (customTitle: string | null) =>
+      handleSyncEvent(
+        utils,
+        queryClient,
+        createSubscriptionUpdatedEvent({ subscriptionId: "sub-1", tags: [], customTitle })
+      );
+    const feedTitles = () => Object.fromEntries(listedEntries().map((e) => [e.id, e.feedTitle]));
+    const before = feedTitles();
+
+    update("Custom Name");
+    expect(feedTitles()).toEqual({ ...before, "entry-1": "Custom Name", "entry-2": "Custom Name" });
+
+    update(null);
+    expect(feedTitles()).toEqual({
+      ...before,
+      "entry-1": DEFAULT_SUBSCRIPTIONS[0].originalTitle,
+      "entry-2": DEFAULT_SUBSCRIPTIONS[0].originalTitle,
+    });
+  });
+
   it("refetches tag feed counts and the collection picker, not the sidebar sections", () => {
     invalidateSpy.mockClear();
     handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent());
