@@ -140,7 +140,7 @@ describe("SSE entry events", () => {
       expect(email.success).toBe(true);
       const saved = await uploadArticle(db, userId, { content: "Body", title: "Saved one" });
       await publishUserEntryUpdated(
-        { userId, subscriptionId: null, feedId: savedFeedId, feedType: "saved" },
+        { userId, subscriptionId: null, feedType: "saved" },
         {
           id: saved.id,
           title: "Renamed",
@@ -152,7 +152,7 @@ describe("SSE entry events", () => {
         }
       );
       // As the feed worker does after fanning out a fetched entry.
-      await publishNewEntry(webFeedId, webEntryId, new Date(), "web", undefined);
+      await publishNewEntry(webFeedId, webEntryId, new Date(), undefined);
 
       // Every publish above is fire-and-forget, so wait for all of them before
       // the marker, which then catches any duplicate.

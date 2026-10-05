@@ -342,8 +342,8 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       userId,
     });
 
-    // Publish subscription_created event so SSE handlers subscribe to the feed channel
-    // This must happen BEFORE the new_entry event so the client receives the entry notification
+    // Publish subscription_created BEFORE the new_entry event (both on the
+    // user's channel, so in order), so the client knows the subscription first
     publishSubscriptionCreated(
       userId,
       feed.id,
@@ -489,7 +489,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // Fire and forget - we don't want publishing failures to affect email processing.
   // A spam entry's event still fires, for the counts.
   publishUserNewEntry(
-    { userId, subscriptionId: entrySubscriptionId, feedId: feed.id, feedType: "email" },
+    { userId, subscriptionId: entrySubscriptionId, feedType: "email" },
     entryId,
     now,
     entryListPayload(newEntry, feed.title)

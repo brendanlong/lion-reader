@@ -214,7 +214,6 @@ test("new_entry event updates unread counts in all affected lists without refetc
     taggedFeed.feedId,
     entry.id,
     entry.updatedAt,
-    "web",
     newEntryListData(entry, taggedFeed)
   );
 
@@ -248,7 +247,6 @@ test("new_entry event inserts the entry at the top of the open list without refe
     taggedFeed.feedId,
     entry.id,
     entry.updatedAt,
-    "web",
     newEntryListData(entry, taggedFeed)
   );
 
@@ -292,7 +290,6 @@ test("new_entry event updates a collapsed tag's unread count", async ({ page, ba
     taggedFeed.feedId,
     entry.id,
     entry.updatedAt,
-    "web",
     newEntryListData(entry, taggedFeed)
   );
 
@@ -321,12 +318,12 @@ test("a saved article's new_entry from the user channel inserts it and updates c
   trpcCalls.length = 0;
 
   const db = getDb();
-  const { savedFeedId, entry } = await createSavedArticle(db, {
+  const { entry } = await createSavedArticle(db, {
     userId: user.id,
     title: "Saved realtime post",
   });
   await publishUserNewEntry(
-    { userId: user.id, subscriptionId: null, feedId: savedFeedId, feedType: "saved" },
+    { userId: user.id, subscriptionId: null, feedType: "saved" },
     entry.id,
     entry.updatedAt,
     { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }

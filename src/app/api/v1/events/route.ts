@@ -496,10 +496,6 @@ export async function GET(req: Request): Promise<Response> {
           } else if (event.type === "subscription_deleted") {
             setCustomTitle(event.subscriptionId, null);
             unsubscribeFromFeed(event.feedId);
-          } else if (event.type === "saved_feed_created") {
-            // Only for previous-release SSE servers; saved entries reach this
-            // one on the user's channel. Nothing for the client to handle.
-            return;
           } else if (event.type === "new_entry") {
             sendNewEntry(event);
             return;

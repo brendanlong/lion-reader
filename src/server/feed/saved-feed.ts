@@ -9,7 +9,6 @@ import { eq, and } from "drizzle-orm";
 import type { Database } from "../db";
 import { feeds } from "../db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { publishSavedFeedCreated } from "@/server/redis/pubsub";
 
 /** Title given to every per-user saved-articles feed. */
 export const SAVED_FEED_TITLE = "Saved Articles";
@@ -30,8 +29,7 @@ export async function getOrCreateSavedFeed(db: Database, userId: string): Promis
   const now = new Date();
 
   // ON CONFLICT DO NOTHING + RETURNING yields the inserted row only when we
-  // actually created the feed (empty on conflict), so we can tell first creation
-  // from a subsequent call without a separate query.
+  // actually created the feed (empty on conflict); otherwise read the existing one.
   const inserted = await db
     .insert(feeds)
     .values({
@@ -64,12 +62,6 @@ export async function getOrCreateSavedFeed(db: Database, userId: string): Promis
     .returning({ id: feeds.id });
 
   if (inserted.length > 0) {
-    // First creation: tell already-open SSE connections to subscribe to this
-    // feed's channel so the first saved article broadcasts live. Fire and
-    // forget — SSE is best-effort and must not block the save.
-    void publishSavedFeedCreated(userId, inserted[0].id).catch(() => {
-      // Ignore publish errors - SSE is best-effort
-    });
     return inserted[0].id;
   }
 
@@ -87,7 +79,6 @@ export async function getOrCreateSavedFeed(db: Database, userId: string): Promis
  * Gets the user's saved articles feed ID if it exists.
  *
  * Unlike getOrCreateSavedFeed, this does not create the feed if it doesn't exist.
- * Used by SSE to subscribe to the saved feed channel without creating the feed.
  *
  * @param db - Database instance
  * @param userId - User ID

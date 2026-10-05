@@ -154,7 +154,7 @@ describe("entry feedTitle is the user's subscription title", () => {
 
     try {
       await publishUntil(
-        () => publishNewEntry(feedId, entryId, new Date(), "web", payload),
+        () => publishNewEntry(feedId, entryId, new Date(), payload),
         () =>
           titlesFor(renamerStream, entryId).length > 0 && titlesFor(otherStream, entryId).length > 0
       );
@@ -181,7 +181,7 @@ describe("entry feedTitle is the user's subscription title", () => {
         { type: "web", url: null, title: FEED_TITLE, description: null, siteUrl: null }
       );
       await publishUntil(
-        () => publishNewEntry(secondFeedId, secondEntryId, new Date(), "web", payload),
+        () => publishNewEntry(secondFeedId, secondEntryId, new Date(), payload),
         () => titlesFor(renamerStream, secondEntryId).length > 0
       );
       expect(new Set(titlesFor(renamerStream, secondEntryId))).toEqual(new Set(["Second Name"]));
@@ -189,7 +189,7 @@ describe("entry feedTitle is the user's subscription title", () => {
       // Clearing the custom title falls back to the feed's.
       await publishSubscriptionUpdated(renamer, subscriptionId, new Date(), [], null);
       const laterEntryId = await createTestEntry(feedId, { userIds: [renamer, other] });
-      await publishNewEntry(feedId, laterEntryId, new Date(), "web", payload);
+      await publishNewEntry(feedId, laterEntryId, new Date(), payload);
       await renamerStream.waitFor("new_entry", (event) => event.entryId === laterEntryId);
       expect(titlesFor(renamerStream, laterEntryId)).toEqual([FEED_TITLE]);
     } finally {

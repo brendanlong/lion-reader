@@ -759,15 +759,13 @@ export async function processEntries(
           ? newEntryAnnouncement(result.newEntryData, feedTitle ?? null)
           : null;
       if (announcement && result.updatedAt) {
-        publishNewEntry(feedId, result.id, result.updatedAt, "web", announcement.entry).catch(
-          (err) => {
-            logger.error("Failed to publish new_entry event", {
-              feedId,
-              entryId: result.id,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        );
+        publishNewEntry(feedId, result.id, result.updatedAt, announcement.entry).catch((err) => {
+          logger.error("Failed to publish new_entry event", {
+            feedId,
+            entryId: result.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
       }
     }
   }

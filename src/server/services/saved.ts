@@ -541,7 +541,7 @@ async function insertSavedEntry(
   // Fire-and-forget: SSE is best-effort and must never fail the save response
   // (the entry transaction has already committed). See entry-events.ts.
   void publishUserNewEntry(
-    { userId, subscriptionId: null, feedId: savedFeedId, feedType: "saved" },
+    { userId, subscriptionId: null, feedType: "saved" },
     entryId,
     now,
     entryListPayload(values, SAVED_FEED_TITLE)
@@ -1302,7 +1302,7 @@ export async function saveArticle(
     // Fire-and-forget: SSE is best-effort and must never fail the response (the
     // transaction has already committed). See entry-events.ts.
     void publishUserEntryUpdated(
-      { userId, subscriptionId: null, feedId: savedFeedId, feedType: "saved" },
+      { userId, subscriptionId: null, feedType: "saved" },
       {
         id: oldEntry.id,
         title: finalTitle,
