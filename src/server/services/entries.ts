@@ -144,6 +144,12 @@ export interface EntryFull {
   author: string | null;
   contentOriginal: string | null;
   contentCleaned: string | null;
+  /**
+   * The sanitized fetched full article when the entry view shows it instead of
+   * the feed content (`showsFullContent`), else null. External clients serve
+   * this first so they match the web app.
+   */
+  fullContent: string | null;
   summary: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
@@ -870,32 +876,60 @@ async function searchEntries(
 }
 
 /**
- * Maps a raw row to EntryFull, sanitizing the content family per read. EntryFull
- * doesn't expose full-content fields, so that family is neither selected nor
- * sanitized here.
+ * Maps a raw row to EntryFull, sanitizing the content family per read. Full
+ * content is sanitized only when it's the variant shown.
  */
 async function toEntryFull(
   row: Awaited<ReturnType<typeof selectEntryFullRows>>[number]
 ): Promise<EntryFull> {
-  const { contentOriginal, contentCleaned, ...rest } = row;
+  const {
+    contentOriginal,
+    contentCleaned,
+    fullContent,
+    fullContentFetchedAt,
+    fullContentError,
+    fetchFullContent,
+    ...rest
+  } = row;
 
-  const content = await sanitizeEntryContentFamily("content", {
-    original: contentOriginal,
-    cleaned: contentCleaned,
+  const showFull = showsFullContent({
+    fullContentCleaned: fullContent,
+    fullContentFetchedAt,
+    fullContentError,
+    fetchFullContent,
   });
+  const [content, sanitizedFullContent] = await Promise.all([
+    sanitizeEntryContentFamily("content", {
+      original: contentOriginal,
+      cleaned: contentCleaned,
+    }),
+    sanitizeEntryHtmlAsync(showFull ? fullContent : null),
+  ]);
 
   return {
     ...rest,
     contentOriginal: content.original,
     contentCleaned: content.cleaned,
+    fullContent: sanitizedFullContent,
   };
 }
 
 function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
   return db
-    .select(entryFullSelectFields)
+    .select({
+      ...entryFullSelectFields,
+      // Raw (untrusted); reduced to the variant served so a whole-page original
+      // is never loaded alongside its cleaned version.
+      fullContent: sql<
+        string | null
+      >`COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal})`,
+      fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+      fullContentError: visibleEntries.fullContentError,
+      fetchFullContent: subscriptions.fetchFullContent,
+    })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
     .where(condition);
 }
 

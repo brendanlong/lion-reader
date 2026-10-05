@@ -133,7 +133,8 @@ export function formatEntryFull(entry: EntryFull): WallabagEntry {
     wallabagId: Number(entry.greaderItemId),
     url: entry.url,
     title: entry.title,
-    content: entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? null,
+    content:
+      entry.fullContent ?? entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? null,
     read: entry.read,
     starred: entry.starred,
     author: entry.author,

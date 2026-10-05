@@ -163,6 +163,7 @@ async function handleStreamContents(
         ...entry,
         contentOriginal: null,
         contentCleaned: null,
+        fullContent: null,
         feedUrl: null,
         unsubscribeUrl: null,
       }

@@ -22,7 +22,9 @@ import {
   createTestUser,
 } from "./helpers";
 
-async function seedSubscribedUser(): Promise<{ userId: string; feedId: string }> {
+async function seedSubscribedUser(
+  subscriptionOverrides: { fetchFullContent?: boolean } = {}
+): Promise<{ userId: string; feedId: string }> {
   const now = new Date();
   const userId = await createTestUser();
   const feedId = await createTestFeed({
@@ -30,7 +32,7 @@ async function seedSubscribedUser(): Promise<{ userId: string; feedId: string }>
     lastFetchedAt: now,
     lastEntriesUpdatedAt: now,
   });
-  await createTestSubscription(userId, feedId);
+  await createTestSubscription(userId, feedId, subscriptionOverrides);
   return { userId, feedId };
 }
 
@@ -160,6 +162,35 @@ describe("entries.get sanitized content", () => {
         expect(entry.contentCleaned).toContain(`body-${entryIds[i]}`);
         expect(entry.contentCleaned).not.toContain("<script>");
       }
+    });
+
+    // Issue #1787: Google Reader/Wallabag clients got the feed teaser even when
+    // the subscription fetches full articles.
+    it("serves sanitized full content only when the subscription shows it", async () => {
+      const fullContentFields = {
+        contentCleaned: "<p>teaser</p>",
+        fullContentCleaned: '<p onclick="evil()">full article<script>alert(1)</script></p>',
+        fullContentHash: "fullhash",
+        fullContentFetchedAt: new Date(),
+      };
+
+      const enabled = await seedSubscribedUser({ fetchFullContent: true });
+      const enabledId = await createTestEntry(enabled.feedId, {
+        ...fullContentFields,
+        userIds: [enabled.userId],
+      });
+      const [entry] = await entriesService.getEntries(db, enabled.userId, [enabledId]);
+      expect(entry.fullContent).toContain("full article");
+      expect(entry.fullContent).not.toContain("<script>");
+      expect(entry.fullContent).not.toContain("onclick");
+
+      const disabled = await seedSubscribedUser({ fetchFullContent: false });
+      const disabledId = await createTestEntry(disabled.feedId, {
+        ...fullContentFields,
+        userIds: [disabled.userId],
+      });
+      const disabledEntry = await entriesService.getEntry(db, disabled.userId, disabledId);
+      expect(disabledEntry.fullContent).toBeNull();
     });
   });
 });
