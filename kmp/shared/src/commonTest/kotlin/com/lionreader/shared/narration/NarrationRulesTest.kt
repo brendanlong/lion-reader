@@ -96,17 +96,48 @@ class NarrationRulesTest {
         val offsets = intArrayOf(0, 100, 200, 300, 400, 500)
         val queued = 2
         // The next chunk always; past it, while within the lookahead.
-        assertTrue(shouldSynthesize(1, playing = 0, queued, offsets, lookaheadChars = 0))
-        assertTrue(shouldSynthesize(3, playing = 0, queued, offsets, lookaheadChars = 200))
-        assertFalse(shouldSynthesize(4, playing = 0, queued, offsets, lookaheadChars = 200))
+        assertTrue(
+            shouldSynthesize(1, playing = 0, queued, offsets, lookaheadChars = 0, speed = 1f)
+        )
+        assertTrue(
+            shouldSynthesize(3, playing = 0, queued, offsets, lookaheadChars = 200, speed = 1f)
+        )
+        assertFalse(
+            shouldSynthesize(4, playing = 0, queued, offsets, lookaheadChars = 200, speed = 1f)
+        )
+    }
+
+    @Test
+    fun theLookaheadIsListeningTimeSoItGrowsWithSpeed() {
+        val offsets = intArrayOf(0, 100, 200, 300, 400, 500)
+        assertTrue(shouldSynthesize(4, playing = 0, 2, offsets, lookaheadChars = 200, speed = 1.5f))
+        assertFalse(
+            shouldSynthesize(4, playing = 0, 2, offsets, lookaheadChars = 200, speed = 1.4f)
+        )
+        assertFalse(
+            shouldSynthesize(2, playing = 0, 1, offsets, lookaheadChars = 200, speed = 0.4f)
+        )
     }
 
     @Test
     fun synthesisGoesOnWhenNothingIsQueuedPastWhatsPlaying() {
         val offsets = intArrayOf(0, 100, 200, 300, 400, 500)
-        assertTrue(shouldSynthesize(4, playing = 2, lastAdded = 2, offsets, lookaheadChars = 0))
-        assertTrue(shouldSynthesize(4, playing = 0, lastAdded = null, offsets, lookaheadChars = 0))
-        assertFalse(shouldSynthesize(4, playing = 1, lastAdded = 2, offsets, lookaheadChars = 0))
+        assertTrue(
+            shouldSynthesize(4, playing = 2, lastAdded = 2, offsets, lookaheadChars = 0, speed = 1f)
+        )
+        assertTrue(
+            shouldSynthesize(
+                4,
+                playing = 0,
+                lastAdded = null,
+                offsets,
+                lookaheadChars = 0,
+                speed = 1f,
+            )
+        )
+        assertFalse(
+            shouldSynthesize(4, playing = 1, lastAdded = 2, offsets, lookaheadChars = 0, speed = 1f)
+        )
     }
 
     @Test

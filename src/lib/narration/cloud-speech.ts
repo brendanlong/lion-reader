@@ -187,10 +187,11 @@ function createPlayer(
     synthesize,
     loadMimeType: loadCloudMimeType,
     chunkParagraphs: chunkCloudSpeech,
-    // One streaming while the next waits for its first audio, and no more:
-    // providers limit concurrent requests per key, which several listeners
-    // share on the server's.
-    maxConcurrentSyntheses: 2,
+    // Enough that a provider streaming slower than playback (at 2x, say) can
+    // keep up by generating several chunks at once, but bounded: providers
+    // limit concurrent requests per key, which several listeners share on the
+    // server's.
+    maxConcurrentSyntheses: 4,
   });
 }
 

@@ -10,7 +10,10 @@ import java.io.File
  */
 interface SpeechEngine {
     val maxChunkChars: Int
-    /** Speech runs about 15 characters a second, so 450 is about 30 seconds ahead. */
+    /**
+     * At 1x, scaled by the playback speed. Speech runs about 15 characters a second, so 450 is
+     * about 30 seconds of listening ahead.
+     */
     val lookaheadChars: Int
     val parallelism: Int
 
