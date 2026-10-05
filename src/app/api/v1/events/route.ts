@@ -44,6 +44,7 @@ import {
   type UserEvent,
 } from "@/server/redis/pubsub";
 import { eq, and, isNull, not } from "drizzle-orm";
+import type { NewEntryListData } from "@/lib/events/schemas";
 import {
   incrementSSEConnections,
   decrementSSEConnections,
@@ -89,6 +90,28 @@ async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, s
     map.set(row.feedId, row.subscriptionId);
   }
   return map;
+}
+
+/** subscriptionId -> custom title for the user's active subscriptions. */
+async function getUserCustomTitles(userId: string): Promise<Map<string, string | null>> {
+  const rows = await db
+    .select({ id: subscriptions.id, customTitle: subscriptions.customTitle })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+  return new Map(rows.map((row) => [row.id, row.customTitle]));
+}
+
+/**
+ * A feed event's list-item payload as this user sees it: feed channels are
+ * shared, so the publisher can only stamp the feed's own title; the user's
+ * custom title for the subscription replaces it here, matching what
+ * `entries.list` returns for the same entry.
+ */
+function withCustomFeedTitle(
+  entry: NewEntryListData,
+  customTitle: string | null | undefined
+): NewEntryListData {
+  return customTitle == null ? entry : { ...entry, feedTitle: customTitle };
 }
 
 /** A user event's `feedId` only routes feed channels here: clients only ever see subscription IDs. */
@@ -212,6 +235,20 @@ export async function GET(req: Request): Promise<Response> {
 
       // Local copy of feed -> subscription mapping (updated on subscription events)
       const feedSubscriptionMap = new Map(feedToSubscriptionMap);
+
+      // subscriptionId -> custom title, for new_entry payloads. Loaded only
+      // once the user channel is subscribed, so a rename can't fall between
+      // the load and the channel; a title an event set first wins over it.
+      const customTitles = new Map<string, string | null>();
+      const titlesSetByEvents = new Set<string>();
+      let markCustomTitlesLoaded = (): void => {};
+      const customTitlesLoaded = new Promise<void>((resolve) => {
+        markCustomTitlesLoaded = resolve;
+      });
+      function setCustomTitle(subscriptionId: string, title: string | null): void {
+        titlesSetByEvents.add(subscriptionId);
+        customTitles.set(subscriptionId, title);
+      }
 
       /**
        * Cleanup function to release Redis channel subscriptions and clear heartbeat
@@ -384,8 +421,12 @@ export async function GET(req: Request): Promise<Response> {
           // (Done synchronously, outside the send chain, so channel membership
           // updates aren't delayed behind pending count queries.)
           if (event.type === "subscription_created" && event.feed.type !== "collection") {
+            setCustomTitle(event.subscriptionId, event.subscription.customTitle);
             subscribeToFeed(event.feedId, event.subscriptionId);
+          } else if (event.type === "subscription_updated") {
+            setCustomTitle(event.subscriptionId, event.customTitle);
           } else if (event.type === "subscription_deleted") {
+            setCustomTitle(event.subscriptionId, null);
             unsubscribeFromFeed(event.feedId);
           } else if (event.type === "saved_feed_created") {
             // The saved feed was created after this connection opened; subscribe
@@ -426,6 +467,7 @@ export async function GET(req: Request): Promise<Response> {
             // order as the per-subscriber user_entries inserts the worker
             // already does for each new entry.
             enqueueSend(async () => {
+              await customTitlesLoaded;
               let counts: BulkUnreadCounts | undefined;
               try {
                 counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
@@ -446,7 +488,14 @@ export async function GET(req: Request): Promise<Response> {
                   ...(counts ? { counts } : {}),
                   // List-item data (absent from events published by a previous
                   // release) lets the client insert the entry into cached lists.
-                  ...(event.entry ? { entry: event.entry } : {}),
+                  ...(event.entry
+                    ? {
+                        entry: withCustomFeedTitle(
+                          event.entry,
+                          subscriptionId ? customTitles.get(subscriptionId) : null
+                        ),
+                      }
+                    : {}),
                 })}\n\n`
               );
               trackSSEEventSent("new_entry");
@@ -506,7 +555,22 @@ export async function GET(req: Request): Promise<Response> {
         }
 
         // Subscribe to all channels
-        subscription.subscribe(...allChannels).catch((err) => {
+        const subscribed = subscription.subscribe(...allChannels);
+        subscribed
+          .then(
+            async () => {
+              for (const [id, title] of await getUserCustomTitles(userId)) {
+                if (!titlesSetByEvents.has(id)) customTitles.set(id, title);
+              }
+            },
+            () => {} // a failed subscribe is handled below
+          )
+          .catch((err) => {
+            // new_entry then carries the feed's own title; nothing else breaks.
+            console.error("Failed to load subscription custom titles:", err);
+          })
+          .finally(markCustomTitlesLoaded);
+        subscribed.catch((err) => {
           console.error("Failed to subscribe to channels:", err);
           cleanup();
           try {

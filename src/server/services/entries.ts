@@ -37,6 +37,7 @@ import {
   buildTaggedSubscriptionIdsSubquery,
   verifySubscriptionOwnership,
   buildUncategorizedSubscriptionIdsSubquery,
+  entryFeedTitleSql,
 } from "./entry-filters";
 
 // ============================================================================
@@ -337,7 +338,7 @@ const entryFullSelectFields = {
   updatedAt: visibleEntries.updatedAt,
   subscriptionId: visibleEntries.subscriptionId,
   siteName: visibleEntries.siteName,
-  feedTitle: feeds.title,
+  feedTitle: entryFeedTitleSql(),
   feedUrl: feeds.url,
   unsubscribeUrl: visibleEntries.unsubscribeUrl,
 };
@@ -631,7 +632,7 @@ export async function listExportableEntries(
       siteName: visibleEntries.siteName,
       feedTitle: sql<
         string | null
-      >`CASE WHEN ${visibleEntries.type} = 'saved' THEN NULL ELSE COALESCE(${subscriptions.customTitle}, ${feeds.title}) END`,
+      >`CASE WHEN ${visibleEntries.type} = 'saved' THEN NULL ELSE ${entryFeedTitleSql()} END`,
       summary: visibleEntries.summary,
       publishedAt: visibleEntries.publishedAt,
       fetchedAt: visibleEntries.fetchedAt,
@@ -780,11 +781,12 @@ export async function listEntries(
   const queryResults = await db
     .select({
       ...entryListSelectFields,
-      feedTitle: feeds.title,
+      feedTitle: entryFeedTitleSql(),
       sortTs: sortTsInstant,
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
     .where(and(...conditions))
     .orderBy(...orderByClause)
     .limit(limit + 1)
@@ -865,12 +867,13 @@ async function searchEntries(
       ...entryListSelectFields,
       // Alias to avoid colliding with visibleEntries.title (both are "title")
       // inside the subquery, which would make the outer reference ambiguous.
-      feedTitle: sql<string | null>`${feeds.title}`.as("feed_title"),
+      feedTitle: entryFeedTitleSql().as("feed_title"),
       // Alias required so the outer query can reference this raw SQL field.
       rank: rankColumn.as("rank"),
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
     .where(and(...conditions))
     .as("ranked");
 
