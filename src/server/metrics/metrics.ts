@@ -183,6 +183,56 @@ export function trackTrpcProcedure(
 }
 
 // ============================================================================
+// Android App Version Metrics
+// ============================================================================
+
+/**
+ * Requests made with the Android app's OAuth token, by app version: which
+ * installed versions are still in use, so API fields only old installs read can
+ * be dropped once they stop showing up (#1846). Counts requests, not installs.
+ *
+ * The app sends `LionReader-Android/<versionName> (<versionCode>)`; releases
+ * up to 0.6.0 send it without ` (<versionCode>)`. Release versionNames are
+ * X.Y.Z (`.github/workflows/android-release.yml`), and debug builds say 0.1.0.
+ */
+const androidAppRequestsTotal = getOrCreate(Counter, {
+  name: "android_app_requests_total",
+  help: 'Requests authenticated with the Android app\'s token, by app version ("other": unrecognized User-Agent)',
+  labelNames: ["version"] as const,
+});
+
+const ANDROID_USER_AGENT = /^LionReader-Android\/(\d{1,4}\.\d{1,3}\.\d{1,3})(?: \(\d{1,10}\))?$/;
+
+/**
+ * The most distinct versions given their own label (per module graph), so a
+ * client sending made-up version strings can't grow the scrape without bound.
+ * Real installs span a handful of releases.
+ */
+export const MAX_ANDROID_VERSION_LABELS = 50;
+
+const androidVersionsSeen = new Set<string>();
+
+/**
+ * The `version` label for a User-Agent: the app's versionName, or "other" when
+ * the User-Agent isn't the app's or `seen` already holds the cap of versions.
+ * Adds a newly labeled version to `seen`.
+ */
+export function androidAppVersionLabel(userAgent: string | null, seen: Set<string>): string {
+  const version = userAgent?.match(ANDROID_USER_AGENT)?.[1];
+  if (!version) return "other";
+  if (seen.has(version)) return version;
+  if (seen.size >= MAX_ANDROID_VERSION_LABELS) return "other";
+  seen.add(version);
+  return version;
+}
+
+/** Counts a request authenticated with the Android app's token. */
+export function trackAndroidAppRequest(userAgent: string | null): void {
+  if (!androidAppRequestsTotal) return;
+  androidAppRequestsTotal.inc({ version: androidAppVersionLabel(userAgent, androidVersionsSeen) });
+}
+
+// ============================================================================
 // Feed Fetch Metrics
 // ============================================================================
 

@@ -9,6 +9,7 @@ import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { validateAppAccessToken } from "@/server/auth/app-token";
 import { isSessionActive, validateSession } from "@/server/auth/session";
 import { isAccessTokenActive } from "@/server/oauth/service";
+import { trackAndroidAppRequest } from "@/server/metrics/metrics";
 
 export interface RouteAuth {
   userId: string;
@@ -52,6 +53,7 @@ export async function authenticateRouteRequest(headers: Headers): Promise<RouteA
 
   const appToken = await validateAppAccessToken(credential);
   if (!appToken) return null;
+  trackAndroidAppRequest(headers.get("user-agent"));
   const tokenId = appToken.tokenId;
   return {
     userId: appToken.userId,
