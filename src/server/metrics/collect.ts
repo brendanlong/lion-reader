@@ -4,7 +4,7 @@
  * Collects metrics from the database for Prometheus export, on each scrape.
  */
 
-import { getTableName, sql, type SQL } from "drizzle-orm";
+import { eq, getTableName, sql, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { db, pool } from "../db";
 import { users, subscriptions, entries, feeds, jobs } from "../db/schema";
@@ -45,7 +45,7 @@ async function collectBusinessMetrics(): Promise<void> {
     estimateRows(entries),
     // Only web feeds are shared and fetched; email, saved and collection feeds
     // are per-user containers, already reflected in users/subscriptions.
-    countRows(feeds, sql`${feeds.type} = 'web'`),
+    countRows(feeds, eq(feeds.type, "web")),
   ]);
 
   updateBusinessMetrics({

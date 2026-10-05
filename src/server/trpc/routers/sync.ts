@@ -271,9 +271,11 @@ async function databaseNow(db: Database): Promise<Temporal.Instant> {
 
 /**
  * The `visible_entries` predicate, over `user_entries` joined to `entries`
- * and left-joined to `subscriptions` on the stamped subscription id. It is
- * fail-closed: an orphaned row's NULL subscription is hidden unless starred
- * or saved (#1080).
+ * and left-joined to `subscriptions` on the stamped subscription id. A NULL
+ * subscription id means a saved/uploaded article, but the saved arm still
+ * gates on the entry type, so the predicate is fail-closed as defence in
+ * depth: a feed entry that somehow lost its subscription stays hidden unless
+ * starred (#1080).
  */
 function visibleEntrySql(): SQL {
   return sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved'

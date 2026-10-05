@@ -75,7 +75,9 @@ export interface SeededEntry {
 //   entry-2:               sub-1, web, unread, not starred
 //   entry-3:               sub-2, web, read, not starred
 //   entry-saved:           null,  saved, unread, not starred (saved article, no subscription)
-//   entry-starred-orphan:  null,  web, unread, starred (orphaned starred entry, no subscription)
+//   entry-starred-orphan:  null,  web, unread, starred (stands in for a starred entry from
+//                          an unsubscribed feed; the server would send that subscription's
+//                          id, which no cached subscription matches, never null for web)
 // ============================================================================
 
 export const DEFAULT_SUBSCRIPTIONS: SeededSubscription[] = [
