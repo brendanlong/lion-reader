@@ -193,33 +193,56 @@ export function trackTrpcProcedure(
  *
  * The app sends `LionReader-Android/<versionName> (<versionCode>)`; releases
  * up to 0.6.0 send it without ` (<versionCode>)`. Release versionNames are
- * X.Y.Z (`.github/workflows/android-release.yml`), and debug builds say 0.1.0.
+ * X.Y.Z and versionCodes X*1000000 + Y*1000 + Z
+ * (`.github/workflows/android-release.yml`); debug builds' versionCode is 1.
  */
 const androidAppRequestsTotal = getOrCreate(Counter, {
   name: "android_app_requests_total",
-  help: 'Requests authenticated with the Android app\'s token, by app version ("other": unrecognized User-Agent)',
+  help: 'Requests authenticated with the Android app\'s token, by app version ("debug": a debug build; "other": unrecognized User-Agent)',
   labelNames: ["version"] as const,
 });
 
-const ANDROID_USER_AGENT = /^LionReader-Android\/(\d{1,4}\.\d{1,3}\.\d{1,3})(?: \(\d{1,10}\))?$/;
+const ANDROID_USER_AGENT =
+  /^LionReader-Android\/(\d{1,4})\.(\d{1,3})\.(\d{1,3})(?: \((\d{1,10})\))?$/;
+
+/** The versionCode debug builds report (`kmp/androidApp/build.gradle.kts`). */
+const DEBUG_VERSION_CODE = 1;
 
 /**
- * The most distinct versions given their own label (per module graph), so a
- * client sending made-up version strings can't grow the scrape without bound.
- * Real installs span a handful of releases.
+ * The most distinct versions given their own label, so a client sending
+ * made-up version strings can't grow the scrape without bound. Real installs
+ * span a handful of releases.
  */
 export const MAX_ANDROID_VERSION_LABELS = 50;
 
-const androidVersionsSeen = new Set<string>();
+/**
+ * The versions labeled so far. On `globalThis`, like the registry, so the cap
+ * holds per process rather than per module graph.
+ */
+const VERSIONS_SEEN_KEY = Symbol.for("lion-reader.metrics.android-versions-seen");
+type GlobalWithVersionsSeen = typeof globalThis & { [VERSIONS_SEEN_KEY]?: Set<string> };
+const androidVersionsSeen: Set<string> = ((globalThis as GlobalWithVersionsSeen)[
+  VERSIONS_SEEN_KEY
+] ??= new Set<string>());
 
 /**
- * The `version` label for a User-Agent: the app's versionName, or "other" when
- * the User-Agent isn't the app's or `seen` already holds the cap of versions.
+ * The `version` label for a User-Agent: the app's versionName; "debug" for a
+ * debug build; or "other" when the User-Agent isn't the app's, its versionCode
+ * doesn't match its versionName, or `seen` already holds the cap of versions.
  * Adds a newly labeled version to `seen`.
  */
 export function androidAppVersionLabel(userAgent: string | null, seen: Set<string>): string {
-  const version = userAgent?.match(ANDROID_USER_AGENT)?.[1];
-  if (!version) return "other";
+  const match = userAgent?.match(ANDROID_USER_AGENT);
+  if (!match) return "other";
+  const [, major, minor, patch, code] = match;
+  if (code !== undefined) {
+    const versionCode = Number(code);
+    if (versionCode === DEBUG_VERSION_CODE) return "debug";
+    if (versionCode !== Number(major) * 1_000_000 + Number(minor) * 1_000 + Number(patch)) {
+      return "other";
+    }
+  }
+  const version = `${Number(major)}.${Number(minor)}.${Number(patch)}`;
   if (seen.has(version)) return version;
   if (seen.size >= MAX_ANDROID_VERSION_LABELS) return "other";
   seen.add(version);

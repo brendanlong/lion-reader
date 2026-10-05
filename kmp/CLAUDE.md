@@ -15,9 +15,10 @@ class doing it.
   `docs/api/openapi.json`; CI fails on breaking changes), never the tRPC wire
   format (superjson) or the Google Reader API.
 - A known sync event that doesn't parse stops sync rather than lose the change
-  (`parseSyncEvent`), so a new value in an enum an event carries (a feed type,
-  say) breaks installed apps: add it as an optional field, or ship the app
-  first.
+  (`parseSyncEvent`), so a new required field, or a new value of an enum an
+  event carries, breaks installed apps: make the field optional, or ship the
+  app first. Decode server-defined kinds (entry and subscription types) as
+  strings, not enums.
 - No custom URL scheme for sign-in: any app can register one and finish a
   sign-in under our client id. The redirect is a verified App Link.
 - Token refresh is serialized through `AppAuth`'s mutex (refresh tokens rotate;
