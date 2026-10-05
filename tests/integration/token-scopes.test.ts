@@ -71,6 +71,16 @@ describe("API token scope enforcement", () => {
       await expect(caller.tags.list()).resolves.toBeDefined();
     });
 
+    it("can set subscription tags, like the set_subscription_tags tool (#1843)", async () => {
+      const userId = await createUser();
+      const caller = createCaller(await createTokenContext(userId, ["mcp"]));
+
+      await expectPassedScopeGate(
+        caller.subscriptions.setTags({ id: generateUuidv7(), tagIds: [] }),
+        "NOT_FOUND"
+      );
+    });
+
     it("cannot access session-only endpoints (sessions, narration)", async () => {
       const userId = await createUser();
       const caller = createCaller(await createTokenContext(userId, ["mcp"]));
