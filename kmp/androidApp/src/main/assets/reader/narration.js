@@ -436,9 +436,9 @@
   }
   function linkTarget(href) {
     try {
-      return `[link to ${new URL(href).hostname}]`;
+      return `(link to ${new URL(href).hostname})`;
     } catch {
-      return `[link to ${href}]`;
+      return `(link to ${href})`;
     }
   }
   function listItemMarker(li) {

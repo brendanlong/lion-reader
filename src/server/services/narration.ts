@@ -79,6 +79,7 @@ RULES:
   - "6'" → "6 feet", "6\"" → "6 inches" when describing height/length; "$6B" → "6 billion dollars", "6M users" → "6 million users"; "4x faster" → "4 times faster"
   - Leave it literal when the suffix is part of a name or its meaning is unclear: "5900X" (AMD chip) stays as-is (the X is read as a letter), "Model X" stays as-is
   - If you can't tell from context what a suffix means, leave it unchanged so TTS reads it literally rather than inventing a meaning
+- Footnote markers are spoken in parentheses: "[1]" or "¹" → "(footnote 1)"; other square brackets become parentheses: "[sic]" → "(sic)"
 - Image alt text is already speakable - clean up if needed, don't rephrase
 - Skip garbage content (ellipsis, ads, junk) using empty string: "text": ""
 - Keep content faithful - do NOT summarize or editorialize
@@ -93,7 +94,8 @@ INPUT:
     { "id": 3, "text": "tl;dr: it works great" },
     { "id": 4, "text": "The rocket is 6' tall and 4x faster." },
     { "id": 5, "text": "The Ryzen 5900X is fast." },
-    { "id": 6, "text": "..." }
+    { "id": 6, "text": "..." },
+    { "id": 7, "text": "It shipped in 2019.[2]" }
   ]
 }
 
@@ -106,7 +108,8 @@ OUTPUT:
     { "id": 3, "text": "TL;DR: it works great." },
     { "id": 4, "text": "The rocket is 6 feet tall and 4 times faster." },
     { "id": 5, "text": "The Ryzen 5900X is fast." },
-    { "id": 6, "text": "" }
+    { "id": 6, "text": "" },
+    { "id": 7, "text": "It shipped in 2019 (footnote 2)." }
   ]
 }
 

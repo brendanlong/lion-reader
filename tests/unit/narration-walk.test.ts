@@ -130,7 +130,7 @@ function expectedWords(html: string): string[] {
 
 /**
  * How many links in a shape have their URL as their text, the one kind that is
- * announced by its target instead ("[link to example.com]").
+ * announced by its target instead ("(link to example.com)").
  *
  * Narration adding boilerplate is invisible to the word count: it introduces no
  * word the document contains, which is how a `<figure><a><img></a></figure>`
@@ -145,7 +145,7 @@ function urlLinks(html: string): number {
 
 /** How many paragraphs are a link announcement rather than the page's words. */
 function announcedLinks(texts: string[]): number {
-  return (texts.join(" ").match(/\[link to /g) ?? []).length;
+  return (texts.join(" ").match(/\(link to /g) ?? []).length;
 }
 
 describe("narration walk invariants", () => {

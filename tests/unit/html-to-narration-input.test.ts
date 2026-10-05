@@ -326,7 +326,7 @@ describe("htmlToNarrationInput", () => {
       const html = '<p>Visit <a href="https://example.com">https://example.com</a>.</p>';
       const result = htmlToNarrationInput(html);
 
-      expect(narrated(result)).toEqual(["Visit [link to example.com]."]);
+      expect(narrated(result)).toEqual(["Visit (link to example.com)."]);
     });
 
     it("says nothing for a link with no visible text", () => {
@@ -895,7 +895,7 @@ describe("htmlToNarrationInput", () => {
         '<p><a href="https://x.com/p">https://x.com/p</a></p>',
         '<a href="https://x.com/p"><p>https://x.com/p</p></a>',
       ]) {
-        expect(narrated(htmlToNarrationInput(html))).toEqual(["[link to x.com]"]);
+        expect(narrated(htmlToNarrationInput(html))).toEqual(["(link to x.com)"]);
       }
     });
   });

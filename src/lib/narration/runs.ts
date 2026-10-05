@@ -261,7 +261,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
    * visible words (`<a href="…"> </a>`, which Substack scatters between linked
    * words) is invisible on the page, so it is silent here too. The one rewrite
    * is a URL as its own link text, which reads as noise: it says where it goes
-   * instead, because "[link to example.com]" beats spelling out a URL.
+   * instead, because "(link to example.com)" beats spelling out a URL.
    */
   const visitLink = (el: Element, depth: number) => {
     const href = el.getAttribute("href");
@@ -625,9 +625,9 @@ function imageText(img: Element, voice: NarrationVoice): string {
 /** What a link whose text is its own URL says instead. */
 function linkTarget(href: string): string {
   try {
-    return `[link to ${new URL(href).hostname}]`;
+    return `(link to ${new URL(href).hostname})`;
   } catch {
-    return `[link to ${href}]`;
+    return `(link to ${href})`;
   }
 }
 

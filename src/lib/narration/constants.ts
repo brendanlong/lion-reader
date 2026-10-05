@@ -16,7 +16,7 @@
  * cache key: a bump misses the cache instead, and two releases that disagree
  * about the numbering never share a row.
  */
-export const NARRATION_FORMAT_VERSION = 4;
+export const NARRATION_FORMAT_VERSION = 5;
 
 /**
  * Providers selectable for narration preprocessing. Narration preprocessing
