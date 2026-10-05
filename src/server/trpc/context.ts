@@ -11,6 +11,7 @@ import { validateSession, type SessionData } from "@/server/auth/session";
 import { validateApiToken, type ApiTokenData } from "@/server/auth/api-token";
 import { validateAppAccessToken } from "@/server/auth/app-token";
 import { extractBearerToken } from "@/server/auth/bearer";
+import { trackAndroidAppRequest } from "@/server/metrics/metrics";
 import type { OAuthScope } from "@/server/oauth/utils";
 import type { User } from "@/server/db/schema";
 
@@ -200,6 +201,7 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
   // clients, Wallabag) are audience-bound elsewhere and rejected here.
   const appToken = await validateAppAccessToken(token);
   if (appToken) {
+    trackAndroidAppRequest(req.headers.get("user-agent"));
     const now = new Date();
     return {
       db,

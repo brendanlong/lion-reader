@@ -2,7 +2,6 @@ package com.lionreader.shared.data
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.api.EntryMetadata
-import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.db.LionReaderDatabase
@@ -35,7 +34,7 @@ class SearchTest {
             FullEntry(
                 id = id,
                 subscriptionId = "sub-1",
-                type = FeedType.WEB,
+                type = "web",
                 title = title,
                 author = "Ada Lovelace",
                 summary = "A summary about engines",

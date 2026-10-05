@@ -202,7 +202,7 @@ class FakeServer {
                         .filter { !recentlyRead || it.readChangedAt != null }
                         .filter { params["starredOnly"] != "true" || it.starred }
                         .filter {
-                            params["type"] == null || it.type.name.lowercase() == params["type"]
+                            params["type"] == null || it.type == params["type"]
                         }
                         .filter {
                             val subscriptionId = params["subscriptionId"]

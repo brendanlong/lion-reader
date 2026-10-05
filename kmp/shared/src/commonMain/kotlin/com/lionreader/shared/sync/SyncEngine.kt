@@ -311,15 +311,17 @@ class SyncEngine(
                     }
                 }
                 .toSet()
-        // A new-entry event with its data is complete for an entry the device
-        // lacks. One it already has was listed by a bootstrap that began
-        // before the entry was created, and may have been edited since its
-        // body was downloaded (#1680), so it's fetched whole.
+        // A new-entry event with its data and type is complete for an entry
+        // the device lacks. One it already has was listed by a bootstrap that
+        // began before the entry was created, and may have been edited since
+        // its body was downloaded (#1680), so it's fetched whole.
         val newIds = events.filterIsInstance<SyncEvent.NewEntry>().map { it.entryId }.toSet()
         val complete =
             events
                 .filterIsInstance<SyncEvent.NewEntry>()
-                .filter { it.entry != null && !writer.entryExists(it.entryId) }
+                .filter {
+                    it.entry != null && it.entryType != null && !writer.entryExists(it.entryId)
+                }
                 .map { it.entryId }
         val ids =
             mentioned.distinct().filter {

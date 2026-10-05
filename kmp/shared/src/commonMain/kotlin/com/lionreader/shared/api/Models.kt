@@ -10,17 +10,14 @@ import kotlinx.serialization.json.JsonObject
 // on decode, so additive server changes never break an installed app.
 
 @Serializable
-enum class FeedType {
-    @SerialName("web") WEB,
-    @SerialName("email") EMAIL,
-    @SerialName("saved") SAVED,
-}
-
-@Serializable
 data class EntryListItem(
     val id: String,
     val subscriptionId: String? = null,
-    val type: FeedType,
+    /**
+     * `web`, `email` or `saved`; a string, so a type newer than this app still decodes. The local
+     * database treats anything but `saved` as not saved.
+     */
+    val type: String,
     val url: String? = null,
     val title: String? = null,
     val author: String? = null,
@@ -42,7 +39,7 @@ data class EntryListPage(val items: List<EntryListItem>, val nextCursor: String?
 data class FullEntry(
     val id: String,
     val subscriptionId: String? = null,
-    val type: FeedType,
+    val type: String,
     val url: String? = null,
     val title: String? = null,
     val author: String? = null,
@@ -111,7 +108,7 @@ const val COLLECTION_TYPE = "collection"
 @Serializable
 data class Subscription(
     val id: String,
-    /** A string rather than [FeedType], so a type newer than this app still decodes. */
+    /** A string, so a type newer than this app still decodes (like [EntryListItem.type]). */
     val type: String? = null,
     val url: String? = null,
     /** The custom title if there is one, else [originalTitle]. */
@@ -157,6 +154,8 @@ data class SyncChanges(
 
 @Serializable
 data class EventEntry(
+    /** The entry's type, when the server sends it (see [SyncEvent.NewEntry.entryType]). */
+    val type: String? = null,
     val title: String? = null,
     val author: String? = null,
     val summary: String? = null,
@@ -197,10 +196,17 @@ sealed interface SyncEvent {
     data class NewEntry(
         val entryId: String,
         val subscriptionId: String? = null,
-        val feedType: FeedType,
+        val feedType: String? = null,
         /** Absent for spam, which the server's lists leave out. */
         val entry: EventEntry? = null,
-    ) : SyncEvent
+    ) : SyncEvent {
+        /**
+         * The entry's type, from the event or else its [entry]; null when neither says, and then
+         * the event can't stand in for the entry (it's fetched whole instead).
+         */
+        val entryType: String?
+            get() = feedType ?: entry?.type
+    }
 
     @Serializable
     @SerialName("entry_updated")
@@ -214,9 +220,13 @@ sealed interface SyncEvent {
         val starred: Boolean,
         val readChangedAt: String? = null,
         val subscriptionId: String? = null,
-        val feedType: FeedType? = null,
+        val feedType: String? = null,
         val entry: EventEntry? = null,
-    ) : SyncEvent
+    ) : SyncEvent {
+        /** As [NewEntry.entryType]. */
+        val entryType: String?
+            get() = feedType ?: entry?.type
+    }
 
     @Serializable
     @SerialName("subscription_created")

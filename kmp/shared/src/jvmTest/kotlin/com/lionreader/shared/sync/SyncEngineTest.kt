@@ -6,7 +6,6 @@ import com.lionreader.shared.api.ApiException
 import com.lionreader.shared.api.COLLECTION_TYPE
 import com.lionreader.shared.api.EntryMetadata
 import com.lionreader.shared.api.EventEntry
-import com.lionreader.shared.api.FeedType
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncEvent
@@ -51,7 +50,7 @@ class SyncEngineTest {
         read: Boolean = false,
         starred: Boolean = false,
         subscriptionId: String? = "sub-1",
-        type: FeedType = FeedType.WEB,
+        type: String = "web",
     ) =
         FullEntry(
             id = id,
@@ -347,7 +346,7 @@ class SyncEngineTest {
                     SyncEvent.NewEntry(
                         entryId = "c",
                         subscriptionId = "sub-1",
-                        feedType = FeedType.WEB,
+                        feedType = "web",
                         entry = EventEntry(title = "New", fetchedAt = "2026-09-29T11:00:00Z"),
                     ),
                     SyncEvent.EntryStateChanged(
@@ -380,7 +379,7 @@ class SyncEngineTest {
                     SyncEvent.NewEntry(
                         entryId = "a",
                         subscriptionId = "sub-1",
-                        feedType = FeedType.WEB,
+                        feedType = "web",
                         entry = EventEntry(title = "Title a", fetchedAt = "2026-09-28T12:00:00Z"),
                     )
                 )
@@ -584,7 +583,7 @@ class SyncEngineTest {
             entry("recent", ageDays = 1),
             entry("old", ageDays = 5),
             entry("old-starred", ageDays = 5, starred = true),
-            entry("old-saved", ageDays = 5, type = FeedType.SAVED, subscriptionId = null),
+            entry("old-saved", ageDays = 5, type = "saved", subscriptionId = null),
         )
 
         engine.sync()
@@ -623,7 +622,7 @@ class SyncEngineTest {
         serve(
             entry("tagged"),
             entry("untagged", subscriptionId = "sub-2"),
-            entry("saved", subscriptionId = null, type = FeedType.SAVED),
+            entry("saved", subscriptionId = null, type = "saved"),
         )
         engine.sync()
 
@@ -641,7 +640,7 @@ class SyncEngineTest {
             entry("c", ageDays = 2, subscriptionId = "sub-2"),
             entry("d", ageDays = 3, read = true, subscriptionId = "sub-2")
                 .copy(readChangedAt = minutesAgo(10)),
-            entry("e", ageDays = 4, subscriptionId = null, type = FeedType.SAVED)
+            entry("e", ageDays = 4, subscriptionId = null, type = "saved")
                 .copy(readChangedAt = minutesAgo(20)),
         )
         engine.sync()
@@ -682,7 +681,7 @@ class SyncEngineTest {
             entry("c", ageDays = 2, subscriptionId = "sub-2"),
             entry("d", ageDays = 3, read = true, subscriptionId = "sub-2")
                 .copy(readChangedAt = minutesAgo(10)),
-            entry("e", ageDays = 4, subscriptionId = null, type = FeedType.SAVED)
+            entry("e", ageDays = 4, subscriptionId = null, type = "saved")
                 .copy(readChangedAt = minutesAgo(20)),
         )
         engine.sync()
@@ -904,7 +903,7 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.NewEntry("spam", "sub-1", FeedType.WEB, entry = null),
+                    SyncEvent.NewEntry("spam", "sub-1", "web", entry = null),
                     SyncEvent.EntryStateChanged("spam-changed", read = false, starred = false),
                 )
         )
@@ -913,6 +912,74 @@ class SyncEngineTest {
 
         assertEquals(emptyList(), timeline())
         assertTrue(requests("/entries/batch").isEmpty())
+    }
+
+    @Test
+    fun anEntryOfATypeNewerThanTheAppIsKeptAsNotSaved() = runTest {
+        serve(
+            entry("new-type", type = "podcast"),
+            entry("saved", subscriptionId = null, type = "saved"),
+        )
+
+        engine.sync()
+
+        assertEquals(setOf("new-type", "saved"), timeline().toSet())
+        assertEquals(listOf("saved"), timeline(ListScope.Saved))
+        assertEquals(1, reader.navigation().first().savedUnread)
+    }
+
+    @Test
+    fun entryEventsWithoutAFeedTypeTakeTheEntrysOwnType() = runTest {
+        engine.sync()
+        // Not on the server any more, so only the events can add them.
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.NewEntry(
+                        "new",
+                        subscriptionId = null,
+                        feedType = null,
+                        entry = EventEntry(type = "saved", fetchedAt = "2026-09-29T11:00:00Z"),
+                    ),
+                    SyncEvent.EntryStateChanged(
+                        "unread-again",
+                        read = false,
+                        starred = false,
+                        subscriptionId = "sub-1",
+                        feedType = null,
+                        entry = EventEntry(type = "web", fetchedAt = "2026-09-29T10:00:00Z"),
+                    ),
+                )
+        )
+
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("new", "unread-again"), timeline())
+        assertEquals(listOf("new"), timeline(ListScope.Saved))
+    }
+
+    @Test
+    fun aNewEntryEventWithoutAnyTypeFetchesTheEntryWhole() = runTest {
+        engine.sync()
+        serve(entry("untyped", type = "saved", subscriptionId = null))
+        val fetched = mutableListOf<String>()
+        server.duringBatch = { fetched += it }
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.NewEntry(
+                        "untyped",
+                        "sub-1",
+                        feedType = null,
+                        entry = EventEntry(fetchedAt = "2026-09-29T11:00:00Z"),
+                    )
+                )
+        )
+
+        engine.sync(downloadContent = false)
+
+        assertEquals(listOf("untyped"), fetched)
+        assertEquals(listOf("untyped"), timeline(ListScope.Saved))
     }
 
     @Test
@@ -925,7 +992,7 @@ class SyncEngineTest {
             SyncEvent.NewEntry(
                 id,
                 "sub-1",
-                FeedType.WEB,
+                "web",
                 EventEntry(title = id, fetchedAt = "2026-09-29T11:00:00Z"),
             )
 

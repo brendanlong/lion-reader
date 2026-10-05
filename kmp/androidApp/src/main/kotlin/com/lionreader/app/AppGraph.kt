@@ -130,7 +130,11 @@ class AppGraph(
 
 private fun appHttpClient() =
     HttpClient(OkHttp) {
-        install(UserAgent) { agent = "LionReader-Android/${BuildConfig.VERSION_NAME}" }
+        // The server counts requests by app version from this (android_app_requests_total), to
+        // tell when no install still needs an API field: keep its shape.
+        install(UserAgent) {
+            agent = "LionReader-Android/${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+        }
         install(HttpTimeout) {
             connectTimeoutMillis = 15_000
             requestTimeoutMillis = 60_000
