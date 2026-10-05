@@ -108,6 +108,7 @@ fun ReaderWebView(
                         }
                         .apply {
                             onLinkLongPress = { linkPress = it }
+                            if (position.anchor != null) hideUntilRestored()
                             // For our scripts; the CSP keeps anything else from running.
                             @SuppressLint("SetJavaScriptEnabled")
                             settings.javaScriptEnabled = true
@@ -396,11 +397,15 @@ private class ReaderView(context: Context) : WebView(context) {
                 narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
                 pageReady = true
                 val restored = position.anchor
-                restored?.let {
+                if (restored == null) {
+                    reveal()
+                } else {
                     evaluateJavascript(
-                        "window.lionPosition && lionPosition.restore(${it.element}, ${it.offset})",
-                        null,
-                    )
+                        "window.lionPosition && " +
+                            "lionPosition.restore(${restored.element}, ${restored.offset})"
+                    ) {
+                        revealWhenDrawn()
+                    }
                 }
                 shown = null
                 // The reader's place wins over paused narration's; playing, the next paragraph
@@ -415,6 +420,35 @@ private class ReaderView(context: Context) : WebView(context) {
     }
 
     var onListenFrom: ((Int) -> Unit)? = null
+
+    private val showNow = Runnable { alpha = 1f }
+
+    /**
+     * A new view going back to a place shows nothing (the page's background) until it's there,
+     * rather than the top of the article and then a jump. Shown anyway after
+     * [REVEAL_TIMEOUT_MILLIS], should the page never report in. A view already showing the article
+     * isn't hidden to load it again: its old content beats a blank.
+     */
+    fun hideUntilRestored() {
+        alpha = 0f
+        postDelayed(showNow, REVEAL_TIMEOUT_MILLIS)
+    }
+
+    private fun reveal() {
+        removeCallbacks(showNow)
+        alpha = 1f
+    }
+
+    /** Once the restored place is ready to draw, so no frame of the top shows first. */
+    private fun revealWhenDrawn() {
+        if (rendererLost) return
+        postVisualStateCallback(
+            0,
+            object : VisualStateCallback() {
+                override fun onComplete(requestId: Long) = reveal()
+            },
+        )
+    }
 
     /** The text selection's menu, with "Listen" (from here) once the page can narrate. */
     override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? =
@@ -582,6 +616,7 @@ private class ReaderView(context: Context) : WebView(context) {
     private companion object {
         /** The web's 2:1 (`MAX_VERTICAL_RATIO` in EntryContentHelpers.ts). */
         const val SWIPE_RATIO = 2f
+        const val REVEAL_TIMEOUT_MILLIS = 1_000L
     }
 }
 
