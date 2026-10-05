@@ -3,8 +3,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { formatUnreadCounts } from "../../src/server/google-reader/format";
+import { formatEntryAsItem, formatUnreadCounts } from "../../src/server/google-reader/format";
 import { stateStreamId } from "../../src/server/google-reader/streams";
+import type { EntryFull } from "../../src/server/services/entries";
 
 // Feed stream serials, as Postgres hands them back (int8 → decimal string).
 const SUB_A = "42";
@@ -88,5 +89,45 @@ describe("formatUnreadCounts", () => {
     const ms = Number(line!.newestItemTimestampUsec) / 1000;
     expect(ms).toBeGreaterThanOrEqual(before);
     expect(ms).toBeLessThanOrEqual(after);
+  });
+});
+
+function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
+  return {
+    id: "01912345-0000-7000-8000-000000000001",
+    greaderItemId: BigInt(42),
+    subscriptionGreaderStreamId: BigInt(7),
+    feedGreaderStreamId: BigInt(7),
+    subscriptionId: "01912345-0000-7000-8000-000000000003",
+    type: "web",
+    url: "https://example.com/article",
+    title: "An Article",
+    author: null,
+    contentOriginal: "<p>original teaser</p>",
+    contentCleaned: "<p>cleaned teaser</p>",
+    fullContent: null,
+    summary: "summary",
+    publishedAt: null,
+    fetchedAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-02T00:00:00Z"),
+    read: false,
+    starred: false,
+    feedTitle: null,
+    feedUrl: null,
+    siteName: null,
+    unsubscribeUrl: null,
+    ...overrides,
+  };
+}
+
+// Issue #1787: clients got the feed teaser when the full article was fetched.
+describe("formatEntryAsItem content", () => {
+  it.each([
+    ["the fetched full article", { fullContent: "<p>full</p>" }, "<p>full</p>"],
+    ["the cleaned feed content", {}, "<p>cleaned teaser</p>"],
+    ["the original feed content", { contentCleaned: null }, "<p>original teaser</p>"],
+    ["the summary", { contentCleaned: null, contentOriginal: null }, "summary"],
+  ])("serves %s when it is the best available", (_label, overrides, expected) => {
+    expect(formatEntryAsItem(makeFullEntry(overrides)).summary.content).toBe(expected);
   });
 });

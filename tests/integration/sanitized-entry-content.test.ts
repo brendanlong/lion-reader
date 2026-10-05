@@ -22,7 +22,9 @@ import {
   createTestUser,
 } from "./helpers";
 
-async function seedSubscribedUser(): Promise<{ userId: string; feedId: string }> {
+async function seedSubscribedUser(
+  subscriptionOverrides: { fetchFullContent?: boolean } = {}
+): Promise<{ userId: string; feedId: string }> {
   const now = new Date();
   const userId = await createTestUser();
   const feedId = await createTestFeed({
@@ -30,7 +32,7 @@ async function seedSubscribedUser(): Promise<{ userId: string; feedId: string }>
     lastFetchedAt: now,
     lastEntriesUpdatedAt: now,
   });
-  await createTestSubscription(userId, feedId);
+  await createTestSubscription(userId, feedId, subscriptionOverrides);
   return { userId, feedId };
 }
 
@@ -160,6 +162,32 @@ describe("entries.get sanitized content", () => {
         expect(entry.contentCleaned).toContain(`body-${entryIds[i]}`);
         expect(entry.contentCleaned).not.toContain("<script>");
       }
+    });
+
+    // Issue #1787: Google Reader/Wallabag clients got the feed teaser even when
+    // the subscription fetches full articles. Two subscribers to one feed, so a
+    // join on anything but the reader's own subscription would leak the setting.
+    it("serves sanitized full content only to subscribers who show it", async () => {
+      const { userId: enabledUserId, feedId } = await seedSubscribedUser({
+        fetchFullContent: true,
+      });
+      const disabledUserId = await createTestUser();
+      await createTestSubscription(disabledUserId, feedId, { fetchFullContent: false });
+      const entryId = await createTestEntry(feedId, {
+        contentCleaned: "<p>teaser</p>",
+        fullContentCleaned: '<p onclick="evil()">full article<script>alert(1)</script></p>',
+        fullContentHash: "fullhash",
+        fullContentFetchedAt: new Date(),
+        userIds: [enabledUserId, disabledUserId],
+      });
+
+      const [entry] = await entriesService.getEntries(db, enabledUserId, [entryId]);
+      expect(entry.fullContent).toContain("full article");
+      expect(entry.fullContent).not.toContain("<script>");
+      expect(entry.fullContent).not.toContain("onclick");
+
+      const disabledEntry = await entriesService.getEntry(db, disabledUserId, entryId);
+      expect(disabledEntry.fullContent).toBeNull();
     });
   });
 });

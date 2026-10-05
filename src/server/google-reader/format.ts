@@ -56,8 +56,8 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
     categories.push(stateStreamId("starred"));
   }
 
-  // Build content from cleaned or original HTML
-  const content = entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? "";
+  const content =
+    entry.fullContent ?? entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? "";
 
   return {
     id: int64ToLongFormId(itemId),
