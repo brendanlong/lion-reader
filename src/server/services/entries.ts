@@ -344,7 +344,8 @@ const entryFullSelectFields = {
 
 /**
  * Superset selected by `selectFullEntry` for the tRPC full-entry view: adds
- * the full-content family and the subscription's fetchFullContent setting.
+ * both full-content variants (the view can toggle back to feed content) and the
+ * subscription's fetchFullContent setting.
  */
 const fullEntrySelectFields = {
   ...entryFullSelectFields,
@@ -918,11 +919,12 @@ function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
   return db
     .select({
       ...entryFullSelectFields,
-      // Raw (untrusted); reduced to the variant served so a whole-page original
-      // is never loaded alongside its cleaned version.
+      // Raw (untrusted); loaded only for subscriptions that show it, and reduced
+      // to the variant served so a whole-page original is never loaded
+      // alongside its cleaned version.
       fullContent: sql<
         string | null
-      >`COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal})`,
+      >`CASE WHEN ${subscriptions.fetchFullContent} THEN COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal}) END`,
       fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
       fullContentError: visibleEntries.fullContentError,
       fetchFullContent: subscriptions.fetchFullContent,

@@ -165,31 +165,28 @@ describe("entries.get sanitized content", () => {
     });
 
     // Issue #1787: Google Reader/Wallabag clients got the feed teaser even when
-    // the subscription fetches full articles.
-    it("serves sanitized full content only when the subscription shows it", async () => {
-      const fullContentFields = {
+    // the subscription fetches full articles. Two subscribers to one feed, so a
+    // join on anything but the reader's own subscription would leak the setting.
+    it("serves sanitized full content only to subscribers who show it", async () => {
+      const { userId: enabledUserId, feedId } = await seedSubscribedUser({
+        fetchFullContent: true,
+      });
+      const disabledUserId = await createTestUser();
+      await createTestSubscription(disabledUserId, feedId, { fetchFullContent: false });
+      const entryId = await createTestEntry(feedId, {
         contentCleaned: "<p>teaser</p>",
         fullContentCleaned: '<p onclick="evil()">full article<script>alert(1)</script></p>',
         fullContentHash: "fullhash",
         fullContentFetchedAt: new Date(),
-      };
-
-      const enabled = await seedSubscribedUser({ fetchFullContent: true });
-      const enabledId = await createTestEntry(enabled.feedId, {
-        ...fullContentFields,
-        userIds: [enabled.userId],
+        userIds: [enabledUserId, disabledUserId],
       });
-      const [entry] = await entriesService.getEntries(db, enabled.userId, [enabledId]);
+
+      const [entry] = await entriesService.getEntries(db, enabledUserId, [entryId]);
       expect(entry.fullContent).toContain("full article");
       expect(entry.fullContent).not.toContain("<script>");
       expect(entry.fullContent).not.toContain("onclick");
 
-      const disabled = await seedSubscribedUser({ fetchFullContent: false });
-      const disabledId = await createTestEntry(disabled.feedId, {
-        ...fullContentFields,
-        userIds: [disabled.userId],
-      });
-      const disabledEntry = await entriesService.getEntry(db, disabled.userId, disabledId);
+      const disabledEntry = await entriesService.getEntry(db, disabledUserId, entryId);
       expect(disabledEntry.fullContent).toBeNull();
     });
   });

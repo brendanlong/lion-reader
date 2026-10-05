@@ -393,7 +393,8 @@ function buildTools(): Tool[] {
 
     {
       name: "get_entry",
-      description: "Get a single entry with full content (original and cleaned HTML).",
+      description:
+        "Get a single entry with its content (original and cleaned HTML, plus `fullContent`: the article fetched from its URL when the subscription has full content enabled).",
       inputSchema: toInputSchema(getEntryArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(getEntryArgs, args);
