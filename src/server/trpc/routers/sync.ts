@@ -27,7 +27,7 @@ import {
   entryTombstones,
 } from "@/server/db/schema";
 import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
-import { entryFeedTitleSql } from "@/server/services/entry-filters";
+import { entryFeedTitleSql, entrySubscriptionJoin } from "@/server/services/entry-filters";
 import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
@@ -559,7 +559,7 @@ async function collectSyncEvents(
       )
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
       .innerJoin(feeds, eq(feeds.id, entries.feedId))
-      .leftJoin(subscriptions, eq(subscriptions.id, userEntries.subscriptionId))
+      .leftJoin(subscriptions, entrySubscriptionJoin(userEntries))
       .where(
         and(
           afterCursor(greatest),

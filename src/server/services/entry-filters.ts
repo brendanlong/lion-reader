@@ -61,12 +61,22 @@ export interface EntryConditionParams {
  * subscription the entry came from, else the feed's title. Every read that
  * sends `feedTitle` to a client uses this, so a renamed subscription's
  * articles never show the original name. The query must join `feeds` on the
- * entry's feed and LEFT JOIN `subscriptions` on its stamped `subscription_id`
- * (user-scoped, so one user's rename never reaches another). Saved articles
- * have no subscription and get the saved feed's title.
+ * entry's feed and LEFT JOIN `subscriptions` on {@link entrySubscriptionJoin}.
+ * Saved articles have no subscription and get the saved feed's title.
  */
 export function entryFeedTitleSql(): SQL<string | null> {
   return sql<string | null>`COALESCE(${subscriptions.customTitle}, ${feeds.title})`;
+}
+
+/**
+ * Joins `subscriptions` to a per-user entry row (`visible_entries` or
+ * `user_entries`) on its stamped `subscription_id`, and on the row's user, so
+ * the join can never reach another user's subscription (and its custom
+ * title or settings) whatever stamped the id. Served by
+ * `uq_subscriptions_id_user`.
+ */
+export function entrySubscriptionJoin(row: { subscriptionId: AnyColumn; userId: AnyColumn }): SQL {
+  return and(eq(subscriptions.id, row.subscriptionId), eq(subscriptions.userId, row.userId))!;
 }
 
 // ============================================================================

@@ -38,6 +38,7 @@ import {
   verifySubscriptionOwnership,
   buildUncategorizedSubscriptionIdsSubquery,
   entryFeedTitleSql,
+  entrySubscriptionJoin,
 } from "./entry-filters";
 
 // ============================================================================
@@ -370,7 +371,7 @@ function selectFullEntryRows(db: typeof dbType, where: SQL | undefined) {
     .select(fullEntrySelectFields)
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
+    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
     .where(where);
 }
 
@@ -645,7 +646,7 @@ export async function listExportableEntries(
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
+    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
     .where(
       and(
         eq(visibleEntries.userId, userId),
@@ -786,7 +787,7 @@ export async function listEntries(
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
+    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
     .where(and(...conditions))
     .orderBy(...orderByClause)
     .limit(limit + 1)
@@ -873,7 +874,7 @@ async function searchEntries(
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
+    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
     .where(and(...conditions))
     .as("ranked");
 
@@ -932,7 +933,7 @@ function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, eq(visibleEntries.subscriptionId, subscriptions.id))
+    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
     .where(condition);
 }
 
