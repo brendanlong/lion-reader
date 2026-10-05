@@ -24,6 +24,7 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { publishCollectionEntriesChanged, publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
+  isCollectionSubscription,
   lockAndCountActiveSubscriptions,
   type Subscription,
 } from "@/server/services/subscriptions";
@@ -143,13 +144,12 @@ export async function assertOwnedCollections(
   const query = db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(
       and(
         inArray(subscriptions.id, unique),
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        eq(feeds.type, "collection")
+        isCollectionSubscription()
       )
     );
   // Not FOR SHARE: the membership triggers update this row's counters, and two

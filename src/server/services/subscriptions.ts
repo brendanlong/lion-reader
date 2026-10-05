@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, gt, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   blockedSenders,
@@ -151,6 +151,14 @@ const subscriptionCursor = createCursorCodec(
     id: cursorUuid,
   })
 );
+
+/**
+ * Matches `subscriptions` rows that are collections. It correlates with the
+ * unaliased `subscriptions` table of the enclosing query, so no join is needed.
+ */
+export function isCollectionSubscription(): SQL {
+  return sql`EXISTS (SELECT 1 FROM ${feeds} WHERE ${feeds.id} = ${subscriptions.feedId} AND ${feeds.type} = 'collection')`;
+}
 
 /**
  * Counts the user's active subscriptions (collections included) for the cap
