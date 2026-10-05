@@ -15,7 +15,8 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { publishEntryStateChanged, type EntryStateListData } from "@/server/redis/pubsub";
 import type { DbOrTx } from "@/server/db";
-import { feeds, visibleEntries } from "@/server/db/schema";
+import { feeds, subscriptions, visibleEntries } from "@/server/db/schema";
+import { entryFeedTitleSql, entrySubscriptionJoin } from "@/server/services/entry-filters";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
 import type { MarkReadEntryState } from "@/server/services/entries";
@@ -43,10 +44,11 @@ async function fetchUnreadListData(
       fetchedAt: visibleEntries.fetchedAt,
       siteName: visibleEntries.siteName,
       isSpam: visibleEntries.isSpam,
-      feedTitle: feeds.title,
+      feedTitle: entryFeedTitleSql(),
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(feeds.id, visibleEntries.feedId))
+    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
 
   const result = new Map<string, EntryStateListData>();

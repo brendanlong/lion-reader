@@ -8,8 +8,6 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
-import { GET as eventsGet } from "../../src/app/api/v1/events/route";
-import { createSession } from "../../src/server/auth/session";
 import {
   publishNewEntry,
   publishSubscriptionCreated,
@@ -22,6 +20,7 @@ import {
   createTestSubscription,
   createTestUser,
 } from "./helpers";
+import { openSseStream, publishUntil } from "../utils/sse";
 
 async function clean(): Promise<void> {
   await db.delete(userEntries);
@@ -98,23 +97,13 @@ describe("feed IDs never reach clients", () => {
       url: "https://example.com/other.xml",
     });
     const otherSubscriptionId = await createTestSubscription(userId, otherFeedId);
-    const { token } = await createSession(db, { userId });
-    const res = await eventsGet(
-      new Request("http://localhost:3000/api/v1/events", {
-        headers: { cookie: `session=${token}` },
-      })
-    );
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let text = "";
+    const stream = await openSseStream(userId);
 
     try {
-      // Publish until the stream has subscribed to the feed's channel.
-      const deadline = Date.now() + 5000;
-      while ((await publishNewEntry(feedId, entryId, new Date(), "web", undefined)) === 0) {
-        if (Date.now() > deadline) throw new Error("SSE stream never subscribed");
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
+      await publishUntil(
+        () => publishNewEntry(feedId, entryId, new Date(), "web", undefined),
+        () => stream.events("new_entry").length > 0
+      );
       await publishSubscriptionCreated(
         userId,
         otherFeedId,
@@ -130,27 +119,14 @@ describe("feed IDs never reach clients", () => {
         }
       );
       await publishSubscriptionDeleted(userId, feedId, subscriptionId, new Date());
-
-      while (!text.includes("event: subscription_deleted")) {
-        const { value, done } = await reader.read();
-        if (done) throw new Error("SSE stream ended early");
-        text += decoder.decode(value, { stream: true });
-      }
+      await stream.waitFor("subscription_deleted");
     } finally {
-      await reader.cancel();
+      await stream.close();
     }
 
-    expect(text).toContain("event: new_entry");
-    expect(text).toContain("event: subscription_created");
-    expect(text).not.toContain(feedId);
-    expect(text).not.toContain(otherFeedId);
-
-    const createdLine = text
-      .split("\n\n")
-      .find((block) => block.includes("event: subscription_created"))!
-      .split("\n")
-      .find((line) => line.startsWith("data: "))!;
-    expect(JSON.parse(createdLine.slice("data: ".length))).toMatchObject({
+    expect(stream.text).not.toContain(feedId);
+    expect(stream.text).not.toContain(otherFeedId);
+    expect(stream.events("subscription_created")[0]).toMatchObject({
       subscription: { feedId: otherSubscriptionId },
       feed: { id: otherSubscriptionId },
     });

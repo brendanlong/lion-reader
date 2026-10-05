@@ -27,6 +27,7 @@ import {
   entryTombstones,
 } from "@/server/db/schema";
 import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { entryFeedTitleSql, entrySubscriptionJoin } from "@/server/services/entry-filters";
 import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
@@ -539,7 +540,7 @@ async function collectSyncEvents(
         readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
         feedType: entries.type,
-        feedTitle: feeds.title,
+        feedTitle: entryFeedTitleSql(),
         visible: sql<boolean>`${visibleEntrySql()}`,
         // Categorization booleans, computed in SQL at µs precision so a row
         // selected past the cursor always gets at least one event.
@@ -558,7 +559,7 @@ async function collectSyncEvents(
       )
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
       .innerJoin(feeds, eq(feeds.id, entries.feedId))
-      .leftJoin(subscriptions, eq(subscriptions.id, userEntries.subscriptionId))
+      .leftJoin(subscriptions, entrySubscriptionJoin(userEntries))
       .where(
         and(
           afterCursor(greatest),

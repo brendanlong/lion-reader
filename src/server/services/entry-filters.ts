@@ -1,8 +1,8 @@
 /**
  * Entry Filters Service
  *
- * Shared filter builder for entry queries. Used by listEntries, searchEntries,
- * countEntries, and markAllRead.
+ * Shared filter builder and select fragments for entry queries. Used by
+ * listEntries, searchEntries, countEntries, and markAllRead.
  */
 
 import {
@@ -21,6 +21,7 @@ import {
 import type { db as dbType } from "@/server/db";
 import {
   collectionEntries,
+  feeds,
   subscriptionTags,
   subscriptions,
   tags,
@@ -49,6 +50,33 @@ export interface EntryConditionParams {
   publishedBefore?: Date;
   updatedAfter?: Date;
   showSpam: boolean;
+}
+
+// ============================================================================
+// Select Fragments
+// ============================================================================
+
+/**
+ * An entry's source name as the user sees it: their custom title for the
+ * subscription the entry came from, else the feed's title. Every read that
+ * sends `feedTitle` to a client uses this, so a renamed subscription's
+ * articles never show the original name. The query must join `feeds` on the
+ * entry's feed and LEFT JOIN `subscriptions` on {@link entrySubscriptionJoin}.
+ * Saved articles have no subscription and get the saved feed's title.
+ */
+export function entryFeedTitleSql(): SQL<string | null> {
+  return sql<string | null>`COALESCE(${subscriptions.customTitle}, ${feeds.title})`;
+}
+
+/**
+ * Joins `subscriptions` to a per-user entry row (`visible_entries` or
+ * `user_entries`) on its stamped `subscription_id`, and on the row's user, so
+ * the join can never reach another user's subscription (and its custom
+ * title or settings) whatever stamped the id. Served by
+ * `uq_subscriptions_id_user`.
+ */
+export function entrySubscriptionJoin(row: { subscriptionId: AnyColumn; userId: AnyColumn }): SQL {
+  return and(eq(subscriptions.id, row.subscriptionId), eq(subscriptions.userId, row.userId))!;
 }
 
 // ============================================================================
