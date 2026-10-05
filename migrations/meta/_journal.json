@@ -855,6 +855,13 @@
       "when": 1782955260000,
       "tag": "0122_drop_orphan_subscription_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1782955320000,
+      "tag": "0123_drop_entries_feed_type_index",
+      "breakpoints": true
     }
   ]
 }

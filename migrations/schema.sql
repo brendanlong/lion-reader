@@ -1152,8 +1152,6 @@ CREATE INDEX idx_entries_feed ON public.entries USING btree (feed_id, id);
 
 CREATE INDEX idx_entries_feed_published_coalesce ON public.entries USING btree (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC);
 
-CREATE INDEX idx_entries_feed_type ON public.entries USING btree (feed_id, type);
-
 CREATE INDEX idx_entries_feed_updated_at ON public.entries USING btree (feed_id, updated_at);
 
 CREATE INDEX idx_entries_fetched ON public.entries USING btree (feed_id, fetched_at);
