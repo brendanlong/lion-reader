@@ -24,16 +24,19 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
+ * Requests streaming at once, as many as on the web: enough that a slow provider's chunks overlap,
+ * and that requests left running after a seek or a new article don't hold up the new position, but
+ * bounded, since providers limit concurrent requests per key and several listeners share the
+ * server's.
+ */
+internal const val MAX_CLOUD_STREAMS = 4
+
+/**
  * What every [CloudVoices] shares, however many there have been: the cloud voices' requests run on,
  * filling the cache, after the narrator has moved to another article (and another engine).
  */
 class CloudSpeechRequests {
-    /**
-     * Requests streaming at once, as many as on the web: enough that a provider streaming slower
-     * than playback can keep up by generating several chunks at once, but bounded, since providers
-     * limit concurrent requests per key and several listeners share the server's.
-     */
-    internal val streams = Semaphore(4)
+    internal val streams = Semaphore(MAX_CLOUD_STREAMS)
 
     /**
      * Streams by cache key, from the request until the audio is all in, so the same text twice is
@@ -68,8 +71,8 @@ class CloudVoices(
 ) : SpeechEngine {
     override val maxChunkChars = MAX_CLOUD_SPEECH_CHARS
     // Requests take anywhere from under a second to many (the server waits up to 15 s for a busy
-    // provider), so 30 seconds ahead. One is started at a time, once the one before has started
-    // playing; see [CloudSpeechRequests.streams] for how many run at once.
+    // provider), so 30 seconds ahead. One is started at a time, once the one before's first audio
+    // is in; see [CloudSpeechRequests.streams] for how many run at once.
     override val lookaheadChars = 450
     override val parallelism = 1
 

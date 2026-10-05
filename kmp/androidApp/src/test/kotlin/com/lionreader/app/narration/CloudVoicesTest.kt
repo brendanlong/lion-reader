@@ -260,23 +260,21 @@ class CloudVoicesTest {
     fun theLimitOnRequestsAtOnceHoldsAcrossEngines() = runTest {
         // An engine per article: requests the narrator left behind run on beside the new ones.
         val shared = CloudSpeechRequests()
-        val held = List(2) { ByteChannel(autoFlush = true) }
+        val held = List(MAX_CLOUD_STREAMS) { ByteChannel(autoFlush = true) }
         responses.addAll(held.map { Answer.Stream(it) })
-        val first = engine(cacheBytes = 1_000_000, shared = shared)
-        val second = engine(cacheBytes = 1_000_000, shared = shared)
-        // Each answers once its first audio is in; both streams stay open.
+        val engines = List(2) { engine(cacheBytes = 1_000_000, shared = shared) }
+        // Each answers once its first audio is in; every stream stays open.
         withContext(Dispatchers.IO) { held.forEach { it.writeFully(speech, 0, 100) } }
-        first.synthesize("One.", dir, "0")
-        second.synthesize("Two.", dir, "1")
+        repeat(MAX_CLOUD_STREAMS) { engines[it % 2].synthesize("Chunk $it.", dir, "$it") }
 
-        val third = async { second.synthesize("Three.", dir, "2") }
+        val next = async { engines[1].synthesize("Next.", dir, "next") }
         withContext(Dispatchers.IO) { delay(200) }
-        assertEquals(2, requests)
+        assertEquals(MAX_CLOUD_STREAMS, requests)
 
         held[0].flushAndClose()
-        assertArrayEquals(audio, played(third.await()))
-        assertEquals(3, requests)
-        held[1].flushAndClose()
+        assertArrayEquals(audio, played(next.await()))
+        assertEquals(MAX_CLOUD_STREAMS + 1, requests)
+        held.drop(1).forEach { it.flushAndClose() }
     }
 
     @Test
