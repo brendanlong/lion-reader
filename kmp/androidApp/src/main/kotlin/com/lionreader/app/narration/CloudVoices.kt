@@ -29,11 +29,11 @@ import kotlinx.coroutines.withContext
  */
 class CloudSpeechRequests {
     /**
-     * Requests streaming at once, two as on the web: the next chunk's wait for its first audio
-     * overlaps the one before's download, and no more, since providers limit concurrent requests
-     * per key and several listeners share the server's.
+     * Requests streaming at once, as many as on the web: enough that a provider streaming slower
+     * than playback can keep up by generating several chunks at once, but bounded, since providers
+     * limit concurrent requests per key and several listeners share the server's.
      */
-    internal val streams = Semaphore(2)
+    internal val streams = Semaphore(4)
 
     /**
      * Streams by cache key, from the request until the audio is all in, so the same text twice is
