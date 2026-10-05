@@ -618,7 +618,10 @@ export const entries = pgTable(
     index("idx_entries_feed").on(table.feedId, table.id),
     // For finding entries by fetched time (visibility filtering)
     index("idx_entries_fetched").on(table.feedId, table.fetchedAt),
-    // For filtering spam entries
+    // No query filters on is_spam here, but nearly every row shares its key
+    // with its neighbours, so B-tree deduplication makes this a fraction of
+    // idx_entries_feed's size, and the planner picks it for plain feed_id
+    // lookups (most of this table's index scans in production). Keep it.
     index("idx_entries_spam").on(table.feedId, table.isSpam),
     // For filtering by entry type
     index("idx_entries_type").on(table.type),
