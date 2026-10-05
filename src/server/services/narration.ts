@@ -83,8 +83,9 @@ RULES:
 - Superscripts and subscripts are marked <sup>…</sup> and <sub>…</sub>. Never output these tags: say what each one means
   - Footnote and citation markers become "(footnote N)": "It shipped in 2019.<sup>1</sup>" → "It shipped in 2019 (footnote 1).", "a claim [3]" → "a claim (footnote 3)"
   - Exponents and chemical formulas are read out: "10 m<sup>2</sup>" → "10 square meters", "H<sub>2</sub>O" → "H 2 O"
-  - If you can't tell what one means, keep its text as it is, without the tags; leave other square brackets alone ("[sic]", "arr[0]")
-- Write out equations as they are spoken: "E=mc<sup>2</sup>" → "E equals m c squared", "x + y = 2" → "x plus y equals 2"
+  - If you can't tell what one means, keep its text as it is, without the tags
+- Leave other square brackets alone: "[sic]", "arr[0]"
+- Write out math equations as they are spoken: "E=mc<sup>2</sup>" → "E equals m c squared", "x + y = 2" → "x plus y equals 2". Not code, URLs, dates, scores or ranges: "2024-01-02" and "won 5-3" stay as-is
 - Image alt text is already speakable - clean up if needed, don't rephrase
 - Skip garbage content (ellipsis, ads, junk) using empty string: "text": ""
 - Keep content faithful - do NOT summarize or editorialize

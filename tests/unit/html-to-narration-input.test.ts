@@ -331,6 +331,20 @@ describe("htmlToNarrationInput", () => {
 
       expect(narrated(result)).toEqual(["x2<sup>n</sup>"]);
     });
+
+    it("keeps the spaces at their edges between the words", () => {
+      const html = "<p>x<sup>2 </sup>y and end.<sup> 1</sup></p>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["x<sup>2</sup> y and end. <sup>1</sup>"]);
+    });
+
+    it("doesn't mark text a block inside split from where it started", () => {
+      const html = "<div>\n   <sup><div></div>abcdef</sup></div>";
+      const result = htmlToNarrationInput(html);
+
+      expect(narrated(result)).toEqual(["abcdef"]);
+    });
   });
 
   describe("link handling", () => {

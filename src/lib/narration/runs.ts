@@ -67,7 +67,10 @@ const SCRIPT_MARKER = /<\/?su[bp]>/g;
  * `text` without the `<sup>`/`<sub>` marks of {@link LLM_INPUT_VOICE}, for
  * speaking it without the LLM's rewrite. The marks tell the LLM a footnote
  * ("2019.<sup>1</sup>") from an exponent ("mc<sup>2</sup>"); unmarked, both
- * read as the digits they hold, as the page's text does.
+ * read as the digits they hold, as the page's text does. A page's own "<sup>"
+ * text (an article about HTML) is stripped too: the parser splits text at each
+ * entity, so telling the two apart would take a placeholder carried through
+ * every nested walk.
  */
 export function withoutScriptMarkers(text: string): string {
   return text.replace(SCRIPT_MARKER, "");
@@ -158,6 +161,8 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   let images = 0;
   let firstImage: Element | null = null;
   let spokeWords = false;
+  /** Runs ended so far, including ones that had nothing to push. */
+  let flushes = 0;
 
   const push = (highlight: Element, value: string) => {
     // Two `<br>`s end a paragraph — with any amount of whitespace between them,
@@ -175,6 +180,7 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
     // image, and the highlight CSS has a border for exactly this case.
     const highlight = images === 1 && !spokeWords && firstImage ? firstImage : owner;
     push(highlight, text);
+    flushes += 1;
     text = "";
     images = 0;
     firstImage = null;
@@ -323,17 +329,21 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
       // Wrapped after the fact rather than read from `textContent`, so whatever
       // is inside (an image's alt text) is still spoken.
       const before = text.length;
-      const runsBefore = runs.length;
+      const flushesBefore = flushes;
       visitChildren(el, depth);
-      const inner = text.slice(before).replaceAll(BREAK, " ").trim();
-      if (!inner || runs.length !== runsBefore) return;
-      if (tagName !== "code") {
-        // Nested scripts (`x<sup>2<sup>n</sup></sup>`) keep only the inner marks.
-        if (withoutScriptMarkers(inner) === inner) {
-          text = `${text.slice(0, before)}<${tagName}>${inner}</${tagName}>`;
-        }
-      } else if (!inner.includes("`")) {
-        text = `${text.slice(0, before)}\`${inner}\``;
+      if (flushes !== flushesBefore) return;
+      const content = text.slice(before).replaceAll(BREAK, " ");
+      const inner = content.trim();
+      // Nested scripts (`x<sup>2<sup>n</sup></sup>`) keep only the inner marks.
+      const wrapped =
+        tagName === "code"
+          ? !inner.includes("`") && `\`${inner}\``
+          : withoutScriptMarkers(inner) === inner && `<${tagName}>${inner}</${tagName}>`;
+      if (inner && wrapped) {
+        // Spaces at the element's edges stay outside the marks, between the words.
+        const lead = content.slice(0, content.length - content.trimStart().length);
+        const trail = content.slice(content.trimEnd().length);
+        text = `${text.slice(0, before)}${lead}${wrapped}${trail}`;
       }
       return;
     }

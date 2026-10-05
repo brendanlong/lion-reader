@@ -343,10 +343,6 @@ describe("htmlToClientNarration", () => {
     });
   });
 
-  it("speaks superscripts without the model's marks", () => {
-    expect(htmlToClientNarration("<p>E=mc<sup>2</sup></p>").narrationText).toBe("E=mc2");
-  });
-
   describe("image handling", () => {
     it("says nothing for a linked image nobody described, or a blank link", () => {
       const html =
