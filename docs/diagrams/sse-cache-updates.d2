@@ -24,15 +24,15 @@ event-sources: Event Sources {
     style.fill: "#dbeafe"
     tooltip: "src/server/email/process-inbound.ts"
 
-    new-entry-email: publishNewEntry(feedId, entryId, "email")
+    new-entry-email: publishUserNewEntry(userId, subscriptionId, entryId, "email")
   }
 
   saved-service: Saved Articles Service {
     style.fill: "#dbeafe"
     tooltip: "src/server/services/saved.ts + routers/saved.ts"
 
-    new-saved: publishNewEntry(savedFeedId, entryId, "saved")
-    saved-updated: publishEntryUpdated(savedFeedId, entryId)
+    new-saved: publishUserNewEntry(userId, null, entryId, "saved")
+    saved-updated: publishUserEntryUpdated(userId, null, entry)
   }
 
   subscriptions-service: Subscriptions Service {
@@ -65,7 +65,7 @@ redis: Redis Pub/Sub {
     tooltip: "feed:{feedId}:events"
 
     channel-pattern: |
-      Pattern: feed:{feedId}:events
+      Pattern: feed:{feedId}:events (web feeds only)
 
       Events:
       - new_entry (feedId, entryId, feedType,
@@ -83,6 +83,8 @@ redis: Redis Pub/Sub {
       Pattern: user:{userId}:events
 
       Events:
+      - new_entry / entry_updated for email and saved entries
+        (subscriptionId, null for saved, + the feed-channel fields)
       - subscription_created (full subscription + feed data + counts)
       - subscription_updated (tags, customTitle)
       - subscription_deleted (subscriptionId + counts, live path only)
@@ -111,10 +113,9 @@ sse-endpoint: SSE Endpoint {
       fan out in-process to all SSE connections.
 
       On connection:
-      1. Build feedId → subscriptionId map
+      1. Build feedId → subscriptionId map (web feeds)
       2. Subscribe to user:{userId}:events
-      3. Subscribe to feed:{feedId}:events for each subscription
-      4. Subscribe to saved feed channel (if exists)
+      3. Subscribe to feed:{feedId}:events for each web subscription
     |
   }
 
@@ -122,16 +123,17 @@ sse-endpoint: SSE Endpoint {
     style.fill: "#bbf7d0"
 
     transform: |
-      Feed Events:
-      - Transform feedId → subscriptionId (null for saved)
+      Entry Events (new_entry, entry_updated):
+      - Web: transform feedId → subscriptionId
+      - Email/saved: subscriptionId comes on the user event
       - new_entry: compute this user's absolute unread
         counts (getBulkEntryRelatedCounts) and attach them,
         so the client sets counts directly (idempotent, #892)
       - Include feedType for cache decisions
 
-      User Events:
+      Other User Events:
       - Forward directly
-      - On subscription_created: subscribe to new feed channel
+      - On subscription_created (web): subscribe to new feed channel
       - On subscription_deleted: unsubscribe from feed channel
     |
   }
@@ -285,14 +287,14 @@ event-sources.entry-processor.new-entry-web -> redis.feed-channels: new_entry {
 event-sources.entry-processor.entry-updated -> redis.feed-channels: entry_updated {
   style.stroke: "#2563eb"
 }
-event-sources.email-processor.new-entry-email -> redis.feed-channels: new_entry {
-  style.stroke: "#2563eb"
+event-sources.email-processor.new-entry-email -> redis.user-channels: new_entry {
+  style.stroke: "#7c3aed"
 }
-event-sources.saved-service.new-saved -> redis.feed-channels: new_entry {
-  style.stroke: "#2563eb"
+event-sources.saved-service.new-saved -> redis.user-channels: new_entry {
+  style.stroke: "#7c3aed"
 }
-event-sources.saved-service.saved-updated -> redis.feed-channels: entry_updated {
-  style.stroke: "#2563eb"
+event-sources.saved-service.saved-updated -> redis.user-channels: entry_updated {
+  style.stroke: "#7c3aed"
 }
 
 event-sources.subscriptions-service.sub-created -> redis.user-channels: subscription_created {

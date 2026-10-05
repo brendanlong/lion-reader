@@ -35,7 +35,7 @@ import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 import { escapeHtml } from "@/server/http/html";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
-import { publishNewEntry, publishEntryUpdatedFromEntry } from "@/server/redis/pubsub";
+import { publishUserNewEntry, publishUserEntryUpdated } from "@/server/redis/pubsub";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { markEntriesRead } from "@/server/services/entries";
@@ -540,11 +540,10 @@ async function insertSavedEntry(
 
   // Fire-and-forget: SSE is best-effort and must never fail the save response
   // (the entry transaction has already committed). See entry-events.ts.
-  void publishNewEntry(
-    savedFeedId,
+  void publishUserNewEntry(
+    { userId, subscriptionId: null, feedId: savedFeedId, feedType: "saved" },
     entryId,
     now,
-    "saved",
     entryListPayload(values, SAVED_FEED_TITLE)
   ).catch(() => {});
 
@@ -1302,15 +1301,18 @@ export async function saveArticle(
     // Publish event to notify other browser windows/tabs of the content update.
     // Fire-and-forget: SSE is best-effort and must never fail the response (the
     // transaction has already committed). See entry-events.ts.
-    void publishEntryUpdatedFromEntry(savedFeedId, {
-      id: oldEntry.id,
-      title: finalTitle,
-      author: finalAuthor,
-      summary: excerpt,
-      url: normalizedUrl,
-      publishedAt: oldEntry.publishedAt,
-      updatedAt: now,
-    }).catch(() => {});
+    void publishUserEntryUpdated(
+      { userId, subscriptionId: null, feedId: savedFeedId, feedType: "saved" },
+      {
+        id: oldEntry.id,
+        title: finalTitle,
+        author: finalAuthor,
+        summary: excerpt,
+        url: normalizedUrl,
+        publishedAt: oldEntry.publishedAt,
+        updatedAt: now,
+      }
+    ).catch(() => {});
 
     return {
       id: oldEntry.id,

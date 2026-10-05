@@ -27,9 +27,8 @@
 
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
-import { isCollectionSubscription } from "@/server/services/subscriptions";
+import { isWebSubscription } from "@/server/services/subscriptions";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
-import { getSavedFeedId } from "@/server/feed/saved-feed";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
   createPubSubSubscription,
@@ -40,10 +39,11 @@ import {
   parseUserEvent,
   parseSiteStatusEvent,
   checkRedisHealth,
+  type EntryUpdatedMetadata,
   type PubSubSubscription,
   type UserEvent,
 } from "@/server/redis/pubsub";
-import { eq, and, isNull, not } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import type { NewEntryListData } from "@/lib/events/schemas";
 import {
   incrementSSEConnections,
@@ -65,10 +65,11 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 // ============================================================================
 
 /**
- * Gets a mapping of feedId -> subscriptionId for a user's active subscriptions.
- * This lets the SSE endpoint transform feed events (which use feedId) into
- * subscription-centric events (which use subscriptionId) for the client.
- * Collections are left out: their feeds never publish.
+ * Gets a mapping of feedId -> subscriptionId for a user's active web
+ * subscriptions. This lets the SSE endpoint transform feed events (which use
+ * feedId) into subscription-centric events (which use subscriptionId) for the
+ * client. Only web feeds publish on feed channels: email and saved entries
+ * arrive on the user's channel, and collections have no entries of their own.
  */
 async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, string>> {
   const rows = await db
@@ -81,7 +82,7 @@ async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, s
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        not(isCollectionSubscription())
+        isWebSubscription()
       )
     );
 
@@ -102,16 +103,31 @@ async function getUserCustomTitles(userId: string): Promise<Map<string, string |
 }
 
 /**
- * A feed event's list-item payload as this user sees it: feed channels are
- * shared, so the publisher can only stamp the feed's own title; the user's
- * custom title for the subscription replaces it here, matching what
- * `entries.list` returns for the same entry.
+ * A new_entry list-item payload as this user sees it: publishers stamp the
+ * feed's own title (a web feed's channel is shared, and email ingestion
+ * doesn't look the title up), so the user's custom title for the subscription
+ * replaces it here, matching what `entries.list` returns for the same entry.
  */
 function withCustomFeedTitle(
   entry: NewEntryListData,
   customTitle: string | null | undefined
 ): NewEntryListData {
   return customTitle == null ? entry : { ...entry, feedTitle: customTitle };
+}
+
+type FeedType = "web" | "email" | "saved";
+
+/**
+ * The fields of an entry event the client receives, whichever channel it came
+ * from: a web feed's (with the subscription looked up here) or, for email and
+ * saved entries, the user's own (with the subscription already on the event).
+ */
+interface ClientEntryEvent {
+  subscriptionId: string | null;
+  entryId: string;
+  timestamp: string;
+  updatedAt: string;
+  feedType?: FeedType;
 }
 
 /** A user event's `feedId` only routes feed channels here: clients only ever see subscription IDs. */
@@ -194,9 +210,6 @@ export async function GET(req: Request): Promise<Response> {
 
   // Get user's feed -> subscription mapping
   const feedToSubscriptionMap = await getUserFeedSubscriptionMap(userId);
-
-  // Get the user's saved feed ID (if it exists)
-  const savedFeedId = await getSavedFeedId(db, userId);
 
   // Get the user-specific events channel
   const userEventsChannel = getUserEventsChannel(userId);
@@ -312,25 +325,6 @@ export async function GET(req: Request): Promise<Response> {
       }
 
       /**
-       * Subscribes to a saved feed's event channel. Saved feeds have no
-       * subscription row, so (unlike subscribeToFeed) no feedSubscriptionMap
-       * entry is added — feed events for it resolve to a null subscriptionId,
-       * matching how the saved feed is wired up at connect time.
-       */
-      function subscribeToSavedFeed(feedId: string): void {
-        if (isCleanedUp || !subscription) return;
-
-        const channel = getFeedEventsChannel(feedId);
-        if (subscribedFeedChannels.has(channel)) return;
-
-        subscribedFeedChannels.add(channel);
-        subscription.subscribe(channel).catch((err) => {
-          console.error(`Failed to subscribe to saved feed channel ${feedId}:`, err);
-          subscribedFeedChannels.delete(channel);
-        });
-      }
-
-      /**
        * Unsubscribes from a feed's event channel and removes the subscription mapping
        */
       function unsubscribeFromFeed(feedId: string): void {
@@ -393,6 +387,81 @@ export async function GET(req: Request): Promise<Response> {
       }
 
       /**
+       * Sends a new_entry event, whether it came from a web feed's channel or
+       * (email, saved) the user's channel.
+       */
+      function sendNewEntry(
+        event: ClientEntryEvent & { feedType: FeedType; entry?: NewEntryListData }
+      ): void {
+        // Compute this user's absolute unread counts and send them with the
+        // event so the client sets counts directly instead of applying a +1
+        // delta. That makes new_entry idempotent: a reconnect catch-up sync
+        // can re-deliver the same entry without double-counting. All write
+        // paths publish new_entry only after the user_entries fanout, so
+        // the entry is in visible_entries by the time this query runs.
+        // This is a per-subscriber query on the feed fan-out path, the same
+        // order as the per-subscriber user_entries inserts the worker
+        // already does for each new entry.
+        const { subscriptionId } = event;
+        enqueueSend(async () => {
+          await customTitlesLoaded;
+          let counts: BulkUnreadCounts | undefined;
+          try {
+            counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
+          } catch (err) {
+            // Leave counts off; the client skips the count update and it
+            // self-heals on the next count-bearing event or refetch.
+            console.error("Failed to compute new_entry counts:", err);
+          }
+          const cursor = new Date().toISOString();
+          send(
+            `event: new_entry\nid: ${cursor}\ndata: ${JSON.stringify({
+              type: "new_entry",
+              subscriptionId,
+              entryId: event.entryId,
+              timestamp: event.timestamp,
+              updatedAt: event.updatedAt,
+              feedType: event.feedType,
+              ...(counts ? { counts } : {}),
+              // List-item data (absent from events published by a previous
+              // release) lets the client insert the entry into cached lists.
+              // Saved articles have no subscription, so keep their own title.
+              ...(event.entry
+                ? {
+                    entry: withCustomFeedTitle(
+                      event.entry,
+                      subscriptionId ? customTitles.get(subscriptionId) : null
+                    ),
+                  }
+                : {}),
+            })}\n\n`
+          );
+          trackSSEEventSent("new_entry");
+        });
+      }
+
+      /** Sends an entry_updated event, with metadata so the client can update caches directly. */
+      function sendEntryUpdated(
+        event: ClientEntryEvent & { metadata: EntryUpdatedMetadata }
+      ): void {
+        enqueueSend(() => {
+          const cursor = new Date().toISOString();
+          send(
+            `event: entry_updated\nid: ${cursor}\ndata: ${JSON.stringify({
+              type: "entry_updated",
+              subscriptionId: event.subscriptionId,
+              entryId: event.entryId,
+              timestamp: event.timestamp,
+              updatedAt: event.updatedAt, // Database updated_at for cursor tracking
+              feedType: event.feedType,
+              metadata: event.metadata,
+            })}\n\n`
+          );
+          trackSSEEventSent("entry_updated");
+        });
+      }
+
+      /**
        * Handles messages from subscribed Redis channels (via the process-wide
        * shared subscriber connection).
        */
@@ -420,21 +489,24 @@ export async function GET(req: Request): Promise<Response> {
           // new_entry are computed from the DB, so no tag bookkeeping is needed.
           // (Done synchronously, outside the send chain, so channel membership
           // updates aren't delayed behind pending count queries.)
-          if (event.type === "subscription_created" && event.feed.type !== "collection") {
+          if (event.type === "subscription_created") {
+            // Email entries need the title too, though they come on this channel.
             setCustomTitle(event.subscriptionId, event.subscription.customTitle);
-            subscribeToFeed(event.feedId, event.subscriptionId);
+            if (event.feed.type === "web") subscribeToFeed(event.feedId, event.subscriptionId);
           } else if (event.type === "subscription_updated") {
             setCustomTitle(event.subscriptionId, event.customTitle);
           } else if (event.type === "subscription_deleted") {
             setCustomTitle(event.subscriptionId, null);
             unsubscribeFromFeed(event.feedId);
           } else if (event.type === "saved_feed_created") {
-            // The saved feed was created after this connection opened; subscribe
-            // to its channel so the first saved article is delivered live.
-            // Saved feeds have no subscription (subscriptionId stays null), so we
-            // add the channel directly rather than via subscribeToFeed.
-            subscribeToSavedFeed(event.feedId);
-            // Server-internal signal — nothing for the client to handle.
+            // Only for previous-release SSE servers; saved entries reach this
+            // one on the user's channel. Nothing for the client to handle.
+            return;
+          } else if (event.type === "new_entry") {
+            sendNewEntry(event);
+            return;
+          } else if (event.type === "entry_updated") {
+            sendEntryUpdated(event);
             return;
           }
 
@@ -446,79 +518,18 @@ export async function GET(req: Request): Promise<Response> {
           return;
         }
 
-        // Handle feed events (new_entry, entry_updated)
-        // Transform events to use subscriptionId instead of feedId for client
+        // Handle web feed events (new_entry, entry_updated), translating the
+        // shared feed into this user's subscription for the client.
         if (subscribedFeedChannels.has(channel)) {
           const event = parseFeedEvent(message);
           if (!event) return;
 
-          // Look up the subscription for this feed.
-          // For saved feeds, subscriptionId will be null (no subscription exists)
           const subscriptionId = feedSubscriptionMap.get(event.feedId) ?? null;
-
           if (event.type === "new_entry") {
-            // Compute this user's absolute unread counts and send them with the
-            // event so the client sets counts directly instead of applying a +1
-            // delta. That makes new_entry idempotent: a reconnect catch-up sync
-            // can re-deliver the same entry without double-counting. All write
-            // paths publish new_entry only after the user_entries fanout, so
-            // the entry is in visible_entries by the time this query runs.
-            // This is a per-subscriber query on the feed fan-out path, the same
-            // order as the per-subscriber user_entries inserts the worker
-            // already does for each new entry.
-            enqueueSend(async () => {
-              await customTitlesLoaded;
-              let counts: BulkUnreadCounts | undefined;
-              try {
-                counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
-              } catch (err) {
-                // Leave counts off; the client skips the count update and it
-                // self-heals on the next count-bearing event or refetch.
-                console.error("Failed to compute new_entry counts:", err);
-              }
-              const cursor = new Date().toISOString();
-              send(
-                `event: new_entry\nid: ${cursor}\ndata: ${JSON.stringify({
-                  type: "new_entry",
-                  subscriptionId,
-                  entryId: event.entryId,
-                  timestamp: event.timestamp,
-                  updatedAt: event.updatedAt,
-                  feedType: event.feedType,
-                  ...(counts ? { counts } : {}),
-                  // List-item data (absent from events published by a previous
-                  // release) lets the client insert the entry into cached lists.
-                  ...(event.entry
-                    ? {
-                        entry: withCustomFeedTitle(
-                          event.entry,
-                          subscriptionId ? customTitles.get(subscriptionId) : null
-                        ),
-                      }
-                    : {}),
-                })}\n\n`
-              );
-              trackSSEEventSent("new_entry");
-            });
-            return;
+            sendNewEntry({ ...event, subscriptionId });
+          } else {
+            sendEntryUpdated({ ...event, subscriptionId });
           }
-
-          // entry_updated: include metadata so the client can update caches directly
-          enqueueSend(() => {
-            const cursor = new Date().toISOString();
-            send(
-              `event: entry_updated\nid: ${cursor}\ndata: ${JSON.stringify({
-                type: "entry_updated",
-                subscriptionId,
-                entryId: event.entryId,
-                timestamp: event.timestamp,
-                updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-                feedType: event.feedType,
-                metadata: event.metadata,
-              })}\n\n`
-            );
-            trackSSEEventSent(event.type);
-          });
         }
       }
 
@@ -535,19 +546,12 @@ export async function GET(req: Request): Promise<Response> {
         }
 
         // Build list of channels to subscribe to:
-        // - User-specific channel for subscription events
-        // - Per-feed channels for each subscribed feed
-        // - Saved feed channel (if user has a saved feed)
+        // - User-specific channel (user state, plus email and saved entries)
+        // - Global site-status channel
+        // - Per-feed channels for each subscribed web feed
         const feedIds = Array.from(feedSubscriptionMap.keys());
         const feedChannels = feedIds.map(getFeedEventsChannel);
         const allChannels = [userEventsChannel, siteStatusChannel, ...feedChannels];
-
-        // Add saved feed channel if it exists
-        if (savedFeedId) {
-          const savedFeedChannel = getFeedEventsChannel(savedFeedId);
-          allChannels.push(savedFeedChannel);
-          subscribedFeedChannels.add(savedFeedChannel);
-        }
 
         // Track subscribed feed channels
         for (const channel of feedChannels) {
