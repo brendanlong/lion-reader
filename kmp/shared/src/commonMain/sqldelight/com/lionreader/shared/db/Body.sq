@@ -45,6 +45,9 @@ DELETE FROM entry_body WHERE entry_id NOT IN (SELECT id FROM entry);
 deleteAll:
 DELETE FROM entry_body;
 
+size:
+SELECT size FROM entry_body WHERE entry_id = ?;
+
 totalSize:
 SELECT COALESCE(SUM(size), 0) FROM entry_body;
 

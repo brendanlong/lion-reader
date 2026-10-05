@@ -50,8 +50,9 @@ class SyncEngine(
 
     /**
      * Serializes the background body downloads, which run outside [mutex] so a long download never
-     * holds up a refresh or a flush. Downloads only write `entry_body`, guarded by body version
-     * (see [SyncWriter.storeBodies]), so they can't race the sync or each other.
+     * holds up a refresh or a flush. Downloads only write `entry_body` (and drop the summaries of
+     * bodies they replace), guarded by body version (see [SyncWriter.storeBodies]), so they can't
+     * race the sync or each other.
      */
     private val contentMutex = Mutex()
 

@@ -192,7 +192,7 @@ SELECT count(*) FROM entry_view WHERE effective_read_changed_at IS NOT NULL;
 bodyVersion:
 SELECT body_version FROM entry WHERE id = ?;
 
--- Entries without a body worth keeping offline, or whose body is out of date,
+-- Entries without a body worth keeping offline, or with an outdated one,
 -- newest first.
 selectMissingContent:
 SELECT v.id, v.body_version FROM entry_view v

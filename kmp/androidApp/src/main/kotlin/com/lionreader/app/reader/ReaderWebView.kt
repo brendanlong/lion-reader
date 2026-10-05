@@ -427,7 +427,8 @@ private class ReaderView(context: Context) : WebView(context) {
      * A new view going back to a place shows nothing (the page's background) until it's there,
      * rather than the top of the article and then a jump. Shown anyway after
      * [REVEAL_TIMEOUT_MILLIS], should the page never report in. A view already showing the article
-     * isn't hidden to load it again: its old content beats a blank.
+     * isn't hidden to load it again: its old content beats a blank. Relies on the view's hardware
+     * layer: without one, a transparent view isn't drawn, so [revealWhenDrawn] would wait it out.
      */
     fun hideUntilRestored() {
         alpha = 0f
@@ -616,7 +617,8 @@ private class ReaderView(context: Context) : WebView(context) {
     private companion object {
         /** The web's 2:1 (`MAX_VERTICAL_RATIO` in EntryContentHelpers.ts). */
         const val SWIPE_RATIO = 2f
-        const val REVEAL_TIMEOUT_MILLIS = 1_000L
+        /** Long enough for a new renderer to start on a slow e-reader. */
+        const val REVEAL_TIMEOUT_MILLIS = 3_000L
     }
 }
 

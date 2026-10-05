@@ -571,11 +571,11 @@ private fun SummaryButton(
 internal class BodyDownload(val failed: Boolean, val retry: () -> Unit)
 
 /**
- * Downloads the entry's body when it's loaded without one, or with one an edit made out of date
- * (shown meanwhile, so the page reloads only if the body changed). Keyed on "loaded and missing",
- * because the entry is null until its query answers: keyed on a missing body alone, the effect
- * would run against the null entry and not again when it loads. Nothing else fetches a missing one:
- * opening an entry marks it read, and the background download skips read entries.
+ * Downloads the entry's body when it's loaded without one, or with an outdated one. Keyed on
+ * "loaded and needing one", because the entry is null until its query answers: keyed on the body
+ * alone, the effect would run against the null entry and not again when it loads. Nothing else
+ * fetches a missing one: opening an entry marks it read, and the background download skips read
+ * entries.
  */
 @Composable
 internal fun rememberBodyDownload(
@@ -583,13 +583,13 @@ internal fun rememberBodyDownload(
     entry: EntryDetail?,
     download: suspend () -> Boolean,
 ): BodyDownload {
-    val missing = entry != null && (entry.content == null || entry.contentOutdated)
+    val needed = entry != null && (entry.content == null || entry.contentOutdated)
     var failed by remember(entryId) { mutableStateOf(false) }
     var attempt by remember(entryId) { mutableIntStateOf(0) }
     val currentDownload by rememberUpdatedState(download)
-    LaunchedEffect(entryId, missing, attempt) {
+    LaunchedEffect(entryId, needed, attempt) {
         failed = false
-        if (!missing) return@LaunchedEffect
+        if (!needed) return@LaunchedEffect
         failed =
             try {
                 !currentDownload()

@@ -39,8 +39,9 @@ internal class PulledPage(
  *
  * Table ownership: `entry` state and metadata, collection membership, subscriptions, tags and
  * cursors are written here under the sync lock; bodies only by [storeBodies] and summaries only by
- * [storeSummary] (both outside the lock, version-guarded, and deleted here with their entry); the
- * outbox by `Reader` (and cleared here once sent).
+ * [storeSummary] and, when the body they summarized is replaced, [storeBodies] (outside the lock,
+ * version-guarded, and deleted here with their entry); the outbox by `Reader` (and cleared here
+ * once sent).
  */
 internal class SyncWriter(private val db: LionReaderDatabase) {
     private val store = LocalStore(db)
@@ -325,15 +326,16 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             val text = texts.getValue(entry.id)
             // The search index's copy of the text counts against the budget too.
             val size = (content.length + text.length).toLong()
-            if (putBody(entry.id, content, size, text, version, now)) stored += size
+            stored += putBody(entry.id, content, size, text, version, now)
         }
-        missing.forEach { id -> versions[id]?.let { putBody(id, "", 0, "", it, now) } }
+        missing.forEach { id -> versions[id]?.let { stored += putBody(id, "", 0, "", it, now) } }
         return stored
     }
 
     /**
-     * Replaces the entry's body with one downloaded at [version], if it's still at it; whether it
-     * did. A summary asked for before an edit goes, unless the body is the one it summarized.
+     * Replaces the entry's body with one downloaded at [version], if it's still at it; how much
+     * that grew the stored bodies. A summary asked for before an edit goes, unless the body is the
+     * one it summarized.
      */
     private fun putBody(
         entryId: String,
@@ -342,13 +344,14 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         searchText: String,
         version: Long,
         now: Long,
-    ): Boolean {
-        if (bodyVersion(entryId) != version) return false
+    ): Long {
+        if (bodyVersion(entryId) != version) return 0
         if (db.bodyQueries.matches(entryId, content).executeAsOne() == 0L) {
             db.summaryQueries.deleteOutdated(entryId, version)
         }
+        val replaced = db.bodyQueries.size(entryId).executeAsOneOrNull() ?: 0
         db.bodyQueries.putIfCurrent(entryId, content, size, now, searchText, version)
-        return true
+        return size - replaced
     }
 
     /** The entry's body version, or null when it isn't on the device. */
