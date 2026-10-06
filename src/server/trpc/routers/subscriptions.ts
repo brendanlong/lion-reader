@@ -466,19 +466,21 @@ export const subscriptionsRouter = createTRPCRouter({
       // Fetch feed and tags in separate queries to avoid a cross-join that
       // multiplies rows (#680). The unread count comes off the UPDATE's
       // RETURNING — the trigger-maintained counter, not a scan.
+      const feedId = subscription.feedId;
       const [feedResult, tagsResult] = await Promise.all([
-        // Feed metadata
-        ctx.db
-          .select({
-            id: feeds.id,
-            url: feeds.url,
-            title: feeds.title,
-            description: feeds.description,
-            siteUrl: feeds.siteUrl,
-          })
-          .from(feeds)
-          .where(eq(feeds.id, subscription.feedId))
-          .limit(1),
+        // Feed metadata; none for a subscription without a feed (#1846)
+        feedId === null
+          ? []
+          : ctx.db
+              .select({
+                url: feeds.url,
+                title: feeds.title,
+                description: feeds.description,
+                siteUrl: feeds.siteUrl,
+              })
+              .from(feeds)
+              .where(eq(feeds.id, feedId))
+              .limit(1),
 
         // Tags for this subscription
         ctx.db
@@ -492,10 +494,7 @@ export const subscriptionsRouter = createTRPCRouter({
           .where(eq(subscriptionTags.subscriptionId, subscription.id)),
       ]);
 
-      const result = feedResult[0];
-      if (!result) {
-        throw errors.subscriptionNotFound();
-      }
+      const feed = feedResult.at(0);
 
       // Publish SSE event for other tabs/devices — only when something
       // actually changed. A no-op re-save (identical customTitle /
@@ -520,11 +519,11 @@ export const subscriptionsRouter = createTRPCRouter({
       return {
         id: subscription.id,
         type: subscription.type,
-        url: result.url,
-        title: subscription.customTitle ?? result.title, // resolved title
-        originalTitle: result.title,
-        description: result.description,
-        siteUrl: result.siteUrl,
+        url: feed?.url ?? null,
+        title: subscription.customTitle ?? feed?.title ?? null, // resolved title
+        originalTitle: feed?.title ?? null,
+        description: feed?.description ?? null,
+        siteUrl: feed?.siteUrl ?? null,
         subscribedAt: subscription.subscribedAt,
         unreadCount: subscription.unreadCount,
         tags: tagsResult,

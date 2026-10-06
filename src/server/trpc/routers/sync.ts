@@ -646,7 +646,7 @@ async function collectSyncEvents(
         updatedAtInstant: sql`${subscriptions.updatedAt}`.mapWith(parseTimestamptz),
       })
       .from(subscriptions)
-      .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+      .leftJoin(feeds, eq(subscriptions.feedId, feeds.id))
       .where(
         and(
           eq(subscriptions.userId, userId),
@@ -693,13 +693,14 @@ async function collectSyncEvents(
               unreadCount: subscription.unreadCount,
               tags: tagsBySubscription.get(subscription.id) ?? [],
             },
+            // A subscription without a feed (#1846) has only its own name.
             feed: {
               id: legacyFeedId(subscription.id),
               type: subscription.type,
-              url: feed.url,
-              title: feed.title,
-              description: feed.description,
-              siteUrl: feed.siteUrl,
+              url: feed?.url ?? null,
+              title: feed?.title ?? subscription.customTitle,
+              description: feed?.description ?? null,
+              siteUrl: feed?.siteUrl ?? null,
             },
             _sortTime: updatedAtInstant,
           });

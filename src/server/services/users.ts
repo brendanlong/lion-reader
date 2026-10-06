@@ -50,8 +50,9 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
             WHERE ${subscriptions.userId} = ${userId}
           )
           AND ${feeds.id} NOT IN (
+            -- A NULL (a subscription without a feed) would make NOT IN match nothing.
             SELECT ${subscriptions.feedId} FROM ${subscriptions}
-            WHERE ${subscriptions.userId} != ${userId}
+            WHERE ${subscriptions.userId} != ${userId} AND ${subscriptions.feedId} IS NOT NULL
           )
           AND ${feeds.id} NOT IN (
             SELECT DISTINCT ${entries.feedId} FROM ${entries}

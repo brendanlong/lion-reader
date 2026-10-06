@@ -904,6 +904,13 @@
       "when": 1782955680000,
       "tag": "0129_collection_names_required",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1782955740000,
+      "tag": "0130_subscriptions_feed_optional",
+      "breakpoints": true
     }
   ]
 }
