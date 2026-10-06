@@ -198,10 +198,9 @@ class AccountsTest {
         val gate = CompletableDeferred<Unit>().also { meGate = it }
         accounts.signIn("bob")
         // Bob's tokens are in, but nobody has asked whose they are yet.
-        until { accounts.connection.value.auth.signedIn.value }
+        until { accounts.accountStatus.value == AccountStatus.Confirming }
         assertSame(alice, accounts.account.value)
         assertFalse(alice.confirmed.value)
-        assertEquals(AccountStatus.Confirming, accounts.accountStatus.value)
 
         gate.complete(Unit)
         until { accounts.account.value.let { it != null && it !== alice && it.confirmed.value } }

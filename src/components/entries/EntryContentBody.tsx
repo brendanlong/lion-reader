@@ -455,7 +455,7 @@ export function EntryContentBody({
                 </>
               ) : summary ? (
                 <>
-                  <SparklesIcon className="h-4 w-4" />
+                  <SparklesIcon className="h-4 w-4" filled={showSummary} />
                   <span className="ml-2">{showSummary ? "Hide Summary" : "Show Summary"}</span>
                 </>
               ) : (
