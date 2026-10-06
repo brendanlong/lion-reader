@@ -695,7 +695,7 @@ async function collectSyncEvents(
             },
             feed: {
               id: legacyFeedId(subscription.id),
-              type: feed.type,
+              type: subscription.type,
               url: feed.url,
               title: feed.title,
               description: feed.description,

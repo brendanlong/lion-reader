@@ -833,6 +833,7 @@ describe("listAllSubscriptions", () => {
         id: generateUuidv7(),
         userId,
         feedId: f.id,
+        type: "web" as const,
         subscribedAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),

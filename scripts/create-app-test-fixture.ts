@@ -33,7 +33,7 @@ async function main(): Promise<void> {
     url: `https://example.com/app-fixture-${feedId}.xml`,
     title: "Fixture Feed",
   });
-  await db.insert(subscriptions).values({ id: generateUuidv7(), userId, feedId });
+  await db.insert(subscriptions).values({ id: generateUuidv7(), userId, feedId, type: "web" });
 
   const entryIds: string[] = [];
   for (let i = 0; i < 3; i++) {

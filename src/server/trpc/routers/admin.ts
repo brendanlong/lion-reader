@@ -27,6 +27,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
+import { isWebSubscription } from "@/server/services/subscriptions";
 import {
   getMaintenanceRaw,
   getAnnouncementRaw,
@@ -847,8 +848,7 @@ const overviewEndpoints = {
         ctx.db
           .select({ count: sql<number>`COUNT(DISTINCT ${subscriptions.feedId})` })
           .from(subscriptions)
-          .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
-          .where(and(isNull(subscriptions.unsubscribedAt), eq(feeds.type, "web"))),
+          .where(and(isNull(subscriptions.unsubscribedAt), isWebSubscription())),
 
         // Total entries
         ctx.db.select({ count: count() }).from(entries),

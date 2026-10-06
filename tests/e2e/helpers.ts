@@ -168,7 +168,7 @@ export async function createSubscribedFeed(db: TestDb, userId: string): Promise<
   });
   // The user_entries fill trigger stamps subscription_id on later user_entries
   // inserts by matching (user_id, entry's feed_id) against this row.
-  await db.insert(schema.subscriptions).values({ id: subscriptionId, userId, feedId });
+  await db.insert(schema.subscriptions).values({ id: subscriptionId, userId, feedId, type: "web" });
 
   return { feedId, subscriptionId, title };
 }

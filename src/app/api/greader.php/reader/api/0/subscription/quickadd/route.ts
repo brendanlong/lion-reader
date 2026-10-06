@@ -111,6 +111,7 @@ export async function POST(request: Request): Promise<Response> {
         id: subscriptionId,
         userId: session.user.id,
         feedId,
+        type: "web",
         subscribedAt: now,
         createdAt: now,
         updatedAt: now,

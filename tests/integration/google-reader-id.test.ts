@@ -51,7 +51,7 @@ async function insertEntry(
   // one subscription, so this is an upsert rather than createTestSubscription.
   await db
     .insert(subscriptions)
-    .values({ id: generateUuidv7(), userId, feedId })
+    .values({ id: generateUuidv7(), userId, feedId, type: "web" })
     .onConflictDoNothing();
 
   const id = await createTestEntry(feedId, { userIds: [userId] });

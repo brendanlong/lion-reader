@@ -76,6 +76,7 @@ export async function createCollection(
       id: subscriptionId,
       userId,
       feedId,
+      type: "collection",
       subscribedAt: now,
       createdAt: now,
       updatedAt: now,

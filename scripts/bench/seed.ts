@@ -755,9 +755,9 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
   await step("entries", ENTRIES);
   await step(
     "subscriptions",
-    `INSERT INTO subscriptions (id, user_id, feed_id, custom_title, subscribed_at, created_at, updated_at)
-     SELECT id, user_id, feed_id, custom_title, subscribed_at, subscribed_at, subscribed_at
-     FROM bench_sub ORDER BY subscribed_at, id`
+    `INSERT INTO subscriptions (id, user_id, feed_id, type, custom_title, subscribed_at, created_at, updated_at)
+     SELECT s.id, s.user_id, s.feed_id, f.kind, s.custom_title, s.subscribed_at, s.subscribed_at, s.subscribed_at
+     FROM bench_sub s JOIN bench_feed f ON f.id = s.feed_id ORDER BY s.subscribed_at, s.id`
   );
   const tagRows = plan.users.flatMap((u) =>
     Array.from({ length: u.tags }, (_, k) => [tagId(u.idx, k + 1), userId(u.idx), tagName(k + 1)])
@@ -777,8 +777,8 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
   await step("user_entries", USER_ENTRIES);
   await step(
     "collections",
-    `INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at)
-     SELECT v.sub, f.user_id, f.id, ${A} - interval '30 days', ${A} - interval '30 days', ${A} - interval '30 days'
+    `INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at)
+     SELECT v.sub, f.user_id, f.id, 'collection', ${A} - interval '30 days', ${A} - interval '30 days', ${A} - interval '30 days'
      FROM unnest($1::uuid[], $2::uuid[]) AS v(sub, feed) JOIN feeds f ON f.id = v.feed`,
     [
       Object.values(COLLECTIONS).map((c) => collectionSubscriptionId(c.userIdx, c.key)),

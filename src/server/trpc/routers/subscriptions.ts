@@ -432,6 +432,7 @@ export const subscriptionsRouter = createTRPCRouter({
         .returning({
           id: subscriptions.id,
           feedId: subscriptions.feedId,
+          type: subscriptions.type,
           customTitle: subscriptions.customTitle,
           fetchFullContent: subscriptions.fetchFullContent,
           subscribedAt: subscriptions.subscribedAt,
@@ -453,7 +454,6 @@ export const subscriptionsRouter = createTRPCRouter({
         ctx.db
           .select({
             id: feeds.id,
-            type: feeds.type,
             url: feeds.url,
             title: feeds.title,
             description: feeds.description,
@@ -502,7 +502,7 @@ export const subscriptionsRouter = createTRPCRouter({
       // Return flat format
       return {
         id: subscription.id,
-        type: result.type,
+        type: subscription.type,
         url: result.url,
         title: subscription.customTitle ?? result.title, // resolved title
         originalTitle: result.title,
