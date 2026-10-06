@@ -777,8 +777,8 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
   await step("user_entries", USER_ENTRIES);
   await step(
     "collections",
-    `INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at)
-     SELECT v.sub, f.user_id, f.id, 'collection', ${A} - interval '30 days', ${A} - interval '30 days', ${A} - interval '30 days'
+    `INSERT INTO subscriptions (id, user_id, feed_id, type, custom_title, subscribed_at, created_at, updated_at)
+     SELECT v.sub, f.user_id, f.id, 'collection', f.title, ${A} - interval '30 days', ${A} - interval '30 days', ${A} - interval '30 days'
      FROM unnest($1::uuid[], $2::uuid[]) AS v(sub, feed) JOIN feeds f ON f.id = v.feed`,
     [
       Object.values(COLLECTIONS).map((c) => collectionSubscriptionId(c.userIdx, c.key)),

@@ -316,7 +316,12 @@ const setSubscriptionTagsArgs = z.object({
 });
 
 const createCollectionArgs = z.object({
-  name: z.string().trim().min(1).max(COLLECTION_NAME_MAX_LENGTH).describe("Collection name"),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(COLLECTION_NAME_MAX_LENGTH)
+    .describe("Collection name (unique per user ignoring case)"),
 });
 
 const collectionEntriesArgs = z.object({
@@ -586,12 +591,18 @@ function buildTools(): Tool[] {
       description:
         "Create a collection: a list of articles you fill by hand, shown and tagged like a " +
         "feed. Returns it as a subscription; its id is the collectionId for " +
-        "add_to_collection and the subscriptionId for list_entries and set_subscription_tags.",
+        "add_to_collection and the subscriptionId for list_entries and set_subscription_tags. " +
+        "If a collection with that name (ignoring case) already exists, returns it unchanged " +
+        "with created: false.",
       inputSchema: toInputSchema(createCollectionArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(createCollectionArgs, args);
-        const { subscription } = await collectionsService.createCollection(db, userId, params.name);
-        return subscription;
+        const { subscription, created } = await collectionsService.createCollection(
+          db,
+          userId,
+          params.name
+        );
+        return { ...subscription, created };
       },
     },
 

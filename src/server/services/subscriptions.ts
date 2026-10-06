@@ -75,6 +75,27 @@ export function isCollectionSubscription(): SQL {
   return eq(subscriptions.type, "collection");
 }
 
+/** Whether the subscription is one of the user's active collections. */
+export async function isActiveCollection(
+  db: DbOrTx,
+  userId: string,
+  subscriptionId: string
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        isCollectionSubscription()
+      )
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 /** Matches `subscriptions` rows to web feeds, the only feeds shared between users. */
 export function isWebSubscription(): SQL {
   return eq(subscriptions.type, "web");

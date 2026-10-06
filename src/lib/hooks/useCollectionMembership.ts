@@ -51,7 +51,9 @@ export function useCollectionMembership(entryId: string) {
   /**
    * Creates a collection and adds the entry to it. The sidebar learns of the
    * collection only once the entry is in it, so it shows the collection's
-   * count. Returns the collection, or null if creating failed.
+   * count. When the user already has a collection with that name (ignoring
+   * case), the entry is added to it instead. Returns the collection, or null
+   * if creating failed.
    */
   const createWithEntry = async (name: string) => {
     let created;
@@ -62,6 +64,14 @@ export function useCollectionMembership(entryId: string) {
       return null;
     }
     const { subscription } = created;
+    if (!created.created) {
+      // Already listed in the sidebar; adding updates its count. A failure
+      // is reported by the mutation's onError.
+      await addMutation
+        .mutateAsync({ id: subscription.id, entryIds: [entryId] })
+        .catch(() => undefined);
+      return subscription;
+    }
     try {
       const result = await addMutation.mutateAsync({ id: subscription.id, entryIds: [entryId] });
       handleSubscriptionCreated(

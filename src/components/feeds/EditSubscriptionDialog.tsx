@@ -71,8 +71,11 @@ function EditSubscriptionForm({
   currentTagIds,
   onClose,
 }: EditSubscriptionFormProps) {
-  // Initialize state with current values
-  const [customTitle, setCustomTitle] = useState(currentCustomTitle ?? "");
+  // A collection's name is its custom title (#1846): edited directly, and
+  // required. A feed's custom title is optional, falling back to the feed's.
+  const [customTitle, setCustomTitle] = useState(
+    isCollection ? currentTitle : (currentCustomTitle ?? "")
+  );
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(currentTagIds);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +93,11 @@ function EditSubscriptionForm({
 
       // Update custom title if changed
       const newCustomTitle = customTitle.trim() || null;
-      if (newCustomTitle !== currentCustomTitle) {
+      if (isCollection && !newCustomTitle) {
+        setError("Collection name is required");
+        return;
+      }
+      if (newCustomTitle !== (isCollection ? currentTitle : currentCustomTitle)) {
         await updateMutation.mutateAsync({
           id: subscriptionId,
           customTitle: newCustomTitle,
@@ -146,12 +153,8 @@ function EditSubscriptionForm({
         <div className="mb-4">
           <Input
             id="custom-title"
-            label="Custom Title (optional)"
-            placeholder={
-              isCollection
-                ? "Leave empty to use the collection's name"
-                : "Leave empty to use feed's default title"
-            }
+            label={isCollection ? "Name" : "Custom Title (optional)"}
+            placeholder={isCollection ? undefined : "Leave empty to use feed's default title"}
             value={customTitle}
             onChange={(e) => setCustomTitle(e.target.value)}
             disabled={isPending}

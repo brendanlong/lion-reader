@@ -1276,6 +1276,8 @@ CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WH
 
 CREATE UNIQUE INDEX uq_subscriptions_id_user ON public.subscriptions USING btree (id, user_id);
 
+CREATE UNIQUE INDEX uq_subscriptions_user_collection_name ON public.subscriptions USING btree (user_id, lower(custom_title)) WHERE ((type = 'collection'::public.feed_type) AND (unsubscribed_at IS NULL));
+
 CREATE UNIQUE INDEX uq_tags_user_lower_name ON public.tags USING btree (user_id, lower(name)) WHERE (deleted_at IS NULL);
 
 CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^https?://'::text, 'https://'::text) FROM public.entries;

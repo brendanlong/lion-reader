@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import Redis from "ioredis";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
@@ -26,7 +27,10 @@ import {
   listGreaderSubscriptions,
 } from "../../src/server/google-reader/subscriptions";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
-import { subscribeAndDrain, waitForMessage } from "../utils/pubsub";
+import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
+import { createSession } from "../../src/server/auth/session";
+import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
+import { POST as editSubscription } from "../../src/app/api/greader.php/reader/api/0/subscription/edit/route";
 import {
   createTestEntry,
   createTestFeed,
@@ -82,8 +86,9 @@ describe("MCP curation tools", () => {
     const collection = (await callTool("create_collection", userId, { name: "Top" })) as {
       id: string;
       type: string;
+      created: boolean;
     };
-    expect(collection.type).toBe("collection");
+    expect(collection).toMatchObject({ type: "collection", created: true });
     expect(
       await callTool("add_to_collection", userId, {
         collectionId: collection.id,
@@ -135,7 +140,48 @@ describe("collection_entries_changed", () => {
   });
 });
 
+describe("subscription_created", () => {
+  it("is published only when a collection is actually created", async () => {
+    const userId = await createTestUser();
+    const channel = getUserEventsChannel(userId);
+
+    await subscribeAndDrain(subscriber, channel, () => createCollection(db, userId, "News"));
+
+    await expectNoMessage(subscriber, channel, () => createCollection(db, userId, "news"));
+  });
+});
+
 describe("Google Reader", () => {
+  it.each([
+    [" news ", 409],
+    ["  ", 400],
+  ])("refuses renaming a collection to %j (another's name, or blank)", async (title, status) => {
+    const userId = await createTestUser();
+    const { token } = await createSession(db, {
+      userId,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    });
+    await createCollection(db, userId, "News");
+    const { subscription } = await createCollection(db, userId, "Tech");
+    const [{ streamId }] = await db
+      .select({ streamId: subscriptions.greaderStreamId })
+      .from(subscriptions)
+      .where(eq(subscriptions.id, subscription.id));
+
+    const res = await editSubscription(
+      new Request("https://example.com/api/greader.php/reader/api/0/subscription/edit", {
+        method: "POST",
+        headers: {
+          authorization: `GoogleLogin auth=${token}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ ac: "edit", s: `feed/${streamId}`, t: title }).toString(),
+      })
+    );
+
+    expect(res.status).toBe(status);
+  });
+
   it("leaves collections out of the subscription list and unread counts", async () => {
     const { userId, sourceId, entryId } = await userWithEntry();
     const { subscription } = await createCollection(db, userId, "C");

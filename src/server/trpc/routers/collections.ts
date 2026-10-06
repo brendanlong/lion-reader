@@ -36,6 +36,11 @@ const membershipOutputSchema = z.object({
 });
 
 export const collectionsRouter = createTRPCRouter({
+  /**
+   * Create a collection. Active collections' names are unique per user
+   * ignoring case; creating an existing name returns that collection
+   * unchanged with `created: false`.
+   */
   create: protectedProcedure
     .meta({
       openapi: {
@@ -46,7 +51,13 @@ export const collectionsRouter = createTRPCRouter({
       },
     })
     .input(z.object({ name: collectionNameSchema }))
-    .output(z.object({ subscription: subscriptionOutputSchema, counts: unreadCountsSchema }))
+    .output(
+      z.object({
+        subscription: subscriptionOutputSchema,
+        counts: unreadCountsSchema,
+        created: z.boolean(),
+      })
+    )
     .mutation(({ ctx, input }) =>
       collectionsService.createCollection(ctx.db, ctx.session.user.id, input.name)
     ),

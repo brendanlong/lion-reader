@@ -135,6 +135,51 @@ describe("EditSubscriptionDialog", () => {
     expect(callsFor("subscriptions.update")[0].input).toEqual({ id: "sub-1", customTitle: null });
   });
 
+  describe("collections (#1846)", () => {
+    const collectionProps = (onClose: () => void) =>
+      defaultProps({ onClose, isCollection: true, currentTitle: "Reading" });
+
+    it.each([
+      ["Later ", [{ id: "sub-1", customTitle: "Later" }]],
+      ["Reading", []],
+    ])("edits the name itself and saves only a change (%j)", async (typed, expectedUpdates) => {
+      const onClose = vi.fn();
+      const { callsFor } = renderWithTrpc(
+        <EditSubscriptionDialog {...collectionProps(onClose)} />,
+        {
+          handlers: baseHandlers(),
+        }
+      );
+      await screen.findByText("Tech");
+      const name = screen.getByLabelText("Name");
+      expect(name).toHaveValue("Reading");
+
+      fireEvent.change(name, { target: { value: typed } });
+      fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      expect(callsFor("subscriptions.update").map((c) => c.input)).toEqual(expectedUpdates);
+    });
+
+    it("refuses an empty name without calling the server", async () => {
+      const onClose = vi.fn();
+      const { callsFor } = renderWithTrpc(
+        <EditSubscriptionDialog {...collectionProps(onClose)} />,
+        {
+          handlers: baseHandlers(),
+        }
+      );
+      await screen.findByText("Tech");
+
+      fireEvent.change(screen.getByLabelText("Name"), { target: { value: "  " } });
+      fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+      expect(await screen.findByText("Collection name is required")).toBeInTheDocument();
+      expect(callsFor("subscriptions.update")).toHaveLength(0);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
   it("saves changed tags via subscriptions.setTags", async () => {
     const onClose = vi.fn();
     const { callsFor } = renderWithTrpc(<EditSubscriptionDialog {...defaultProps({ onClose })} />, {

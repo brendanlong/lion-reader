@@ -35,6 +35,7 @@ import { publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { importOpml } from "@/server/services/imports";
+import { isUniqueViolation } from "@/server/db/errors";
 import { unreadCountsSchema } from "@/lib/events/schemas";
 
 // Endpoints exposed via the MCP tool surface; the native app uses them too.
@@ -45,10 +46,12 @@ const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
 // ============================================================================
 
 /**
- * Custom title validation schema.
+ * Custom title validation schema. Trimmed, like a collection name on create,
+ * so a rename can't make a near-duplicate ("News " next to "News").
  */
 const customTitleSchema = z
   .string()
+  .trim()
   .max(255, "Custom title must be less than 255 characters")
   .nullable();
 
@@ -358,7 +361,9 @@ export const subscriptionsRouter = createTRPCRouter({
    * Update a subscription.
    *
    * Allows users to update subscription settings:
-   * - customTitle: Set a custom title (null to use feed's default)
+   * - customTitle: Set a custom title (null to use feed's default). For a
+   *   collection it's the name: required, and unique among the user's active
+   *   collections ignoring case (COLLECTION_NAME_TAKEN otherwise).
    * - fetchFullContent: Whether to fetch full article content from URL
    */
   update: protectedProcedure
@@ -389,6 +394,14 @@ export const subscriptionsRouter = createTRPCRouter({
       } = {};
 
       if (input.customTitle !== undefined) {
+        // A collection's name lives in custom_title (#1846), so it can't be
+        // cleared. The type never changes, so checking first can't race.
+        if (
+          !input.customTitle &&
+          (await subscriptionsService.isActiveCollection(ctx.db, userId, input.id))
+        ) {
+          throw errors.validation("Collection name is required");
+        }
         updateData.customTitle = input.customTitle;
       }
       if (input.fetchFullContent !== undefined) {
@@ -438,6 +451,10 @@ export const subscriptionsRouter = createTRPCRouter({
           subscribedAt: subscriptions.subscribedAt,
           unreadCount: subscriptions.unreadCount,
           changed: sql<boolean>`${meaningfulChange}`,
+        })
+        .catch((err: unknown) => {
+          // Only custom_title can collide: with another active collection's name.
+          throw isUniqueViolation(err) ? errors.collectionNameTaken() : err;
         });
 
       if (updateResult.length === 0) {
