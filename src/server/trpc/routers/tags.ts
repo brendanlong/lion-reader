@@ -80,11 +80,8 @@ export const tagsRouter = createTRPCRouter({
     }),
 
   /**
-   * Create a new tag.
-   *
-   * @param name - The tag name (must be unique per user)
-   * @param color - Optional hex color for the tag
-   * @returns The created tag
+   * Create a tag. Names are unique per user ignoring case; creating an
+   * existing name returns that tag unchanged with `created: false`.
    */
   create: protectedProcedure
     .meta({

@@ -12,7 +12,7 @@
  *   handler.
  */
 
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   feeds,
@@ -191,50 +191,58 @@ export type ProcessOpmlImportResult =
 /**
  * Resolves every category name used by the import to a tag row, creating the
  * missing ones in a single batch insert (rather than a query per feed). Tag
- * names are unique ignoring case, so the map is keyed by `importTagKey` and
- * categories differing only in case share one tag.
+ * names are unique ignoring case, so categories are matched to tags by
+ * Postgres's `lower()`, the same comparison the unique index makes, and
+ * categories differing only in case share one tag. Keyed by category name.
  */
 async function ensureImportTags(
   db: typeof dbType,
   userId: string,
   feedsData: OpmlImportFeedData[]
 ): Promise<Map<string, ImportTagInfo>> {
+  const categoryNames = [...new Set(feedsData.flatMap((feed) => feed.category ?? []))];
+  const categoryToTag = new Map<string, ImportTagInfo>();
+  if (categoryNames.length === 0) {
+    return categoryToTag;
+  }
+
+  const categoryKeys = await db.execute<{ name: string; key: string }>(
+    sql`SELECT name, lower(name) AS key FROM unnest(ARRAY[${sql.join(
+      categoryNames.map((name) => sql`${name}`),
+      sql`, `
+    )}]::text[]) WITH ORDINALITY AS c(name, i) ORDER BY i`
+  );
   // Lowercased name → the first spelling the import uses.
-  const tagNames = new Map<string, string>();
-  for (const feed of feedsData) {
-    for (const categoryName of feed.category ?? []) {
-      if (!tagNames.has(importTagKey(categoryName))) {
-        tagNames.set(importTagKey(categoryName), categoryName);
-      }
-    }
+  const namesByKey = new Map<string, string>();
+  for (const { name, key } of categoryKeys.rows) {
+    if (!namesByKey.has(key)) namesByKey.set(key, name);
   }
 
-  const tagNameToInfo = new Map<string, ImportTagInfo>();
-  if (tagNames.size === 0) {
-    return tagNameToInfo;
-  }
-
+  const tagsByKey = new Map<string, ImportTagInfo>();
+  const tagSelection = {
+    id: tags.id,
+    name: tags.name,
+    color: tags.color,
+    key: sql<string>`lower(${tags.name})`,
+  };
   const addExisting = async () => {
     // Only live tags: `deleteTag` tombstones, and the unique index on tag
     // names is partial (`WHERE deleted_at IS NULL`), so a deleted tag can
     // share a name with a live one. Reusing a tombstone would attach the
     // imported subscriptions to a tag that no sidebar group lists.
     const existingTags = await db
-      .select({ id: tags.id, name: tags.name, color: tags.color })
+      .select(tagSelection)
       .from(tags)
       .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
-    for (const existingTag of existingTags) {
-      const key = importTagKey(existingTag.name);
-      if (tagNames.has(key)) {
-        tagNameToInfo.set(key, existingTag);
-      }
+    for (const { key, ...tag } of existingTags) {
+      if (namesByKey.has(key)) tagsByKey.set(key, tag);
     }
   };
   await addExisting();
 
   const now = new Date();
-  const tagsToCreate = [...tagNames]
-    .filter(([key]) => !tagNameToInfo.has(key))
+  const tagsToCreate = [...namesByKey]
+    .filter(([key]) => !tagsByKey.has(key))
     .map(([, name]) => ({ id: generateUuidv7(), userId, name, createdAt: now }));
 
   if (tagsToCreate.length > 0) {
@@ -243,9 +251,9 @@ async function ensureImportTags(
       .insert(tags)
       .values(tagsToCreate)
       .onConflictDoNothing()
-      .returning({ id: tags.id, name: tags.name, color: tags.color });
-    for (const tag of inserted) {
-      tagNameToInfo.set(importTagKey(tag.name), tag);
+      .returning(tagSelection);
+    for (const { key, ...tag } of inserted) {
+      tagsByKey.set(key, tag);
     }
     if (inserted.length < tagsToCreate.length) {
       await addExisting();
@@ -257,11 +265,11 @@ async function ensureImportTags(
     });
   }
 
-  return tagNameToInfo;
-}
-
-function importTagKey(name: string): string {
-  return name.toLowerCase();
+  for (const { name, key } of categoryKeys.rows) {
+    const tag = tagsByKey.get(key);
+    if (tag) categoryToTag.set(name, tag);
+  }
+  return categoryToTag;
 }
 
 /**
@@ -279,7 +287,7 @@ async function applyImportTags(
   const tagInfos = [
     ...new Map(
       categories
-        .map((categoryName) => tagNameToInfo.get(importTagKey(categoryName)))
+        .map((categoryName) => tagNameToInfo.get(categoryName))
         .filter((info): info is ImportTagInfo => info !== undefined)
         .map((info) => [info.id, info])
     ).values(),

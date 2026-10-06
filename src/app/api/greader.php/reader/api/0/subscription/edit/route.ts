@@ -167,8 +167,9 @@ async function applyTagChanges(
     if (!labelMatch) continue;
 
     const tagName = labelMatch[1];
-    // Returns the existing tag when there is one.
-    const { tag } = await tagsService.createTag(database, userId, { name: tagName });
+    const tag =
+      (await resolveTagByName(database, userId, tagName)) ??
+      (await tagsService.createTag(database, userId, { name: tagName })).tag;
 
     // Add tag to subscription (ignore if already exists)
     await database

@@ -173,7 +173,9 @@ export async function createTag(
 
     const existing = await selectTagWithCounts(
       db,
-      and(eq(tags.userId, userId), tagNameMatches(params.name), isNull(tags.deletedAt))!
+      eq(tags.userId, userId),
+      tagNameMatches(params.name),
+      isNull(tags.deletedAt)
     );
     if (existing) {
       return { tag: toTag(existing), created: false };
@@ -255,7 +257,7 @@ export async function updateTag(
     throw err;
   }
 
-  const tag = await selectTagWithCounts(db, and(eq(tags.id, tagId), eq(tags.userId, userId))!);
+  const tag = await selectTagWithCounts(db, eq(tags.id, tagId), eq(tags.userId, userId));
   if (!tag) {
     throw errors.tagNotFound();
   }
@@ -276,7 +278,7 @@ export async function updateTag(
   return toTag(tag);
 }
 
-async function selectTagWithCounts(db: typeof dbType, where: SQL) {
+async function selectTagWithCounts(db: typeof dbType, ...conditions: SQL[]) {
   const [tag] = await db
     .select({
       id: tags.id,
@@ -289,7 +291,7 @@ async function selectTagWithCounts(db: typeof dbType, where: SQL) {
     })
     .from(tags)
     .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
-    .where(where)
+    .where(and(...conditions))
     .groupBy(tags.id)
     .limit(1);
   return tag;

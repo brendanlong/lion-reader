@@ -5,7 +5,8 @@
  * and the proper handling of user isolation and authorization.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import Redis from "ioredis";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
@@ -19,6 +20,8 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
+import { getUserEventsChannel } from "../../src/server/redis/pubsub";
+import { expectNoMessage, subscribeAndDrain } from "../utils/pubsub";
 import {
   createAuthContext,
   createTestEntry,
@@ -265,6 +268,28 @@ describe("Tags API", () => {
         tag: { id: first.tag.id, name: "Tech", color: "#ff6b6b", feedCount: 1 },
       });
       expect((await caller.tags.list()).items).toHaveLength(1);
+    });
+
+    describe("events", () => {
+      let subscriber: Redis;
+      beforeAll(() => {
+        const redisUrl = process.env.REDIS_URL;
+        if (!redisUrl) throw new Error("REDIS_URL must be set for integration tests");
+        subscriber = new Redis(redisUrl);
+      });
+      afterAll(async () => {
+        await subscriber.quit();
+      });
+
+      it("publishes tag_created only when a tag is actually created", async () => {
+        const userId = await createTestUser();
+        const caller = createCaller(await createAuthContext(userId));
+        const channel = getUserEventsChannel(userId);
+
+        await subscribeAndDrain(subscriber, channel, () => caller.tags.create({ name: "News" }));
+
+        await expectNoMessage(subscriber, channel, () => caller.tags.create({ name: "news" }));
+      });
     });
 
     it("gives concurrent creates of one name the same tag", async () => {
