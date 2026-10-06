@@ -5,7 +5,7 @@
  * tRPC routers, MCP server, and background jobs.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { users, feeds, entries, subscriptions, userEntries, sessions } from "@/server/db/schema";
 import { getRedisClient } from "@/server/redis";
@@ -74,7 +74,7 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
     // Step 3: Delete orphaned web feeds (and their entries via cascade)
     if (orphanedFeedIds.length > 0) {
       const ids = orphanedFeedIds.map((f) => f.id);
-      await tx.delete(feeds).where(sql`${feeds.id} = ANY(${ids})`);
+      await tx.delete(feeds).where(inArray(feeds.id, ids));
     }
   });
 
