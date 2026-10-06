@@ -172,3 +172,6 @@ playwright-report/
 
 # Locally unpacked Node toolchain (see "Toolchain" in CLAUDE.md)
 /.node26/
+
+# Database benchmark runs (the baseline is committed separately)
+/scripts/bench/results/
