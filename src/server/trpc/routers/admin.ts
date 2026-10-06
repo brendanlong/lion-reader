@@ -27,7 +27,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
-import { isWebSubscription } from "@/server/services/subscriptions";
+import { isListedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 import {
   getMaintenanceRaw,
   getAnnouncementRaw,
@@ -615,7 +615,13 @@ const userEndpoints = {
       const subscriptionCountSq = ctx.db
         .select({ count: count().as("count") })
         .from(subscriptions)
-        .where(and(eq(subscriptions.userId, users.id), isNull(subscriptions.unsubscribedAt)));
+        .where(
+          and(
+            eq(subscriptions.userId, users.id),
+            isNull(subscriptions.unsubscribedAt),
+            isListedSubscription()
+          )
+        );
 
       // Subquery: count of user_entries
       const entryCountSq = ctx.db
@@ -857,7 +863,7 @@ const overviewEndpoints = {
         ctx.db
           .select({ count: count() })
           .from(subscriptions)
-          .where(isNull(subscriptions.unsubscribedAt)),
+          .where(and(isNull(subscriptions.unsubscribedAt), isListedSubscription())),
 
         // Pending invites
         ctx.db

@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { eq, and, gt, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   blockedSenders,
@@ -102,7 +102,22 @@ export function isWebSubscription(): SQL {
 }
 
 /**
- * Builds the base query for fetching subscriptions using the user_feeds view.
+ * Matches the subscriptions users and clients can see and manage: every type
+ * but `saved`. The database gives each user one saved subscription to hold the
+ * Saved list's memberships (#1846). It stays hidden, can't be tagged and can't
+ * be unsubscribed, so installed apps never list Saved as a feed; the Saved list
+ * is reached through `type: "saved"` filters instead. Pass `user_feeds.type`
+ * when querying the view.
+ */
+export function isListedSubscription(
+  type: typeof subscriptions.type | typeof userFeeds.type = subscriptions.type
+): SQL {
+  return ne(type, "saved");
+}
+
+/**
+ * Builds the base query for fetching subscriptions using the user_feeds view,
+ * limited to `where` and to listed subscriptions (`isListedSubscription`).
  * Includes unread counts and tags.
  *
  * The unread count is the trigger-maintained `subscriptions.unread_count`
@@ -111,7 +126,7 @@ export function isWebSubscription(): SQL {
  * option existed because the count was a scan over visible_entries that
  * scaled with the unread backlog, issue #1074). Spam never counts.
  */
-function buildSubscriptionBaseQuery(db: typeof dbType) {
+function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undefined) {
   return db
     .select({
       // From user_feeds view - subscription fields
@@ -142,6 +157,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType) {
     .$dynamic()
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
+    .where(and(where, isListedSubscription(userFeeds.type)))
     .groupBy(
       userFeeds.id,
       userFeeds.subscribedAt,
@@ -184,8 +200,8 @@ const subscriptionCursor = createCursorCodec(
 );
 
 /**
- * Counts the user's active subscriptions (collections included) for the cap
- * check, first taking a transaction-scoped lock that serializes concurrent
+ * Counts the user's active subscriptions (collections included, the hidden
+ * saved one not) for the cap check, first taking a transaction-scoped lock that serializes concurrent
  * subscription creation for the user, so two callers can't both pass the
  * check and both insert past the limit (issue #952).
  */
@@ -194,7 +210,13 @@ export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string
   const [{ activeCount }] = await tx
     .select({ activeCount: sql<number>`count(*)::int` })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        isListedSubscription()
+      )
+    );
   return activeCount;
 }
 
@@ -392,8 +414,7 @@ export async function listSubscriptions(
   }
 
   // Build and execute query, sorted alphabetically by title then by id as tiebreaker
-  const results = await buildSubscriptionBaseQuery(db)
-    .where(and(...conditions))
+  const results = await buildSubscriptionBaseQuery(db, and(...conditions))
     .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id)
     .limit(effectiveLimit + 1);
 
@@ -436,9 +457,10 @@ export async function listAllSubscriptions(
   db: typeof dbType,
   userId: string
 ): Promise<Subscription[]> {
-  const results = await buildSubscriptionBaseQuery(db)
-    .where(eq(userFeeds.userId, userId))
-    .orderBy(sql`COALESCE(${userFeeds.title}, '') ASC`, userFeeds.id);
+  const results = await buildSubscriptionBaseQuery(db, eq(userFeeds.userId, userId)).orderBy(
+    sql`COALESCE(${userFeeds.title}, '') ASC`,
+    userFeeds.id
+  );
   return results.map(formatSubscriptionRow);
 }
 
@@ -478,9 +500,10 @@ export async function getSubscription(
   userId: string,
   subscriptionId: string
 ): Promise<Subscription> {
-  const results = await buildSubscriptionBaseQuery(db)
-    .where(and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId)))
-    .limit(1);
+  const results = await buildSubscriptionBaseQuery(
+    db,
+    and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId))
+  ).limit(1);
 
   if (results.length === 0) {
     throw errors.subscriptionNotFound();
@@ -713,9 +736,10 @@ export async function createSubscription(
   // Idempotent already-active return: compute the real unread count from the
   // view now that the transaction has committed.
   if (txResult.kind === "alreadyActive") {
-    const viewResults = await buildSubscriptionBaseQuery(db)
-      .where(and(eq(userFeeds.id, txResult.subscriptionId), eq(userFeeds.userId, userId)))
-      .limit(1);
+    const viewResults = await buildSubscriptionBaseQuery(
+      db,
+      and(eq(userFeeds.id, txResult.subscriptionId), eq(userFeeds.userId, userId))
+    ).limit(1);
 
     return {
       subscriptionId: txResult.subscriptionId,
@@ -788,7 +812,9 @@ export async function setSubscriptionTags(
   tagIds: string[]
 ): Promise<void> {
   tagIds = [...new Set(tagIds)];
-  // Verify the subscription exists and belongs to the user
+  // Verify the subscription exists and belongs to the user. The saved
+  // subscription can't be tagged (#1846): like any subscription the user
+  // can't see, it's not found.
   const existingSubscription = await db
     .select()
     .from(subscriptions)
@@ -796,7 +822,8 @@ export async function setSubscriptionTags(
       and(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
+        isNull(subscriptions.unsubscribedAt),
+        isListedSubscription()
       )
     )
     .limit(1);
@@ -907,7 +934,9 @@ export async function unsubscribe(
       and(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
+        isNull(subscriptions.unsubscribedAt),
+        // The saved subscription can't be unsubscribed (#1846).
+        isListedSubscription()
       )
     )
     .limit(1);

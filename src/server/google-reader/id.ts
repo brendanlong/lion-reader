@@ -27,6 +27,7 @@
  */
 
 import { and, eq, inArray } from "drizzle-orm";
+import { isListedSubscription } from "@/server/services/subscriptions";
 import type { db as dbType } from "@/server/db";
 import { feeds, subscriptions, visibleEntries } from "@/server/db/schema";
 
@@ -133,8 +134,9 @@ export function feedStreamId(streamId: bigint): string {
  * Looks up a subscription UUID from a Google Reader feed stream int64 ID — a
  * single unique-index seek on `subscriptions.greader_stream_id`, scoped to the
  * user. Returns null when nothing matches (unknown id, another user's
- * subscription, or an id outside the bigint range — a client can send an
- * arbitrarily large `feed/{n}`, which would otherwise poison the query).
+ * subscription, the hidden saved subscription, or an id outside the bigint
+ * range — a client can send an arbitrarily large `feed/{n}`, which would
+ * otherwise poison the query).
  */
 export async function feedStreamIdToSubscriptionUuid(
   db: typeof dbType,
@@ -146,7 +148,13 @@ export async function feedStreamIdToSubscriptionUuid(
   const [row] = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.greaderStreamId, streamId)))
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        eq(subscriptions.greaderStreamId, streamId),
+        isListedSubscription()
+      )
+    )
     .limit(1);
 
   return row?.id ?? null;
@@ -165,7 +173,9 @@ export type FeedStreamResolution =
  * Resolves a `feed/{int64}` stream ID to either a subscription or the user's
  * saved-articles feed. Tries subscriptions first (the common case); if none
  * matches, checks the user's saved feed. Subscriptions and feeds draw their
- * stream ids from the same sequence, so the two seeks can never both match.
+ * stream ids from the same sequence, so the two seeks can only both match for
+ * the user's saved subscription, which carries its saved feed's serial (#1846)
+ * and which the first seek skips, so the stream stays the synthetic saved one.
  * Returns null when it matches nothing the user owns.
  */
 export async function resolveFeedStream(
