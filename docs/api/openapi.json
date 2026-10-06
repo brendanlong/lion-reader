@@ -8604,10 +8604,14 @@
                         "createdAt"
                       ],
                       "additionalProperties": false
+                    },
+                    "created": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "tag"
+                    "tag",
+                    "created"
                   ],
                   "additionalProperties": false
                 }

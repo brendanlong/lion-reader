@@ -329,7 +329,11 @@ const collectionEntriesArgs = z.object({
 const listTagsArgs = z.object({});
 
 const createTagArgs = z.object({
-  name: z.string().min(1).max(50).describe("Tag name (max 50 characters, must be unique per user)"),
+  name: z
+    .string()
+    .min(1)
+    .max(50)
+    .describe("Tag name (max 50 characters, unique per user ignoring case)"),
   color: tagColorSchema
     .optional()
     .describe("Optional hex color (e.g., #ff6b6b). Null to remove color."),
@@ -342,7 +346,7 @@ const updateTagArgs = z.object({
     .min(1)
     .max(50)
     .optional()
-    .describe("New tag name (max 50 characters, must be unique per user)"),
+    .describe("New tag name (max 50 characters, unique per user ignoring case)"),
   color: tagColorSchema.optional().describe("New hex color (e.g., #ff6b6b). Null to remove color."),
 });
 
@@ -645,14 +649,16 @@ function buildTools(): Tool[] {
 
     {
       name: "create_tag",
-      description: "Create a new tag for organizing subscriptions.",
+      description:
+        "Create a tag for organizing subscriptions. If a tag with that name (ignoring case) already exists, returns it unchanged with created: false.",
       inputSchema: toInputSchema(createTagArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(createTagArgs, args);
-        return tagsService.createTag(db, userId, {
+        const { tag, created } = await tagsService.createTag(db, userId, {
           name: params.name,
           color: params.color,
         });
+        return { ...tag, created };
       },
     },
 

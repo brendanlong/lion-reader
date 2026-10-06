@@ -14,6 +14,7 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import * as tagsService from "@/server/services/tags";
+import { getAppErrorCode } from "@/server/trpc/errors";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,14 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse(`Tag not found: ${oldName}`, 404);
   }
 
-  await tagsService.updateTag(db, userId, tag.id, { name: newName });
+  try {
+    await tagsService.updateTag(db, userId, tag.id, { name: newName });
+  } catch (error) {
+    if (getAppErrorCode(error) === "TAG_NAME_TAKEN") {
+      return errorResponse(`Tag already exists: ${newName}`, 409);
+    }
+    throw error;
+  }
 
   return textResponse("OK");
 }

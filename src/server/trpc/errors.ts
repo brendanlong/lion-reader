@@ -36,6 +36,7 @@ const errorCodeToTRPCCode = {
   MAX_INGEST_ADDRESSES_REACHED: "BAD_REQUEST",
   SIGNUP_PROVIDER_NOT_ALLOWED: "FORBIDDEN",
   OAUTH_ALREADY_LINKED: "CONFLICT",
+  TAG_NAME_TAKEN: "CONFLICT",
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
   SESSION_REVOKE_FAILED: "INTERNAL_SERVER_ERROR",
@@ -101,6 +102,8 @@ export const errors = {
   subscriptionNotFound: () => createError("SUBSCRIPTION_NOT_FOUND", "Subscription not found"),
 
   tagNotFound: () => createError("TAG_NOT_FOUND", "Tag not found"),
+
+  tagNameTaken: () => createError("TAG_NAME_TAKEN", "A tag with this name already exists"),
 
   ingestAddressNotFound: () => createError("INGEST_ADDRESS_NOT_FOUND", "Ingest address not found"),
 

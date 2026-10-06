@@ -104,15 +104,15 @@ export const tagsRouter = createTRPCRouter({
     .output(
       z.object({
         tag: tagOutputSchema,
+        created: z.boolean(),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const tag = await tagsService.createTag(ctx.db, ctx.session.user.id, {
+    .mutation(({ ctx, input }) =>
+      tagsService.createTag(ctx.db, ctx.session.user.id, {
         name: input.name,
         color: input.color,
-      });
-      return { tag };
-    }),
+      })
+    ),
 
   /**
    * Update a tag.

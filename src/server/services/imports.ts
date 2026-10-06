@@ -190,17 +190,22 @@ export type ProcessOpmlImportResult =
 
 /**
  * Resolves every category name used by the import to a tag row, creating the
- * missing ones in a single batch insert (rather than a query per feed).
+ * missing ones in a single batch insert (rather than a query per feed). Tag
+ * names are unique ignoring case, so the map is keyed by `importTagKey` and
+ * categories differing only in case share one tag.
  */
 async function ensureImportTags(
   db: typeof dbType,
   userId: string,
   feedsData: OpmlImportFeedData[]
 ): Promise<Map<string, ImportTagInfo>> {
-  const tagNames = new Set<string>();
+  // Lowercased name → the first spelling the import uses.
+  const tagNames = new Map<string, string>();
   for (const feed of feedsData) {
     for (const categoryName of feed.category ?? []) {
-      tagNames.add(categoryName);
+      if (!tagNames.has(importTagKey(categoryName))) {
+        tagNames.set(importTagKey(categoryName), categoryName);
+      }
     }
   }
 
@@ -209,48 +214,54 @@ async function ensureImportTags(
     return tagNameToInfo;
   }
 
-  // Only live tags: `deleteTag` tombstones, and `uq_tags_user_name` is partial
-  // (`WHERE deleted_at IS NULL`), so a deleted tag can share a name with a live
-  // one. Reusing a tombstone would attach the imported subscriptions to a tag
-  // that no sidebar group lists.
-  const existingTags = await db
-    .select({ id: tags.id, name: tags.name, color: tags.color })
-    .from(tags)
-    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
-
-  for (const existingTag of existingTags) {
-    if (tagNames.has(existingTag.name)) {
-      tagNameToInfo.set(existingTag.name, {
-        id: existingTag.id,
-        name: existingTag.name,
-        color: existingTag.color,
-      });
+  const addExisting = async () => {
+    // Only live tags: `deleteTag` tombstones, and the unique index on tag
+    // names is partial (`WHERE deleted_at IS NULL`), so a deleted tag can
+    // share a name with a live one. Reusing a tombstone would attach the
+    // imported subscriptions to a tag that no sidebar group lists.
+    const existingTags = await db
+      .select({ id: tags.id, name: tags.name, color: tags.color })
+      .from(tags)
+      .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
+    for (const existingTag of existingTags) {
+      const key = importTagKey(existingTag.name);
+      if (tagNames.has(key)) {
+        tagNameToInfo.set(key, existingTag);
+      }
     }
-  }
+  };
+  await addExisting();
 
   const now = new Date();
-  const tagsToCreate = Array.from(tagNames)
-    .filter((tagName) => !tagNameToInfo.has(tagName))
-    .map((tagName) => ({
-      id: generateUuidv7(),
-      userId,
-      name: tagName,
-      createdAt: now,
-    }));
+  const tagsToCreate = [...tagNames]
+    .filter(([key]) => !tagNameToInfo.has(key))
+    .map(([, name]) => ({ id: generateUuidv7(), userId, name, createdAt: now }));
 
   if (tagsToCreate.length > 0) {
-    await db.insert(tags).values(tagsToCreate);
-    for (const tag of tagsToCreate) {
-      tagNameToInfo.set(tag.name, { id: tag.id, name: tag.name, color: null });
+    // A tag created meanwhile (e.g. in another tab) wins; pick it up after.
+    const inserted = await db
+      .insert(tags)
+      .values(tagsToCreate)
+      .onConflictDoNothing()
+      .returning({ id: tags.id, name: tags.name, color: tags.color });
+    for (const tag of inserted) {
+      tagNameToInfo.set(importTagKey(tag.name), tag);
+    }
+    if (inserted.length < tagsToCreate.length) {
+      await addExisting();
     }
     logger.debug("OPML import: created tags", {
-      count: tagsToCreate.length,
-      tagNames: tagsToCreate.map((t) => t.name),
+      count: inserted.length,
+      tagNames: inserted.map((t) => t.name),
       userId,
     });
   }
 
   return tagNameToInfo;
+}
+
+function importTagKey(name: string): string {
+  return name.toLowerCase();
 }
 
 /**
@@ -265,9 +276,14 @@ async function applyImportTags(
   categories: string[],
   tagNameToInfo: Map<string, ImportTagInfo>
 ): Promise<void> {
-  const tagInfos = categories
-    .map((categoryName) => tagNameToInfo.get(categoryName))
-    .filter((info): info is ImportTagInfo => info !== undefined);
+  const tagInfos = [
+    ...new Map(
+      categories
+        .map((categoryName) => tagNameToInfo.get(importTagKey(categoryName)))
+        .filter((info): info is ImportTagInfo => info !== undefined)
+        .map((info) => [info.id, info])
+    ).values(),
+  ];
 
   if (tagInfos.length === 0) {
     return;

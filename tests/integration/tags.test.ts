@@ -250,15 +250,34 @@ describe("Tags API", () => {
       expect(result.tag.name).toBe("Tech");
     });
 
-    it("rejects duplicate tag names for the same user", async () => {
+    it("returns the existing tag, ignoring case, instead of creating a duplicate", async () => {
+      const userId = await createTestUser();
+      const caller = createCaller(await createAuthContext(userId));
+      const first = await caller.tags.create({ name: "Tech", color: "#ff6b6b" });
+      const subId = await createTestSubscription(userId, await createTestFeed());
+      await caller.subscriptions.setTags({ id: subId, tagIds: [first.tag.id] });
+
+      const again = await caller.tags.create({ name: "tech", color: "#4ecdc4" });
+
+      expect(first.created).toBe(true);
+      expect(again).toMatchObject({
+        created: false,
+        tag: { id: first.tag.id, name: "Tech", color: "#ff6b6b", feedCount: 1 },
+      });
+      expect((await caller.tags.list()).items).toHaveLength(1);
+    });
+
+    it("gives concurrent creates of one name the same tag", async () => {
       const userId = await createTestUser();
       const caller = createCaller(await createAuthContext(userId));
 
-      await caller.tags.create({ name: "Tech" });
+      const results = await Promise.all([
+        caller.tags.create({ name: "Same" }),
+        caller.tags.create({ name: "same" }),
+      ]);
 
-      await expect(caller.tags.create({ name: "Tech" })).rejects.toThrow(
-        "A tag with this name already exists"
-      );
+      expect(new Set(results.map((r) => r.tag.id)).size).toBe(1);
+      expect(results.filter((r) => r.created)).toHaveLength(1);
     });
 
     it("allows same tag name for different users", async () => {
@@ -422,7 +441,7 @@ describe("Tags API", () => {
       );
     });
 
-    it("rejects duplicate name when updating", async () => {
+    it("rejects renaming onto another tag's name, ignoring case", async () => {
       const userId = await createTestUser();
 
       const techTagId = await createTestTag(userId, { name: "Tech" });
@@ -430,9 +449,20 @@ describe("Tags API", () => {
 
       const caller = createCaller(await createAuthContext(userId));
 
-      await expect(caller.tags.update({ id: techTagId, name: "News" })).rejects.toThrow(
-        "A tag with this name already exists"
-      );
+      await expect(caller.tags.update({ id: techTagId, name: "news" })).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "A tag with this name already exists",
+      });
+    });
+
+    it("allows renaming a tag to another capitalization of its own name", async () => {
+      const userId = await createTestUser();
+      const tagId = await createTestTag(userId, { name: "Tech" });
+      const caller = createCaller(await createAuthContext(userId));
+
+      const result = await caller.tags.update({ id: tagId, name: "TECH" });
+
+      expect(result.tag.name).toBe("TECH");
     });
 
     it("allows keeping the same name when updating only color", async () => {

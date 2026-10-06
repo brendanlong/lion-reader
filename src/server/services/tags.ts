@@ -4,7 +4,7 @@
  * Business logic for tag operations. Used by both tRPC routers and MCP server.
  */
 
-import { eq, and, sql, isNull, inArray } from "drizzle-orm";
+import { eq, and, ne, sql, isNull, inArray, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
 import { errors } from "@/server/trpc/errors";
@@ -108,71 +108,85 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
   };
 }
 
+/** Tag names are unique per user ignoring case, among live (not deleted) tags. */
+export function tagNameMatches(name: string): SQL {
+  return sql`lower(${tags.name}) = lower(${name})`;
+}
+
+export interface CreateTagResult {
+  tag: Tag;
+  /** False when a live tag with this name (ignoring case) already existed; it's returned unchanged. */
+  created: boolean;
+}
+
 /**
- * Creates a new tag for a user.
- *
- * @throws validation error if a tag with the same name already exists
+ * Creates a tag, or returns the user's existing tag with that name (ignoring
+ * case), so retried and concurrent creates are harmless.
  */
 export async function createTag(
   db: typeof dbType,
   userId: string,
   params: CreateTagParams
-): Promise<Tag> {
-  const tagId = generateUuidv7();
-  const now = new Date();
+): Promise<CreateTagResult> {
+  // An existing tag can be deleted between the conflicting insert and the
+  // lookup; then the next insert succeeds.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const now = new Date();
+    const [createdTag] = await db
+      .insert(tags)
+      .values({
+        id: generateUuidv7(),
+        userId,
+        name: params.name,
+        color: params.color ?? null,
+        createdAt: now,
+      })
+      .onConflictDoNothing()
+      .returning({
+        id: tags.id,
+        name: tags.name,
+        color: tags.color,
+        createdAt: tags.createdAt,
+        updatedAt: tags.updatedAt,
+      });
 
-  const result = await db
-    .insert(tags)
-    .values({
-      id: tagId,
-      userId,
-      name: params.name,
-      color: params.color ?? null,
-      createdAt: now,
-    })
-    .onConflictDoNothing()
-    .returning({
-      id: tags.id,
-      name: tags.name,
-      color: tags.color,
-      createdAt: tags.createdAt,
-      updatedAt: tags.updatedAt,
-    });
+    if (createdTag) {
+      publishTagCreated(
+        userId,
+        { id: createdTag.id, name: createdTag.name, color: createdTag.color },
+        createdTag.updatedAt
+      ).catch(() => {
+        // Ignore publish errors - SSE is best-effort
+      });
+      return {
+        tag: {
+          id: createdTag.id,
+          name: createdTag.name,
+          color: createdTag.color,
+          feedCount: 0,
+          unreadCount: 0,
+          createdAt: createdTag.createdAt,
+        },
+        created: true,
+      };
+    }
 
-  if (result.length === 0) {
-    throw errors.validation("A tag with this name already exists");
+    const existing = await selectTagWithCounts(
+      db,
+      and(eq(tags.userId, userId), tagNameMatches(params.name), isNull(tags.deletedAt))!
+    );
+    if (existing) {
+      return { tag: toTag(existing), created: false };
+    }
   }
-
-  const createdTag = result[0];
-
-  // Publish tag created event for multi-tab/device sync (fire and forget)
-  publishTagCreated(
-    userId,
-    {
-      id: createdTag.id,
-      name: createdTag.name,
-      color: createdTag.color,
-    },
-    createdTag.updatedAt
-  ).catch(() => {
-    // Ignore publish errors - SSE is best-effort
-  });
-
-  return {
-    id: createdTag.id,
-    name: createdTag.name,
-    color: createdTag.color,
-    feedCount: 0,
-    unreadCount: 0,
-    createdAt: createdTag.createdAt,
-  };
+  throw errors.tagNameTaken();
 }
 
 /**
  * Updates an existing tag.
  *
  * @throws tagNotFound if tag doesn't exist or doesn't belong to user
- * @throws validation error if new name conflicts with an existing tag
+ * @throws tagNameTaken if another of the user's tags has the new name (ignoring case)
  */
 export async function updateTag(
   db: typeof dbType,
@@ -191,18 +205,25 @@ export async function updateTag(
     throw errors.tagNotFound();
   }
 
-  // If name is being updated, check for duplicates among *live* tags only.
-  // Soft-deleted (tombstoned) tags keep their name for sync tracking but must
-  // not block reusing it, matching the partial unique index (issue #952).
+  // Check for duplicates among *live* tags only, so this fails with a clear
+  // error up front; the unique index decides races (caught below). A tag may
+  // be renamed to a different capitalization of its own name.
   if (params.name !== undefined && params.name !== existingTag[0].name) {
     const duplicateName = await db
-      .select()
+      .select({ id: tags.id })
       .from(tags)
-      .where(and(eq(tags.userId, userId), eq(tags.name, params.name), isNull(tags.deletedAt)))
+      .where(
+        and(
+          eq(tags.userId, userId),
+          tagNameMatches(params.name),
+          isNull(tags.deletedAt),
+          ne(tags.id, tagId)
+        )
+      )
       .limit(1);
 
     if (duplicateName.length > 0) {
-      throw errors.validation("A tag with this name already exists");
+      throw errors.tagNameTaken();
     }
   }
 
@@ -219,9 +240,6 @@ export async function updateTag(
     updateData.color = params.color;
   }
 
-  // The duplicate check above is check-then-act; a concurrent rename to the same
-  // name can still slip in between and trip the partial unique index. Catch that
-  // as a validation error instead of surfacing a raw 500.
   try {
     // Scope the UPDATE by userId too — the ownership SELECT above already
     // guarantees it, but keeping the predicate here makes the mutation
@@ -232,33 +250,15 @@ export async function updateTag(
       .where(and(eq(tags.id, tagId), eq(tags.userId, userId)));
   } catch (err) {
     if (isUniqueViolation(err)) {
-      throw errors.validation("A tag with this name already exists");
+      throw errors.tagNameTaken();
     }
     throw err;
   }
 
-  // Get updated tag with feed count and unread count
-  const updatedTag = await db
-    .select({
-      id: tags.id,
-      name: tags.name,
-      color: tags.color,
-      createdAt: tags.createdAt,
-      updatedAt: tags.updatedAt,
-      unreadCount: tags.unreadCount,
-      feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
-    })
-    .from(tags)
-    .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
-    .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
-    .groupBy(tags.id)
-    .limit(1);
-
-  if (updatedTag.length === 0) {
+  const tag = await selectTagWithCounts(db, and(eq(tags.id, tagId), eq(tags.userId, userId))!);
+  if (!tag) {
     throw errors.tagNotFound();
   }
-
-  const tag = updatedTag[0];
 
   // Publish tag updated event for multi-tab/device sync (fire and forget)
   publishTagUpdated(
@@ -273,6 +273,29 @@ export async function updateTag(
     // Ignore publish errors - SSE is best-effort
   });
 
+  return toTag(tag);
+}
+
+async function selectTagWithCounts(db: typeof dbType, where: SQL) {
+  const [tag] = await db
+    .select({
+      id: tags.id,
+      name: tags.name,
+      color: tags.color,
+      createdAt: tags.createdAt,
+      updatedAt: tags.updatedAt,
+      unreadCount: tags.unreadCount,
+      feedCount: sql<number>`count(${subscriptionTags.subscriptionId})::int`,
+    })
+    .from(tags)
+    .leftJoin(subscriptionTags, eq(subscriptionTags.tagId, tags.id))
+    .where(where)
+    .groupBy(tags.id)
+    .limit(1);
+  return tag;
+}
+
+function toTag(tag: NonNullable<Awaited<ReturnType<typeof selectTagWithCounts>>>): Tag {
   return {
     id: tag.id,
     name: tag.name,
