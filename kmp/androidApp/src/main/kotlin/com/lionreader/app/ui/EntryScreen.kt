@@ -432,7 +432,7 @@ private fun EntryPage(
     val context = LocalContext.current
     val article by
         remember(entryId) { account.reader.article(entryId) }.collectAsStateWithLifecycle(null)
-    val entry = (article as? ArticleState.Shown)?.entry
+    val entry = rememberShownArticle(entryId, (article as? ArticleState.Shown)?.entry)
     // Up here, so it outlasts the page showing no article for a while (e.g. a fresh sync).
     val position = rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() }
     // Null once it's gone (e.g. deleted) or can't be read, and when the page
@@ -567,15 +567,39 @@ private fun SummaryButton(
     }
 }
 
+/**
+ * The article as the page first showed it: an edit, and the new body it brings, wait for the next
+ * visit rather than reloading what's being read. Read and starred stay live, and a body or summary
+ * arriving where there was none shows; one going (replaced in the background) stays.
+ */
+@Composable
+internal fun rememberShownArticle(entryId: String, latest: EntryDetail?): EntryDetail? {
+    val shown = remember(entryId) { arrayOfNulls<EntryDetail>(1) }
+    val first = shown[0]
+    val current =
+        when {
+            latest == null -> return null
+            first == null -> latest
+            else ->
+                first.copy(
+                    read = latest.read,
+                    starred = latest.starred,
+                    content = first.content ?: latest.content,
+                    summary = first.summary ?: latest.summary,
+                )
+        }
+    shown[0] = current
+    return current
+}
+
 /** Whether the page's body download failed, and a way to try it again. */
 internal class BodyDownload(val failed: Boolean, val retry: () -> Unit)
 
 /**
- * Downloads the entry's body when it's loaded without one, or with an outdated one. Keyed on
- * "loaded and needing one", because the entry is null until its query answers: keyed on the body
- * alone, the effect would run against the null entry and not again when it loads. Nothing else
- * fetches a missing one: opening an entry marks it read, and the background download skips read
- * entries.
+ * Downloads the entry's body when it's loaded without one. Keyed on "loaded and missing", because
+ * the entry is null until its query answers: keyed on a missing body alone, the effect would run
+ * against the null entry and not again when it loads. Nothing else fetches it, either: opening an
+ * entry marks it read, and the background download skips read entries.
  */
 @Composable
 internal fun rememberBodyDownload(
@@ -583,13 +607,13 @@ internal fun rememberBodyDownload(
     entry: EntryDetail?,
     download: suspend () -> Boolean,
 ): BodyDownload {
-    val needed = entry != null && (entry.content == null || entry.contentOutdated)
+    val missing = entry != null && entry.content == null
     var failed by remember(entryId) { mutableStateOf(false) }
     var attempt by remember(entryId) { mutableIntStateOf(0) }
     val currentDownload by rememberUpdatedState(download)
-    LaunchedEffect(entryId, needed, attempt) {
+    LaunchedEffect(entryId, missing, attempt) {
         failed = false
-        if (!needed) return@LaunchedEffect
+        if (!missing) return@LaunchedEffect
         failed =
             try {
                 !currentDownload()

@@ -65,8 +65,6 @@ data class EntryDetail(
     val content: String?,
     /** The AI summary, sanitized HTML; null until the user asks for one. */
     val summary: String?,
-    /** [content] is from before an edit: shown until the new body replaces it. */
-    val contentOutdated: Boolean = false,
 )
 
 data class NavSubscription(
@@ -229,7 +227,6 @@ class Reader(
                     starred = it.effective_starred == 1L,
                     content = it.content,
                     summary = it.ai_summary,
-                    contentOutdated = it.content != null && it.body_outdated == true,
                 )
             }
         }

@@ -38,8 +38,7 @@ class BodyVersionMigrationTest {
         AppSchema.migrate(driver, 4, AppSchema.version)
 
         val db = LionReaderDatabase(driver)
-        assertEquals(1L, db.bodyQueries.existsCurrent("a").executeAsOne())
-        assertEquals(1L, db.bodyQueries.existsCurrent("b").executeAsOne())
+        assertEquals(emptyList(), db.entryQueries.selectOutdatedBodies(10).executeAsList())
         // A summary of the current body: one arriving at this version keeps it.
         db.summaryQueries.deleteOutdated("a", 7)
         assertTrue(db.entryQueries.selectById("a").executeAsOne().ai_summary != null)

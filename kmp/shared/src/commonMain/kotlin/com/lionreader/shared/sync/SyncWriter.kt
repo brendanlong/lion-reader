@@ -191,9 +191,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         published,
                         event.entryId,
                     )
-                    // The body may have changed too: this makes it out of date,
-                    // to download again (it's shown until then), and rejects
-                    // any download that started before now.
+                    // The body may have changed too: this makes it, and any
+                    // download that started before now, out of date, to
+                    // download again (it stays until then).
                     db.entryQueries.bumpBodyVersion(event.entryId)
                 }
             is SyncEvent.EntryStateChanged -> {
@@ -333,9 +333,11 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     }
 
     /**
-     * Replaces the entry's body with one downloaded at [version], if it's still at it; how much
-     * that grew the stored bodies. A summary asked for before an edit goes, unless the body is the
-     * one it summarized.
+     * Stores a body downloaded at [version] in place of an older one, never a newer one (versions
+     * only grow), while the entry is on the device; how much that grew the stored bodies. One an
+     * edit overtook mid-download is still stored, out of date, rather than leaving the article
+     * without a body: the background download replaces it. A summary goes when the body it
+     * summarized is replaced by a different one.
      */
     private fun putBody(
         entryId: String,
@@ -345,13 +347,14 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         version: Long,
         now: Long,
     ): Long {
-        if (bodyVersion(entryId) != version) return 0
+        if (bodyVersion(entryId) == null) return 0
+        val stored = db.bodyQueries.stored(entryId).executeAsOneOrNull()
+        if (stored != null && stored.body_version >= version) return 0
         if (db.bodyQueries.matches(entryId, content).executeAsOne() == 0L) {
             db.summaryQueries.deleteOutdated(entryId, version)
         }
-        val replaced = db.bodyQueries.size(entryId).executeAsOneOrNull() ?: 0
-        db.bodyQueries.putIfCurrent(entryId, content, size, now, searchText, version)
-        return size - replaced
+        db.bodyQueries.put(entryId, content, size, now, searchText, version)
+        return size - (stored?.size ?: 0)
     }
 
     /** The entry's body version, or null when it isn't on the device. */
@@ -366,9 +369,13 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             it.id to it.body_version
         }
 
-    /** Whether the entry has a body, and not one an edit made out of date. */
-    fun hasCurrentBody(entryId: String): Boolean =
-        db.bodyQueries.existsCurrent(entryId).executeAsOne() > 0
+    /** Entries whose body an edit made out of date, with the body version to download them at. */
+    fun outdatedBodies(limit: Long): Map<String, Long> =
+        db.entryQueries.selectOutdatedBodies(limit).executeAsList().associate {
+            it.id to it.body_version
+        }
+
+    fun hasBody(entryId: String): Boolean = db.bodyQueries.exists(entryId).executeAsOne() > 0
 
     fun evict(policy: RetentionPolicy, now: Long) = db.transaction {
         db.entryQueries.evictOutsideWindow(now - policy.windowMillis)

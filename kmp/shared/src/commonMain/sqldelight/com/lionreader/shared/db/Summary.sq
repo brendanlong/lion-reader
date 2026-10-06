@@ -16,10 +16,10 @@ INSERT OR REPLACE INTO entry_summary(entry_id, html, body_version)
 SELECT :entryId, :html, :bodyVersion
 WHERE EXISTS (SELECT 1 FROM entry WHERE id = :entryId AND body_version = :bodyVersion);
 
--- When a changed body arrives at :bodyVersion: a summary asked for before the
--- edit is of the old text.
+-- When a changed body from :bodyVersion replaces the old one: a summary asked
+-- for before it is of the old text.
 deleteOutdated:
-DELETE FROM entry_summary WHERE entry_id = :entryId AND body_version != :bodyVersion;
+DELETE FROM entry_summary WHERE entry_id = :entryId AND body_version < :bodyVersion;
 
 deleteForEntry:
 DELETE FROM entry_summary WHERE entry_id = ?;

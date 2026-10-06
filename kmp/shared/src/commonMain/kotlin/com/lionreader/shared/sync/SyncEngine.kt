@@ -23,7 +23,6 @@ import kotlinx.coroutines.sync.withLock
 
 private const val FLUSH_BATCH = 1000
 private const val CONTENT_BATCH = 50
-private const val ENSURE_ATTEMPTS = 3
 private const val RECENTLY_READ_PAGE = 100
 private const val RECENTLY_READ_REFRESH = 20
 
@@ -90,18 +89,15 @@ class SyncEngine(
     }
 
     /**
-     * Downloads one entry's body now (opening an entry the sync hasn't reached, or one edited since
-     * its body was downloaded); whether the entry now has a current one. Not behind [contentMutex]:
-     * the user is waiting, and a background download can take minutes.
+     * Downloads one entry's body now (opening an entry the sync hasn't reached); whether the entry
+     * now has one. Not behind [contentMutex]: the user is waiting, and a background download can
+     * take minutes.
      */
     suspend fun ensureContent(entryId: String): Boolean {
-        // Again if the entry was edited mid-download, which makes that body out of date.
-        repeat(ENSURE_ATTEMPTS) {
-            if (writer.hasCurrentBody(entryId)) return true
-            val version = writer.bodyVersion(entryId) ?: return false
-            fetchBodies(mapOf(entryId to version))
-        }
-        return writer.hasCurrentBody(entryId)
+        if (writer.hasBody(entryId)) return true
+        val version = writer.bodyVersion(entryId) ?: return false
+        fetchBodies(mapOf(entryId to version))
+        return writer.hasBody(entryId)
     }
 
     /** Whether the server can summarize for this user (it has an AI provider to use). */
@@ -344,6 +340,15 @@ class SyncEngine(
     // ---- Bodies ----------------------------------------------------------
 
     private suspend fun downloadContent() {
+        // Replacing an outdated body hardly moves the total, so it isn't held to the budget. The
+        // same ones again means edits are arriving meanwhile: the next sync gets them.
+        var refreshed: Set<String>? = null
+        while (true) {
+            val outdated = writer.outdatedBodies(CONTENT_BATCH.toLong())
+            if (outdated.isEmpty() || outdated.keys == refreshed) break
+            refreshed = outdated.keys
+            fetchBodies(outdated)
+        }
         val budget = policy().contentBudgetBytes
         var size = writer.bodySize()
         while (size < budget) {

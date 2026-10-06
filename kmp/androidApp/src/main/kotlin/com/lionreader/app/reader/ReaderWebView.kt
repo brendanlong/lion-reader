@@ -66,10 +66,10 @@ import org.json.JSONObject
 
 /**
  * The article: untrusted (server-sanitized) HTML next to the app's credentials, so hardened as
- * SECURITY.md §1 requires. Bundled fonts and scripts come through [WebViewAssetLoader] rather than
- * file:// access. The only WebView in the app (entry HTML can hold MathML, SVG, tables and embeds),
- * with the article's header in it too. It fills the page and scrolls itself: sized to its content
- * inside a scrolling layout, a WebView stays blank until it has measured.
+ * SECURITY.md §1 requires. Bundled fonts and the script come through [WebViewAssetLoader] rather
+ * than file:// access. The only WebView in the app (entry HTML can hold MathML, SVG, tables and
+ * embeds), with the article's header in it too. It fills the page and scrolls itself: sized to its
+ * content inside a scrolling layout, a WebView stays blank until it has measured.
  */
 @Composable
 fun ReaderWebView(
@@ -80,7 +80,6 @@ fun ReaderWebView(
     paging: ReaderPaging = ReaderPaging(),
 ) {
     val current by rememberUpdatedState(narration)
-    val currentPosition by rememberUpdatedState(position)
     val shown = remember { arrayOfNulls<ReaderView>(1) }
     val losses = remember { RendererLosses() }
     val turns = paging.turns
@@ -108,7 +107,6 @@ fun ReaderWebView(
                         }
                         .apply {
                             onLinkLongPress = { linkPress = it }
-                            if (position.anchor != null) hideUntilRestored()
                             // For our scripts; the CSP keeps anything else from running.
                             @SuppressLint("SetJavaScriptEnabled")
                             settings.javaScriptEnabled = true
@@ -131,9 +129,7 @@ fun ReaderWebView(
                                     "lionReader",
                                     setOf(ASSET_ORIGIN),
                                 ) { _, message, _, isMainFrame, _ ->
-                                    if (isMainFrame) {
-                                        onPageMessage(message.data ?: "", current, currentPosition)
-                                    }
+                                    if (isMainFrame) onPageMessage(message.data ?: "", current)
                                 }
                             }
                             webViewClient =
@@ -151,10 +147,12 @@ fun ReaderWebView(
                 update = { view ->
                     // It mustn't be used any more; a new one is on its way.
                     if (view.rendererLost) return@AndroidView
+                    view.position = position
                     if (view.tag != document) {
                         view.tag = document
                         view.sideScrollers = emptyList()
                         view.pageReady = false
+                        view.restoring = true
                         view.loadDataWithBaseURL(
                             "$ASSET_ORIGIN/",
                             document,
@@ -176,25 +174,14 @@ fun ReaderWebView(
 }
 
 /**
- * The article element at the top of the screen ([element], as narration numbers them) and how far
- * through it ([offset], a fraction of its height; negative above it).
+ * How far down the article the reader is ([fraction] of its height), kept outside the WebView,
+ * which can be replaced (the system reclaims renderers of apps in the background) or reload (text
+ * size, the summary), so the page comes back there rather than to the top.
  */
-data class ReadingAnchor(val element: Int, val offset: Double)
-
-/**
- * Where the reader is in an article, kept outside the WebView, which can be replaced (the system
- * reclaims renderers of apps in the background) or reloaded (an edited article), so the page comes
- * back here, not to the top.
- */
-class ReadingPosition(var anchor: ReadingAnchor? = null) {
+class ReadingPosition(var fraction: Float = 0f) {
     companion object {
-        val Saver: Saver<ReadingPosition, DoubleArray> =
-            Saver(
-                save = { position ->
-                    position.anchor?.let { doubleArrayOf(it.element.toDouble(), it.offset) }
-                },
-                restore = { ReadingPosition(ReadingAnchor(it[0].toInt(), it[1])) },
-            )
+        val Saver: Saver<ReadingPosition, Float> =
+            Saver(save = { it.fraction }, restore = { ReadingPosition(it) })
     }
 }
 
@@ -321,6 +308,10 @@ private class ReaderView(context: Context) : WebView(context) {
     var pageReady = false
     /** Its renderer is gone, so it can only be destroyed. */
     var rendererLost = false
+    var position = ReadingPosition()
+
+    /** Until the page has loaded and gone back to [position], its scrolling isn't the reader's. */
+    var restoring = true
     private var wanted: Int? = null
     private var shown: Int? = null
     private var scroll = true
@@ -348,6 +339,24 @@ private class ReaderView(context: Context) : WebView(context) {
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         scrolledTo = t
+        val range = computeVerticalScrollRange()
+        if (!restoring && range > 0) position.fraction = t.toFloat() / range
+    }
+
+    /**
+     * Once everything in the page (images included) is laid out, so for an unchanged article the
+     * place is exactly where it was. Not if the reader has already scrolled it.
+     */
+    fun onLoaded() {
+        if (!restoring || rendererLost) return
+        restoring = false
+        val fraction = position.fraction
+        if (fraction > 0f && scrollY == 0) {
+            evaluateJavascript(
+                "window.scrollTo(0, $fraction * document.documentElement.scrollHeight)",
+                null,
+            )
+        }
     }
 
     init {
@@ -385,7 +394,7 @@ private class ReaderView(context: Context) : WebView(context) {
         return handled
     }
 
-    fun onPageMessage(data: String, narration: ReaderNarration, position: ReadingPosition) {
+    fun onPageMessage(data: String, narration: ReaderNarration) {
         if (data.startsWith("[")) {
             sideScrollers = parseRects(data)
             return
@@ -396,60 +405,16 @@ private class ReaderView(context: Context) : WebView(context) {
                 val paragraphs = message.optJSONArray("paragraphs") ?: return
                 narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
                 pageReady = true
-                val restored = position.anchor
-                if (restored == null) {
-                    reveal()
-                } else {
-                    evaluateJavascript(
-                        "window.lionPosition && " +
-                            "lionPosition.restore(${restored.element}, ${restored.offset})"
-                    ) {
-                        revealWhenDrawn()
-                    }
-                }
                 shown = null
                 // The reader's place wins over paused narration's; playing, the next paragraph
                 // scrolls to it.
-                highlight(wanted, scroll && restored == null)
+                highlight(wanted, scroll && position.fraction == 0f)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
-            // Not before this load's narration message, when the place is restored: an earlier
-            // report is the top of a page not yet restored.
-            "position" -> if (pageReady) position.anchor = parseAnchor(message.optJSONObject("at"))
         }
     }
 
     var onListenFrom: ((Int) -> Unit)? = null
-
-    private val showNow = Runnable { alpha = 1f }
-
-    /**
-     * A new view going back to a place shows nothing (the page's background) until it's there,
-     * rather than the top of the article and then a jump. Shown anyway after
-     * [REVEAL_TIMEOUT_MILLIS], should the page never report in. A view already showing the article
-     * isn't hidden to load it again: its old content beats a blank. Relies on the view's hardware
-     * layer: without one, a transparent view isn't drawn, so [revealWhenDrawn] would wait it out.
-     */
-    fun hideUntilRestored() {
-        alpha = 0f
-        postDelayed(showNow, REVEAL_TIMEOUT_MILLIS)
-    }
-
-    private fun reveal() {
-        removeCallbacks(showNow)
-        alpha = 1f
-    }
-
-    /** Once the restored place is ready to draw, so no frame of the top shows first. */
-    private fun revealWhenDrawn() {
-        if (rendererLost) return
-        postVisualStateCallback(
-            0,
-            object : VisualStateCallback() {
-                override fun onComplete(requestId: Long) = reveal()
-            },
-        )
-    }
 
     /** The text selection's menu, with "Listen" (from here) once the page can narrate. */
     override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? =
@@ -617,8 +582,6 @@ private class ReaderView(context: Context) : WebView(context) {
     private companion object {
         /** The web's 2:1 (`MAX_VERTICAL_RATIO` in EntryContentHelpers.ts). */
         const val SWIPE_RATIO = 2f
-        /** Long enough for a new renderer to start on a slow e-reader. */
-        const val REVEAL_TIMEOUT_MILLIS = 3_000L
     }
 }
 
@@ -630,12 +593,6 @@ private class SideScroller(
 )
 
 private const val LISTEN_FROM_HERE = 0x4c52
-
-internal fun parseAnchor(at: JSONObject?): ReadingAnchor? {
-    val element = at?.optInt("element", -1) ?: return null
-    val offset = at.optDouble("offset")
-    return if (element >= 0 && offset.isFinite()) ReadingAnchor(element, offset) else null
-}
 
 private fun parseRects(json: String?): List<SideScroller> = runCatching {
     val rects = JSONArray(json)
@@ -665,6 +622,10 @@ private class ReaderWebViewClient(
         view: WebView,
         request: WebResourceRequest,
     ): WebResourceResponse? = assets.shouldInterceptRequest(request.url)
+
+    override fun onPageFinished(view: WebView, url: String?) {
+        (view as? ReaderView)?.onLoaded()
+    }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val url = request.url

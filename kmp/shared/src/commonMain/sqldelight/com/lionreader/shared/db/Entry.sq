@@ -100,7 +100,7 @@ WHERE subscription_id = ?
   AND id NOT IN (SELECT entry_id FROM collection_entry);
 
 selectById:
-SELECT v.*, b.content, b.body_version IS NOT v.body_version AS body_outdated, s.html AS ai_summary
+SELECT v.*, b.content, s.html AS ai_summary
 FROM entry_view v
 LEFT JOIN entry_body b ON b.entry_id = v.id
 LEFT JOIN entry_summary s ON s.entry_id = v.id
@@ -192,16 +192,21 @@ SELECT count(*) FROM entry_view WHERE effective_read_changed_at IS NOT NULL;
 bodyVersion:
 SELECT body_version FROM entry WHERE id = ?;
 
--- Entries without a body worth keeping offline, or with an outdated one,
--- newest first.
+-- Entries without a body worth keeping offline, newest first.
 selectMissingContent:
-SELECT v.id, v.body_version FROM entry_view v
-LEFT JOIN entry_body b ON b.entry_id = v.id
-WHERE (b.entry_id IS NULL
-    AND (v.effective_read = 0 OR v.effective_starred = 1 OR v.type = 'saved'
-      OR v.id IN (SELECT entry_id FROM collection_entry)))
-  OR b.body_version != v.body_version
-ORDER BY v.sort_at DESC, v.id DESC
+SELECT id, body_version FROM entry_view
+WHERE id NOT IN (SELECT entry_id FROM entry_body)
+  AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved'
+    OR id IN (SELECT entry_id FROM collection_entry))
+ORDER BY sort_at DESC, id DESC
+LIMIT ?;
+
+-- Entries whose body an edit made out of date, newest first.
+selectOutdatedBodies:
+SELECT e.id, e.body_version FROM entry e
+JOIN entry_body b ON b.entry_id = e.id
+WHERE b.body_version < e.body_version
+ORDER BY e.sort_at DESC, e.id DESC
 LIMIT ?;
 
 unreadIdsInScope:

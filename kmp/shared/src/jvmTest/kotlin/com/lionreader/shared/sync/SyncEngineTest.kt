@@ -20,7 +20,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
@@ -295,14 +294,26 @@ class SyncEngineTest {
         )
 
         engine.sync(downloadContent = false)
-        val edited = reader.entry("a").first()!!
-        assertEquals("<p>Body a</p>", edited.content)
-        assertTrue(edited.contentOutdated)
+        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
 
-        assertTrue(engine.ensureContent("a"))
-        val downloaded = reader.entry("a").first()!!
-        assertEquals("<p>Revised</p>", downloaded.content)
-        assertFalse(downloaded.contentOutdated)
+        engine.sync()
+        assertEquals("<p>Revised</p>", reader.entry("a").first()?.content)
+    }
+
+    @Test
+    fun outdatedBodiesAreReplacedPastTheContentBudget() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        // Full, with the one body (and its search text).
+        policy = RetentionPolicy(contentBudgetBytes = ("<p>Body a</p>" + "Body a").length.toLong())
+        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Body A</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+
+        engine.sync()
+
+        assertEquals("<p>Body A</p>", reader.entry("a").first()?.content)
     }
 
     @Test
@@ -415,23 +426,24 @@ class SyncEngineTest {
     }
 
     @Test
-    fun aDownloadStartedBeforeAResyncIsNotStored() = runTest {
+    fun aDownloadAnEditOvertakesIsKeptUntilTheNewBodyReplacesIt() = runTest {
         serve(entry("a"))
         engine.sync(downloadContent = false)
 
-        // While the body is downloading, the entry is edited and a resync
-        // deletes and re-adds it. The download's answer predates the edit.
-        var batches = 0
+        // Opening it: the entry is edited while its body downloads, so the
+        // download's answer is of the old text.
         server.duringBatch = {
-            serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
-            if (++batches == 1) {
-                server.queueChanges(resyncRequired = true)
-                engine.sync(downloadContent = false)
-                serve(entry("a"))
-            }
+            server.duringBatch = null
+            server.queueChanges(
+                events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Edited")))
+            )
+            engine.sync(downloadContent = false)
         }
-        engine.ensureContent("a")
+        assertTrue(engine.ensureContent("a"))
+        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
 
+        serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+        engine.sync()
         assertEquals("<p>Edited</p>", reader.entry("a").first()?.content)
     }
 
