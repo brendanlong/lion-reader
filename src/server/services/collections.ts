@@ -56,7 +56,10 @@ export interface CreateCollectionResult {
 
 /**
  * The user's active collection with this name, ignoring case as the unique
- * index `uq_subscriptions_user_collection_name` does (and served by it).
+ * index `uq_subscriptions_user_collection_name` does. Served by the user's
+ * active-subscriptions index (`idx_subscriptions_user_active`): `type` is a
+ * bound parameter, so a generic plan can't match the unique index's partial
+ * predicate.
  */
 async function findActiveCollectionByName(
   db: DbOrTx,

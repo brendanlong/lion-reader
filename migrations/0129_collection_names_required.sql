@@ -14,7 +14,9 @@ SET LOCAL lock_timeout = '5s';
 -- (the index allows at most one), else the oldest; the others, oldest first,
 -- get "Name (2)", "Name (3)", … with the first number whose result is free
 -- ignoring case. The displayed name changes, so updated_at moves and delta
--- sync re-delivers them.
+-- sync re-delivers them. A collection with no name anywhere (NULL feed title
+-- too) is named 'Untitled' here and in step 2 alike, so those can't clash
+-- either and the check in step 3 can't fail.
 DO $$
 DECLARE
   clash record;
@@ -25,9 +27,9 @@ BEGIN
     SELECT ranked.id, ranked.user_id, ranked.name
     FROM (
       SELECT s.id, s.user_id, s.created_at,
-        COALESCE(s.custom_title, f.title) AS name,
+        COALESCE(s.custom_title, f.title, 'Untitled') AS name,
         row_number() OVER (
-          PARTITION BY s.user_id, lower(COALESCE(s.custom_title, f.title))
+          PARTITION BY s.user_id, lower(COALESCE(s.custom_title, f.title, 'Untitled'))
           ORDER BY s.custom_title IS NULL, s.created_at, s.id
         ) AS rank
       FROM subscriptions s
@@ -47,7 +49,7 @@ BEGIN
         WHERE o.user_id = clash.user_id
           AND o.type = 'collection'
           AND o.unsubscribed_at IS NULL
-          AND lower(COALESCE(o.custom_title, f.title)) = lower(candidate)
+          AND lower(COALESCE(o.custom_title, f.title, 'Untitled')) = lower(candidate)
       );
       n := n + 1;
     END LOOP;
@@ -59,7 +61,7 @@ END $$;
 -- deleted collection keeps its name). It doesn't change, so updated_at
 -- doesn't move.
 UPDATE subscriptions s
-SET custom_title = f.title
+SET custom_title = COALESCE(f.title, 'Untitled')
 FROM feeds f
 WHERE f.id = s.feed_id AND s.type = 'collection' AND s.custom_title IS NULL;
 

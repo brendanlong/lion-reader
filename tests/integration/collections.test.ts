@@ -610,7 +610,7 @@ describe("collections", () => {
       const at = (minutes: number) => new Date(Date.UTC(2026, 9, 1, 0, minutes));
       const create = async (
         userId: string,
-        title: string,
+        title: string | null,
         createdAt: Date,
         {
           stored = false,
@@ -638,6 +638,9 @@ describe("collections", () => {
         newReading: await create(userId, "READING", at(5)),
         deleted: await create(userId, "News", at(6), { unsubscribedAt: at(7) }),
         otherUser: await create(otherUserId, "News", at(8)),
+        // No name anywhere: "Untitled", and a second one doesn't clash with it.
+        untitled: await create(otherUserId, null, at(10)),
+        untitled2: await create(otherUserId, null, at(11)),
       };
       const feed = await createTestSubscription(userId, await createTestFeed(), {
         createdAt: at(9),
@@ -684,12 +687,14 @@ describe("collections", () => {
           [rows.newReading.id, "READING (2)"],
           [rows.deleted.id, "News"],
           [rows.otherUser.id, "News"],
+          [rows.untitled.id, "Untitled"],
+          [rows.untitled2.id, "Untitled (2)"],
           [feed, null],
         ])
       );
       // Delta sync re-delivers exactly the renamed ones.
       const moved = after.filter((r) => r.updatedAt.getTime() > at(60).getTime()).map((r) => r.id);
-      expect(moved.sort()).toEqual([rows.oldNews.id, rows.newReading.id].sort());
+      expect(moved.sort()).toEqual([rows.oldNews.id, rows.newReading.id, rows.untitled2.id].sort());
       await expect(
         db
           .update(subscriptions)
