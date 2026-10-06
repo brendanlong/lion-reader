@@ -5,8 +5,10 @@
  *
  * The plan (who subscribes to what, how many entries each feed and library
  * has) is computed here from a seeded PRNG; the bulk rows are generated in SQL
- * from it. Every counter is maintained by the production triggers, which fire
- * on the bulk inserts. Destroys all data in the target database, so it refuses
+ * from it. Every counter, and every subscription_entries membership, is
+ * maintained by the production triggers, which fire on the bulk inserts. Each
+ * user with saved articles gets the saved subscription a first save creates,
+ * inserted up front so its id is fixed. Destroys all data in the target database, so it refuses
  * to run on one that isn't empty or already a benchmark database.
  *
  * Text: entries draw paragraphs from a pool of 4,000 made-up-word paragraphs
@@ -28,6 +30,7 @@ import {
   collectionSubscriptionId,
   prng,
   savedFeedId,
+  savedSubscriptionId,
   subscriptionId,
   tagId,
   tagName,
@@ -41,7 +44,8 @@ import {
 
 // Production row counts, 2026-10-05. Its feeds then included one per
 // collection, which collections no longer have (#1846), so the seed has
-// that many fewer.
+// that many fewer. Its subscriptions didn't include saved subscriptions
+// (#1846), which the seed adds on top, one per user with saved articles.
 const TARGET = {
   users: 48,
   feeds: 2_932,
@@ -418,7 +422,7 @@ CREATE FUNCTION pg_temp.uuid7(ts timestamptz, k text) RETURNS uuid LANGUAGE sql 
 
 const RESET = `
 TRUNCATE users, feeds, entries, subscriptions, user_entries, tags, subscription_tags,
-  collection_entries, entry_tombstones, jobs RESTART IDENTITY CASCADE;
+  collection_entries, subscription_entries, entry_tombstones, jobs RESTART IDENTITY CASCADE;
 ALTER SEQUENCE greader_id_seq RESTART;
 `;
 
@@ -596,6 +600,7 @@ UNION ALL SELECT 'subscriptions', count(*) FROM subscriptions
 UNION ALL SELECT 'entries', count(*) FROM entries
 UNION ALL SELECT 'user_entries', count(*) FROM user_entries
 UNION ALL SELECT 'collection_entries', count(*) FROM collection_entries
+UNION ALL SELECT 'subscription_entries', count(*) FROM subscription_entries
 UNION ALL SELECT 'U0 user_entries', count(*) FROM user_entries WHERE user_id = '${userId(0)}'
 UNION ALL SELECT 'U0 unread', count(*) FROM user_entries WHERE user_id = '${userId(0)}' AND NOT read
 UNION ALL SELECT 'U1 user_entries', count(*) FROM user_entries WHERE user_id = '${userId(1)}'
@@ -753,6 +758,16 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
     "subscription tags",
     `INSERT INTO subscription_tags (subscription_id, tag_id, created_at)
      SELECT subscription_id, tag_id, ${A} - interval '700 days' FROM bench_sub_tag`
+  );
+  const savedUsers = plan.users.filter((u) => u.saved > 0);
+  await step(
+    "saved subscriptions",
+    `INSERT INTO subscriptions (id, user_id, type, custom_title, greader_stream_id,
+                                subscribed_at, created_at, updated_at)
+     SELECT v.id, f.user_id, 'saved', 'Saved', f.greader_stream_id, f.created_at, ${A}, ${A}
+     FROM unnest($1::uuid[], $2::uuid[]) AS v(id, feed_id)
+     JOIN feeds f ON f.id = v.feed_id`,
+    [savedUsers.map((u) => savedSubscriptionId(u.idx)), savedUsers.map((u) => savedFeedId(u.idx))]
   );
   await step("user_entries", USER_ENTRIES);
   await step(

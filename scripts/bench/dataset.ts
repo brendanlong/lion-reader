@@ -82,6 +82,7 @@ export const collectionSubscriptionId = (userIdx: number, key: string): string =
   subscriptionId(userIdx, `collection:${key}`);
 
 export const savedFeedId = (userIdx: number): string => benchUuid(`feed:saved:${userIdx}`);
+export const savedSubscriptionId = (userIdx: number): string => subscriptionId(userIdx, "saved");
 export const tagId = (userIdx: number, n: number): string => benchUuid(`tag:${userIdx}:${n}`);
 export const tagName = (n: number): string => `Tag ${String(n).padStart(2, "0")}`;
 

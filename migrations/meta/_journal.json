@@ -918,6 +918,13 @@
       "when": 1782955800000,
       "tag": "0131_collections_feedless",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1782955860000,
+      "tag": "0132_subscription_entries",
+      "breakpoints": true
     }
   ]
 }

@@ -82,7 +82,7 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 
 ## Database Conventions
 
-- **IDs**: UUIDv7 via `generateUuidv7()` from `@/lib/uuidv7` (`gen_uuidv7()` isn't available in our Postgres)
+- **IDs**: UUIDv7 via `generateUuidv7()` from `@/lib/uuidv7` (`gen_uuidv7()` isn't available in our Postgres); a trigger that must create a row uses Postgres 18's `uuidv7()`
 - **Timestamps**: `timestamptz` in UTC, read as JS `Date` (milliseconds). Keyset cursors need microseconds — see "Ordering & Pagination" in `src/server/CLAUDE.md`.
 - **Soft deletes**: `deleted_at`/`unsubscribed_at`
 - **Upserts**: Prefer `onConflictDoNothing()`/`onConflictDoUpdate()` over check-then-act

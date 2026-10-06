@@ -2,10 +2,13 @@
  * Handler for `reconcile_counters` jobs (singleton).
  *
  * See src/server/services/reconcile-counters.ts for the reconciliation itself.
+ * Until #1846 phase 7 it also checks the subscription_entries mirror
+ * (src/server/services/subscription-entries.ts).
  */
 
 import { db } from "../../db";
 import { reconcileCounters } from "../../services/reconcile-counters";
+import { checkSubscriptionEntries } from "../../services/subscription-entries";
 import type { JobHandlerResult } from "./types";
 
 /**
@@ -22,10 +25,11 @@ const RECONCILE_COUNTERS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export async function handleReconcileCounters(): Promise<JobHandlerResult> {
   const now = new Date();
   const result = await reconcileCounters(db);
+  const memberships = await checkSubscriptionEntries(db);
 
   return {
     success: true,
     nextRunAt: new Date(now.getTime() + RECONCILE_COUNTERS_INTERVAL_MS),
-    metadata: { ...result },
+    metadata: { ...result, memberships },
   };
 }

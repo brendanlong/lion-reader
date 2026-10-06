@@ -17,7 +17,7 @@
  * `afterAll` (deleting a user cascades to its subscriptions and user_entries).
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -124,23 +124,19 @@ export async function createTestSubscription(
 }
 
 /**
- * Gives `userId` a saved feed (if missing) and the saved subscription the
- * database will create for it (#1846): type `saved`, no feed, named "Saved",
- * with the saved feed's Google Reader serial. Returns both ids.
+ * Gives `userId` a saved feed and the saved subscription (#1846), as a first
+ * save does (`ensure_saved_subscriptions`), without saving anything. Returns
+ * both ids.
  */
 export async function createTestSavedSubscription(
   userId: string
 ): Promise<{ subscriptionId: string; savedFeedId: string }> {
   const savedFeedId = await getOrCreateSavedFeed(db, userId);
-  const subscriptionId = generateUuidv7();
-  await db.insert(subscriptions).values({
-    id: subscriptionId,
-    userId,
-    feedId: null,
-    type: "saved",
-    customTitle: "Saved",
-    greaderStreamId: sql`(SELECT ${feeds.greaderStreamId} FROM ${feeds} WHERE ${feeds.id} = ${savedFeedId})`,
-  });
+  await db.execute(sql`SELECT ensure_saved_subscriptions(ARRAY[${userId}::uuid])`);
+  const [{ subscriptionId }] = await db
+    .select({ subscriptionId: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "saved")));
   return { subscriptionId, savedFeedId };
 }
 
