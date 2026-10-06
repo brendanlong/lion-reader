@@ -310,7 +310,10 @@ private class ReaderView(context: Context) : WebView(context) {
     var rendererLost = false
     var position = ReadingPosition()
 
-    /** Until the page has loaded and gone back to [position], its scrolling isn't the reader's. */
+    /**
+     * Until the page has loaded and gone back to [position], or the reader takes over (a touch, a
+     * page turn), its scrolling isn't the reader's.
+     */
     var restoring = true
     private var wanted: Int? = null
     private var shown: Int? = null
@@ -340,22 +343,23 @@ private class ReaderView(context: Context) : WebView(context) {
         super.onScrollChanged(l, t, oldl, oldt)
         scrolledTo = t
         val range = computeVerticalScrollRange()
-        if (!restoring && range > 0) position.fraction = t.toFloat() / range
+        if (!restoring && !rendererLost && range > 0) position.fraction = t.toFloat() / range
     }
 
     /**
      * Once everything in the page (images included) is laid out, so for an unchanged article the
-     * place is exactly where it was. Not if the reader has already scrolled it.
+     * place is exactly where it was. Checked in the page, as a load this one replaced can report
+     * finishing too.
      */
     fun onLoaded() {
         if (!restoring || rendererLost) return
-        restoring = false
-        val fraction = position.fraction
-        if (fraction > 0f && scrollY == 0) {
-            evaluateJavascript(
-                "window.scrollTo(0, $fraction * document.documentElement.scrollHeight)",
-                null,
-            )
+        evaluateJavascript(
+            "(function () {" +
+                " if (document.readyState !== 'complete') return false;" +
+                " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight);" +
+                " return true; })()"
+        ) { done ->
+            if (done == "true") restoring = false
         }
     }
 
@@ -495,6 +499,7 @@ private class ReaderView(context: Context) : WebView(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                restoring = false
                 pointerId = event.getPointerId(0)
                 downX = event.x
                 downY = event.y
@@ -551,6 +556,7 @@ private class ReaderView(context: Context) : WebView(context) {
      */
     fun turnPage(direction: Int): Boolean {
         if (height == 0 || rendererLost) return false
+        restoring = false
         val bottom = (computeVerticalScrollRange() - height).coerceAtLeast(0)
         val step = (height * PAGE_FRACTION).toInt()
         scrollTo(scrollX, (scrollY + direction * step).coerceIn(0, bottom))

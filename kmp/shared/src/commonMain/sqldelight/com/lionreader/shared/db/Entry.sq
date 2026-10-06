@@ -23,7 +23,8 @@ CREATE TABLE entry (
   last_opened_at INTEGER,
   -- From body_version_seq: new on insert and whenever the server reports the
   -- entry edited, so a body downloaded before an edit, or before the entry
-    -- was deleted and added again, can't be stored after it (see Body.sq).
+  -- was deleted and added again, is out of date and never replaces a newer
+  -- one (SyncWriter.putBody).
   body_version INTEGER NOT NULL,
   -- When read state last changed, as the server last reported it (Recently
   -- Read's order); null if it never has. Last, as the migration adds it (1.sqm).

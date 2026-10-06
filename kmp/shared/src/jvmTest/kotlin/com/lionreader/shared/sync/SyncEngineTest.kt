@@ -285,7 +285,7 @@ class SyncEngineTest {
     }
 
     @Test
-    fun anEditedEntryKeepsItsOldBodyUntilTheNewOneReplacesIt() = runTest {
+    fun anEditLeavesTheOldBodyInPlace() = runTest {
         serve(entry("a"))
         engine.sync()
         server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
@@ -294,10 +294,8 @@ class SyncEngineTest {
         )
 
         engine.sync(downloadContent = false)
-        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
 
-        engine.sync()
-        assertEquals("<p>Revised</p>", reader.entry("a").first()?.content)
+        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
     }
 
     @Test

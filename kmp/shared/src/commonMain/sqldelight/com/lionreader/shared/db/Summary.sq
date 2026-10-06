@@ -9,8 +9,7 @@ CREATE TABLE entry_summary (
 );
 
 -- Only while the entry is still on the device at the :bodyVersion it had when
--- the request started, like bodies: a summary requested before an edit is of
--- the old text.
+-- the request started: a summary requested before an edit is of the old text.
 putIfCurrent:
 INSERT OR REPLACE INTO entry_summary(entry_id, html, body_version)
 SELECT :entryId, :html, :bodyVersion

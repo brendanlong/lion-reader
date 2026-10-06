@@ -568,25 +568,25 @@ private fun SummaryButton(
 }
 
 /**
- * The article as the page first showed it: an edit, and the new body it brings, wait for the next
- * visit rather than reloading what's being read. Read and starred stay live, and a body or summary
- * arriving where there was none shows; one going (replaced in the background) stays.
+ * The article as the page first showed its body: an edit, and the new body it brings, wait for the
+ * next visit rather than reloading what's being read. Read and starred stay live, and a summary
+ * arriving where there was none shows; one going (its body replaced in the background) stays.
+ * Remembered, not saved: recreating the activity shows the article as it is then.
  */
 @Composable
 internal fun rememberShownArticle(entryId: String, latest: EntryDetail?): EntryDetail? {
     val shown = remember(entryId) { arrayOfNulls<EntryDetail>(1) }
+    if (latest == null) return null
     val first = shown[0]
     val current =
-        when {
-            latest == null -> return null
-            first == null -> latest
-            else ->
-                first.copy(
-                    read = latest.read,
-                    starred = latest.starred,
-                    content = first.content ?: latest.content,
-                    summary = first.summary ?: latest.summary,
-                )
+        if (first == null || first.content.isNullOrEmpty()) {
+            latest
+        } else {
+            first.copy(
+                read = latest.read,
+                starred = latest.starred,
+                summary = first.summary ?: latest.summary,
+            )
         }
     shown[0] = current
     return current

@@ -21,7 +21,8 @@ class ShownArticleTest {
         content: String? = "<p>Old</p>",
         summary: String? = null,
         read: Boolean = false,
-    ) = EntryDetail("a", title, null, null, null, 0, read, false, content, summary)
+        starred: Boolean = false,
+    ) = EntryDetail("a", title, null, null, null, 0, read, starred, content, summary)
 
     private fun show(latest: EntryDetail): Pair<(EntryDetail) -> Unit, () -> EntryDetail?> {
         val state = mutableStateOf(latest)
@@ -37,17 +38,17 @@ class ShownArticleTest {
     }
 
     @Test
-    fun anEditWaitsForTheNextVisitButReadStateDoesNot() {
+    fun anEditWaitsForTheNextVisitButReadAndStarredDoNot() {
         val (update, shown) = show(entry())
 
-        update(entry(title = "Edited", content = "<p>New</p>", read = true))
+        update(entry(title = "Edited", content = "<p>New</p>", read = true, starred = true))
 
-        assertEquals(entry(read = true), shown())
+        assertEquals(entry(read = true, starred = true), shown())
     }
 
     @Test
-    fun aBodyOrSummaryArrivingShowsAndOneGoingStays() {
-        val (update, shown) = show(entry(content = null))
+    fun aSummaryArrivingShowsAndOneGoingStays() {
+        val (update, shown) = show(entry())
 
         update(entry(summary = "<p>Short</p>"))
         assertEquals(entry(summary = "<p>Short</p>"), shown())
@@ -55,5 +56,14 @@ class ShownArticleTest {
         // The background download replaced the body, taking the summary with it.
         update(entry(content = "<p>New</p>", summary = null))
         assertEquals(entry(summary = "<p>Short</p>"), shown())
+    }
+
+    @Test
+    fun untilItsBodyShowsTheArticleFollowsEdits() {
+        val (update, shown) = show(entry(content = null))
+
+        update(entry(title = "Edited", content = "<p>New</p>"))
+
+        assertEquals(entry(title = "Edited", content = "<p>New</p>"), shown())
     }
 }

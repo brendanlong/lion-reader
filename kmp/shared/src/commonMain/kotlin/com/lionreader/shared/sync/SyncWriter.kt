@@ -291,9 +291,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     /**
      * Stores downloaded bodies, and an empty one for each [missing] id (asked for but not returned:
-     * no longer visible) so it isn't requested again — each only if its entry is still at the
-     * [versions] it had when the download started. Never touches `entry`, which is why it's safe
-     * outside the sync lock. Returns the characters stored.
+     * no longer visible) so it isn't requested again, each at the [versions] its entry had when the
+     * download started ([putBody] says which are kept). Never touches `entry`, which is why it's
+     * safe outside the sync lock. Returns how much the stored bodies grew.
      */
     fun storeBodies(
         fetched: List<FullEntry>,
