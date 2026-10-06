@@ -852,7 +852,8 @@ CREATE TABLE public.subscriptions (
     unread_count integer DEFAULT 0 NOT NULL,
     starred_unread_count integer DEFAULT 0 NOT NULL,
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
-    type public.feed_type NOT NULL
+    type public.feed_type NOT NULL,
+    CONSTRAINT subscriptions_collection_named CHECK (((type <> 'collection'::public.feed_type) OR (custom_title IS NOT NULL)))
 );
 
 CREATE TABLE public.tags (

@@ -74,9 +74,9 @@ describe("subscriptions.type", () => {
 
     // The previous release's inserts don't know the column.
     await db.execute(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id)
-      VALUES (${emailSubId}, ${userId}, ${emailFeedId}),
-             (${collectionSubId}, ${userId}, ${collectionFeedId})
+      INSERT INTO subscriptions (id, user_id, feed_id, custom_title)
+      VALUES (${emailSubId}, ${userId}, ${emailFeedId}, NULL),
+             (${collectionSubId}, ${userId}, ${collectionFeedId}, 'Reading')
     `);
 
     expect(await typeOf(emailSubId)).toBe("email");

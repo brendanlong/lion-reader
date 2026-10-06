@@ -897,6 +897,13 @@
       "when": 1782955620000,
       "tag": "0128_collection_names_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1782955680000,
+      "tag": "0129_collection_names_required",
+      "breakpoints": true
     }
   ]
 }

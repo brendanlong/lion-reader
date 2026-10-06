@@ -779,6 +779,8 @@ export const subscriptions = pgTable(
     uniqueIndex("uq_subscriptions_user_collection_name")
       .on(table.userId, sql`lower(${table.customTitle})`)
       .where(sql`type = 'collection' AND unsubscribed_at IS NULL`),
+    // Every collection has a name (#1846).
+    check("subscriptions_collection_named", sql`type <> 'collection' OR custom_title IS NOT NULL`),
   ]
 );
 
