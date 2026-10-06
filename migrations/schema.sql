@@ -130,6 +130,30 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.collection_entries_copy_memberships_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  DELETE FROM subscription_entries se
+  USING old_rows o
+  WHERE se.subscription_id = o.subscription_id AND se.entry_id = o.entry_id;
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.collection_entries_copy_memberships_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+  SELECT n.subscription_id, n.user_id, n.entry_id, ue.published_or_fetched_at
+  FROM new_rows n
+  JOIN user_entries ue ON ue.user_id = n.user_id AND ue.entry_id = n.entry_id
+  ON CONFLICT DO NOTHING;
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.collection_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -178,6 +202,22 @@ BEGIN
   FROM (SELECT DISTINCT user_id FROM changed_rows ORDER BY user_id) u;
   RETURN NULL;
 END;
+$$;
+
+CREATE FUNCTION public.ensure_saved_subscriptions(p_users uuid[]) RETURNS integer
+    LANGUAGE sql
+    AS $$
+  WITH created AS (
+    INSERT INTO subscriptions (id, user_id, type, custom_title, greader_stream_id,
+                               subscribed_at, created_at, updated_at)
+    SELECT uuidv7(), f.user_id, 'saved', 'Saved', f.greader_stream_id, f.created_at, now(), now()
+    FROM feeds f
+    WHERE f.type = 'saved' AND f.user_id = ANY (p_users)
+    ORDER BY f.user_id
+    ON CONFLICT (user_id) WHERE type = 'saved' DO NOTHING
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM created;
 $$;
 
 CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
@@ -306,6 +346,54 @@ BEGIN
     HAVING sum(side) <> 0
     ORDER BY user_id
   ) u;
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.user_entries_copy_membership_restamp() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+  VALUES (NEW.subscription_id, NEW.user_id, NEW.entry_id, NEW.published_or_fetched_at)
+  ON CONFLICT DO NOTHING;
+  RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.user_entries_copy_memberships_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_users uuid[];
+BEGIN
+  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+  SELECT subscription_id, user_id, entry_id, published_or_fetched_at
+  FROM new_rows
+  WHERE subscription_id IS NOT NULL
+  ON CONFLICT DO NOTHING;
+
+  IF NOT EXISTS (SELECT 1 FROM new_rows WHERE subscription_id IS NULL) THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT array_agg(DISTINCT n.user_id) INTO v_users
+  FROM new_rows n
+  JOIN entries e ON e.id = n.entry_id
+  WHERE n.subscription_id IS NULL AND e.type = 'saved';
+  IF v_users IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  PERFORM ensure_saved_subscriptions(v_users);
+
+  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+  SELECT s.id, n.user_id, n.entry_id, n.published_or_fetched_at
+  FROM new_rows n
+  JOIN entries e ON e.id = n.entry_id
+  JOIN subscriptions s ON s.user_id = n.user_id AND s.type = 'saved'
+  WHERE n.subscription_id IS NULL AND e.type = 'saved'
+  ON CONFLICT DO NOTHING;
   RETURN NULL;
 END;
 $$;
@@ -825,6 +913,13 @@ CREATE TABLE public.sessions (
     scopes text[]
 );
 
+CREATE TABLE public.subscription_entries (
+    subscription_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    entry_id uuid NOT NULL,
+    published_or_fetched_at timestamp with time zone NOT NULL
+);
+
 CREATE TABLE public.subscription_tags (
     subscription_id uuid NOT NULL,
     tag_id uuid NOT NULL,
@@ -846,7 +941,8 @@ CREATE TABLE public.subscriptions (
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     type public.feed_type NOT NULL,
     CONSTRAINT subscriptions_collection_feedless CHECK (((type <> 'collection'::public.feed_type) OR (feed_id IS NULL))),
-    CONSTRAINT subscriptions_collection_named CHECK (((type <> 'collection'::public.feed_type) OR (custom_title IS NOT NULL)))
+    CONSTRAINT subscriptions_collection_named CHECK (((type <> 'collection'::public.feed_type) OR (custom_title IS NOT NULL))),
+    CONSTRAINT subscriptions_saved_feedless CHECK (((type <> 'saved'::public.feed_type) OR (feed_id IS NULL)))
 );
 
 CREATE TABLE public.tags (
@@ -1099,6 +1195,9 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_token_hash_unique UNIQUE (token_hash);
 
+ALTER TABLE ONLY public.subscription_entries
+    ADD CONSTRAINT subscription_entries_pkey PRIMARY KEY (subscription_id, entry_id);
+
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_tag_id_pk PRIMARY KEY (subscription_id, tag_id);
 
@@ -1230,6 +1329,10 @@ CREATE INDEX idx_sessions_last_active ON public.sessions USING btree (last_activ
 
 CREATE INDEX idx_sessions_user ON public.sessions USING btree (user_id);
 
+CREATE INDEX idx_subscription_entries_timeline ON public.subscription_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC);
+
+CREATE INDEX idx_subscription_entries_user_entry ON public.subscription_entries USING btree (user_id, entry_id);
+
 CREATE INDEX idx_subscription_tags_tag ON public.subscription_tags USING btree (tag_id);
 
 CREATE INDEX idx_subscriptions_feed ON public.subscriptions USING btree (feed_id);
@@ -1270,11 +1373,17 @@ CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WH
 
 CREATE UNIQUE INDEX uq_subscriptions_id_user ON public.subscriptions USING btree (id, user_id);
 
+CREATE UNIQUE INDEX uq_subscriptions_saved_user ON public.subscriptions USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
+
 CREATE UNIQUE INDEX uq_subscriptions_user_collection_name ON public.subscriptions USING btree (user_id, lower(custom_title)) WHERE ((type = 'collection'::public.feed_type) AND (unsubscribed_at IS NULL));
 
 CREATE UNIQUE INDEX uq_tags_user_lower_name ON public.tags USING btree (user_id, lower(name)) WHERE (deleted_at IS NULL);
 
 CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^https?://'::text, 'https://'::text) FROM public.entries;
+
+CREATE TRIGGER collection_entries_copy_memberships_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_copy_memberships_delete();
+
+CREATE TRIGGER collection_entries_copy_memberships_insert_trigger AFTER INSERT ON public.collection_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_copy_memberships_insert();
 
 CREATE TRIGGER collection_entries_counters_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_counters_delete();
 
@@ -1293,6 +1402,10 @@ CREATE TRIGGER subscriptions_empty_unsubscribed_collection_trigger AFTER UPDATE 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 
 CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON public.subscriptions REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_recompute_lists();
+
+CREATE TRIGGER user_entries_copy_membership_restamp_trigger AFTER UPDATE OF subscription_id ON public.user_entries FOR EACH ROW WHEN (((new.subscription_id IS NOT NULL) AND (new.subscription_id IS DISTINCT FROM old.subscription_id))) EXECUTE FUNCTION public.user_entries_copy_membership_restamp();
+
+CREATE TRIGGER user_entries_copy_memberships_insert_trigger AFTER INSERT ON public.user_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_copy_memberships_insert();
 
 CREATE TRIGGER user_entries_counters_delete_trigger AFTER DELETE ON public.user_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_delete();
 
@@ -1364,6 +1477,12 @@ ALTER TABLE ONLY public.opml_imports
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.subscription_entries
+    ADD CONSTRAINT subscription_entries_subscription_id_user_id_fkey FOREIGN KEY (subscription_id, user_id) REFERENCES public.subscriptions(id, user_id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.subscription_entries
+    ADD CONSTRAINT subscription_entries_user_id_entry_id_fkey FOREIGN KEY (user_id, entry_id) REFERENCES public.user_entries(user_id, entry_id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_subscriptions_id_fk FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;

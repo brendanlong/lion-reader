@@ -1418,6 +1418,63 @@ WHERE subscription_tags.subscription_id IN (${q(survivor)})`,
       };
     },
   },
+  {
+    name: "write.delete_saved_article",
+    kind: "write",
+    source:
+      "services/saved.ts deleteSavedArticle (U0's oldest saved article; cascades to user_entries and its memberships)",
+    prepare: async (db) => {
+      const saved = savedFeedId(0);
+      const { id } = await one<{ id: string }>(
+        db,
+        `SELECT id FROM entries WHERE feed_id = ${q(saved)} ORDER BY id LIMIT 1`
+      );
+      return {
+        statements: [
+          {
+            label: "saved_feed",
+            sql: `SELECT feeds.id FROM feeds WHERE feeds.type = 'saved' AND feeds.user_id = ${q(U0)} LIMIT 1`,
+          },
+          {
+            label: "existing",
+            sql: `SELECT entries.id FROM entries
+INNER JOIN user_entries ON user_entries.entry_id = entries.id
+WHERE entries.id = ${q(id)} AND entries.feed_id = ${q(saved)} AND user_entries.user_id = ${q(U0)}
+LIMIT 1`,
+          },
+          {
+            label: "collections",
+            sql: `SELECT collection_entries.subscription_id FROM collection_entries
+WHERE collection_entries.user_id = ${q(U0)} AND collection_entries.entry_id = ${q(id)}
+ORDER BY collection_entries.subscription_id`,
+          },
+          {
+            label: "delete_entry",
+            sql: `DELETE FROM entries WHERE entries.id = ${q(id)} AND entries.feed_id = ${q(saved)}`,
+          },
+          {
+            label: "tombstone",
+            sql: `INSERT INTO entry_tombstones (user_id, entry_id) VALUES (${q(U0)}, ${q(id)})
+ON CONFLICT (user_id, entry_id) DO UPDATE SET deleted_at = now()`,
+          },
+        ],
+      };
+    },
+  },
+  {
+    name: "write.delete_feed",
+    kind: "write",
+    source:
+      "the cascade of deleting a feed, as services/users.ts deleteUser does an orphaned one (U0's 1,500-entry feed: its entries, user_entries, subscription and memberships)",
+    prepare: async () => ({
+      statements: [
+        {
+          label: "delete_feed",
+          sql: `DELETE FROM feeds WHERE feeds.id = ${q(webFeedId(WEB.mergeSource))}`,
+        },
+      ],
+    }),
+  },
 ];
 
 export const BENCHMARKS: Benchmark[] = [...READS, ...WRITES];

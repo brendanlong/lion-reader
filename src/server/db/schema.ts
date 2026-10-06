@@ -759,7 +759,8 @@ export const subscriptions = pgTable(
     // Google Reader feed stream id (issue #1117, migration 0097). Backs the
     // feed/{int} stream id and the subscription sortid; reversed by
     // feedStreamIdToSubscriptionUuid / resolveFeedStream with a unique-index seek.
-    // Drawn from the shared greader_id_seq; DB-assigned via a sequence default.
+    // Drawn from the shared greader_id_seq; DB-assigned via a sequence default,
+    // except a saved subscription's, which is its saved feed's (#1846).
     greaderStreamId: bigint("greader_stream_id", { mode: "bigint" })
       .notNull()
       .default(sql`nextval('greader_id_seq'::regclass)`),
@@ -781,6 +782,12 @@ export const subscriptions = pgTable(
     check("subscriptions_collection_named", sql`type <> 'collection' OR custom_title IS NOT NULL`),
     // Collections have no feed (#1846).
     check("subscriptions_collection_feedless", sql`type <> 'collection' OR feed_id IS NULL`),
+    // One saved subscription per user, with no feed (#1846), so the
+    // user_entries fill trigger never stamps a saved article with it.
+    uniqueIndex("uq_subscriptions_saved_user")
+      .on(table.userId)
+      .where(sql`type = 'saved'`),
+    check("subscriptions_saved_feedless", sql`type <> 'saved' OR feed_id IS NULL`),
   ]
 );
 
@@ -894,6 +901,45 @@ export const userEntries = pgTable(
     // published_or_fetched_at DESC, entry_id DESC; partial: WHERE
     // subscription_id IS NOT NULL) is defined in migration 0088.
     // Partial indexes defined in migration (can't express WHERE clause in drizzle)
+  ]
+);
+
+/**
+ * Which articles each subscription holds, for every type (#1846). It will
+ * replace `user_entries.subscription_id` and `collection_entries`; until then
+ * nothing reads it, and the database's `*_copy_membership*` triggers keep it a
+ * copy of them plus the saved articles (members of the user's saved
+ * subscription). Never write it from app code yet.
+ */
+export const subscriptionEntries = pgTable(
+  "subscription_entries",
+  {
+    subscriptionId: uuid("subscription_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    entryId: uuid("entry_id").notNull(),
+    // The user_entries row's sort key, which never changes.
+    publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.subscriptionId, table.entryId] }),
+    // Scope every membership to the subscription's owner and the owner's own
+    // user_entries row, so none can cross users.
+    foreignKey({
+      columns: [table.subscriptionId, table.userId],
+      foreignColumns: [subscriptions.id, subscriptions.userId],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId, table.entryId],
+      foreignColumns: [userEntries.userId, userEntries.entryId],
+    })
+      .onDelete("cascade")
+      .onUpdate("cascade"),
+    index("idx_subscription_entries_timeline").on(
+      table.subscriptionId,
+      table.publishedOrFetchedAt.desc(),
+      table.entryId.desc()
+    ),
+    index("idx_subscription_entries_user_entry").on(table.userId, table.entryId),
   ]
 );
 

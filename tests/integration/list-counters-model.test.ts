@@ -9,7 +9,8 @@
  *   1. the reconcile job, which recomputes every counter from its definition,
  *      finds nothing to fix, and
  *   2. every badge equals the number of unread articles its list shows (tag,
- *      Uncategorized, each subscription, All).
+ *      Uncategorized, each subscription, All), and
+ *   3. the subscription_entries mirror matches the memberships it copies (#1846).
  * Interleavings that hand-written tests miss (an article reaching a tag through
  * both its feed and a collection, retagging while members are unread, ...)
  * come up here. Every random pick indexes a world's ids in creation order, so
@@ -45,6 +46,7 @@ import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handle
 import { deleteTag } from "../../src/server/services/tags";
 import { deleteSavedArticle, uploadArticle } from "../../src/server/services/saved";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
+import { checkSubscriptionEntries } from "../../src/server/services/subscription-entries";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -410,6 +412,11 @@ describe("unread counters under random operations", () => {
           tagsFixed: 0,
         });
         await expectBadgesMatchLists(world.userId);
+        expect(await checkSubscriptionEntries(db), context).toEqual({
+          missing: 0,
+          extra: 0,
+          misdated: 0,
+        });
       }
     },
     120_000
