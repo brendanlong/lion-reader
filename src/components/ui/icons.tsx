@@ -195,16 +195,27 @@ export function AlertIcon({ className = "h-4 w-4" }: IconProps) {
 }
 
 /**
- * Sparkles icon (for AI features)
+ * Sparkles icon (for AI features). `filled` fills the large sparkle to mark an
+ * active state, which survives e-ink where button color changes don't.
  */
-export function SparklesIcon({ className = "h-4 w-4" }: IconProps) {
+export function SparklesIcon({
+  className = "h-4 w-4",
+  filled = false,
+}: IconProps & { filled?: boolean }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={2}
-        d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+        d="M5 3v4M3 5h4M6 17v4m-2-2h4"
+      />
+      <path
+        fill={filled ? "currentColor" : "none"}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M13 3l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
       />
     </svg>
   );
