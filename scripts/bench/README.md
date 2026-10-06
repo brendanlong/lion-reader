@@ -49,10 +49,13 @@ and the generic plan can be several times slower (an unsubscribe goes from
 ~10 ms to ~70 ms). Writes also report **cold ms**: each iteration on a new
 connection, so the triggers still plan per call, plus the cost of filling the
 connection's catalog caches. The warm-up calls are all for U0, the heaviest
-library, while a production connection decides after calls for whichever
-users it served first, so production may settle on a different plan for some
-statements. A change that alters which plan the triggers settle on shows up as
-warm and cold moving differently.
+library, and that is what tips the switch: Postgres picks the generic plan
+when it looks no costlier than the custom plans so far, and U0's look costly.
+A connection whose first calls are for light users keeps custom plans (true
+of `recompute_list_counters`: after five light users, U0's call stays at
+~2 ms). So warm is the worst case a production connection can settle into,
+and cold the best. A change that alters which plan the triggers settle on
+shows up as warm and cold moving differently.
 
 ## Comparing before and after
 
