@@ -521,7 +521,7 @@ export const subscriptionsRouter = createTRPCRouter({
         type: subscription.type,
         url: feed?.url ?? null,
         title: subscription.customTitle ?? feed?.title ?? null, // resolved title
-        originalTitle: feed?.title ?? null,
+        originalTitle: feed?.title ?? subscription.customTitle,
         description: feed?.description ?? null,
         siteUrl: feed?.siteUrl ?? null,
         subscribedAt: subscription.subscribedAt,

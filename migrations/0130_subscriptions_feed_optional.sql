@@ -8,7 +8,8 @@ SET LOCAL lock_timeout = '5s';
 
 ALTER TABLE subscriptions ALTER COLUMN feed_id DROP NOT NULL;
 
--- Same columns; a feedless subscription gets NULL feed fields.
+-- Same columns. A feedless subscription gets NULL feed fields, except
+-- original_title, which is its name (as sync and created events report it).
 CREATE OR REPLACE VIEW user_feeds AS
  SELECT s.id,
     s.user_id,
@@ -19,7 +20,7 @@ CREATE OR REPLACE VIEW user_feeds AS
     s.fetch_full_content,
     s.type,
     COALESCE(s.custom_title, f.title) AS title,
-    f.title AS original_title,
+    COALESCE(f.title, s.custom_title) AS original_title,
     f.url,
     f.site_url,
     f.description,

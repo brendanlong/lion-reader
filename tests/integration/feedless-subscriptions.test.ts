@@ -69,6 +69,7 @@ describe("subscriptions without a feed (#1846)", () => {
       id: collectionId,
       type: "collection",
       title: "Reading",
+      originalTitle: "Reading",
       url: null,
       unreadCount: 1,
       tags: [],
@@ -89,7 +90,13 @@ describe("subscriptions without a feed (#1846)", () => {
     const tagId = await createTestTag(userId);
 
     expect(await caller.subscriptions.update({ id: collectionId, customTitle: "Later" })).toEqual(
-      expect.objectContaining({ id: collectionId, type: "collection", title: "Later", url: null })
+      expect.objectContaining({
+        id: collectionId,
+        type: "collection",
+        title: "Later",
+        originalTitle: "Later",
+        url: null,
+      })
     );
     await caller.subscriptions.setTags({ id: collectionId, tagIds: [tagId] });
     expect((await caller.subscriptions.list({ tagId })).items.map((s) => s.id)).toEqual([

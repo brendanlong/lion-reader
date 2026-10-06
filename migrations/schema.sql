@@ -899,7 +899,7 @@ CREATE VIEW public.user_feeds AS
     s.fetch_full_content,
     s.type,
     COALESCE(s.custom_title, f.title) AS title,
-    f.title AS original_title,
+    COALESCE(f.title, s.custom_title) AS original_title,
     f.url,
     f.site_url,
     f.description,
