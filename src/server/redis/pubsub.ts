@@ -31,7 +31,7 @@ import type { BulkUnreadCounts } from "@/server/services/counts";
 // ============================================================================
 
 /**
- * Zod schema for feed events published/received via Redis pub/sub.
+ * Zod schema for web feed events published/received via Redis pub/sub.
  * Reuses entryMetadataSchema from the shared event schemas.
  */
 const feedEventSchema = z.discriminatedUnion("type", [
@@ -41,7 +41,7 @@ const feedEventSchema = z.discriminatedUnion("type", [
     entryId: z.string(),
     timestamp: z.string(),
     updatedAt: z.string(),
-    feedType: z.enum(["web", "email", "saved"]),
+    feedType: z.literal("web"),
     // List-item data forwarded to clients so they can insert the entry into
     // cached lists. Optional so events published by a previous release (no
     // entry data) still parse during a deploy window.
@@ -53,7 +53,6 @@ const feedEventSchema = z.discriminatedUnion("type", [
     entryId: z.string(),
     timestamp: z.string(),
     updatedAt: z.string(),
-    feedType: z.enum(["web", "email", "saved"]).optional(),
     metadata: entryMetadataSchema,
   }),
 ]);
@@ -207,15 +206,6 @@ const userEventSchema = z.discriminatedUnion("type", [
     timestamp: z.string(),
     updatedAt: z.string(),
   }),
-  // Server-internal signal that a user's saved-articles feed was just created,
-  // for SSE servers from the previous release, which subscribe to the saved
-  // feed's channel. Current servers ignore it. Not forwarded to the client.
-  z.object({
-    type: z.literal("saved_feed_created"),
-    userId: z.string(),
-    feedId: z.string(),
-    timestamp: z.string(),
-  }),
 ]);
 
 /**
@@ -344,7 +334,6 @@ async function publishSiteStatusEvent(event: SiteStatusEvent): Promise<number> {
  * @param feedId - The ID of the feed containing the entry
  * @param entryId - The ID of the newly created entry
  * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param feedType - The feed type (web, email, or saved)
  * @param entry - List-item data so clients can insert the entry into cached
  *   lists. Pass undefined for entries the default entries.list would filter
  *   out (spam) so clients only update counts and never insert a ghost row.
@@ -354,7 +343,6 @@ export async function publishNewEntry(
   feedId: string,
   entryId: string,
   updatedAt: Date,
-  feedType: "web" | "email" | "saved",
   entry: NewEntryListData | undefined
 ): Promise<number> {
   return publishFeedEvent({
@@ -363,7 +351,7 @@ export async function publishNewEntry(
     entryId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-    feedType,
+    feedType: "web",
     ...(entry ? { entry } : {}),
   });
 }
@@ -373,13 +361,6 @@ interface UserEntryTarget {
   userId: string;
   /** The email subscription's id; null for saved articles. */
   subscriptionId: string | null;
-  /**
-   * The entry's feed, only for the transitional feed-channel copy (#1846):
-   * SSE servers from the previous release listen for email and saved entries
-   * on the feed's channel. Remove with that copy once this release is deployed
-   * (follow-up: brendanlong/realtime-user-channel-cleanup).
-   */
-  feedId: string;
   feedType: "email" | "saved";
 }
 
@@ -399,21 +380,16 @@ export async function publishUserNewEntry(
   updatedAt: Date,
   entry: NewEntryListData | undefined
 ): Promise<number> {
-  const [received] = await Promise.all([
-    publishUserEvent({
-      type: "new_entry",
-      userId: target.userId,
-      subscriptionId: target.subscriptionId,
-      entryId,
-      timestamp: new Date().toISOString(),
-      updatedAt: updatedAt.toISOString(),
-      feedType: target.feedType,
-      ...(entry ? { entry } : {}),
-    }),
-    // Transitional copy for previous-release SSE servers (see UserEntryTarget.feedId).
-    publishNewEntry(target.feedId, entryId, updatedAt, target.feedType, entry),
-  ]);
-  return received;
+  return publishUserEvent({
+    type: "new_entry",
+    userId: target.userId,
+    subscriptionId: target.subscriptionId,
+    entryId,
+    timestamp: new Date().toISOString(),
+    updatedAt: updatedAt.toISOString(),
+    feedType: target.feedType,
+    ...(entry ? { entry } : {}),
+  });
 }
 
 /**
@@ -428,21 +404,16 @@ export async function publishUserEntryUpdated(
   target: UserEntryTarget,
   entry: EntryLike
 ): Promise<number> {
-  const [received] = await Promise.all([
-    publishUserEvent({
-      type: "entry_updated",
-      userId: target.userId,
-      subscriptionId: target.subscriptionId,
-      entryId: entry.id,
-      timestamp: new Date().toISOString(),
-      updatedAt: entry.updatedAt.toISOString(),
-      feedType: target.feedType,
-      metadata: toEntryMetadata(entry),
-    }),
-    // Transitional copy for previous-release SSE servers (see UserEntryTarget.feedId).
-    publishEntryUpdatedFromEntry(target.feedId, entry),
-  ]);
-  return received;
+  return publishUserEvent({
+    type: "entry_updated",
+    userId: target.userId,
+    subscriptionId: target.subscriptionId,
+    entryId: entry.id,
+    timestamp: new Date().toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
+    feedType: target.feedType,
+    metadata: toEntryMetadata(entry),
+  });
 }
 
 /**
@@ -813,27 +784,6 @@ export async function publishTagDeleted(
     tagId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-  });
-}
-
-/**
- * Publishes a saved_feed_created event when a user's saved-articles feed is
- * first created. Lets already-open SSE connections from the previous release
- * subscribe to the new feed's channel so the very first saved article
- * broadcasts live. Transitional (#1846): current SSE servers get saved entries
- * on the user's channel and ignore this; remove it once this release is
- * deployed (follow-up: brendanlong/realtime-user-channel-cleanup).
- *
- * @param userId - The ID of the user whose saved feed was created
- * @param feedId - The ID of the newly created saved feed
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishSavedFeedCreated(userId: string, feedId: string): Promise<number> {
-  return publishUserEvent({
-    type: "saved_feed_created",
-    userId,
-    feedId,
-    timestamp: new Date().toISOString(),
   });
 }
 

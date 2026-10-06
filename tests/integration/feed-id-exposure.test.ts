@@ -101,7 +101,7 @@ describe("feed IDs never reach clients", () => {
 
     try {
       await publishUntil(
-        () => publishNewEntry(feedId, entryId, new Date(), "web", undefined),
+        () => publishNewEntry(feedId, entryId, new Date(), undefined),
         () => stream.events("new_entry").length > 0
       );
       await publishSubscriptionCreated(
