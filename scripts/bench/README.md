@@ -54,8 +54,7 @@ whose first calls are for light users keeps custom plans. So warm is the worst
 case a production connection can settle into, and cold the best. A change
 that alters which plan the triggers settle on shows up as warm and cold moving
 differently. A warm time several times the cold one points at a slow generic
-plan: `recompute_list_counters` forces custom plans because its generic plan
-made an unsubscribe take ~70 ms instead of ~6 ms (#1862).
+plan (#1862).
 
 ## Comparing before and after
 

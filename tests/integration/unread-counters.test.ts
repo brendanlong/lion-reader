@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -347,5 +347,18 @@ describe("unread counters (triggers + reconciliation)", () => {
     expect(await subscriptionCounters(subId)).toEqual({ unread: 1, starredUnread: 1 });
     expect(await userCounters(userId)).toEqual({ savedUnread: 0, starredUnread: 1 });
     await expectNoDrift();
+  });
+});
+
+describe("recompute_list_counters", () => {
+  it("always plans per call (#1862)", async () => {
+    const result = await db.execute<{ proconfig: string[] | null }>(sql`
+      SELECT proconfig FROM pg_proc WHERE proname = 'recompute_list_counters'
+    `);
+    expect(
+      result.rows[0]?.proconfig ?? [],
+      "its generic plan is ~15x slower for heavy users, and CREATE OR REPLACE FUNCTION drops " +
+        "the setting: repeat `SET plan_cache_mode = force_custom_plan` when redefining it (#1862)"
+    ).toContain("plan_cache_mode=force_custom_plan");
   });
 });
