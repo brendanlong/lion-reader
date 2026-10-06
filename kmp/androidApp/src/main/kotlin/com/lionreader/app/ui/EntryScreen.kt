@@ -553,15 +553,18 @@ private fun SummaryButton(
                 strokeWidth = 2.dp,
             )
         } else {
+            val active = hasSummary && shown
             Icon(
-                painterResource(R.drawable.ic_sparkles),
+                painterResource(
+                    if (active) R.drawable.ic_sparkles_filled else R.drawable.ic_sparkles
+                ),
                 contentDescription =
                     when {
                         !hasSummary -> "Summarize"
                         shown -> "Hide summary"
                         else -> "Show summary"
                     },
-                tint = actionTint(active = hasSummary && shown),
+                tint = actionTint(active = active),
             )
         }
     }
