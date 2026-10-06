@@ -88,7 +88,7 @@ Custom auth from established primitives: `openid-client` (Google/Apple/Discord s
 
 ## Feed Processing
 
-Subscription types are web (RSS/Atom/JSON), email (newsletters to per-user ingest addresses), saved (read-it-later), and collection (a per-user list of articles from any of the others, #1806). A collection is a subscription like any feed, so it is tagged, renamed, counted and shown the same way; its articles are referenced, not copied, so read state stays shared. We fetch respectfully — honoring `Cache-Control`, conditional requests and `Retry-After`, backing off failing feeds up to 7 days, and tracking permanent redirects. Feeds that advertise a WebSub hub get pushes and drop to a daily backup poll. Rules: `src/server/feed/CLAUDE.md`.
+Subscription types are web (RSS/Atom/JSON), email (newsletters to per-user ingest addresses), saved (read-it-later), and collection (a per-user list of articles from any of the others, #1806). A collection is a subscription with no feed, tagged, renamed, counted and shown like any other; its articles are referenced, not copied, so read state stays shared. We fetch respectfully — honoring `Cache-Control`, conditional requests and `Retry-After`, backing off failing feeds up to 7 days, and tracking permanent redirects. Feeds that advertise a WebSub hub get pushes and drop to a daily backup poll. Rules: `src/server/feed/CLAUDE.md`.
 
 Per-source behavior (YouTube, LessWrong, Bluesky, Google Docs, …) lives in capability-based plugins (`src/server/plugins/`), so adding a source means writing one self-contained plugin instead of scattering URL checks through core modules.
 

@@ -443,7 +443,7 @@ export const feeds = pgTable(
   "feeds",
   {
     id: uuid("id").primaryKey(),
-    type: feedTypeEnum("type").notNull(),
+    type: feedTypeEnum("type").$type<EntryType>().notNull(), // never collection: those have no feed
 
     url: text("url").unique(), // For URL-based feeds
 
@@ -507,10 +507,9 @@ export const feeds = pgTable(
     index("idx_feeds_next_fetch").on(table.nextFetchAt),
     uniqueIndex("idx_feeds_greader_stream_id").on(table.greaderStreamId),
     // Per-user feeds require user_id, shared web feeds must not have it
-    check(
-      "feed_type_user_id",
-      sql`(type IN ('email', 'saved', 'collection')) = (user_id IS NOT NULL)`
-    ),
+    check("feed_type_user_id", sql`(type IN ('email', 'saved')) = (user_id IS NOT NULL)`),
+    // Collections are subscriptions without a feed (#1846).
+    check("feeds_type_not_collection", sql`type <> 'collection'`),
     // Unique constraint for email feeds: one feed per (user, sender)
     unique("uq_feeds_email_user_sender").on(table.userId, table.emailSenderPattern),
     // Unique constraint for saved feeds: one saved feed per user (partial index)
@@ -736,11 +735,10 @@ export const subscriptions = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // NULL for a subscription without a feed, such as a collection (#1846);
-    // its type and name are its own, so reads never need the feed.
+    // NULL for a subscription without a feed, which a collection always is
+    // (#1846); its type and name are its own, so reads never need the feed.
     feedId: uuid("feed_id").references(() => feeds.id, { onDelete: "cascade" }),
-    // Never changes after insert. A BEFORE INSERT trigger fills it from the
-    // feed when an insert omits it (the previous release's inserts; #1846).
+    // Never changes after insert.
     type: feedTypeEnum("type").notNull(),
 
     // The user's override for a feed's title; a collection's name (#1846).
@@ -781,12 +779,14 @@ export const subscriptions = pgTable(
       .where(sql`type = 'collection' AND unsubscribed_at IS NULL`),
     // Every collection has a name (#1846).
     check("subscriptions_collection_named", sql`type <> 'collection' OR custom_title IS NOT NULL`),
+    // Collections have no feed (#1846).
+    check("subscriptions_collection_feedless", sql`type <> 'collection' OR feed_id IS NULL`),
   ]
 );
 
 /**
  * Articles in a collection (#1806). A collection is a subscription of type
- * 'collection'; its members are articles from feeds, referenced
+ * 'collection' with no feed; its members are articles from feeds, referenced
  * rather than copied, so read/star state stays shared.
  * Trigger-maintained counters on the collection's subscription row count its
  * unread members. (user_id, entry_id) references user_entries through a

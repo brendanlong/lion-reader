@@ -35,12 +35,12 @@ async function readGauge(name: string): Promise<number> {
 }
 
 describe("feeds_total", () => {
-  it("counts only web feeds, not per-user saved/email/collection feeds", async () => {
+  it("counts only web feeds, not per-user saved/email feeds", async () => {
     const before = await readGauge("feeds_total");
 
     const userId = await createTestUser({ emailPrefix: "metrics" });
     userIds.push(userId);
-    for (const type of ["saved", "email", "collection"] as const) {
+    for (const type of ["saved", "email"] as const) {
       feedIds.push(await createTestFeed({ type, userId, url: null }));
     }
     feedIds.push(await createTestFeed());
