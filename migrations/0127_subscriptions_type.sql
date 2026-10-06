@@ -1,16 +1,23 @@
 -- A subscription's type (web/email/saved/collection) is its own column rather
 -- than something read off its feed (#1846, phase 1). A type never changes
 -- after insert.
-ALTER TABLE subscriptions ADD COLUMN type feed_type;
+-- ADD COLUMN takes ACCESS EXCLUSIVE on a table the counter triggers update
+-- constantly; fail fast rather than queue every write behind it.
+SET LOCAL lock_timeout = '5s';
+
+-- A constant default is metadata-only, so only the non-web rows get rewritten
+-- (rewriting every row packs the pages full and costs the counter triggers'
+-- updates their HOT path until vacuum frees space).
+ALTER TABLE subscriptions ADD COLUMN type feed_type NOT NULL DEFAULT 'web';
 
 UPDATE subscriptions s
 SET type = f.type
 FROM feeds f
-WHERE f.id = s.feed_id;
+WHERE f.id = s.feed_id AND f.type <> 'web';
 
 -- The previous release inserts subscriptions without naming the column, so
--- fill it from the feed whenever an insert leaves it NULL. It only fills: it
--- doesn't check an explicit type against the feed's.
+-- fill it from the feed whenever an insert leaves it NULL (no default, below).
+-- It only fills: it doesn't check an explicit type against the feed's.
 CREATE FUNCTION subscriptions_fill_type() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -26,7 +33,7 @@ CREATE TRIGGER subscriptions_fill_type_trigger
   WHEN (NEW.type IS NULL)
   EXECUTE FUNCTION subscriptions_fill_type();
 
-ALTER TABLE subscriptions ALTER COLUMN type SET NOT NULL;
+ALTER TABLE subscriptions ALTER COLUMN type DROP DEFAULT;
 
 -- Read the type off the subscription. Same columns and values as before, so
 -- the previous release reads the view unchanged.

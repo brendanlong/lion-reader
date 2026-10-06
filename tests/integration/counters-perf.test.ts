@@ -102,8 +102,8 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
       ON CONFLICT DO NOTHING
     `);
     await db.execute(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id)
-      SELECT gen_random_uuid(), ${userId}::uuid, f.id
+      INSERT INTO subscriptions (id, user_id, feed_id, type)
+      SELECT gen_random_uuid(), ${userId}::uuid, f.id, 'web'
       FROM feeds f WHERE f.url LIKE 'https://perf.example.com/feed-%'
     `);
     await db.execute(sql`
@@ -145,8 +145,8 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
       VALUES (${scratchUser}, ${`counters-perf-scratch-${scratchUser}@test.com`}, 'test-hash')
     `);
     await db.execute(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id)
-      SELECT gen_random_uuid(), ${scratchUser}::uuid, f.id
+      INSERT INTO subscriptions (id, user_id, feed_id, type)
+      SELECT gen_random_uuid(), ${scratchUser}::uuid, f.id, 'web'
       FROM feeds f WHERE f.url LIKE 'https://perf.example.com/feed-%'
     `);
 
