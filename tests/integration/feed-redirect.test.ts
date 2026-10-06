@@ -414,6 +414,31 @@ describe("Feed Redirect Handling", () => {
       expect(await getStampedSubscriptionId(userId, newCopy)).toBeNull();
     });
 
+    it("gives the survivor an article the user holds only through another subscription", async () => {
+      // The populate's dedup keys on the subscription the twin is attributed to
+      // (#1861): a copy from a feed the user follows separately doesn't count.
+      const userId = await createTestUser();
+      const { oldFeedId, newFeedId } = await createFeedPair();
+      const otherFeedId = await createTestFeed({ url: "https://other-domain.com/feed.xml" });
+      await createTestSubscription(userId, oldFeedId);
+      const otherSubId = await createTestSubscription(userId, otherFeedId);
+      const otherCopy = await createTestEntry(otherFeedId, {
+        guid: "http://example.com/post",
+        userIds: [userId],
+      });
+      const newFeed = await getFeed(newFeedId);
+      const newCopy = await createTestEntry(newFeedId, {
+        guid: "https://example.com/post",
+        fetchedAt: newFeed.lastEntriesUpdatedAt!,
+      });
+
+      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), newFeed);
+
+      const survivor = await getSubscription(userId, newFeedId);
+      expect(await getStampedSubscriptionId(userId, otherCopy)).toBe(otherSubId);
+      expect(await getStampedSubscriptionId(userId, newCopy)).toBe(survivor!.id);
+    });
+
     it("drops stale tags from a reactivated survivor", async () => {
       const userId = await createTestUser();
       const { oldFeedId, newFeedId } = await createFeedPair();

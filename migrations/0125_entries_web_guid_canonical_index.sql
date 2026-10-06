@@ -17,5 +17,8 @@ CREATE INDEX IF NOT EXISTS idx_entries_web_guid_canonical
 CREATE STATISTICS IF NOT EXISTS entries_guid_canonical_stats
   ON (regexp_replace(guid, '^https?://', 'https://')) FROM entries;
 --> statement-breakpoint
--- Build the statistics now rather than at the next autoanalyze.
-ANALYZE entries;
+-- Build the statistics now rather than at the next autoanalyze. Restricted to
+-- guid: it still builds the expression statistics, and a full ANALYZE would
+-- detoast every sampled search_vector while the index build's lock blocks
+-- feed writes.
+ANALYZE entries (guid);

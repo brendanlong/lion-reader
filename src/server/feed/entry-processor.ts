@@ -527,7 +527,8 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   //    with the same GUID from one of their previous feeds (redirect
   //    deduplication). "Previous feeds" = entries already attributed to this
   //    subscription (user_entries.subscription_id) under a different feed_id
-  //    — merge-history attribution stamped by the feed-merge job. GUIDs are
+  //    — re-stamped by `mergeSubscriptionIntoFeed` when the fetch-feed
+  //    handler moves subscriptions off a redirected feed. GUIDs are
   //    compared scheme-insensitively (see guid-identity.ts): a feed that moved
   //    to https often re-spells its guids at the same time.
   //    The check starts from the entry's twins in other feeds, found through
