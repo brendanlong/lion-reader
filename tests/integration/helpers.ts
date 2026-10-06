@@ -17,7 +17,7 @@
  * `afterAll` (deleting a user cascades to its subscriptions and user_entries).
  */
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -98,7 +98,10 @@ export async function createTestFeed(
 // Subscriptions
 // ============================================================================
 
-/** Subscribes `userId` to `feedId`. Returns the subscription id. */
+/**
+ * Subscribes `userId` to `feedId`, with the feed's type unless overridden.
+ * Returns the subscription id.
+ */
 export async function createTestSubscription(
   userId: string,
   feedId: string,
@@ -110,6 +113,7 @@ export async function createTestSubscription(
     id: subscriptionId,
     userId,
     feedId,
+    type: sql`(SELECT ${feeds.type} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`,
     subscribedAt: now,
     createdAt: now,
     updatedAt: now,

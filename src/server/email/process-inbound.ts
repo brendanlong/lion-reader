@@ -323,6 +323,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       id: subscriptionId,
       userId,
       feedId: feed.id,
+      type: "email",
       subscribedAt: now,
       createdAt: now,
       updatedAt: now,

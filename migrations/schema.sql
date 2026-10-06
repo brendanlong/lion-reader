@@ -200,8 +200,7 @@ BEGIN
       COALESCE(sum(s.starred_unread_count) FILTER (WHERE s.unsubscribed_at IS NOT NULL), 0)::int
         AS starred_inactive
     FROM subscriptions s
-    JOIN feeds fd ON fd.id = s.feed_id AND fd.type <> 'collection'
-    WHERE s.user_id = p_user
+    WHERE s.user_id = p_user AND s.type <> 'collection'
   ) f,
   (
     SELECT
@@ -230,7 +229,7 @@ BEGIN
     SELECT st.tag_id, sum(s.unread_count)::int AS n
     FROM subscription_tags st
     JOIN subscriptions s ON s.id = st.subscription_id AND s.unsubscribed_at IS NULL
-    JOIN feeds fd ON fd.id = s.feed_id AND fd.type <> 'collection'
+      AND s.type <> 'collection'
     WHERE s.user_id = p_user
     GROUP BY st.tag_id
   ) f ON f.tag_id = t2.id
@@ -288,6 +287,15 @@ BEGIN
   FROM removed r
   WHERE ue.user_id = r.user_id AND ue.entry_id = r.entry_id;
   RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.subscriptions_fill_type() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  SELECT f.type INTO NEW.type FROM feeds f WHERE f.id = NEW.feed_id;
+  RETURN NEW;
 END;
 $$;
 
@@ -843,7 +851,8 @@ CREATE TABLE public.subscriptions (
     fetch_full_content boolean DEFAULT false NOT NULL,
     unread_count integer DEFAULT 0 NOT NULL,
     starred_unread_count integer DEFAULT 0 NOT NULL,
-    greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL
+    greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
+    type public.feed_type NOT NULL
 );
 
 CREATE TABLE public.tags (
@@ -887,7 +896,7 @@ CREATE VIEW public.user_feeds AS
     s.feed_id,
     s.custom_title,
     s.fetch_full_content,
-    f.type,
+    s.type,
     COALESCE(s.custom_title, f.title) AS title,
     f.title AS original_title,
     f.url,
@@ -1284,6 +1293,8 @@ CREATE TRIGGER subscription_tags_recompute_lists_delete_trigger AFTER DELETE ON 
 CREATE TRIGGER subscription_tags_recompute_lists_insert_trigger AFTER INSERT ON public.subscription_tags REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_tags_recompute_lists();
 
 CREATE TRIGGER subscriptions_empty_unsubscribed_collection_trigger AFTER UPDATE OF unsubscribed_at ON public.subscriptions FOR EACH ROW WHEN (((old.unsubscribed_at IS NULL) AND (new.unsubscribed_at IS NOT NULL))) EXECUTE FUNCTION public.subscriptions_empty_unsubscribed_collection();
+
+CREATE TRIGGER subscriptions_fill_type_trigger BEFORE INSERT ON public.subscriptions FOR EACH ROW WHEN ((new.type IS NULL)) EXECUTE FUNCTION public.subscriptions_fill_type();
 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 

@@ -138,6 +138,7 @@ async function seed() {
     id: generateUuidv7(),
     userId: user.id,
     feedId: feed.id,
+    type: feed.type,
     subscribedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Subscribed 7 days ago
   }));
 

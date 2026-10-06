@@ -12,6 +12,7 @@ import { eq, and, isNull, sql, count } from "drizzle-orm";
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
 import { feeds, subscriptions, entries } from "@/server/db/schema";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
+import { isWebSubscription } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Constants
@@ -99,7 +100,7 @@ export const feedStatsRouter = createTRPCRouter({
       const conditions = [
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        eq(feeds.type, "web"),
+        isWebSubscription(),
       ];
 
       const resolvedTitle = sql<string>`COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${feeds.url}, '')`;

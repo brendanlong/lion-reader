@@ -739,6 +739,9 @@ export const subscriptions = pgTable(
     feedId: uuid("feed_id")
       .notNull()
       .references(() => feeds.id, { onDelete: "cascade" }),
+    // Never changes after insert. A BEFORE INSERT trigger fills it from the
+    // feed when an insert omits it (the previous release's inserts; #1846).
+    type: feedTypeEnum("type").notNull(),
 
     customTitle: text("custom_title"), // user's override for feed title
     fetchFullContent: boolean("fetch_full_content").notNull().default(false), // fetch full article from URL
@@ -924,7 +927,7 @@ export const entryTombstones = pgTable(
  * scoping checks must query the subscriptions table directly.
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
- * (most recently redefined in 0093_user_feeds_unread_count.sql).
+ * (most recently redefined in 0127_subscriptions_type.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const userFeeds = pgView("user_feeds", {

@@ -77,8 +77,7 @@ async function one<T>(db: ClientBase, sql: string): Promise<T> {
 }
 
 /** `isCollectionSubscription()` (services/subscriptions.ts) over the unaliased `subscriptions`. */
-const IS_COLLECTION =
-  "EXISTS (SELECT 1 FROM feeds WHERE feeds.id = subscriptions.feed_id AND feeds.type = 'collection')";
+const IS_COLLECTION = "subscriptions.type = 'collection'";
 
 /** `entryListSelectFields` + `entryFeedTitleSql()` (services/entries.ts, entry-filters.ts). */
 const LIST_COLUMNS = `ve.id, ve.greader_item_id, ve.subscription_greader_stream_id, feeds.greader_stream_id,
@@ -1208,8 +1207,8 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.unsubscribed_at IS NULL
           },
           {
             label: "upsert_subscription",
-            sql: `INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at, fetch_full_content)
-VALUES (${q(newSub)}, ${q(U0)}, ${q(feedId)}, ${now}, ${now}, ${now}, false)
+            sql: `INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at, fetch_full_content)
+VALUES (${q(newSub)}, ${q(U0)}, ${q(feedId)}, 'web', ${now}, ${now}, ${now}, false)
 ON CONFLICT (user_id, feed_id) DO UPDATE SET unsubscribed_at = NULL, subscribed_at = ${now}, updated_at = ${now}
 WHERE subscriptions.unsubscribed_at IS NOT NULL
 RETURNING id, subscribed_at, custom_title, fetch_full_content`,
@@ -1353,8 +1352,8 @@ FOR UPDATE`,
           },
           {
             label: "upsert_survivor",
-            sql: `INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at, custom_title, fetch_full_content)
-VALUES (${q(survivor)}, ${q(U0)}, ${q(newFeed)}, ${now}, ${now}, ${now}, ${q(old.custom_title)}, false)
+            sql: `INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at, custom_title, fetch_full_content)
+VALUES (${q(survivor)}, ${q(U0)}, ${q(newFeed)}, 'web', ${now}, ${now}, ${now}, ${q(old.custom_title)}, false)
 ON CONFLICT (user_id, feed_id) DO UPDATE SET
   unsubscribed_at = NULL, subscribed_at = EXCLUDED.subscribed_at, updated_at = EXCLUDED.updated_at,
   custom_title = EXCLUDED.custom_title, fetch_full_content = EXCLUDED.fetch_full_content

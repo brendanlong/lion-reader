@@ -70,26 +70,14 @@ export interface Subscription {
 // Helper Functions
 // ============================================================================
 
-/**
- * Matches `subscriptions` rows whose feed has the given type. It correlates
- * with the unaliased `subscriptions` table of the enclosing query, so no join
- * is needed.
- */
-function isSubscriptionOfType(type: FeedType): SQL {
-  return sql`EXISTS (SELECT 1 FROM ${feeds} WHERE ${feeds.id} = ${subscriptions.feedId} AND ${feeds.type} = ${type})`;
-}
-
-/** Matches `subscriptions` rows that are collections (see isSubscriptionOfType). */
+/** Matches `subscriptions` rows that are collections. */
 export function isCollectionSubscription(): SQL {
-  return isSubscriptionOfType("collection");
+  return eq(subscriptions.type, "collection");
 }
 
-/**
- * Matches `subscriptions` rows to web feeds, the only feeds shared between
- * users (see isSubscriptionOfType).
- */
+/** Matches `subscriptions` rows to web feeds, the only feeds shared between users. */
 export function isWebSubscription(): SQL {
-  return isSubscriptionOfType("web");
+  return eq(subscriptions.type, "web");
 }
 
 /**
@@ -661,8 +649,8 @@ export async function createSubscription(
       custom_title: string | null;
       fetch_full_content: boolean;
     }>(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at, fetch_full_content)
-      VALUES (${newSubscriptionId}, ${userId}, ${feedId}, ${subscribedAt}, ${subscribedAt}, ${subscribedAt}, ${defaultFullContent})
+      INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at, fetch_full_content)
+      VALUES (${newSubscriptionId}, ${userId}, ${feedId}, 'web', ${subscribedAt}, ${subscribedAt}, ${subscribedAt}, ${defaultFullContent})
       ON CONFLICT (user_id, feed_id) DO UPDATE SET
         unsubscribed_at = NULL,
         subscribed_at = ${subscribedAt},
@@ -1060,8 +1048,8 @@ export async function mergeSubscriptionIntoFeed(
     // Insert or reactivate the survivor. An already-active survivor keeps its
     // own settings; the ON CONFLICT row lock holds it for this transaction.
     const upserted = await tx.execute<{ id: string }>(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id, subscribed_at, created_at, updated_at, custom_title, fetch_full_content)
-      VALUES (${generateUuidv7()}, ${userId}, ${newFeed.id}, ${now}, ${now}, ${now}, ${old.customTitle}, ${old.fetchFullContent || defaultFullContent})
+      INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at, custom_title, fetch_full_content)
+      VALUES (${generateUuidv7()}, ${userId}, ${newFeed.id}, 'web', ${now}, ${now}, ${now}, ${old.customTitle}, ${old.fetchFullContent || defaultFullContent})
       ON CONFLICT (user_id, feed_id) DO UPDATE SET
         unsubscribed_at = NULL,
         subscribed_at = EXCLUDED.subscribed_at,
