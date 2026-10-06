@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -73,6 +74,7 @@ import org.json.JSONObject
 @Composable
 fun ReaderWebView(
     document: String,
+    position: ReadingPosition,
     modifier: Modifier = Modifier,
     narration: ReaderNarration = ReaderNarration(),
     paging: ReaderPaging = ReaderPaging(),
@@ -145,10 +147,12 @@ fun ReaderWebView(
                 update = { view ->
                     // It mustn't be used any more; a new one is on its way.
                     if (view.rendererLost) return@AndroidView
+                    view.position = position
                     if (view.tag != document) {
                         view.tag = document
                         view.sideScrollers = emptyList()
                         view.pageReady = false
+                        view.restoring = true
                         view.loadDataWithBaseURL(
                             "$ASSET_ORIGIN/",
                             document,
@@ -166,6 +170,18 @@ fun ReaderWebView(
             )
         }
         linkPress?.let { LinkMenu(it) { linkPress = null } }
+    }
+}
+
+/**
+ * How far down the article the reader is ([fraction] of its height), kept outside the WebView,
+ * which can be replaced (the system reclaims renderers of apps in the background) or reload (text
+ * size, the summary), so the page comes back there rather than to the top.
+ */
+class ReadingPosition(var fraction: Float = 0f) {
+    companion object {
+        val Saver: Saver<ReadingPosition, Float> =
+            Saver(save = { it.fraction }, restore = { ReadingPosition(it) })
     }
 }
 
@@ -292,6 +308,13 @@ private class ReaderView(context: Context) : WebView(context) {
     var pageReady = false
     /** Its renderer is gone, so it can only be destroyed. */
     var rendererLost = false
+    var position = ReadingPosition()
+
+    /**
+     * Until the page has loaded and gone back to [position], or the reader takes over (a touch, a
+     * page turn), its scrolling isn't the reader's.
+     */
+    var restoring = true
     private var wanted: Int? = null
     private var shown: Int? = null
     private var scroll = true
@@ -319,6 +342,25 @@ private class ReaderView(context: Context) : WebView(context) {
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         scrolledTo = t
+        val range = computeVerticalScrollRange()
+        if (!restoring && !rendererLost && range > 0) position.fraction = t.toFloat() / range
+    }
+
+    /**
+     * Once everything in the page (images included) is laid out, so for an unchanged article the
+     * place is exactly where it was. Checked in the page, as a load this one replaced can report
+     * finishing too.
+     */
+    fun onLoaded() {
+        if (!restoring || rendererLost) return
+        evaluateJavascript(
+            "(function () {" +
+                " if (document.readyState !== 'complete') return false;" +
+                " window.scrollTo(0, ${position.fraction} * document.documentElement.scrollHeight);" +
+                " return true; })()"
+        ) { done ->
+            if (done == "true") restoring = false
+        }
     }
 
     init {
@@ -368,7 +410,9 @@ private class ReaderView(context: Context) : WebView(context) {
                 narration.onParagraphs(List(paragraphs.length()) { paragraphs.getString(it) })
                 pageReady = true
                 shown = null
-                highlight(wanted, scroll)
+                // The reader's place wins over paused narration's; playing, the next paragraph
+                // scrolls to it.
+                highlight(wanted, scroll && position.fraction == 0f)
             }
             "seek" -> narration.onSeek(message.optInt("paragraph"))
         }
@@ -455,6 +499,7 @@ private class ReaderView(context: Context) : WebView(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                restoring = false
                 pointerId = event.getPointerId(0)
                 downX = event.x
                 downY = event.y
@@ -511,6 +556,7 @@ private class ReaderView(context: Context) : WebView(context) {
      */
     fun turnPage(direction: Int): Boolean {
         if (height == 0 || rendererLost) return false
+        restoring = false
         val bottom = (computeVerticalScrollRange() - height).coerceAtLeast(0)
         val step = (height * PAGE_FRACTION).toInt()
         scrollTo(scrollX, (scrollY + direction * step).coerceIn(0, bottom))
@@ -582,6 +628,10 @@ private class ReaderWebViewClient(
         view: WebView,
         request: WebResourceRequest,
     ): WebResourceResponse? = assets.shouldInterceptRequest(request.url)
+
+    override fun onPageFinished(view: WebView, url: String?) {
+        (view as? ReaderView)?.onLoaded()
+    }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val url = request.url

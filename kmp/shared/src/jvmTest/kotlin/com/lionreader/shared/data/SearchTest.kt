@@ -140,6 +140,8 @@ class SearchTest {
         assertEquals(emptyList(), search("before"))
         assertEquals(listOf("a"), search("after"))
         assertEquals(listOf("a"), search("rewritten"))
+        // The old body's words, replaced in place.
+        assertEquals(emptyList(), search("nothing"))
         assertEquals(emptyList(), search("doomed"))
     }
 

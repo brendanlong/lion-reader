@@ -48,8 +48,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
   Allow-listed embeds run only in their sandboxed cross-origin frames. No file or
   content access; the one message channel is limited to the asset origin's main
   frame, the app reads only layout, narration text and taps from it, and calls
-  back only `lionNarration.highlight(number|null, boolean)` and
-  `lionNarration.selectedParagraph()` (read as an integer or null). Every
+  back only `lionNarration.highlight(number|null, boolean)`,
+  `lionNarration.selectedParagraph()` (read as an integer or null) and
+  `window.scrollTo` with numbers of its own. Every
   navigation leaves for the browser. Header text (title, byline) enters only via
   `escapeHtml`, and the title links to the entry only when it's http(s) (`webUrl`,
   which also gates the link menu, Open original and Share). Loosening any of this

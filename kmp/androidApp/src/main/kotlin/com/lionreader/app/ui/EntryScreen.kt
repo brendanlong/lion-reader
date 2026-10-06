@@ -69,6 +69,7 @@ import com.lionreader.app.reader.ASSET_ORIGIN
 import com.lionreader.app.reader.ReaderNarration
 import com.lionreader.app.reader.ReaderPaging
 import com.lionreader.app.reader.ReaderWebView
+import com.lionreader.app.reader.ReadingPosition
 import com.lionreader.app.reader.appearanceTokens
 import com.lionreader.app.reader.pagerViewConfiguration
 import com.lionreader.app.shareWebPage
@@ -431,7 +432,9 @@ private fun EntryPage(
     val context = LocalContext.current
     val article by
         remember(entryId) { account.reader.article(entryId) }.collectAsStateWithLifecycle(null)
-    val entry = (article as? ArticleState.Shown)?.entry
+    val entry = rememberShownArticle(entryId, (article as? ArticleState.Shown)?.entry)
+    // Up here, so it outlasts the page showing no article for a while (e.g. a fresh sync).
+    val position = rememberSaveable(entryId, saver = ReadingPosition.Saver) { ReadingPosition() }
     // Null once it's gone (e.g. deleted) or can't be read, and when the page
     // leaves: the top bar shows only what's on a page now.
     LaunchedEffect(entry) { onEntry(entryId, entry) }
@@ -494,6 +497,7 @@ private fun EntryPage(
             }
         ReaderWebView(
             document,
+            position,
             Modifier.fillMaxSize(),
             narration,
             ReaderPaging(
@@ -561,6 +565,31 @@ private fun SummaryButton(
             )
         }
     }
+}
+
+/**
+ * The article as the page first showed its body: an edit, and the new body it brings, wait for the
+ * next visit rather than reloading what's being read. Read and starred stay live, and a summary
+ * arriving where there was none shows; one going (its body replaced in the background) stays.
+ * Remembered, not saved: recreating the activity shows the article as it is then.
+ */
+@Composable
+internal fun rememberShownArticle(entryId: String, latest: EntryDetail?): EntryDetail? {
+    val shown = remember(entryId) { arrayOfNulls<EntryDetail>(1) }
+    if (latest == null) return null
+    val first = shown[0]
+    val current =
+        if (first == null || first.content.isNullOrEmpty()) {
+            latest
+        } else {
+            first.copy(
+                read = latest.read,
+                starred = latest.starred,
+                summary = first.summary ?: latest.summary,
+            )
+        }
+    shown[0] = current
+    return current
 }
 
 /** Whether the page's body download failed, and a way to try it again. */

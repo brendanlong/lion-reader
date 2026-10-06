@@ -39,8 +39,9 @@ internal class PulledPage(
  *
  * Table ownership: `entry` state and metadata, collection membership, subscriptions, tags and
  * cursors are written here under the sync lock; bodies only by [storeBodies] and summaries only by
- * [storeSummary] (both outside the lock, version-guarded, and deleted here with their entry); the
- * outbox by `Reader` (and cleared here once sent).
+ * [storeSummary] and, when the body they summarized is replaced, [storeBodies] (outside the lock,
+ * version-guarded, and deleted here with their entry); the outbox by `Reader` (and cleared here
+ * once sent).
  */
 internal class SyncWriter(private val db: LionReaderDatabase) {
     private val store = LocalStore(db)
@@ -146,11 +147,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 entry.readChangedAt,
             )
             // The fetched body is current: it replaces the old one and wins
-            // over any download already in flight. A summary goes unless the
-            // body is the one it summarized.
-            if (db.bodyQueries.matches(entry.id, entry.displayContent ?: "").executeAsOne() == 0L) {
-                db.summaryQueries.deleteForEntry(entry.id)
-            }
+            // over any download already in flight.
             db.entryQueries.bumpBodyVersion(entry.id)
         }
         val versions = page.fetchedEntries.associate { it.id to (bodyVersion(it.id) ?: 0L) }
@@ -197,11 +194,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         published,
                         event.entryId,
                     )
-                    // The body may have changed too; download it again, and
-                    // reject any download that started before now. A summary
-                    // of the old text goes with it.
-                    db.bodyQueries.deleteForEntry(event.entryId)
-                    db.summaryQueries.deleteForEntry(event.entryId)
+                    // The body may have changed too: this makes it, and any
+                    // download that started before now, out of date, to
+                    // download again (it stays until then).
                     db.entryQueries.bumpBodyVersion(event.entryId)
                 }
             is SyncEvent.EntryStateChanged -> {
@@ -300,9 +295,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     /**
      * Stores downloaded bodies, and an empty one for each [missing] id (asked for but not returned:
-     * no longer visible) so it isn't requested again — each only if its entry is still at the
-     * [versions] it had when the download started. Never touches `entry`, which is why it's safe
-     * outside the sync lock. Returns the characters stored.
+     * no longer visible) so it isn't requested again, each at the [versions] its entry had when the
+     * download started ([putBody] says which are kept). Never touches `entry`, which is why it's
+     * safe outside the sync lock. Returns how much the stored bodies grew.
      */
     fun storeBodies(
         fetched: List<FullEntry>,
@@ -335,13 +330,35 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
             val text = texts.getValue(entry.id)
             // The search index's copy of the text counts against the budget too.
             val size = (content.length + text.length).toLong()
-            db.bodyQueries.putIfCurrent(entry.id, content, size, now, text, version)
-            stored += size
+            stored += putBody(entry.id, content, size, text, version, now)
         }
-        missing.forEach { id ->
-            versions[id]?.let { db.bodyQueries.putIfCurrent(id, "", 0, now, "", it) }
-        }
+        missing.forEach { id -> versions[id]?.let { stored += putBody(id, "", 0, "", it, now) } }
         return stored
+    }
+
+    /**
+     * Stores a body downloaded at [version] in place of an older one, never a newer one (versions
+     * only grow), while the entry is on the device; how much that grew the stored bodies. One an
+     * edit overtook mid-download is still stored, out of date, rather than leaving the article
+     * without a body: the background download replaces it. A summary goes when the body it
+     * summarized is replaced by a different one.
+     */
+    private fun putBody(
+        entryId: String,
+        content: String,
+        size: Long,
+        searchText: String,
+        version: Long,
+        now: Long,
+    ): Long {
+        if (bodyVersion(entryId) == null) return 0
+        val stored = db.bodyQueries.stored(entryId).executeAsOneOrNull()
+        if (stored != null && stored.body_version >= version) return 0
+        if (db.bodyQueries.matches(entryId, content).executeAsOne() == 0L) {
+            db.summaryQueries.deleteOutdated(entryId, version)
+        }
+        db.bodyQueries.put(entryId, content, size, now, searchText, version)
+        return size - (stored?.size ?: 0)
     }
 
     /** The entry's body version, or null when it isn't on the device. */
@@ -353,6 +370,12 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     /** Entries needing a body, with the body version to download them at. */
     fun missingBodies(limit: Long): Map<String, Long> =
         db.entryQueries.selectMissingContent(limit).executeAsList().associate {
+            it.id to it.body_version
+        }
+
+    /** Entries whose body an edit made out of date, with the body version to download them at. */
+    fun outdatedBodies(limit: Long): Map<String, Long> =
+        db.entryQueries.selectOutdatedBodies(limit).executeAsList().associate {
             it.id to it.body_version
         }
 

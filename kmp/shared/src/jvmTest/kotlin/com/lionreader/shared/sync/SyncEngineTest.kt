@@ -284,10 +284,42 @@ class SyncEngineTest {
     }
 
     @Test
-    fun anUpdatedEntryIsDownloadedAgain() = runTest {
+    fun anEditLeavesTheOldBodyInPlace() = runTest {
         serve(entry("a"))
         engine.sync()
         server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+
+        engine.sync(downloadContent = false)
+
+        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
+    }
+
+    @Test
+    fun outdatedBodiesAreReplacedPastTheContentBudget() = runTest {
+        serve(entry("a"))
+        engine.sync()
+        // Full, with the one body (and its search text).
+        policy = RetentionPolicy(contentBudgetBytes = ("<p>Body a</p>" + "Body a").length.toLong())
+        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Body A</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+
+        engine.sync()
+
+        assertEquals("<p>Body A</p>", reader.entry("a").first()?.content)
+    }
+
+    @Test
+    fun aReadEntrysOutdatedBodyIsDownloadedAgainInTheBackground() = runTest {
+        // Read entries' bodies aren't downloaded in the background; this one was opened.
+        serve(entry("a", read = true))
+        engine.sync()
+        engine.ensureContent("a")
+        server.entries["a"] = entry("a", read = true).copy(contentCleaned = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -391,23 +423,24 @@ class SyncEngineTest {
     }
 
     @Test
-    fun aDownloadStartedBeforeAResyncIsNotStored() = runTest {
+    fun aDownloadAnEditOvertakesIsKeptUntilTheNewBodyReplacesIt() = runTest {
         serve(entry("a"))
         engine.sync(downloadContent = false)
 
-        // While the body is downloading, the entry is edited and a resync
-        // deletes and re-adds it. The download's answer predates the edit.
-        var batches = 0
+        // Opening it: the entry is edited while its body downloads, so the
+        // download's answer is of the old text.
         server.duringBatch = {
-            serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
-            if (++batches == 1) {
-                server.queueChanges(resyncRequired = true)
-                engine.sync(downloadContent = false)
-                serve(entry("a"))
-            }
+            server.duringBatch = null
+            server.queueChanges(
+                events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Edited")))
+            )
+            engine.sync(downloadContent = false)
         }
-        engine.ensureContent("a")
+        assertTrue(engine.ensureContent("a"))
+        assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
 
+        serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+        engine.sync()
         assertEquals("<p>Edited</p>", reader.entry("a").first()?.content)
     }
 
@@ -749,12 +782,39 @@ class SyncEngineTest {
         engine.sync()
         assertEquals("<p>Short version</p>", reader.entry("a").first()?.summary)
 
-        // An edit makes the summary stale.
+        // An edit that leaves the body as it was leaves the summary too.
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "New title")))
         )
         engine.sync()
+        assertEquals("<p>Short version</p>", reader.entry("a").first()?.summary)
+
+        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+        engine.sync()
         assertNull(reader.entry("a").first()?.summary)
+    }
+
+    @Test
+    fun aSummaryOfTheEditedTextOutlastsTheOldBody() = runTest {
+        server.subscriptions += subscription("sub-1")
+        serve(entry("a"))
+        engine.sync()
+        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
+        )
+        engine.sync(downloadContent = false)
+
+        // Asked for while the old body is still on screen.
+        server.summaries["a"] = "<p>Of the revision</p>"
+        engine.summarize("a")
+        engine.sync()
+
+        assertEquals("<p>Revised</p>", reader.entry("a").first()?.content)
+        assertEquals("<p>Of the revision</p>", reader.entry("a").first()?.summary)
     }
 
     @Test

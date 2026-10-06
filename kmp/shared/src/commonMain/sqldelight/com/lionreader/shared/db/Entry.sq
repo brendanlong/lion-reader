@@ -23,7 +23,8 @@ CREATE TABLE entry (
   last_opened_at INTEGER,
   -- From body_version_seq: new on insert and whenever the server reports the
   -- entry edited, so a body downloaded before an edit, or before the entry
-    -- was deleted and added again, can't be stored after it (see Body.sq).
+  -- was deleted and added again, is out of date and never replaces a newer
+  -- one (SyncWriter.putBody).
   body_version INTEGER NOT NULL,
   -- When read state last changed, as the server last reported it (Recently
   -- Read's order); null if it never has. Last, as the migration adds it (1.sqm).
@@ -199,6 +200,14 @@ WHERE id NOT IN (SELECT entry_id FROM entry_body)
   AND (effective_read = 0 OR effective_starred = 1 OR type = 'saved'
     OR id IN (SELECT entry_id FROM collection_entry))
 ORDER BY sort_at DESC, id DESC
+LIMIT ?;
+
+-- Entries whose body an edit made out of date, newest first.
+selectOutdatedBodies:
+SELECT e.id, e.body_version FROM entry e
+JOIN entry_body b ON b.entry_id = e.id
+WHERE b.body_version < e.body_version
+ORDER BY e.sort_at DESC, e.id DESC
 LIMIT ?;
 
 unreadIdsInScope:
