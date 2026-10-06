@@ -45,6 +45,16 @@ export function clientErrorResponse(error: unknown): Response | null {
   return errorResponse(error.code, error.message, status);
 }
 
+/** Splits a Wallabag `tags` parameter ("a,b, c") into its labels. */
+export function parseTagLabels(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const labels = raw
+    .split(",")
+    .map((label) => label.trim())
+    .filter((label) => label.length > 0);
+  return [...new Map(labels.map((label) => [label.toLowerCase(), label])).values()];
+}
+
 /**
  * Parses query parameters for entry listing.
  */
@@ -70,12 +80,7 @@ export function parseEntryListParams(url: URL): {
     order: (params.get("order") as "asc" | "desc") ?? "desc",
     page: Math.max(1, parseInt(params.get("page") ?? "1", 10) || 1),
     perPage: Math.min(Math.max(1, parseInt(params.get("perPage") ?? "30", 10) || 30), 100),
-    tags: params.get("tags")
-      ? params
-          .get("tags")!
-          .split(",")
-          .map((t) => t.trim())
-      : [],
+    tags: parseTagLabels(params.get("tags")),
     since: params.has("since") ? parseInt(params.get("since")!, 10) || undefined : undefined,
     public: params.has("public") ? params.get("public") === "1" : undefined,
     detail: (params.get("detail") as "metadata" | "full") ?? "full",

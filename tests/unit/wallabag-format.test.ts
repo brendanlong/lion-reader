@@ -3,7 +3,8 @@
  *
  * Wallabag integer ids are stored serials (issue #1117): entry ids expose
  * `entries.greader_item_id` (via `EntryListItem`/`EntryFull.greaderItemId`, or
- * passed explicitly for saved articles), tag ids expose `tags.greader_sortid`.
+ * passed explicitly for saved articles), tag ids expose a collection's
+ * `subscriptions.greader_stream_id`.
  * These tests pin the serial → JSON-number mapping that replaced the old
  * 31-bit UUID-hash ids.
  */
@@ -13,7 +14,7 @@ import {
   formatEntryFull,
   formatEntryListItem,
   formatSavedArticle,
-  formatTags,
+  formatTag,
 } from "../../src/server/wallabag/format";
 import type { EntryFull, EntryListItem } from "../../src/server/services/entries";
 import type { SavedArticle } from "../../src/server/services/saved";
@@ -44,7 +45,7 @@ function makeListItem(overrides: Partial<EntryListItem> = {}): EntryListItem {
 
 describe("formatEntryListItem", () => {
   it("exposes the entry's stored serial as the Wallabag id", () => {
-    const formatted = formatEntryListItem(makeListItem({ greaderItemId: BigInt(31337) }));
+    const formatted = formatEntryListItem(makeListItem({ greaderItemId: BigInt(31337) }), []);
 
     expect(formatted.id).toBe(31337);
     expect(typeof formatted.id).toBe("number");
@@ -54,7 +55,7 @@ describe("formatEntryListItem", () => {
   });
 
   it("produces JSON-serializable output (no bigint leaks)", () => {
-    expect(() => JSON.stringify(formatEntryListItem(makeListItem()))).not.toThrow();
+    expect(() => JSON.stringify(formatEntryListItem(makeListItem(), []))).not.toThrow();
   });
 });
 
@@ -74,7 +75,7 @@ describe("formatSavedArticle", () => {
       savedAt: new Date("2026-01-01T00:00:00Z"),
     };
 
-    const formatted = formatSavedArticle(article, 123);
+    const formatted = formatSavedArticle(article, 123, []);
 
     expect(formatted.id).toBe(123);
     expect(formatted.uid).toBe(article.id);
@@ -82,17 +83,11 @@ describe("formatSavedArticle", () => {
   });
 });
 
-describe("formatTags", () => {
-  it("exposes each tag's stored sortid serial as its Wallabag id", () => {
-    const formatted = formatTags([
-      { name: "Tech News", greaderSortid: BigInt(11) },
-      { name: "cooking", greaderSortid: BigInt(12) },
-    ]);
+describe("formatTag", () => {
+  it("exposes the stored serial as a JSON number and slugs the label", () => {
+    const formatted = formatTag({ id: BigInt(11), label: "Tech News" });
 
-    expect(formatted).toEqual([
-      { id: 11, label: "Tech News", slug: "tech-news" },
-      { id: 12, label: "cooking", slug: "cooking" },
-    ]);
+    expect(formatted).toEqual({ id: 11, label: "Tech News", slug: "tech-news" });
     expect(() => JSON.stringify(formatted)).not.toThrow();
   });
 });
@@ -128,7 +123,7 @@ function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
 describe("formatEntryFull", () => {
   // Issue #1787: clients got the feed teaser when the full article was fetched.
   it("serves the fetched full article over the feed content", () => {
-    expect(formatEntryFull(makeFullEntry({ fullContent: "<p>full</p>" })).content).toBe(
+    expect(formatEntryFull(makeFullEntry({ fullContent: "<p>full</p>" }), []).content).toBe(
       "<p>full</p>"
     );
   });

@@ -13,8 +13,7 @@
  * - order: asc|desc - sort order (default: desc)
  * - page: number - page number (default: 1)
  * - perPage: number - items per page (default: 30, max: 100)
- * - tags: string - comma-separated tag names (unsupported: saved articles carry
- *   no tags, so any tag filter returns an empty result rather than being ignored)
+ * - tags: string - comma-separated tag labels; entries carrying all of them
  * - since: number - unix timestamp, return entries modified since
  * - domain_name: string - filter by domain (unsupported: matching it would mean a
  *   per-row regex over the URL with no index, so any domain filter returns empty)
@@ -23,7 +22,7 @@
  * POST body:
  * - url: string (required) - URL to save
  * - title: string - optional title override
- * - tags: string - comma-separated tags
+ * - tags: string - comma-separated tag labels to add, creating missing tags
  * - archive: 0|1 - mark as archived (read)
  * - starred: 0|1 - mark as starred
  * - content: string - optional content override
@@ -37,6 +36,7 @@ import {
   clientErrorResponse,
   parseEntryListParams,
   parseBody,
+  parseTagLabels,
 } from "@/server/wallabag/parse";
 import { getAppErrorCode } from "@/server/trpc/errors";
 import {
@@ -48,6 +48,8 @@ import {
 import * as entriesService from "@/server/services/entries";
 import * as savedService from "@/server/services/saved";
 import { entryIdToWallabagId } from "@/server/wallabag/id";
+import { addEntryTags, collectionIdGroupsForLabels, listEntryTags } from "@/server/wallabag/tags";
+import { logger } from "@/lib/logger";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -59,15 +61,23 @@ export async function GET(request: Request): Promise<Response> {
   const params = parseEntryListParams(url);
   const baseUrl = `${url.origin}/api/wallabag/api/entries`;
 
-  // Two filters we deliberately don't support, each answered with an empty result
-  // rather than a silently-unfiltered list (issue #1062):
-  //  - `tags`: Lion Reader tags are per-subscription, and saved articles (the
-  //    Wallabag surface) have no subscription, so nothing can carry a tag.
-  //  - `domain_name`: matching a domain means a per-row regex over the entry URL
-  //    with no index — a potential per-user table scan (DB CPU is expensive), and
-  //    not worth it for a rarely-used compat knob (issue #1070 has the analysis).
-  if (params.tags.length > 0 || params.domainName) {
-    return jsonResponse(createPaginatedResponse([], params.page, params.perPage, 0, baseUrl));
+  const empty = (): Response =>
+    jsonResponse(createPaginatedResponse([], params.page, params.perPage, 0, baseUrl));
+
+  // `domain_name` is deliberately unsupported, answered with an empty result rather
+  // than a silently-unfiltered list (issue #1062): matching a domain means a per-row
+  // regex over the entry URL with no index — a potential per-user table scan (DB CPU
+  // is expensive), and not worth it for a rarely-used compat knob (issue #1070).
+  if (params.domainName) {
+    return empty();
+  }
+
+  const collectionIdGroups =
+    params.tags.length > 0
+      ? await collectionIdGroupsForLabels(db, auth.userId, params.tags)
+      : undefined;
+  if (collectionIdGroups === null) {
+    return empty();
   }
 
   // Scope to saved articles only — the Wallabag API is a read-it-later interface.
@@ -85,6 +95,7 @@ export async function GET(request: Request): Promise<Response> {
     // updatedAfter filters on GREATEST(entry.updated_at, user_entries.updated_at),
     // which captures all three, so this is correct (not a lossy save-time proxy).
     updatedAfter: params.since ? new Date(params.since * 1000) : undefined,
+    collectionIdGroups,
   };
 
   // Wallabag `sort` field → listEntries sort column. `created` (default) is our
@@ -110,21 +121,17 @@ export async function GET(request: Request): Promise<Response> {
   ]);
 
   // If detail is "full", fetch full content in a single bulk query
-  let formattedItems;
-  if (params.detail === "full") {
-    const fullEntries = await entriesService.getEntries(
-      db,
-      auth.userId,
-      result.items.map((e) => e.id)
-    );
-    const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
-    formattedItems = result.items.map((entry) => {
-      const full = fullMap.get(entry.id);
-      return full ? formatEntryFull(full) : formatEntryListItem(entry);
-    });
-  } else {
-    formattedItems = result.items.map(formatEntryListItem);
-  }
+  const entryIds = result.items.map((e) => e.id);
+  const [fullEntries, tagsByEntry] = await Promise.all([
+    params.detail === "full" ? entriesService.getEntries(db, auth.userId, entryIds) : [],
+    listEntryTags(db, auth.userId, entryIds),
+  ]);
+  const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
+  const formattedItems = result.items.map((entry) => {
+    const full = fullMap.get(entry.id);
+    const tags = tagsByEntry.get(entry.id) ?? [];
+    return full ? formatEntryFull(full, tags) : formatEntryListItem(entry, tags);
+  });
 
   return jsonResponse(
     createPaginatedResponse(formattedItems, params.page, params.perPage, total, baseUrl)
@@ -140,6 +147,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!articleUrl) {
     return errorResponse("invalid_request", "url is required", 400);
   }
+  const tagLabels = parseTagLabels(body.tags);
 
   try {
     // Save the article
@@ -160,16 +168,7 @@ export async function POST(request: Request): Promise<Response> {
       await entriesService.updateEntryStarred(db, auth.userId, article.id, true);
     }
 
-    // SavedArticle doesn't carry the entry serial (it's also returned by
-    // MCP save_article, which must stay bigint-free), so look it up — a
-    // user-scoped seek on the entry we just saved.
-    const wallabagId = await entryIdToWallabagId(db, auth.userId, article.id);
-    if (wallabagId === null) {
-      // Only possible if the entry was deleted between the save and this seek.
-      return errorResponse("not_found", "Entry not found", 404);
-    }
-
-    return jsonResponse(formatSavedArticle(article, wallabagId));
+    return await savedArticleResponse(auth.userId, article, tagLabels);
   } catch (error) {
     // The Wallabag Android app's offline save queue only advances an item on a
     // 2xx response; any error keeps it queued, retried forever, AND halts every
@@ -192,14 +191,43 @@ export async function POST(request: Request): Promise<Response> {
         url: articleUrl,
         reason: describeSaveFailure(error),
       });
-      const wallabagId = await entryIdToWallabagId(db, auth.userId, placeholder.id);
-      if (wallabagId === null) {
-        return errorResponse("not_found", "Entry not found", 404);
-      }
-      return jsonResponse(formatSavedArticle(placeholder, wallabagId));
+      return await savedArticleResponse(auth.userId, placeholder, tagLabels);
     }
     throw error;
   }
+}
+
+/**
+ * Tags the just-saved article and formats it. Tagging is best effort: a failure
+ * here must not fail the save (see the poison-queue note in POST).
+ */
+async function savedArticleResponse(
+  userId: string,
+  article: savedService.SavedArticle,
+  tagLabels: string[]
+): Promise<Response> {
+  try {
+    await addEntryTags(db, userId, article.id, tagLabels);
+  } catch (error) {
+    logger.warn("Wallabag save: skipped adding tags", {
+      component: "wallabag",
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // SavedArticle doesn't carry the entry serial (it's also returned by
+  // MCP save_article, which must stay bigint-free), so look it up — a
+  // user-scoped seek on the entry we just saved.
+  const [wallabagId, tagsByEntry] = await Promise.all([
+    entryIdToWallabagId(db, userId, article.id),
+    listEntryTags(db, userId, [article.id]),
+  ]);
+  if (wallabagId === null) {
+    // Only possible if the entry was deleted between the save and this seek.
+    return errorResponse("not_found", "Entry not found", 404);
+  }
+  return jsonResponse(formatSavedArticle(article, wallabagId, tagsByEntry.get(article.id) ?? []));
 }
 
 /**
