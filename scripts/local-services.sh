@@ -93,9 +93,18 @@ PY
 echo "==> Initializing Postgres cluster ($("$PG_BIN/postgres" --version | awk '{print $3}'))"
 "$PG_BIN/initdb" -D "$PGDATA" -U "$PG_USER" --auth=trust -E UTF8 >/dev/null
 
+# pg_stat_statements lets the database benchmarks (scripts/bench) count the
+# buffers triggers use, which EXPLAIN doesn't attribute; optional if the
+# contrib module isn't installed.
+PG_OPTS="-p $PGPORT -k $PGDATA -c listen_addresses=127.0.0.1"
+PG_LIBDIR="$("$PG_BIN/pg_config" --pkglibdir 2>/dev/null || true)"
+if [[ -n "$PG_LIBDIR" && -f "$PG_LIBDIR/pg_stat_statements.so" ]]; then
+  PG_OPTS="$PG_OPTS -c shared_preload_libraries=pg_stat_statements"
+fi
+
 echo "==> Starting Postgres on 127.0.0.1:$PGPORT"
 "$PG_BIN/pg_ctl" -D "$PGDATA" \
-  -o "-p $PGPORT -k $PGDATA -c listen_addresses=127.0.0.1" \
+  -o "$PG_OPTS" \
   -w -l "$STATE_DIR/postgres.log" start >/dev/null
 
 "$PG_BIN/createdb" -h 127.0.0.1 -p "$PGPORT" -U "$PG_USER" "$DEV_DB"
