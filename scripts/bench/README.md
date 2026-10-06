@@ -44,18 +44,17 @@ lists the indexes and sequentially scanned tables the plans used.
 **ms** and **buffers** are the warm state: a connection that has already run
 the benchmark five times. PL/pgSQL plans a statement for its arguments for its
 first five executions in a session and may then switch to a generic plan,
-which is what the triggers run on production's long-lived pooled connections,
-and the generic plan can be several times slower (an unsubscribe goes from
-~10 ms to ~70 ms). Writes also report **cold ms**: each iteration on a new
-connection, so the triggers still plan per call, plus the cost of filling the
-connection's catalog caches. The warm-up calls are all for U0, the heaviest
-library, and that is what tips the switch: Postgres picks the generic plan
-when it looks no costlier than the custom plans so far, and U0's look costly.
-A connection whose first calls are for light users keeps custom plans (true
-of `recompute_list_counters`: after five light users, U0's call stays at
-~2 ms). So warm is the worst case a production connection can settle into,
-and cold the best. A change that alters which plan the triggers settle on
-shows up as warm and cold moving differently.
+which is what the triggers run on production's long-lived pooled connections.
+Writes also report **cold ms**: each iteration on a new connection, so the
+triggers still plan per call, plus the cost of filling the connection's
+catalog caches. The warm-up calls are all for U0, the heaviest library, and
+that is what tips the switch: Postgres picks the generic plan when it looks no
+costlier than the custom plans so far, and U0's look costly. A connection
+whose first calls are for light users keeps custom plans. So warm is the worst
+case a production connection can settle into, and cold the best. A change
+that alters which plan the triggers settle on shows up as warm and cold moving
+differently. A warm time several times the cold one points at a slow generic
+plan (#1862).
 
 ## Comparing before and after
 

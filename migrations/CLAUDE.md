@@ -4,5 +4,6 @@
 - We use a custom runner (`scripts/migrate.ts`), not drizzle-kit, which isn't installed even though the file format looks like its. Run `pnpm db:migrate` / `pnpm db:migrate:test`.
 - Add every migration to `meta/_journal.json`; only journaled migrations run (a unit test checks every `.sql` file is journaled).
 - Never `CREATE INDEX CONCURRENTLY` in a migration — each runs in a transaction. If production needs a concurrent build, apply it by hand first, then journal a plain `CREATE INDEX IF NOT EXISTS`. Heavy migrations on production: `docs/fly-postgres-ops.md`.
+- `CREATE OR REPLACE FUNCTION` resets every setting the new definition doesn't repeat: copy the function's `SET` lines from `schema.sql`.
 - Test with `pnpm test:integration`.
 - Read @schema.sql and keep it current with `pnpm db:schema`.

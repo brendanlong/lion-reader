@@ -527,9 +527,17 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   //    with the same GUID from one of their previous feeds (redirect
   //    deduplication). "Previous feeds" = entries already attributed to this
   //    subscription (user_entries.subscription_id) under a different feed_id
-  //    — merge-history attribution stamped by the feed-merge job. GUIDs are
+  //    — re-stamped by `mergeSubscriptionIntoFeed` when the fetch-feed
+  //    handler moves subscriptions off a redirected feed. GUIDs are
   //    compared scheme-insensitively (see guid-identity.ts): a feed that moved
   //    to https often re-spells its guids at the same time.
+  //    The check starts from the entry's twins in other feeds, found through
+  //    idx_entries_web_guid_canonical (normally none), then probes the
+  //    subscriber's row by primary key. Starting from the subscription's
+  //    history instead walks every entry it holds, per subscriber and entry
+  //    (#1861). `type = 'web'` lets the partial index serve the lookup and
+  //    drops nothing: only a merge re-stamps a row onto another feed's
+  //    subscription, and only web subscriptions are merged.
   // 3. Uses ON CONFLICT DO NOTHING for idempotency
   // We use db.execute() with raw SQL because Drizzle's INSERT...SELECT always
   // generates column lists for all table columns. Since we only want to insert
@@ -546,12 +554,13 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
         AND e.id = ANY(${entryIdsArray}::uuid[])
         AND NOT EXISTS (
           SELECT 1
-          FROM user_entries ue_existing
-          JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
-          WHERE ue_existing.user_id = s.user_id
-            AND ue_existing.subscription_id = s.id
-            AND e_prev.feed_id != s.feed_id
+          FROM entries e_prev
+          JOIN user_entries ue_existing
+            ON ue_existing.user_id = s.user_id AND ue_existing.entry_id = e_prev.id
+          WHERE e_prev.type = 'web'
             AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
+            AND e_prev.feed_id != s.feed_id
+            AND ue_existing.subscription_id = s.id
         )
       ON CONFLICT DO NOTHING
     `);

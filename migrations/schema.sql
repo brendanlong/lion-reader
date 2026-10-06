@@ -182,6 +182,7 @@ $$;
 
 CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
+    SET plan_cache_mode TO 'force_custom_plan'
     AS $$
 BEGIN
   PERFORM 1 FROM users WHERE id = p_user FOR NO KEY UPDATE;
@@ -1168,6 +1169,8 @@ CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);
 
+CREATE INDEX idx_entries_web_guid_canonical ON public.entries USING btree (regexp_replace(guid, '^https?://'::text, 'https://'::text)) WHERE (type = 'web'::public.feed_type);
+
 CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
 
 CREATE INDEX idx_entry_tombstones_deleted_at ON public.entry_tombstones USING btree (deleted_at);
@@ -1265,6 +1268,8 @@ CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WH
 CREATE UNIQUE INDEX uq_subscriptions_id_user ON public.subscriptions USING btree (id, user_id);
 
 CREATE UNIQUE INDEX uq_tags_user_lower_name ON public.tags USING btree (user_id, lower(name)) WHERE (deleted_at IS NULL);
+
+CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^https?://'::text, 'https://'::text) FROM public.entries;
 
 CREATE TRIGGER collection_entries_counters_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_counters_delete();
 

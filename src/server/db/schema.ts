@@ -635,6 +635,10 @@ export const entries = pgTable(
     // Expression indexes (Drizzle can't express these, created via raw SQL):
     // - uq_entries_feed_guid_canonical: UNIQUE (feed_id, regexp_replace(guid, '^https?://', 'https://'))
     //   WHERE type = 'web'. Enforces src/server/feed/guid-identity.ts at the DB (#1535). Migration 0109.
+    // - idx_entries_web_guid_canonical: (regexp_replace(guid, '^https?://', 'https://')) WHERE type = 'web'
+    //   Finds an entry's twins in other feeds for the redirect-merge dedup (#1861). Migration 0125,
+    //   with the statistics object entries_guid_canonical_stats on the same expression, without
+    //   which the planner doesn't pick it.
     // - idx_entries_published_coalesce: (COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables limit pushdown for "all entries" queries. Migration 0060.
     // - idx_entries_feed_published_coalesce: (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC)

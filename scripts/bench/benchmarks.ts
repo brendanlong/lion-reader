@@ -278,12 +278,13 @@ WHERE e.feed_id = ${q(feedId)}
   AND e.last_seen_at >= f.last_entries_updated_at
   AND NOT EXISTS (
     SELECT 1
-    FROM user_entries ue_existing
-    JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
-    WHERE ue_existing.user_id = ${q(userId)}
-      AND ue_existing.subscription_id = ${q(subscriptionId)}
-      AND e_prev.feed_id != e.feed_id
+    FROM entries e_prev
+    JOIN user_entries ue_existing
+      ON ue_existing.user_id = ${q(userId)} AND ue_existing.entry_id = e_prev.id
+    WHERE e_prev.type = 'web'
       AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(e.guid, '^https?://', 'https://')
+      AND e_prev.feed_id != e.feed_id
+      AND ue_existing.subscription_id = ${q(subscriptionId)}
   )
 ON CONFLICT DO NOTHING`,
 });
@@ -1052,12 +1053,13 @@ WHERE s.feed_id = ${q(feedId)}::uuid
   AND e.id = ANY(${uuidArray(allIds)})
   AND NOT EXISTS (
     SELECT 1
-    FROM user_entries ue_existing
-    JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
-    WHERE ue_existing.user_id = s.user_id
-      AND ue_existing.subscription_id = s.id
-      AND e_prev.feed_id != s.feed_id
+    FROM entries e_prev
+    JOIN user_entries ue_existing
+      ON ue_existing.user_id = s.user_id AND ue_existing.entry_id = e_prev.id
+    WHERE e_prev.type = 'web'
       AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(e.guid, '^https?://', 'https://')
+      AND e_prev.feed_id != s.feed_id
+      AND ue_existing.subscription_id = s.id
   )
 ON CONFLICT DO NOTHING`,
     },

@@ -869,6 +869,20 @@
       "when": 1782955380000,
       "tag": "0124_tags_unique_ignoring_case",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1782955440000,
+      "tag": "0125_entries_web_guid_canonical_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1782955500000,
+      "tag": "0126_recompute_list_counters_custom_plans",
+      "breakpoints": true
     }
   ]
 }
