@@ -90,7 +90,8 @@ const userEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("subscription_created"),
     userId: z.string(),
-    feedId: z.string(),
+    // The feed channel to follow; null for a subscription without a feed (#1846).
+    feedId: z.string().nullable(),
     subscriptionId: z.string(),
     timestamp: z.string(),
     updatedAt: z.string(),
@@ -110,7 +111,7 @@ const userEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("subscription_deleted"),
     userId: z.string(),
-    feedId: z.string(),
+    feedId: z.string().nullable(),
     subscriptionId: z.string(),
     timestamp: z.string(),
     updatedAt: z.string(),
@@ -477,7 +478,7 @@ export async function publishEntryUpdatedFromEntry(
  * 2. Update the subscriptions cache directly with the provided data
  *
  * @param userId - The ID of the user who subscribed
- * @param feedId - The ID of the feed they subscribed to (server-side routing only)
+ * @param feedId - The ID of the feed they subscribed to (server-side routing only; null without a feed)
  * @param subscriptionId - The ID of the new subscription
  * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @param subscription - Subscription data for optimistic cache update
@@ -486,7 +487,7 @@ export async function publishEntryUpdatedFromEntry(
  */
 export async function publishSubscriptionCreated(
   userId: string,
-  feedId: string,
+  feedId: string | null,
   subscriptionId: string,
   updatedAt: Date,
   subscription: SubscriptionCreatedEventSubscription,
@@ -537,14 +538,14 @@ export async function publishCollectionEntriesChanged(
  * 2. Refresh the subscriptions list in the UI
  *
  * @param userId - The ID of the user who unsubscribed
- * @param feedId - The ID of the feed they unsubscribed from
+ * @param feedId - The ID of the feed they unsubscribed from (null without a feed)
  * @param subscriptionId - The ID of the subscription that was deleted
  * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionDeleted(
   userId: string,
-  feedId: string,
+  feedId: string | null,
   subscriptionId: string,
   updatedAt: Date,
   counts?: z.infer<typeof unreadCountsSchema>

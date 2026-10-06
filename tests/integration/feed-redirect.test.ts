@@ -91,7 +91,7 @@ async function getSubscription(
   feedId: string
 ): Promise<{
   id: string;
-  feedId: string;
+  feedId: string | null;
   unsubscribedAt: Date | null;
 } | null> {
   const result = await db
@@ -112,7 +112,7 @@ async function getSubscription(
  */
 async function getActiveSubscriptions(
   userId: string
-): Promise<Array<{ id: string; feedId: string }>> {
+): Promise<Array<{ id: string; feedId: string | null }>> {
   return db
     .select({
       id: subscriptions.id,

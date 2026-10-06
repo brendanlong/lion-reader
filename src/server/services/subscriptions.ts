@@ -902,7 +902,7 @@ export async function unsubscribe(
   const [existing] = await db
     .select({ feed: feeds })
     .from(subscriptions)
-    .innerJoin(feeds, eq(subscriptions.feedId, feeds.id))
+    .leftJoin(feeds, eq(subscriptions.feedId, feeds.id))
     .where(
       and(
         eq(subscriptions.id, subscriptionId),
@@ -916,6 +916,7 @@ export async function unsubscribe(
     return null;
   }
 
+  // Null for a subscription without a feed (#1846).
   const { feed } = existing;
   const now = new Date();
 
@@ -923,7 +924,7 @@ export async function unsubscribe(
   // so they run BEFORE the transaction; only the blocked_senders row is written
   // inside it.
   let blockedSenderValues: typeof blockedSenders.$inferInsert | null = null;
-  if (feed.type === "email" && feed.emailSenderPattern) {
+  if (feed?.type === "email" && feed.emailSenderPattern) {
     const unsubscribeResult = await attemptUnsubscribe(feed.id);
 
     logger.info("Email unsubscribe attempt completed", {
@@ -970,7 +971,7 @@ export async function unsubscribe(
       await tx.insert(blockedSenders).values(blockedSenderValues).onConflictDoNothing();
       logger.info("Added sender to blocked list", {
         userId,
-        senderEmail: feed.emailSenderPattern,
+        senderEmail: blockedSenderValues.senderEmail,
       });
     }
 
@@ -1002,11 +1003,11 @@ export async function unsubscribe(
   // tags, so it omits counts and the client invalidates instead).
   const counts = await getSubscriptionDeletionCounts(db, userId, formerTagIds);
 
-  publishSubscriptionDeleted(userId, feed.id, subscriptionId, now, counts).catch((err) => {
+  publishSubscriptionDeleted(userId, feed?.id ?? null, subscriptionId, now, counts).catch((err) => {
     logger.error("Failed to publish subscription_deleted event", {
       err,
       userId,
-      feedId: feed.id,
+      subscriptionId,
     });
   });
 

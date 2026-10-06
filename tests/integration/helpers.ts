@@ -122,6 +122,31 @@ export async function createTestSubscription(
   return subscriptionId;
 }
 
+/**
+ * Inserts a collection subscription with no feed row (#1846), as collections
+ * will be once they stop having feeds. Returns the subscription id.
+ */
+export async function createTestFeedlessCollection(
+  userId: string,
+  name: string,
+  overrides: Partial<typeof subscriptions.$inferInsert> = {}
+): Promise<string> {
+  const subscriptionId = overrides.id ?? generateUuidv7();
+  const now = new Date();
+  await db.insert(subscriptions).values({
+    id: subscriptionId,
+    userId,
+    feedId: null,
+    type: "collection",
+    customTitle: name,
+    subscribedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  return subscriptionId;
+}
+
 // ============================================================================
 // Entries
 // ============================================================================

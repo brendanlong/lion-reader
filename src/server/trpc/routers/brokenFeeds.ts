@@ -138,7 +138,9 @@ export const brokenFeedsRouter = createTRPCRouter({
         )
         .limit(1);
 
-      if (!subscription) {
+      // A subscription without a feed (#1846) has nothing to fetch.
+      const feedId = subscription?.feedId;
+      if (!feedId) {
         throw errors.subscriptionNotFound();
       }
 
@@ -153,7 +155,7 @@ export const brokenFeedsRouter = createTRPCRouter({
           nextFetchAt: now,
           updatedAt: now,
         })
-        .where(eq(feeds.id, subscription.feedId));
+        .where(eq(feeds.id, feedId));
 
       // Also update the job to run immediately
       await ctx.db
@@ -164,9 +166,7 @@ export const brokenFeedsRouter = createTRPCRouter({
           nextRunAt: now,
           updatedAt: now,
         })
-        .where(
-          sql`${jobs.payload}->>'feedId' = ${subscription.feedId} AND ${jobs.type} = 'fetch_feed'`
-        );
+        .where(sql`${jobs.payload}->>'feedId' = ${feedId} AND ${jobs.type} = 'fetch_feed'`);
 
       return { success: true };
     }),

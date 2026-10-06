@@ -305,7 +305,7 @@ async function unsubscribeStatements(
   return [
     {
       label: "existing",
-      sql: `SELECT feeds.* FROM subscriptions INNER JOIN feeds ON subscriptions.feed_id = feeds.id
+      sql: `SELECT feeds.* FROM subscriptions LEFT JOIN feeds ON subscriptions.feed_id = feeds.id
 WHERE ${sub} AND subscriptions.unsubscribed_at IS NULL LIMIT 1`,
     },
     // lockSubscriptionRow(..., { members: true })
@@ -509,7 +509,7 @@ LIMIT 501`;
     }>(db, entriesSql)
   ).filter((r) => r.visible);
   const subsSql = `SELECT subscriptions.*, feeds.*, subscriptions.updated_at AS updated_at_instant
-FROM subscriptions INNER JOIN feeds ON subscriptions.feed_id = feeds.id
+FROM subscriptions LEFT JOIN feeds ON subscriptions.feed_id = feeds.id
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.updated_at > ${ts(subCursor.ts)}
 ORDER BY subscriptions.updated_at`;
   const activeSubs = (

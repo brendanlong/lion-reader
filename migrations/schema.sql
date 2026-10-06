@@ -842,7 +842,7 @@ CREATE TABLE public.subscription_tags (
 CREATE TABLE public.subscriptions (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
-    feed_id uuid NOT NULL,
+    feed_id uuid,
     custom_title text,
     subscribed_at timestamp with time zone DEFAULT now() NOT NULL,
     unsubscribed_at timestamp with time zone,
@@ -899,14 +899,14 @@ CREATE VIEW public.user_feeds AS
     s.fetch_full_content,
     s.type,
     COALESCE(s.custom_title, f.title) AS title,
-    f.title AS original_title,
+    COALESCE(f.title, s.custom_title) AS original_title,
     f.url,
     f.site_url,
     f.description,
     s.unread_count,
     s.greader_stream_id
    FROM (public.subscriptions s
-     JOIN public.feeds f ON ((f.id = s.feed_id)))
+     LEFT JOIN public.feeds f ON ((f.id = s.feed_id)))
   WHERE (s.unsubscribed_at IS NULL);
 
 CREATE TABLE public.users (

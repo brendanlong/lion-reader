@@ -88,7 +88,7 @@ async function getUserFeedSubscriptionMap(userId: string): Promise<Map<string, s
 
   const map = new Map<string, string>();
   for (const row of rows) {
-    map.set(row.feedId, row.subscriptionId);
+    if (row.feedId !== null) map.set(row.feedId, row.subscriptionId);
   }
   return map;
 }
@@ -488,12 +488,14 @@ export async function GET(req: Request): Promise<Response> {
           if (event.type === "subscription_created") {
             // Email entries need the title too, though they come on this channel.
             setCustomTitle(event.subscriptionId, event.subscription.customTitle);
-            if (event.feed.type === "web") subscribeToFeed(event.feedId, event.subscriptionId);
+            if (event.feed.type === "web" && event.feedId !== null) {
+              subscribeToFeed(event.feedId, event.subscriptionId);
+            }
           } else if (event.type === "subscription_updated") {
             setCustomTitle(event.subscriptionId, event.customTitle);
           } else if (event.type === "subscription_deleted") {
             setCustomTitle(event.subscriptionId, null);
-            unsubscribeFromFeed(event.feedId);
+            if (event.feedId !== null) unsubscribeFromFeed(event.feedId);
           } else if (event.type === "new_entry") {
             sendNewEntry(event);
             return;
