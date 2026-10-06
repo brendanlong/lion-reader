@@ -12,7 +12,7 @@
  *   handler.
  */
 
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
   feeds,
@@ -190,67 +190,86 @@ export type ProcessOpmlImportResult =
 
 /**
  * Resolves every category name used by the import to a tag row, creating the
- * missing ones in a single batch insert (rather than a query per feed).
+ * missing ones in a single batch insert (rather than a query per feed). Tag
+ * names are unique ignoring case, so categories are matched to tags by
+ * Postgres's `lower()`, the same comparison the unique index makes, and
+ * categories differing only in case share one tag. Keyed by category name.
  */
 async function ensureImportTags(
   db: typeof dbType,
   userId: string,
   feedsData: OpmlImportFeedData[]
 ): Promise<Map<string, ImportTagInfo>> {
-  const tagNames = new Set<string>();
-  for (const feed of feedsData) {
-    for (const categoryName of feed.category ?? []) {
-      tagNames.add(categoryName);
+  const categoryNames = [...new Set(feedsData.flatMap((feed) => feed.category ?? []))];
+  const categoryToTag = new Map<string, ImportTagInfo>();
+  if (categoryNames.length === 0) {
+    return categoryToTag;
+  }
+
+  const categoryKeys = await db.execute<{ name: string; key: string }>(
+    sql`SELECT name, lower(name) AS key FROM unnest(ARRAY[${sql.join(
+      categoryNames.map((name) => sql`${name}`),
+      sql`, `
+    )}]::text[]) WITH ORDINALITY AS c(name, i) ORDER BY i`
+  );
+  // Lowercased name → the first spelling the import uses.
+  const namesByKey = new Map<string, string>();
+  for (const { name, key } of categoryKeys.rows) {
+    if (!namesByKey.has(key)) namesByKey.set(key, name);
+  }
+
+  const tagsByKey = new Map<string, ImportTagInfo>();
+  const tagSelection = {
+    id: tags.id,
+    name: tags.name,
+    color: tags.color,
+    key: sql<string>`lower(${tags.name})`,
+  };
+  const addExisting = async () => {
+    // Only live tags: `deleteTag` tombstones, and the unique index on tag
+    // names is partial (`WHERE deleted_at IS NULL`), so a deleted tag can
+    // share a name with a live one. Reusing a tombstone would attach the
+    // imported subscriptions to a tag that no sidebar group lists.
+    const existingTags = await db
+      .select(tagSelection)
+      .from(tags)
+      .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
+    for (const { key, ...tag } of existingTags) {
+      if (namesByKey.has(key)) tagsByKey.set(key, tag);
     }
-  }
-
-  const tagNameToInfo = new Map<string, ImportTagInfo>();
-  if (tagNames.size === 0) {
-    return tagNameToInfo;
-  }
-
-  // Only live tags: `deleteTag` tombstones, and `uq_tags_user_name` is partial
-  // (`WHERE deleted_at IS NULL`), so a deleted tag can share a name with a live
-  // one. Reusing a tombstone would attach the imported subscriptions to a tag
-  // that no sidebar group lists.
-  const existingTags = await db
-    .select({ id: tags.id, name: tags.name, color: tags.color })
-    .from(tags)
-    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
-
-  for (const existingTag of existingTags) {
-    if (tagNames.has(existingTag.name)) {
-      tagNameToInfo.set(existingTag.name, {
-        id: existingTag.id,
-        name: existingTag.name,
-        color: existingTag.color,
-      });
-    }
-  }
+  };
+  await addExisting();
 
   const now = new Date();
-  const tagsToCreate = Array.from(tagNames)
-    .filter((tagName) => !tagNameToInfo.has(tagName))
-    .map((tagName) => ({
-      id: generateUuidv7(),
-      userId,
-      name: tagName,
-      createdAt: now,
-    }));
+  const tagsToCreate = [...namesByKey]
+    .filter(([key]) => !tagsByKey.has(key))
+    .map(([, name]) => ({ id: generateUuidv7(), userId, name, createdAt: now }));
 
   if (tagsToCreate.length > 0) {
-    await db.insert(tags).values(tagsToCreate);
-    for (const tag of tagsToCreate) {
-      tagNameToInfo.set(tag.name, { id: tag.id, name: tag.name, color: null });
+    // A tag created meanwhile (e.g. in another tab) wins; pick it up after.
+    const inserted = await db
+      .insert(tags)
+      .values(tagsToCreate)
+      .onConflictDoNothing()
+      .returning(tagSelection);
+    for (const { key, ...tag } of inserted) {
+      tagsByKey.set(key, tag);
+    }
+    if (inserted.length < tagsToCreate.length) {
+      await addExisting();
     }
     logger.debug("OPML import: created tags", {
-      count: tagsToCreate.length,
-      tagNames: tagsToCreate.map((t) => t.name),
+      count: inserted.length,
+      tagNames: inserted.map((t) => t.name),
       userId,
     });
   }
 
-  return tagNameToInfo;
+  for (const { name, key } of categoryKeys.rows) {
+    const tag = tagsByKey.get(key);
+    if (tag) categoryToTag.set(name, tag);
+  }
+  return categoryToTag;
 }
 
 /**
@@ -265,9 +284,14 @@ async function applyImportTags(
   categories: string[],
   tagNameToInfo: Map<string, ImportTagInfo>
 ): Promise<void> {
-  const tagInfos = categories
-    .map((categoryName) => tagNameToInfo.get(categoryName))
-    .filter((info): info is ImportTagInfo => info !== undefined);
+  const tagInfos = [
+    ...new Map(
+      categories
+        .map((categoryName) => tagNameToInfo.get(categoryName))
+        .filter((info): info is ImportTagInfo => info !== undefined)
+        .map((info) => [info.id, info])
+    ).values(),
+  ];
 
   if (tagInfos.length === 0) {
     return;

@@ -7,9 +7,10 @@
 import { eq, and, isNull } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { tags } from "@/server/db/schema";
+import { tagNameMatches } from "@/server/services/tags";
 
 /**
- * Finds a tag by name for a given user.
+ * Finds a tag by name (ignoring case, like tag uniqueness) for a given user.
  * Returns the tag row or null if not found.
  */
 export async function resolveTagByName(
@@ -20,7 +21,7 @@ export async function resolveTagByName(
   const result = await db
     .select({ id: tags.id, name: tags.name })
     .from(tags)
-    .where(and(eq(tags.userId, userId), eq(tags.name, name), isNull(tags.deletedAt)))
+    .where(and(eq(tags.userId, userId), tagNameMatches(name), isNull(tags.deletedAt)))
     .limit(1);
 
   return result[0] ?? null;

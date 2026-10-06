@@ -1264,7 +1264,7 @@ CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WH
 
 CREATE UNIQUE INDEX uq_subscriptions_id_user ON public.subscriptions USING btree (id, user_id);
 
-CREATE UNIQUE INDEX uq_tags_user_name ON public.tags USING btree (user_id, name) WHERE (deleted_at IS NULL);
+CREATE UNIQUE INDEX uq_tags_user_lower_name ON public.tags USING btree (user_id, lower(name)) WHERE (deleted_at IS NULL);
 
 CREATE TRIGGER collection_entries_counters_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_counters_delete();
 

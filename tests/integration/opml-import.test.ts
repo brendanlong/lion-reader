@@ -343,7 +343,7 @@ describe("OPML Import", () => {
       expect(record.results.map((r) => r.status)).toEqual(["imported", "imported", "imported"]);
     });
 
-    // `deleteTag` only tombstones, and `uq_tags_user_name` is partial
+    // `deleteTag` only tombstones, and the unique index on tag names is partial
     // (`WHERE deleted_at IS NULL`), so a live and a deleted tag can share a
     // name. Reusing the tombstone would attach the imported subscriptions to a
     // tag `listTags` hides — and `buildUncategorizedSubscriptionIdsSubquery`
@@ -351,7 +351,7 @@ describe("OPML Import", () => {
     // up in no sidebar group at all.
     it("creates a new tag rather than reusing a soft-deleted one of the same name", async () => {
       const userId = await createTestUser();
-      const created = await createTag(db, userId, { name: "News" });
+      const { tag: created } = await createTag(db, userId, { name: "News" });
       await deleteTag(db, userId, created.id);
 
       const importId = await seedImport(userId, [
@@ -381,6 +381,25 @@ describe("OPML Import", () => {
       const listed = await listTags(db, userId);
       expect(listed.items.map((t) => t.name)).toEqual(["News"]);
       expect(listed.items[0].id).toBe(liveTags[0].id);
+    });
+
+    it("matches categories to tags ignoring case, attaching each tag once", async () => {
+      const userId = await createTestUser();
+      const { tag: news } = await createTag(db, userId, { name: "News" });
+
+      const importId = await seedImport(userId, [
+        { xmlUrl: "https://a.example.com/feed.xml", title: "A", category: ["news", "NEWS"] },
+        { xmlUrl: "https://b.example.com/feed.xml", title: "B", category: ["Tech"] },
+        { xmlUrl: "https://c.example.com/feed.xml", title: "C", category: ["tech"] },
+      ]);
+      await processOpmlImport(db, importId);
+
+      const listed = await listTags(db, userId);
+      expect(listed.items.map((t) => [t.name, t.feedCount])).toEqual([
+        ["News", 1],
+        ["Tech", 2],
+      ]);
+      expect(listed.items[0].id).toBe(news.id);
     });
 
     it("skips feeds the user is already subscribed to", async () => {

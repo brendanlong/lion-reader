@@ -682,11 +682,11 @@ export const tags = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }), // Soft delete for sync tracking
   },
   (table) => [
-    // Each user can only have one *live* tag with a given name. Partial on
+    // Each user can only have one *live* tag with a given name, ignoring case. Partial on
     // deleted_at IS NULL so a soft-deleted (tombstoned) tag doesn't block reusing
     // its name — otherwise "News" → delete → "News" failed forever (issue #952).
-    uniqueIndex("uq_tags_user_name")
-      .on(table.userId, table.name)
+    uniqueIndex("uq_tags_user_lower_name")
+      .on(table.userId, sql`lower(${table.name})`)
       .where(sql`deleted_at IS NULL`),
     // Index for listing tags by user
     // Index for sync queries

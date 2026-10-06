@@ -117,8 +117,8 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
   const utils = trpc.useUtils();
 
   const createMutation = trpc.tags.create.useMutation({
-    onSuccess: () => {
-      onSuccess("Tag created successfully");
+    onSuccess: ({ tag, created }) => {
+      onSuccess(created ? "Tag created successfully" : `A tag named "${tag.name}" already exists`);
       setName("");
       setColor(DEFAULT_TAG_COLOR);
       setShowColorPicker(false);
