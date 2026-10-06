@@ -182,6 +182,7 @@ $$;
 
 CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
+    SET plan_cache_mode TO 'force_custom_plan'
     AS $$
 BEGIN
   PERFORM 1 FROM users WHERE id = p_user FOR NO KEY UPDATE;
