@@ -2,18 +2,27 @@
  * Runs the database benchmarks (`pnpm bench:db`) against a database seeded by
  * `seed.ts`, writes a result file and prints a markdown summary.
  *
- * Every statement runs under EXPLAIN ANALYZE (with SERIALIZE on Postgres 17+,
- * so reads pay for detoasting what they return). A write benchmark runs in a
- * transaction with `SET CONSTRAINTS ALL IMMEDIATE`, so deferred checks are
- * measured too, and is rolled back.
+ * Every statement runs under `EXPLAIN (ANALYZE, BUFFERS, WAL, TIMING OFF)`,
+ * with SERIALIZE on Postgres 17+ so reads pay for detoasting what they
+ * return. Per-node timing is off because its overhead swamps plans with many
+ * loops; one extra timed iteration supplies trigger times, which EXPLAIN only
+ * reports with timing on. EXPLAIN doesn't attribute trigger work to plan
+ * nodes, so buffers come from pg_stat_statements when the server loads it
+ * (`pnpm services` does): the delta of its top-level totals around each
+ * statement covers everything the statement ran, triggers and foreign-key
+ * checks included.
+ *
+ * A write benchmark runs in a transaction with `SET CONSTRAINTS ALL
+ * IMMEDIATE`, so deferred checks are measured too, and is rolled back.
  *
  * Each benchmark gets a fresh connection and runs `--warmup` unrecorded
  * iterations before `--iterations` recorded ones. The warm-up matters: a
  * PL/pgSQL statement is planned for its arguments only for its first five
  * executions in a session and may then switch to a generic plan, which is what
  * the triggers run on production's long-lived pooled connections. The default
- * of 5 puts every trigger statement past that switch, and the fresh connection
- * keeps one benchmark's calls from changing the next one's plans.
+ * of 5 puts every trigger statement past that switch. Writes are also measured
+ * cold: each iteration on a new connection, so the triggers still use custom
+ * plans (and catalog caches are empty).
  *
  *   pnpm bench:db [--iterations 5] [--warmup 5] [--filter write.,search] [--out file.json] [--note text]
  */
@@ -31,13 +40,14 @@ import { BENCHMARKS, type Benchmark, type PreparedBenchmark } from "./benchmarks
 import { U0, userEmail } from "./dataset";
 import {
   RESULT_VERSION,
+  bestBuffers,
   fmtBytes,
   fmtCount,
   fmtMs,
   markdownTable,
-  totalBuffers,
   type BenchResult,
   type Buffers,
+  type Measurement,
   type RunFile,
   type RunMeta,
   type Spread,
@@ -73,16 +83,29 @@ interface ExplainDoc {
   };
 }
 
+interface RunOptions {
+  /** EXPLAIN SERIALIZE is available (Postgres 17+). */
+  serialize: boolean;
+  /** pg_stat_statements is loaded, so buffers can include trigger work. */
+  pgss: boolean;
+}
+
 interface Sample {
   ms: number;
   planMs: number;
   triggerMs: number;
   rows: number;
-  buffers: Buffers;
+  planBuffers: Buffers;
+  buffers: Buffers | null;
   nodes: string[];
   /** `idx:name` for each index scanned, `seq:table` for each sequential scan. */
   access: string[];
   triggers: TriggerTime[];
+}
+
+interface Iteration {
+  samples: Sample[];
+  walBytes: number;
 }
 
 const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +124,25 @@ async function vacuum(client: Client): Promise<void> {
     `VACUUM (DISABLE_PAGE_SKIPPING) entries, user_entries, subscriptions, subscription_tags,
        collection_entries, feeds, jobs, tags, users`
   );
+}
+
+/**
+ * ANALYZEs every table without statistics or with rows changed since its last
+ * ANALYZE (a migration's new or backfilled table, say), so plans don't depend
+ * on when autovacuum gets to it. The seed analyzes everything and rolled-back
+ * benchmark writes don't count as changes, so this is normally a no-op.
+ */
+async function analyzeStale(client: Client): Promise<string[]> {
+  const stale = await client.query<{ relname: string }>(
+    `SELECT relname FROM pg_stat_user_tables
+     WHERE schemaname = 'public'
+       AND (n_mod_since_analyze > 0 OR (last_analyze IS NULL AND last_autoanalyze IS NULL))
+     ORDER BY relname`
+  );
+  for (const { relname } of stale.rows) {
+    await client.query(`ANALYZE public.${client.escapeIdentifier(relname)}`);
+  }
+  return stale.rows.map((r) => r.relname);
 }
 
 /**
@@ -123,25 +165,43 @@ async function settle(client: Client): Promise<void> {
   await vacuum(client);
 }
 
+/** Whether pg_stat_statements is usable, creating the extension if needed. */
+async function enablePgStatStatements(client: Client): Promise<boolean> {
+  try {
+    await client.query("CREATE EXTENSION IF NOT EXISTS pg_stat_statements");
+    await client.query("SELECT 1 FROM pg_stat_statements(false) LIMIT 1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Totals over pg_stat_statements' top-level entries (reading them uses no buffers). */
+async function pgssTotals(client: Client): Promise<Buffers> {
+  const res = await client.query<Record<keyof Buffers, string>>(
+    `SELECT coalesce(sum(shared_blks_hit), 0)::text AS hit,
+            coalesce(sum(shared_blks_read), 0)::text AS read,
+            coalesce(sum(shared_blks_dirtied), 0)::text AS dirtied,
+            coalesce(sum(shared_blks_written), 0)::text AS written
+     FROM pg_stat_statements(false) WHERE toplevel`
+  );
+  const row = res.rows[0];
+  return {
+    hit: Number(row.hit),
+    read: Number(row.read),
+    dirtied: Number(row.dirtied),
+    written: Number(row.written),
+  };
+}
+
 function median(values: number[]): number {
   const s = [...values].sort((a, b) => a - b);
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-/** Nearest-rank percentile. */
-function percentile(values: number[], p: number): number {
-  const s = [...values].sort((a, b) => a - b);
-  return s[Math.max(0, Math.ceil((p / 100) * s.length) - 1)];
-}
-
 function spread(values: number[]): Spread {
-  return {
-    median: median(values),
-    p90: percentile(values, 90),
-    min: Math.min(...values),
-    max: Math.max(...values),
-  };
+  return { median: median(values), min: Math.min(...values), max: Math.max(...values) };
 }
 
 function medianBuffers(all: Buffers[]): Buffers {
@@ -150,6 +210,15 @@ function medianBuffers(all: Buffers[]): Buffers {
     read: median(all.map((b) => b.read)),
     dirtied: median(all.map((b) => b.dirtied)),
     written: median(all.map((b) => b.written)),
+  };
+}
+
+function sumBuffers(all: Buffers[]): Buffers {
+  return {
+    hit: all.reduce((a, b) => a + b.hit, 0),
+    read: all.reduce((a, b) => a + b.read, 0),
+    dirtied: all.reduce((a, b) => a + b.dirtied, 0),
+    written: all.reduce((a, b) => a + b.written, 0),
   };
 }
 
@@ -172,9 +241,23 @@ function statementRows(plan: PlanNode): number {
   return source ? (source["Actual Rows"] ?? 0) * (source["Actual Loops"] ?? 1) : 0;
 }
 
-async function explain(client: Client, sql: string, serialize: boolean): Promise<Sample> {
-  const options = `ANALYZE, BUFFERS, ${serialize ? "SERIALIZE TEXT, " : ""}FORMAT JSON`;
+async function explain(
+  client: Client,
+  sql: string,
+  opts: RunOptions,
+  timing: boolean
+): Promise<Sample> {
+  const options = [
+    "ANALYZE",
+    "BUFFERS",
+    "WAL",
+    `TIMING ${timing ? "ON" : "OFF"}`,
+    ...(opts.serialize ? ["SERIALIZE TEXT"] : []),
+    "FORMAT JSON",
+  ].join(", ");
+  const before = opts.pgss ? await pgssTotals(client) : null;
   const res = await client.query<{ "QUERY PLAN": ExplainDoc[] }>(`EXPLAIN (${options}) ${sql}`);
+  const after = opts.pgss ? await pgssTotals(client) : null;
   const doc = res.rows[0]["QUERY PLAN"][0];
   const plan = doc.Plan;
   const ser = doc.Serialization ?? {};
@@ -196,12 +279,21 @@ async function explain(client: Client, sql: string, serialize: boolean): Promise
     planMs: doc["Planning Time"],
     triggerMs: triggers.reduce((a, t) => a + t.ms, 0),
     rows: statementRows(plan),
-    buffers: {
+    planBuffers: {
       hit: (plan["Shared Hit Blocks"] ?? 0) + (ser["Shared Hit Blocks"] ?? 0),
       read: (plan["Shared Read Blocks"] ?? 0) + (ser["Shared Read Blocks"] ?? 0),
       dirtied: (plan["Shared Dirtied Blocks"] ?? 0) + (ser["Shared Dirtied Blocks"] ?? 0),
       written: (plan["Shared Written Blocks"] ?? 0) + (ser["Shared Written Blocks"] ?? 0),
     },
+    buffers:
+      before && after
+        ? {
+            hit: after.hit - before.hit,
+            read: after.read - before.read,
+            dirtied: after.dirtied - before.dirtied,
+            written: after.written - before.written,
+          }
+        : null,
     nodes,
     access,
     triggers,
@@ -218,8 +310,9 @@ async function iterate(
   client: Client,
   bench: Benchmark,
   prepared: PreparedBenchmark,
-  serialize: boolean
-): Promise<{ samples: Sample[]; walBytes: number }> {
+  opts: RunOptions,
+  timing = false
+): Promise<Iteration> {
   const write = bench.kind === "write";
   if (write) {
     // The previous iteration's rolled-back rows are dead tuples the next one
@@ -234,7 +327,7 @@ async function iterate(
     const samples: Sample[] = [];
     for (const statement of prepared.statements) {
       try {
-        samples.push(await explain(client, statement.sql, serialize));
+        samples.push(await explain(client, statement.sql, opts, timing));
       } catch (err) {
         throw new Error(`${bench.name} / ${statement.label}: ${(err as Error).message}`);
       }
@@ -250,54 +343,80 @@ async function iterate(
   }
 }
 
+function measurement(runs: Iteration[]): Measurement {
+  const buffers = runs.map((r) =>
+    r.samples.every((s) => s.buffers) ? sumBuffers(r.samples.map((s) => s.buffers!)) : null
+  );
+  return {
+    ms: spread(runs.map((r) => r.samples.reduce((a, s) => a + s.ms, 0))),
+    buffers: buffers.every((b) => b) ? medianBuffers(buffers.map((b) => b!)) : null,
+    walBytes: median(runs.map((r) => r.walBytes)),
+  };
+}
+
 async function runBenchmark(
-  client: Client,
+  connect: () => Promise<Client>,
   bench: Benchmark,
   iterations: number,
   warmup: number,
-  serialize: boolean
+  opts: RunOptions
 ): Promise<BenchResult> {
-  const prepared = await bench.prepare(client);
-  for (let i = 0; i < warmup; i++) await iterate(client, bench, prepared, serialize);
-  const runs: Array<{ samples: Sample[]; walBytes: number }> = [];
-  for (let i = 0; i < iterations; i++) runs.push(await iterate(client, bench, prepared, serialize));
+  const client = await connect();
+  try {
+    await vacuum(client);
+    const prepared = await bench.prepare(client);
 
-  const statements: StatementResult[] = prepared.statements.map((s, k) => {
-    const samples = runs.map((r) => r.samples[k]);
-    const last = samples[samples.length - 1];
+    let cold: Measurement | undefined;
+    if (bench.kind === "write") {
+      const coldRuns: Iteration[] = [];
+      for (let i = 0; i < iterations; i++) {
+        const fresh = await connect();
+        try {
+          coldRuns.push(await iterate(fresh, bench, prepared, opts));
+        } finally {
+          await fresh.end();
+        }
+      }
+      cold = measurement(coldRuns);
+    }
+
+    for (let i = 0; i < warmup; i++) await iterate(client, bench, prepared, opts);
+    const runs: Iteration[] = [];
+    for (let i = 0; i < iterations; i++) runs.push(await iterate(client, bench, prepared, opts));
+    const timed = await iterate(client, bench, prepared, opts, true);
+
+    const statements: StatementResult[] = prepared.statements.map((s, k) => {
+      const samples = runs.map((r) => r.samples[k]);
+      const all = samples.map((x) => x.buffers);
+      return {
+        label: s.label,
+        ms: median(samples.map((x) => x.ms)),
+        triggerMs: timed.samples[k].triggerMs,
+        rows: median(samples.map((x) => x.rows)),
+        buffers: all.every((b) => b) ? medianBuffers(all.map((b) => b!)) : null,
+        planBuffers: medianBuffers(samples.map((x) => x.planBuffers)),
+        nodes: samples[samples.length - 1].nodes,
+        triggers: timed.samples[k].triggers,
+      };
+    });
+    const sum = (r: Iteration, f: (s: Sample) => number) => r.samples.reduce((a, s) => a + f(s), 0);
+    const access = new Set(runs.flatMap((r) => r.samples.flatMap((s) => s.access)));
     return {
-      label: s.label,
-      ms: median(samples.map((x) => x.ms)),
-      triggerMs: median(samples.map((x) => x.triggerMs)),
-      rows: median(samples.map((x) => x.rows)),
-      buffers: medianBuffers(samples.map((x) => x.buffers)),
-      nodes: last.nodes,
-      triggers: last.triggers,
+      name: bench.name,
+      kind: bench.kind,
+      source: bench.source,
+      ...measurement(runs),
+      planMs: median(runs.map((r) => sum(r, (s) => s.planMs))),
+      triggerMs: sum(timed, (s) => s.triggerMs),
+      planBuffers: medianBuffers(runs.map((r) => sumBuffers(r.samples.map((s) => s.planBuffers)))),
+      rows: median(runs.map((r) => sum(r, (s) => s.rows))),
+      ...(cold ? { cold } : {}),
+      access: [...access].sort(),
+      statements,
     };
-  });
-  const sum = (r: { samples: Sample[] }, f: (s: Sample) => number) =>
-    r.samples.reduce((a, s) => a + f(s), 0);
-  const access = new Set(runs.flatMap((r) => r.samples.flatMap((s) => s.access)));
-  return {
-    name: bench.name,
-    kind: bench.kind,
-    source: bench.source,
-    ms: spread(runs.map((r) => sum(r, (s) => s.ms))),
-    planMs: median(runs.map((r) => sum(r, (s) => s.planMs))),
-    triggerMs: median(runs.map((r) => sum(r, (s) => s.triggerMs))),
-    buffers: medianBuffers(
-      runs.map((r) => ({
-        hit: sum(r, (s) => s.buffers.hit),
-        read: sum(r, (s) => s.buffers.read),
-        dirtied: sum(r, (s) => s.buffers.dirtied),
-        written: sum(r, (s) => s.buffers.written),
-      }))
-    ),
-    rows: median(runs.map((r) => sum(r, (s) => s.rows))),
-    walBytes: median(runs.map((r) => r.walBytes)),
-    access: [...access].sort(),
-    statements,
-  };
+  } finally {
+    await client.end();
+  }
 }
 
 function git(args: string): string {
@@ -310,15 +429,15 @@ function git(args: string): string {
 
 async function collectMeta(
   client: Client,
-  iterations: number,
-  warmup: number,
+  options: { iterations: number; warmup: number; pgss: boolean; analyzed: string[] },
   note: string | undefined
 ): Promise<RunMeta> {
   const version = (await client.query<{ v: string }>("SELECT version() AS v")).rows[0].v;
   const settings = await client.query<{ name: string; setting: string; unit: string | null }>(
     `SELECT name, setting, unit FROM pg_settings
      WHERE name IN ('shared_buffers', 'work_mem', 'effective_cache_size', 'random_page_cost',
-                    'jit', 'max_parallel_workers_per_gather', 'effective_io_concurrency')
+                    'jit', 'max_parallel_workers_per_gather', 'effective_io_concurrency',
+                    'plan_cache_mode')
      ORDER BY name`
   );
   const counts = await client.query<{ what: string; n: string }>(
@@ -356,9 +475,11 @@ async function collectMeta(
       settings: Object.fromEntries(
         settings.rows.map((r) => [r.name, r.unit ? `${r.setting} ${r.unit}` : r.setting])
       ),
+      pgStatStatements: options.pgss,
     },
-    iterations,
-    warmup,
+    iterations: options.iterations,
+    warmup: options.warmup,
+    analyzed: options.analyzed,
     dataset,
     ...(note ? { note } : {}),
   };
@@ -373,13 +494,14 @@ function summaryTable(results: BenchResult[]): string {
       : shown.join(", ");
   };
   return markdownTable(
-    ["benchmark", "p50 ms", "p90 ms", "trigger ms", "buffers", "rows", "WAL", "access"],
+    ["benchmark", "ms", "max ms", "cold ms", "trigger ms", "buffers", "rows", "WAL", "access"],
     results.map((r) => [
       r.name,
       fmtMs(r.ms.median),
-      fmtMs(r.ms.p90),
+      fmtMs(r.ms.max),
+      r.cold ? fmtMs(r.cold.ms.median) : "",
       r.triggerMs > 0 ? fmtMs(r.triggerMs) : "",
-      fmtCount(totalBuffers(r.buffers)),
+      fmtCount(bestBuffers(r)),
       fmtCount(r.rows),
       r.walBytes > 0 ? fmtBytes(r.walBytes) : "",
       access(r.access),
@@ -422,24 +544,31 @@ async function main(): Promise<void> {
   const versionNum = Number(
     (await admin.query<{ v: string }>("SHOW server_version_num")).rows[0].v
   );
-  const serialize = versionNum >= 170000;
-  const meta = await collectMeta(admin, iterations, warmup, values.note);
+  const opts: RunOptions = {
+    serialize: versionNum >= 170000,
+    pgss: await enablePgStatStatements(admin),
+  };
+  if (!opts.pgss) {
+    console.error(
+      "pg_stat_statements isn't loaded: buffers will exclude trigger work (see scripts/bench/README.md)"
+    );
+  }
+  const analyzed = await analyzeStale(admin);
+  const meta = await collectMeta(
+    admin,
+    { iterations, warmup, pgss: opts.pgss, analyzed },
+    values.note
+  );
   await settle(admin);
   await admin.end();
 
   const results: BenchResult[] = [];
   for (const bench of selected) {
     const started = Date.now();
-    const client = await connect();
-    try {
-      await vacuum(client);
-      results.push(await runBenchmark(client, bench, iterations, warmup, serialize));
-    } finally {
-      await client.end();
-    }
+    results.push(await runBenchmark(connect, bench, iterations, warmup, opts));
     const r = results[results.length - 1];
     console.error(
-      `${bench.name.padEnd(32)} p50 ${fmtMs(r.ms.median).padStart(7)} ms  (${((Date.now() - started) / 1000).toFixed(1)} s)`
+      `${bench.name.padEnd(32)} ${fmtMs(r.ms.median).padStart(7)} ms  (${((Date.now() - started) / 1000).toFixed(1)} s)`
     );
   }
 
@@ -456,7 +585,9 @@ async function main(): Promise<void> {
 
   console.log(
     `\n${meta.git.branch}@${meta.git.sha.slice(0, 8)}${meta.git.dirty ? " (dirty)" : ""}, ` +
-      `${meta.postgres.version.split(" on ")[0]}, ${iterations} iterations\n`
+      `${meta.postgres.version.split(" on ")[0]}, ${iterations} iterations` +
+      (analyzed.length > 0 ? `, analyzed ${analyzed.join(", ")}` : "") +
+      "\n"
   );
   console.log(summaryTable(results));
   console.log(`\nWrote ${out}`);

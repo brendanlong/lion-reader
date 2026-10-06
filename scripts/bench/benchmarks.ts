@@ -22,6 +22,7 @@ import {
   savedFeedId,
   searchQuery,
   tagId,
+  userId,
   vocabulary,
   webFeedId,
   webFeedUrl,
@@ -407,6 +408,7 @@ const subLarge = webSubscriptionId(0, WEB.large);
 const subMergeSource = webSubscriptionId(0, WEB.mergeSource);
 const readingList = collectionSubscriptionId(0, COLLECTIONS.readingList.key);
 const emptyCollection = collectionSubscriptionId(0, COLLECTIONS.empty.key);
+const archive = collectionSubscriptionId(1, COLLECTIONS.archive.key);
 
 /** U0's newest unread web entry in a tagged subscription and no collection. */
 async function plainUnreadEntry(db: ClientBase): Promise<{ id: string; subscription_id: string }> {
@@ -432,6 +434,151 @@ WHERE ve.user_id = ${q(U0)}
 ORDER BY ve.published_or_fetched_at DESC, ve.id DESC LIMIT ${n}`
     )
   ).map((r) => r.id);
+}
+
+/**
+ * `collectSyncEvents` (trpc/routers/sync.ts) from a cursor ~200 changes back:
+ * the entry, subscription and tag arms and their count lookups. For
+ * `sync.changes` (the Android app's delta sync) it adds the database clock
+ * read, `reportHidden` (entries a state change hid come back too),
+ * `listCollectionMemberships` and the tombstones read.
+ */
+async function syncStatements(db: ClientBase, changes: boolean): Promise<Statement[]> {
+  const cursor = await one<{ ts: string; id: string }>(
+    db,
+    `SELECT updated_at::text AS ts, entry_id AS id FROM user_entries WHERE user_id = ${q(U0)}
+ORDER BY updated_at DESC, entry_id DESC OFFSET 200 LIMIT 1`
+  );
+  const subCursor = await one<{ ts: string }>(
+    db,
+    `SELECT updated_at::text AS ts FROM subscriptions WHERE user_id = ${q(U0)}
+ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
+  );
+  const tagCursor = await one<{ ts: string }>(
+    db,
+    `SELECT max(updated_at)::text AS ts FROM tags WHERE user_id = ${q(U0)}`
+  );
+  const c = ts(cursor.ts);
+  const after = (col: string) =>
+    `(${col} > ${c} OR (${col} = ${c} AND entries.id > ${q(cursor.id)}::uuid))`;
+  // The app sends the first page's cursor as `entriesSince` on every page.
+  const since = (col: string) => (changes ? `(${after(col)} OR ${after(col)})` : after(col));
+  const greatest = "GREATEST(entries.updated_at, user_entries.updated_at)";
+  const visible = `((subscriptions.id IS NOT NULL AND subscriptions.unsubscribed_at IS NULL) OR user_entries.starred = true OR entries.type = 'saved'
+    OR EXISTS (SELECT 1 FROM collection_entries ce WHERE ce.user_id = user_entries.user_id AND ce.entry_id = user_entries.entry_id))`;
+  const saved = savedFeedId(0);
+  const entriesSql = `WITH changed_entries AS (
+  (SELECT user_entries.entry_id FROM user_entries
+   WHERE user_entries.user_id = ${q(U0)} AND user_entries.updated_at >= ${c})
+  UNION
+  (SELECT user_entries.entry_id FROM subscriptions
+   INNER JOIN entries ON entries.feed_id = subscriptions.feed_id AND entries.updated_at >= ${c}
+   INNER JOIN user_entries ON user_entries.entry_id = entries.id AND user_entries.user_id = subscriptions.user_id
+   WHERE subscriptions.user_id = ${q(U0)})
+  UNION
+  (SELECT user_entries.entry_id FROM user_entries
+   INNER JOIN entries ON entries.id = user_entries.entry_id AND entries.feed_id = ${q(saved)} AND entries.updated_at >= ${c}
+   WHERE user_entries.user_id = ${q(U0)})
+)
+SELECT entries.id, entries.title, entries.author, entries.summary, entries.url, entries.published_at,
+  entries.fetched_at, entries.site_name, entries.is_spam, entries.is_backfill, user_entries.read,
+  user_entries.starred, user_entries.read_changed_at, subscriptions.id AS subscription_id, entries.type,
+  COALESCE(subscriptions.custom_title, feeds.title) AS feed_title,
+  ${visible} AS visible,
+  ${since("entries.updated_at")} AS metadata_changed,
+  ${since("user_entries.updated_at")} AS state_changed,
+  ${since("entries.created_at")} AS is_new,
+  ${greatest} AS max_updated_at, user_entries.updated_at AS state_updated_at
+FROM changed_entries
+INNER JOIN user_entries ON user_entries.user_id = ${q(U0)} AND user_entries.entry_id = changed_entries.entry_id
+INNER JOIN entries ON entries.id = user_entries.entry_id
+INNER JOIN feeds ON feeds.id = entries.feed_id
+LEFT JOIN subscriptions ON subscriptions.id = user_entries.subscription_id AND subscriptions.user_id = user_entries.user_id
+WHERE ${after(greatest)}
+  AND ${changes ? `(${visible} OR ${since("user_entries.updated_at")})` : visible}
+ORDER BY ${greatest}, entries.id
+LIMIT 501`;
+  const changed = (
+    await rows<{
+      id: string;
+      visible: boolean;
+      subscription_id: string | null;
+      state_changed: boolean;
+      metadata_changed: boolean;
+      is_new: boolean;
+    }>(db, entriesSql)
+  ).filter((r) => r.visible);
+  const subsSql = `SELECT subscriptions.*, feeds.*, subscriptions.updated_at AS updated_at_instant
+FROM subscriptions INNER JOIN feeds ON subscriptions.feed_id = feeds.id
+WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.updated_at > ${ts(subCursor.ts)}
+ORDER BY subscriptions.updated_at`;
+  const activeSubs = (
+    await rows<{ id: string; unsubscribed_at: string | null }>(
+      db,
+      `SELECT id, unsubscribed_at FROM subscriptions WHERE user_id = ${q(U0)} AND updated_at > ${ts(subCursor.ts)}`
+    )
+  ).filter((s) => s.unsubscribed_at === null);
+  const toCountEntries = (rowsIn: typeof changed) =>
+    rowsIn.map((r) => ({ id: r.id, subscriptionId: r.subscription_id }));
+  const newEntries = changed.filter((r) => r.metadata_changed && r.is_new);
+  const stateChanged = changed.filter((r) => r.state_changed);
+  const prefixed = (prefix: string, statements: Statement[]) =>
+    statements.map((s) => ({ ...s, label: `${prefix}.${s.label}` }));
+  const deletionsCursor = await one<{ ts: string }>(
+    db,
+    "SELECT (now() - interval '1 day')::text AS ts"
+  );
+  return [
+    ...(changes ? [{ label: "db_now", sql: "SELECT now() AS now" }] : []),
+    {
+      label: "saved_feed",
+      sql: `SELECT feeds.id FROM feeds WHERE feeds.type = 'saved' AND feeds.user_id = ${q(U0)} LIMIT 1`,
+    },
+    { label: "entries", sql: entriesSql },
+    ...(newEntries.length > 0
+      ? prefixed("new", await bulkCounts(db, U0, toCountEntries(newEntries)))
+      : []),
+    ...(stateChanged.length > 0
+      ? prefixed("state", await bulkCounts(db, U0, toCountEntries(stateChanged)))
+      : []),
+    { label: "subscriptions", sql: subsSql },
+    ...(activeSubs.length > 0
+      ? [
+          {
+            label: "subscription_tags",
+            sql: `SELECT subscription_tags.subscription_id, tags.id, tags.name, tags.color
+FROM subscription_tags INNER JOIN tags ON tags.id = subscription_tags.tag_id
+WHERE subscription_tags.subscription_id IN (${list(activeSubs.map((s) => s.id))})`,
+          },
+        ]
+      : []),
+    {
+      label: "tags",
+      sql: `SELECT tags.id, tags.name, tags.color, tags.created_at, tags.deleted_at, tags.updated_at
+FROM tags WHERE tags.user_id = ${q(U0)} AND tags.updated_at > ${ts(tagCursor.ts)} ORDER BY tags.updated_at`,
+    },
+    ...(changes && stateChanged.length > 0
+      ? [
+          // listCollectionMemberships
+          {
+            label: "collection_memberships",
+            sql: `SELECT collection_entries.entry_id, collection_entries.subscription_id
+FROM collection_entries
+WHERE collection_entries.user_id = ${q(U0)} AND collection_entries.entry_id IN (${list(stateChanged.map((r) => r.id))})`,
+          },
+        ]
+      : []),
+    ...(changes
+      ? [
+          {
+            label: "tombstones",
+            sql: `SELECT entry_tombstones.entry_id, entry_tombstones.deleted_at FROM entry_tombstones
+WHERE entry_tombstones.user_id = ${q(U0)} AND entry_tombstones.deleted_at > ${ts(deletionsCursor.ts)}
+ORDER BY entry_tombstones.deleted_at LIMIT 501`,
+          },
+        ]
+      : []),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -723,115 +870,15 @@ LIMIT 11 OFFSET 0`,
   {
     name: "sync.events",
     kind: "read",
+    source: "trpc/routers/sync.ts sync.events: collectSyncEvents (~200 changes)",
+    prepare: async (db) => ({ statements: await syncStatements(db, false) }),
+  },
+  {
+    name: "sync.changes",
+    kind: "read",
     source:
-      "trpc/routers/sync.ts collectSyncEvents (entry + subscription + tag arms, ~200 changes)",
-    prepare: async (db) => {
-      const cursor = await one<{ ts: string; id: string }>(
-        db,
-        `SELECT updated_at::text AS ts, entry_id AS id FROM user_entries WHERE user_id = ${q(U0)}
-ORDER BY updated_at DESC, entry_id DESC OFFSET 200 LIMIT 1`
-      );
-      const subCursor = await one<{ ts: string }>(
-        db,
-        `SELECT updated_at::text AS ts FROM subscriptions WHERE user_id = ${q(U0)}
-ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
-      );
-      const tagCursor = await one<{ ts: string }>(
-        db,
-        `SELECT max(updated_at)::text AS ts FROM tags WHERE user_id = ${q(U0)}`
-      );
-      const c = ts(cursor.ts);
-      const after = (col: string) =>
-        `(${col} > ${c} OR (${col} = ${c} AND entries.id > ${q(cursor.id)}::uuid))`;
-      const greatest = "GREATEST(entries.updated_at, user_entries.updated_at)";
-      const visible = `((subscriptions.id IS NOT NULL AND subscriptions.unsubscribed_at IS NULL) OR user_entries.starred = true OR entries.type = 'saved'
-    OR EXISTS (SELECT 1 FROM collection_entries ce WHERE ce.user_id = user_entries.user_id AND ce.entry_id = user_entries.entry_id))`;
-      const saved = savedFeedId(0);
-      const entriesSql = `WITH changed_entries AS (
-  (SELECT user_entries.entry_id FROM user_entries
-   WHERE user_entries.user_id = ${q(U0)} AND user_entries.updated_at >= ${c})
-  UNION
-  (SELECT user_entries.entry_id FROM subscriptions
-   INNER JOIN entries ON entries.feed_id = subscriptions.feed_id AND entries.updated_at >= ${c}
-   INNER JOIN user_entries ON user_entries.entry_id = entries.id AND user_entries.user_id = subscriptions.user_id
-   WHERE subscriptions.user_id = ${q(U0)})
-  UNION
-  (SELECT user_entries.entry_id FROM user_entries
-   INNER JOIN entries ON entries.id = user_entries.entry_id AND entries.feed_id = ${q(saved)} AND entries.updated_at >= ${c}
-   WHERE user_entries.user_id = ${q(U0)})
-)
-SELECT entries.id, entries.title, entries.author, entries.summary, entries.url, entries.published_at,
-  entries.fetched_at, entries.site_name, entries.is_spam, entries.is_backfill, user_entries.read,
-  user_entries.starred, user_entries.read_changed_at, subscriptions.id AS subscription_id, entries.type,
-  COALESCE(subscriptions.custom_title, feeds.title) AS feed_title,
-  ${visible} AS visible,
-  ${after("entries.updated_at")} AS metadata_changed,
-  ${after("user_entries.updated_at")} AS state_changed,
-  ${after("entries.created_at")} AS is_new,
-  ${greatest} AS max_updated_at, user_entries.updated_at AS state_updated_at
-FROM changed_entries
-INNER JOIN user_entries ON user_entries.user_id = ${q(U0)} AND user_entries.entry_id = changed_entries.entry_id
-INNER JOIN entries ON entries.id = user_entries.entry_id
-INNER JOIN feeds ON feeds.id = entries.feed_id
-LEFT JOIN subscriptions ON subscriptions.id = user_entries.subscription_id AND subscriptions.user_id = user_entries.user_id
-WHERE ${after(greatest)} AND ${visible}
-ORDER BY ${greatest}, entries.id
-LIMIT 501`;
-      const changed = await rows<{
-        id: string;
-        subscription_id: string | null;
-        state_changed: boolean;
-        metadata_changed: boolean;
-        is_new: boolean;
-      }>(db, entriesSql);
-      const subsSql = `SELECT subscriptions.*, feeds.*, subscriptions.updated_at AS updated_at_instant
-FROM subscriptions INNER JOIN feeds ON subscriptions.feed_id = feeds.id
-WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.updated_at > ${ts(subCursor.ts)}
-ORDER BY subscriptions.updated_at`;
-      const activeSubs = (
-        await rows<{ id: string; unsubscribed_at: string | null }>(
-          db,
-          `SELECT id, unsubscribed_at FROM subscriptions WHERE user_id = ${q(U0)} AND updated_at > ${ts(subCursor.ts)}`
-        )
-      ).filter((s) => s.unsubscribed_at === null);
-      const toCountEntries = (rowsIn: typeof changed) =>
-        rowsIn.map((r) => ({ id: r.id, subscriptionId: r.subscription_id }));
-      const newEntries = changed.filter((r) => r.metadata_changed && r.is_new);
-      const stateChanged = changed.filter((r) => r.state_changed);
-      const prefixed = (prefix: string, statements: Statement[]) =>
-        statements.map((s) => ({ ...s, label: `${prefix}.${s.label}` }));
-      return {
-        statements: [
-          {
-            label: "saved_feed",
-            sql: `SELECT feeds.id FROM feeds WHERE feeds.type = 'saved' AND feeds.user_id = ${q(U0)} LIMIT 1`,
-          },
-          { label: "entries", sql: entriesSql },
-          ...(newEntries.length > 0
-            ? prefixed("new", await bulkCounts(db, U0, toCountEntries(newEntries)))
-            : []),
-          ...(stateChanged.length > 0
-            ? prefixed("state", await bulkCounts(db, U0, toCountEntries(stateChanged)))
-            : []),
-          { label: "subscriptions", sql: subsSql },
-          ...(activeSubs.length > 0
-            ? [
-                {
-                  label: "subscription_tags",
-                  sql: `SELECT subscription_tags.subscription_id, tags.id, tags.name, tags.color
-FROM subscription_tags INNER JOIN tags ON tags.id = subscription_tags.tag_id
-WHERE subscription_tags.subscription_id IN (${list(activeSubs.map((s) => s.id))})`,
-                },
-              ]
-            : []),
-          {
-            label: "tags",
-            sql: `SELECT tags.id, tags.name, tags.color, tags.created_at, tags.deleted_at, tags.updated_at
-FROM tags WHERE tags.user_id = ${q(U0)} AND tags.updated_at > ${ts(tagCursor.ts)} ORDER BY tags.updated_at`,
-          },
-        ],
-      };
-    },
+      "trpc/routers/sync.ts sync.changes: collectSyncEvents(reportHidden) + listCollectionMemberships + tombstones",
+    prepare: async (db) => ({ statements: await syncStatements(db, true) }),
   },
   {
     name: "greader.stream_feed",
@@ -1211,14 +1258,8 @@ WHERE subscription_tags.subscription_id IN (${q(newSub)})`,
   {
     name: "write.collection_delete_1000",
     kind: "write",
-    source: "services/subscriptions.ts unsubscribe on a collection (1,000 members, added in setup)",
-    prepare: async (db) => {
-      const ids = await newestVisibleIds(db, 1000);
-      return {
-        setup: addToCollectionStatements(U0, emptyCollection, ids).map((s) => s.sql),
-        statements: await unsubscribeStatements(db, U0, emptyCollection),
-      };
-    },
+    source: "services/subscriptions.ts unsubscribe on a collection (1,000 members)",
+    prepare: async (db) => ({ statements: await unsubscribeStatements(db, userId(1), archive) }),
   },
   {
     name: "write.save_article",

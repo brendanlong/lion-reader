@@ -2,9 +2,12 @@
  * Compares two `pnpm bench:db` result files (`pnpm bench:db:compare before.json
  * after.json`) and prints a markdown before/after table for a PR description.
  *
- * Time ratios on sub-millisecond benchmarks are mostly noise; buffer ratios are
- * stable across runs, so read those first. "plan" flags a benchmark whose
- * index or sequential-scan set changed, listed under the table.
+ * Buffer ratios are the stable signal (time ratios on sub-millisecond
+ * benchmarks are mostly noise). Buffers include trigger work when both runs
+ * had pg_stat_statements; otherwise only the plans' buffers are comparable,
+ * and for trigger-heavy writes the WAL and trigger-time columns carry the
+ * signal. "plan" flags a benchmark whose index or sequential-scan set
+ * changed, listed under the table.
  */
 
 import * as fs from "node:fs";
@@ -12,6 +15,7 @@ import { parseArgs } from "node:util";
 
 import {
   RESULT_VERSION,
+  fmtBytes,
   fmtMs,
   fmtCount,
   markdownTable,
@@ -71,21 +75,21 @@ function main(): void {
   const afterByName = new Map(after.results.map((r) => [r.name, r]));
   const beforeNames = new Set(before.results.map((r) => r.name));
 
+  const withTriggers =
+    before.meta.postgres.pgStatStatements && after.meta.postgres.pgStatStatements;
+  const buffersOf = (r: BenchResult) => totalBuffers((withTriggers && r.buffers) || r.planBuffers);
+  const arrow = (b: string, a: string) => (b || a ? `${b || "–"} → ${a || "–"}` : "");
+
   const rows: string[][] = [];
   const planNotes: string[] = [];
   const pair = (b: BenchResult | undefined, a: BenchResult | undefined, name: string) => {
     if (!b || !a) {
-      rows.push([
-        name,
-        b ? fmtMs(b.ms.median) : "–",
-        a ? fmtMs(a.ms.median) : "–",
-        "",
-        "",
-        "",
-        "",
-        "",
-        a ? "added" : "removed",
-      ]);
+      const one = (b ?? a)!;
+      rows.push(
+        [name, b ? fmtMs(one.ms.median) : "–", a ? fmtMs(one.ms.median) : "–"]
+          .concat(new Array<string>(8).fill(""))
+          .concat([a ? "added" : "removed"])
+      );
       return;
     }
     const added = a.access.filter((x) => !b.access.includes(x));
@@ -101,10 +105,12 @@ function main(): void {
       fmtMs(b.ms.median),
       fmtMs(a.ms.median),
       ratio(b.ms.median, a.ms.median, threshold),
-      fmtCount(totalBuffers(b.buffers)),
-      fmtCount(totalBuffers(a.buffers)),
-      ratio(totalBuffers(b.buffers), totalBuffers(a.buffers), threshold),
-      b.triggerMs > 0 || a.triggerMs > 0 ? `${fmtMs(b.triggerMs)} → ${fmtMs(a.triggerMs)}` : "",
+      fmtCount(buffersOf(b)),
+      fmtCount(buffersOf(a)),
+      ratio(buffersOf(b), buffersOf(a), threshold),
+      arrow(b.walBytes > 0 ? fmtBytes(b.walBytes) : "", a.walBytes > 0 ? fmtBytes(a.walBytes) : ""),
+      arrow(b.triggerMs > 0 ? fmtMs(b.triggerMs) : "", a.triggerMs > 0 ? fmtMs(a.triggerMs) : ""),
+      arrow(b.cold ? fmtMs(b.cold.ms.median) : "", a.cold ? fmtMs(a.cold.ms.median) : ""),
       planChanged ? "changed" : "",
     ]);
   };
@@ -116,6 +122,11 @@ function main(): void {
   if (warnings.length > 0) {
     console.log(`**Not comparable as-is:** ${warnings.join("; ")}.\n`);
   }
+  if (!withTriggers) {
+    console.log(
+      "Buffers are the plans' only (no pg_stat_statements in one run): they miss trigger work.\n"
+    );
+  }
   console.log(
     markdownTable(
       [
@@ -126,7 +137,9 @@ function main(): void {
         "before buf",
         "after buf",
         "buffers",
+        "WAL",
         "trigger ms",
+        "cold ms",
         "plan",
       ],
       rows

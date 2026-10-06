@@ -1,6 +1,7 @@
 /**
  * Seeds the database benchmark dataset (`pnpm bench:db:seed`): production's
- * shape as of 2026-10-05, with exact row counts for the main tables.
+ * shape as of 2026-10-05, with exact row counts for the main tables except
+ * collection_entries (see `COLLECTIONS`).
  *
  * The plan (who subscribes to what, how many entries each feed and library
  * has) is computed here from a seeded PRNG; the bulk rows are generated in SQL
@@ -46,7 +47,6 @@ const TARGET = {
   subscriptions: 1_776,
   entries: 481_197,
   userEntries: 508_971,
-  collectionEntries: 71,
 };
 
 interface HeavyUser {
@@ -606,6 +606,7 @@ const COLLECTION_ENTRIES = [
     { n: 2, where: "e.type = 'email' AND NOT e.is_spam" },
   ]),
   collectionMembers(COLLECTIONS.favorites.key, 1, [{ n: 11, where: activeWeb }]),
+  collectionMembers(COLLECTIONS.archive.key, 1, [{ n: 1000, where: activeWeb }]),
 ].join("\n");
 
 const STATS = `

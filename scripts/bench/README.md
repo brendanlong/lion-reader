@@ -13,27 +13,46 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
   function it mirrors**, keeping its name so comparisons line up.
 - `run.ts` runs them and says how (EXPLAIN ANALYZE, rolled-back writes,
   warm-up, vacuuming between iterations); `compare.ts` diffs two runs.
+- `baseline.json` is the phase 0 run of #1846, for seeing which benchmarks
+  are heavy and how they plan, not the "before" of a comparison.
 
 ## Running
 
 ```bash
 pnpm services          # as a background task: throwaway Postgres + Redis
 pnpm bench:db:seed     # ~3 minutes; refuses to wipe a database that isn't a benchmark one
-pnpm bench:db          # ~2 minutes; prints a table, writes scripts/bench/results/<time>-<sha>.json
+pnpm bench:db          # ~3 minutes; prints a table, writes scripts/bench/results/<time>-<sha>.json
 ```
 
-The scripts read `DATABASE_URL` from `.env.local-services`; a `DATABASE_URL`
-in the environment takes precedence. `pnpm bench:db` takes `--iterations`
-(default 5), `--warmup` (default 5), `--filter name,name` (substring match),
-`--out file.json` and `--note text`.
+The scripts use the `DATABASE_URL` in `.env.local-services`. `pnpm bench:db`
+takes `--iterations` (default 5), `--warmup` (default 5), `--filter name,name`
+(substring match), `--out file.json` and `--note text`.
 
 Columns: **ms** is planning + execution summed over the benchmark's
-statements, triggers included (median and p90 over the iterations).
+statements, triggers included (median; **max** over the iterations).
 **trigger ms** is the part spent in triggers, foreign-key checks included.
-**buffers** are shared buffers hit or read by the plans, which excludes work
-inside triggers; **WAL** includes it. **rows** are rows returned, or for
-writes rows written by the statements themselves. **access** lists the indexes
-and sequentially scanned tables the plans used.
+**buffers** are shared buffers hit or read by everything the statements ran,
+triggers included, counted with pg_stat_statements, which `pnpm services`
+loads. Against a server without it they fall back to the plans' own buffers,
+which miss trigger work entirely (an unsubscribe shows a few dozen), and
+`compare` says so. **WAL** includes trigger writes. **rows** are rows
+returned, or for writes rows written by the statements themselves. **access**
+lists the indexes and sequentially scanned tables the plans used.
+
+### Warm and cold
+
+**ms** and **buffers** are the warm state: a connection that has already run
+the benchmark five times. PL/pgSQL plans a statement for its arguments for its
+first five executions in a session and may then switch to a generic plan,
+which is what the triggers run on production's long-lived pooled connections,
+and the generic plan can be several times slower (an unsubscribe goes from
+~10 ms to ~70 ms). Writes also report **cold ms**: each iteration on a new
+connection, so the triggers still plan per call, plus the cost of filling the
+connection's catalog caches. The warm-up calls are all for U0, the heaviest
+library, while a production connection decides after calls for whichever
+users it served first, so production may settle on a different plan for some
+statements. A change that alters which plan the triggers settle on shows up as
+warm and cold moving differently.
 
 ## Comparing before and after
 
@@ -49,39 +68,18 @@ pnpm bench:db:compare /tmp/before.json /tmp/after.json   # markdown for the PR d
 ```
 
 Migrations aren't reversible, so re-seed on master before running master
-again. `compare` warns when the two runs differ in machine, Postgres or row
-counts. Read buffer ratios first: on an unchanged tree they repeat within 1%,
-except `ssr.list_saved` and `greader.stream_saved` (parallel plans, ±10%) and
-`write.collection_delete_1000` (±25%). Times repeat within about 10% on an
-idle machine, but a busy one moves them all together, and sub-millisecond
-ratios are noise. A "changed" plan means the set of indexes or sequential
-scans moved; the statements' `nodes` in the two result files show how.
+again. A run ANALYZEs any table a migration left without fresh statistics
+(listed in the result's `meta.analyzed`). `compare` warns when the two runs
+differ in machine, Postgres or row counts.
 
-## Baseline
-
-`baseline.json` is the phase 0 run of #1846: commit 94607ac9 on a Ryzen 9
-5900X, against `pnpm services`' PostgreSQL 18.6 with default settings (128 MB
-`shared_buffers`). Use it to see which benchmarks are heavy and what their
-plans look like, not as the "before" of a comparison. Everything not listed
-here takes under 2 ms.
-
-| benchmark                      | p50 ms | buffers | trigger ms |
-| :----------------------------- | -----: | ------: | ---------: |
-| `write.fanout_100`             |  2,312 |    4.2M |         30 |
-| `write.fanout_one`             |  1,062 |    2.1M |          4 |
-| `write.collection_delete_1000` |    144 |     10k |        141 |
-| `write.redirect_merge`         |    103 |     55k |         72 |
-| `write.collection_add_1000`    |     92 |     43k |         73 |
-| `write.mark_all_read_feed`     |     78 |    143k |         12 |
-| `ssr.sync_cursors`             |     58 |     70k |            |
-| `write.collection_delete`      |     41 |     278 |         40 |
-| `write.unsubscribe_large`      |     39 |      55 |         38 |
-| `ssr.list_saved`               |     26 |     68k |            |
-| `greader.stream_saved`         |     25 |     62k |            |
-| `write.subscribe_with_history` |     20 |     16k |          9 |
-| `search`                       |    6.4 |    9.4k |            |
-| `sync.events`                  |    4.3 |    4.3k |            |
-| `write.save_article`           |    3.7 |     132 |        1.9 |
+Read buffer ratios first: on an unchanged tree they repeat within 1%, except
+the parallel plans (`ssr.list_saved`, `greader.stream_saved`, about ±10%).
+For trigger-heavy writes, read buffers together with trigger ms, WAL and cold
+ms, since that's where those writes spend their time. Times repeat within
+about 10% on an idle machine, but a busy one moves them all together, and
+sub-millisecond ratios are noise. A "changed" plan means the set of indexes or
+sequential scans moved; the statements' `nodes` in the two result files show
+how.
 
 ## Does anything belong in Redis?
 

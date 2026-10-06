@@ -64,12 +64,19 @@ export const subscriptionId = (userIdx: number, feedKey: string): string =>
 export const webSubscriptionId = (userIdx: number, feedIdx: number): string =>
   subscriptionId(userIdx, `web:${feedIdx}`);
 
-/** U0's collections. `empty` starts with no members (the add-1,000 target). */
+/**
+ * The seeded collections. `empty` has no members (the add-1,000 target).
+ * `archive` holds 1,000 (the large-delete target), so the seed has 1,071
+ * collection_entries to production's 71; it belongs to U1 because every
+ * counter recompute scans its owner's members, and U0's should stay
+ * production-sized.
+ */
 export const COLLECTIONS = {
-  readingList: { userIdx: 0, key: "reading-list", title: "Reading list", members: 40 },
-  research: { userIdx: 0, key: "research", title: "Research", members: 20 },
-  empty: { userIdx: 0, key: "inbox-zero", title: "Inbox zero", members: 0 },
-  favorites: { userIdx: 1, key: "favorites", title: "Favorites", members: 11 },
+  readingList: { userIdx: 0, key: "reading-list", title: "Reading list" },
+  research: { userIdx: 0, key: "research", title: "Research" },
+  empty: { userIdx: 0, key: "inbox-zero", title: "Inbox zero" },
+  archive: { userIdx: 1, key: "archive", title: "Archive" },
+  favorites: { userIdx: 1, key: "favorites", title: "Favorites" },
 } as const;
 export const collectionFeedId = (key: string): string => benchUuid(`feed:collection:${key}`);
 export const collectionSubscriptionId = (userIdx: number, key: string): string =>
