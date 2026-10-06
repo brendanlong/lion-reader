@@ -32,6 +32,7 @@ import {
   oauthClients,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -120,6 +121,27 @@ export async function createTestSubscription(
     ...overrides,
   });
   return subscriptionId;
+}
+
+/**
+ * Gives `userId` a saved feed (if missing) and the saved subscription the
+ * database will create for it (#1846): type `saved`, no feed, named "Saved",
+ * with the saved feed's Google Reader serial. Returns both ids.
+ */
+export async function createTestSavedSubscription(
+  userId: string
+): Promise<{ subscriptionId: string; savedFeedId: string }> {
+  const savedFeedId = await getOrCreateSavedFeed(db, userId);
+  const subscriptionId = generateUuidv7();
+  await db.insert(subscriptions).values({
+    id: subscriptionId,
+    userId,
+    feedId: null,
+    type: "saved",
+    customTitle: "Saved",
+    greaderStreamId: sql`(SELECT ${feeds.greaderStreamId} FROM ${feeds} WHERE ${feeds.id} = ${savedFeedId})`,
+  });
+  return { subscriptionId, savedFeedId };
 }
 
 // ============================================================================

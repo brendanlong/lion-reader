@@ -24,7 +24,13 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
-import { createTestFeed, createTestUser, createUnauthContext } from "./helpers";
+import {
+  createTestFeed,
+  createTestSavedSubscription,
+  createTestSubscription,
+  createTestUser,
+  createUnauthContext,
+} from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -349,6 +355,18 @@ describe("Admin API", () => {
       expect(stats.totalUsers).toBe(4);
       expect(stats.activeUsersLast7Days).toBe(1);
       expect(stats.activeUsersLast30Days).toBe(2);
+    });
+
+    it("doesn't count the hidden saved subscription (#1846)", async () => {
+      const caller = createCaller(createAdminContext());
+      const userId = await createTestUser();
+      await createTestSubscription(userId, await createTestFeed());
+      await createTestSavedSubscription(userId);
+
+      expect((await caller.admin.getOverview()).totalSubscriptions).toBe(1);
+      expect(
+        (await caller.admin.listUsers()).items.find((u) => u.id === userId)?.subscriptionCount
+      ).toBe(1);
     });
   });
 

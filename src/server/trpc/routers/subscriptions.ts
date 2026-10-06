@@ -439,7 +439,8 @@ export const subscriptionsRouter = createTRPCRouter({
             eq(prev.id, subscriptions.id),
             eq(subscriptions.id, input.id),
             eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt)
+            isNull(subscriptions.unsubscribedAt),
+            subscriptionsService.isListedSubscription()
           )
         )
         .returning({

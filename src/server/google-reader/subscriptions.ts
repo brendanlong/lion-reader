@@ -95,7 +95,13 @@ export async function listGreaderSubscriptions(
     db
       .select({ id: subscriptions.id, greaderStreamId: subscriptions.greaderStreamId })
       .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt))),
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          isNull(subscriptions.unsubscribedAt),
+          subscriptionsService.isListedSubscription()
+        )
+      ),
     getSavedSubscription(db, userId),
   ]);
 
@@ -224,6 +230,7 @@ export async function getGreaderUnreadCounts(
     WHERE subscriptions.user_id = ${userId}::uuid
       AND subscriptions.unsubscribed_at IS NULL
       AND NOT ${subscriptionsService.isCollectionSubscription()}
+      AND ${subscriptionsService.isListedSubscription()}
 
     UNION ALL
 
