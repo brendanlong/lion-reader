@@ -78,7 +78,6 @@ export const COLLECTIONS = {
   archive: { userIdx: 1, key: "archive", title: "Archive" },
   favorites: { userIdx: 1, key: "favorites", title: "Favorites" },
 } as const;
-export const collectionFeedId = (key: string): string => benchUuid(`feed:collection:${key}`);
 export const collectionSubscriptionId = (userIdx: number, key: string): string =>
   subscriptionId(userIdx, `collection:${key}`);
 
