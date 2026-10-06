@@ -25,7 +25,6 @@ import {
   FIRST_POOL_FEED,
   WEB,
   benchUuid,
-  collectionFeedId,
   collectionSubscriptionId,
   prng,
   savedFeedId,
@@ -40,7 +39,9 @@ import {
   webSubscriptionId,
 } from "./dataset";
 
-// Production row counts, 2026-10-05.
+// Production row counts, 2026-10-05. Its feeds then included one per
+// collection, which collections no longer have (#1846), so the seed has
+// that many fewer.
 const TARGET = {
   users: 48,
   feeds: 2_932,
@@ -115,7 +116,7 @@ interface PlanUser {
 
 interface PlanFeed {
   id: string;
-  kind: "web" | "email" | "saved" | "collection";
+  kind: "web" | "email" | "saved";
   webIdx: number | null;
   userIdx: number | null;
   n: number;
@@ -377,26 +378,6 @@ function buildPlan() {
       });
     }
   }
-  for (const c of Object.values(COLLECTIONS)) {
-    feeds.push({
-      id: collectionFeedId(c.key),
-      kind: "collection",
-      webIdx: null,
-      userIdx: c.userIdx,
-      n: 0,
-      current: 0,
-      spanDays: 0,
-      url: null,
-      title: c.title,
-      sender: null,
-      spamFrac: 0,
-      guidPrefix: "",
-      aliasPrefix: null,
-      aliasCount: 0,
-      aliasN: 0,
-      lastUpdatedMinutesAgo: 0,
-    });
-  }
 
   // Tags: each active web/email subscription gets one or two of its user's
   // tags with the user's probability; the special feeds are tagged by hand.
@@ -475,8 +456,7 @@ CROSS JOIN LATERAL generate_series(1, f.n) o
 CROSS JOIN LATERAL (
   SELECT f.last_upd - (o - 1 + pg_temp.h(f.id || ':' || o)) * (f.span_days / f.n) * interval '1 day' AS ts
 ) t0
-CROSS JOIN LATERAL (SELECT t0.ts, t0.ts + interval '5 minutes' AS fetched_at) t
-WHERE f.kind <> 'collection';
+CROSS JOIN LATERAL (SELECT t0.ts, t0.ts + interval '5 minutes' AS fetched_at) t;
 CREATE INDEX ON bench_entry (feed_id, ord);
 ANALYZE bench_entry;
 `;
@@ -777,12 +757,13 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
   await step("user_entries", USER_ENTRIES);
   await step(
     "collections",
-    `INSERT INTO subscriptions (id, user_id, feed_id, type, custom_title, subscribed_at, created_at, updated_at)
-     SELECT v.sub, f.user_id, f.id, 'collection', f.title, ${A} - interval '30 days', ${A} - interval '30 days', ${A} - interval '30 days'
-     FROM unnest($1::uuid[], $2::uuid[]) AS v(sub, feed) JOIN feeds f ON f.id = v.feed`,
+    `INSERT INTO subscriptions (id, user_id, type, custom_title, subscribed_at, created_at, updated_at)
+     SELECT v.sub, v.user_id, 'collection', v.title, ${A} - interval '30 days', ${A} - interval '30 days', ${A} - interval '30 days'
+     FROM unnest($1::uuid[], $2::uuid[], $3::text[]) AS v(sub, user_id, title)`,
     [
       Object.values(COLLECTIONS).map((c) => collectionSubscriptionId(c.userIdx, c.key)),
-      Object.values(COLLECTIONS).map((c) => collectionFeedId(c.key)),
+      Object.values(COLLECTIONS).map((c) => userId(c.userIdx)),
+      Object.values(COLLECTIONS).map((c) => c.title),
     ]
   );
   await step(

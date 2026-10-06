@@ -1,8 +1,7 @@
 /**
- * A subscription may have no feed (#1846, phase 3A): collections will stop
- * having feed rows. Every read takes a subscription's type and name from the
- * subscription itself, so a feedless collection works everywhere a
- * collection with a feed does.
+ * A subscription may have no feed, and a collection never has one (#1846).
+ * Every read takes a subscription's type and name from the subscription
+ * itself, and clients still get the fields released apps require.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -18,18 +17,17 @@ import {
   userEntries,
   users,
 } from "../../src/server/db/schema";
-import { addEntriesToCollection } from "../../src/server/services/collections";
+import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import { exportSubscriptionsOpml, unsubscribe } from "../../src/server/services/subscriptions";
 import { deleteUser } from "../../src/server/services/users";
 import { listGreaderSubscriptions } from "../../src/server/google-reader/subscriptions";
 import { listWallabagTags } from "../../src/server/wallabag/tags";
-import { publishNewEntry, publishSubscriptionCreated } from "../../src/server/redis/pubsub";
+import { publishNewEntry } from "../../src/server/redis/pubsub";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
   createTestEntry,
   createTestFeed,
-  createTestFeedlessCollection,
   createTestSubscription,
   createTestTag,
   createTestUser,
@@ -47,13 +45,17 @@ async function cleanup(): Promise<void> {
   await db.delete(users);
 }
 
-/** A user with a web subscription, one unread entry in it, and a feedless collection holding that entry. */
+async function newCollection(userId: string, name: string): Promise<string> {
+  return (await createCollection(db, userId, name)).subscription.id;
+}
+
+/** A user with a web subscription, one unread entry in it, and a collection holding that entry. */
 async function setup() {
   const userId = await createTestUser();
   const feedId = await createTestFeed({ title: "Source" });
   const sourceId = await createTestSubscription(userId, feedId);
   const entryId = await createTestEntry(feedId, { userIds: [userId] });
-  const collectionId = await createTestFeedlessCollection(userId, "Reading");
+  const collectionId = await newCollection(userId, "Reading");
   await addEntriesToCollection(db, userId, collectionId, [entryId]);
   return { userId, feedId, sourceId, entryId, collectionId };
 }
@@ -61,6 +63,36 @@ async function setup() {
 describe("subscriptions without a feed (#1846)", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
+
+  it("creating a collection creates no feed", async () => {
+    const userId = await createTestUser();
+    const caller = createCaller(await createAuthContext(userId));
+
+    const { subscription } = await caller.collections.create({ name: "Reading" });
+
+    expect(
+      await db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(eq(subscriptions.id, subscription.id))
+    ).toEqual([{ feedId: null }]);
+    expect(await db.select({ id: feeds.id }).from(feeds).where(eq(feeds.userId, userId))).toEqual(
+      []
+    );
+    expect(subscription).toEqual({
+      id: subscription.id,
+      type: "collection",
+      url: null,
+      title: "Reading",
+      originalTitle: "Reading",
+      description: null,
+      siteUrl: null,
+      subscribedAt: expect.any(Date),
+      unreadCount: 0,
+      tags: [],
+      fetchFullContent: false,
+    });
+  });
 
   it("lists and gets one with its own type and name", async () => {
     const { userId, collectionId } = await setup();
@@ -163,10 +195,11 @@ describe("subscriptions without a feed (#1846)", () => {
     });
   });
 
-  it("streams its events alongside a web feed's over SSE", async () => {
+  it("streams a new one's events alongside a web feed's over SSE", async () => {
     const { userId, feedId, entryId } = await setup();
-    const laterId = await createTestFeedlessCollection(userId, "Later");
+    const caller = createCaller(await createAuthContext(userId));
     const stream = await openSseStream(userId);
+    let laterId = "";
 
     try {
       // The web feed's channel is still followed.
@@ -174,33 +207,48 @@ describe("subscriptions without a feed (#1846)", () => {
         () => publishNewEntry(feedId, entryId, new Date(), undefined),
         () => stream.events("new_entry").length > 0
       );
-      await publishSubscriptionCreated(
-        userId,
-        null,
-        laterId,
-        new Date(),
-        { customTitle: "Later", subscribedAt: new Date().toISOString(), unreadCount: 0, tags: [] },
-        { type: "collection", url: null, title: "Later", description: null, siteUrl: null }
-      );
+      laterId = (await caller.collections.create({ name: "Later" })).subscription.id;
+      await stream.waitFor("subscription_created", (e) => e.subscriptionId === laterId);
       expect(await unsubscribe(db, userId, laterId)).not.toBeNull();
       await stream.waitFor("subscription_deleted", (e) => e.subscriptionId === laterId);
     } finally {
       await stream.close();
     }
 
+    // Released Android builds (up to v0.5.1) require subscription.feedId and
+    // feed.id; they carry the subscription id. The internal feedId is stripped.
     expect(stream.events("subscription_created")).toEqual([
-      expect.objectContaining({
+      {
+        type: "subscription_created",
+        userId,
         subscriptionId: laterId,
-        feed: expect.objectContaining({ id: laterId }),
-      }),
+        timestamp: expect.any(String),
+        updatedAt: expect.any(String),
+        subscription: {
+          id: laterId,
+          feedId: laterId,
+          customTitle: "Later",
+          subscribedAt: expect.any(String),
+          unreadCount: 0,
+          tags: [],
+        },
+        feed: {
+          id: laterId,
+          type: "collection",
+          url: null,
+          title: "Later",
+          description: null,
+          siteUrl: null,
+        },
+        counts: expect.any(Object),
+      },
     ]);
   });
 
-  // Skipped: deleting any orphaned feed fails (#1872).
-  it.skip("doesn't stop deleting a user from removing their orphaned feeds", async () => {
+  it("doesn't stop deleting a user from removing their orphaned feeds", async () => {
     const { userId, feedId } = await setup();
     const otherUserId = await createTestUser();
-    await createTestFeedlessCollection(otherUserId, "Other");
+    await newCollection(otherUserId, "Other");
 
     await deleteUser(db, userId);
 

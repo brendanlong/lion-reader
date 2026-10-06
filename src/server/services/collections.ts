@@ -2,22 +2,16 @@
  * Collections Service (#1806)
  *
  * A collection is a list of articles the user fills by hand (or through an AI
- * assistant). It is stored as a subscription to a per-user feed of type
- * 'collection', so everything that handles subscriptions (tags, renaming,
- * unread counters, the sidebar, deletion) handles collections too. Members are
- * referenced through `collection_entries`, never copied: an article keeps its
- * source feed and its read/starred state.
+ * assistant). It is a subscription of type 'collection' with no feed (#1846),
+ * so everything that handles subscriptions (tags, renaming, unread counters,
+ * the sidebar, deletion) handles collections too. Members are referenced
+ * through `collection_entries`, never copied: an article keeps its source feed
+ * and its read/starred state.
  */
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx, Transaction } from "@/server/db";
-import {
-  collectionEntries,
-  feeds,
-  subscriptions,
-  userEntries,
-  visibleEntries,
-} from "@/server/db/schema";
+import { collectionEntries, subscriptions, userEntries, visibleEntries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -95,7 +89,7 @@ export async function createCollection(
   // The collection found can be deleted or renamed before it's read back;
   // then the next attempt creates one.
   for (let attempt = 0; attempt < 2; attempt++) {
-    let outcome: { existingId: string } | { feedId: string; subscriptionId: string; now: Date };
+    let outcome: { existingId: string } | { subscriptionId: string; now: Date };
     try {
       outcome = await db.transaction(async (tx) => {
         // The creation lock serializes the lookup and insert with the user's
@@ -147,37 +141,26 @@ async function insertCollection(
   tx: Transaction,
   userId: string,
   name: string
-): Promise<{ feedId: string; subscriptionId: string; now: Date }> {
-  const feedId = generateUuidv7();
+): Promise<{ subscriptionId: string; now: Date }> {
   const subscriptionId = generateUuidv7();
   const now = new Date();
-  await tx.insert(feeds).values({
-    id: feedId,
-    type: "collection",
-    userId,
-    // The previous release reads the name from here (#1846).
-    title: name,
-    createdAt: now,
-    updatedAt: now,
-  });
   await tx.insert(subscriptions).values({
     id: subscriptionId,
     userId,
-    feedId,
     type: "collection",
     customTitle: name,
     subscribedAt: now,
     createdAt: now,
     updatedAt: now,
   });
-  return { feedId, subscriptionId, now };
+  return { subscriptionId, now };
 }
 
 async function finishCreate(
   db: typeof dbType,
   userId: string,
   name: string,
-  { feedId, subscriptionId, now }: { feedId: string; subscriptionId: string; now: Date }
+  { subscriptionId, now }: { subscriptionId: string; now: Date }
 ): Promise<CreateCollectionResult> {
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
   const feedData = {
@@ -188,9 +171,11 @@ async function finishCreate(
     siteUrl: null,
   };
 
+  // No feed channel to follow; clients still get `feedId`/`feed.id` (the
+  // subscription id, `legacyFeedId`).
   publishSubscriptionCreated(
     userId,
-    feedId,
+    null,
     subscriptionId,
     now,
     {
@@ -202,7 +187,11 @@ async function finishCreate(
     feedData,
     counts
   ).catch((err) => {
-    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
+    logger.error("Failed to publish subscription_created event", {
+      err,
+      userId,
+      subscriptionId,
+    });
   });
 
   return {
