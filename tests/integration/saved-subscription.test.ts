@@ -29,6 +29,10 @@ import {
   resolveFeedStreamFilter,
 } from "../../src/server/google-reader/subscriptions";
 import { feedStreamIdToSubscriptionUuid } from "../../src/server/google-reader/id";
+import {
+  buildUncategorizedSubscriptionIdsSubquery,
+  verifySubscriptionOwnership,
+} from "../../src/server/services/entry-filters";
 import { registerTools } from "../../src/server/mcp/tools";
 import { createCaller } from "../../src/server/trpc/root";
 import {
@@ -100,6 +104,15 @@ describe("the saved subscription (#1846)", () => {
       subscriptions: Array<{ id: string }>;
     };
     expect(listed.subscriptions.map((s) => s.id)).toEqual([webId]);
+  });
+
+  it("isn't a subscription filter, nor part of Uncategorized", async () => {
+    const { userId, webId, subscriptionId } = await setup();
+
+    expect(await verifySubscriptionOwnership(db, subscriptionId, userId)).toBe(false);
+    expect(
+      (await buildUncategorizedSubscriptionIdsSubquery(db, userId)).map((r) => r.subscriptionId)
+    ).toEqual([webId]);
   });
 
   it("can't be tagged, renamed or unsubscribed", async () => {

@@ -27,7 +27,7 @@ import {
   tags,
   visibleEntries,
 } from "@/server/db/schema";
-import { isCollectionSubscription } from "@/server/services/subscriptions";
+import { isCollectionSubscription, isListedSubscription } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Types
@@ -90,7 +90,8 @@ export function entrySubscriptionJoin(row: { subscriptionId: AnyColumn; userId: 
 // ============================================================================
 
 /**
- * Verifies a subscription exists, is active, and belongs to the user.
+ * Verifies a subscription exists, is active, belongs to the user and is listed
+ * (the saved subscription isn't a filter: Saved is `type: "saved"`).
  * Queries the subscriptions table directly — the user_feeds view is
  * display-only (subscription list surfaces), not for ownership checks.
  */
@@ -106,7 +107,8 @@ export async function verifySubscriptionOwnership(
       and(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt)
+        isNull(subscriptions.unsubscribedAt),
+        isListedSubscription()
       )
     )
     .limit(1);
@@ -162,6 +164,7 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
+        isListedSubscription(),
         isNull(subscriptionTags.subscriptionId)
       )
     );

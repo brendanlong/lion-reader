@@ -106,10 +106,13 @@ export function isWebSubscription(): SQL {
  * but `saved`. The database gives each user one saved subscription to hold the
  * Saved list's memberships (#1846). It stays hidden, can't be tagged and can't
  * be unsubscribed, so installed apps never list Saved as a feed; the Saved list
- * is reached through `type: "saved"` filters instead.
+ * is reached through `type: "saved"` filters instead. Pass `user_feeds.type`
+ * when querying the view.
  */
-export function isListedSubscription(): SQL {
-  return ne(subscriptions.type, "saved");
+export function isListedSubscription(
+  type: typeof subscriptions.type | typeof userFeeds.type = subscriptions.type
+): SQL {
+  return ne(type, "saved");
 }
 
 /**
@@ -154,7 +157,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undefined) {
     .$dynamic()
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .where(and(where, ne(userFeeds.type, "saved")))
+    .where(and(where, isListedSubscription(userFeeds.type)))
     .groupBy(
       userFeeds.id,
       userFeeds.subscribedAt,
