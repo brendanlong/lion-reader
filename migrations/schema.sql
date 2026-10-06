@@ -290,15 +290,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.subscriptions_fill_type() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  SELECT f.type INTO NEW.type FROM feeds f WHERE f.id = NEW.feed_id;
-  RETURN NEW;
-END;
-$$;
-
 CREATE FUNCTION public.subscriptions_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -678,7 +669,8 @@ CREATE TABLE public.feeds (
     ttl_minutes integer,
     syndication_update_period text,
     syndication_update_frequency integer,
-    CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type, 'collection'::public.feed_type])) = (user_id IS NOT NULL)))
+    CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL))),
+    CONSTRAINT feeds_type_not_collection CHECK ((type <> 'collection'::public.feed_type))
 );
 
 CREATE TABLE public.ingest_addresses (
@@ -853,6 +845,7 @@ CREATE TABLE public.subscriptions (
     starred_unread_count integer DEFAULT 0 NOT NULL,
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     type public.feed_type NOT NULL,
+    CONSTRAINT subscriptions_collection_feedless CHECK (((type <> 'collection'::public.feed_type) OR (feed_id IS NULL))),
     CONSTRAINT subscriptions_collection_named CHECK (((type <> 'collection'::public.feed_type) OR (custom_title IS NOT NULL)))
 );
 
@@ -1296,8 +1289,6 @@ CREATE TRIGGER subscription_tags_recompute_lists_delete_trigger AFTER DELETE ON 
 CREATE TRIGGER subscription_tags_recompute_lists_insert_trigger AFTER INSERT ON public.subscription_tags REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_tags_recompute_lists();
 
 CREATE TRIGGER subscriptions_empty_unsubscribed_collection_trigger AFTER UPDATE OF unsubscribed_at ON public.subscriptions FOR EACH ROW WHEN (((old.unsubscribed_at IS NULL) AND (new.unsubscribed_at IS NOT NULL))) EXECUTE FUNCTION public.subscriptions_empty_unsubscribed_collection();
-
-CREATE TRIGGER subscriptions_fill_type_trigger BEFORE INSERT ON public.subscriptions FOR EACH ROW WHEN ((new.type IS NULL)) EXECUTE FUNCTION public.subscriptions_fill_type();
 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 

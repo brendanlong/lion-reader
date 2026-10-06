@@ -1,11 +1,10 @@
 /**
  * `subscriptions.type` (#1846): every insert path stores the subscription's
- * own type, and the BEFORE INSERT trigger fills it from the feed for inserts
- * that don't name the column (the previous release's).
+ * own type.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   feeds,
@@ -59,29 +58,6 @@ async function cleanup(): Promise<void> {
 describe("subscriptions.type", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
-
-  it("is filled from the feed when an insert omits it", async () => {
-    const userId = await createTestUser();
-    const emailFeedId = await createTestFeed({
-      type: "email",
-      userId,
-      url: null,
-      emailSenderPattern: "news@example.com",
-    });
-    const collectionFeedId = await createTestFeed({ type: "collection", userId, url: null });
-    const emailSubId = generateUuidv7();
-    const collectionSubId = generateUuidv7();
-
-    // The previous release's inserts don't know the column.
-    await db.execute(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id, custom_title)
-      VALUES (${emailSubId}, ${userId}, ${emailFeedId}, NULL),
-             (${collectionSubId}, ${userId}, ${collectionFeedId}, 'Reading')
-    `);
-
-    expect(await typeOf(emailSubId)).toBe("email");
-    expect(await typeOf(collectionSubId)).toBe("collection");
-  });
 
   it.each<{ path: string; expected: FeedType; insert: (userId: string) => Promise<string> }>([
     {

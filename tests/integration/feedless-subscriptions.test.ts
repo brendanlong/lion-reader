@@ -4,13 +4,15 @@
  * itself, and clients still get the fields released apps require.
  */
 
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
   entries,
   feeds,
+  jobs,
   subscriptionTags,
   subscriptions,
   tags,
@@ -33,6 +35,7 @@ import {
   createTestUser,
 } from "./helpers";
 import { openSseStream, publishUntil } from "../utils/sse";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 
 async function cleanup(): Promise<void> {
   await db.delete(collectionEntries);
@@ -253,5 +256,107 @@ describe("subscriptions without a feed (#1846)", () => {
     await deleteUser(db, userId);
 
     expect(await db.select().from(feeds).where(eq(feeds.id, feedId))).toEqual([]);
+  });
+});
+
+describe("migration 0131: collections drop their feeds", () => {
+  beforeEach(cleanup);
+  afterAll(cleanup);
+
+  const migration = readFileSync(
+    new URL("../../migrations/0131_collections_feedless.sql", import.meta.url),
+    "utf8"
+  );
+
+  /**
+   * Gives the collection a feed of its own (with a fetch job, and optionally
+   * an entry), as releases before 0131 created them, then runs the migration
+   * in the same transaction. The schema now forbids those rows, so its checks
+   * are first put back as they were; the migration replaces them. Raw
+   * inserts: the factories can't build rows the current schema rejects.
+   */
+  async function migrateFromFeed(
+    userId: string,
+    collectionId: string,
+    { strayEntry = false }: { strayEntry?: boolean } = {}
+  ): Promise<{ legacyFeedId: string; jobId: string }> {
+    const legacyFeedId = generateUuidv7();
+    const jobId = generateUuidv7();
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        ALTER TABLE subscriptions DROP CONSTRAINT subscriptions_collection_feedless;
+        ALTER TABLE feeds DROP CONSTRAINT feeds_type_not_collection;
+        ALTER TABLE feeds DROP CONSTRAINT feed_type_user_id;
+        ALTER TABLE feeds ADD CONSTRAINT feed_type_user_id
+          CHECK ((type IN ('email', 'saved', 'collection')) = (user_id IS NOT NULL))`);
+      await tx.execute(sql`
+        INSERT INTO feeds (id, type, user_id, title)
+        VALUES (${legacyFeedId}, 'collection', ${userId}, 'Reading')`);
+      if (strayEntry) {
+        await tx.execute(sql`
+          INSERT INTO entries (id, feed_id, type, guid, fetched_at, content_hash)
+          VALUES (${generateUuidv7()}, ${legacyFeedId}, 'saved', 'stray', now(), 'hash')`);
+      }
+      await tx
+        .update(subscriptions)
+        .set({ feedId: legacyFeedId })
+        .where(eq(subscriptions.id, collectionId));
+      await tx
+        .insert(jobs)
+        .values({ id: jobId, type: "fetch_feed", payload: { feedId: legacyFeedId } });
+      await tx.execute(sql.raw(migration));
+    });
+    return { legacyFeedId, jobId };
+  }
+
+  it("deletes their feeds, and they keep working without", async () => {
+    const { userId, feedId, sourceId, entryId, collectionId } = await setup();
+
+    const { legacyFeedId, jobId } = await migrateFromFeed(userId, collectionId);
+
+    expect(await db.select().from(feeds).where(eq(feeds.id, legacyFeedId))).toEqual([]);
+    expect(await db.select().from(jobs).where(eq(jobs.id, jobId))).toEqual([]);
+    expect(
+      await db
+        .select({ id: subscriptions.id, feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId))
+        .orderBy(subscriptions.id)
+    ).toEqual([
+      { id: sourceId, feedId },
+      { id: collectionId, feedId: null },
+    ]);
+    const caller = createCaller(await createAuthContext(userId));
+    expect(await caller.subscriptions.get({ id: collectionId })).toMatchObject({
+      type: "collection",
+      title: "Reading",
+      unreadCount: 1,
+    });
+    expect(
+      (await caller.entries.list({ subscriptionId: collectionId })).items.map((e) => e.id)
+    ).toEqual([entryId]);
+    // The checks now forbid giving a collection a feed, or a feed that type.
+    await expect(
+      db.update(subscriptions).set({ feedId }).where(eq(subscriptions.id, collectionId))
+    ).rejects.toMatchObject({ cause: { constraint: "subscriptions_collection_feedless" } });
+    await expect(
+      db.execute(sql`UPDATE feeds SET type = 'collection' WHERE id = ${feedId}`)
+    ).rejects.toMatchObject({ cause: { constraint: "feeds_type_not_collection" } });
+  });
+
+  it("stops rather than delete a collection feed's entries", async () => {
+    const { userId, collectionId } = await setup();
+
+    await expect(migrateFromFeed(userId, collectionId, { strayEntry: true })).rejects.toMatchObject(
+      { cause: { message: expect.stringContaining("a collection feed has entries") } }
+    );
+
+    // Rolled back whole: the collection is as it was.
+    expect(
+      await db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(eq(subscriptions.id, collectionId))
+    ).toEqual([{ feedId: null }]);
   });
 });

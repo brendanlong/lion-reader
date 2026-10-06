@@ -4,8 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { readFileSync } from "node:fs";
-import { and, eq, inArray, sql, TransactionRollbackError } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
@@ -601,106 +600,6 @@ describe("collections", () => {
       const result = await caller.subscriptions.update({ id: sourceId, customTitle: "research" });
 
       expect(result.title).toBe("research");
-    });
-
-    it("the migration renames clashes, fills every name and requires one", async () => {
-      // As the release before 0128's code creates them: the name only on the
-      // feed. They're inserted with a placeholder name (the constraint
-      // requires one) that the transaction below clears.
-      const at = (minutes: number) => new Date(Date.UTC(2026, 9, 1, 0, minutes));
-      const create = async (
-        userId: string,
-        title: string | null,
-        createdAt: Date,
-        {
-          stored = false,
-          unsubscribedAt = null,
-        }: { stored?: boolean; unsubscribedAt?: Date | null } = {}
-      ) => {
-        const feedId = await createTestFeed({ type: "collection", userId, url: null, title });
-        const id = await createTestSubscription(userId, feedId, {
-          customTitle: stored ? title : `placeholder ${feedId}`,
-          createdAt,
-          updatedAt: createdAt,
-          unsubscribedAt,
-        });
-        return { id, stored };
-      };
-      const userId = await createTestUser();
-      const otherUserId = await createTestUser();
-      const rows = {
-        // A stored name keeps it even against an older unstored one.
-        oldNews: await create(userId, "news", at(1)),
-        news: await create(userId, "News", at(2), { stored: true }),
-        news2: await create(userId, "NEWS (2)", at(3), { stored: true }),
-        // Without a stored name, the oldest keeps it.
-        reading: await create(userId, "Reading", at(4)),
-        newReading: await create(userId, "READING", at(5)),
-        deleted: await create(userId, "News", at(6), { unsubscribedAt: at(7) }),
-        otherUser: await create(otherUserId, "News", at(8)),
-        // No name anywhere: "Untitled", and a second one doesn't clash with it.
-        untitled: await create(otherUserId, null, at(10)),
-        untitled2: await create(otherUserId, null, at(11)),
-      };
-      const feed = await createTestSubscription(userId, await createTestFeed(), {
-        createdAt: at(9),
-        updatedAt: at(9),
-      });
-      const migration = readFileSync(
-        new URL("../../migrations/0129_collection_names_required.sql", import.meta.url),
-        "utf8"
-      );
-      const unstored = Object.values(rows)
-        .filter((row) => !row.stored)
-        .map((row) => row.id);
-
-      // Run it against the old-style rows, then roll back to the migrated schema.
-      let after: { id: string; customTitle: string | null; updatedAt: Date }[] = [];
-      await expect(
-        db.transaction(async (tx) => {
-          await tx.execute(
-            sql`ALTER TABLE subscriptions DROP CONSTRAINT subscriptions_collection_named`
-          );
-          await tx
-            .update(subscriptions)
-            .set({ customTitle: null })
-            .where(inArray(subscriptions.id, unstored));
-          await tx.execute(sql.raw(migration));
-          after = await tx
-            .select({
-              id: subscriptions.id,
-              customTitle: subscriptions.customTitle,
-              updatedAt: subscriptions.updatedAt,
-            })
-            .from(subscriptions)
-            .where(inArray(subscriptions.userId, [userId, otherUserId]));
-          tx.rollback();
-        })
-      ).rejects.toThrow(TransactionRollbackError);
-
-      expect(new Map(after.map((r) => [r.id, r.customTitle]))).toEqual(
-        new Map([
-          [rows.oldNews.id, "news (3)"],
-          [rows.news.id, "News"],
-          [rows.news2.id, "NEWS (2)"],
-          [rows.reading.id, "Reading"],
-          [rows.newReading.id, "READING (2)"],
-          [rows.deleted.id, "News"],
-          [rows.otherUser.id, "News"],
-          [rows.untitled.id, "Untitled"],
-          [rows.untitled2.id, "Untitled (2)"],
-          [feed, null],
-        ])
-      );
-      // Delta sync re-delivers exactly the renamed ones.
-      const moved = after.filter((r) => r.updatedAt.getTime() > at(60).getTime()).map((r) => r.id);
-      expect(moved.sort()).toEqual([rows.oldNews.id, rows.newReading.id, rows.untitled2.id].sort());
-      await expect(
-        db
-          .update(subscriptions)
-          .set({ customTitle: null })
-          .where(eq(subscriptions.id, rows.reading.id))
-      ).rejects.toMatchObject({ cause: { constraint: "subscriptions_collection_named" } });
     });
   });
 });
