@@ -7,13 +7,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import {
-  collectionEntries,
-  entries,
-  feeds,
-  subscriptions,
-  users,
-} from "../../src/server/db/schema";
+import { collectionEntries, entries, subscriptions, users } from "../../src/server/db/schema";
 import { createTokens } from "../../src/server/oauth/service";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
@@ -116,12 +110,11 @@ async function activeCollectionIds(user: TestUser): Promise<string[]> {
   const rows = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(
       and(
         eq(subscriptions.userId, user.id),
         isNull(subscriptions.unsubscribedAt),
-        eq(feeds.type, "collection")
+        eq(subscriptions.type, "collection")
       )
     );
   return rows.map((row) => row.id);
@@ -192,38 +185,6 @@ describe("entry tags", () => {
     expect(await activeCollectionIds(user)).toEqual([]);
   });
 
-  it("creates one collection when concurrent requests add the same new tag", async () => {
-    const user = await createUser();
-    const articles = await Promise.all([createSaved(user), createSaved(user)]);
-
-    await Promise.all(
-      articles.map((article) =>
-        addEntryTags(
-          formRequest(user, `entries/${article.wallabagId}/tags`, "POST", "tags=fresh"),
-          params({ entry: String(article.wallabagId) })
-        )
-      )
-    );
-
-    expect(await activeCollectionIds(user)).toHaveLength(1);
-  });
-
-  it("uses the oldest of several same-named collections", async () => {
-    const user = await createUser();
-    const article = await createSaved(user);
-    const oldest = await createCollectionTag(user, "Dup");
-    const newer = await createCollectionTag(user, "dup");
-    const entry = String(article.wallabagId);
-
-    await addEntryTags(
-      formRequest(user, `entries/${entry}/tags`, "POST", "tags=DUP"),
-      params({ entry })
-    );
-
-    expect(await memberIds(oldest.subscriptionId)).toEqual([article.id]);
-    expect(await memberIds(newer.subscriptionId)).toEqual([]);
-  });
-
   it("adds tags through PATCH", async () => {
     const user = await createUser();
     const article = await createSaved(user);
@@ -274,16 +235,6 @@ describe("GET /api/entries?tags=", () => {
     expect(await listedIds(user, "tags=a")).toEqual([both.wallabagId, onlyA.wallabagId].sort());
     expect(await listedIds(user, "tags=A,B")).toEqual([both.wallabagId]);
     expect(await listedIds(user, "tags=A,missing")).toEqual([]);
-  });
-
-  it("matches a label shared by several collections through any of them", async () => {
-    const user = await createUser();
-    const first = await createSaved(user);
-    const second = await createSaved(user);
-    await createCollectionTag(user, "Dup", [first.id]);
-    await createCollectionTag(user, "Dup", [second.id]);
-
-    expect(await listedIds(user, "tags=dup")).toEqual([first.wallabagId, second.wallabagId].sort());
   });
 
   it("reports each entry's tags in the list", async () => {

@@ -14,7 +14,7 @@ import { collectionEntries, entries, feeds, subscriptions } from "@/server/db/sc
 import { isInt64 } from "@/server/google-reader/id";
 import {
   addEntriesToCollection,
-  findOrCreateCollection,
+  createCollection,
   removeEntriesFromCollection,
 } from "@/server/services/collections";
 import { isCollectionSubscription, unsubscribe } from "@/server/services/subscriptions";
@@ -107,9 +107,8 @@ export async function resolveWallabagTag(
 }
 
 /**
- * For each label, the ids of the user's collections with that name (names
- * aren't unique), or null when some label matches no collection, so a filter
- * on it can match nothing.
+ * For each label, the ids of the user's collections with that name, or null
+ * when some label matches no collection, so a filter on it can match nothing.
  */
 export async function collectionIdGroupsForLabels(
   db: typeof dbType,
@@ -132,7 +131,7 @@ function groupByLabel(collections: CollectionTag[]): Map<string, string[]> {
 
 /**
  * Adds an entry to the collections named by `labels`, creating the missing
- * ones (see findOrCreateCollection).
+ * ones (creating an existing name returns that collection).
  */
 export async function addEntryTags(
   db: typeof dbType,
@@ -147,8 +146,8 @@ export async function addEntryTags(
     throw errors.validation(`Tags must be at most ${COLLECTION_NAME_MAX_LENGTH} characters`);
   }
   for (const label of labels) {
-    const subscriptionId = await findOrCreateCollection(db, userId, label);
-    await addEntriesToCollection(db, userId, subscriptionId, [entryId]);
+    const { subscription } = await createCollection(db, userId, label);
+    await addEntriesToCollection(db, userId, subscription.id, [entryId]);
   }
 }
 
