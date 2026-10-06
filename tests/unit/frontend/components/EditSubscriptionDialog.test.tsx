@@ -139,7 +139,10 @@ describe("EditSubscriptionDialog", () => {
     const collectionProps = (onClose: () => void) =>
       defaultProps({ onClose, isCollection: true, currentTitle: "Reading" });
 
-    it("edits the name itself and saves only a change", async () => {
+    it.each([
+      ["Later ", [{ id: "sub-1", customTitle: "Later" }]],
+      ["Reading", []],
+    ])("edits the name itself and saves only a change (%j)", async (typed, expectedUpdates) => {
       const onClose = vi.fn();
       const { callsFor } = renderWithTrpc(
         <EditSubscriptionDialog {...collectionProps(onClose)} />,
@@ -151,13 +154,11 @@ describe("EditSubscriptionDialog", () => {
       const name = screen.getByLabelText("Name");
       expect(name).toHaveValue("Reading");
 
-      fireEvent.change(name, { target: { value: "Later " } });
+      fireEvent.change(name, { target: { value: typed } });
       fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
       await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-      expect(callsFor("subscriptions.update").map((c) => c.input)).toEqual([
-        { id: "sub-1", customTitle: "Later" },
-      ]);
+      expect(callsFor("subscriptions.update").map((c) => c.input)).toEqual(expectedUpdates);
     });
 
     it("refuses an empty name without calling the server", async () => {

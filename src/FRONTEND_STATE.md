@@ -147,7 +147,7 @@ Search (`?q=`) is an ordinary `entries.list` scoped to the current view's filter
 | `subscriptions.import`  | `OpmlImportExport`                       | Toast + navigate; `import_progress`/`import_completed` SSE events invalidate `imports.*`                                                      |
 | `imports.preview`       | `OpmlImportExport`                       | None (pure server-side OPML parse for the preview list; no cached data changes)                                                               |
 
-Collection mutations (`useCollectionMembership`): `collections.addEntries` / `removeEntries` apply the response through `applyCollectionEntriesChange`; `collections.create` goes through `handleSubscriptionCreated`. Deleting a collection is `subscriptions.delete`.
+Collection mutations (`useCollectionMembership`): `collections.addEntries` / `removeEntries` apply the response through `applyCollectionEntriesChange`; `collections.create` goes through `handleSubscriptionCreated` when it created the collection; when it returned an existing one (`created: false`), the entry is added with `collections.addEntries` and applied through `applyCollectionEntriesChange` only. Deleting a collection is `subscriptions.delete`.
 
 Tag mutations (`tags.create/update/delete`) invalidate/patch via their components; the corresponding SSE events keep other tabs in sync.
 

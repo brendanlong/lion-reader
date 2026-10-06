@@ -46,10 +46,12 @@ const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
 // ============================================================================
 
 /**
- * Custom title validation schema.
+ * Custom title validation schema. Trimmed, like a collection name on create,
+ * so a rename can't make a near-duplicate ("News " next to "News").
  */
 const customTitleSchema = z
   .string()
+  .trim()
   .max(255, "Custom title must be less than 255 characters")
   .nullable();
 
@@ -395,7 +397,7 @@ export const subscriptionsRouter = createTRPCRouter({
         // A collection's name lives in custom_title (#1846), so it can't be
         // cleared. The type never changes, so checking first can't race.
         if (
-          !input.customTitle?.trim() &&
+          !input.customTitle &&
           (await subscriptionsService.isActiveCollection(ctx.db, userId, input.id))
         ) {
           throw errors.validation("Collection name is required");

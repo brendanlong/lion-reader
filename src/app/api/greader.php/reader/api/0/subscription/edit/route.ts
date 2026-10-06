@@ -22,7 +22,7 @@ import { db } from "@/server/db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
-import { unsubscribe } from "@/server/services/subscriptions";
+import { isActiveCollection, unsubscribe } from "@/server/services/subscriptions";
 import { isUniqueViolation } from "@/server/db/errors";
 
 export const dynamic = "force-dynamic";
@@ -63,9 +63,8 @@ export async function POST(request: Request): Promise<Response> {
       const existingSubId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
       if (existingSubId) {
         // Already subscribed — apply any tag/title changes.
-        if (title && !(await renameSubscription(userId, existingSubId, title))) {
-          return collectionNameTakenResponse(title);
-        }
+        const renameError = title ? await renameSubscription(userId, existingSubId, title) : null;
+        if (renameError) return renameError;
 
         // Handle tag additions
         await applyTagChanges(db, userId, existingSubId, addTags, removeTags);
@@ -82,9 +81,8 @@ export async function POST(request: Request): Promise<Response> {
         return errorResponse("Subscription not found", 404);
       }
 
-      if (title && !(await renameSubscription(userId, subscriptionId, title))) {
-        return collectionNameTakenResponse(title);
-      }
+      const renameError = title ? await renameSubscription(userId, subscriptionId, title) : null;
+      if (renameError) return renameError;
 
       // Handle tag changes
       await applyTagChanges(db, userId, subscriptionId, addTags, removeTags);
@@ -108,17 +106,25 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 /**
- * Sets a subscription's title. The IS DISTINCT FROM guard makes a same-title
- * re-save match no row, so updated_at doesn't move and the subscription
- * delta-sync cursor doesn't churn when a client re-asserts the title it
- * already has (#1160). Returns false when the subscription is a collection and
- * another of the user's active collections has this name, ignoring case.
+ * Sets a subscription's title, trimmed like the tRPC rename. The IS DISTINCT
+ * FROM guard makes a same-title re-save match no row, so updated_at doesn't
+ * move and the subscription delta-sync cursor doesn't churn when a client
+ * re-asserts the title it already has (#1160). Returns an error response when
+ * the subscription is a collection and the name is blank or another of the
+ * user's active collections has it, ignoring case (#1846). A blank title for a
+ * feed is ignored.
  */
 async function renameSubscription(
   userId: string,
   subscriptionId: string,
-  title: string
-): Promise<boolean> {
+  rawTitle: string
+): Promise<Response | null> {
+  const title = rawTitle.trim();
+  if (!title) {
+    return (await isActiveCollection(db, userId, subscriptionId))
+      ? errorResponse("Collection name is required", 400)
+      : null;
+  }
   try {
     await db
       .update(subscriptions)
@@ -131,15 +137,13 @@ async function renameSubscription(
           sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
         )
       );
-    return true;
+    return null;
   } catch (error) {
-    if (isUniqueViolation(error)) return false;
+    if (isUniqueViolation(error)) {
+      return errorResponse(`Collection already exists: ${title}`, 409);
+    }
     throw error;
   }
-}
-
-function collectionNameTakenResponse(title: string): Response {
-  return errorResponse(`Collection already exists: ${title}`, 409);
 }
 
 /**

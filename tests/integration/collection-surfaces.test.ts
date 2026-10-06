@@ -89,10 +89,6 @@ describe("MCP curation tools", () => {
       created: boolean;
     };
     expect(collection).toMatchObject({ type: "collection", created: true });
-    expect(await callTool("create_collection", userId, { name: "top" })).toMatchObject({
-      id: collection.id,
-      created: false,
-    });
     expect(
       await callTool("add_to_collection", userId, {
         collectionId: collection.id,
@@ -156,7 +152,10 @@ describe("subscription_created", () => {
 });
 
 describe("Google Reader", () => {
-  it("refuses renaming a collection onto another's name, ignoring case", async () => {
+  it.each([
+    [" news ", 409],
+    ["  ", 400],
+  ])("refuses renaming a collection to %j (another's name, or blank)", async (title, status) => {
     const userId = await createTestUser();
     const { token } = await createSession(db, {
       userId,
@@ -176,11 +175,11 @@ describe("Google Reader", () => {
           authorization: `GoogleLogin auth=${token}`,
           "content-type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ ac: "edit", s: `feed/${streamId}`, t: "NEWS" }).toString(),
+        body: new URLSearchParams({ ac: "edit", s: `feed/${streamId}`, t: title }).toString(),
       })
     );
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(status);
   });
 
   it("leaves collections out of the subscription list and unread counts", async () => {

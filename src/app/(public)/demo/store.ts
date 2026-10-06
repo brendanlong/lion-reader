@@ -564,7 +564,28 @@ export function createDemoStore(): DemoStore {
     "subscriptions.update": (input) => {
       const sub = requireSubscription(input.id);
       if (input.customTitle !== undefined) {
-        sub.title = input.customTitle ?? sub.originalTitle;
+        const title = input.customTitle?.trim() || null;
+        // As on the server (#1846): a collection's name is required and
+        // unique among live collections, ignoring case.
+        if (sub.type === "collection") {
+          if (!title) {
+            throw procedureError("BAD_REQUEST", "Collection name is required", "VALIDATION_ERROR");
+          }
+          const clash = liveSubscriptions().some(
+            (other) =>
+              other.id !== sub.id &&
+              other.type === "collection" &&
+              other.title.toLowerCase() === title.toLowerCase()
+          );
+          if (clash) {
+            throw procedureError(
+              "CONFLICT",
+              "A collection with this name already exists",
+              "COLLECTION_NAME_TAKEN"
+            );
+          }
+        }
+        sub.title = title ?? sub.originalTitle;
       }
       if (input.fetchFullContent !== undefined) {
         sub.fetchFullContent = input.fetchFullContent;

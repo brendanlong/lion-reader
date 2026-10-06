@@ -565,7 +565,7 @@ describe("collections", () => {
       const caller = createCaller(await createAuthContext(userId));
 
       await expect(
-        caller.subscriptions.update({ id: collectionId, customTitle: "READING" })
+        caller.subscriptions.update({ id: collectionId, customTitle: " reading " })
       ).rejects.toMatchObject({
         code: "CONFLICT",
         message: "A collection with this name already exists",
