@@ -56,9 +56,10 @@ export interface CreateCollectionResult {
 
 /**
  * The user's active collection with this name, ignoring case as the unique
- * index `uq_subscriptions_user_collection_name` does. Matches the displayed
- * name, so it also finds a collection the previous release created without a
- * `custom_title` during the rollout (#1846).
+ * index `uq_subscriptions_user_collection_name` does. Served by the user's
+ * active-subscriptions index (`idx_subscriptions_user_active`): `type` is a
+ * bound parameter, so a generic plan can't match the unique index's partial
+ * predicate.
  */
 async function findActiveCollectionByName(
   db: DbOrTx,
@@ -68,13 +69,12 @@ async function findActiveCollectionByName(
   const [row] = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(
       and(
         eq(subscriptions.userId, userId),
         isCollectionSubscription(),
         isNull(subscriptions.unsubscribedAt),
-        sql`lower(COALESCE(${subscriptions.customTitle}, ${feeds.title})) = lower(${name})`
+        sql`lower(${subscriptions.customTitle}) = lower(${name})`
       )
     )
     .limit(1);

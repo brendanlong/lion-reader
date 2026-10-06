@@ -10,7 +10,7 @@
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { collectionEntries, entries, feeds, subscriptions } from "@/server/db/schema";
+import { collectionEntries, entries, subscriptions } from "@/server/db/schema";
 import { isInt64 } from "@/server/google-reader/id";
 import {
   addEntriesToCollection,
@@ -30,7 +30,8 @@ export interface CollectionTag {
 
 const collectionTagSelection = {
   subscriptionId: subscriptions.id,
-  label: sql<string>`COALESCE(${subscriptions.customTitle}, ${feeds.title}, '')`,
+  // Never NULL for a collection (`subscriptions_collection_named`).
+  label: sql<string>`${subscriptions.customTitle}`,
   greaderStreamId: subscriptions.greaderStreamId,
 };
 
@@ -50,7 +51,6 @@ async function listCollectionTags(db: typeof dbType, userId: string): Promise<Co
   return db
     .select(collectionTagSelection)
     .from(subscriptions)
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(activeCollectionsOf(userId))
     .orderBy(collectionTagSelection.label, subscriptions.id);
 }
@@ -71,7 +71,6 @@ export async function listEntryTags(
     .select({ entryId: collectionEntries.entryId, ...collectionTagSelection })
     .from(collectionEntries)
     .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(
       and(
         eq(collectionEntries.userId, userId),
@@ -100,7 +99,6 @@ export async function resolveWallabagTag(
   const [row] = await db
     .select(collectionTagSelection)
     .from(subscriptions)
-    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(and(activeCollectionsOf(userId), eq(subscriptions.greaderStreamId, BigInt(id))))
     .limit(1);
   return row ?? null;
