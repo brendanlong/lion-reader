@@ -743,7 +743,8 @@ export const subscriptions = pgTable(
     // feed when an insert omits it (the previous release's inserts; #1846).
     type: feedTypeEnum("type").notNull(),
 
-    customTitle: text("custom_title"), // user's override for feed title
+    // The user's override for a feed's title; a collection's name (#1846).
+    customTitle: text("custom_title"),
     fetchFullContent: boolean("fetch_full_content").notNull().default(false), // fetch full article from URL
 
     subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull().defaultNow(), // critical for visibility
@@ -774,6 +775,10 @@ export const subscriptions = pgTable(
     index("idx_subscriptions_feed").on(table.feedId),
     uniqueIndex("idx_subscriptions_greader_stream_id").on(table.greaderStreamId),
     uniqueIndex("uq_subscriptions_id_user").on(table.id, table.userId),
+    // Active collections' names are unique per user ignoring case (#1846).
+    uniqueIndex("uq_subscriptions_user_collection_name")
+      .on(table.userId, sql`lower(${table.customTitle})`)
+      .where(sql`type = 'collection' AND unsubscribed_at IS NULL`),
   ]
 );
 

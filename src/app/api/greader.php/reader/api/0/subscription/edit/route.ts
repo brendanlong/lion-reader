@@ -23,6 +23,7 @@ import { eq, and, isNull, sql } from "drizzle-orm";
 import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
 import { unsubscribe } from "@/server/services/subscriptions";
+import { isUniqueViolation } from "@/server/db/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -61,22 +62,9 @@ export async function POST(request: Request): Promise<Response> {
       // This is handled by quickadd, so return success if already subscribed
       const existingSubId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
       if (existingSubId) {
-        // Already subscribed — apply any tag/title changes. The IS DISTINCT
-        // FROM guard makes a same-title re-save match no row, so updated_at
-        // doesn't move and the subscription delta-sync cursor doesn't churn
-        // when a client re-asserts the title it already has (issue #1160).
-        if (title) {
-          await db
-            .update(subscriptions)
-            .set({ customTitle: title, updatedAt: new Date() })
-            .where(
-              and(
-                eq(subscriptions.id, existingSubId),
-                eq(subscriptions.userId, userId),
-                isNull(subscriptions.unsubscribedAt),
-                sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
-              )
-            );
+        // Already subscribed — apply any tag/title changes.
+        if (title && !(await renameSubscription(userId, existingSubId, title))) {
+          return collectionNameTakenResponse(title);
         }
 
         // Handle tag additions
@@ -94,20 +82,8 @@ export async function POST(request: Request): Promise<Response> {
         return errorResponse("Subscription not found", 404);
       }
 
-      // Apply title change — only when it actually differs, so a same-title
-      // re-save doesn't bump updated_at / churn the delta-sync cursor (#1160)
-      if (title) {
-        await db
-          .update(subscriptions)
-          .set({ customTitle: title, updatedAt: new Date() })
-          .where(
-            and(
-              eq(subscriptions.id, subscriptionId),
-              eq(subscriptions.userId, userId),
-              isNull(subscriptions.unsubscribedAt),
-              sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
-            )
-          );
+      if (title && !(await renameSubscription(userId, subscriptionId, title))) {
+        return collectionNameTakenResponse(title);
       }
 
       // Handle tag changes
@@ -129,6 +105,41 @@ export async function POST(request: Request): Promise<Response> {
     default:
       return errorResponse(`Unknown action: ${action}`, 400);
   }
+}
+
+/**
+ * Sets a subscription's title. The IS DISTINCT FROM guard makes a same-title
+ * re-save match no row, so updated_at doesn't move and the subscription
+ * delta-sync cursor doesn't churn when a client re-asserts the title it
+ * already has (#1160). Returns false when the subscription is a collection and
+ * another of the user's active collections has this name, ignoring case.
+ */
+async function renameSubscription(
+  userId: string,
+  subscriptionId: string,
+  title: string
+): Promise<boolean> {
+  try {
+    await db
+      .update(subscriptions)
+      .set({ customTitle: title, updatedAt: new Date() })
+      .where(
+        and(
+          eq(subscriptions.id, subscriptionId),
+          eq(subscriptions.userId, userId),
+          isNull(subscriptions.unsubscribedAt),
+          sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
+        )
+      );
+    return true;
+  } catch (error) {
+    if (isUniqueViolation(error)) return false;
+    throw error;
+  }
+}
+
+function collectionNameTakenResponse(title: string): Response {
+  return errorResponse(`Collection already exists: ${title}`, 409);
 }
 
 /**

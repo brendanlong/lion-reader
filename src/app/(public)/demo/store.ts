@@ -586,6 +586,16 @@ export function createDemoStore(): DemoStore {
     },
 
     "collections.create": (input) => {
+      const existing = liveSubscriptions().find(
+        (s) => s.type === "collection" && s.title.toLowerCase() === input.name.toLowerCase()
+      );
+      if (existing) {
+        return {
+          subscription: toSubscription(existing),
+          counts: countsForSubscriptions([existing]),
+          created: false,
+        };
+      }
       const sub: SubscriptionState = {
         id: crypto.randomUUID(),
         type: "collection",
@@ -598,7 +608,11 @@ export function createDemoStore(): DemoStore {
         members: new Set(),
       };
       subscriptions.set(sub.id, sub);
-      return { subscription: toSubscription(sub), counts: countsForSubscriptions([sub]) };
+      return {
+        subscription: toSubscription(sub),
+        counts: countsForSubscriptions([sub]),
+        created: true,
+      };
     },
 
     "collections.addEntries": (input) => changeMembership(input.id, input.entryIds, true),

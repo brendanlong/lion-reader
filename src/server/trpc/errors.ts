@@ -37,6 +37,7 @@ const errorCodeToTRPCCode = {
   SIGNUP_PROVIDER_NOT_ALLOWED: "FORBIDDEN",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   TAG_NAME_TAKEN: "CONFLICT",
+  COLLECTION_NAME_TAKEN: "CONFLICT",
   CANNOT_UNLINK_ONLY_AUTH: "BAD_REQUEST",
   INTERNAL_ERROR: "INTERNAL_SERVER_ERROR",
   SESSION_REVOKE_FAILED: "INTERNAL_SERVER_ERROR",
@@ -104,6 +105,9 @@ export const errors = {
   tagNotFound: () => createError("TAG_NOT_FOUND", "Tag not found"),
 
   tagNameTaken: () => createError("TAG_NAME_TAKEN", "A tag with this name already exists"),
+
+  collectionNameTaken: () =>
+    createError("COLLECTION_NAME_TAKEN", "A collection with this name already exists"),
 
   ingestAddressNotFound: () => createError("INGEST_ADDRESS_NOT_FOUND", "Ingest address not found"),
 

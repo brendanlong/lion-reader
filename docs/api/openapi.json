@@ -9153,11 +9153,15 @@
                         "tags"
                       ],
                       "additionalProperties": false
+                    },
+                    "created": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "subscription",
-                    "counts"
+                    "counts",
+                    "created"
                   ],
                   "additionalProperties": false
                 }

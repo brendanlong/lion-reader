@@ -4,7 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { readFileSync } from "node:fs";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
@@ -502,5 +503,134 @@ describe("collections", () => {
     expect(
       (await getBulkEntryRelatedCounts(db, userId, [{ id: entryA, subscriptionId: null }])).tags
     ).toEqual([{ id: tagId, unread: 1 }]);
+  });
+
+  describe("names (#1846)", () => {
+    async function collectionIds(userId: string): Promise<string[]> {
+      const rows = await db
+        .select({ id: subscriptions.id })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "collection")));
+      return rows.map((row) => row.id);
+    }
+
+    it("returns the existing collection, ignoring case, with its real counts", async () => {
+      const { userId, entryA, collectionId } = await setup();
+      const tagId = await createTestTag(userId, { subscriptionIds: [collectionId] });
+      await addEntriesToCollection(db, userId, collectionId, [entryA]);
+      const caller = createCaller(await createAuthContext(userId));
+
+      const again = await caller.collections.create({ name: "research" });
+
+      expect(again).toMatchObject({
+        created: false,
+        subscription: {
+          id: collectionId,
+          title: "Research",
+          unreadCount: 1,
+          tags: [{ id: tagId }],
+        },
+        counts: { subscriptions: [{ id: collectionId, unread: 1 }] },
+      });
+      expect(await collectionIds(userId)).toEqual([collectionId]);
+    });
+
+    it("gives concurrent creates of one name the same collection", async () => {
+      const userId = await createTestUser();
+
+      const results = await Promise.all([
+        createCollection(db, userId, "Same"),
+        createCollection(db, userId, "same"),
+      ]);
+
+      expect(new Set(results.map((r) => r.subscription.id)).size).toBe(1);
+      expect(results.filter((r) => r.created)).toHaveLength(1);
+      expect(await collectionIds(userId)).toHaveLength(1);
+    });
+
+    it("lets a deleted collection's name be reused", async () => {
+      const { userId, collectionId } = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+      await caller.subscriptions.delete({ id: collectionId });
+
+      const again = await caller.collections.create({ name: "Research" });
+
+      expect(again.created).toBe(true);
+      expect(again.subscription.id).not.toBe(collectionId);
+    });
+
+    it("refuses renaming a collection onto another's name, ignoring case", async () => {
+      const { userId, collectionId } = await setup();
+      await createCollection(db, userId, "Reading");
+      const caller = createCaller(await createAuthContext(userId));
+
+      await expect(
+        caller.subscriptions.update({ id: collectionId, customTitle: "READING" })
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "A collection with this name already exists",
+      });
+    });
+
+    it("allows renaming a collection to another capitalization of its own name", async () => {
+      const { userId, collectionId } = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+
+      const result = await caller.subscriptions.update({
+        id: collectionId,
+        customTitle: "RESEARCH",
+      });
+
+      expect(result.title).toBe("RESEARCH");
+    });
+
+    it.each([null, "", "  "])("refuses clearing a collection's name (%j)", async (customTitle) => {
+      const { userId, collectionId } = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+
+      await expect(
+        caller.subscriptions.update({ id: collectionId, customTitle })
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect((await caller.subscriptions.get({ id: collectionId })).title).toBe("Research");
+    });
+
+    it("lets a feed take a collection's name", async () => {
+      const { userId, sourceId } = await setup();
+      const caller = createCaller(await createAuthContext(userId));
+
+      const result = await caller.subscriptions.update({ id: sourceId, customTitle: "research" });
+
+      expect(result.title).toBe("research");
+    });
+
+    it("the migration copies every collection's name into custom_title", async () => {
+      const userId = await createTestUser();
+      // As the previous release creates them: the name only on the feed.
+      const oldWay = async (title: string, unsubscribedAt: Date | null) => {
+        const feedId = await createTestFeed({ type: "collection", userId, url: null, title });
+        return createTestSubscription(userId, feedId, { unsubscribedAt });
+      };
+      const active = await oldWay("Active", null);
+      const deleted = await oldWay("Deleted", new Date());
+      const feed = await createTestSubscription(userId, await createTestFeed());
+      const migration = readFileSync(
+        new URL("../../migrations/0128_collection_names_unique.sql", import.meta.url),
+        "utf8"
+      );
+
+      await db.transaction((tx) => tx.execute(sql.raw(migration)));
+
+      const rows = await db
+        .select({ id: subscriptions.id, customTitle: subscriptions.customTitle })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId));
+      expect(new Map(rows.map((r) => [r.id, r.customTitle]))).toEqual(
+        new Map([
+          [active, "Active"],
+          [deleted, "Deleted"],
+          [feed, null],
+        ])
+      );
+    });
   });
 });

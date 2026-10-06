@@ -24,12 +24,14 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { publishCollectionEntriesChanged, publishSubscriptionCreated } from "@/server/redis/pubsub";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
+  getSubscription,
   isCollectionSubscription,
   lockAndCountActiveSubscriptions,
   type Subscription,
 } from "@/server/services/subscriptions";
-import { errors } from "@/server/trpc/errors";
+import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
+import { isUniqueViolation } from "@/server/db/errors";
 
 /** The user's collections holding an entry. */
 export async function listEntryCollectionIds(
@@ -48,41 +50,135 @@ export async function listEntryCollectionIds(
 export interface CreateCollectionResult {
   subscription: Subscription;
   counts: BulkUnreadCounts;
+  /** False when an active collection with this name (ignoring case) already existed; it's returned unchanged. */
+  created: boolean;
 }
 
+/**
+ * The user's active collection with this name, ignoring case as the unique
+ * index `uq_subscriptions_user_collection_name` does. Matches the displayed
+ * name, so it also finds a collection the previous release created without a
+ * `custom_title` during the rollout (#1846).
+ */
+async function findActiveCollectionByName(
+  db: DbOrTx,
+  userId: string,
+  name: string
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isCollectionSubscription(),
+        isNull(subscriptions.unsubscribedAt),
+        sql`lower(COALESCE(${subscriptions.customTitle}, ${feeds.title})) = lower(${name})`
+      )
+    )
+    .limit(1);
+  return row?.id;
+}
+
+/**
+ * Creates a collection, or returns the user's active collection with this
+ * name (ignoring case) unchanged, so retried and concurrent creates are
+ * harmless. Only a real creation is checked against the subscription cap and
+ * publishes `subscription_created`.
+ */
 export async function createCollection(
   db: typeof dbType,
   userId: string,
   name: string
 ): Promise<CreateCollectionResult> {
-  const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
+  // The collection found can be deleted or renamed before it's read back;
+  // then the next attempt creates one.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let outcome: { existingId: string } | { feedId: string; subscriptionId: string; now: Date };
+    try {
+      outcome = await db.transaction(async (tx) => {
+        // The creation lock serializes the lookup and insert with the user's
+        // other creates.
+        const activeCount = await lockAndCountActiveSubscriptions(tx, userId);
+        const existingId = await findActiveCollectionByName(tx, userId, name);
+        if (existingId) return { existingId };
+        const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
+        if (activeCount >= maxSubs) {
+          throw errors.maxSubscriptionsReached(maxSubs);
+        }
+        return insertCollection(tx, userId, name);
+      });
+    } catch (err) {
+      // A rename doesn't take the creation lock, so it can take the name
+      // between the lookup and the insert.
+      if (!isUniqueViolation(err)) throw err;
+      const existingId = await findActiveCollectionByName(db, userId, name);
+      if (existingId === undefined) continue;
+      outcome = { existingId };
+    }
+
+    if (!("existingId" in outcome)) {
+      return finishCreate(db, userId, name, outcome);
+    }
+    const existing = await getActiveCollection(db, userId, outcome.existingId);
+    if (existing) {
+      const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: existing.id }]);
+      return { subscription: existing, counts, created: false };
+    }
+  }
+  throw errors.collectionNameTaken();
+}
+
+async function getActiveCollection(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string
+): Promise<Subscription | undefined> {
+  try {
+    return await getSubscription(db, userId, subscriptionId);
+  } catch (err) {
+    if (getAppErrorCode(err) === "SUBSCRIPTION_NOT_FOUND") return undefined;
+    throw err;
+  }
+}
+
+async function insertCollection(
+  tx: Transaction,
+  userId: string,
+  name: string
+): Promise<{ feedId: string; subscriptionId: string; now: Date }> {
   const feedId = generateUuidv7();
   const subscriptionId = generateUuidv7();
   const now = new Date();
-
-  await db.transaction(async (tx) => {
-    if ((await lockAndCountActiveSubscriptions(tx, userId)) >= maxSubs) {
-      throw errors.maxSubscriptionsReached(maxSubs);
-    }
-    await tx.insert(feeds).values({
-      id: feedId,
-      type: "collection",
-      userId,
-      title: name,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await tx.insert(subscriptions).values({
-      id: subscriptionId,
-      userId,
-      feedId,
-      type: "collection",
-      subscribedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
+  await tx.insert(feeds).values({
+    id: feedId,
+    type: "collection",
+    userId,
+    // The previous release reads the name from here (#1846).
+    title: name,
+    createdAt: now,
+    updatedAt: now,
   });
+  await tx.insert(subscriptions).values({
+    id: subscriptionId,
+    userId,
+    feedId,
+    type: "collection",
+    customTitle: name,
+    subscribedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { feedId, subscriptionId, now };
+}
 
+async function finishCreate(
+  db: typeof dbType,
+  userId: string,
+  name: string,
+  { feedId, subscriptionId, now }: { feedId: string; subscriptionId: string; now: Date }
+): Promise<CreateCollectionResult> {
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
   const feedData = {
     type: "collection" as const,
@@ -98,7 +194,7 @@ export async function createCollection(
     subscriptionId,
     now,
     {
-      customTitle: null,
+      customTitle: name,
       subscribedAt: now.toISOString(),
       unreadCount: 0,
       tags: [],
@@ -124,6 +220,7 @@ export async function createCollection(
       fetchFullContent: false,
     },
     counts,
+    created: true,
   };
 }
 
