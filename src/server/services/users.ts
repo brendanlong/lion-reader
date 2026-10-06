@@ -5,7 +5,7 @@
  * tRPC routers, MCP server, and background jobs.
  */
 
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { users, feeds, entries, subscriptions, userEntries, sessions } from "@/server/db/schema";
 import { getRedisClient } from "@/server/redis";
@@ -19,7 +19,8 @@ import { logger } from "@/lib/logger";
  * that are no longer referenced by any other user.
  *
  * Orphan cleanup:
- * - Web feeds with no remaining subscriptions from other users
+ * - Web feeds the user subscribed to that no other user subscribes to or
+ *   has entries from
  * - Entries belonging to orphaned feeds (cascaded from feed deletion)
  * - Email/saved feeds are always user-specific and cascade automatically
  *
@@ -35,31 +36,13 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
     .where(eq(sessions.userId, userId));
 
   await db.transaction(async (tx) => {
-    // Step 1: Find web feeds that will become orphaned after this user is deleted.
-    // A feed is orphaned if:
-    // - It has no subscriptions from other users
-    // - It has no user_entries from other users
+    // Step 1: The web feeds the user subscribes to may become orphaned.
     // Email and saved feeds are user-specific and cascade automatically.
-    const orphanedFeedIds = await tx
+    const candidates = await tx
       .select({ id: feeds.id })
-      .from(feeds)
-      .where(
-        sql`${feeds.type} = 'web'
-          AND ${feeds.id} IN (
-            SELECT ${subscriptions.feedId} FROM ${subscriptions}
-            WHERE ${subscriptions.userId} = ${userId}
-          )
-          AND ${feeds.id} NOT IN (
-            -- A NULL (a subscription without a feed) would make NOT IN match nothing.
-            SELECT ${subscriptions.feedId} FROM ${subscriptions}
-            WHERE ${subscriptions.userId} != ${userId} AND ${subscriptions.feedId} IS NOT NULL
-          )
-          AND ${feeds.id} NOT IN (
-            SELECT DISTINCT ${entries.feedId} FROM ${entries}
-            INNER JOIN ${userEntries} ON ${userEntries.entryId} = ${entries.id}
-            WHERE ${userEntries.userId} != ${userId}
-          )`
-      );
+      .from(subscriptions)
+      .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
+      .where(and(eq(subscriptions.userId, userId), eq(feeds.type, "web")));
 
     // Step 2: Delete the user. This cascades to:
     // - sessions, api_tokens, oauth_accounts
@@ -72,10 +55,25 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
     // - invites.used_by_user_id is set to NULL
     await tx.delete(users).where(eq(users.id, userId));
 
-    // Step 3: Delete orphaned web feeds (and their entries via cascade)
-    if (orphanedFeedIds.length > 0) {
-      const ids = orphanedFeedIds.map((f) => f.id);
-      await tx.delete(feeds).where(inArray(feeds.id, ids));
+    // Step 3: Delete the candidates nobody else subscribes to or has entries
+    // from (e.g. starred after unsubscribing), and their entries by cascade.
+    // Checking in the DELETE itself, after the user's own rows are gone, means
+    // only a subscribe still uncommitted when it runs can be lost (cascaded).
+    if (candidates.length > 0) {
+      await tx.delete(feeds).where(
+        and(
+          inArray(
+            feeds.id,
+            candidates.map((f) => f.id)
+          ),
+          sql`NOT EXISTS (SELECT 1 FROM ${subscriptions} WHERE ${subscriptions.feedId} = ${feeds.id})`,
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${entries}
+            INNER JOIN ${userEntries} ON ${userEntries.entryId} = ${entries.id}
+            WHERE ${entries.feedId} = ${feeds.id}
+          )`
+        )
+      );
     }
   });
 
