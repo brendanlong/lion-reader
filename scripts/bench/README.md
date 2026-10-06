@@ -57,6 +57,32 @@ idle machine, but a busy one moves them all together, and sub-millisecond
 ratios are noise. A "changed" plan means the set of indexes or sequential
 scans moved; the statements' `nodes` in the two result files show how.
 
+## Baseline
+
+`baseline.json` is the phase 0 run of #1846: commit 94607ac9 on a Ryzen 9
+5900X, against `pnpm services`' PostgreSQL 18.6 with default settings (128 MB
+`shared_buffers`). Use it to see which benchmarks are heavy and what their
+plans look like, not as the "before" of a comparison. Everything not listed
+here takes under 2 ms.
+
+| benchmark                      | p50 ms | buffers | trigger ms |
+| :----------------------------- | -----: | ------: | ---------: |
+| `write.fanout_100`             |  2,312 |    4.2M |         30 |
+| `write.fanout_one`             |  1,062 |    2.1M |          4 |
+| `write.collection_delete_1000` |    144 |     10k |        141 |
+| `write.redirect_merge`         |    103 |     55k |         72 |
+| `write.collection_add_1000`    |     92 |     43k |         73 |
+| `write.mark_all_read_feed`     |     78 |    143k |         12 |
+| `ssr.sync_cursors`             |     58 |     70k |            |
+| `write.collection_delete`      |     41 |     278 |         40 |
+| `write.unsubscribe_large`      |     39 |      55 |         38 |
+| `ssr.list_saved`               |     26 |     68k |            |
+| `greader.stream_saved`         |     25 |     62k |            |
+| `write.subscribe_with_history` |     20 |     16k |          9 |
+| `search`                       |    6.4 |    9.4k |            |
+| `sync.events`                  |    4.3 |    4.3k |            |
+| `write.save_article`           |    3.7 |     132 |        1.9 |
+
 ## Does anything belong in Redis?
 
 Mostly no. Sessions (5-minute TTL) and the site-status flags are already in

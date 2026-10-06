@@ -1,0 +1,6112 @@
+{
+  "meta": {
+    "version": 1,
+    "startedAt": "2026-10-06T01:31:50.274Z",
+    "git": {
+      "sha": "94607ac97621ace67934a99663c5c9c8dfdcb2d2",
+      "branch": "brendanlong/bench-phase0",
+      "dirty": false
+    },
+    "machine": {
+      "cpu": "AMD Ryzen 9 5900X 12-Core Processor",
+      "cores": 24,
+      "memoryGb": 126,
+      "platform": "linux 7.0.0-34-generic"
+    },
+    "postgres": {
+      "version": "PostgreSQL 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0, 64-bit",
+      "settings": {
+        "effective_cache_size": "524288 8kB",
+        "effective_io_concurrency": "16",
+        "jit": "on",
+        "max_parallel_workers_per_gather": "2",
+        "random_page_cost": "4",
+        "shared_buffers": "16384 8kB",
+        "work_mem": "4096 kB"
+      }
+    },
+    "iterations": 5,
+    "warmup": 5,
+    "dataset": {
+      "size": "4497 MB",
+      "collection_entries": 71,
+      "users": 48,
+      "feeds": 2932,
+      "subscriptions": 1776,
+      "u0_unread": 126516,
+      "u0_user_entries": 129627,
+      "entries": 481197,
+      "user_entries": 508971
+    },
+    "note": "Phase 0 baseline: pnpm services Postgres with default settings, fresh seed"
+  },
+  "results": [
+    {
+      "name": "ssr.tags_list",
+      "kind": "read",
+      "source": "services/tags.ts listTags",
+      "ms": {
+        "median": 0.45300000000000007,
+        "p90": 0.466,
+        "min": 0.44600000000000006,
+        "max": 0.466
+      },
+      "planMs": 0.156,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 109,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 32,
+      "walBytes": 0,
+      "access": [
+        "idx:idx_subscription_tags_tag",
+        "idx:idx_subscriptions_user_active",
+        "seq:subscription_tags",
+        "seq:tags",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "tags",
+          "ms": 0.16999999999999998,
+          "triggerMs": 0,
+          "rows": 30,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Sort",
+            "Seq Scan tags",
+            "Aggregate",
+            "Index Only Scan idx_subscription_tags_tag"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "uncategorized_feeds",
+          "ms": 0.261,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 42,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Aggregate",
+            "Hash Join",
+            "Seq Scan subscription_tags",
+            "Hash",
+            "Bitmap Heap Scan subscriptions",
+            "Bitmap Index Scan idx_subscriptions_user_active"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "uncategorized_unread",
+          "ms": 0.027,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.entries_count",
+      "kind": "read",
+      "source": "services/counts.ts getUserUnreadCounts (entries.count, run 3× per SSR)",
+      "ms": {
+        "median": 0.03,
+        "p90": 0.034,
+        "min": 0.026,
+        "max": 0.034
+      },
+      "planMs": 0.021,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 3,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 1,
+      "walBytes": 0,
+      "access": ["seq:users"],
+      "statements": [
+        {
+          "label": "counts.users",
+          "ms": 0.03,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.sync_cursors",
+      "kind": "read",
+      "source": "trpc/routers/sync.ts currentSyncCursors",
+      "ms": {
+        "median": 57.605000000000004,
+        "p90": 60.116,
+        "min": 54.696999999999996,
+        "max": 60.116
+      },
+      "planMs": 0.87,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 2153,
+        "read": 67994,
+        "dirtied": 0,
+        "written": 203
+      },
+      "rows": 3,
+      "walBytes": 0,
+      "access": [
+        "idx:idx_entries_feed_updated_at",
+        "idx:idx_tags_updated_at",
+        "idx:idx_user_entries_updated_at",
+        "idx:uq_feeds_saved_user",
+        "idx:uq_subscriptions_user_feed",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:entries",
+        "seq:subscriptions"
+      ],
+      "statements": [
+        {
+          "label": "entries",
+          "ms": 57.339,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 2090,
+            "read": 67994,
+            "dirtied": 0,
+            "written": 203
+          },
+          "nodes": [
+            "Limit",
+            "Limit",
+            "Incremental Sort",
+            "Index Scan idx_user_entries_updated_at",
+            "Result",
+            "CTE Scan",
+            "Sort",
+            "Append",
+            "CTE Scan",
+            "Subquery Scan",
+            "Limit",
+            "CTE Scan",
+            "Nested Loop",
+            "Gather Merge",
+            "Sort",
+            "Hash Join",
+            "Seq Scan entries",
+            "Hash",
+            "Index Only Scan uq_subscriptions_user_feed",
+            "Index Only Scan user_entry_states_user_id_entry_id_pk",
+            "Subquery Scan",
+            "Limit",
+            "Index Scan uq_feeds_saved_user",
+            "CTE Scan",
+            "Incremental Sort",
+            "Nested Loop",
+            "Index Scan idx_entries_feed_updated_at",
+            "Index Only Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "subscriptions",
+          "ms": 0.21999999999999997,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 61,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Aggregate", "Seq Scan subscriptions"],
+          "triggers": []
+        },
+        {
+          "label": "tags",
+          "ms": 0.054,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Result", "Limit", "Index Only Scan idx_tags_updated_at"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_all",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/all, unread, first page)",
+      "ms": {
+        "median": 0.707,
+        "p90": 0.732,
+        "min": 0.694,
+        "max": 0.732
+      },
+      "planMs": 0.587,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 157,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 11,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_user_entries_published_or_fetched",
+        "idx:subscriptions_pkey",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "list",
+          "ms": 0.707,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 157,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_published_or_fetched",
+            "Memoize",
+            "Index Scan subscriptions_pkey",
+            "Index Scan entries_pkey",
+            "Seq Scan collection_entries",
+            "Memoize",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_all_page_20",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/all, unread, keyset cursor 200 rows deep)",
+      "ms": {
+        "median": 1.201,
+        "p90": 1.392,
+        "min": 1.181,
+        "max": 1.392
+      },
+      "planMs": 0.629,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 1452,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 11,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_user_entries_published_or_fetched",
+        "idx:subscriptions_pkey",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "list",
+          "ms": 1.201,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 1452,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_published_or_fetched",
+            "Memoize",
+            "Index Scan subscriptions_pkey",
+            "Index Scan entries_pkey",
+            "Seq Scan collection_entries",
+            "Memoize",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_subscription",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/subscription/:id, U0's subscription with most unread)",
+      "ms": {
+        "median": 0.79,
+        "p90": 0.862,
+        "min": 0.764,
+        "max": 0.862
+      },
+      "planMs": 0.6970000000000001,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 102,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 12,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_feeds_type",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:uq_subscriptions_id_user",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "verify_ownership",
+          "ms": 0.044000000000000004,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "collection_lookup",
+          "ms": 0.131,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 9,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan idx_feeds_type"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "list",
+          "ms": 0.609,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 90,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_subscription_timeline",
+            "Index Scan entries_pkey",
+            "Materialize",
+            "Index Scan uq_subscriptions_id_user",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Materialize",
+            "Index Scan uq_subscriptions_id_user"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_tag",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/tag/:id; the tag also holds a collection)",
+      "ms": {
+        "median": 1.5710000000000002,
+        "p90": 1.5810000000000002,
+        "min": 1.553,
+        "max": 1.5810000000000002
+      },
+      "planMs": 0.9969999999999999,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 744,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 12,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_feeds_type",
+        "idx:idx_subscription_tags_tag",
+        "idx:idx_user_entries_published_or_fetched",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:subscriptions_pkey",
+        "idx:uq_subscriptions_user_feed",
+        "seq:collection_entries",
+        "seq:subscriptions",
+        "seq:tags"
+      ],
+      "statements": [
+        {
+          "label": "collection_lookup",
+          "ms": 0.32099999999999995,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 36,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_feeds_type",
+            "Index Scan uq_subscriptions_user_feed",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan subscriptions_pkey",
+            "Index Only Scan subscription_tags_subscription_id_tag_id_pk",
+            "Seq Scan tags"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "list",
+          "ms": 1.249,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 708,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_published_or_fetched",
+            "Memoize",
+            "Index Scan subscriptions_pkey",
+            "Index Scan entries_pkey",
+            "Seq Scan collection_entries",
+            "Nested Loop",
+            "Seq Scan tags",
+            "Hash Join",
+            "Seq Scan subscriptions",
+            "Hash",
+            "Bitmap Heap Scan subscription_tags",
+            "Bitmap Index Scan idx_subscription_tags_tag",
+            "Seq Scan collection_entries",
+            "Memoize",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_starred",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/starred)",
+      "ms": {
+        "median": 0.706,
+        "p90": 0.761,
+        "min": 0.699,
+        "max": 0.761
+      },
+      "planMs": 0.573,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 167,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 11,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_user_entries_published_or_fetched",
+        "idx:subscriptions_pkey",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "list",
+          "ms": 0.706,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 167,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_published_or_fetched",
+            "Index Scan entries_pkey",
+            "Index Scan subscriptions_pkey",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_saved",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/saved)",
+      "ms": {
+        "median": 25.882,
+        "p90": 29.058,
+        "min": 21.612,
+        "max": 29.058
+      },
+      "planMs": 0.667,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 68237,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 11,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_user_entries_published_or_fetched",
+        "idx:subscriptions_pkey",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "list",
+          "ms": 25.882,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 68237,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Gather Merge",
+            "Nested Loop",
+            "Index Scan idx_user_entries_published_or_fetched",
+            "Index Scan entries_pkey",
+            "Index Scan subscriptions_pkey",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_uncategorized",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/uncategorized; includes untagged collections)",
+      "ms": {
+        "median": 1.512,
+        "p90": 1.721,
+        "min": 1.4369999999999998,
+        "max": 1.721
+      },
+      "planMs": 0.9229999999999999,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 458,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 13,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_feeds_type",
+        "idx:idx_user_entries_published_or_fetched",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:subscriptions_pkey",
+        "idx:uq_subscriptions_user_feed",
+        "seq:collection_entries",
+        "seq:subscription_tags",
+        "seq:subscriptions"
+      ],
+      "statements": [
+        {
+          "label": "collection_lookup",
+          "ms": 0.27,
+          "triggerMs": 0,
+          "rows": 2,
+          "buffers": {
+            "hit": 33,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_feeds_type",
+            "Index Scan uq_subscriptions_user_feed",
+            "Nested Loop",
+            "Index Scan subscriptions_pkey",
+            "Index Only Scan subscription_tags_subscription_id_tag_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "list",
+          "ms": 1.242,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 425,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_published_or_fetched",
+            "Memoize",
+            "Index Scan subscriptions_pkey",
+            "Index Scan entries_pkey",
+            "Seq Scan collection_entries",
+            "Hash Join",
+            "Seq Scan subscriptions",
+            "Hash",
+            "Seq Scan subscription_tags",
+            "Seq Scan collection_entries",
+            "Memoize",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.list_recently_read",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/recently-read)",
+      "ms": {
+        "median": 0.702,
+        "p90": 0.875,
+        "min": 0.6759999999999999,
+        "max": 0.875
+      },
+      "planMs": 0.618,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 103,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 11,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_user_entries_read_changed_at",
+        "idx:subscriptions_pkey",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "list",
+          "ms": 0.702,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 103,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_read_changed_at",
+            "Memoize",
+            "Index Scan subscriptions_pkey",
+            "Index Scan entries_pkey",
+            "Seq Scan collection_entries",
+            "Memoize",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.entries_get",
+      "kind": "read",
+      "source": "services/entries.ts selectFullEntry (entries.get)",
+      "ms": {
+        "median": 0.40599999999999997,
+        "p90": 0.414,
+        "min": 0.38999999999999996,
+        "max": 0.414
+      },
+      "planMs": 0.365,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 17,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 1,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:subscriptions_pkey",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "get",
+          "ms": 0.40599999999999997,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 17,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan entries_pkey",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "ssr.subscriptions_get",
+      "kind": "read",
+      "source": "services/subscriptions.ts getSubscription",
+      "ms": {
+        "median": 0.292,
+        "p90": 0.34099999999999997,
+        "min": 0.28600000000000003,
+        "max": 0.34099999999999997
+      },
+      "planMs": 0.236,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 15,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 1,
+      "walBytes": 0,
+      "access": [
+        "idx:feeds_pkey",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "seq:tags"
+      ],
+      "statements": [
+        {
+          "label": "get",
+          "ms": 0.292,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 15,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Aggregate",
+            "Sort",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Hash Join",
+            "Seq Scan tags",
+            "Hash",
+            "Index Only Scan subscription_tags_subscription_id_tag_id_pk",
+            "Index Scan feeds_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "list.collection",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (/subscription/:id for a collection, unread)",
+      "ms": {
+        "median": 1.735,
+        "p90": 1.822,
+        "min": 1.666,
+        "max": 1.822
+      },
+      "planMs": 1.3820000000000001,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 683,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 13,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_feeds_type",
+        "idx:subscriptions_pkey",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "verify_ownership",
+          "ms": 0.045,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "collection_lookup",
+          "ms": 0.121,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 7,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan idx_feeds_type"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "list",
+          "ms": 1.5590000000000002,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 673,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Sort",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Seq Scan collection_entries",
+            "Index Scan entries_pkey",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan subscriptions_pkey",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "list.mostly_read_feed_unread",
+      "kind": "read",
+      "source": "services/entries.ts listEntries (unread only, 3,000-entry feed with 40 unread)",
+      "ms": {
+        "median": 0.925,
+        "p90": 1.054,
+        "min": 0.856,
+        "max": 1.054
+      },
+      "planMs": 0.7000000000000001,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 651,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 12,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_feeds_type",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:uq_subscriptions_id_user",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "verify_ownership",
+          "ms": 0.046,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "collection_lookup",
+          "ms": 0.121,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 9,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan idx_feeds_type"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "list",
+          "ms": 0.75,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 639,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_subscription_timeline",
+            "Index Scan entries_pkey",
+            "Materialize",
+            "Index Scan uq_subscriptions_id_user",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Materialize",
+            "Index Scan uq_subscriptions_id_user"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "search",
+      "kind": "read",
+      "source": "services/entries.ts searchEntries (all entries, two-word query)",
+      "ms": {
+        "median": 6.348999999999999,
+        "p90": 6.703,
+        "min": 6.244,
+        "max": 6.703
+      },
+      "planMs": 0.593,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 9369,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 11,
+      "walBytes": 0,
+      "access": [
+        "idx:feeds_pkey",
+        "idx:idx_entries_search_vector",
+        "idx:subscriptions_pkey",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:subscriptions"
+      ],
+      "statements": [
+        {
+          "label": "search",
+          "ms": 6.348999999999999,
+          "triggerMs": 0,
+          "rows": 11,
+          "buffers": {
+            "hit": 9369,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Sort",
+            "Nested Loop",
+            "Nested Loop",
+            "Hash Join",
+            "Nested Loop",
+            "Bitmap Heap Scan entries",
+            "Bitmap Index Scan idx_entries_search_vector",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Hash",
+            "Seq Scan subscriptions",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "sync.events",
+      "kind": "read",
+      "source": "trpc/routers/sync.ts collectSyncEvents (entry + subscription + tag arms, ~200 changes)",
+      "ms": {
+        "median": 4.335000000000001,
+        "p90": 4.361,
+        "min": 4.276,
+        "max": 4.361
+      },
+      "planMs": 1.8609999999999998,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 4337,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 700,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_entries_feed_updated_at",
+        "idx:idx_user_entries_updated_at",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_feeds_saved_user",
+        "idx:uq_subscriptions_id_user",
+        "idx:uq_subscriptions_user_feed",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:subscriptions",
+        "seq:tags",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "saved_feed",
+          "ms": 0.037,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_feeds_saved_user"],
+          "triggers": []
+        },
+        {
+          "label": "entries",
+          "ms": 3.08,
+          "triggerMs": 0,
+          "rows": 184,
+          "buffers": {
+            "hit": 4080,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Result",
+            "Sort",
+            "Nested Loop",
+            "Hash Join",
+            "Nested Loop",
+            "Nested Loop",
+            "Unique",
+            "Sort",
+            "Append",
+            "Index Scan idx_user_entries_updated_at",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Only Scan uq_subscriptions_user_feed",
+            "Memoize",
+            "Index Scan idx_entries_feed_updated_at",
+            "Index Only Scan user_entry_states_user_id_entry_id_pk",
+            "Nested Loop",
+            "Index Scan idx_entries_feed_updated_at",
+            "Index Only Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan entries_pkey",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Hash",
+            "Seq Scan subscriptions",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Seq Scan collection_entries"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "new.counts.collections",
+          "ms": 0.063,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 1,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Aggregate", "Seq Scan collection_entries"],
+          "triggers": []
+        },
+        {
+          "label": "new.counts.users",
+          "ms": 0.028,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "new.counts.subscriptions",
+          "ms": 0.129,
+          "triggerMs": 0,
+          "rows": 118,
+          "buffers": {
+            "hit": 66,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Bitmap Heap Scan subscriptions", "Bitmap Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "new.counts.subscription_tags",
+          "ms": 0.163,
+          "triggerMs": 0,
+          "rows": 106,
+          "buffers": {
+            "hit": 11,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        },
+        {
+          "label": "new.counts.tags",
+          "ms": 0.042,
+          "triggerMs": 0,
+          "rows": 29,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan tags"],
+          "triggers": []
+        },
+        {
+          "label": "state.counts.collections",
+          "ms": 0.066,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 1,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Aggregate", "Seq Scan collection_entries"],
+          "triggers": []
+        },
+        {
+          "label": "state.counts.users",
+          "ms": 0.027,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "state.counts.subscriptions",
+          "ms": 0.139,
+          "triggerMs": 0,
+          "rows": 119,
+          "buffers": {
+            "hit": 66,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Bitmap Heap Scan subscriptions", "Bitmap Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "state.counts.subscription_tags",
+          "ms": 0.155,
+          "triggerMs": 0,
+          "rows": 106,
+          "buffers": {
+            "hit": 11,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        },
+        {
+          "label": "state.counts.tags",
+          "ms": 0.039,
+          "triggerMs": 0,
+          "rows": 29,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan tags"],
+          "triggers": []
+        },
+        {
+          "label": "subscriptions",
+          "ms": 0.20700000000000002,
+          "triggerMs": 0,
+          "rows": 5,
+          "buffers": {
+            "hit": 76,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Sort", "Nested Loop", "Seq Scan subscriptions", "Index Scan feeds_pkey"],
+          "triggers": []
+        },
+        {
+          "label": "subscription_tags",
+          "ms": 0.102,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 8,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Hash Join",
+            "Seq Scan tags",
+            "Hash",
+            "Index Only Scan subscription_tags_subscription_id_tag_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "tags",
+          "ms": 0.036000000000000004,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Sort", "Seq Scan tags"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "greader.stream_feed",
+      "kind": "read",
+      "source": "greader stream/contents route: resolveFeedStream + listEntries + getEntries (feed/{n}, n=20)",
+      "ms": {
+        "median": 1.3579999999999999,
+        "p90": 1.5059999999999998,
+        "min": 1.347,
+        "max": 1.5059999999999998
+      },
+      "planMs": 1.0879999999999999,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 495,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 43,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_feeds_type",
+        "idx:idx_subscriptions_greader_stream_id",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:subscriptions_pkey",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "resolve_stream",
+          "ms": 0.036000000000000004,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan idx_subscriptions_greader_stream_id"],
+          "triggers": []
+        },
+        {
+          "label": "verify_ownership",
+          "ms": 0.04,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "collection_lookup",
+          "ms": 0.11299999999999999,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 9,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan idx_feeds_type"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "list",
+          "ms": 0.609,
+          "triggerMs": 0,
+          "rows": 21,
+          "buffers": {
+            "hit": 170,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_user_entries_subscription_timeline",
+            "Index Scan entries_pkey",
+            "Materialize",
+            "Index Scan uq_subscriptions_id_user",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Materialize",
+            "Index Scan uq_subscriptions_id_user"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "get_entries",
+          "ms": 0.5609999999999999,
+          "triggerMs": 0,
+          "rows": 20,
+          "buffers": {
+            "hit": 310,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan entries_pkey",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan subscriptions_pkey",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "greader.stream_saved",
+      "kind": "read",
+      "source": "greader stream/contents route: resolveFeedStream + listEntries + getEntries (Saved, n=20)",
+      "ms": {
+        "median": 24.498000000000005,
+        "p90": 25.356,
+        "min": 20.260999999999996,
+        "max": 25.356
+      },
+      "planMs": 1.362,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 61554,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 42,
+      "walBytes": 0,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_subscriptions_greader_stream_id",
+        "idx:idx_user_entries_published_or_fetched",
+        "idx:subscriptions_pkey",
+        "idx:uq_feeds_saved_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries"
+      ],
+      "statements": [
+        {
+          "label": "resolve_subscription",
+          "ms": 0.041,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan idx_subscriptions_greader_stream_id"],
+          "triggers": []
+        },
+        {
+          "label": "resolve_saved",
+          "ms": 0.046,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_feeds_saved_user"],
+          "triggers": []
+        },
+        {
+          "label": "list",
+          "ms": 23.630000000000003,
+          "triggerMs": 0,
+          "rows": 21,
+          "buffers": {
+            "hit": 61330,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Gather Merge",
+            "Nested Loop",
+            "Index Scan idx_user_entries_published_or_fetched",
+            "Index Scan entries_pkey",
+            "Index Scan subscriptions_pkey",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "get_entries",
+          "ms": 0.7190000000000001,
+          "triggerMs": 0,
+          "rows": 20,
+          "buffers": {
+            "hit": 220,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan entries_pkey",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan subscriptions_pkey",
+            "Seq Scan collection_entries",
+            "Index Scan feeds_pkey",
+            "Index Scan subscriptions_pkey"
+          ],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "greader.unread_count",
+      "kind": "read",
+      "source": "google-reader/subscriptions.ts getGreaderUnreadCounts",
+      "ms": {
+        "median": 1.6589999999999998,
+        "p90": 1.798,
+        "min": 1.573,
+        "max": 1.798
+      },
+      "planMs": 0.42400000000000004,
+      "triggerMs": 0,
+      "buffers": {
+        "hit": 1056,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 332,
+      "walBytes": 0,
+      "access": [
+        "idx:idx_entries_feed_published_coalesce",
+        "idx:idx_feeds_type",
+        "idx:idx_subscriptions_user_active",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:uq_feeds_saved_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "counts",
+          "ms": 1.63,
+          "triggerMs": 0,
+          "rows": 331,
+          "buffers": {
+            "hit": 1053,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Append",
+            "Hash Join",
+            "Nested Loop",
+            "Bitmap Heap Scan subscriptions",
+            "Bitmap Index Scan idx_subscriptions_user_active",
+            "Limit",
+            "Index Only Scan idx_user_entries_subscription_timeline",
+            "Hash",
+            "Index Scan idx_feeds_type",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan uq_feeds_saved_user",
+            "Seq Scan users",
+            "Limit",
+            "Nested Loop",
+            "Index Scan idx_entries_feed_published_coalesce",
+            "Index Only Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.029,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.fanout_one",
+      "kind": "write",
+      "source": "feed/entry-processor.ts processEntries + createUserEntriesForFeed (1 new of 50, 20 subscribers)",
+      "ms": {
+        "median": 1062.418,
+        "p90": 1120.4379999999999,
+        "min": 1048.746,
+        "max": 1120.4379999999999
+      },
+      "planMs": 0.626,
+      "triggerMs": 3.682,
+      "buffers": {
+        "hit": 2058863,
+        "read": 421,
+        "dirtied": 83,
+        "written": 7
+      },
+      "rows": 170,
+      "walBytes": 387864,
+      "access": [
+        "idx:entries_pkey",
+        "idx:idx_entries_feed_published_coalesce",
+        "idx:idx_entries_spam",
+        "idx:idx_subscriptions_feed_active",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:idx_user_entries_updated_at",
+        "idx:uq_entries_feed_guid"
+      ],
+      "statements": [
+        {
+          "label": "existing",
+          "ms": 0.409,
+          "triggerMs": 0,
+          "rows": 49,
+          "buffers": {
+            "hit": 123,
+            "read": 1,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_entries_feed_guid"],
+          "triggers": []
+        },
+        {
+          "label": "create_entry.0",
+          "ms": 0.68,
+          "triggerMs": 0.03,
+          "rows": 1,
+          "buffers": {
+            "hit": 72,
+            "read": 5,
+            "dirtied": 5,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.03
+            }
+          ]
+        },
+        {
+          "label": "previously_current",
+          "ms": 1.909,
+          "triggerMs": 0,
+          "rows": 51,
+          "buffers": {
+            "hit": 1814,
+            "read": 270,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Bitmap Heap Scan entries", "Bitmap Index Scan idx_entries_spam"],
+          "triggers": []
+        },
+        {
+          "label": "update_last_seen",
+          "ms": 3.966,
+          "triggerMs": 0,
+          "rows": 49,
+          "buffers": {
+            "hit": 3115,
+            "read": 48,
+            "dirtied": 19,
+            "written": 6
+          },
+          "nodes": ["ModifyTable entries", "Index Scan entries_pkey"],
+          "triggers": []
+        },
+        {
+          "label": "fanout",
+          "ms": 1055.415,
+          "triggerMs": 3.654,
+          "rows": 20,
+          "buffers": {
+            "hit": 2053740,
+            "read": 100,
+            "dirtied": 59,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_entries_feed_published_coalesce",
+            "Bitmap Heap Scan subscriptions",
+            "Bitmap Index Scan idx_subscriptions_feed_active",
+            "Nested Loop",
+            "Bitmap Heap Scan user_entries",
+            "BitmapAnd",
+            "Bitmap Index Scan idx_user_entries_subscription_timeline",
+            "Bitmap Index Scan idx_user_entries_updated_at",
+            "Index Scan entries_pkey"
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16555",
+              "relation": "user_entries",
+              "calls": 20,
+              "ms": 0.128
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16560",
+              "relation": "user_entries",
+              "calls": 20,
+              "ms": 0.35
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_17464",
+              "relation": "user_entries",
+              "calls": 20,
+              "ms": 0.133
+            },
+            {
+              "name": "user_entries_counters_insert_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 1.78
+            },
+            {
+              "name": "user_entries_fill_denormalized_trigger",
+              "relation": "user_entries",
+              "calls": 1000,
+              "ms": 1.677
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "write.fanout_100",
+      "kind": "write",
+      "source": "feed/entry-processor.ts processEntries + createUserEntriesForFeed (100 new, 20 subscribers)",
+      "ms": {
+        "median": 2312.1180000000004,
+        "p90": 2410.984,
+        "min": 2216.925,
+        "max": 2410.984
+      },
+      "planMs": 2.217999999999998,
+      "triggerMs": 29.786,
+      "buffers": {
+        "hit": 4225070,
+        "read": 680,
+        "dirtied": 188,
+        "written": 437
+      },
+      "rows": 2250,
+      "walBytes": 3268392,
+      "access": [
+        "idx:entries_pkey",
+        "idx:idx_entries_feed_published_coalesce",
+        "idx:idx_entries_spam",
+        "idx:idx_subscriptions_feed_active",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:idx_user_entries_updated_at",
+        "idx:uq_entries_feed_guid"
+      ],
+      "statements": [
+        {
+          "label": "existing",
+          "ms": 0.662,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 34,
+            "read": 1,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_entries_feed_guid"],
+          "triggers": []
+        },
+        {
+          "label": "create_entry.0",
+          "ms": 0.654,
+          "triggerMs": 0.022,
+          "rows": 1,
+          "buffers": {
+            "hit": 76,
+            "read": 1,
+            "dirtied": 2,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.02
+            }
+          ]
+        },
+        {
+          "label": "create_entry.1",
+          "ms": 0.379,
+          "triggerMs": 0.013,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.2",
+          "ms": 0.48100000000000004,
+          "triggerMs": 0.012,
+          "rows": 1,
+          "buffers": {
+            "hit": 68,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.3",
+          "ms": 0.337,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.4",
+          "ms": 0.329,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.5",
+          "ms": 0.454,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 68,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.6",
+          "ms": 0.40900000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 69,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.7",
+          "ms": 0.406,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 61,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.8",
+          "ms": 0.426,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 63,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.9",
+          "ms": 0.44,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 69,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.10",
+          "ms": 0.40700000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 63,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.11",
+          "ms": 0.41600000000000004,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 63,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.12",
+          "ms": 0.446,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.13",
+          "ms": 0.397,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.14",
+          "ms": 0.402,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.15",
+          "ms": 0.35500000000000004,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.16",
+          "ms": 0.528,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 75,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.17",
+          "ms": 0.39,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 57,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.18",
+          "ms": 0.511,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.19",
+          "ms": 0.375,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.012
+            }
+          ]
+        },
+        {
+          "label": "create_entry.20",
+          "ms": 0.366,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.014
+            }
+          ]
+        },
+        {
+          "label": "create_entry.21",
+          "ms": 0.5650000000000001,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 77,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.22",
+          "ms": 0.421,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 59,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.23",
+          "ms": 0.438,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.24",
+          "ms": 0.328,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 59,
+            "read": 0,
+            "dirtied": 2,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.25",
+          "ms": 0.405,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.015
+            }
+          ]
+        },
+        {
+          "label": "create_entry.26",
+          "ms": 0.404,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.27",
+          "ms": 0.401,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.28",
+          "ms": 0.338,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.29",
+          "ms": 0.382,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.30",
+          "ms": 0.497,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.31",
+          "ms": 0.396,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.32",
+          "ms": 0.381,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.33",
+          "ms": 0.39,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.34",
+          "ms": 0.47300000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 72,
+            "read": 0,
+            "dirtied": 3,
+            "written": 4
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.012
+            }
+          ]
+        },
+        {
+          "label": "create_entry.35",
+          "ms": 0.427,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.36",
+          "ms": 0.545,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 78,
+            "read": 1,
+            "dirtied": 2,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.37",
+          "ms": 0.381,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 66,
+            "read": 1,
+            "dirtied": 3,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.38",
+          "ms": 0.35100000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 75,
+            "read": 1,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.39",
+          "ms": 0.439,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 65,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.028
+            }
+          ]
+        },
+        {
+          "label": "create_entry.40",
+          "ms": 0.449,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 67,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.016
+            }
+          ]
+        },
+        {
+          "label": "create_entry.41",
+          "ms": 0.394,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 63,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.013
+            }
+          ]
+        },
+        {
+          "label": "create_entry.42",
+          "ms": 0.364,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 73,
+            "read": 2,
+            "dirtied": 4,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.012
+            }
+          ]
+        },
+        {
+          "label": "create_entry.43",
+          "ms": 0.401,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 63,
+            "read": 0,
+            "dirtied": 2,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.014
+            }
+          ]
+        },
+        {
+          "label": "create_entry.44",
+          "ms": 0.397,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 61,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.013
+            }
+          ]
+        },
+        {
+          "label": "create_entry.45",
+          "ms": 0.35200000000000004,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 61,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.46",
+          "ms": 0.514,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 72,
+            "read": 0,
+            "dirtied": 3,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.015
+            }
+          ]
+        },
+        {
+          "label": "create_entry.47",
+          "ms": 0.405,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.012
+            }
+          ]
+        },
+        {
+          "label": "create_entry.48",
+          "ms": 0.342,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.49",
+          "ms": 0.363,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.50",
+          "ms": 0.48000000000000004,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.51",
+          "ms": 0.393,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.016
+            }
+          ]
+        },
+        {
+          "label": "create_entry.52",
+          "ms": 0.384,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.53",
+          "ms": 0.40800000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.014
+            }
+          ]
+        },
+        {
+          "label": "create_entry.54",
+          "ms": 0.434,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.55",
+          "ms": 0.422,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.56",
+          "ms": 0.47500000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.57",
+          "ms": 0.35600000000000004,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.58",
+          "ms": 0.489,
+          "triggerMs": 0.012,
+          "rows": 1,
+          "buffers": {
+            "hit": 74,
+            "read": 1,
+            "dirtied": 4,
+            "written": 4
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.017
+            }
+          ]
+        },
+        {
+          "label": "create_entry.59",
+          "ms": 0.41500000000000004,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 66,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.60",
+          "ms": 0.41400000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 68,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.61",
+          "ms": 0.369,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.62",
+          "ms": 0.4,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.63",
+          "ms": 0.317,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.64",
+          "ms": 0.41600000000000004,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.65",
+          "ms": 0.376,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.66",
+          "ms": 0.426,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 68,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.67",
+          "ms": 0.38,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.68",
+          "ms": 0.385,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.69",
+          "ms": 0.442,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 68,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.70",
+          "ms": 0.47500000000000003,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 83,
+            "read": 0,
+            "dirtied": 3,
+            "written": 4
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.71",
+          "ms": 0.41200000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.72",
+          "ms": 0.366,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.73",
+          "ms": 0.342,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 69,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.74",
+          "ms": 0.328,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 56,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.75",
+          "ms": 0.39,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 63,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.76",
+          "ms": 0.499,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 69,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.77",
+          "ms": 0.502,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 67,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.78",
+          "ms": 0.384,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 63,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.79",
+          "ms": 0.331,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 57,
+            "read": 0,
+            "dirtied": 1,
+            "written": 2
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.80",
+          "ms": 0.41300000000000003,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.81",
+          "ms": 0.29400000000000004,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 57,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.82",
+          "ms": 0.373,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.83",
+          "ms": 0.483,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 70,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.84",
+          "ms": 0.308,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 55,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.018
+            }
+          ]
+        },
+        {
+          "label": "create_entry.85",
+          "ms": 0.445,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 68,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.86",
+          "ms": 0.41100000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.87",
+          "ms": 0.396,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 62,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.88",
+          "ms": 0.28200000000000003,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 55,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.89",
+          "ms": 0.34800000000000003,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 64,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.90",
+          "ms": 0.29100000000000004,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 55,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.014
+            }
+          ]
+        },
+        {
+          "label": "create_entry.91",
+          "ms": 0.35700000000000004,
+          "triggerMs": 0.012,
+          "rows": 1,
+          "buffers": {
+            "hit": 57,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.012
+            }
+          ]
+        },
+        {
+          "label": "create_entry.92",
+          "ms": 0.322,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 58,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.93",
+          "ms": 0.337,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 61,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.94",
+          "ms": 0.326,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 61,
+            "read": 0,
+            "dirtied": 1,
+            "written": 1
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.95",
+          "ms": 0.527,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 74,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.96",
+          "ms": 0.34400000000000003,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 56,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.97",
+          "ms": 0.42,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 69,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.011
+            }
+          ]
+        },
+        {
+          "label": "create_entry.98",
+          "ms": 0.366,
+          "triggerMs": 0.01,
+          "rows": 1,
+          "buffers": {
+            "hit": 61,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.01
+            }
+          ]
+        },
+        {
+          "label": "create_entry.99",
+          "ms": 0.445,
+          "triggerMs": 0.011,
+          "rows": 1,
+          "buffers": {
+            "hit": 69,
+            "read": 0,
+            "dirtied": 2,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.013
+            }
+          ]
+        },
+        {
+          "label": "previously_current",
+          "ms": 3.9509999999999996,
+          "triggerMs": 0,
+          "rows": 150,
+          "buffers": {
+            "hit": 1554,
+            "read": 616,
+            "dirtied": 0,
+            "written": 304
+          },
+          "nodes": ["Bitmap Heap Scan entries", "Bitmap Index Scan idx_entries_spam"],
+          "triggers": []
+        },
+        {
+          "label": "update_last_seen",
+          "ms": 0.125,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 97,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable entries", "Index Scan entries_pkey"],
+          "triggers": []
+        },
+        {
+          "label": "fanout",
+          "ms": 2265.3070000000002,
+          "triggerMs": 28.657,
+          "rows": 2000,
+          "buffers": {
+            "hit": 4216868,
+            "read": 53,
+            "dirtied": 66,
+            "written": 1
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan idx_entries_feed_published_coalesce",
+            "Bitmap Heap Scan subscriptions",
+            "Bitmap Index Scan idx_subscriptions_feed_active",
+            "Nested Loop",
+            "Bitmap Heap Scan user_entries",
+            "BitmapAnd",
+            "Bitmap Index Scan idx_user_entries_subscription_timeline",
+            "Bitmap Index Scan idx_user_entries_updated_at",
+            "Index Scan entries_pkey"
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16555",
+              "relation": "user_entries",
+              "calls": 2000,
+              "ms": 7.66
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16560",
+              "relation": "user_entries",
+              "calls": 2000,
+              "ms": 6.756
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_17464",
+              "relation": "user_entries",
+              "calls": 2000,
+              "ms": 6.553
+            },
+            {
+              "name": "user_entries_counters_insert_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 4.485
+            },
+            {
+              "name": "user_entries_fill_denormalized_trigger",
+              "relation": "user_entries",
+              "calls": 2000,
+              "ms": 3.203
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "write.mark_read_one",
+      "kind": "write",
+      "source": "services/entries.ts markEntriesRead (one entry, tagged feed)",
+      "ms": {
+        "median": 1.859,
+        "p90": 3.426,
+        "min": 1.818,
+        "max": 3.426
+      },
+      "planMs": 0.43800000000000006,
+      "triggerMs": 1.272,
+      "buffers": {
+        "hit": 62,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 6,
+      "walBytes": 1096,
+      "access": [
+        "idx:entries_pkey",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:tags",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "update",
+          "ms": 1.4729999999999999,
+          "triggerMs": 1.272,
+          "rows": 1,
+          "buffers": {
+            "hit": 37,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Nested Loop",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": [
+            {
+              "name": "user_entries_counters_update_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 1.27
+            }
+          ]
+        },
+        {
+          "label": "readback",
+          "ms": 0.239,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 12,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan entries_pkey",
+            "Seq Scan collection_entries"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "counts.collections",
+          "ms": 0.038,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 1,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Unique", "Sort", "Seq Scan collection_entries"],
+          "triggers": []
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.028999999999999998,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscriptions",
+          "ms": 0.033,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscription_tags",
+          "ms": 0.022,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        },
+        {
+          "label": "counts.tags",
+          "ms": 0.03,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan tags"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.mark_all_read_feed",
+      "kind": "write",
+      "source": "services/entries.ts markAllEntriesRead (subscription with 4,000 unread)",
+      "ms": {
+        "median": 77.545,
+        "p90": 78.98700000000001,
+        "min": 71.295,
+        "max": 78.98700000000001
+      },
+      "planMs": 1.3509999999999998,
+      "triggerMs": 12.326,
+      "buffers": {
+        "hit": 143213,
+        "read": 1,
+        "dirtied": 3,
+        "written": 0
+      },
+      "rows": 4000,
+      "walBytes": 3177952,
+      "access": [
+        "idx:entries_pkey",
+        "idx:idx_feeds_type",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:idx_user_entries_unread",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:subscriptions_pkey",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:tags",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "verify_ownership",
+          "ms": 0.084,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "collection_lookup",
+          "ms": 0.15699999999999997,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 9,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan idx_feeds_type"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "update",
+          "ms": 76.56200000000001,
+          "triggerMs": 12.326,
+          "rows": 3993,
+          "buffers": {
+            "hit": 143183,
+            "read": 1,
+            "dirtied": 3,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Nested Loop",
+            "Bitmap Heap Scan user_entries",
+            "BitmapAnd",
+            "Bitmap Index Scan idx_user_entries_subscription_timeline",
+            "Bitmap Index Scan idx_user_entries_unread",
+            "Nested Loop",
+            "Nested Loop",
+            "Index Scan entries_pkey",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan subscriptions_pkey",
+            "Seq Scan collection_entries"
+          ],
+          "triggers": [
+            {
+              "name": "user_entries_counters_update_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 12.039
+            }
+          ]
+        },
+        {
+          "label": "counts.collections",
+          "ms": 0.593,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 1,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Aggregate", "Seq Scan collection_entries"],
+          "triggers": []
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.032,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscriptions",
+          "ms": 0.045,
+          "triggerMs": 0,
+          "rows": 2,
+          "buffers": {
+            "hit": 6,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscription_tags",
+          "ms": 0.028999999999999998,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 5,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        },
+        {
+          "label": "counts.tags",
+          "ms": 0.035,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan tags"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.star_one",
+      "kind": "write",
+      "source": "services/entries.ts updateEntriesStarred (one entry)",
+      "ms": {
+        "median": 1.763,
+        "p90": 3.2469999999999994,
+        "min": 1.6989999999999998,
+        "max": 3.2469999999999994
+      },
+      "planMs": 0.31600000000000006,
+      "triggerMs": 1.293,
+      "buffers": {
+        "hit": 64,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 6,
+      "walBytes": 1144,
+      "access": [
+        "idx:entries_pkey",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:tags",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "update",
+          "ms": 1.504,
+          "triggerMs": 1.293,
+          "rows": 1,
+          "buffers": {
+            "hit": 42,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Nested Loop",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": [
+            {
+              "name": "user_entries_counters_update_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 1.293
+            }
+          ]
+        },
+        {
+          "label": "readback",
+          "ms": 0.11,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 9,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Nested Loop",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Index Scan entries_pkey"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "counts.collections",
+          "ms": 0.037,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 1,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Unique", "Sort", "Seq Scan collection_entries"],
+          "triggers": []
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.028999999999999998,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscriptions",
+          "ms": 0.034,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscription_tags",
+          "ms": 0.022,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        },
+        {
+          "label": "counts.tags",
+          "ms": 0.031,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan tags"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.subscribe_with_history",
+      "kind": "write",
+      "source": "services/subscriptions.ts createSubscription + populateInitialUserEntries (500 current entries)",
+      "ms": {
+        "median": 19.571999999999996,
+        "p90": 21.304,
+        "min": 19.183999999999997,
+        "max": 21.304
+      },
+      "planMs": 0.517,
+      "triggerMs": 8.588,
+      "buffers": {
+        "hit": 16279,
+        "read": 5,
+        "dirtied": 43,
+        "written": 0
+      },
+      "rows": 506,
+      "walBytes": 451560,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:feeds_url_unique",
+        "idx:idx_entries_spam",
+        "idx:idx_subscriptions_user_active",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "upsert_feed",
+          "ms": 0.056999999999999995,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 4,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable feeds", "Result"],
+          "triggers": []
+        },
+        {
+          "label": "select_feed",
+          "ms": 0.066,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan feeds_url_unique"],
+          "triggers": []
+        },
+        {
+          "label": "ensure_feed_job",
+          "ms": 0.063,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 17,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable jobs", "Result"],
+          "triggers": []
+        },
+        {
+          "label": "advisory_lock",
+          "ms": 0.009000000000000001,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 0,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Result"],
+          "triggers": []
+        },
+        {
+          "label": "count_active",
+          "ms": 0.08,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Aggregate", "Index Only Scan idx_subscriptions_user_active"],
+          "triggers": []
+        },
+        {
+          "label": "upsert_subscription",
+          "ms": 0.119,
+          "triggerMs": 0.066,
+          "rows": 1,
+          "buffers": {
+            "hit": 20,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable subscriptions", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16545",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.019
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16550",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.011
+            },
+            {
+              "name": "subscriptions_recompute_lists_update_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.03
+            }
+          ]
+        },
+        {
+          "label": "populate",
+          "ms": 19.093,
+          "triggerMs": 8.521999999999998,
+          "rows": 500,
+          "buffers": {
+            "hit": 16224,
+            "read": 5,
+            "dirtied": 43,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Hash Join",
+            "Nested Loop",
+            "Index Scan feeds_pkey",
+            "Bitmap Heap Scan entries",
+            "Bitmap Index Scan idx_entries_spam",
+            "Hash",
+            "Nested Loop",
+            "Bitmap Heap Scan user_entries",
+            "Bitmap Index Scan idx_user_entries_subscription_timeline",
+            "Index Scan entries_pkey"
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16555",
+              "relation": "user_entries",
+              "calls": 500,
+              "ms": 1.95
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16560",
+              "relation": "user_entries",
+              "calls": 500,
+              "ms": 2.316
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_17464",
+              "relation": "user_entries",
+              "calls": 500,
+              "ms": 1.597
+            },
+            {
+              "name": "user_entries_counters_insert_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 2.195
+            },
+            {
+              "name": "user_entries_fill_denormalized_trigger",
+              "relation": "user_entries",
+              "calls": 500,
+              "ms": 0.336
+            }
+          ]
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.031,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscriptions",
+          "ms": 0.035,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscription_tags",
+          "ms": 0.022,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.unsubscribe_large",
+      "kind": "write",
+      "source": "services/subscriptions.ts unsubscribe (8,000-entry tagged feed)",
+      "ms": {
+        "median": 38.71699999999999,
+        "p90": 40.098,
+        "min": 38.26899999999999,
+        "max": 40.098
+      },
+      "planMs": 0.4470000000000001,
+      "triggerMs": 38.116,
+      "buffers": {
+        "hit": 55,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 8,
+      "walBytes": 1040,
+      "access": [
+        "idx:feeds_pkey",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:tags",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "existing",
+          "ms": 0.19999999999999998,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 6,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan feeds_pkey"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "lock_members",
+          "ms": 0.121,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 1,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "LockRows",
+            "Sort",
+            "Nested Loop",
+            "Seq Scan collection_entries",
+            "Index Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "lock_subscription",
+          "ms": 0.041,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 5,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["LockRows", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "soft_delete",
+          "ms": 19.418,
+          "triggerMs": 19.338,
+          "rows": 1,
+          "buffers": {
+            "hit": 21,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable subscriptions", "Index Scan uq_subscriptions_id_user"],
+          "triggers": [
+            {
+              "name": "subscriptions_empty_unsubscribed_collection_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.41
+            },
+            {
+              "name": "subscriptions_recompute_lists_update_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 20.562
+            }
+          ]
+        },
+        {
+          "label": "delete_tags",
+          "ms": 18.789,
+          "triggerMs": 18.696,
+          "rows": 2,
+          "buffers": {
+            "hit": 16,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable subscription_tags",
+            "Nested Loop",
+            "Index Scan subscription_tags_subscription_id_tag_id_pk",
+            "Index Scan uq_subscriptions_id_user"
+          ],
+          "triggers": [
+            {
+              "name": "subscription_tags_recompute_lists_delete_trigger",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 18.449
+            }
+          ]
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.036,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "counts.tags",
+          "ms": 0.044,
+          "triggerMs": 0,
+          "rows": 2,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan tags"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.collection_add_1000",
+      "kind": "write",
+      "source": "services/collections.ts addEntriesToCollection (1,000 articles into an empty collection)",
+      "ms": {
+        "median": 92.22500000000001,
+        "p90": 94.71100000000001,
+        "min": 90.669,
+        "max": 94.71100000000001
+      },
+      "planMs": 1.5059999999999998,
+      "triggerMs": 72.978,
+      "buffers": {
+        "hit": 42878,
+        "read": 1,
+        "dirtied": 12,
+        "written": 11
+      },
+      "rows": 3004,
+      "walBytes": 1318944,
+      "access": [
+        "idx:entries_pkey",
+        "idx:idx_feeds_type",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:subscriptions",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "lock_entries",
+          "ms": 1.126,
+          "triggerMs": 0,
+          "rows": 1000,
+          "buffers": {
+            "hit": 3913,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["LockRows", "Index Scan user_entry_states_user_id_entry_id_pk"],
+          "triggers": []
+        },
+        {
+          "label": "lock_collection",
+          "ms": 0.176,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 10,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "LockRows",
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan idx_feeds_type"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "count",
+          "ms": 0.041,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 1,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Aggregate", "Seq Scan collection_entries"],
+          "triggers": []
+        },
+        {
+          "label": "insert",
+          "ms": 77.108,
+          "triggerMs": 70.469,
+          "rows": 1000,
+          "buffers": {
+            "hit": 12689,
+            "read": 0,
+            "dirtied": 11,
+            "written": 11
+          },
+          "nodes": [
+            "ModifyTable collection_entries",
+            "Hash Join",
+            "Nested Loop",
+            "Index Scan entries_pkey",
+            "Index Scan user_entry_states_user_id_entry_id_pk",
+            "Hash",
+            "Seq Scan subscriptions",
+            "Seq Scan collection_entries"
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_17638",
+              "relation": "collection_entries",
+              "calls": 1000,
+              "ms": 3.923
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_17643",
+              "relation": "collection_entries",
+              "calls": 1000,
+              "ms": 3.539
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_17648",
+              "relation": "collection_entries",
+              "calls": 1000,
+              "ms": 4.071
+            },
+            {
+              "name": "collection_entries_counters_insert_trigger",
+              "relation": "collection_entries",
+              "calls": 1,
+              "ms": 1.465
+            },
+            {
+              "name": "collection_entries_recompute_lists_insert_trigger",
+              "relation": "collection_entries",
+              "calls": 1,
+              "ms": 57.471
+            }
+          ]
+        },
+        {
+          "label": "touch",
+          "ms": 14.419,
+          "triggerMs": 2.459,
+          "rows": 1000,
+          "buffers": {
+            "hit": 26257,
+            "read": 1,
+            "dirtied": 1,
+            "written": 0
+          },
+          "nodes": ["ModifyTable user_entries", "Index Scan user_entry_states_user_id_entry_id_pk"],
+          "triggers": [
+            {
+              "name": "user_entries_counters_update_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 2.509
+            }
+          ]
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.033,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscriptions",
+          "ms": 0.036,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscription_tags",
+          "ms": 0.024,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.collection_delete",
+      "kind": "write",
+      "source": "services/subscriptions.ts unsubscribe on a collection (40 members)",
+      "ms": {
+        "median": 40.565,
+        "p90": 41.967,
+        "min": 39.638999999999996,
+        "max": 41.967
+      },
+      "planMs": 0.434,
+      "triggerMs": 39.881,
+      "buffers": {
+        "hit": 278,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 44,
+      "walBytes": 39272,
+      "access": [
+        "idx:feeds_pkey",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:collection_entries",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "existing",
+          "ms": 0.19999999999999998,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 6,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan feeds_pkey"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "lock_members",
+          "ms": 0.28600000000000003,
+          "triggerMs": 0,
+          "rows": 40,
+          "buffers": {
+            "hit": 241,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "LockRows",
+            "Sort",
+            "Nested Loop",
+            "Seq Scan collection_entries",
+            "Index Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "lock_subscription",
+          "ms": 0.039,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 5,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["LockRows", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "soft_delete",
+          "ms": 39.944,
+          "triggerMs": 39.865,
+          "rows": 1,
+          "buffers": {
+            "hit": 21,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable subscriptions", "Index Scan uq_subscriptions_id_user"],
+          "triggers": [
+            {
+              "name": "subscriptions_empty_unsubscribed_collection_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 20.836
+            },
+            {
+              "name": "subscriptions_recompute_lists_update_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 18.082
+            }
+          ]
+        },
+        {
+          "label": "delete_tags",
+          "ms": 0.085,
+          "triggerMs": 0.016,
+          "rows": 0,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable subscription_tags",
+            "Nested Loop",
+            "Index Scan subscription_tags_subscription_id_tag_id_pk",
+            "Index Scan uq_subscriptions_id_user"
+          ],
+          "triggers": [
+            {
+              "name": "subscription_tags_recompute_lists_delete_trigger",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 0.014
+            }
+          ]
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.032,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.collection_delete_1000",
+      "kind": "write",
+      "source": "services/subscriptions.ts unsubscribe on a collection (1,000 members, added in setup)",
+      "ms": {
+        "median": 143.614,
+        "p90": 149.076,
+        "min": 137.74099999999999,
+        "max": 149.076
+      },
+      "planMs": 0.42000000000000004,
+      "triggerMs": 140.92000000000002,
+      "buffers": {
+        "hit": 10152,
+        "read": 0,
+        "dirtied": 0,
+        "written": 0
+      },
+      "rows": 1004,
+      "walBytes": 1054880,
+      "access": [
+        "idx:collection_entries_pkey",
+        "idx:feeds_pkey",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "idx:user_entry_states_user_id_entry_id_pk",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "existing",
+          "ms": 0.156,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 6,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Index Scan uq_subscriptions_id_user",
+            "Index Scan feeds_pkey"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "lock_members",
+          "ms": 2.626,
+          "triggerMs": 0,
+          "rows": 1000,
+          "buffers": {
+            "hit": 10117,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "LockRows",
+            "Nested Loop",
+            "Index Scan collection_entries_pkey",
+            "Index Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "lock_subscription",
+          "ms": 0.037,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 4,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["LockRows", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "soft_delete",
+          "ms": 140.975,
+          "triggerMs": 140.901,
+          "rows": 1,
+          "buffers": {
+            "hit": 20,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable subscriptions", "Index Scan uq_subscriptions_id_user"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16546",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.014
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16551",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.01
+            },
+            {
+              "name": "subscriptions_empty_unsubscribed_collection_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 88.438
+            },
+            {
+              "name": "subscriptions_recompute_lists_update_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 51.776
+            }
+          ]
+        },
+        {
+          "label": "delete_tags",
+          "ms": 0.14100000000000001,
+          "triggerMs": 0.022,
+          "rows": 0,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable subscription_tags",
+            "Nested Loop",
+            "Index Scan subscription_tags_subscription_id_tag_id_pk",
+            "Index Scan uq_subscriptions_id_user"
+          ],
+          "triggers": [
+            {
+              "name": "subscription_tags_recompute_lists_delete_trigger",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 0.021
+            }
+          ]
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.038,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        }
+      ]
+    },
+    {
+      "name": "write.save_article",
+      "kind": "write",
+      "source": "services/saved.ts saveArticle: getOrCreateSavedFeed + selectExistingSavedRow + insertSavedEntry",
+      "ms": {
+        "median": 3.653,
+        "p90": 4.956,
+        "min": 3.208,
+        "max": 4.956
+      },
+      "planMs": 0.28700000000000003,
+      "triggerMs": 1.94,
+      "buffers": {
+        "hit": 132,
+        "read": 0,
+        "dirtied": 3,
+        "written": 3
+      },
+      "rows": 3,
+      "walBytes": 46456,
+      "access": [
+        "idx:uq_entries_feed_guid",
+        "idx:uq_feeds_saved_user",
+        "idx:user_entry_states_user_id_entry_id_pk"
+      ],
+      "statements": [
+        {
+          "label": "create_saved_feed",
+          "ms": 0.057999999999999996,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 5,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable feeds", "Result"],
+          "triggers": []
+        },
+        {
+          "label": "select_saved_feed",
+          "ms": 0.059000000000000004,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Limit", "Index Scan uq_feeds_saved_user"],
+          "triggers": []
+        },
+        {
+          "label": "existing",
+          "ms": 0.23,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 5,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Limit",
+            "Nested Loop",
+            "Index Scan uq_entries_feed_guid",
+            "Index Scan user_entry_states_user_id_entry_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "insert_entry",
+          "ms": 1.3139999999999998,
+          "triggerMs": 0.021,
+          "rows": 1,
+          "buffers": {
+            "hit": 96,
+            "read": 0,
+            "dirtied": 3,
+            "written": 3
+          },
+          "nodes": ["ModifyTable entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16535",
+              "relation": "entries",
+              "calls": 1,
+              "ms": 0.03
+            }
+          ]
+        },
+        {
+          "label": "insert_user_entry",
+          "ms": 1.971,
+          "triggerMs": 1.919,
+          "rows": 1,
+          "buffers": {
+            "hit": 24,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable user_entries", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16555",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 0.02
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16560",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 0.013
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_17464",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 0.002
+            },
+            {
+              "name": "user_entries_counters_insert_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 1.87
+            },
+            {
+              "name": "user_entries_fill_denormalized_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 0.046
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "write.redirect_merge",
+      "kind": "write",
+      "source": "services/subscriptions.ts mergeSubscriptionIntoFeed (1,500-entry feed onto a fresh 300-entry feed)",
+      "ms": {
+        "median": 103.203,
+        "p90": 106.48399999999998,
+        "min": 102.02799999999999,
+        "max": 106.48399999999998
+      },
+      "planMs": 0.7450000000000001,
+      "triggerMs": 72.207,
+      "buffers": {
+        "hit": 55415,
+        "read": 2,
+        "dirtied": 19,
+        "written": 0
+      },
+      "rows": 3061,
+      "walBytes": 1427688,
+      "access": [
+        "idx:entries_pkey",
+        "idx:feeds_pkey",
+        "idx:idx_entries_fetched",
+        "idx:idx_subscriptions_feed",
+        "idx:idx_user_entries_subscription_timeline",
+        "idx:subscription_tags_subscription_id_tag_id_pk",
+        "idx:uq_subscriptions_id_user",
+        "seq:tags",
+        "seq:users"
+      ],
+      "statements": [
+        {
+          "label": "lock_entries",
+          "ms": 1.6119999999999999,
+          "triggerMs": 0,
+          "rows": 1500,
+          "buffers": {
+            "hit": 4186,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "LockRows",
+            "Sort",
+            "Bitmap Heap Scan user_entries",
+            "Bitmap Index Scan idx_user_entries_subscription_timeline"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "lock_old",
+          "ms": 0.055,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 5,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["LockRows", "Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "upsert_survivor",
+          "ms": 0.122,
+          "triggerMs": 0.061,
+          "rows": 1,
+          "buffers": {
+            "hit": 20,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable subscriptions", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16545",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.021
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16550",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.017
+            },
+            {
+              "name": "subscriptions_recompute_lists_update_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.037
+            }
+          ]
+        },
+        {
+          "label": "select_survivor",
+          "ms": 0.043000000000000003,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 6,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan idx_subscriptions_feed"],
+          "triggers": []
+        },
+        {
+          "label": "restamp",
+          "ms": 34.901999999999994,
+          "triggerMs": 13.004000000000001,
+          "rows": 1500,
+          "buffers": {
+            "hit": 43089,
+            "read": 2,
+            "dirtied": 19,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Bitmap Heap Scan user_entries",
+            "Bitmap Index Scan idx_user_entries_subscription_timeline"
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_17465",
+              "relation": "user_entries",
+              "calls": 1500,
+              "ms": 5.005
+            },
+            {
+              "name": "user_entries_counters_update_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 8.006
+            }
+          ]
+        },
+        {
+          "label": "clear_survivor_tags",
+          "ms": 0.043,
+          "triggerMs": 0.017,
+          "rows": 0,
+          "buffers": {
+            "hit": 2,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable subscription_tags",
+            "Index Scan subscription_tags_subscription_id_tag_id_pk"
+          ],
+          "triggers": [
+            {
+              "name": "subscription_tags_recompute_lists_delete_trigger",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 0.015
+            }
+          ]
+        },
+        {
+          "label": "populate",
+          "ms": 9.282,
+          "triggerMs": 2.103,
+          "rows": 50,
+          "buffers": {
+            "hit": 8066,
+            "read": 0,
+            "dirtied": 1,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable user_entries",
+            "Nested Loop",
+            "Index Scan feeds_pkey",
+            "Hash Join",
+            "Nested Loop",
+            "Bitmap Heap Scan user_entries",
+            "Bitmap Index Scan idx_user_entries_subscription_timeline",
+            "Index Scan entries_pkey",
+            "Hash",
+            "Bitmap Heap Scan entries",
+            "Bitmap Index Scan idx_entries_fetched"
+          ],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16555",
+              "relation": "user_entries",
+              "calls": 50,
+              "ms": 0.182
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16560",
+              "relation": "user_entries",
+              "calls": 50,
+              "ms": 0.22
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_17464",
+              "relation": "user_entries",
+              "calls": 50,
+              "ms": 0.176
+            },
+            {
+              "name": "user_entries_counters_insert_trigger",
+              "relation": "user_entries",
+              "calls": 1,
+              "ms": 1.484
+            },
+            {
+              "name": "user_entries_fill_denormalized_trigger",
+              "relation": "user_entries",
+              "calls": 50,
+              "ms": 0.041
+            }
+          ]
+        },
+        {
+          "label": "move_tags.delete",
+          "ms": 19.343,
+          "triggerMs": 19.31,
+          "rows": 1,
+          "buffers": {
+            "hit": 7,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "ModifyTable subscription_tags",
+            "Index Scan subscription_tags_subscription_id_tag_id_pk"
+          ],
+          "triggers": [
+            {
+              "name": "subscription_tags_recompute_lists_delete_trigger",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 19.31
+            }
+          ]
+        },
+        {
+          "label": "move_tags.insert",
+          "ms": 18.687,
+          "triggerMs": 18.653,
+          "rows": 1,
+          "buffers": {
+            "hit": 9,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable subscription_tags", "Result"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16620",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 0.015
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16625",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 0.01
+            },
+            {
+              "name": "subscription_tags_recompute_lists_insert_trigger",
+              "relation": "subscription_tags",
+              "calls": 1,
+              "ms": 18.783
+            }
+          ]
+        },
+        {
+          "label": "unsubscribe_old",
+          "ms": 19.183,
+          "triggerMs": 19.109,
+          "rows": 1,
+          "buffers": {
+            "hit": 20,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable subscriptions", "Index Scan uq_subscriptions_id_user"],
+          "triggers": [
+            {
+              "name": "RI_ConstraintTrigger_c_16546",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.011
+            },
+            {
+              "name": "RI_ConstraintTrigger_c_16551",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.008
+            },
+            {
+              "name": "subscriptions_empty_unsubscribed_collection_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 0.56
+            },
+            {
+              "name": "subscriptions_recompute_lists_update_trigger",
+              "relation": "subscriptions",
+              "calls": 1,
+              "ms": 18.53
+            }
+          ]
+        },
+        {
+          "label": "survivor_tags",
+          "ms": 0.11,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 7,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": [
+            "Hash Join",
+            "Seq Scan tags",
+            "Hash",
+            "Index Only Scan subscription_tags_subscription_id_tag_id_pk"
+          ],
+          "triggers": []
+        },
+        {
+          "label": "ensure_feed_job",
+          "ms": 0.062,
+          "triggerMs": 0,
+          "rows": 0,
+          "buffers": {
+            "hit": 17,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["ModifyTable jobs", "Result"],
+          "triggers": []
+        },
+        {
+          "label": "counts.users",
+          "ms": 0.032,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan users"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscriptions",
+          "ms": 0.035,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Scan uq_subscriptions_id_user"],
+          "triggers": []
+        },
+        {
+          "label": "counts.subscription_tags",
+          "ms": 0.023,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 4,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Index Only Scan subscription_tags_subscription_id_tag_id_pk"],
+          "triggers": []
+        },
+        {
+          "label": "counts.tags",
+          "ms": 0.03,
+          "triggerMs": 0,
+          "rows": 1,
+          "buffers": {
+            "hit": 3,
+            "read": 0,
+            "dirtied": 0,
+            "written": 0
+          },
+          "nodes": ["Seq Scan tags"],
+          "triggers": []
+        }
+      ]
+    }
+  ]
+}
