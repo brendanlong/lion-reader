@@ -971,6 +971,41 @@ describe("Entry Processor", () => {
         expect(ids).toContain(result.entries[1].id);
         expect(ids).not.toContain(result.entries[0].id);
       });
+
+      it("still fans out a guid the user holds from a feed that wasn't merged into this subscription", async () => {
+        // The dedup keys on the subscription the twin is attributed to (#1861):
+        // a user separately subscribed to two feeds carrying the same article
+        // gets it from both.
+        const otherFeed = await createTestFeed();
+        const feed = await createTestFeed();
+        const userId = await createTestUser({ emailPrefix: "unmerged" });
+        const otherSubscriptionId = await createTestSubscription(userId, otherFeed.id);
+        await createTestSubscription(userId, feed.id);
+
+        const otherParsed: ParsedEntry = { guid: "http://example.com/?p=1", title: "P" };
+        const otherEntry = await createEntry(
+          otherFeed.id,
+          otherParsed,
+          generateContentHash(otherParsed),
+          new Date()
+        );
+        await db
+          .insert(userEntries)
+          .values({ userId, entryId: otherEntry.id, subscriptionId: otherSubscriptionId });
+
+        const result = await processEntries(feed.id, {
+          title: "T",
+          items: [{ guid: "https://example.com/?p=1", title: "P" }],
+        });
+
+        const rows = await db
+          .select({ entryId: userEntries.entryId })
+          .from(userEntries)
+          .where(eq(userEntries.userId, userId));
+        expect(rows.map((r) => r.entryId).sort()).toEqual(
+          [otherEntry.id, result.entries[0].id].sort()
+        );
+      });
     });
 
     it("publishes new_entry only after the user_entries fanout", async () => {

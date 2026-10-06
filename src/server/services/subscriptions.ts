@@ -264,7 +264,8 @@ async function populateInitialUserEntries(
   // Skips an entry the subscription already has under another feed by GUID, as
   // the fetch-time fanout (`createUserEntriesForFeed`) does: a redirect merge
   // re-attributes the old feed's entries to the subscription, and the new feed
-  // usually republishes the same articles.
+  // usually republishes the same articles. Same lookup direction as the fanout,
+  // which says why.
   await tx.execute(sql`
     INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
     SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam, e.is_backfill
@@ -275,12 +276,13 @@ async function populateInitialUserEntries(
       AND e.last_seen_at >= f.last_entries_updated_at
       AND NOT EXISTS (
         SELECT 1
-        FROM user_entries ue_existing
-        JOIN entries e_prev ON ue_existing.entry_id = e_prev.id
-        WHERE ue_existing.user_id = ${userId}
-          AND ue_existing.subscription_id = ${subscriptionId}
-          AND e_prev.feed_id != e.feed_id
+        FROM entries e_prev
+        JOIN user_entries ue_existing
+          ON ue_existing.user_id = ${userId} AND ue_existing.entry_id = e_prev.id
+        WHERE e_prev.type = 'web'
           AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
+          AND e_prev.feed_id != e.feed_id
+          AND ue_existing.subscription_id = ${subscriptionId}
       )
     ON CONFLICT DO NOTHING
   `);

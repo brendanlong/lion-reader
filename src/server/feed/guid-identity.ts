@@ -40,7 +40,9 @@ export function canonicalGuid(guid: string): string {
 /**
  * SQL expression computing `canonicalGuid` for a column reference, for use in
  * raw queries that compare guids across rows. `columnRef` must be a literal
- * column reference from the calling query, never user input.
+ * column reference from the calling query, never user input. Indexes on
+ * `entries` repeat this expression verbatim (see the schema), so changing it
+ * takes a migration or the planner stops using them.
  */
 export function canonicalGuidSql(columnRef: string): string {
   return `regexp_replace(${columnRef}, '${GUID_SCHEME_PATTERN}', 'https://')`;
