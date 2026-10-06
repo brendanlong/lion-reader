@@ -14,16 +14,23 @@
  * Every write is ON CONFLICT DO NOTHING, so it's safe to re-run, and runs
  * alongside live traffic: rows written meanwhile are mirrored by the triggers.
  * Each batch logs its cursor; `--after` resumes step 2 from one. A user_entries
- * row deleted mid-batch fails its foreign key, and the batch is retried.
+ * row deleted mid-batch fails its foreign key, and a batch can lose a deadlock to
+ * live traffic; either way the batch is retried. When done, it comments the
+ * table, which tells the daily check missing rows are now a bug.
  */
 
 import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import type { db as dbType } from "../src/server/db";
-import { checkSubscriptionEntries } from "../src/server/services/subscription-entries";
+import {
+  BACKFILLED_COMMENT,
+  checkSubscriptionEntries,
+} from "../src/server/services/subscription-entries";
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
-const FOREIGN_KEY_VIOLATION = "23503";
+// A row the batch read was deleted before its insert, or the batch lost a
+// deadlock to live traffic: either way, running it again succeeds.
+const RETRYABLE = new Set(["23503", "40P01"]);
 const BATCH_ATTEMPTS = 5;
 
 export interface BackfillOptions {
@@ -46,22 +53,23 @@ interface BatchRow extends Record<string, unknown> {
   last_b: string | null;
 }
 
-function isForeignKeyViolation(err: unknown): boolean {
-  const cause = err instanceof Error && "cause" in err ? err.cause : err;
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    (cause as { code?: unknown }).code === FOREIGN_KEY_VIOLATION
-  );
+function isRetryable(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && typeof current === "object" && current !== null; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && RETRYABLE.has(code)) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
-/** Runs one batch statement, retrying when a row it read was deleted before the insert. */
+/** Runs one batch statement, retrying the failures a re-run fixes. */
 async function runBatch(db: typeof dbType, statement: ReturnType<typeof sql>): Promise<BatchRow> {
   for (let attempt = 1; ; attempt++) {
     try {
       return (await db.execute<BatchRow>(statement)).rows[0];
     } catch (err) {
-      if (attempt >= BATCH_ATTEMPTS || !isForeignKeyViolation(err)) throw err;
+      if (attempt >= BATCH_ATTEMPTS || !isRetryable(err)) throw err;
     }
   }
 }
@@ -167,6 +175,9 @@ export async function backfillSubscriptionEntries(
     log(`collection_entries: +${row.inserted} of ${row.scanned}`);
     if (row.scanned < batchSize) break;
   }
+
+  // Marks the table, so the daily check treats anything missing as a bug.
+  await db.execute(sql.raw(`COMMENT ON TABLE subscription_entries IS '${BACKFILLED_COMMENT}'`));
 
   return { savedSubscriptionsCreated, userEntryMemberships, collectionMemberships };
 }

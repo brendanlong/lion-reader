@@ -5,11 +5,13 @@
 -- saved subscription (created here on first save).
 --
 -- Adding the foreign keys and triggers locks user_entries and collection_entries
--- against writes, and the check needs ACCESS EXCLUSIVE on subscriptions. Take
--- them up front in the counter triggers' order (user_entries, then
--- subscriptions), so no write holding one can deadlock against us, and fail
--- fast rather than queue writes. Every table touched is empty or small apart
--- from user_entries, which is only locked, never scanned.
+-- against writes, and the check needs ACCESS EXCLUSIVE on subscriptions, which
+-- also queues its reads until we commit or lock_timeout fails us. Take them up
+-- front in the counter triggers' order (user_entries, then subscriptions).
+-- A transaction that already holds a later lock can still deadlock with us;
+-- Postgres then aborts one side, and if that's the migration, re-running the
+-- deploy retries it. Every table touched is empty or small apart from
+-- user_entries, which is only locked, never scanned.
 SET LOCAL lock_timeout = '5s';
 LOCK TABLE user_entries, collection_entries IN SHARE ROW EXCLUSIVE MODE;
 LOCK TABLE subscriptions IN ACCESS EXCLUSIVE MODE;
@@ -28,11 +30,12 @@ CREATE TABLE subscription_entries (
   entry_id uuid NOT NULL,
   -- user_entries.published_or_fetched_at, which never changes after insert.
   published_or_fetched_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (subscription_id, entry_id),
   FOREIGN KEY (subscription_id, user_id) REFERENCES subscriptions (id, user_id) ON DELETE CASCADE,
-  -- ON UPDATE too: merging duplicate entries re-keys user_entries rows onto
-  -- the surviving entry (as migration 0109 did), and memberships follow.
+  -- ON UPDATE too, for re-keying user_entries onto a surviving duplicate
+  -- entry, which migration 0109 did (its replay test still does). Such a
+  -- re-key must also rewrite the copied published_or_fetched_at, or the daily
+  -- check reports the rows as misdated.
   FOREIGN KEY (user_id, entry_id) REFERENCES user_entries (user_id, entry_id)
     ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -66,7 +69,10 @@ $$;
 -- user_entries or collection_entries, before the counter triggers (they sort
 -- first by name, and row triggers fire before statement ones), so their locks
 -- follow the lock order: user_entries rows, subscription_entries,
--- subscriptions, users, tags. Every write is idempotent.
+-- subscriptions, users, tags. The one exception is a user's first save, which
+-- inserts the saved subscription before its membership; that new row can only
+-- be contended by another first save for the same user, which waits on the
+-- unique index before taking any other lock. Every write is idempotent.
 
 -- A new user_entries row joins its source subscription, or for a saved
 -- article (subscription_id NULL) the user's saved subscription.

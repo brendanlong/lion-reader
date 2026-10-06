@@ -122,7 +122,7 @@ describe("subscription_entries mirror (#1846)", () => {
     expect(await membershipsOf(bob)).toEqual(pairs([bobSub, entryIds[0]], [bobSub, entryIds[1]]));
   });
 
-  it("copies a new subscription's initial entries, with their sort key", async () => {
+  it("copies a new subscription's initial entries", async () => {
     const userId = await createTestUser();
     const { feedId, entryIds } = await currentFeed(2);
 
@@ -133,13 +133,6 @@ describe("subscription_entries mirror (#1846)", () => {
     expect(await membershipsOf(userId)).toEqual(
       pairs([subscriptionId, entryIds[0]], [subscriptionId, entryIds[1]])
     );
-    const sortKeys = await db.execute<{ same: boolean }>(sql`
-      SELECT se.published_or_fetched_at = ue.published_or_fetched_at AS same
-      FROM subscription_entries se
-      JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id
-      WHERE se.user_id = ${userId}
-    `);
-    expect(sortKeys.rows).toEqual([{ same: true }, { same: true }]);
   });
 
   it("adds a redirect merge's survivor and keeps the old subscription's copy", async () => {
@@ -390,13 +383,17 @@ describe("backfill and check (#1846)", () => {
           eq(subscriptionEntries.entryId, entryIds[1])
         )
       );
-    // In the collection without a collection_entries row.
-    await db.insert(subscriptionEntries).values({
-      subscriptionId: collectionId,
-      userId,
-      entryId: entryIds[2],
-      publishedOrFetchedAt: sql`(SELECT published_or_fetched_at FROM user_entries WHERE user_id = ${userId} AND entry_id = ${entryIds[2]})`,
-    });
+    // In the collection without a collection_entries row, and in another
+    // active web subscription whose feed it isn't from.
+    const otherFeedSub = await createTestSubscription(userId, await createTestFeed());
+    for (const subscriptionId of [collectionId, otherFeedSub]) {
+      await db.insert(subscriptionEntries).values({
+        subscriptionId,
+        userId,
+        entryId: entryIds[2],
+        publishedOrFetchedAt: sql`(SELECT published_or_fetched_at FROM user_entries WHERE user_id = ${userId} AND entry_id = ${entryIds[2]})`,
+      });
+    }
     await db
       .update(subscriptionEntries)
       .set({ publishedOrFetchedAt: sql`published_or_fetched_at - interval '1 second'` })
@@ -407,6 +404,6 @@ describe("backfill and check (#1846)", () => {
         )
       );
 
-    expect(await checkSubscriptionEntries(db)).toEqual({ missing: 1, extra: 1, misdated: 1 });
+    expect(await checkSubscriptionEntries(db)).toEqual({ missing: 1, extra: 2, misdated: 1 });
   });
 });

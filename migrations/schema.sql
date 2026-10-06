@@ -917,8 +917,7 @@ CREATE TABLE public.subscription_entries (
     subscription_id uuid NOT NULL,
     user_id uuid NOT NULL,
     entry_id uuid NOT NULL,
-    published_or_fetched_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    published_or_fetched_at timestamp with time zone NOT NULL
 );
 
 CREATE TABLE public.subscription_tags (

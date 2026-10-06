@@ -919,7 +919,6 @@ export const subscriptionEntries = pgTable(
     entryId: uuid("entry_id").notNull(),
     // The user_entries row's sort key, which never changes.
     publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.subscriptionId, table.entryId] }),
