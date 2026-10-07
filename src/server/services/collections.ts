@@ -27,7 +27,7 @@ import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 import { isUniqueViolation } from "@/server/db/errors";
 
-/** The user's collections holding an entry. */
+/** The user's active collections holding an entry. */
 export async function listEntryCollectionIds(
   db: typeof dbType,
   userId: string,
@@ -36,7 +36,14 @@ export async function listEntryCollectionIds(
   const rows = await db
     .select({ id: collectionEntries.subscriptionId })
     .from(collectionEntries)
-    .where(and(eq(collectionEntries.userId, userId), eq(collectionEntries.entryId, entryId)))
+    .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
+    .where(
+      and(
+        eq(collectionEntries.userId, userId),
+        eq(collectionEntries.entryId, entryId),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    )
     .orderBy(collectionEntries.subscriptionId);
   return rows.map((row) => row.id);
 }

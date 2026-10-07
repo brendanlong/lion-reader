@@ -748,11 +748,9 @@ export const subscriptions = pgTable(
     subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull().defaultNow(), // critical for visibility
     unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }), // soft delete
 
-    // Denormalized unread counters (issue #1117, migration 0092), maintained by
-    // the user_entries_counters_* statement triggers over rows attributed to
-    // this subscription (spam permanently excluded). Stay accurate while the
-    // subscription is unsubscribed (rows keep their stamp); starred_unread_count
-    // of INACTIVE subscriptions is the starred-orphans term of the "all" badge.
+    // The subscription's unread, non-spam memberships (#1846), kept by the
+    // counter triggers, also while it's unsubscribed. starred_unread_count is
+    // no longer maintained; it's dropped in #1846 phase 5B.
     unreadCount: integer("unread_count").notNull().default(0),
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
 
@@ -886,6 +884,11 @@ export const userEntries = pgTable(
     // ingest from the provider's verdict). The DB enforces NOT NULL; left optional
     // here so callers may rely on the trigger to fill it.
     isSpam: boolean("is_spam"),
+
+    // How many active subscriptions hold the article (#1846): it's visible
+    // iff this is positive or it's starred. Trigger-maintained, from
+    // subscription_entries and subscriptions.unsubscribed_at; never write it.
+    activeMemberships: integer("active_memberships").notNull().default(0),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.entryId] }),
@@ -907,9 +910,9 @@ export const userEntries = pgTable(
 /**
  * Which articles each subscription holds, for every type (#1846). It will
  * replace `user_entries.subscription_id` and `collection_entries`; until then
- * nothing reads it, and the database's `*_copy_membership*` triggers keep it a
- * copy of them plus the saved articles (members of the user's saved
- * subscription). Never write it from app code yet.
+ * the database's `*_copy_membership*` triggers keep it a copy of them plus the
+ * saved articles (members of the user's saved subscription). The counters and
+ * visibility read it. Never write it from app code yet.
  */
 export const subscriptionEntries = pgTable(
   "subscription_entries",
@@ -923,17 +926,14 @@ export const subscriptionEntries = pgTable(
   (table) => [
     primaryKey({ columns: [table.subscriptionId, table.entryId] }),
     // Scope every membership to the subscription's owner and the owner's own
-    // user_entries row, so none can cross users.
+    // user_entries row, so none can cross users. The second foreign key,
+    // (user_id, entry_id) → user_entries, is deferred and doesn't cascade
+    // deletes: the user_entries delete trigger counts a deleted article's
+    // memberships, then removes them (migration 0133).
     foreignKey({
       columns: [table.subscriptionId, table.userId],
       foreignColumns: [subscriptions.id, subscriptions.userId],
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.userId, table.entryId],
-      foreignColumns: [userEntries.userId, userEntries.entryId],
-    })
-      .onDelete("cascade")
-      .onUpdate("cascade"),
     index("idx_subscription_entries_timeline").on(
       table.subscriptionId,
       table.publishedOrFetchedAt.desc(),
@@ -1004,15 +1004,12 @@ export const userFeeds = pgView("user_feeds", {
 }).existing();
 
 /**
- * visible_entries view - Entries with visibility rules and subscription context.
- * An entry is visible if:
- * 1. User has a user_entries row for it, AND
- * 2. Either the entry is from an active subscription, OR the entry is starred,
- *    OR it is a saved article (saved feeds have no subscription rows), OR it is
- *    in one of the user's collections
+ * visible_entries view - Entries the user can see: starred, or in at least one
+ * active subscription (`user_entries.active_memberships > 0`, #1846).
+ * `subscription_id` is the article's stamped source subscription.
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
- * (most recently redefined in 0090_drop_entry_scoring_columns.sql).
+ * (most recently redefined in 0133_counters_on_memberships.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const visibleEntries = pgView("visible_entries", {

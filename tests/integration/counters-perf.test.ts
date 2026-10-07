@@ -233,7 +233,12 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
     await setTriggers(true);
     await reconcileCounters(db);
     const check = await reconcileCounters(db);
-    expect(check).toEqual({ subscriptionsFixed: 0, usersFixed: 0, tagsFixed: 0 });
+    expect(check).toEqual({
+      userEntriesFixed: 0,
+      subscriptionsFixed: 0,
+      usersFixed: 0,
+      tagsFixed: 0,
+    });
 
     await db.execute(sql`DELETE FROM users WHERE id = ${scratchUser}::uuid`);
   }, 600_000);

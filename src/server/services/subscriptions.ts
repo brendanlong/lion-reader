@@ -5,11 +5,11 @@
  */
 
 import { z } from "zod";
-import { eq, and, gt, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { eq, and, gt, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   blockedSenders,
-  collectionEntries,
+  subscriptionEntries,
   feeds,
   subscriptions,
   tags,
@@ -221,10 +221,38 @@ export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string
 }
 
 /**
+ * Locks the user_entries rows of the articles in the user's subscriptions
+ * matching `where`, sorted. (Un)subscribing moves each member's
+ * `active_memberships` (#1846), so a transaction that changes whether a
+ * subscription is active takes these locks first, as the lock order in
+ * `src/server/CLAUDE.md` requires.
+ */
+export async function lockSubscriptionMembers(
+  tx: DbOrTx,
+  userId: string,
+  where: SQL | undefined
+): Promise<void> {
+  await tx
+    .select({ entryId: userEntries.entryId })
+    .from(userEntries)
+    .innerJoin(
+      subscriptionEntries,
+      and(
+        eq(subscriptionEntries.userId, userEntries.userId),
+        eq(subscriptionEntries.entryId, userEntries.entryId)
+      )
+    )
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionEntries.subscriptionId))
+    .where(and(eq(userEntries.userId, userId), eq(subscriptions.userId, userId), where))
+    .orderBy(userEntries.entryId)
+    .for("no key update", { of: userEntries });
+}
+
+/**
  * Locks one of the user's subscription rows for the rest of the transaction,
  * so a change to its tags or state takes locks in the order `src/server/CLAUDE.md`
- * requires. Unsubscribing a collection also touches its members' user_entries
- * rows (the trigger empties it), so `members` locks those first.
+ * requires. Unsubscribing moves its members' user_entries rows, so `members`
+ * locks those first.
  */
 async function lockSubscriptionRow(
   tx: DbOrTx,
@@ -233,24 +261,7 @@ async function lockSubscriptionRow(
   { members = false }: { members?: boolean } = {}
 ): Promise<void> {
   if (members) {
-    await tx
-      .select({ entryId: userEntries.entryId })
-      .from(userEntries)
-      .innerJoin(
-        collectionEntries,
-        and(
-          eq(collectionEntries.userId, userEntries.userId),
-          eq(collectionEntries.entryId, userEntries.entryId)
-        )
-      )
-      .where(
-        and(
-          eq(collectionEntries.subscriptionId, subscriptionId),
-          eq(collectionEntries.userId, userId)
-        )
-      )
-      .orderBy(userEntries.entryId)
-      .for("no key update", { of: userEntries });
+    await lockSubscriptionMembers(tx, userId, eq(subscriptions.id, subscriptionId));
   }
   await tx
     .select({ id: subscriptions.id })
@@ -669,6 +680,12 @@ export async function createSubscription(
 
     // 3. Check subscription cap; if at cap, return existing or throw
     const activeCount = await lockAndCountActiveSubscriptions(tx, userId);
+    // Reactivating moves the members' rows, which come first in the lock order.
+    await lockSubscriptionMembers(
+      tx,
+      userId,
+      and(eq(subscriptions.feedId, feedId), isNotNull(subscriptions.unsubscribedAt))
+    );
 
     if (activeCount >= maxSubs) {
       // Over cap — check if we're already subscribed to this specific feed
@@ -1068,14 +1085,14 @@ export async function mergeSubscriptionIntoFeed(
   const now = new Date();
 
   const merged = await db.transaction(async (tx) => {
-    // Lock order: the user_entries rows the re-stamp moves, then the
+    // Lock order: the user_entries rows the re-stamp moves and the
+    // (de)activations change (both subscriptions' members), then the
     // subscription rows (see "Unread Counts" in src/server/CLAUDE.md).
-    await tx
-      .select({ entryId: userEntries.entryId })
-      .from(userEntries)
-      .where(and(eq(userEntries.userId, userId), eq(userEntries.subscriptionId, oldSubscriptionId)))
-      .orderBy(userEntries.entryId)
-      .for("no key update");
+    await lockSubscriptionMembers(
+      tx,
+      userId,
+      or(eq(subscriptions.id, oldSubscriptionId), eq(subscriptions.feedId, newFeed.id))
+    );
 
     const [old] = await tx
       .select({

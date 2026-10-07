@@ -22,111 +22,130 @@ CREATE TYPE public.websub_state AS ENUM (
     'unsubscribed'
 );
 
-CREATE FUNCTION public.apply_unread_rows(p_sign integer[], p_user uuid[], p_entry uuid[], p_sub uuid[], p_starred boolean[], p_no_members boolean DEFAULT false) RETURNS void
+CREATE FUNCTION public.apply_membership_changes(p_sign integer, p_user uuid[], p_entry uuid[], p_sub uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF p_user IS NULL THEN
+    RETURN;
+  END IF;
+  PERFORM apply_unread_memberships(array_agg(p_sign), array_agg(c.user_id), array_agg(c.entry_id),
+                                   array_agg(c.subscription_id), false)
+  FROM unnest(p_user, p_entry, p_sub) AS c(user_id, entry_id, subscription_id)
+  JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+  WHERE NOT ue.read AND NOT ue.is_spam;
+
+  UPDATE user_entries ue
+  SET active_memberships = m.n
+  FROM (
+    SELECT p.user_id, p.entry_id, (
+      SELECT count(*)::int
+      FROM subscription_entries se
+      JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
+      WHERE se.user_id = p.user_id AND se.entry_id = p.entry_id
+    ) AS n
+    FROM (SELECT DISTINCT user_id, entry_id FROM unnest(p_user, p_entry) AS c(user_id, entry_id)) p
+    WHERE EXISTS (
+      SELECT 1 FROM user_entries x WHERE x.user_id = p.user_id AND x.entry_id = p.entry_id
+    )
+  ) m
+  WHERE ue.user_id = m.user_id AND ue.entry_id = m.entry_id AND ue.active_memberships <> m.n;
+END;
+$$;
+
+CREATE FUNCTION public.apply_unread_memberships(p_sign integer[], p_user uuid[], p_entry uuid[], p_sub uuid[], p_complete boolean, p_count_user uuid[] DEFAULT NULL::uuid[], p_all integer[] DEFAULT NULL::integer[], p_starred integer[] DEFAULT NULL::integer[]) RETURNS void
     LANGUAGE plpgsql
     AS $$
 DECLARE
-  m_sign integer[]; m_user uuid[]; m_entry uuid[]; m_sub uuid[]; m_starred boolean[];
-  n_n integer[]; n_user uuid[]; n_sub uuid[]; n_starred boolean[];
+  l_user uuid[]; l_tag uuid[]; l_n integer[];
 BEGIN
-  IF p_sign IS NULL THEN
+  IF p_sign IS NULL AND p_count_user IS NULL THEN
     RETURN;
   END IF;
 
-  PERFORM 1 FROM users WHERE id IN (SELECT unnest(p_user)) ORDER BY id FOR NO KEY UPDATE;
-
-  WITH c AS (
-    SELECT x.*, NOT p_no_members AND EXISTS (
-      SELECT 1 FROM collection_entries ce WHERE ce.user_id = x.user_id AND ce.entry_id = x.entry_id
-    ) AS member
-    FROM unnest(p_sign, p_user, p_entry, p_sub, p_starred) AS x(sign, user_id, entry_id, subscription_id, starred)
-  ),
-  plain AS (
-    SELECT user_id, subscription_id, starred, sum(sign)::int AS n
-    FROM c WHERE NOT member
-    GROUP BY user_id, subscription_id, starred
+  UPDATE subscriptions s
+  SET unread_count = s.unread_count + d.n
+  FROM (
+    SELECT subscription_id, sum(sign)::int AS n
+    FROM unnest(p_sign, p_sub) AS c(sign, subscription_id)
+    GROUP BY subscription_id
     HAVING sum(sign) <> 0
-  )
-  SELECT
-    (SELECT array_agg(sign) FROM c WHERE member),
-    (SELECT array_agg(user_id) FROM c WHERE member),
-    (SELECT array_agg(entry_id) FROM c WHERE member),
-    (SELECT array_agg(subscription_id) FROM c WHERE member),
-    (SELECT array_agg(starred) FROM c WHERE member),
-    (SELECT array_agg(n) FROM plain),
-    (SELECT array_agg(user_id) FROM plain),
-    (SELECT array_agg(subscription_id) FROM plain),
-    (SELECT array_agg(starred) FROM plain)
-  INTO m_sign, m_user, m_entry, m_sub, m_starred, n_n, n_user, n_sub, n_starred;
+  ) d
+  WHERE s.id = d.subscription_id;
 
-  WITH plain AS (
-    SELECT p.*, (s.id IS NOT NULL AND s.unsubscribed_at IS NULL) AS active,
-           EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = p.subscription_id) AS tagged
-    FROM unnest(n_n, n_user, n_sub, n_starred) AS p(n, user_id, subscription_id, starred)
-    LEFT JOIN subscriptions s ON s.id = p.subscription_id
+  PERFORM 1 FROM users
+  WHERE id IN (SELECT unnest(p_user) UNION SELECT unnest(p_count_user))
+  ORDER BY id FOR NO KEY UPDATE;
+
+  WITH changed AS (
+    SELECT c.user_id, c.entry_id, st.tag_id, c.sign
+    FROM unnest(p_sign, p_user, p_entry, p_sub) AS c(sign, user_id, entry_id, subscription_id)
+    JOIN subscriptions s ON s.id = c.subscription_id AND s.unsubscribed_at IS NULL
+    LEFT JOIN subscription_tags st ON st.subscription_id = s.id
+    WHERE st.tag_id IS NOT NULL OR s.type <> 'saved'
   ),
-  members AS (
-    SELECT m.*, (s.id IS NOT NULL AND s.unsubscribed_at IS NULL) AS active,
-           EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = m.subscription_id) AS tagged
-    FROM unnest(m_sign, m_user, m_entry, m_sub, m_starred) AS m(sign, user_id, entry_id, subscription_id, starred)
-    LEFT JOIN subscriptions s ON s.id = m.subscription_id
+  reached AS (
+    SELECT user_id, entry_id, tag_id FROM changed WHERE p_complete AND sign > 0
+    UNION ALL
+    SELECT p.user_id, p.entry_id, st.tag_id
+    FROM (SELECT DISTINCT user_id, entry_id FROM changed WHERE NOT p_complete) p
+    JOIN user_entries ue ON ue.user_id = p.user_id AND ue.entry_id = p.entry_id
+      AND NOT ue.read AND NOT ue.is_spam
+    JOIN subscription_entries se ON se.user_id = p.user_id AND se.entry_id = p.entry_id
+    JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
+    LEFT JOIN subscription_tags st ON st.subscription_id = s.id
+    WHERE st.tag_id IS NOT NULL OR s.type <> 'saved'
+  ),
+  per_article AS (
+    SELECT user_id, tag_id, sum(now)::int AS now, sum(now - change)::int AS before
+    FROM (
+      SELECT user_id, entry_id, tag_id, 1 AS now, 0 AS change FROM reached
+      UNION ALL
+      SELECT user_id, entry_id, tag_id, 0, sign FROM changed
+    ) x
+    GROUP BY user_id, entry_id, tag_id
   ),
   d AS (
-    SELECT user_id, sum(uc)::int AS uc, sum(al)::int AS al
-    FROM (
-      SELECT user_id, CASE WHEN active AND NOT tagged THEN n ELSE 0 END AS uc,
-             CASE WHEN active OR subscription_id IS NULL OR starred THEN n ELSE 0 END AS al
-      FROM plain
-      UNION ALL
-      SELECT m.user_id,
-             CASE WHEN (m.active AND NOT m.tagged) OR EXISTS (
-               SELECT 1 FROM collection_entries ce
-               WHERE ce.user_id = m.user_id AND ce.entry_id = m.entry_id
-                 AND NOT EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = ce.subscription_id)
-             ) THEN m.sign ELSE 0 END,
-             m.sign
-      FROM members m
-    ) x
-    GROUP BY user_id
-    HAVING sum(uc) <> 0 OR sum(al) <> 0
+    SELECT user_id, tag_id, sum((now > 0)::int - (before > 0)::int)::int AS n
+    FROM per_article
+    GROUP BY user_id, tag_id
+    HAVING sum((now > 0)::int - (before > 0)::int) <> 0
   )
+  SELECT array_agg(user_id), array_agg(tag_id), array_agg(n) INTO l_user, l_tag, l_n FROM d;
+
   UPDATE users u
   SET uncategorized_unread_count = u.uncategorized_unread_count + d.uc,
-      all_unread_count = u.all_unread_count + d.al
-  FROM d
+      saved_unread_count = u.saved_unread_count + d.sv,
+      all_unread_count = u.all_unread_count + d.al,
+      starred_unread_count = u.starred_unread_count + d.st
+  FROM (
+    SELECT user_id, sum(uc)::int AS uc, sum(sv)::int AS sv, sum(al)::int AS al, sum(st)::int AS st
+    FROM (
+      SELECT l.user_id, l.n AS uc, 0 AS sv, 0 AS al, 0 AS st
+      FROM unnest(l_user, l_tag, l_n) AS l(user_id, tag_id, n)
+      WHERE l.tag_id IS NULL
+      UNION ALL
+      SELECT c.user_id, 0, c.sign, 0, 0
+      FROM unnest(p_sign, p_user, p_sub) AS c(sign, user_id, subscription_id)
+      JOIN subscriptions s ON s.id = c.subscription_id AND s.type = 'saved'
+      UNION ALL
+      SELECT r.user_id, 0, 0, r.al, r.st
+      FROM unnest(p_count_user, p_all, p_starred) AS r(user_id, al, st)
+    ) x
+    GROUP BY user_id
+    HAVING sum(uc) <> 0 OR sum(sv) <> 0 OR sum(al) <> 0 OR sum(st) <> 0
+  ) d
   WHERE u.id = d.user_id;
 
-  WITH plain AS (
-    SELECT p.*
-    FROM unnest(n_n, n_sub) AS p(n, subscription_id)
-    JOIN subscriptions s ON s.id = p.subscription_id AND s.unsubscribed_at IS NULL
-  ),
-  routes AS (
-    SELECT m.sign, m.user_id, m.entry_id, m.subscription_id AS route
-    FROM unnest(m_sign, m_user, m_entry, m_sub) AS m(sign, user_id, entry_id, subscription_id)
-    JOIN subscriptions s ON s.id = m.subscription_id AND s.unsubscribed_at IS NULL
-    UNION ALL
-    SELECT m.sign, m.user_id, m.entry_id, ce.subscription_id
-    FROM unnest(m_sign, m_user, m_entry) AS m(sign, user_id, entry_id)
-    JOIN collection_entries ce ON ce.user_id = m.user_id AND ce.entry_id = m.entry_id
-  ),
-  d AS (
-    SELECT tag_id, sum(n)::int AS n
-    FROM (
-      SELECT st.tag_id, p.n FROM plain p JOIN subscription_tags st ON st.subscription_id = p.subscription_id
-      UNION ALL
-      SELECT tag_id, sign FROM (
-        SELECT DISTINCT r.sign, r.user_id, r.entry_id, st.tag_id
-        FROM routes r JOIN subscription_tags st ON st.subscription_id = r.route
-      ) hits
-    ) x
-    GROUP BY tag_id
-    HAVING sum(n) <> 0
-  )
   UPDATE tags t
   SET unread_count = t.unread_count + d.n
-  FROM d
-  WHERE t.id = d.tag_id;
+  FROM (
+    SELECT l.tag_id, sum(l.n)::int AS n
+    FROM unnest(l_tag, l_n) AS l(tag_id, n)
+    WHERE l.tag_id IS NOT NULL
+    GROUP BY l.tag_id
+  ) d
+  WHERE t.id = d.tag_id AND d.n <> 0;
 END;
 $$;
 
@@ -154,56 +173,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.collection_entries_counters_delete() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  UPDATE subscriptions s
-  SET unread_count = s.unread_count - d.u,
-      starred_unread_count = s.starred_unread_count - d.su
-  FROM (
-    SELECT o.subscription_id,
-           count(*) FILTER (WHERE NOT ue.read AND NOT ue.is_spam)::int AS u,
-           count(*) FILTER (WHERE ue.starred AND NOT ue.read AND NOT ue.is_spam)::int AS su
-    FROM old_rows o
-    JOIN user_entries ue ON ue.user_id = o.user_id AND ue.entry_id = o.entry_id
-    GROUP BY o.subscription_id
-  ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
-  RETURN NULL;
-END;
-$$;
-
-CREATE FUNCTION public.collection_entries_counters_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  UPDATE subscriptions s
-  SET unread_count = s.unread_count + d.u,
-      starred_unread_count = s.starred_unread_count + d.su
-  FROM (
-    SELECT n.subscription_id,
-           count(*) FILTER (WHERE NOT ue.read AND NOT ue.is_spam)::int AS u,
-           count(*) FILTER (WHERE ue.starred AND NOT ue.read AND NOT ue.is_spam)::int AS su
-    FROM new_rows n
-    JOIN user_entries ue ON ue.user_id = n.user_id AND ue.entry_id = n.entry_id
-    GROUP BY n.subscription_id
-  ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
-  RETURN NULL;
-END;
-$$;
-
-CREATE FUNCTION public.collection_entries_recompute_lists() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  PERFORM recompute_list_counters(u.user_id)
-  FROM (SELECT DISTINCT user_id FROM changed_rows ORDER BY user_id) u;
-  RETURN NULL;
-END;
-$$;
-
 CREATE FUNCTION public.ensure_saved_subscriptions(p_users uuid[]) RETURNS integer
     LANGUAGE sql
     AS $$
@@ -224,70 +193,80 @@ CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
     SET plan_cache_mode TO 'force_custom_plan'
     AS $$
+DECLARE
+  x_tag uuid[]; x_n integer[];
 BEGIN
   PERFORM 1 FROM users WHERE id = p_user FOR NO KEY UPDATE;
 
-  UPDATE users u
-  SET uncategorized_unread_count = f.uncategorized + m.uncategorized,
-      all_unread_count = f.all_active + u.saved_unread_count + f.starred_inactive + m.all_extra
+  SELECT array_agg(tag_id), array_agg(n) INTO x_tag, x_n
   FROM (
-    SELECT
-      COALESCE(sum(s.unread_count) FILTER (
-        WHERE s.unsubscribed_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = s.id)
-      ), 0)::int AS uncategorized,
-      COALESCE(sum(s.unread_count) FILTER (WHERE s.unsubscribed_at IS NULL), 0)::int AS all_active,
-      COALESCE(sum(s.starred_unread_count) FILTER (WHERE s.unsubscribed_at IS NOT NULL), 0)::int
-        AS starred_inactive
-    FROM subscriptions s
-    WHERE s.user_id = p_user AND s.type <> 'collection'
-  ) f,
-  (
-    SELECT
-      count(DISTINCT ue.entry_id) FILTER (
-        WHERE NOT EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = ce.subscription_id)
-          AND NOT (src.unsubscribed_at IS NULL AND src.id IS NOT NULL AND NOT EXISTS (
-            SELECT 1 FROM subscription_tags st WHERE st.subscription_id = src.id))
-      )::int AS uncategorized,
-      count(DISTINCT ue.entry_id) FILTER (
-        WHERE ue.subscription_id IS NOT NULL AND NOT ue.starred AND src.unsubscribed_at IS NOT NULL
-      )::int AS all_extra
-    FROM collection_entries ce
-    JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
-    LEFT JOIN subscriptions src ON src.id = ue.subscription_id
-    WHERE ce.user_id = p_user AND NOT ue.read AND NOT ue.is_spam
-  ) m
-  WHERE u.id = p_user
-    AND (u.uncategorized_unread_count, u.all_unread_count)
-      IS DISTINCT FROM (f.uncategorized + m.uncategorized,
-                        f.all_active + u.saved_unread_count + f.starred_inactive + m.all_extra);
+    SELECT tag_id, sum(k - 1)::int AS n
+    FROM (
+      SELECT se.entry_id, st.tag_id, count(*) AS k
+      FROM user_entries ue
+      JOIN subscription_entries se ON se.user_id = ue.user_id AND se.entry_id = ue.entry_id
+      JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL
+      LEFT JOIN subscription_tags st ON st.subscription_id = s.id
+      WHERE ue.user_id = p_user AND ue.active_memberships > 1 AND NOT ue.read AND NOT ue.is_spam
+        AND (st.tag_id IS NOT NULL OR s.type <> 'saved')
+      GROUP BY se.entry_id, st.tag_id
+    ) m
+    WHERE k > 1
+    GROUP BY tag_id
+  ) x;
+
+  UPDATE users u
+  SET uncategorized_unread_count = f.n
+  FROM (
+    SELECT (
+      SELECT COALESCE(sum(s.unread_count), 0)::int
+      FROM subscriptions s
+      WHERE s.user_id = p_user AND s.unsubscribed_at IS NULL AND s.type <> 'saved'
+        AND NOT EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = s.id)
+    ) - COALESCE((SELECT sum(x.n) FROM unnest(x_tag, x_n) AS x(tag_id, n) WHERE x.tag_id IS NULL), 0)::int AS n
+  ) f
+  WHERE u.id = p_user AND u.uncategorized_unread_count IS DISTINCT FROM f.n;
 
   UPDATE tags t
-  SET unread_count = COALESCE(f.n, 0) + COALESCE(m.n, 0)
+  SET unread_count = COALESCE(f.n, 0) - COALESCE(x.n, 0)
   FROM tags t2
   LEFT JOIN (
     SELECT st.tag_id, sum(s.unread_count)::int AS n
     FROM subscription_tags st
     JOIN subscriptions s ON s.id = st.subscription_id AND s.unsubscribed_at IS NULL
-      AND s.type <> 'collection'
     WHERE s.user_id = p_user
     GROUP BY st.tag_id
   ) f ON f.tag_id = t2.id
-  LEFT JOIN (
-    SELECT st.tag_id, count(DISTINCT ue.entry_id)::int AS n
-    FROM collection_entries ce
-    JOIN subscription_tags st ON st.subscription_id = ce.subscription_id
-    JOIN user_entries ue ON ue.user_id = ce.user_id AND ue.entry_id = ce.entry_id
-    WHERE ce.user_id = p_user AND NOT ue.read AND NOT ue.is_spam
-      AND NOT EXISTS (
-        SELECT 1 FROM subscriptions src
-        JOIN subscription_tags st2 ON st2.subscription_id = src.id AND st2.tag_id = st.tag_id
-        WHERE src.id = ue.subscription_id AND src.unsubscribed_at IS NULL
-      )
-    GROUP BY st.tag_id
-  ) m ON m.tag_id = t2.id
+  LEFT JOIN unnest(x_tag, x_n) AS x(tag_id, n) ON x.tag_id = t2.id
   WHERE t.id = t2.id AND t2.user_id = p_user
-    AND t.unread_count IS DISTINCT FROM COALESCE(f.n, 0) + COALESCE(m.n, 0);
+    AND t.unread_count IS DISTINCT FROM COALESCE(f.n, 0) - COALESCE(x.n, 0);
+END;
+$$;
+
+CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_mode text := current_setting('lion.memberships', true);
+  v_sign integer := CASE WHEN TG_OP = 'INSERT' THEN 1 ELSE -1 END;
+  v_user uuid[]; v_entry uuid[]; v_sub uuid[];
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM changed_rows) THEN
+    RETURN NULL;
+  END IF;
+  IF v_mode = 'new_rows' THEN
+    PERFORM apply_unread_memberships(array_agg(1), array_agg(c.user_id), array_agg(c.entry_id),
+                                     array_agg(c.subscription_id), true)
+    FROM changed_rows c
+    JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+    WHERE NOT ue.read AND NOT ue.is_spam;
+    RETURN NULL;
+  END IF;
+  SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id)
+  INTO v_user, v_entry, v_sub
+  FROM changed_rows;
+  PERFORM apply_membership_changes(v_sign, v_user, v_entry, v_sub);
+  RETURN NULL;
 END;
 $$;
 
@@ -333,19 +312,36 @@ $$;
 CREATE FUNCTION public.subscriptions_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+  a_id uuid[]; a_user uuid[]; a_d integer[];
 BEGIN
-  PERFORM recompute_list_counters(u.user_id)
+  SELECT array_agg(id), array_agg(user_id), array_agg(d) INTO a_id, a_user, a_d
   FROM (
-    SELECT DISTINCT user_id
+    SELECT id, user_id, sum(d)::int AS d
     FROM (
-      SELECT id, user_id, unsubscribed_at, 1 AS side FROM changed_rows
+      SELECT id, user_id, CASE WHEN unsubscribed_at IS NULL THEN 1 ELSE 0 END AS d FROM changed_rows
       UNION ALL
-      SELECT id, user_id, unsubscribed_at, -1 FROM old_rows
+      SELECT id, user_id, CASE WHEN unsubscribed_at IS NULL THEN -1 ELSE 0 END FROM old_rows
     ) x
-    GROUP BY id, user_id, unsubscribed_at
-    HAVING sum(side) <> 0
-    ORDER BY user_id
-  ) u;
+    GROUP BY id, user_id
+    HAVING sum(d) <> 0
+  ) a;
+  IF a_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  UPDATE user_entries ue
+  SET active_memberships = ue.active_memberships + m.d
+  FROM (
+    SELECT se.user_id, se.entry_id, sum(a.d)::int AS d
+    FROM unnest(a_id, a_d) AS a(id, d)
+    JOIN subscription_entries se ON se.subscription_id = a.id
+    GROUP BY se.user_id, se.entry_id
+  ) m
+  WHERE ue.user_id = m.user_id AND ue.entry_id = m.entry_id AND m.d <> 0;
+
+  PERFORM recompute_list_counters(u.user_id)
+  FROM (SELECT DISTINCT user_id FROM unnest(a_user) AS a(user_id) ORDER BY user_id) u;
   RETURN NULL;
 END;
 $$;
@@ -353,9 +349,27 @@ $$;
 CREATE FUNCTION public.user_entries_copy_membership_restamp() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+  r_user uuid[]; r_entry uuid[]; r_sub uuid[]; r_at timestamptz[];
 BEGIN
+  SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id), array_agg(at)
+  INTO r_user, r_entry, r_sub, r_at
+  FROM (
+    SELECT user_id, entry_id, subscription_id, max(published_or_fetched_at) AS at
+    FROM (
+      SELECT 1 AS sign, user_id, entry_id, subscription_id, published_or_fetched_at FROM new_rows
+      UNION ALL
+      SELECT -1, user_id, entry_id, subscription_id, published_or_fetched_at FROM old_rows
+    ) x
+    WHERE subscription_id IS NOT NULL
+    GROUP BY user_id, entry_id, subscription_id
+    HAVING sum(sign) > 0
+  ) r;
+  IF r_user IS NULL THEN
+    RETURN NULL;
+  END IF;
   INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-  VALUES (NEW.subscription_id, NEW.user_id, NEW.entry_id, NEW.published_or_fetched_at)
+  SELECT * FROM unnest(r_sub, r_user, r_entry, r_at)
   ON CONFLICT DO NOTHING;
   RETURN NULL;
 END;
@@ -367,11 +381,13 @@ CREATE FUNCTION public.user_entries_copy_memberships_insert() RETURNS trigger
 DECLARE
   v_users uuid[];
 BEGIN
+  PERFORM set_config('lion.memberships', 'new_rows', true);
   INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
   SELECT subscription_id, user_id, entry_id, published_or_fetched_at
   FROM new_rows
   WHERE subscription_id IS NOT NULL
   ON CONFLICT DO NOTHING;
+  PERFORM set_config('lion.memberships', '', true);
 
   IF NOT EXISTS (SELECT 1 FROM new_rows WHERE subscription_id IS NULL) THEN
     RETURN NULL;
@@ -387,6 +403,7 @@ BEGIN
 
   PERFORM ensure_saved_subscriptions(v_users);
 
+  PERFORM set_config('lion.memberships', 'new_rows', true);
   INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
   SELECT s.id, n.user_id, n.entry_id, n.published_or_fetched_at
   FROM new_rows n
@@ -394,6 +411,7 @@ BEGIN
   JOIN subscriptions s ON s.user_id = n.user_id AND s.type = 'saved'
   WHERE n.subscription_id IS NULL AND e.type = 'saved'
   ON CONFLICT DO NOTHING;
+  PERFORM set_config('lion.memberships', '', true);
   RETURN NULL;
 END;
 $$;
@@ -401,53 +419,35 @@ $$;
 CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+  m_sign integer[]; m_user uuid[]; m_entry uuid[]; m_sub uuid[];
+  c_user uuid[]; c_all integer[]; c_starred integer[];
 BEGIN
-  UPDATE subscriptions s
-  SET unread_count = s.unread_count - d.u,
-      starred_unread_count = s.starred_unread_count - d.su
-  FROM (
-    SELECT subscription_id,
-           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
-    FROM old_rows
-    WHERE subscription_id IS NOT NULL
-    GROUP BY subscription_id
-  ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
+  SELECT array_agg(-1), array_agg(se.user_id), array_agg(se.entry_id), array_agg(se.subscription_id)
+  INTO m_sign, m_user, m_entry, m_sub
+  FROM old_rows o
+  JOIN subscription_entries se ON se.user_id = o.user_id AND se.entry_id = o.entry_id
+  WHERE NOT o.read AND NOT o.is_spam;
 
-  UPDATE subscriptions s
-  SET unread_count = s.unread_count - d.u,
-      starred_unread_count = s.starred_unread_count - d.su
-  FROM (
-    SELECT ce.subscription_id,
-           count(*) FILTER (WHERE NOT o.read AND NOT o.is_spam)::int AS u,
-           count(*) FILTER (WHERE o.starred AND NOT o.read AND NOT o.is_spam)::int AS su
-    FROM old_rows o
-    JOIN collection_entries ce ON ce.user_id = o.user_id AND ce.entry_id = o.entry_id
-    GROUP BY ce.subscription_id
-  ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
-
-  PERFORM apply_unread_rows(array_agg(-1), array_agg(user_id), array_agg(entry_id),
-                            array_agg(subscription_id), array_agg(starred))
-  FROM old_rows
-  WHERE NOT read AND NOT is_spam;
-
-  UPDATE users usr
-  SET saved_unread_count = usr.saved_unread_count - d.sv,
-      starred_unread_count = usr.starred_unread_count - d.st
+  SELECT array_agg(user_id), array_agg(al), array_agg(st)
+  INTO c_user, c_all, c_starred
   FROM (
     SELECT user_id,
-           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
+           -count(*) FILTER (WHERE NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int AS al,
+           -count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
     FROM old_rows
     GROUP BY user_id
   ) d
-  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  WHERE al <> 0 OR st <> 0;
+
+  PERFORM apply_unread_memberships(m_sign, m_user, m_entry, m_sub, true, c_user, c_all, c_starred);
 
   DELETE FROM collection_entries ce
   USING old_rows o
   WHERE ce.user_id = o.user_id AND ce.entry_id = o.entry_id;
+  DELETE FROM subscription_entries se
+  USING old_rows o
+  WHERE se.user_id = o.user_id AND se.entry_id = o.entry_id;
   RETURN NULL;
 END;
 $$;
@@ -455,36 +455,21 @@ $$;
 CREATE FUNCTION public.user_entries_counters_insert() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+  c_user uuid[]; c_all integer[]; c_starred integer[];
 BEGIN
-  UPDATE subscriptions s
-  SET unread_count = s.unread_count + d.u,
-      starred_unread_count = s.starred_unread_count + d.su
-  FROM (
-    SELECT subscription_id,
-           count(*) FILTER (WHERE NOT read AND NOT is_spam)::int AS u,
-           count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS su
-    FROM new_rows
-    WHERE subscription_id IS NOT NULL
-    GROUP BY subscription_id
-  ) d
-  WHERE s.id = d.subscription_id AND (d.u <> 0 OR d.su <> 0);
-
-  PERFORM apply_unread_rows(array_agg(1), array_agg(user_id), array_agg(entry_id),
-                            array_agg(subscription_id), array_agg(starred), true)
-  FROM new_rows
-  WHERE NOT read AND NOT is_spam;
-
-  UPDATE users usr
-  SET saved_unread_count = usr.saved_unread_count + d.sv,
-      starred_unread_count = usr.starred_unread_count + d.st
+  SELECT array_agg(user_id), array_agg(al), array_agg(st)
+  INTO c_user, c_all, c_starred
   FROM (
     SELECT user_id,
-           count(*) FILTER (WHERE subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
+           count(*) FILTER (WHERE NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int AS al,
            count(*) FILTER (WHERE starred AND NOT read AND NOT is_spam)::int AS st
     FROM new_rows
     GROUP BY user_id
   ) d
-  WHERE usr.id = d.user_id AND (d.sv <> 0 OR d.st <> 0);
+  WHERE al <> 0 OR st <> 0;
+
+  PERFORM apply_unread_memberships(NULL, NULL, NULL, NULL, true, c_user, c_all, c_starred);
   RETURN NULL;
 END;
 $$;
@@ -492,92 +477,44 @@ $$;
 CREATE FUNCTION public.user_entries_counters_update() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+DECLARE
+  m_sign integer[]; m_user uuid[]; m_entry uuid[]; m_sub uuid[];
+  c_user uuid[]; c_all integer[]; c_starred integer[];
 BEGIN
-  UPDATE subscriptions s
-  SET unread_count = s.unread_count + d.u,
-      starred_unread_count = s.starred_unread_count + d.su
+  SELECT array_agg(f.n), array_agg(se.user_id), array_agg(se.entry_id), array_agg(se.subscription_id)
+  INTO m_sign, m_user, m_entry, m_sub
   FROM (
-    SELECT subscription_id, sum(u)::int AS u, sum(su)::int AS su
+    SELECT user_id, entry_id, sum(sign)::int AS n
     FROM (
-      SELECT subscription_id,
-             (NOT read AND NOT is_spam)::int AS u,
-             (starred AND NOT read AND NOT is_spam)::int AS su
-      FROM new_rows
-      WHERE subscription_id IS NOT NULL
+      SELECT 1 AS sign, user_id, entry_id FROM new_rows WHERE NOT read AND NOT is_spam
       UNION ALL
-      SELECT subscription_id,
-             -((NOT read AND NOT is_spam)::int),
-             -((starred AND NOT read AND NOT is_spam)::int)
-      FROM old_rows
-      WHERE subscription_id IS NOT NULL
+      SELECT -1, user_id, entry_id FROM old_rows WHERE NOT read AND NOT is_spam
     ) x
-    GROUP BY subscription_id
-    HAVING sum(u) <> 0 OR sum(su) <> 0
-  ) d
-  WHERE s.id = d.subscription_id;
-
-  UPDATE subscriptions s
-  SET unread_count = s.unread_count + d.u,
-      starred_unread_count = s.starred_unread_count + d.su
-  FROM (
-    SELECT ce.subscription_id, sum(x.u)::int AS u, sum(x.su)::int AS su
-    FROM (
-      SELECT user_id, entry_id, sum(u) AS u, sum(su) AS su
-      FROM (
-        SELECT user_id, entry_id,
-               (NOT read AND NOT is_spam)::int AS u,
-               (starred AND NOT read AND NOT is_spam)::int AS su
-        FROM new_rows
-        UNION ALL
-        SELECT user_id, entry_id,
-               -((NOT read AND NOT is_spam)::int),
-               -((starred AND NOT read AND NOT is_spam)::int)
-        FROM old_rows
-      ) y
-      GROUP BY user_id, entry_id
-      HAVING sum(u) <> 0 OR sum(su) <> 0
-    ) x
-    JOIN collection_entries ce ON ce.user_id = x.user_id AND ce.entry_id = x.entry_id
-    GROUP BY ce.subscription_id
-    HAVING sum(x.u) <> 0 OR sum(x.su) <> 0
-  ) d
-  WHERE s.id = d.subscription_id;
-
-  PERFORM apply_unread_rows(array_agg(x.n), array_agg(x.user_id), array_agg(x.entry_id),
-                            array_agg(x.subscription_id), array_agg(x.starred))
-  FROM (
-    SELECT user_id, entry_id, subscription_id, starred, sum(sign)::int AS n
-    FROM (
-      SELECT 1 AS sign, user_id, entry_id, subscription_id, starred
-      FROM new_rows WHERE NOT read AND NOT is_spam
-      UNION ALL
-      SELECT -1, user_id, entry_id, subscription_id, starred
-      FROM old_rows WHERE NOT read AND NOT is_spam
-    ) y
-    GROUP BY user_id, entry_id, subscription_id, starred
+    GROUP BY user_id, entry_id
     HAVING sum(sign) <> 0
-  ) x;
+  ) f
+  JOIN subscription_entries se ON se.user_id = f.user_id AND se.entry_id = f.entry_id;
 
-  UPDATE users usr
-  SET saved_unread_count = usr.saved_unread_count + d.sv,
-      starred_unread_count = usr.starred_unread_count + d.st
+  SELECT array_agg(user_id), array_agg(al), array_agg(st)
+  INTO c_user, c_all, c_starred
   FROM (
-    SELECT user_id, sum(sv)::int AS sv, sum(st)::int AS st
+    SELECT user_id, sum(al)::int AS al, sum(st)::int AS st
     FROM (
       SELECT user_id,
-             (subscription_id IS NULL AND NOT read AND NOT is_spam)::int AS sv,
+             (NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int AS al,
              (starred AND NOT read AND NOT is_spam)::int AS st
       FROM new_rows
       UNION ALL
       SELECT user_id,
-             -((subscription_id IS NULL AND NOT read AND NOT is_spam)::int),
+             -((NOT read AND NOT is_spam AND (starred OR active_memberships > 0))::int),
              -((starred AND NOT read AND NOT is_spam)::int)
       FROM old_rows
     ) x
     GROUP BY user_id
-    HAVING sum(sv) <> 0 OR sum(st) <> 0
-  ) d
-  WHERE usr.id = d.user_id;
+    HAVING sum(al) <> 0 OR sum(st) <> 0
+  ) d;
+
+  PERFORM apply_unread_memberships(m_sign, m_user, m_entry, m_sub, true, c_user, c_all, c_starred);
   RETURN NULL;
 END;
 $$;
@@ -587,14 +524,15 @@ CREATE FUNCTION public.user_entries_fill_denormalized() RETURNS trigger
     AS $$
 DECLARE
   v_feed_id uuid;
+  v_type feed_type;
 BEGIN
   IF NEW.published_or_fetched_at IS NULL
      OR NEW.is_spam IS NULL
      OR NEW.subscription_id IS NULL THEN
     SELECT COALESCE(NEW.published_or_fetched_at, e.published_at, e.fetched_at),
            COALESCE(NEW.is_spam, e.is_spam),
-           e.feed_id
-      INTO NEW.published_or_fetched_at, NEW.is_spam, v_feed_id
+           e.feed_id, e.type
+      INTO NEW.published_or_fetched_at, NEW.is_spam, v_feed_id, v_type
       FROM entries e
       WHERE e.id = NEW.entry_id;
     IF NEW.subscription_id IS NULL THEN
@@ -604,6 +542,14 @@ BEGIN
         WHERE s.user_id = NEW.user_id
           AND s.feed_id = v_feed_id;
     END IF;
+  END IF;
+  IF NEW.subscription_id IS NOT NULL THEN
+    NEW.active_memberships := (
+      SELECT count(*) FROM subscriptions s
+      WHERE s.id = NEW.subscription_id AND s.unsubscribed_at IS NULL
+    );
+  ELSIF v_type = 'saved' THEN
+    NEW.active_memberships := 1;
   END IF;
   RETURN NEW;
 END;
@@ -975,7 +921,9 @@ CREATE TABLE public.user_entries (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     published_or_fetched_at timestamp with time zone NOT NULL,
     subscription_id uuid,
-    is_spam boolean NOT NULL
+    is_spam boolean NOT NULL,
+    active_memberships integer DEFAULT 0 NOT NULL,
+    CONSTRAINT user_entries_active_memberships_nonnegative CHECK ((active_memberships >= 0))
 );
 
 CREATE VIEW public.user_feeds AS
@@ -1065,9 +1013,7 @@ CREATE VIEW public.visible_entries AS
    FROM ((public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
      LEFT JOIN public.subscriptions s ON ((s.id = ue.subscription_id)))
-  WHERE (((s.id IS NOT NULL) AND (s.unsubscribed_at IS NULL)) OR (ue.starred = true) OR (e.type = 'saved'::public.feed_type) OR (EXISTS ( SELECT 1
-           FROM public.collection_entries ce
-          WHERE ((ce.user_id = ue.user_id) AND (ce.entry_id = ue.entry_id)))));
+  WHERE (ue.starred OR (ue.active_memberships > 0));
 
 CREATE TABLE public.websub_hub_stats (
     hub_url text NOT NULL,
@@ -1347,6 +1293,8 @@ CREATE INDEX idx_tags_updated_at ON public.tags USING btree (user_id, updated_at
 
 CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry_id);
 
+CREATE INDEX idx_user_entries_multi_member ON public.user_entries USING btree (user_id) WHERE (active_memberships > 1);
+
 CREATE INDEX idx_user_entries_published_or_fetched ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC);
 
 CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
@@ -1385,13 +1333,9 @@ CREATE TRIGGER collection_entries_copy_memberships_delete_trigger AFTER DELETE O
 
 CREATE TRIGGER collection_entries_copy_memberships_insert_trigger AFTER INSERT ON public.collection_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_copy_memberships_insert();
 
-CREATE TRIGGER collection_entries_counters_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_counters_delete();
+CREATE TRIGGER subscription_entries_counters_delete_trigger AFTER DELETE ON public.subscription_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
 
-CREATE TRIGGER collection_entries_counters_insert_trigger AFTER INSERT ON public.collection_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_counters_insert();
-
-CREATE TRIGGER collection_entries_recompute_lists_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_recompute_lists();
-
-CREATE TRIGGER collection_entries_recompute_lists_insert_trigger AFTER INSERT ON public.collection_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_recompute_lists();
+CREATE TRIGGER subscription_entries_counters_insert_trigger AFTER INSERT ON public.subscription_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
 
 CREATE TRIGGER subscription_tags_recompute_lists_delete_trigger AFTER DELETE ON public.subscription_tags REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_tags_recompute_lists();
 
@@ -1403,7 +1347,7 @@ CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DEL
 
 CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON public.subscriptions REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_recompute_lists();
 
-CREATE TRIGGER user_entries_copy_membership_restamp_trigger AFTER UPDATE OF subscription_id ON public.user_entries FOR EACH ROW WHEN (((new.subscription_id IS NOT NULL) AND (new.subscription_id IS DISTINCT FROM old.subscription_id))) EXECUTE FUNCTION public.user_entries_copy_membership_restamp();
+CREATE TRIGGER user_entries_copy_membership_restamp_trigger AFTER UPDATE ON public.user_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_copy_membership_restamp();
 
 CREATE TRIGGER user_entries_copy_memberships_insert_trigger AFTER INSERT ON public.user_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_copy_memberships_insert();
 
@@ -1482,7 +1426,7 @@ ALTER TABLE ONLY public.subscription_entries
     ADD CONSTRAINT subscription_entries_subscription_id_user_id_fkey FOREIGN KEY (subscription_id, user_id) REFERENCES public.subscriptions(id, user_id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.subscription_entries
-    ADD CONSTRAINT subscription_entries_user_id_entry_id_fkey FOREIGN KEY (user_id, entry_id) REFERENCES public.user_entries(user_id, entry_id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT subscription_entries_user_id_entry_id_fkey FOREIGN KEY (user_id, entry_id) REFERENCES public.user_entries(user_id, entry_id) ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE ONLY public.subscription_tags
     ADD CONSTRAINT subscription_tags_subscription_id_subscriptions_id_fk FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;

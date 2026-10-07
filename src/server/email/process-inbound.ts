@@ -25,6 +25,7 @@ import { publishUserNewEntry, publishSubscriptionCreated } from "../redis/pubsub
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
+import { lockSubscriptionMembers } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Types
@@ -317,23 +318,32 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // RETURNING only returns a row if inserted OR updated (not if already active)
   const subscriptionId = generateUuidv7();
 
-  const [upsertedSubscription] = await db
-    .insert(subscriptions)
-    .values({
-      id: subscriptionId,
+  // Reactivating moves the members' user_entries rows, which come first in
+  // the lock order.
+  const [upsertedSubscription] = await db.transaction(async (tx) => {
+    await lockSubscriptionMembers(
+      tx,
       userId,
-      feedId: feed.id,
-      type: "email",
-      subscribedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [subscriptions.userId, subscriptions.feedId],
-      set: { unsubscribedAt: null, updatedAt: now },
-      where: isNotNull(subscriptions.unsubscribedAt),
-    })
-    .returning();
+      and(eq(subscriptions.feedId, feed.id), isNotNull(subscriptions.unsubscribedAt))
+    );
+    return tx
+      .insert(subscriptions)
+      .values({
+        id: subscriptionId,
+        userId,
+        feedId: feed.id,
+        type: "email",
+        subscribedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [subscriptions.userId, subscriptions.feedId],
+        set: { unsubscribedAt: null, updatedAt: now },
+        where: isNotNull(subscriptions.unsubscribedAt),
+      })
+      .returning();
+  });
 
   if (upsertedSubscription) {
     const isNewSubscription = upsertedSubscription.id === subscriptionId;

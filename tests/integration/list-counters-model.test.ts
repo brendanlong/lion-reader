@@ -193,17 +193,12 @@ async function membershipCount(subscriptionId: string): Promise<number> {
 const TODAY = {
   /** Deleting a collection empties it, instead of keeping its memberships. */
   deletedCollectionsEmptied: true,
-  /**
-   * A web or email subscription's counter counts the articles stamped with it
-   * (`user_entries.subscription_id`), not its memberships, so a merged-away
-   * subscription drops the articles it keeps, and the saved subscription
-   * counts nothing (Saved is `users.saved_unread_count`).
-   */
-  countsStampedArticles: true,
 };
 
 interface ExpectedState {
   visible: string[];
+  /** Each article's `user_entries.active_memberships`. */
+  activeMemberships: Map<string, number>;
   subscriptions: Map<string, number>;
   tags: Map<string, number>;
   all: number;
@@ -215,7 +210,8 @@ interface ExpectedState {
 /**
  * Every counter and the visible articles of one user, by #1846's rules,
  * from the base facts alone:
- * - visible: starred, or in at least one active subscription;
+ * - visible: starred, or in at least one active subscription (the number of
+ *   which is the row's `active_memberships`);
  * - a subscription (active or not): its unread, non-spam memberships;
  * - All: visible, unread, non-spam articles;
  * - a tag: distinct unread, non-spam articles in an active subscription with
@@ -252,7 +248,6 @@ async function expectedState(userId: string): Promise<ExpectedState> {
   const rows = await db
     .select({
       entryId: userEntries.entryId,
-      subscriptionId: userEntries.subscriptionId,
       read: userEntries.read,
       starred: userEntries.starred,
       isSpam: userEntries.isSpam,
@@ -270,25 +265,20 @@ async function expectedState(userId: string): Promise<ExpectedState> {
   const distinctUnread = (inLists: typeof subs) =>
     new Set(inLists.flatMap((s) => membersOf(s.id)).filter(unread)).size;
 
-  const inActive = new Set(active.flatMap((s) => membersOf(s.id)));
+  const activeMemberships = new Map<string, number>(rows.map((r) => [r.entryId, 0]));
+  for (const s of active) {
+    for (const id of membersOf(s.id)) activeMemberships.set(id, activeMemberships.get(id)! + 1);
+  }
   const visible = rows
-    .filter((r) => r.starred || inActive.has(r.entryId))
+    .filter((r) => r.starred || activeMemberships.get(r.entryId)! > 0)
     .map((r) => r.entryId)
     .sort();
   const savedSubscription = subs.find((s) => s.type === "saved");
 
-  const subscriptionCounts = new Map(
-    subs.map((s) => {
-      if (TODAY.countsStampedArticles && s.type !== "collection") {
-        const stamped = rows.filter((r) => r.subscriptionId === s.id).map((r) => r.entryId);
-        return [s.id, stamped.filter(unread).length];
-      }
-      return [s.id, membersOf(s.id).filter(unread).length];
-    })
-  );
   return {
     visible,
-    subscriptions: subscriptionCounts,
+    activeMemberships,
+    subscriptions: new Map(subs.map((s) => [s.id, membersOf(s.id).filter(unread).length])),
     tags: new Map(
       tagRows.map((t) => [t.id, distinctUnread(active.filter((s) => tagsOf(s.id).includes(t.id)))])
     ),
@@ -311,6 +301,14 @@ async function expectCountersMatchModel(userId: string, context: string): Promis
     visible.rows.map((r) => r.id),
     `${context}\nvisible`
   ).toEqual(expected.visible);
+
+  const memberships = await db
+    .select({ id: userEntries.entryId, n: userEntries.activeMemberships })
+    .from(userEntries)
+    .where(eq(userEntries.userId, userId));
+  expect(new Map(memberships.map((r) => [r.id, r.n])), `${context}\nactive_memberships`).toEqual(
+    expected.activeMemberships
+  );
 
   const [user] = await db
     .select({
@@ -655,6 +653,7 @@ describe("unread counters under random operations", () => {
         const context = `seed ${seed}, step ${step}:\n${history.slice(-5).join("\n")}`;
         for (const w of worlds) await expectCountersMatchModel(w.userId, context);
         expect(await reconcileCounters(db), context).toEqual({
+          userEntriesFixed: 0,
           subscriptionsFixed: 0,
           usersFixed: 0,
           tagsFixed: 0,

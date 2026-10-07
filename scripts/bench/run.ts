@@ -320,6 +320,12 @@ async function iterate(
     await vacuum(client);
     await client.query("BEGIN");
     await client.query("SET CONSTRAINTS ALL IMMEDIATE");
+    // Except the memberships' foreign keys to user_entries: the user_entries
+    // delete trigger removes the rows they check only after the delete that
+    // runs an immediate check, so they hold only at commit (migration 0133).
+    await client.query(
+      "SET CONSTRAINTS subscription_entries_user_id_entry_id_fkey, collection_entries_user_id_entry_id_fkey DEFERRED"
+    );
     for (const sql of prepared.setup ?? []) await client.query(sql);
   }
   try {
