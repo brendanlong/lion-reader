@@ -204,9 +204,13 @@ export function createDemoStore(): DemoStore {
     return sub && !sub.deleted ? sub : undefined;
   }
 
-  /** The live subscriptions containing the entry: its feed and any collections holding it. */
+  /**
+   * The live subscriptions containing the entry: its feed and any collections
+   * holding it. A saved article's feed is the saved subscription, which no
+   * list shows, like the server's (#1846).
+   */
   function containersOf(state: EntryState): SubscriptionState[] {
-    const feed = subscriptionOf(state);
+    const feed = state.entry.type === "saved" ? undefined : subscriptionOf(state);
     const collections = liveSubscriptions().filter((sub) => sub.members.has(state.entry.id));
     return feed ? [feed, ...collections] : collections;
   }
@@ -222,16 +226,16 @@ export function createDemoStore(): DemoStore {
 
   /** The active subscriptions holding the entry, like the API's `subscriptionIds`. */
   function subscriptionIdsOf(state: EntryState): string[] {
-    const ids = containersOf(state)
-      .filter((sub) => !sub.deleted && sub !== subscriptionOf(state))
-      .map((sub) => sub.id);
-    const origin = originOf(state);
-    return (origin ? [origin, ...ids] : ids).sort();
+    const ids = containersOf(state).map((sub) => sub.id);
+    return state.entry.type === "saved" ? [DEMO_SAVED_SUBSCRIPTION_ID, ...ids].sort() : ids.sort();
   }
 
-  /** Starred and collected entries stay visible after unsubscribing, like the app. */
+  /**
+   * Saved articles (in the saved subscription), starred ones and collected
+   * ones stay visible after unsubscribing, like the app.
+   */
   function isVisible(state: EntryState): boolean {
-    return containersOf(state).length > 0 || state.starred;
+    return state.entry.type === "saved" || containersOf(state).length > 0 || state.starred;
   }
 
   function matches(state: EntryState, filter: EntryFilter): boolean {

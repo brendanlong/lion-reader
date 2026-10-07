@@ -88,18 +88,16 @@ describe("createDemoStore", () => {
       const sub = DEMO_SUBSCRIPTIONS[0];
       const subItems = procedures["entries.list"]({ subscriptionId: sub.id, limit: 100 }).items;
       expect(subItems).toHaveLength(sub.entryCount);
-      // A saved article's origin is the saved subscription, like the server's (#1846).
-      expect(
-        subItems.every((i) => i.subscriptionId === (i.type === "saved" ? "demo-saved" : sub.id))
-      ).toBe(true);
+      expect(subItems.every((i) => i.subscriptionId === sub.id)).toBe(true);
 
       const tag = DEMO_TAGS.find((t) => t.id === "features")!;
       const tagItems = procedures["entries.list"]({ tagId: tag.id, limit: 100 }).items;
-      expect(
-        tagItems.every((i) => i.type === "saved" || tag.subscriptionIds.includes(i.subscriptionId!))
-      ).toBe(true);
+      expect(tagItems.every((i) => tag.subscriptionIds.includes(i.subscriptionId!))).toBe(true);
+      // Saved articles are in the saved subscription, not a tagged feed (#1846).
       expect(tagItems.length).toBe(
-        DEMO_ENTRIES.filter((e) => tag.subscriptionIds.includes(e.subscriptionId!)).length
+        DEMO_ENTRIES.filter(
+          (e) => e.type !== "saved" && tag.subscriptionIds.includes(e.subscriptionId!)
+        ).length
       );
 
       expect(procedures["entries.list"]({ type: "saved", limit: 100 }).items).toHaveLength(SAVED);
@@ -216,7 +214,7 @@ describe("createDemoStore", () => {
       const features = tags.items.find((t) => t.id === "features")!;
       expect(features.feedCount).toBe(4);
       expect(features.unreadCount).toBe(
-        DEMO_ENTRIES.filter((e) => e.subscriptionId !== "lion-reader").length
+        DEMO_ENTRIES.filter((e) => e.subscriptionId !== "lion-reader" && e.type !== "saved").length
       );
       expect(tags.uncategorized).toEqual({ feedCount: 0, unreadCount: 0 });
     });
