@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, inArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { Temporal } from "temporal-polyfill";
 
 import {
@@ -272,20 +272,15 @@ async function databaseNow(db: Database): Promise<Temporal.Instant> {
 }
 
 /**
- * The `visible_entries` predicate, over `user_entries` joined to `entries`
- * and left-joined to `subscriptions` on the stamped subscription id. A NULL
- * subscription id means a saved/uploaded article, but the saved arm still
- * gates on the entry type, so the predicate is fail-closed as defence in
- * depth: a feed entry that somehow lost its subscription stays hidden unless
- * starred (#1080).
+ * The `visible_entries` predicate over `user_entries`: starred, or in an
+ * active subscription (#1846).
  */
 function visibleEntrySql(): SQL {
-  return sql`((${subscriptions.id} IS NOT NULL AND ${subscriptions.unsubscribedAt} IS NULL) OR ${userEntries.starred} = true OR ${entries.type} = 'saved'
-    OR EXISTS (SELECT 1 FROM ${collectionEntries} ce WHERE ce.user_id = ${userEntries.userId} AND ce.entry_id = ${userEntries.entryId}))`;
+  return sql`(${userEntries.starred} = true OR ${userEntries.activeMemberships} > 0)`;
 }
 
 /**
- * Each entry's collections, empty for one in none. Membership is per-user
+ * Each entry's (active) collections, empty for one in none. Membership is per-user
  * entry state (changing it moves `user_entries.updated_at`), so an offline
  * store replaces an entry's memberships whenever its state is re-delivered.
  */
@@ -301,7 +296,14 @@ async function listCollectionMemberships(
       subscriptionId: collectionEntries.subscriptionId,
     })
     .from(collectionEntries)
-    .where(and(eq(collectionEntries.userId, userId), inArray(collectionEntries.entryId, entryIds)));
+    .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
+    .where(
+      and(
+        eq(collectionEntries.userId, userId),
+        inArray(collectionEntries.entryId, entryIds),
+        isNull(subscriptions.unsubscribedAt)
+      )
+    );
   const byEntry = new Map<string, string[]>(entryIds.map((id) => [id, []]));
   for (const row of rows) {
     byEntry.get(row.entryId)?.push(row.subscriptionId);

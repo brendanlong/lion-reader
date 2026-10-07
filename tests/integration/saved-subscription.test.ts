@@ -205,7 +205,7 @@ describe("the saved subscription (#1846)", () => {
     ).toEqual([webId]);
   });
 
-  it("leaves today's counters alone: saved articles still count once, as saved", async () => {
+  it("counts saved articles once, in Saved and in the saved subscription", async () => {
     const { userId, subscriptionId, savedFeedId } = await setup();
     // A saved article inserted while the saved subscription exists isn't
     // stamped with it: the saved subscription has no feed to match on.
@@ -222,11 +222,12 @@ describe("the saved subscription (#1846)", () => {
     expect(await caller.entries.count({})).toEqual({ unread: 3 });
     expect(
       await db
-        .select({ unread: subscriptions.unreadCount, starred: subscriptions.starredUnreadCount })
+        .select({ unread: subscriptions.unreadCount })
         .from(subscriptions)
         .where(eq(subscriptions.id, subscriptionId))
-    ).toEqual([{ unread: 0, starred: 0 }]);
+    ).toEqual([{ unread: 2 }]);
     expect(await reconcileCounters(db)).toEqual({
+      userEntriesFixed: 0,
       subscriptionsFixed: 0,
       usersFixed: 0,
       tagsFixed: 0,

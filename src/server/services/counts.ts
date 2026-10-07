@@ -7,7 +7,7 @@
  * Every unread badge is a trigger-maintained counter (spam excluded), read
  * directly — never a scan:
  *
- *   subscription  = subscriptions.unread_count (a collection's counts its members)
+ *   subscription  = subscriptions.unread_count (its unread memberships)
  *   tag           = tags.unread_count
  *   uncategorized = users.uncategorized_unread_count
  *   saved         = users.saved_unread_count
@@ -15,11 +15,11 @@
  *   all           = users.all_unread_count
  *
  * Tag, Uncategorized and All count distinct articles: one reachable through
- * both a feed and a collection (#1806) counts once. The database functions
- * `apply_unread_rows` and `recompute_list_counters` maintain them.
+ * several subscriptions (#1806, #1846) counts once. The database functions
+ * `apply_unread_memberships` and `recompute_list_counters` maintain them.
  */
 
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   collectionEntries,
@@ -140,9 +140,11 @@ export async function getBulkEntryRelatedCounts(
           await db
             .selectDistinct({ id: collectionEntries.subscriptionId })
             .from(collectionEntries)
+            .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
             .where(
               and(
                 eq(collectionEntries.userId, userId),
+                isNull(subscriptions.unsubscribedAt),
                 // One array parameter: a mark-all-read can pass more ids than a
                 // statement takes parameters.
                 sql`${collectionEntries.entryId} = ANY(${`{${entryIds.join(",")}}`}::uuid[])`

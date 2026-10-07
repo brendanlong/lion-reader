@@ -5,7 +5,7 @@
  * forms: `user_entries.subscription_id`, `collection_entries`, and saved
  * articles (`user_entries` rows of saved entries with no subscription, which
  * belong to the user's saved subscription). Nothing reads the copy yet, so the
- * daily `reconcile_counters` job runs this check to prove it complete before
+ * daily `reconcile_membership_counters` job runs this check to prove it complete before
  * phase 5 starts reading it. Any finding is a mirror-trigger bug and is logged
  * at error level, except before the backfill has finished (it marks the table
  * with `BACKFILLED_COMMENT`), when missing rows are expected and it's a

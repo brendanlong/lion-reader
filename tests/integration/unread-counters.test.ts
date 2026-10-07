@@ -1,12 +1,9 @@
 /**
- * Integration tests for the denormalized unread counters (issue #1117,
- * migration 0092): subscriptions.unread_count / starred_unread_count and
- * users.saved_unread_count / starred_unread_count, maintained by the
- * user_entries_counters_* statement triggers. Spam is permanently excluded.
- *
- * Nothing reads the counters yet (that's step 5b) — these tests verify the
- * WRITE side: after exercising every mutation path, the counters must equal
- * ground truth, which is asserted two ways:
+ * Integration tests for the denormalized unread counters (issue #1117; rules
+ * from #1846): subscriptions.unread_count and users.saved_unread_count /
+ * starred_unread_count, maintained by the counter triggers. Spam is
+ * permanently excluded. After exercising each mutation path, the counters
+ * must equal ground truth, which is asserted two ways:
  *   1. explicit expected values, and
  *   2. reconcileCounters() reporting ZERO fixes — the same self-healing sweep
  *      that runs in production, so "no drift after every path" is exactly the
@@ -38,10 +35,7 @@ import { createTestEntry, createTestFeed, createTestSubscription, createTestUser
 
 async function subscriptionCounters(subscriptionId: string) {
   const [row] = await db
-    .select({
-      unread: subscriptions.unreadCount,
-      starredUnread: subscriptions.starredUnreadCount,
-    })
+    .select({ unread: subscriptions.unreadCount })
     .from(subscriptions)
     .where(eq(subscriptions.id, subscriptionId));
   return row;
@@ -61,7 +55,12 @@ async function userCounters(userId: string) {
 /** Triggers must have kept everything exact: the sweep finds nothing to fix. */
 async function expectNoDrift() {
   const result = await reconcileCounters(db);
-  expect(result).toEqual({ subscriptionsFixed: 0, usersFixed: 0, tagsFixed: 0 });
+  expect(result).toEqual({
+    userEntriesFixed: 0,
+    subscriptionsFixed: 0,
+    usersFixed: 0,
+    tagsFixed: 0,
+  });
 }
 
 async function cleanupTables() {
@@ -90,10 +89,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
     const result = await createSubscription(db, userId, { url });
 
-    expect(await subscriptionCounters(result.subscriptionId)).toEqual({
-      unread: 2,
-      starredUnread: 0,
-    });
+    expect(await subscriptionCounters(result.subscriptionId)).toEqual({ unread: 2 });
     await expectNoDrift();
   });
 
@@ -113,7 +109,7 @@ describe("unread counters (triggers + reconciliation)", () => {
       .from(userEntries)
       .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, spamId)));
     expect(spamRow.isSpam).toBe(true);
-    expect(await subscriptionCounters(subId)).toEqual({ unread: 1, starredUnread: 0 });
+    expect(await subscriptionCounters(subId)).toEqual({ unread: 1 });
     await expectNoDrift();
   });
 
@@ -142,7 +138,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     await expectNoDrift();
   });
 
-  it("tracks starring, and reading a starred entry decrements both counters", async () => {
+  it("tracks starring, and reading a starred entry decrements both badges", async () => {
     const userId = await createTestUser();
     const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
@@ -153,11 +149,11 @@ describe("unread counters (triggers + reconciliation)", () => {
       .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
 
     await updateEntryStarred(db, userId, entryId, true);
-    expect(await subscriptionCounters(subId)).toEqual({ unread: 1, starredUnread: 1 });
+    expect(await subscriptionCounters(subId)).toEqual({ unread: 1 });
     expect((await userCounters(userId)).starredUnread).toBe(1);
 
     await markEntriesRead(db, userId, [{ id: entryId }], true);
-    expect(await subscriptionCounters(subId)).toEqual({ unread: 0, starredUnread: 0 });
+    expect(await subscriptionCounters(subId)).toEqual({ unread: 0 });
     expect((await userCounters(userId)).starredUnread).toBe(0);
 
     await updateEntryStarred(db, userId, entryId, false);
@@ -180,7 +176,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     await expectNoDrift();
   });
 
-  it("moves counts to the survivor on a feed merge (re-stamp UPDATE)", async () => {
+  it("counts a merged article in the survivor and in the subscription it left", async () => {
     const userId = await createTestUser();
     const oldFeedId = await createTestFeed({ url: "https://old.example.com/feed.xml" });
     const newFeedId = await createTestFeed({ url: "https://new.example.com/feed.xml" });
@@ -195,15 +191,16 @@ describe("unread counters (triggers + reconciliation)", () => {
       .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
     await updateEntryStarred(db, userId, entryId, true);
 
-    expect(await subscriptionCounters(oldSubId)).toEqual({ unread: 1, starredUnread: 1 });
+    expect(await subscriptionCounters(oldSubId)).toEqual({ unread: 1 });
 
     const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, oldFeedId));
     const [newFeed] = await db.select().from(feeds).where(eq(feeds.id, newFeedId));
     await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
 
-    // The re-stamp UPDATE moved the contribution between subscriptions.
-    expect(await subscriptionCounters(oldSubId)).toEqual({ unread: 0, starredUnread: 0 });
-    expect(await subscriptionCounters(existingNewSubId)).toEqual({ unread: 1, starredUnread: 1 });
+    // The article joins the survivor and stays in the (now inactive) old
+    // subscription, which still counts it (#1846).
+    expect(await subscriptionCounters(oldSubId)).toEqual({ unread: 1 });
+    expect(await subscriptionCounters(existingNewSubId)).toEqual({ unread: 1 });
     await expectNoDrift();
   });
 
@@ -222,7 +219,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     await expectNoDrift();
   });
 
-  it("keeps dead-subscription counters accurate (starred-orphan term of the all badge)", async () => {
+  it("keeps an unsubscribed subscription's counter accurate", async () => {
     const userId = await createTestUser();
     const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
@@ -235,24 +232,21 @@ describe("unread counters (triggers + reconciliation)", () => {
       .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
     await updateEntryStarred(db, userId, entryId, true);
 
-    // Unsubscribe: no user_entries write, counters frozen — and still correct,
-    // because the rows keep their stamp.
+    // An unsubscribed subscription keeps counting its memberships.
     await db
       .update(subscriptions)
       .set({ unsubscribedAt: new Date() })
       .where(eq(subscriptions.id, subId));
-    expect(await subscriptionCounters(subId)).toEqual({ unread: 1, starredUnread: 1 });
+    expect(await subscriptionCounters(subId)).toEqual({ unread: 1 });
 
-    // Reading the starred orphan flows through the dead sub's counters.
+    // Reading the starred article moves the inactive subscription's counter.
     await markEntriesRead(db, userId, [{ id: entryId }], true);
-    expect(await subscriptionCounters(subId)).toEqual({ unread: 0, starredUnread: 0 });
+    expect(await subscriptionCounters(subId)).toEqual({ unread: 0 });
     await expectNoDrift();
   });
 
-  it("computes the full 'all' badge algebra from the counters (step 5b, read side)", async () => {
-    // all = SUM(unread_count) over ACTIVE subs
-    //     + users.saved_unread_count
-    //     + SUM(starred_unread_count) over INACTIVE subs (starred orphans)
+  it("counts every visible unread article in All", async () => {
+    // All = unread articles that are starred or in an active subscription.
     const userId = await createTestUser();
 
     // Active subscription with 2 unread entries.
@@ -285,7 +279,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
     const counts = await getBulkEntryRelatedCounts(db, userId, []);
 
-    // all = 2 (active) + 1 (saved) + 1 (starred orphan on the inactive sub)
+    // all = 2 (active) + 1 (saved) + 1 (starred, on the inactive sub)
     expect(counts.all).toEqual({ unread: 4 });
     // starred = users.starred_unread_count = the one starred unread orphan
     expect(counts.starred).toEqual({ unread: 1 });
@@ -330,21 +324,23 @@ describe("unread counters (triggers + reconciliation)", () => {
       .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
     await updateEntryStarred(db, userId, entryId, true);
 
-    // Corrupt all four counters directly.
-    await db
-      .update(subscriptions)
-      .set({ unreadCount: 99, starredUnreadCount: 99 })
-      .where(eq(subscriptions.id, subId));
+    // Corrupt the counters, and the article's active_memberships, directly.
+    await db.update(subscriptions).set({ unreadCount: 99 }).where(eq(subscriptions.id, subId));
     await db
       .update(users)
       .set({ savedUnreadCount: 99, starredUnreadCount: 99 })
       .where(eq(users.id, userId));
+    await db
+      .update(userEntries)
+      .set({ activeMemberships: 5 })
+      .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
 
     const result = await reconcileCounters(db);
+    expect(result.userEntriesFixed).toBe(1);
     expect(result.subscriptionsFixed).toBeGreaterThanOrEqual(1);
     expect(result.usersFixed).toBeGreaterThanOrEqual(1);
 
-    expect(await subscriptionCounters(subId)).toEqual({ unread: 1, starredUnread: 1 });
+    expect(await subscriptionCounters(subId)).toEqual({ unread: 1 });
     expect(await userCounters(userId)).toEqual({ savedUnread: 0, starredUnread: 1 });
     await expectNoDrift();
   });

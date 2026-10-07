@@ -925,6 +925,13 @@
       "when": 1782955860000,
       "tag": "0132_subscription_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1782955920000,
+      "tag": "0133_counters_on_memberships",
+      "breakpoints": true
     }
   ]
 }

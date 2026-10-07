@@ -219,7 +219,9 @@ async function bulkCounts(
   let collectionIds: string[] = [];
   if (entryIds.length > 0) {
     const sql = `SELECT DISTINCT collection_entries.subscription_id FROM collection_entries
-WHERE collection_entries.user_id = ${q(userId)} AND collection_entries.entry_id = ANY(${uuidArray(entryIds)})`;
+INNER JOIN subscriptions ON subscriptions.id = collection_entries.subscription_id
+WHERE collection_entries.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
+  AND collection_entries.entry_id = ANY(${uuidArray(entryIds)})`;
     collectionIds = (await rows<{ subscription_id: string }>(db, sql)).map(
       (r) => r.subscription_id
     );
@@ -288,6 +290,18 @@ WHERE e.feed_id = ${q(feedId)}
 ON CONFLICT DO NOTHING`,
 });
 
+/** `lockSubscriptionMembers` (services/subscriptions.ts) for the subscriptions matching `where`. */
+const lockMembersSql = (userId: string, where: string): Statement => ({
+  label: "lock_members",
+  sql: `SELECT user_entries.entry_id FROM user_entries
+INNER JOIN subscription_entries ON subscription_entries.user_id = user_entries.user_id
+  AND subscription_entries.entry_id = user_entries.entry_id
+INNER JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
+WHERE user_entries.user_id = ${q(userId)} AND subscriptions.user_id = ${q(userId)} AND ${where}
+ORDER BY user_entries.entry_id
+FOR NO KEY UPDATE OF user_entries`,
+});
+
 /** `unsubscribe` (services/subscriptions.ts), from its existence check to its counts. */
 async function unsubscribeStatements(
   db: ClientBase,
@@ -309,15 +323,7 @@ async function unsubscribeStatements(
 WHERE ${sub} AND subscriptions.unsubscribed_at IS NULL LIMIT 1`,
     },
     // lockSubscriptionRow(..., { members: true })
-    {
-      label: "lock_members",
-      sql: `SELECT user_entries.entry_id FROM user_entries
-INNER JOIN collection_entries ON collection_entries.user_id = user_entries.user_id
-  AND collection_entries.entry_id = user_entries.entry_id
-WHERE collection_entries.subscription_id = ${q(subscriptionId)} AND collection_entries.user_id = ${q(userId)}
-ORDER BY user_entries.entry_id
-FOR NO KEY UPDATE OF user_entries`,
-    },
+    lockMembersSql(userId, `subscriptions.id = ${q(subscriptionId)}`),
     {
       label: "lock_subscription",
       sql: `SELECT subscriptions.id FROM subscriptions WHERE ${sub} FOR UPDATE`,
@@ -464,8 +470,7 @@ ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
   // The app sends the first page's cursor as `entriesSince` on every page.
   const since = (col: string) => (changes ? `(${after(col)} OR ${after(col)})` : after(col));
   const greatest = "GREATEST(entries.updated_at, user_entries.updated_at)";
-  const visible = `((subscriptions.id IS NOT NULL AND subscriptions.unsubscribed_at IS NULL) OR user_entries.starred = true OR entries.type = 'saved'
-    OR EXISTS (SELECT 1 FROM collection_entries ce WHERE ce.user_id = user_entries.user_id AND ce.entry_id = user_entries.entry_id))`;
+  const visible = "(user_entries.starred = true OR user_entries.active_memberships > 0)";
   const saved = savedFeedId(0);
   const entriesSql = `WITH changed_entries AS (
   (SELECT user_entries.entry_id FROM user_entries
@@ -564,7 +569,9 @@ FROM tags WHERE tags.user_id = ${q(U0)} AND tags.updated_at > ${ts(tagCursor.ts)
             label: "collection_memberships",
             sql: `SELECT collection_entries.entry_id, collection_entries.subscription_id
 FROM collection_entries
-WHERE collection_entries.user_id = ${q(U0)} AND collection_entries.entry_id IN (${list(stateChanged.map((r) => r.id))})`,
+INNER JOIN subscriptions ON subscriptions.id = collection_entries.subscription_id
+WHERE collection_entries.user_id = ${q(U0)} AND collection_entries.entry_id IN (${list(stateChanged.map((r) => r.id))})
+  AND subscriptions.unsubscribed_at IS NULL`,
           },
         ]
       : []),
@@ -1205,6 +1212,10 @@ ON CONFLICT (url) DO NOTHING`,
             sql: `SELECT count(*)::int FROM subscriptions
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.unsubscribed_at IS NULL`,
           },
+          lockMembersSql(
+            U0,
+            `subscriptions.feed_id = ${q(feedId)} AND subscriptions.unsubscribed_at IS NOT NULL`
+          ),
           {
             label: "upsert_subscription",
             sql: `INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at, fetch_full_content)
@@ -1336,12 +1347,10 @@ RETURNING entries.id`,
       const now = ts(nowIso());
       return {
         statements: [
-          {
-            label: "lock_entries",
-            sql: `SELECT user_entries.entry_id FROM user_entries
-WHERE user_entries.user_id = ${q(U0)} AND user_entries.subscription_id = ${q(subMergeSource)}
-ORDER BY user_entries.entry_id FOR NO KEY UPDATE`,
-          },
+          lockMembersSql(
+            U0,
+            `(subscriptions.id = ${q(subMergeSource)} OR subscriptions.feed_id = ${q(newFeed)})`
+          ),
           {
             label: "lock_old",
             sql: `SELECT subscriptions.feed_id, subscriptions.custom_title, subscriptions.fetch_full_content
@@ -1445,7 +1454,9 @@ LIMIT 1`,
           {
             label: "collections",
             sql: `SELECT collection_entries.subscription_id FROM collection_entries
+INNER JOIN subscriptions ON subscriptions.id = collection_entries.subscription_id
 WHERE collection_entries.user_id = ${q(U0)} AND collection_entries.entry_id = ${q(id)}
+  AND subscriptions.unsubscribed_at IS NULL
 ORDER BY collection_entries.subscription_id`,
           },
           {

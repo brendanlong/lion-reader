@@ -14,7 +14,14 @@ import { readFileSync } from "fs";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
+import {
+  entries,
+  feeds,
+  subscriptionEntries,
+  subscriptions,
+  userEntries,
+  users,
+} from "../../src/server/db/schema";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 const INDEX_NAME = "uq_entries_feed_guid_canonical";
@@ -55,16 +62,20 @@ async function stateOf(userId: string, entryId: string) {
 
 async function expectCountersMatchRecount(userId: string, subscriptionId: string) {
   const [sub] = await db
-    .select({ unread: subscriptions.unreadCount, starredUnread: subscriptions.starredUnreadCount })
+    .select({ unread: subscriptions.unreadCount })
     .from(subscriptions)
     .where(eq(subscriptions.id, subscriptionId));
   const [subActual] = await db
-    .select({
-      unread: sql<number>`count(*) filter (where not read)::int`,
-      starredUnread: sql<number>`count(*) filter (where starred and not read)::int`,
-    })
+    .select({ unread: sql<number>`count(*) filter (where not read)::int` })
     .from(userEntries)
-    .where(eq(userEntries.subscriptionId, subscriptionId));
+    .innerJoin(
+      subscriptionEntries,
+      and(
+        eq(subscriptionEntries.userId, userEntries.userId),
+        eq(subscriptionEntries.entryId, userEntries.entryId)
+      )
+    )
+    .where(eq(subscriptionEntries.subscriptionId, subscriptionId));
   expect(sub).toEqual(subActual);
 
   const [user] = await db
@@ -278,13 +289,10 @@ describe("migration 0109: merge scheme-twin entries", () => {
         await expectCountersMatchRecount(userId, subscriptionId);
       }
       const [subBothRow] = await db
-        .select({
-          unread: subscriptions.unreadCount,
-          starredUnread: subscriptions.starredUnreadCount,
-        })
+        .select({ unread: subscriptions.unreadCount })
         .from(subscriptions)
         .where(eq(subscriptions.id, subBoth));
-      expect(subBothRow).toEqual({ unread: 3, starredUnread: 1 });
+      expect(subBothRow).toEqual({ unread: 3 });
     } finally {
       await db.execute(sql.raw(createIndexStatement));
     }

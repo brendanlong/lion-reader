@@ -54,7 +54,7 @@ async function cleanup(): Promise<void> {
 
 async function counters(subscriptionId: string) {
   const [row] = await db
-    .select({ unread: subscriptions.unreadCount, starredUnread: subscriptions.starredUnreadCount })
+    .select({ unread: subscriptions.unreadCount })
     .from(subscriptions)
     .where(eq(subscriptions.id, subscriptionId));
   return row;
@@ -76,6 +76,7 @@ async function tagUnread(tagId: string): Promise<number> {
 
 async function expectNoDrift(): Promise<void> {
   expect(await reconcileCounters(db)).toEqual({
+    userEntriesFixed: 0,
     subscriptionsFixed: 0,
     usersFixed: 0,
     tagsFixed: 0,
@@ -103,18 +104,19 @@ describe("collections", () => {
   afterAll(cleanup);
 
   describe("counters", () => {
-    it("tracks unread and starred members through add, read, star and remove", async () => {
+    it("tracks unread members through add, read, star and remove", async () => {
       const { userId, entryA, entryB, collectionId } = await setup();
 
       await addEntriesToCollection(db, userId, collectionId, [entryA, entryB]);
-      expect(await counters(collectionId)).toEqual({ unread: 2, starredUnread: 0 });
+      expect(await counters(collectionId)).toEqual({ unread: 2 });
 
       await markEntriesRead(db, userId, [{ id: entryA }], true);
       await updateEntryStarred(db, userId, entryB, true);
-      expect(await counters(collectionId)).toEqual({ unread: 1, starredUnread: 1 });
+      expect(await counters(collectionId)).toEqual({ unread: 1 });
+      expect((await getGlobalUnreadCounts(db, userId)).starredUnread).toBe(1);
 
       await removeEntriesFromCollection(db, userId, collectionId, [entryB]);
-      expect(await counters(collectionId)).toEqual({ unread: 0, starredUnread: 0 });
+      expect(await counters(collectionId)).toEqual({ unread: 0 });
       await expectNoDrift();
     });
 
@@ -124,11 +126,11 @@ describe("collections", () => {
       const { userId, collectionId } = await setup();
       const saved = await uploadArticle(db, userId, { content: "Body", title: "Paper" });
       await addEntriesToCollection(db, userId, collectionId, [saved.id]);
-      expect(await counters(collectionId)).toEqual({ unread: 1, starredUnread: 0 });
+      expect(await counters(collectionId)).toEqual({ unread: 1 });
 
       await deleteSavedArticle(db, userId, saved.id);
 
-      expect(await counters(collectionId)).toEqual({ unread: 0, starredUnread: 0 });
+      expect(await counters(collectionId)).toEqual({ unread: 0 });
       await expectNoDrift();
     });
 
@@ -230,7 +232,7 @@ describe("collections", () => {
           .where(eq(collectionEntries.subscriptionId, collectionId))
       ).toEqual([]);
       expect(await getEntries(db, userId, [entryA])).toEqual([]);
-      expect(await counters(collectionId)).toEqual({ unread: 0, starredUnread: 0 });
+      expect(await counters(collectionId)).toEqual({ unread: 0 });
       await expectNoDrift();
     });
   });

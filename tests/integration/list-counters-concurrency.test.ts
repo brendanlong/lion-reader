@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import pg from "pg";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
@@ -22,9 +22,14 @@ import {
 } from "../../src/server/db/schema";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import { markEntriesRead } from "../../src/server/services/entries";
-import { setSubscriptionTags } from "../../src/server/services/subscriptions";
+import {
+  createSubscription,
+  setSubscriptionTags,
+  unsubscribe,
+} from "../../src/server/services/subscriptions";
 import { deleteTag } from "../../src/server/services/tags";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
+import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import {
   createTestEntry,
@@ -47,10 +52,23 @@ async function cleanup(): Promise<void> {
 
 async function expectNoDrift(): Promise<void> {
   expect(await reconcileCounters(db)).toEqual({
+    userEntriesFixed: 0,
     subscriptionsFixed: 0,
     usersFixed: 0,
     tagsFixed: 0,
   });
+}
+
+/** Waits until some backend is waiting on a lock `pid` holds. */
+async function waitUntilBlockedBy(pid: number): Promise<void> {
+  for (let i = 0; i < 500; i++) {
+    const result = await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`
+    );
+    if (result.rows[0].n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`nothing waited on backend ${pid}`);
 }
 
 async function expectAllFulfilled(promises: Array<Promise<unknown>>): Promise<void> {
@@ -131,6 +149,37 @@ describe("unread counters under concurrent writes", () => {
     await expectNoDrift();
   });
 
+  it("unsubscribing, resubscribing and deleting collections while articles are read all succeeds", async () => {
+    // (Un)subscribing moves every member's active_memberships (#1846), so it
+    // must lock their rows before the subscription's, like a mark-read.
+    const userId = await createTestUser();
+    const sources = [await feedWithEntries(userId, 5), await feedWithEntries(userId, 5)];
+    const [{ url }] = await db
+      .select({ url: feeds.url })
+      .from(feeds)
+      .innerJoin(subscriptions, eq(subscriptions.feedId, feeds.id))
+      .where(eq(subscriptions.id, sources[1].subscriptionId));
+    await unsubscribe(db, userId, sources[1].subscriptionId);
+    // Starred, so the unsubscribed feed's articles stay visible and readable.
+    await db
+      .update(userEntries)
+      .set({ starred: true })
+      .where(
+        and(eq(userEntries.userId, userId), inArray(userEntries.entryId, sources[1].entryIds))
+      );
+    const { subscription } = await createCollection(db, userId, "C");
+    const all = sources.flatMap((f) => f.entryIds);
+    await addEntriesToCollection(db, userId, subscription.id, all);
+
+    await expectAllFulfilled([
+      unsubscribe(db, userId, sources[0].subscriptionId),
+      createSubscription(db, userId, { url: url! }),
+      unsubscribe(db, userId, subscription.id),
+      ...all.map((id) => markEntriesRead(db, userId, [{ id }], true)),
+    ]);
+    await expectNoDrift();
+  });
+
   it("concurrent fan-outs of feeds with shared subscribers all succeed", async () => {
     // Each fan-out is one statement inserting rows for every subscriber. A
     // feed fetches one at a time (one job per feed), so the concurrency is
@@ -171,6 +220,45 @@ describe("unread counters under concurrent writes", () => {
     await expectAllFulfilled([merge, ...fanouts]);
     await expectNoDrift();
   });
+
+  it.each([false, true])(
+    "a fan-out racing an unsubscribe leaves the new article hidden (read: %s)",
+    async (read) => {
+      // The fan-out picks the subscription while the unsubscribe is still
+      // uncommitted, so the unsubscribe's trigger can't see the new row: the
+      // membership trigger must notice the unsubscribe itself, even when
+      // nothing it inserts is unread (a backfill).
+      const userId = await createTestUser();
+      const feedId = await createTestFeed();
+      const subscriptionId = await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { isBackfill: read });
+
+      const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      await client.connect();
+      try {
+        const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        await client.query("BEGIN");
+        await client.query("UPDATE subscriptions SET unsubscribed_at = now() WHERE id = $1", [
+          subscriptionId,
+        ]);
+        const fanout = createUserEntriesForFeed(feedId, [entryId]);
+        // Commit only once the fan-out is waiting on the unsubscribe's lock,
+        // so the race this test is about always happens.
+        await waitUntilBlockedBy(rows[0].pid);
+        await client.query("COMMIT");
+        await fanout;
+      } finally {
+        await client.end();
+      }
+
+      const [row] = await db
+        .select({ activeMemberships: userEntries.activeMemberships })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+      expect(row).toEqual({ activeMemberships: 0 });
+      await expectNoDrift();
+    }
+  );
 
   it("a recompute waits for a statement that moves articles between tags", async () => {
     // Read one article of a T1 feed and unread one of a T2 feed in one

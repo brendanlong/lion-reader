@@ -221,7 +221,7 @@ interface GoogleReaderUnreadCount {
  * trigger-maintained `unread_count` counter, the newest is a live seek over
  * `user_entries` — so the `Date.now()` fallback is not dead: it fires if the
  * denormalized counter has **drifted above** the real entry set (count > 0 but no
- * row to seek), the exact drift the daily `reconcile_counters` job repairs. It's
+ * row to seek), the exact drift the daily `reconcile_membership_counters` job repairs. It's
  * deliberately not "0": in that case either content genuinely just arrived or the
  * counter is transiently high, and signalling "new" (prompting one refetch) is
  * safe — it reverts to the real item time once the counter reconciles. "0" would
