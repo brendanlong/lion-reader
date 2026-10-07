@@ -63,6 +63,10 @@ BEGIN
     RETURN;
   END IF;
 
+  PERFORM 1 FROM subscriptions
+  WHERE id IN (SELECT unnest(p_sub))
+  ORDER BY id FOR NO KEY UPDATE;
+
   UPDATE subscriptions s
   SET unread_count = s.unread_count + d.n
   FROM (
