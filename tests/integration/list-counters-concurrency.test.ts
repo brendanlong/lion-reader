@@ -180,6 +180,46 @@ describe("unread counters under concurrent writes", () => {
     await expectNoDrift();
   });
 
+  it("a mark-read locks its article's subscriptions in id order", async () => {
+    // Two mark-reads of articles in the same feed and collection deadlocked
+    // when each updated the two subscription rows in the order its plan met
+    // them, which follows where the rows sit on disk (CI run 37675879817).
+    const userId = await createTestUser();
+    const { subscriptionId, entryIds } = await feedWithEntries(userId, 1);
+    const { subscription } = await createCollection(db, userId, "C");
+    await addEntriesToCollection(db, userId, subscription.id, entryIds);
+    const [lower, higher] = [subscriptionId, subscription.id].sort();
+    // Rewrite the lower row, so on disk it comes after the higher one.
+    await db
+      .update(subscriptions)
+      .set({ updatedAt: new Date() })
+      .where(eq(subscriptions.id, lower));
+
+    const holder = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    const probe = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await holder.connect();
+    await probe.connect();
+    try {
+      const { rows } = await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      await holder.query("BEGIN");
+      await holder.query("SELECT 1 FROM subscriptions WHERE id = $1 FOR NO KEY UPDATE", [lower]);
+      const markRead = markEntriesRead(db, userId, [{ id: entryIds[0] }], true);
+      await waitUntilBlockedBy(rows[0].pid);
+      // Waiting for the lower row, the mark-read must not hold the higher one.
+      await probe.query("BEGIN");
+      await probe.query("SELECT 1 FROM subscriptions WHERE id = $1 FOR NO KEY UPDATE NOWAIT", [
+        higher,
+      ]);
+      await probe.query("ROLLBACK");
+      await holder.query("COMMIT");
+      await markRead;
+    } finally {
+      await holder.end();
+      await probe.end();
+    }
+    await expectNoDrift();
+  });
+
   it("concurrent fan-outs of feeds with shared subscribers all succeed", async () => {
     // Each fan-out is one statement inserting rows for every subscriber. A
     // feed fetches one at a time (one job per feed), so the concurrency is

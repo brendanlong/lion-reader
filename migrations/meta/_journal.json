@@ -932,6 +932,13 @@
       "when": 1782955920000,
       "tag": "0133_counters_on_memberships",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1782955980000,
+      "tag": "0134_lock_subscriptions_in_order",
+      "breakpoints": true
     }
   ]
 }
