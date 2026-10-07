@@ -29,6 +29,7 @@ import {
 } from "../../src/server/services/subscriptions";
 import { deleteTag } from "../../src/server/services/tags";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
+import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import {
   createTestEntry,
@@ -207,6 +208,42 @@ describe("unread counters under concurrent writes", () => {
     await expectAllFulfilled([merge, ...fanouts]);
     await expectNoDrift();
   });
+
+  it.each([false, true])(
+    "a fan-out racing an unsubscribe leaves the new article hidden (read: %s)",
+    async (read) => {
+      // The fan-out picks the subscription while the unsubscribe is still
+      // uncommitted, so the unsubscribe's trigger can't see the new row: the
+      // membership trigger must notice the unsubscribe itself, even when
+      // nothing it inserts is unread (a backfill).
+      const userId = await createTestUser();
+      const feedId = await createTestFeed();
+      const subscriptionId = await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { isBackfill: read });
+
+      const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      await client.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("UPDATE subscriptions SET unsubscribed_at = now() WHERE id = $1", [
+          subscriptionId,
+        ]);
+        const fanout = createUserEntriesForFeed(feedId, [entryId]);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await client.query("COMMIT");
+        await fanout;
+      } finally {
+        await client.end();
+      }
+
+      const [row] = await db
+        .select({ activeMemberships: userEntries.activeMemberships })
+        .from(userEntries)
+        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+      expect(row).toEqual({ activeMemberships: 0 });
+      await expectNoDrift();
+    }
+  );
 
   it("a recompute waits for a statement that moves articles between tags", async () => {
     // Read one article of a T1 feed and unread one of a T2 feed in one

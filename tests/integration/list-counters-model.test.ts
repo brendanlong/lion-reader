@@ -4,9 +4,11 @@
  * Runs seeded random sequences of the operations that move counters — read,
  * star, collection membership, tagging, unsubscribing and resubscribing, feed
  * merges (onto a new feed, and onto one the user already follows), spam, new
- * articles, saving and deleting saved articles, mark-all-read, statements
- * moving rows both ways, deleting tags, collections and users — through the
- * code the app runs. After every step it checks that:
+ * articles (one by one, and a fan-out to every user of a shared feed),
+ * newsletters through the ingest path with unsubscribing and resubscribing,
+ * saving (upload and by URL, including a user's first save) and deleting saved
+ * articles, deleting feeds, mark-all-read, statements moving rows both ways,
+ * deleting tags, collections and users — through the code the app runs. After every step it checks that:
  *   1. every counter and the set of visible articles equal what #1846's rules
  *      give, computed here from the base facts (memberships, subscriptions,
  *      tags, read/starred/spam) rather than through any app or trigger code
@@ -26,6 +28,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
+  blockedSenders,
   collectionEntries,
   entries,
   feeds,
@@ -51,13 +54,17 @@ import {
 import { createSubscription, setSubscriptionTags } from "../../src/server/services/subscriptions";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { deleteTag } from "../../src/server/services/tags";
-import { deleteSavedArticle, uploadArticle } from "../../src/server/services/saved";
+import { deleteSavedArticle, saveArticle, uploadArticle } from "../../src/server/services/saved";
+import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
+import { processInboundEmail } from "../../src/server/email/process-inbound";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { checkSubscriptionEntries } from "../../src/server/services/subscription-entries";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
   createTestEntry,
+  createTestIngestAddress,
   createTestFeed,
   createTestSubscription,
   createTestTag,
@@ -85,6 +92,7 @@ function prng(seed: number) {
 }
 
 async function cleanup(): Promise<void> {
+  await db.delete(blockedSenders);
   await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
@@ -100,23 +108,45 @@ interface World {
   userId: string;
   feeds: Array<{ feedId: string; subscriptionId: string }>;
   emailSubscriptionId: string;
+  /** The ingest token newsletters are delivered to (processInboundEmail). */
+  ingestToken: string;
   collections: string[];
   tagIds: string[];
   entryIds: string[];
   savedIds: string[];
 }
 
-async function createWorld(): Promise<World> {
+/**
+ * A feed every world subscribes to, so one fan-out statement inserts rows for
+ * several users (set per seed).
+ */
+let sharedFeedId = "";
+/** The current worlds, for operations that reach every user. */
+let currentWorlds: World[] = [];
+
+/** The world's feeds other than the shared one. */
+function ownFeeds(w: World): World["feeds"] {
+  return w.feeds.filter((f) => f.feedId !== sharedFeedId);
+}
+
+async function createWorld({ withSaved }: { withSaved: boolean }): Promise<World> {
   const userId = await createTestUser();
+  const ingestToken = `token-${generateUuidv7()}`;
+  await createTestIngestAddress(userId, { token: ingestToken });
   const world: World = {
     userId,
     feeds: [],
     emailSubscriptionId: "",
+    ingestToken,
     collections: [],
     tagIds: [],
     entryIds: [],
     savedIds: [],
   };
+  world.feeds.push({
+    feedId: sharedFeedId,
+    subscriptionId: await createTestSubscription(userId, sharedFeedId),
+  });
   for (let i = 0; i < 3; i++) {
     const feedId = await createTestFeed();
     const subscriptionId = await createTestSubscription(userId, feedId);
@@ -142,7 +172,8 @@ async function createWorld(): Promise<World> {
       await createTestEntry(emailFeedId, { type: "email", isSpam, userIds: [userId] })
     );
   }
-  for (let i = 0; i < 2; i++) {
+  // The other world's first save comes later, creating its saved subscription.
+  for (let i = 0; withSaved && i < 2; i++) {
     const { id } = await uploadArticle(db, userId, { content: "x", title: `S${i}` });
     world.savedIds.push(id);
     world.entryIds.push(id);
@@ -439,10 +470,19 @@ const OPS: Array<[number, Op]> = [
         await deleteSavedArticle(db, w.userId, id);
         return `delete saved ${id}`;
       }
-      const article = await uploadArticle(db, w.userId, { content: "y", title: "New" });
+      if (rng.chance(0.5)) {
+        const article = await uploadArticle(db, w.userId, { content: "y", title: "New" });
+        w.savedIds.push(article.id);
+        w.entryIds.push(article.id);
+        return `upload ${article.id}`;
+      }
+      const article = await saveArticle(db, w.userId, {
+        url: `https://example.com/saved/${generateUuidv7()}`,
+        html: "<html><body><article><h1>Saved</h1><p>A saved article body, long enough to keep.</p></article></body></html>",
+      });
       w.savedIds.push(article.id);
       w.entryIds.push(article.id);
-      return `save ${article.id}`;
+      return `save by URL ${article.id}`;
     },
   ],
   [
@@ -497,7 +537,9 @@ OPS.push(
     async (w, rng) => {
       // A redirect merge onto a new feed: re-stamps the entries, moves the
       // tags, unsubscribes the old subscription and subscribes to the new one.
-      const index = w.feeds.indexOf(rng.pick(w.feeds));
+      // Never the shared feed: a merge moves every user's subscription to it,
+      // and the other world would keep resubscribing to a redirected feed.
+      const index = w.feeds.indexOf(rng.pick(ownFeeds(w)));
       const old = w.feeds[index];
       const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, old.feedId));
       const [newFeed] = await db
@@ -519,8 +561,8 @@ OPS.push(
     async (w, rng) => {
       // A redirect merge onto another feed the user follows (or followed):
       // the survivor already holds some articles and keeps its own tags.
-      const from = w.feeds.indexOf(rng.pick(w.feeds));
-      const onto = rng.pick(w.feeds.filter((f) => f.feedId !== w.feeds[from].feedId));
+      const from = w.feeds.indexOf(rng.pick(ownFeeds(w)));
+      const onto = rng.pick(ownFeeds(w).filter((f) => f.feedId !== w.feeds[from].feedId));
       if (!onto) return "merge onto existing: one feed";
       const old = w.feeds[from];
       const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, old.feedId));
@@ -558,6 +600,75 @@ OPS.push(
         .set({ read: sql`NOT ${userEntries.read}` })
         .where(and(eq(userEntries.userId, w.userId), inArray(userEntries.entryId, ids)));
       return `flip ${ids.join(",")}`;
+    },
+  ]
+);
+
+OPS.push(
+  [
+    2,
+    async () => {
+      // A fetch of the shared feed: one statement fanning out to every world
+      // still subscribed (createUserEntriesForFeed, as the fetch job does).
+      const entryId = await createTestEntry(sharedFeedId);
+      await createUserEntriesForFeed(sharedFeedId, [entryId]);
+      for (const world of currentWorlds) world.entryIds.push(entryId);
+      return `fan out ${entryId}`;
+    },
+  ],
+  [
+    2,
+    async (w, rng) => {
+      // Newsletters from a second sender, through the real ingest path:
+      // delivery creates (or reactivates) the subscription, unsubscribing
+      // blocks the sender, and unblocking lets the next issue resubscribe.
+      const sender = `letters-${w.userId}@example.com`;
+      const [sub] = await db
+        .select({
+          id: subscriptions.id,
+          active: sql<boolean>`${subscriptions.unsubscribedAt} IS NULL`,
+        })
+        .from(subscriptions)
+        .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
+        .where(and(eq(subscriptions.userId, w.userId), eq(feeds.emailSenderPattern, sender)));
+      const caller = createCaller(await createAuthContext(w.userId));
+      if (sub?.active && rng.chance(0.3)) {
+        await caller.subscriptions.delete({ id: sub.id });
+        return `unsubscribe email ${sub.id}`;
+      }
+      if (sub && !sub.active) {
+        const [blocked] = await db
+          .select({ id: blockedSenders.id })
+          .from(blockedSenders)
+          .where(and(eq(blockedSenders.userId, w.userId), eq(blockedSenders.senderEmail, sender)));
+        if (blocked) await caller.blockedSenders.unblock({ id: blocked.id });
+      }
+      const result = await processInboundEmail({
+        to: `${w.ingestToken}@ingest.lionreader.com`,
+        from: { address: sender, name: "Letters" },
+        subject: "Issue",
+        messageId: `<${generateUuidv7()}@example.com>`,
+        html: "<p>Issue</p>",
+        headers: {},
+      });
+      if (result.entryId) w.entryIds.push(result.entryId);
+      return `email ${result.entryId ?? "dropped"}`;
+    },
+  ],
+  [
+    1,
+    async (w, rng) => {
+      // Deleting a feed (as account deletion does an orphaned one): its
+      // entries, their rows and memberships, and the subscription go by
+      // cascade. The world then follows a fresh feed in its place.
+      const gone = rng.pick(ownFeeds(w));
+      if (!gone) return "delete feed: none";
+      await db.delete(feeds).where(eq(feeds.id, gone.feedId));
+      const feedId = await createTestFeed();
+      const fresh = { feedId, subscriptionId: await createTestSubscription(w.userId, feedId) };
+      w.feeds = w.feeds.map((f) => (f.feedId === gone.feedId ? fresh : f));
+      w.entryIds.push(await createTestEntry(feedId, { userIds: [w.userId] }));
+      return `delete feed ${gone.feedId}`;
     },
   ]
 );
@@ -635,7 +746,12 @@ describe("unread counters under random operations", () => {
     async (seed) => {
       const rng = prng(seed);
       // Two users, so a counter leaking across users shows up as drift.
-      const worlds = [await createWorld(), await createWorld()];
+      sharedFeedId = await createTestFeed();
+      const worlds = [
+        await createWorld({ withSaved: true }),
+        await createWorld({ withSaved: false }),
+      ];
+      currentWorlds = worlds;
       await expectBadgesMatchLists(worlds[0].userId);
 
       const history: string[] = [];
@@ -645,7 +761,7 @@ describe("unread counters under random operations", () => {
           // Deleting a user (with whatever collections and members it has)
           // must leave everyone else's counters exact.
           await db.delete(users).where(eq(users.id, worlds[index].userId));
-          worlds[index] = await createWorld();
+          worlds[index] = await createWorld({ withSaved: false });
           history.push(`delete user, new world ${worlds[index].userId}`);
         }
         const world = worlds[index];

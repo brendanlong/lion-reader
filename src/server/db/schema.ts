@@ -1110,10 +1110,11 @@ export const jobs = pgTable(
       .where(sql`type = 'fetch_feed'`),
     // Enforce one row per singleton job type so claimSingletonJob's
     // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
+    // reconcile_counters is the parked row of a retired type (migration 0133).
     uniqueIndex("jobs_singleton_type_unique")
       .on(table.type)
       .where(
-        sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters', 'backfill_getting_started')`
+        sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters', 'reconcile_membership_counters', 'backfill_getting_started')`
       ),
   ]
 );

@@ -467,7 +467,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
         case "cleanup":
           result = await handleCleanup();
           break;
-        case "reconcile_counters":
+        case "reconcile_membership_counters":
           result = await handleReconcileCounters();
           break;
         case "backfill_getting_started":

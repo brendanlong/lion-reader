@@ -18,8 +18,10 @@
 -- unchanged: for every article it can reach, the new rules give the same
 -- answers as the old ones.
 --
--- Locks: adding the column takes ACCESS EXCLUSIVE on user_entries, so reads
--- of it wait for this migration. Take every lock up front in the counter
+-- Locks: adding the column takes ACCESS EXCLUSIVE on user_entries, so every
+-- read and write of it waits for this migration (about 3 s at production's
+-- size, plus up to lock_timeout to get the lock): deploy at a quiet time or
+-- with maintenance mode on. Take every lock up front in the counter
 -- triggers' order (user_entries, subscription_entries, subscriptions).
 SET LOCAL lock_timeout = '5s';
 LOCK TABLE user_entries IN ACCESS EXCLUSIVE MODE;
@@ -28,9 +30,13 @@ LOCK TABLE subscriptions IN SHARE ROW EXCLUSIVE MODE;
 
 -- The previous release's daily reconcile_counters job recomputes the counters
 -- by its own rules, which differ for the saved subscription and merged-away
--- ones. Keep it from running while that release is still up.
-UPDATE jobs SET next_run_at = GREATEST(next_run_at, now() + interval '2 hours')
-WHERE type = 'reconcile_counters';
+-- ones. Park it for good, so neither that release nor a rollback to it ever
+-- runs it; this release reconciles under a new singleton type.
+UPDATE jobs SET next_run_at = 'infinity' WHERE type = 'reconcile_counters';
+DROP INDEX jobs_singleton_type_unique;
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON jobs (type)
+  WHERE type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters',
+                 'reconcile_membership_counters', 'backfill_getting_started');
 
 -- The old counter triggers, replaced below.
 DROP TRIGGER user_entries_counters_insert_trigger ON user_entries;
@@ -76,8 +82,7 @@ ALTER TABLE subscription_entries DROP CONSTRAINT subscription_entries_user_id_en
 ALTER TABLE subscription_entries
   ADD CONSTRAINT subscription_entries_user_id_entry_id_fkey
   FOREIGN KEY (user_id, entry_id) REFERENCES user_entries (user_id, entry_id)
-  ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED NOT VALID;
-ALTER TABLE subscription_entries VALIDATE CONSTRAINT subscription_entries_user_id_entry_id_fkey;
+  ON UPDATE CASCADE DEFERRABLE INITIALLY DEFERRED;
 
 -- A new row's active_memberships counts its source subscription if active, or
 -- for a saved article the saved subscription the mirror adds it to. The
@@ -480,7 +485,25 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM changed_rows) THEN
     RETURN NULL;
   END IF;
+  -- A membership added while its subscription is being (un)subscribed: that
+  -- statement's trigger can't see this uncommitted membership, so this one
+  -- must see its outcome. Lock the subscriptions (sorted; they follow the
+  -- memberships in the lock order), so everything below reads them settled.
+  IF TG_OP = 'INSERT' THEN
+    PERFORM 1 FROM subscriptions
+    WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
+    ORDER BY id FOR NO KEY UPDATE;
+  END IF;
   IF v_mode = 'new_rows' THEN
+    -- The fill trigger counted each row's one membership by what it saw;
+    -- correct the rows whose subscription has (un)subscribed since. This
+    -- update moves All through the user_entries update trigger.
+    UPDATE user_entries ue
+    SET active_memberships = (s.unsubscribed_at IS NULL)::int
+    FROM changed_rows c
+    JOIN subscriptions s ON s.id = c.subscription_id
+    WHERE ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+      AND ue.active_memberships <> (s.unsubscribed_at IS NULL)::int;
     PERFORM apply_unread_memberships(array_agg(1), array_agg(c.user_id), array_agg(c.entry_id),
                                      array_agg(c.subscription_id), true)
     FROM changed_rows c
@@ -554,7 +577,10 @@ $$;
 -- membership and keeps the old one. Statement-level, so the survivor's
 -- memberships are written, and counted, in one statement rather than one per
 -- row; the cost is a pass over every update's changed rows. Named to fire
--- before the counter trigger.
+-- before the counter trigger. Don't re-stamp and flip read (or spam) in one
+-- UPDATE: the new membership is counted here by the row's new state, and the
+-- counter trigger then counts the flip over every membership, this one
+-- included, twice. No statement does that today.
 CREATE OR REPLACE FUNCTION user_entries_copy_membership_restamp() RETURNS trigger
     LANGUAGE plpgsql
     AS $$

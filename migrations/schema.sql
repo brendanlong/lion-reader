@@ -254,7 +254,18 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM changed_rows) THEN
     RETURN NULL;
   END IF;
+  IF TG_OP = 'INSERT' THEN
+    PERFORM 1 FROM subscriptions
+    WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
+    ORDER BY id FOR NO KEY UPDATE;
+  END IF;
   IF v_mode = 'new_rows' THEN
+    UPDATE user_entries ue
+    SET active_memberships = (s.unsubscribed_at IS NULL)::int
+    FROM changed_rows c
+    JOIN subscriptions s ON s.id = c.subscription_id
+    WHERE ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+      AND ue.active_memberships <> (s.unsubscribed_at IS NULL)::int;
     PERFORM apply_unread_memberships(array_agg(1), array_agg(c.user_id), array_agg(c.entry_id),
                                      array_agg(c.subscription_id), true)
     FROM changed_rows c
@@ -1313,7 +1324,7 @@ CREATE INDEX idx_users_last_active_at ON public.users USING btree (last_active_a
 
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
 
-CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_counters'::text, 'backfill_getting_started'::text]));
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_counters'::text, 'reconcile_membership_counters'::text, 'backfill_getting_started'::text]));
 
 CREATE UNIQUE INDEX uq_entries_feed_guid_canonical ON public.entries USING btree (feed_id, regexp_replace(guid, '^https?://'::text, 'https://'::text)) WHERE (type = 'web'::public.feed_type);
 
