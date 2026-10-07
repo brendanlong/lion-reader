@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
+  subscriptionEntries,
   entries,
   feeds,
   subscriptionTags,
@@ -214,7 +215,7 @@ describe("collections", () => {
       expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(0);
     });
 
-    it("deleting a collection empties it and hides members of unsubscribed sources", async () => {
+    it("deleting a collection keeps its memberships and hides members of unsubscribed sources", async () => {
       const { userId, sourceId, entryA, collectionId } = await setup();
       await addEntriesToCollection(db, userId, collectionId, [entryA]);
       await db
@@ -225,19 +226,22 @@ describe("collections", () => {
 
       await caller.subscriptions.delete({ id: collectionId });
 
+      // Like an unsubscribed feed's, the memberships stay and stop counting
+      // anywhere but the collection's own counter (#1846).
       expect(
         await db
-          .select()
-          .from(collectionEntries)
-          .where(eq(collectionEntries.subscriptionId, collectionId))
-      ).toEqual([]);
+          .select({ entryId: subscriptionEntries.entryId })
+          .from(subscriptionEntries)
+          .where(eq(subscriptionEntries.subscriptionId, collectionId))
+      ).toEqual([{ entryId: entryA }]);
       expect(await getEntries(db, userId, [entryA])).toEqual([]);
-      expect(await counters(collectionId)).toEqual({ unread: 0 });
+      expect(await counters(collectionId)).toEqual({ unread: 1 });
+      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(0);
       await expectNoDrift();
     });
   });
 
-  it("never strands a member in a collection deleted while it was being added to", async () => {
+  it("keeps the counters exact when a collection is deleted while being added to", async () => {
     for (let i = 0; i < 5; i++) {
       const { userId, entryA, collectionId } = await setup();
       const caller = createCaller(await createAuthContext(userId));
@@ -247,12 +251,7 @@ describe("collections", () => {
         caller.subscriptions.delete({ id: collectionId }),
       ]);
 
-      expect(
-        await db
-          .select()
-          .from(collectionEntries)
-          .where(eq(collectionEntries.subscriptionId, collectionId))
-      ).toEqual([]);
+      await expectNoDrift();
     }
   });
 

@@ -191,7 +191,11 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
 }
 
 function entryTagScope(queryClient: QueryClient, entry: EntryRow): EntryTagScope | undefined {
-  if (!entry.subscriptionId) return { tagIds: new Set(), uncategorized: false };
+  // Saved articles (whose subscription is the saved one, which no list shows)
+  // belong to no tag list and not to Uncategorized.
+  if (!entry.subscriptionId || entry.type === "saved") {
+    return { tagIds: new Set(), uncategorized: false };
+  }
   const subscription = getLocalDb(queryClient).subscriptions.rows.getSynced(entry.subscriptionId);
   if (!subscription) return undefined;
   return {

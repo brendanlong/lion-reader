@@ -44,7 +44,8 @@ async function subscriptionCounters(subscriptionId: string) {
 async function userCounters(userId: string) {
   const [row] = await db
     .select({
-      savedUnread: users.savedUnreadCount,
+      savedUnread: sql<number>`COALESCE((SELECT unread_count FROM subscriptions s
+        WHERE s.user_id = users.id AND s.type = 'saved'), 0)`.mapWith(Number),
       starredUnread: users.starredUnreadCount,
     })
     .from(users)
@@ -283,7 +284,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     expect(counts.all).toEqual({ unread: 4 });
     // starred = users.starred_unread_count = the one starred unread orphan
     expect(counts.starred).toEqual({ unread: 1 });
-    // saved = users.saved_unread_count
+    // saved = the saved subscription's count
     expect(counts.saved).toEqual({ unread: 1 });
     await expectNoDrift();
   });
@@ -326,10 +327,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
     // Corrupt the counters, and the article's active_memberships, directly.
     await db.update(subscriptions).set({ unreadCount: 99 }).where(eq(subscriptions.id, subId));
-    await db
-      .update(users)
-      .set({ savedUnreadCount: 99, starredUnreadCount: 99 })
-      .where(eq(users.id, userId));
+    await db.update(users).set({ starredUnreadCount: 99 }).where(eq(users.id, userId));
     await db
       .update(userEntries)
       .set({ activeMemberships: 5 })

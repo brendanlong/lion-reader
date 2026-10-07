@@ -217,15 +217,6 @@ async function membershipCount(subscriptionId: string): Promise<number> {
   return n;
 }
 
-/**
- * Where today's triggers differ from #1846's rules; phase 5 makes them agree
- * and deletes these.
- */
-const TODAY = {
-  /** Deleting a collection empties it, instead of keeping its memberships. */
-  deletedCollectionsEmptied: true,
-};
-
 interface ExpectedState {
   visible: string[];
   /** Each article's `user_entries.active_memberships`. */
@@ -346,7 +337,8 @@ async function expectCountersMatchModel(userId: string, context: string): Promis
       all: users.allUnreadCount,
       uncategorized: users.uncategorizedUnreadCount,
       starred: users.starredUnreadCount,
-      saved: users.savedUnreadCount,
+      // The previous release's copy of the saved subscription's count.
+      saved: sql<number>`users.saved_unread_count`,
     })
     .from(users)
     .where(eq(users.id, userId));
@@ -522,7 +514,7 @@ const OPS: Array<[number, Op]> = [
         const before = await membershipCount(id);
         await createCaller(await createAuthContext(w.userId)).subscriptions.delete({ id });
         // A deleted collection's memberships stay, and stop counting.
-        expect(await membershipCount(id)).toBe(TODAY.deletedCollectionsEmptied ? 0 : before);
+        expect(await membershipCount(id)).toBe(before);
         return `delete collection ${id}`;
       }
       w.collections.push((await createCollection(db, w.userId, "New")).subscription.id);
@@ -730,7 +722,11 @@ async function expectBadgesMatchLists(userId: string): Promise<void> {
       })
     ).items.length;
   const [globals] = await db
-    .select({ starred: users.starredUnreadCount, saved: users.savedUnreadCount })
+    .select({
+      starred: users.starredUnreadCount,
+      saved: sql<number>`COALESCE((SELECT unread_count FROM subscriptions s
+        WHERE s.user_id = users.id AND s.type = 'saved'), 0)`,
+    })
     .from(users)
     .where(eq(users.id, userId));
   expect(globals.starred, "Starred").toBe(await listed({ starredOnly: true }));

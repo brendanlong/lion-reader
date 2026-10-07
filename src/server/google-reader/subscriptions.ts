@@ -1,18 +1,16 @@
 /**
  * Google Reader subscription enumeration & feed-stream resolution.
  *
- * The per-user saved-articles feed is exposed to Google Reader clients as a
- * synthetic, uncategorized "Saved Articles" subscription (issue #730). It has no
- * real subscription row, so every endpoint that lists subscriptions or resolves a
- * `feed/{int64}` stream has to account for it. Rather than re-deriving that
- * special case in each route handler — which is how mark-all-as-read once ended
- * up silently no-op'ing on the saved feed (issue #1069) — the handlers go through
- * the helpers here, so the saved feed is materialized in exactly one place.
+ * The user's saved subscription is exposed to Google Reader clients as an
+ * uncategorized "Saved Articles" subscription (issue #730). The app's own
+ * subscription lists hide it (#1846), so every endpoint that lists
+ * subscriptions or resolves a `feed/{int64}` stream goes through the helpers
+ * here, which add it in exactly one place (issue #1069).
  */
 
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { feeds, subscriptions, users } from "@/server/db/schema";
+import { subscriptions } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { getGlobalUnreadCounts } from "@/server/services/counts";
 import type { ListEntriesParams } from "@/server/services/entries";
@@ -21,8 +19,7 @@ import { resolveFeedStream } from "./id";
 
 /**
  * A subscription plus its Google Reader feed stream serial
- * (`subscriptions.greader_stream_id`, or the saved feed's for the synthetic
- * saved subscription). The compat id is kept off the shared `Subscription` type
+ * (`subscriptions.greader_stream_id`). The compat id is kept off the shared `Subscription` type
  * — which flows to the main app and MCP, where a bigint can't be JSON-serialized
  * — and attached only here where the Google Reader layer needs it.
  */
@@ -44,13 +41,14 @@ export type GreaderFeedFilter =
 
 /**
  * Resolves a `feed/{int64}` stream to the entries-service filter that selects its
- * entries: a real subscription id, or the `type: "saved"` filter for the
- * saved-articles feed (which has no subscription row — issue #730). Returns null
- * when the int64 matches nothing the user owns.
+ * entries: a subscription id, or for the saved subscription the `type: "saved"`
+ * filter (Saved, the saved subscription's members; it isn't a subscription
+ * filter the app accepts). Returns null when the int64 matches nothing the user
+ * owns.
  *
  * This is the single place a Google Reader feed stream becomes a service filter,
  * so stream/contents, stream/items/ids, and mark-all-as-read all treat the
- * synthetic saved feed identically.
+ * saved subscription identically.
  */
 export async function resolveFeedStreamFilter(
   db: typeof dbType,
@@ -66,17 +64,16 @@ export async function resolveFeedStreamFilter(
 
 /**
  * Enumerates every subscription a Google Reader client should see, with the
- * per-user saved-articles feed appended as a synthetic subscription (issue #730).
+ * user's saved subscription appended as "Saved Articles" (issue #730).
  * Google Reader has no pagination on the wire, so the real subscriptions are
  * fetched in a single unbounded query (`listAllSubscriptions`) rather than a
- * cursor loop, concurrently with the saved-feed lookup.
+ * cursor loop, concurrently with the saved-subscription lookup.
  *
- * Centralizing the saved-feed append here means subscription/list and
+ * Centralizing the saved append here means subscription/list and
  * unread-count inherit it for free instead of each re-deriving it (issue #1069).
  *
  * Unread counts are trigger-maintained counters (issue #1117, step 5b) — a
- * free column read per subscription plus one users-row read for the saved
- * feed — so the old `includeUnreadCounts` opt-out (issue #1074) is gone; every
+ * free column read per subscription — so the old `includeUnreadCounts` opt-out (issue #1074) is gone; every
  * caller gets real counts. Spam never counts (the counters exclude it).
  *
  * Collections are left out: Google Reader clients file each item under its
@@ -122,43 +119,33 @@ export async function listGreaderSubscriptions(
 }
 
 /**
- * The saved-articles feed as a synthetic `Subscription`, or null if the user has
- * no saved feed yet (a user who has never saved anything gets no empty feed). It
- * carries its unread count and enough metadata to be formatted and counted
- * exactly like a real subscription (uncategorized, titled "Saved Articles"), so
- * downstream formatting needs no saved special case. `subscribedAt` is the epoch
- * — the saved feed has no meaningful subscription time.
+ * The saved subscription as Google Reader's "Saved Articles" subscription, or
+ * null if the user has none yet (a user who has never saved anything gets no
+ * empty feed). Formatted and counted exactly like a real subscription
+ * (uncategorized, titled "Saved Articles"). `subscribedAt` is the epoch, as it
+ * has always been for this stream.
  *
- * Module-private: routes go through `listGreaderSubscriptions` so the saved feed
- * is appended in exactly one place (issue #1069).
+ * Module-private: routes go through `listGreaderSubscriptions` so it is
+ * appended in exactly one place (issue #1069).
  */
 async function getSavedSubscription(
   db: typeof dbType,
   userId: string
 ): Promise<GreaderSubscription | null> {
-  // The saved feed's own greader_stream_id is its Google Reader feed stream id
-  // (it has no subscription row — issue #730). Fetch it together with the row's
-  // existence; a user who has never saved anything has no saved feed and gets no
-  // synthetic subscription.
-  const [feedRow] = await db
-    .select({ id: feeds.id, greaderStreamId: feeds.greaderStreamId })
-    .from(feeds)
-    .where(and(eq(feeds.userId, userId), eq(feeds.type, "saved")))
-    .limit(1);
-  if (!feedRow) return null;
-
-  // The saved badge is the trigger-maintained users.saved_unread_count
-  // counter (migration 0092) — a single-row read, so there's no wasted work
-  // for callers that ignore counts (the issue #1074 opt-out is moot).
   const [row] = await db
-    .select({ unread: users.savedUnreadCount })
-    .from(users)
-    .where(eq(users.id, userId));
-  const unread = row?.unread ?? 0;
+    .select({
+      id: subscriptions.id,
+      greaderStreamId: subscriptions.greaderStreamId,
+      unread: subscriptions.unreadCount,
+    })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "saved")))
+    .limit(1);
+  if (!row) return null;
 
   return {
-    id: feedRow.id,
-    greaderStreamId: feedRow.greaderStreamId,
+    id: row.id,
+    greaderStreamId: row.greaderStreamId,
     type: "saved",
     url: null,
     title: SAVED_FEED_TITLE,
@@ -166,7 +153,7 @@ async function getSavedSubscription(
     description: null,
     siteUrl: null,
     subscribedAt: new Date(0),
-    unreadCount: unread,
+    unreadCount: row.unread,
     tags: [],
     fetchFullContent: false,
   };
@@ -175,32 +162,23 @@ async function getSavedSubscription(
 /**
  * Per-feed unread count and newest visible item time for the Google Reader
  * unread-count endpoint, both keyed by the feed stream serial `formatUnreadCounts`
- * emits `feed/{n}` from: the subscription's `greader_stream_id`, or the saved
- * feed's for the synthetic saved feed (issue #730). Returned as the
- * `{ subscriptions, newestItemAtByStreamId }` pair that endpoint feeds straight
- * into `formatUnreadCounts`.
+ * emits `feed/{n}` from (`subscriptions.greader_stream_id`, the saved
+ * subscription's included). Returned as the `{ subscriptions,
+ * newestItemAtByStreamId }` pair that endpoint feeds straight into
+ * `formatUnreadCounts`.
  *
- * The two used to be separate reads (subscription counts + a per-feed newest map),
- * which opened a benign TOCTOU: a feed gaining its first visible entry between the
- * reads could be counted (unread > 0) yet be absent from the newest map (issue
- * #1092). They're now derived from a **single statement**, so both come from one
- * snapshot and the race is structurally impossible — no transaction needed. This
- * became clean once the unread count was a trigger-maintained counter column
- * (`subscriptions.unread_count` / `users.saved_unread_count`, issue #1117): the
- * count is a free column read here, identical to what `user_feeds` exposes (the
- * view selects the same column, filtered by the same `unsubscribed_at IS NULL`),
- * so there's no spam/visibility logic duplicated from `buildSubscriptionBaseQuery`.
+ * Both come from a **single statement**, so one snapshot: a feed gaining its
+ * first visible entry between two reads could otherwise be counted (unread > 0)
+ * yet be absent from the newest map (issue #1092). The count is the
+ * trigger-maintained `subscriptions.unread_count`, the same column `user_feeds`
+ * exposes.
  *
- * "Newest visible" is the most recent entry — by `COALESCE(published_at,
- * fetched_at)`, matching stream ordering — that the user has a `user_entries` row
- * for (the same record `visible_entries` treats as visibility). Read state is
- * ignored (a read article is still the stream's newest item) and spam is included,
- * so a feed with an unread item always has a newest. It's a per-subscription seek:
- * a LATERAL `LIMIT 1` over `user_entries` reads the newest attributed row straight
- * off `idx_user_entries_subscription_timeline` (subscription_id,
- * published_or_fetched_at DESC, entry_id DESC — migration 0088). The saved feed
- * has no subscription row, so its arm looks up newest by feed id directly and its
- * count from `users.saved_unread_count`. Cost is O(subscriptions) index seeks.
+ * "Newest visible" is the subscription's newest membership by sort key
+ * (`COALESCE(published_at, fetched_at)`, matching stream ordering): read state
+ * is ignored (a read article is still the stream's newest item) and spam is
+ * included, so a feed with an unread item always has a newest. It's a LATERAL
+ * `LIMIT 1` per subscription off `idx_subscription_entries_timeline`, so
+ * O(subscriptions) index seeks.
  */
 export async function getGreaderUnreadCounts(
   db: typeof dbType,
@@ -211,41 +189,26 @@ export async function getGreaderUnreadCounts(
   /** The All badge, for the reading-list total. */
   readingListUnread: number;
 }> {
-  // Key both arms by the Google Reader feed stream id — the subscription's
-  // greader_stream_id, or the saved feed's — so the result feeds straight into
-  // formatUnreadCounts, which emits `feed/{streamId}`. Postgres returns bigint
-  // (int8) as a decimal string, which is exactly what the wire id needs.
+  // Keyed by the Google Reader feed stream id, so the result feeds straight
+  // into formatUnreadCounts, which emits `feed/{streamId}`. Postgres returns
+  // bigint (int8) as a decimal string, which is exactly what the wire id needs.
+  // The saved subscription is included (as "Saved Articles"); collections
+  // aren't (see listGreaderSubscriptions).
   const result = await db.execute(sql`
     SELECT subscriptions.greader_stream_id AS stream_id,
       subscriptions.unread_count AS unread,
       latest.newest AS newest
     FROM subscriptions
     LEFT JOIN LATERAL (
-      SELECT ue.published_or_fetched_at AS newest
-      FROM user_entries ue
-      WHERE ue.subscription_id = subscriptions.id
-      ORDER BY ue.published_or_fetched_at DESC, ue.entry_id DESC
+      SELECT se.published_or_fetched_at AS newest
+      FROM subscription_entries se
+      WHERE se.subscription_id = subscriptions.id
+      ORDER BY se.published_or_fetched_at DESC, se.entry_id DESC
       LIMIT 1
     ) latest ON true
     WHERE subscriptions.user_id = ${userId}::uuid
       AND subscriptions.unsubscribed_at IS NULL
       AND NOT ${subscriptionsService.isCollectionSubscription()}
-      AND ${subscriptionsService.isListedSubscription()}
-
-    UNION ALL
-
-    SELECT f.greader_stream_id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest
-    FROM feeds f
-    JOIN users u ON u.id = f.user_id
-    LEFT JOIN LATERAL (
-      SELECT COALESCE(e.published_at, e.fetched_at) AS newest
-      FROM entries e
-      JOIN user_entries ue ON ue.user_id = f.user_id AND ue.entry_id = e.id
-      WHERE e.feed_id = f.id
-      ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC
-      LIMIT 1
-    ) latest ON true
-    WHERE f.type = 'saved' AND f.user_id = ${userId}::uuid
   `);
 
   const subscriptions: Array<{ streamId: string; unreadCount: number }> = [];

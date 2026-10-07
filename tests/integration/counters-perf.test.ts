@@ -254,39 +254,28 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
     await explainAnalyze(
       "reconcile subscriptions (no-drift pass)",
       `UPDATE subscriptions s
-       SET unread_count = COALESCE(t.u, 0), starred_unread_count = COALESCE(t.su, 0)
+       SET unread_count = COALESCE(t.n, 0)
        FROM subscriptions s2
        LEFT JOIN (
-         SELECT subscription_id, count(*)::int AS u,
-                count(*) FILTER (WHERE starred)::int AS su
-         FROM user_entries
-         WHERE subscription_id IS NOT NULL AND NOT read AND NOT is_spam
-         GROUP BY subscription_id
+         SELECT se.subscription_id, count(*)::int AS n
+         FROM subscription_entries se
+         JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id
+         WHERE NOT ue.read AND NOT ue.is_spam
+         GROUP BY se.subscription_id
        ) t ON t.subscription_id = s2.id
-       WHERE s.id = s2.id
-         AND (s2.unread_count IS DISTINCT FROM COALESCE(t.u, 0)
-           OR s2.starred_unread_count IS DISTINCT FROM COALESCE(t.su, 0))`
+       WHERE s.id = s2.id AND s2.unread_count IS DISTINCT FROM COALESCE(t.n, 0)`
     );
   }, 300_000);
 
-  it("compares the step-5b badge arithmetic against the current scan (informational)", async () => {
-    // Current production shape (visible_entries scan over unread rows).
+  it("compares the badge counters against a scan (informational)", async () => {
+    // What the badges count, scanned (spam excluded, as the counters do).
     const scanQuery = `SELECT count(*)::int AS all_unread,
-              count(*) FILTER (WHERE starred)::int AS starred_unread,
-              count(*) FILTER (WHERE type = 'saved')::int AS saved_unread
+              count(*) FILTER (WHERE starred)::int AS starred_unread
        FROM visible_entries
-       WHERE user_id = '${userId}' AND read = false`;
-    // Step 5b replacement: pure counter arithmetic.
-    const arithmeticQuery = `SELECT COALESCE(sum(s.unread_count) FILTER (WHERE s.unsubscribed_at IS NULL), 0)::int
-              + u.saved_unread_count
-              + COALESCE(sum(s.starred_unread_count) FILTER (WHERE s.unsubscribed_at IS NOT NULL), 0)::int
-                AS all_unread,
-              u.starred_unread_count AS starred_unread,
-              u.saved_unread_count AS saved_unread
-       FROM users u
-       LEFT JOIN subscriptions s ON s.user_id = u.id
-       WHERE u.id = '${userId}'
-       GROUP BY u.id, u.saved_unread_count, u.starred_unread_count`;
+       WHERE user_id = '${userId}' AND read = false AND is_spam = false`;
+    // The counters the badges read.
+    const arithmeticQuery = `SELECT all_unread_count AS all_unread, starred_unread_count AS starred_unread
+       FROM users WHERE id = '${userId}'`;
 
     const scan: number[] = [];
     const arith: number[] = [];
@@ -294,7 +283,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
       scan.push(await timed(() => db.execute(sql.raw(scanQuery))));
       arith.push(await timed(() => db.execute(sql.raw(arithmeticQuery))));
     }
-    console.log("\n--- Badge query: current scan vs counter arithmetic (50k unread) ---");
+    console.log("\n--- Badge query: scan vs counters (50k unread) ---");
     console.log(`visible_entries scan:  median ${median(scan).toFixed(1)}ms`);
     console.log(`counter arithmetic:    median ${median(arith).toFixed(1)}ms`);
 

@@ -150,6 +150,9 @@ describe("useShowOriginalPreference", () => {
 
       expect(showOriginalKey({ subscriptionId: "sub-1", type: "web" })).toBe("sub-1");
       expect(showOriginalKey({ subscriptionId: null, type: "saved" })).toBe("saved");
+      // A saved article's subscription is the saved one (#1846); saved
+      // articles still share one preference.
+      expect(showOriginalKey({ subscriptionId: "saved-sub", type: "saved" })).toBe("saved");
     });
   });
 

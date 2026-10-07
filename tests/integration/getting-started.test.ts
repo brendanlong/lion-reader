@@ -19,6 +19,7 @@ import { GETTING_STARTED_TITLE } from "../../src/server/services/getting-started
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { getSavedFeedId } from "../../src/server/feed/saved-feed";
 import { createTestUser } from "./helpers";
+import { getGlobalUnreadCounts } from "../../src/server/services/counts";
 
 const createdUserIds: string[] = [];
 
@@ -103,11 +104,11 @@ describe("createGettingStartedArticle", () => {
 
     // The starred counter the badge reads must see it.
     const [counts] = await db
-      .select({ starred: users.starredUnreadCount, saved: users.savedUnreadCount })
+      .select({ starred: users.starredUnreadCount })
       .from(users)
       .where(eq(users.id, userId));
     expect(counts.starred).toBe(1);
-    expect(counts.saved).toBe(1);
+    expect((await getGlobalUnreadCounts(db, userId)).savedUnread).toBe(1);
   });
 
   it("does not re-add the article after the user deletes it", async () => {

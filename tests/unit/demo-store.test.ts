@@ -93,8 +93,11 @@ describe("createDemoStore", () => {
       const tag = DEMO_TAGS.find((t) => t.id === "features")!;
       const tagItems = procedures["entries.list"]({ tagId: tag.id, limit: 100 }).items;
       expect(tagItems.every((i) => tag.subscriptionIds.includes(i.subscriptionId!))).toBe(true);
+      // Saved articles are in the saved subscription, not a tagged feed (#1846).
       expect(tagItems.length).toBe(
-        DEMO_ENTRIES.filter((e) => tag.subscriptionIds.includes(e.subscriptionId!)).length
+        DEMO_ENTRIES.filter(
+          (e) => e.type !== "saved" && tag.subscriptionIds.includes(e.subscriptionId!)
+        ).length
       );
 
       expect(procedures["entries.list"]({ type: "saved", limit: 100 }).items).toHaveLength(SAVED);
@@ -211,7 +214,7 @@ describe("createDemoStore", () => {
       const features = tags.items.find((t) => t.id === "features")!;
       expect(features.feedCount).toBe(4);
       expect(features.unreadCount).toBe(
-        DEMO_ENTRIES.filter((e) => e.subscriptionId !== "lion-reader").length
+        DEMO_ENTRIES.filter((e) => e.subscriptionId !== "lion-reader" && e.type !== "saved").length
       );
       expect(tags.uncategorized).toEqual({ feedCount: 0, unreadCount: 0 });
     });

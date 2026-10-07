@@ -10,7 +10,7 @@
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
-import { collectionEntries, entries, subscriptions } from "@/server/db/schema";
+import { entries, subscriptionEntries, subscriptions } from "@/server/db/schema";
 import { isInt64 } from "@/server/google-reader/id";
 import {
   addEntriesToCollection,
@@ -68,13 +68,13 @@ export async function listEntryTags(
   const result = new Map<string, WallabagTag[]>(entryIds.map((id) => [id, []]));
   if (entryIds.length === 0) return result;
   const rows = await db
-    .select({ entryId: collectionEntries.entryId, ...collectionTagSelection })
-    .from(collectionEntries)
-    .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
+    .select({ entryId: subscriptionEntries.entryId, ...collectionTagSelection })
+    .from(subscriptionEntries)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionEntries.subscriptionId))
     .where(
       and(
-        eq(collectionEntries.userId, userId),
-        inArray(collectionEntries.entryId, entryIds),
+        eq(subscriptionEntries.userId, userId),
+        inArray(subscriptionEntries.entryId, entryIds),
         activeCollectionsOf(userId)
       )
     )
@@ -161,17 +161,17 @@ export async function deleteWallabagTag(
   tag: CollectionTag
 ): Promise<void> {
   const members = await db
-    .select({ entryId: collectionEntries.entryId, type: entries.type })
-    .from(collectionEntries)
-    .innerJoin(entries, eq(entries.id, collectionEntries.entryId))
+    .select({ entryId: subscriptionEntries.entryId, type: entries.type })
+    .from(subscriptionEntries)
+    .innerJoin(entries, eq(entries.id, subscriptionEntries.entryId))
     .where(
       and(
-        eq(collectionEntries.subscriptionId, tag.subscriptionId),
-        eq(collectionEntries.userId, userId)
+        eq(subscriptionEntries.subscriptionId, tag.subscriptionId),
+        eq(subscriptionEntries.userId, userId)
       )
     );
   if (members.every((member) => member.type === "saved")) {
-    // Unsubscribing a collection empties it.
+    // Deleting the collection takes it off every article.
     await unsubscribe(db, userId, tag.subscriptionId);
     return;
   }

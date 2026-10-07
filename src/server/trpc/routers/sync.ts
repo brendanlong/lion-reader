@@ -17,7 +17,7 @@ import {
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { ENTRY_TOMBSTONE_RETENTION_MS } from "@/server/services/entry-tombstones";
 import {
-  collectionEntries,
+  subscriptionEntries,
   entries,
   feeds,
   subscriptions,
@@ -27,13 +27,16 @@ import {
   entryTombstones,
 } from "@/server/db/schema";
 import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
-import { entryFeedTitleSql, entrySubscriptionJoin } from "@/server/services/entry-filters";
+import {
+  entryFeedTitleSql,
+  entryOriginJoin,
+  entrySubscriptionIdsSql,
+} from "@/server/services/entry-filters";
 import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
-import { getSavedFeedId } from "@/server/feed/saved-feed";
-import { isListedSubscription } from "@/server/services/subscriptions";
+import { isCollectionSubscription, isListedSubscription } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Helpers
@@ -175,7 +178,11 @@ async function currentSyncCursors(
     //   arm_sub — max entries.updated_at (content refetches that bump the entry
     //             but not the ue row) over the user's feeds, driven from
     //             subscriptions into idx_entries_feed_updated_at per feed.
-    //   arm_saved — same, for the saved-articles feed (no subscription row).
+    //   arm_saved — same, for saved articles, through the saved feed's
+    //             (feed_id, updated_at) index (until #1846 phase 6 gives
+    //             entries an owner).
+    //   arm_collections — same, for active collections' members (a few
+    //             hundred at most), whose feed may be unsubscribed.
     // The two entry arms are bounded to updated_at >= arm_ue's max (the `bound`
     // CTE): an entry only changes the answer when its content update is at least
     // as new as the newest state change, so this keeps the per-feed index seeks
@@ -210,14 +217,23 @@ async function currentSyncCursors(
         LIMIT 1
       ),
       arm_saved AS (
-        SELECT e.updated_at AS ts, e.id
-        FROM entries e
-        JOIN user_entries ue2
-          ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+        SELECT e.updated_at AS ts, e.id FROM entries e
+        JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
         WHERE e.feed_id = (
             SELECT id FROM feeds WHERE user_id = ${userId}::uuid AND type = 'saved'
           )
           AND e.updated_at >= (SELECT ts FROM bound)
+        ORDER BY e.updated_at DESC, e.id DESC
+        LIMIT 1
+      ),
+      arm_collections AS (
+        SELECT e.updated_at AS ts, e.id
+        FROM subscriptions s
+        JOIN subscription_entries se ON se.subscription_id = s.id
+        JOIN entries e
+          ON e.id = se.entry_id
+          AND e.updated_at >= (SELECT ts FROM bound)
+        WHERE s.user_id = ${userId}::uuid AND s.type = 'collection' AND s.unsubscribed_at IS NULL
         ORDER BY e.updated_at DESC, e.id DESC
         LIMIT 1
       )
@@ -225,6 +241,7 @@ async function currentSyncCursors(
         SELECT ts, id FROM arm_ue
         UNION ALL SELECT ts, id FROM arm_sub
         UNION ALL SELECT ts, id FROM arm_saved
+        UNION ALL SELECT ts, id FROM arm_collections
       ) c
       WHERE ts IS NOT NULL
       ORDER BY ts DESC, id DESC
@@ -292,16 +309,17 @@ async function listCollectionMemberships(
   if (entryIds.length === 0) return [];
   const rows = await db
     .select({
-      entryId: collectionEntries.entryId,
-      subscriptionId: collectionEntries.subscriptionId,
+      entryId: subscriptionEntries.entryId,
+      subscriptionId: subscriptionEntries.subscriptionId,
     })
-    .from(collectionEntries)
-    .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
+    .from(subscriptionEntries)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionEntries.subscriptionId))
     .where(
       and(
-        eq(collectionEntries.userId, userId),
-        inArray(collectionEntries.entryId, entryIds),
-        isNull(subscriptions.unsubscribedAt)
+        eq(subscriptionEntries.userId, userId),
+        inArray(subscriptionEntries.entryId, entryIds),
+        isNull(subscriptions.unsubscribedAt),
+        isCollectionSubscription()
       )
     );
   const byEntry = new Map<string, string[]>(entryIds.map((id) => [id, []]));
@@ -310,6 +328,9 @@ async function listCollectionMemberships(
   }
   return [...byEntry].map(([entryId, subscriptionIds]) => ({ entryId, subscriptionIds }));
 }
+
+/** A `user_entries` row, for the origin and membership lookups. */
+const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
 
 /** Per-entity-type cursors, as a client sends them back. */
 interface SyncCursorsInput {
@@ -472,8 +493,11 @@ async function collectSyncEvents(
     //            and permanently dropping the tail of a >MAX_ENTRIES same-poll
     //            content burst from the delta. The per-feed index seek already
     //            bounds the work; no pre-filter is needed.
-    //   Arm B2 — same, for the user's saved-articles feed (no subscription
-    //            row; saved feeds are never polled), keyed by the feed id.
+    //   Arm B2 — same, for saved articles, seeking the saved feed's
+    //            (feed_id, updated_at) index (until #1846 phase 6 gives
+    //            entries an owner).
+    //   Arm B3 — same, for active collections' members (a few hundred at
+    //            most), whose feed may be unsubscribed.
     //
     // Arms compare with `>=` so a tied-timestamp boundary row is still a
     // candidate; the outer query re-applies the exact `(GREATEST, id)` keyset
@@ -501,27 +525,40 @@ async function collectSyncEvents(
       )
       .where(eq(subscriptions.userId, userId));
 
-    // Saved-articles arm: keyed by the saved feed id (no subscription row,
-    // and last_entries_updated_at is never set on saved feeds).
-    const savedFeedId = await getSavedFeedId(db, userId);
-    const savedEntryCandidates = savedFeedId
-      ? db
-          .select({ entryId: userEntries.entryId })
-          .from(userEntries)
-          .innerJoin(
-            entries,
-            and(
-              eq(entries.id, userEntries.entryId),
-              eq(entries.feedId, savedFeedId),
-              sql`${entries.updatedAt} >= ${cursorTs}`
-            )
-          )
-          .where(eq(userEntries.userId, userId))
-      : null;
+    const savedEntryCandidates = db
+      .select({ entryId: userEntries.entryId })
+      .from(userEntries)
+      .innerJoin(
+        entries,
+        and(
+          eq(entries.id, userEntries.entryId),
+          sql`${entries.feedId} = (SELECT ${feeds.id} FROM ${feeds}
+            WHERE ${feeds.userId} = ${userId} AND ${feeds.type} = 'saved')`,
+          sql`${entries.updatedAt} >= ${cursorTs}`
+        )
+      )
+      .where(eq(userEntries.userId, userId));
 
-    const candidates = savedEntryCandidates
-      ? stateChangedCandidates.union(subscribedEntryCandidates).union(savedEntryCandidates)
-      : stateChangedCandidates.union(subscribedEntryCandidates);
+    const collectionEntryCandidates = db
+      .select({ entryId: subscriptionEntries.entryId })
+      .from(subscriptions)
+      .innerJoin(subscriptionEntries, eq(subscriptionEntries.subscriptionId, subscriptions.id))
+      .innerJoin(
+        entries,
+        and(eq(entries.id, subscriptionEntries.entryId), sql`${entries.updatedAt} >= ${cursorTs}`)
+      )
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          isCollectionSubscription(),
+          isNull(subscriptions.unsubscribedAt)
+        )
+      );
+
+    const candidates = stateChangedCandidates
+      .union(subscribedEntryCandidates)
+      .union(savedEntryCandidates)
+      .union(collectionEntryCandidates);
 
     const changed = db.$with("changed_entries").as(candidates);
 
@@ -542,6 +579,7 @@ async function collectSyncEvents(
         starred: userEntries.starred,
         readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
+        subscriptionIds: entrySubscriptionIdsSql(USER_ROW),
         feedType: entries.type,
         feedTitle: entryFeedTitleSql(),
         visible: sql<boolean>`${visibleEntrySql()}`,
@@ -562,7 +600,7 @@ async function collectSyncEvents(
       )
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
       .innerJoin(feeds, eq(feeds.id, entries.feedId))
-      .leftJoin(subscriptions, entrySubscriptionJoin(userEntries))
+      .leftJoin(subscriptions, entryOriginJoin(USER_ROW))
       .where(
         and(
           afterCursor(greatest),
@@ -573,8 +611,7 @@ async function collectSyncEvents(
             : visibleEntrySql()
         )
       )
-      // Direct join on the stamped user_entries.subscription_id — one
-      // subscription per row by construction, so no fan-out is possible.
+      // The origin join yields at most one subscription per row.
       .orderBy(greatest, entries.id)
       .limit(MAX_ENTRIES + 1);
 

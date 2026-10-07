@@ -102,9 +102,13 @@ const SUBSCRIPTION_CONFIG: Record<string, { title: string; tagId: string; descri
 // Generated data
 // ============================================================================
 
-/** Count entries per subscription */
+/**
+ * Count entries per subscription. Saved articles belong to the saved
+ * subscription, not the feed they're filed under here (#1846).
+ */
 const entryCountBySubscription = new Map<string, number>();
 for (const article of DEMO_ARTICLES) {
+  if (article.type === "saved") continue;
   entryCountBySubscription.set(
     article.subscriptionId,
     (entryCountBySubscription.get(article.subscriptionId) ?? 0) + 1

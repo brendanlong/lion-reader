@@ -27,7 +27,7 @@
 
 import { db } from "@/server/db";
 import { subscriptions, type EntryType } from "@/server/db/schema";
-import { isWebSubscription } from "@/server/services/subscriptions";
+import { isListedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
@@ -98,7 +98,14 @@ async function getUserCustomTitles(userId: string): Promise<Map<string, string |
   const rows = await db
     .select({ id: subscriptions.id, customTitle: subscriptions.customTitle })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)));
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        // Saved articles keep the saved feed's title.
+        isListedSubscription()
+      )
+    );
   return new Map(rows.map((row) => [row.id, row.customTitle]));
 }
 
@@ -403,7 +410,12 @@ export async function GET(req: Request): Promise<Response> {
           await customTitlesLoaded;
           let counts: BulkUnreadCounts | undefined;
           try {
-            counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
+            // The saved subscription has no list of its own; Saved is a global count.
+            counts = await getBulkEntryRelatedCounts(
+              db,
+              userId,
+              event.feedType === "saved" ? [] : [{ subscriptionId }]
+            );
           } catch (err) {
             // Leave counts off; the client skips the count update and it
             // self-heals on the next count-bearing event or refetch.
@@ -414,6 +426,8 @@ export async function GET(req: Request): Promise<Response> {
             `event: new_entry\nid: ${cursor}\ndata: ${JSON.stringify({
               type: "new_entry",
               subscriptionId,
+              // A new entry's one membership is its origin (#1846).
+              subscriptionIds: subscriptionId ? [subscriptionId] : [],
               entryId: event.entryId,
               timestamp: event.timestamp,
               updatedAt: event.updatedAt,

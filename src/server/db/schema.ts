@@ -115,16 +115,15 @@ export const users = pgTable(
     // expired sessions (the previous MAX(sessions.last_active_at) source).
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
 
-    // Denormalized unread counters (issue #1117, migration 0092), maintained by
-    // the user_entries_counters_* statement triggers (spam permanently
-    // excluded). saved = unread rows with no subscription (saved/uploaded);
-    // starred = ALL starred unread rows (any subscription state + saved) — the
-    // Starred badge directly.
-    savedUnreadCount: integer("saved_unread_count").notNull().default(0),
+    // Trigger-maintained unread counters (spam excluded; rules in migration
+    // 0133, kept by `apply_unread_memberships` / `recompute_list_counters`):
+    // starred = starred unread articles; uncategorized = distinct unread
+    // articles in untagged active subscriptions other than saved; all =
+    // visible unread articles.
+    // saved_unread_count, kept by the counter triggers only for the previous
+    // release, is deliberately unmapped: Saved is the saved subscription's
+    // count, and the column is dropped in #1846 phase 5B.
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
-    // Distinct unread, non-spam articles reachable through untagged active
-    // subscriptions, and visible at all (`apply_unread_rows` / `recompute_list_counters` keep
-    // them current).
     uncategorizedUnreadCount: integer("uncategorized_unread_count").notNull().default(0),
     allUnreadCount: integer("all_unread_count").notNull().default(0),
 
@@ -669,8 +668,8 @@ export const tags = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     color: text("color"), // hex color for UI (e.g., "#ff6b6b")
-    // Distinct unread, non-spam articles reachable through the tag's active
-    // feeds and collections (`apply_unread_rows` / `recompute_list_counters`).
+    // Distinct unread, non-spam articles in the tag's active subscriptions
+    // (`apply_unread_memberships` / `recompute_list_counters`).
     unreadCount: integer("unread_count").notNull().default(0),
 
     // Opaque Google Reader folder sortid (issue #1117, migration 0097). Drawn

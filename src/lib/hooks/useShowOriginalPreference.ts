@@ -41,7 +41,10 @@ export function useShowOriginalPreference(
   return [store.useValue(), store.set];
 }
 
-/** Per subscription; entries without one (saved articles) share one per type. */
+/**
+ * Per feed subscription; saved articles (whose subscription is the saved one)
+ * and any entry without a subscription share one per type.
+ */
 export function showOriginalKey(entry: { subscriptionId: string | null; type: string }): string {
-  return entry.subscriptionId ?? entry.type;
+  return entry.type === "saved" ? entry.type : (entry.subscriptionId ?? entry.type);
 }

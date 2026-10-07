@@ -11,7 +11,13 @@
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx, Transaction } from "@/server/db";
-import { collectionEntries, subscriptions, userEntries, visibleEntries } from "@/server/db/schema";
+import {
+  collectionEntries,
+  subscriptionEntries,
+  subscriptions,
+  userEntries,
+  visibleEntries,
+} from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -34,17 +40,18 @@ export async function listEntryCollectionIds(
   entryId: string
 ): Promise<string[]> {
   const rows = await db
-    .select({ id: collectionEntries.subscriptionId })
-    .from(collectionEntries)
-    .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
+    .select({ id: subscriptionEntries.subscriptionId })
+    .from(subscriptionEntries)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionEntries.subscriptionId))
     .where(
       and(
-        eq(collectionEntries.userId, userId),
-        eq(collectionEntries.entryId, entryId),
+        eq(subscriptionEntries.userId, userId),
+        eq(subscriptionEntries.entryId, entryId),
+        isCollectionSubscription(),
         isNull(subscriptions.unsubscribedAt)
       )
     )
-    .orderBy(collectionEntries.subscriptionId);
+    .orderBy(subscriptionEntries.subscriptionId);
   return rows.map((row) => row.id);
 }
 
@@ -278,8 +285,8 @@ export async function addEntriesToCollection(
     if (entryIds.length === 0) return [];
     const [{ count }] = await tx
       .select({ count: sql<number>`count(*)::int` })
-      .from(collectionEntries)
-      .where(eq(collectionEntries.subscriptionId, subscriptionId));
+      .from(subscriptionEntries)
+      .where(eq(subscriptionEntries.subscriptionId, subscriptionId));
     if (count + entryIds.length > MAX_COLLECTION_ENTRIES) {
       throw errors.validation(`A collection can hold at most ${MAX_COLLECTION_ENTRIES} articles`);
     }

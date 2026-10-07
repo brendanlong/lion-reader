@@ -157,6 +157,9 @@ interface EntryFilter {
   query?: string;
 }
 
+/** The demo user's saved subscription: saved articles' origin, never listed. */
+const DEMO_SAVED_SUBSCRIPTION_ID = "demo-saved";
+
 export function createDemoStore(): DemoStore {
   const tags = new Map(DEMO_TAGS.map((tag) => [tag.id, tag]));
 
@@ -201,16 +204,38 @@ export function createDemoStore(): DemoStore {
     return sub && !sub.deleted ? sub : undefined;
   }
 
-  /** The live subscriptions containing the entry: its feed and any collections holding it. */
+  /**
+   * The live subscriptions containing the entry: its feed and any collections
+   * holding it. A saved article's feed is the saved subscription, which no
+   * list shows, like the server's (#1846).
+   */
   function containersOf(state: EntryState): SubscriptionState[] {
-    const feed = subscriptionOf(state);
+    const feed = state.entry.type === "saved" ? undefined : subscriptionOf(state);
     const collections = liveSubscriptions().filter((sub) => sub.members.has(state.entry.id));
     return feed ? [feed, ...collections] : collections;
   }
 
-  /** Starred and collected entries stay visible after unsubscribing, like the app. */
+  /**
+   * The entry's origin as the API reports it: for a saved article the saved
+   * subscription (#1846), which no list shows and nothing can update.
+   */
+  function originOf(state: EntryState): string | null {
+    if (state.entry.type === "saved") return DEMO_SAVED_SUBSCRIPTION_ID;
+    return subscriptionOf(state)?.id ?? null;
+  }
+
+  /** The active subscriptions holding the entry, like the API's `subscriptionIds`. */
+  function subscriptionIdsOf(state: EntryState): string[] {
+    const ids = containersOf(state).map((sub) => sub.id);
+    return state.entry.type === "saved" ? [DEMO_SAVED_SUBSCRIPTION_ID, ...ids].sort() : ids.sort();
+  }
+
+  /**
+   * Saved articles (in the saved subscription), starred ones and collected
+   * ones stay visible after unsubscribing, like the app.
+   */
   function isVisible(state: EntryState): boolean {
-    return containersOf(state).length > 0 || state.starred;
+    return state.entry.type === "saved" || containersOf(state).length > 0 || state.starred;
   }
 
   function matches(state: EntryState, filter: EntryFilter): boolean {
@@ -265,8 +290,9 @@ export function createDemoStore(): DemoStore {
     const sub = subscriptionOf(state);
     return {
       id: entry.id,
-      subscriptionId: sub?.id ?? null,
-      feedId: legacyFeedId(sub?.id ?? null),
+      subscriptionId: originOf(state),
+      subscriptionIds: subscriptionIdsOf(state),
+      feedId: legacyFeedId(originOf(state)),
       type: entry.type,
       url: entry.url,
       title: entry.title,
@@ -296,7 +322,8 @@ export function createDemoStore(): DemoStore {
       fullContentCleaned: state.fullContentFetchedAt ? contentCleaned : null,
       fullContentFetchedAt: state.fullContentFetchedAt,
       fullContentError: null,
-      fetchFullContent: subscriptionOf(state)?.fetchFullContent ?? false,
+      fetchFullContent:
+        state.entry.type === "saved" ? false : (subscriptionOf(state)?.fetchFullContent ?? false),
     };
   }
 
@@ -463,7 +490,8 @@ export function createDemoStore(): DemoStore {
         state.readChangedAt = writtenAt;
         results.push({
           id,
-          subscriptionId: subscriptionOf(state)?.id ?? null,
+          subscriptionId: originOf(state),
+          subscriptionIds: subscriptionIdsOf(state),
           read: state.read,
           starred: state.starred,
           type: state.entry.type,
@@ -556,6 +584,7 @@ export function createDemoStore(): DemoStore {
       return {
         items: page.map(toSubscription),
         nextCursor: start + limit < matching.length ? page[page.length - 1].id : undefined,
+        savedSubscriptionId: DEMO_SAVED_SUBSCRIPTION_ID,
       };
     },
 

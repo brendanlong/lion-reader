@@ -4792,10 +4792,17 @@
                     },
                     "nextCursor": {
                       "type": "string"
+                    },
+                    "savedSubscriptionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
-                    "items"
+                    "items",
+                    "savedSubscriptionId"
                   ],
                   "additionalProperties": false
                 }
@@ -5913,6 +5920,12 @@
                               "null"
                             ]
                           },
+                          "subscriptionIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "feedId": {
                             "type": "string",
                             "deprecated": true,
@@ -5990,6 +6003,7 @@
                         "required": [
                           "id",
                           "subscriptionId",
+                          "subscriptionIds",
                           "feedId",
                           "type",
                           "url",
@@ -6303,6 +6317,12 @@
                             "null"
                           ]
                         },
+                        "subscriptionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
                         "feedId": {
                           "type": "string",
                           "deprecated": true,
@@ -6431,6 +6451,7 @@
                       "required": [
                         "id",
                         "subscriptionId",
+                        "subscriptionIds",
                         "feedId",
                         "type",
                         "url",
@@ -6579,6 +6600,12 @@
                               "null"
                             ]
                           },
+                          "subscriptionIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "feedId": {
                             "type": "string",
                             "deprecated": true,
@@ -6707,6 +6734,7 @@
                         "required": [
                           "id",
                           "subscriptionId",
+                          "subscriptionIds",
                           "feedId",
                           "type",
                           "url",
@@ -6870,6 +6898,12 @@
                               "null"
                             ]
                           },
+                          "subscriptionIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "read": {
                             "type": "boolean"
                           },
@@ -6897,6 +6931,7 @@
                         "required": [
                           "id",
                           "subscriptionId",
+                          "subscriptionIds",
                           "read",
                           "starred",
                           "type",
@@ -7615,6 +7650,12 @@
                               "null"
                             ]
                           },
+                          "subscriptionIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "read": {
                             "type": "boolean"
                           },
@@ -7642,6 +7683,7 @@
                         "required": [
                           "id",
                           "subscriptionId",
+                          "subscriptionIds",
                           "read",
                           "starred",
                           "type",
@@ -7858,6 +7900,12 @@
                             "null"
                           ]
                         },
+                        "subscriptionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
                         "feedId": {
                           "type": "string",
                           "deprecated": true,
@@ -7986,6 +8034,7 @@
                       "required": [
                         "id",
                         "subscriptionId",
+                        "subscriptionIds",
                         "feedId",
                         "type",
                         "url",
@@ -12691,6 +12740,12 @@
                                   "null"
                                 ]
                               },
+                              "subscriptionIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "entryId": {
                                 "type": "string"
                               },
@@ -13192,6 +13247,12 @@
                                   "feedTitle"
                                 ],
                                 "additionalProperties": false
+                              },
+                              "subscriptionIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
                               }
                             },
                             "required": [

@@ -20,7 +20,15 @@ import {
   type SQL,
 } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
-import { entries, feeds, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
+import {
+  entries,
+  feeds,
+  subscriptionEntries,
+  userEntries,
+  subscriptions,
+  visibleEntries,
+} from "@/server/db/schema";
+import { getSavedSubscriptionId } from "./subscriptions";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -38,7 +46,9 @@ import {
   verifySubscriptionOwnership,
   buildUncategorizedSubscriptionIdsSubquery,
   entryFeedTitleSql,
-  entrySubscriptionJoin,
+  entryOriginJoin,
+  entrySubscriptionIdsSql,
+  inSavedSubscriptionSql,
 } from "./entry-filters";
 
 // ============================================================================
@@ -111,7 +121,10 @@ export interface EntryListItem {
   // responses.
   subscriptionGreaderStreamId: bigint | null;
   feedGreaderStreamId: bigint;
+  /** The entry's origin subscription (`entryOriginJoin`). */
   subscriptionId: string | null;
+  /** Every active subscription holding the entry (`entrySubscriptionIdsSql`). */
+  subscriptionIds: string[];
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -140,7 +153,9 @@ export interface EntryFull {
   // Google Reader feed stream ids (stored serials); see EntryListItem.
   subscriptionGreaderStreamId: bigint | null;
   feedGreaderStreamId: bigint;
+  /** See EntryListItem. */
   subscriptionId: string | null;
+  subscriptionIds: string[];
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -187,7 +202,9 @@ export interface MarkReadEntry {
  */
 export interface MarkReadEntryState {
   id: string;
+  /** See EntryListItem. */
   subscriptionId: string | null;
+  subscriptionIds: string[];
   read: boolean;
   starred: boolean;
   type: "web" | "email" | "saved";
@@ -219,6 +236,7 @@ interface EntryListRow {
   subscriptionGreaderStreamId: bigint | null;
   feedGreaderStreamId: bigint;
   subscriptionId: string | null;
+  subscriptionIds: string[];
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -244,6 +262,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     subscriptionGreaderStreamId: row.subscriptionGreaderStreamId,
     feedGreaderStreamId: row.feedGreaderStreamId,
     subscriptionId: row.subscriptionId,
+    subscriptionIds: row.subscriptionIds,
     type: row.type,
     url: row.url,
     title: row.title,
@@ -287,6 +306,10 @@ const searchCursor = createCursorCodec(
 // Sanitized Content Resolution
 // ============================================================================
 
+/** A `visible_entries` row, for the origin and membership lookups. */
+const VISIBLE_ROW = { userId: visibleEntries.userId, entryId: visibleEntries.id };
+const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
+
 /**
  * Columns shared by the list and search queries (each adds its feed title and
  * sort key). Callers must join `feeds`.
@@ -294,7 +317,7 @@ const searchCursor = createCursorCodec(
 const entryListSelectFields = {
   id: visibleEntries.id,
   greaderItemId: visibleEntries.greaderItemId,
-  subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
+  subscriptionGreaderStreamId: subscriptions.greaderStreamId,
   feedGreaderStreamId: feeds.greaderStreamId,
   type: visibleEntries.type,
   url: visibleEntries.url,
@@ -307,7 +330,8 @@ const entryListSelectFields = {
   starred: visibleEntries.starred,
   readChangedAt: visibleEntries.readChangedAt,
   updatedAt: visibleEntries.updatedAt,
-  subscriptionId: visibleEntries.subscriptionId,
+  subscriptionId: subscriptions.id,
+  subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
   siteName: visibleEntries.siteName,
 };
 
@@ -320,10 +344,9 @@ const entryListSelectFields = {
 const entryFullSelectFields = {
   id: visibleEntries.id,
   greaderItemId: visibleEntries.greaderItemId,
-  // Google Reader feed stream ids (compat layer only). The subscription's comes
-  // from the view's LEFT JOIN (null for saved); the feed's from the
-  // feeds join every entry read performs (used for saved articles).
-  subscriptionGreaderStreamId: visibleEntries.subscriptionGreaderStreamId,
+  // Google Reader feed stream ids (compat layer only): the origin
+  // subscription's, and the feed's from the feeds join every entry read performs.
+  subscriptionGreaderStreamId: subscriptions.greaderStreamId,
   feedGreaderStreamId: feeds.greaderStreamId,
   type: visibleEntries.type,
   url: visibleEntries.url,
@@ -338,7 +361,8 @@ const entryFullSelectFields = {
   read: visibleEntries.read,
   starred: visibleEntries.starred,
   updatedAt: visibleEntries.updatedAt,
-  subscriptionId: visibleEntries.subscriptionId,
+  subscriptionId: subscriptions.id,
+  subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
   siteName: visibleEntries.siteName,
   feedTitle: entryFeedTitleSql(),
   feedUrl: feeds.url,
@@ -372,7 +396,7 @@ function selectFullEntryRows(db: typeof dbType, where: SQL | undefined) {
     .select(fullEntrySelectFields)
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
+    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(where);
 }
 
@@ -647,7 +671,7 @@ export async function listExportableEntries(
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
+    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(
       and(
         eq(visibleEntries.userId, userId),
@@ -672,6 +696,21 @@ export async function listExportableEntries(
     entries: exportable,
     nextAfterId: idRows.length < limit ? null : idRows[idRows.length - 1].id,
   };
+}
+
+/**
+ * The one subscription a list shows, when it shows exactly one: the
+ * `subscriptionId` filter (already checked by `buildEntrySubscriptionFilter`)
+ * or, for Saved, the saved subscription.
+ */
+async function singleSubscriptionOf(
+  db: typeof dbType,
+  params: ListEntriesParams
+): Promise<string | null> {
+  if (params.tagId || params.uncategorized) return null;
+  if (params.subscriptionId) return params.subscriptionId;
+  if (params.type === "saved") return getSavedSubscriptionId(db, params.userId);
+  return null;
 }
 
 // ============================================================================
@@ -712,16 +751,32 @@ export async function listEntries(
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
   // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId);
+  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
+    paged: true,
+  });
   if (subscriptionFilter === null) {
     return { items: [], nextCursor: undefined };
   }
-  if (subscriptionFilter) {
+
+  // One subscription's list (a subscription filter, or Saved) walks that
+  // subscription's timeline (idx_subscription_entries_timeline, whose sort key
+  // is the row's) rather than the user's: joining one subscription's
+  // memberships can't fan out, and the user's timeline may hold it sparsely.
+  const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
+  const single = timelineSort ? await singleSubscriptionOf(db, params) : null;
+  if (subscriptionFilter && !single) {
     conditions.push(subscriptionFilter);
   }
 
-  // Apply entry filter conditions (read/starred/type/spam/timestamp filters)
-  conditions.push(...buildEntryFilterConditions(params));
+  // Apply entry filter conditions (read/starred/type/spam/timestamp filters).
+  // Saved is the saved subscription's list, which `single` already is.
+  conditions.push(
+    ...buildEntryFilterConditions(
+      single && !params.subscriptionId && params.type === "saved"
+        ? { ...params, type: undefined }
+        : params
+    )
+  );
 
   // Recently Read: exclude entries that were never explicitly read-state-changed.
   // This exclusion is specific to that view (sortBy=readChanged); the Wallabag
@@ -735,10 +790,12 @@ export async function listEntries(
   //    planner can serve filter + sort from idx_user_entries_published_or_fetched.
   //  - "readChanged"/"archived" sort by when read state was last changed
   //    (idx_user_entries_read_changed_at).
-  const sortColumn =
-    params.sortBy === "readChanged" || params.sortBy === "archived"
-      ? visibleEntries.readChangedAt
+  const sortColumn = !timelineSort
+    ? visibleEntries.readChangedAt
+    : single
+      ? subscriptionEntries.publishedOrFetchedAt
       : visibleEntries.publishedOrFetchedAt;
+  const idColumn = single ? subscriptionEntries.entryId : visibleEntries.id;
 
   // Full-precision sort key for cursor encoding. The pool hands back Postgres's
   // raw microsecond string for timestamptz (see parseTimestamptz); mapWith decodes
@@ -761,26 +818,23 @@ export async function listEntries(
     const { ts, id } = timelineCursor.decode(params.cursor);
     if (sortOrder === "newest") {
       conditions.push(
-        sql`(${sortColumn} < ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${visibleEntries.id} < ${id}))`
+        sql`(${sortColumn} < ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${idColumn} < ${id}))`
       );
     } else {
       conditions.push(
-        sql`(${sortColumn} > ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${visibleEntries.id} > ${id}))`
+        sql`(${sortColumn} > ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${idColumn} > ${id}))`
       );
     }
   }
 
   // Query
   const orderByClause =
-    sortOrder === "newest"
-      ? [desc(sortColumn), desc(visibleEntries.id)]
-      : [asc(sortColumn), asc(visibleEntries.id)];
+    sortOrder === "newest" ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)];
 
-  // visible_entries emits exactly one row per (user, entry) — it joins
-  // subscriptions on the stamped user_entries.subscription_id (migration 0087)
-  // — so no DISTINCT ON dedup is needed and the (sortColumn, id) keyset cursor
-  // resumes cleanly over unique rows.
-  const queryResults = await db
+  // visible_entries emits exactly one row per (user, entry), and so does a
+  // join on one subscription's memberships, so no DISTINCT ON dedup is needed
+  // and the (sortColumn, id) keyset cursor resumes cleanly over unique rows.
+  const base = db
     .select({
       ...entryListSelectFields,
       feedTitle: entryFeedTitleSql(),
@@ -788,7 +842,20 @@ export async function listEntries(
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
+    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
+    .$dynamic();
+  const queryResults = await (
+    single
+      ? base.innerJoin(
+          subscriptionEntries,
+          and(
+            eq(subscriptionEntries.subscriptionId, single),
+            eq(subscriptionEntries.userId, visibleEntries.userId),
+            eq(subscriptionEntries.entryId, visibleEntries.id)
+          )
+        )
+      : base
+  )
     .where(and(...conditions))
     .orderBy(...orderByClause)
     .limit(limit + 1)
@@ -838,7 +905,9 @@ async function searchEntries(
   const rankColumn = sql<number>`ts_rank(${visibleEntries.searchVector}, ${searchQuery})`;
 
   // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId);
+  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
+    paged: true,
+  });
   if (subscriptionFilter === null) {
     return { items: [], nextCursor: undefined };
   }
@@ -867,6 +936,13 @@ async function searchEntries(
   const rankedSubquery = db
     .select({
       ...entryListSelectFields,
+      // Aliases: the origin's columns share names with the view's and the
+      // feed's, and raw SQL can't be read back through a subquery without one.
+      subscriptionId: sql<string | null>`${subscriptions.id}`.as("origin_subscription_id"),
+      subscriptionGreaderStreamId: sql<bigint | null>`${subscriptions.greaderStreamId}`
+        .mapWith(subscriptions.greaderStreamId)
+        .as("origin_greader_stream_id"),
+      subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW).as("subscription_ids"),
       // Alias to avoid colliding with visibleEntries.title (both are "title")
       // inside the subquery, which would make the outer reference ambiguous.
       feedTitle: entryFeedTitleSql().as("feed_title"),
@@ -875,7 +951,7 @@ async function searchEntries(
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
+    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(and(...conditions))
     .as("ranked");
 
@@ -934,7 +1010,7 @@ function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
-    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
+    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(condition);
 }
 
@@ -1140,7 +1216,8 @@ export async function markEntriesRead(
   const entries = await db
     .select({
       id: visibleEntries.id,
-      subscriptionId: visibleEntries.subscriptionId,
+      subscriptionId: subscriptions.id,
+      subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
       read: visibleEntries.read,
       starred: visibleEntries.starred,
       type: visibleEntries.type,
@@ -1148,6 +1225,7 @@ export async function markEntriesRead(
       readChangedAt: visibleEntries.readChangedAt,
     })
     .from(visibleEntries)
+    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 
   // Compute absolute counts once, for both the return value and the SSE
@@ -1233,27 +1311,18 @@ export async function markAllEntriesRead(
   // Filter by subscriptionId: a foreign or unsubscribed subscription matches
   // nothing. (Scoping checks query the subscriptions table, never the
   // display-only user_feeds view.)
-  const columns = { entryId: userEntries.entryId, subscriptionId: userEntries.subscriptionId };
+  const columns = { userId: userEntries.userId, entryId: userEntries.entryId };
   if (params.subscriptionId) {
     if (!(await verifySubscriptionOwnership(db, params.subscriptionId, params.userId))) {
       return { entryIds: [] };
     }
-    conditions.push(
-      await buildEntriesInSubscriptionsCondition(
-        db,
-        params.userId,
-        [params.subscriptionId],
-        columns
-      )
-    );
+    conditions.push(buildEntriesInSubscriptionsCondition([params.subscriptionId], columns));
   }
 
   // Filter by tag (ownership enforced by the shared subquery's tags.userId join)
   if (params.tagId) {
     conditions.push(
-      await buildEntriesInSubscriptionsCondition(
-        db,
-        params.userId,
+      buildEntriesInSubscriptionsCondition(
         buildTaggedSubscriptionIdsSubquery(db, params.tagId, params.userId),
         columns
       )
@@ -1264,9 +1333,7 @@ export async function markAllEntriesRead(
   // stays in sync with buildEntrySubscriptionFilter (listEntries/countEntries).
   if (params.uncategorized) {
     conditions.push(
-      await buildEntriesInSubscriptionsCondition(
-        db,
-        params.userId,
+      buildEntriesInSubscriptionsCondition(
         buildUncategorizedSubscriptionIdsSubquery(db, params.userId),
         columns
       )
@@ -1278,8 +1345,12 @@ export async function markAllEntriesRead(
     conditions.push(eq(userEntries.starred, true));
   }
 
-  // Filter by feed type
-  if (params.type) {
+  // Filter by feed type; Saved is the saved subscription's list, as for listEntries.
+  if (params.type === "saved") {
+    conditions.push(
+      inSavedSubscriptionSql({ userId: userEntries.userId, entryId: userEntries.entryId })
+    );
+  } else if (params.type) {
     const typeEntryIdsSubquery = db
       .select({ id: entries.id })
       .from(entries)
@@ -1308,13 +1379,17 @@ export async function markAllEntriesRead(
       updatedAt,
     })
     .where(and(...conditions))
-    .returning({ id: userEntries.entryId, subscriptionId: userEntries.subscriptionId });
+    .returning({ id: userEntries.entryId });
 
   const entryIds = result.map((r) => r.id);
   if (entryIds.length === 0) return { entryIds };
   // Absolute counts for every list the marked entries reached, so clients
   // set them rather than refetching and guessing which lists went to zero.
-  const counts = await getBulkEntryRelatedCounts(db, params.userId, result);
+  const counts = await getBulkEntryRelatedCounts(
+    db,
+    params.userId,
+    entryIds.map((id) => ({ id, subscriptionId: null }))
+  );
 
   // Notify the user's other tabs/devices. Mark-all-read is unbounded, so rather
   // than emitting a per-entry event (or shipping every affected id), we publish
@@ -1363,11 +1438,9 @@ export async function markAllEntriesRead(
  * predicate keeps the read scoped to the caller, so another user's entry id
  * still matches no row.
  *
- * The projected columns are exactly what the view computes: it emits
- * `GREATEST(entries.updated_at, user_entries.updated_at)` as `updated_at`, and
- * its `subscription_id` is `subscriptions.id` from a LEFT JOIN on
- * `user_entries.subscription_id` — whose FK is `ON DELETE SET NULL`, so the
- * column is NULL in exactly the cases the join would produce NULL.
+ * The projected columns are what a read through the view gives: the view
+ * emits `GREATEST(entries.updated_at, user_entries.updated_at)` as
+ * `updated_at`, and the origin and memberships are looked up the same way.
  */
 async function selectStarredEntryStates(
   db: DbOrTx,
@@ -1377,7 +1450,8 @@ async function selectStarredEntryStates(
   return db
     .select({
       id: userEntries.entryId,
-      subscriptionId: userEntries.subscriptionId,
+      subscriptionId: subscriptions.id,
+      subscriptionIds: entrySubscriptionIdsSql(USER_ROW),
       read: userEntries.read,
       starred: userEntries.starred,
       type: entries.type,
@@ -1388,6 +1462,7 @@ async function selectStarredEntryStates(
     })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))
+    .leftJoin(subscriptions, entryOriginJoin(USER_ROW))
     .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
 }
 

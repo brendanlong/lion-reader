@@ -10,7 +10,7 @@
  *   subscription  = subscriptions.unread_count (its unread memberships)
  *   tag           = tags.unread_count
  *   uncategorized = users.uncategorized_unread_count
- *   saved         = users.saved_unread_count
+ *   saved         = the saved subscription's unread_count
  *   starred       = users.starred_unread_count
  *   all           = users.all_unread_count
  *
@@ -19,10 +19,10 @@
  * `apply_unread_memberships` and `recompute_list_counters` maintain them.
  */
 
-import { eq, and, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
-  collectionEntries,
+  subscriptionEntries,
   subscriptionTags,
   subscriptions,
   tags,
@@ -57,7 +57,12 @@ export async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<U
     .select({
       allUnread: users.allUnreadCount,
       starredUnread: users.starredUnreadCount,
-      savedUnread: users.savedUnreadCount,
+      // Saved is the saved subscription's count. Raw names: a single-table
+      // select renders its columns unqualified, which the subquery would capture.
+      savedUnread: sql<number>`COALESCE((
+        SELECT s.unread_count FROM subscriptions s
+        WHERE s.user_id = users.id AND s.type = 'saved'
+      ), 0)`,
       uncategorizedUnread: users.uncategorizedUnreadCount,
     })
     .from(users)
@@ -124,8 +129,8 @@ export interface BulkUnreadCounts {
  *
  * @param db - Database instance
  * @param userId - User ID
- * @param entries - Each entry's source subscription, plus its id when it may
- *   already be in collections (whose counts are then included too)
+ * @param entries - Entries (by id: every listed subscription holding them),
+ *   or subscriptions (by subscriptionId, for an entry-less change)
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
@@ -134,30 +139,33 @@ export async function getBulkEntryRelatedCounts(
   entries: Array<{ id?: string; subscriptionId: string | null }>
 ): Promise<BulkUnreadCounts> {
   const entryIds = entries.map((e) => e.id).filter((id) => id !== undefined);
-  const collectionIds =
+  // The active listed subscriptions holding the entries (#1846): the saved
+  // subscription isn't a list clients show.
+  const memberOf =
     entryIds.length > 0
       ? (
           await db
-            .selectDistinct({ id: collectionEntries.subscriptionId })
-            .from(collectionEntries)
-            .innerJoin(subscriptions, eq(subscriptions.id, collectionEntries.subscriptionId))
+            .selectDistinct({ id: subscriptionEntries.subscriptionId })
+            .from(subscriptionEntries)
+            .innerJoin(subscriptions, eq(subscriptions.id, subscriptionEntries.subscriptionId))
             .where(
               and(
-                eq(collectionEntries.userId, userId),
+                eq(subscriptionEntries.userId, userId),
                 isNull(subscriptions.unsubscribedAt),
+                // isListedSubscription(): the saved subscription is no list.
+                ne(subscriptions.type, "saved"),
                 // One array parameter: a mark-all-read can pass more ids than a
                 // statement takes parameters.
-                sql`${collectionEntries.entryId} = ANY(${`{${entryIds.join(",")}}`}::uuid[])`
+                sql`${subscriptionEntries.entryId} = ANY(${`{${entryIds.join(",")}}`}::uuid[])`
               )
             )
         ).map((row) => row.id)
       : [];
 
-  // Collect unique subscription IDs (excluding null for saved articles)
   const subscriptionIds = [
     ...new Set([
-      ...entries.map((e) => e.subscriptionId).filter((id) => id !== null),
-      ...collectionIds,
+      ...entries.flatMap((e) => (e.id === undefined && e.subscriptionId ? [e.subscriptionId] : [])),
+      ...memberOf,
     ]),
   ];
 

@@ -191,9 +191,17 @@ const updatedAtWithFallback = z.string().optional();
 // Individual Event Schemas
 // ============================================================================
 
+/**
+ * Every active subscription holding the entry (#1846): its origin
+ * (`subscriptionId`), its collections and, for a saved article, the saved
+ * subscription. Absent from a previous release's events.
+ */
+const subscriptionIdsSchema = z.array(z.string()).optional();
+
 const newEntryEventSchema = z.object({
   type: z.literal("new_entry"),
   subscriptionId: z.string().nullable(),
+  subscriptionIds: subscriptionIdsSchema,
   entryId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
@@ -243,6 +251,7 @@ const entryStateChangedEventSchema = z.object({
   subscriptionId: z.string().nullable().optional(),
   feedType: z.enum(["web", "email", "saved"]).optional(),
   entry: newEntryListDataSchema.optional(),
+  subscriptionIds: subscriptionIdsSchema,
 });
 
 const markAllReadEventSchema = z.object({

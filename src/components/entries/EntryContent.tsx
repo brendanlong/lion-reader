@@ -179,12 +179,15 @@ function EntryContentInner({
   });
 
   // Handle toggling fetchFullContent setting
+  // A saved article's subscription is the saved one, which has no settings:
+  // full content is a feed subscription's setting.
+  const fullContentSubscriptionId = entry?.type === "saved" ? null : entry?.subscriptionId;
   const handleToggleFetchFullContent = useCallback(() => {
-    if (!entry?.subscriptionId) return;
+    if (!entry || !fullContentSubscriptionId) return;
 
     const newValue = !fetchFullContent;
     updateSubscriptionMutation.mutate({
-      id: entry.subscriptionId,
+      id: fullContentSubscriptionId,
       fetchFullContent: newValue,
     });
 
@@ -194,7 +197,14 @@ function EntryContentInner({
     if (newValue && needsFetch) {
       fetchFullContentMutation.mutate({ id: entryId });
     }
-  }, [entry, fetchFullContent, entryId, updateSubscriptionMutation, fetchFullContentMutation]);
+  }, [
+    entry,
+    fullContentSubscriptionId,
+    fetchFullContent,
+    entryId,
+    updateSubscriptionMutation,
+    fetchFullContentMutation,
+  ]);
 
   // Determine if full content is currently being shown
   // This mirrors the logic in EntryContentBody for content selection
@@ -387,7 +397,9 @@ function EntryContentInner({
         fullContentError={entry.fullContentError}
         fetchFullContent={fetchFullContent}
         isFullContentFetching={fetchFullContentMutation.isPending}
-        onToggleFetchFullContent={entry.subscriptionId ? handleToggleFetchFullContent : undefined}
+        onToggleFetchFullContent={
+          fullContentSubscriptionId ? handleToggleFetchFullContent : undefined
+        }
         // Summarization props
         isSummarizationAvailable={isSummarizationAvailable}
         summary={summary}

@@ -16,7 +16,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { publishEntryStateChanged, type EntryStateListData } from "@/server/redis/pubsub";
 import type { DbOrTx } from "@/server/db";
 import { feeds, subscriptions, visibleEntries } from "@/server/db/schema";
-import { entryFeedTitleSql, entrySubscriptionJoin } from "@/server/services/entry-filters";
+import { entryFeedTitleSql, entryOriginJoin } from "@/server/services/entry-filters";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
 import type { MarkReadEntryState } from "@/server/services/entries";
@@ -34,7 +34,7 @@ async function fetchUnreadListData(
   const rows = await db
     .select({
       id: visibleEntries.id,
-      subscriptionId: visibleEntries.subscriptionId,
+      subscriptionId: subscriptions.id,
       feedType: visibleEntries.type,
       url: visibleEntries.url,
       title: visibleEntries.title,
@@ -48,7 +48,10 @@ async function fetchUnreadListData(
     })
     .from(visibleEntries)
     .innerJoin(feeds, eq(feeds.id, visibleEntries.feedId))
-    .leftJoin(subscriptions, entrySubscriptionJoin(visibleEntries))
+    .leftJoin(
+      subscriptions,
+      entryOriginJoin({ userId: visibleEntries.userId, entryId: visibleEntries.id })
+    )
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
 
   const result = new Map<string, EntryStateListData>();
@@ -100,7 +103,8 @@ export function publishMarkReadStateChanges(
           entry.starred,
           entry.updatedAt,
           counts,
-          listData.get(entry.id)
+          listData.get(entry.id),
+          entry.subscriptionIds
         ).catch(() => {
           // Ignore publish errors - SSE is best-effort
         })
@@ -115,7 +119,9 @@ export function publishMarkReadStateChanges(
  */
 export function publishStarredStateChanges(
   userId: string,
-  entries: Array<Pick<MarkReadEntryState, "id" | "read" | "starred" | "updatedAt">>,
+  entries: Array<
+    Pick<MarkReadEntryState, "id" | "read" | "starred" | "updatedAt" | "subscriptionIds">
+  >,
   counts: BulkUnreadCounts
 ): void {
   void Promise.all(
@@ -126,7 +132,9 @@ export function publishStarredStateChanges(
         entry.read,
         entry.starred,
         entry.updatedAt,
-        counts
+        counts,
+        undefined,
+        entry.subscriptionIds
       ).catch(() => {
         // Ignore publish errors - SSE is best-effort
       })

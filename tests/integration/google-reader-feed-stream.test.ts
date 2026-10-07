@@ -11,7 +11,12 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, subscriptions } from "../../src/server/db/schema";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestFeed,
+  createTestSavedSubscription,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 import {
   feedStreamIdToSubscriptionUuid,
   resolveFeedStream,
@@ -46,15 +51,17 @@ async function createSubscription(userId: string): Promise<{ subId: string; stre
   return { subId, streamId: sub.greaderStreamId };
 }
 
-async function createSavedFeed(userId: string): Promise<{ feedId: string; streamId: bigint }> {
-  // Saved feeds carry no URL (see getOrCreateSavedFeed).
-  const feedId = await createTestFeed({ type: "saved", userId, url: null });
-  createdFeedIds.push(feedId);
+/** The user's saved subscription, which carries the saved feed's stream serial (#1846). */
+async function createSavedFeed(
+  userId: string
+): Promise<{ subscriptionId: string; streamId: bigint }> {
+  const { subscriptionId, savedFeedId } = await createTestSavedSubscription(userId);
+  createdFeedIds.push(savedFeedId);
   const [feed] = await db
     .select({ greaderStreamId: feeds.greaderStreamId })
     .from(feeds)
-    .where(eq(feeds.id, feedId));
-  return { feedId, streamId: feed.greaderStreamId };
+    .where(eq(feeds.id, savedFeedId));
+  return { subscriptionId, streamId: feed.greaderStreamId };
 }
 
 describe("feedStreamIdToSubscriptionUuid", () => {
@@ -97,12 +104,12 @@ describe("resolveFeedStream", () => {
     });
   });
 
-  it("resolves the saved feed's stream id to the saved feed", async () => {
+  it("resolves the saved feed's stream id to the saved subscription", async () => {
     const userId = await createUser();
-    const { feedId, streamId } = await createSavedFeed(userId);
+    const { subscriptionId, streamId } = await createSavedFeed(userId);
     expect(await resolveFeedStream(db, userId, streamId)).toEqual({
       kind: "saved",
-      feedId,
+      subscriptionId,
     });
   });
 

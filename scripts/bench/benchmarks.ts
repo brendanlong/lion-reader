@@ -20,6 +20,7 @@ import {
   collectionSubscriptionId,
   prng,
   savedFeedId,
+  savedSubscriptionId,
   searchQuery,
   tagId,
   userId,
@@ -79,27 +80,51 @@ async function one<T>(db: ClientBase, sql: string): Promise<T> {
 /** `isCollectionSubscription()` (services/subscriptions.ts) over the unaliased `subscriptions`. */
 const IS_COLLECTION = "subscriptions.type = 'collection'";
 
+/** `entryFeedTitleSql()` (services/entry-filters.ts). */
+const FEED_TITLE =
+  "COALESCE(CASE WHEN subscriptions.type <> 'saved' THEN subscriptions.custom_title END, feeds.title)";
+
+/** `entrySubscriptionIdsSql` (services/entry-filters.ts) for a row's user and entry columns. */
+const subscriptionIdsSql = (userCol: string, entryCol: string): string => `ARRAY(
+    SELECT se.subscription_id::text FROM subscription_entries se
+    JOIN subscriptions ms ON ms.id = se.subscription_id AND ms.unsubscribed_at IS NULL
+    WHERE se.user_id = ${userCol} AND se.entry_id = ${entryCol}
+    ORDER BY se.subscription_id)`;
+
+/** `entryOriginJoin` (services/entry-filters.ts): the join condition onto `subscriptions`. */
+const originJoin = (userCol: string, entryCol: string): string =>
+  `subscriptions.user_id = ${userCol} AND subscriptions.id = (
+    SELECT se.subscription_id FROM subscription_entries se
+    JOIN subscriptions os ON os.id = se.subscription_id
+    WHERE se.user_id = ${userCol} AND se.entry_id = ${entryCol} AND os.type <> 'collection'
+    ORDER BY os.unsubscribed_at IS NULL DESC, se.subscription_id DESC
+    LIMIT 1)`;
+
 /** `entryListSelectFields` + `entryFeedTitleSql()` (services/entries.ts, entry-filters.ts). */
-const LIST_COLUMNS = `ve.id, ve.greader_item_id, ve.subscription_greader_stream_id, feeds.greader_stream_id,
-  ve.type, ve.url, ve.title, ve.author, ve.summary, ve.published_at, ve.fetched_at, ve.read,
-  ve.starred, ve.read_changed_at, ve.updated_at, ve.subscription_id, ve.site_name,
-  COALESCE(subscriptions.custom_title, feeds.title) AS feed_title`;
+const LIST_COLUMNS = `ve.id, ve.greader_item_id, subscriptions.greader_stream_id AS subscription_greader_stream_id,
+  feeds.greader_stream_id, ve.type, ve.url, ve.title, ve.author, ve.summary, ve.published_at,
+  ve.fetched_at, ve.read, ve.starred, ve.read_changed_at, ve.updated_at,
+  subscriptions.id AS subscription_id, ${subscriptionIdsSql("ve.user_id", "ve.id")} AS subscription_ids,
+  ve.site_name, ${FEED_TITLE} AS feed_title`;
 
 /** `entryFullSelectFields` + `shownFullContentSelectFields` (getEntries/getEntry). */
-const FULL_COLUMNS = `ve.id, ve.greader_item_id, ve.subscription_greader_stream_id, feeds.greader_stream_id,
-  ve.type, ve.url, ve.title, ve.author, ve.content_original, ve.content_cleaned, ve.summary,
-  ve.published_at, ve.fetched_at, ve.read, ve.starred, ve.updated_at, ve.subscription_id, ve.site_name,
-  COALESCE(subscriptions.custom_title, feeds.title) AS feed_title, feeds.url AS feed_url, ve.unsubscribe_url,
+const FULL_COLUMNS = `ve.id, ve.greader_item_id, subscriptions.greader_stream_id AS subscription_greader_stream_id,
+  feeds.greader_stream_id, ve.type, ve.url, ve.title, ve.author, ve.content_original, ve.content_cleaned,
+  ve.summary, ve.published_at, ve.fetched_at, ve.read, ve.starred, ve.updated_at,
+  subscriptions.id AS subscription_id, ${subscriptionIdsSql("ve.user_id", "ve.id")} AS subscription_ids,
+  ve.site_name, ${FEED_TITLE} AS feed_title, feeds.url AS feed_url, ve.unsubscribe_url,
   CASE WHEN subscriptions.fetch_full_content THEN COALESCE(ve.full_content_cleaned, ve.full_content_original) END AS full_content,
   ve.full_content_fetched_at, ve.full_content_error, subscriptions.fetch_full_content`;
 
-/** The joins every entry read performs (`entrySubscriptionJoin`). */
+/** The joins every entry read performs (`entryOriginJoin`). */
 const FROM_VISIBLE = `FROM visible_entries ve
 INNER JOIN feeds ON ve.feed_id = feeds.id
-LEFT JOIN subscriptions ON subscriptions.id = ve.subscription_id AND subscriptions.user_id = ve.user_id`;
+LEFT JOIN subscriptions ON ${originJoin("ve.user_id", "ve.id")}`;
 
 interface ListOptions {
   userId: string;
+  /** One subscription's list, walked through its memberships' timeline. */
+  single?: string;
   where?: string[];
   unreadOnly?: boolean;
   limit?: number;
@@ -110,20 +135,29 @@ interface ListOptions {
 /** `listEntries` (services/entries.ts), newest first; `limit` is the page size. */
 function listEntriesSql(o: ListOptions): string {
   const sortColumn =
-    o.sortBy === "readChanged" ? "ve.read_changed_at" : "ve.published_or_fetched_at";
+    o.sortBy === "readChanged"
+      ? "ve.read_changed_at"
+      : o.single
+        ? "se.published_or_fetched_at"
+        : "ve.published_or_fetched_at";
+  const idColumn = o.single ? "se.entry_id" : "ve.id";
   const where = [`ve.user_id = ${q(o.userId)}`, ...(o.where ?? [])];
   if (o.unreadOnly ?? true) where.push("ve.read = false");
   where.push("ve.is_spam = false");
   if (o.sortBy === "readChanged") where.push("ve.read_changed_at IS NOT NULL");
   if (o.cursor) {
     where.push(
-      `(${sortColumn} < ${ts(o.cursor.ts)} OR (${sortColumn} = ${ts(o.cursor.ts)} AND ve.id < ${q(o.cursor.id)}))`
+      `(${sortColumn} < ${ts(o.cursor.ts)} OR (${sortColumn} = ${ts(o.cursor.ts)} AND ${idColumn} < ${q(o.cursor.id)}))`
     );
   }
+  const join = o.single
+    ? `\nINNER JOIN subscription_entries se ON se.subscription_id = ${q(o.single)}
+  AND se.user_id = ve.user_id AND se.entry_id = ve.id`
+    : "";
   return `SELECT ${LIST_COLUMNS}, ${sortColumn} AS sort_ts
-${FROM_VISIBLE}
+${FROM_VISIBLE}${join}
 WHERE ${where.join("\n  AND ")}
-ORDER BY ${sortColumn} DESC, ve.id DESC
+ORDER BY ${sortColumn} DESC, ${idColumn} DESC
 LIMIT ${(o.limit ?? 10) + 1} OFFSET 0`;
 }
 
@@ -162,45 +196,34 @@ LEFT JOIN subscription_tags ON subscription_tags.subscription_id = subscriptions
 WHERE subscriptions.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
   AND subscription_tags.subscription_id IS NULL`;
 
-/**
- * `buildEntriesInSubscriptionsCondition` (services/entry-filters.ts): its
- * collection lookup (run here to pick the condition's shape, and returned as
- * a statement since the service runs it too) and the condition.
- */
-async function entriesInSubscriptions(
-  db: ClientBase,
-  userId: string,
+/** `buildEntriesInSubscriptionsCondition` (services/entry-filters.ts). */
+function entriesInSubscriptions(
   ids: string[] | { subquery: string },
-  columns: { entryId: string; subscriptionId: string }
-): Promise<{ lookup: Statement; condition: string }> {
+  columns: { userId: string; entryId: string },
+  paged = false
+): string {
   const idsSql = Array.isArray(ids) ? list(ids) : ids.subquery;
-  const lookupSql = `SELECT subscriptions.id FROM subscriptions
-WHERE subscriptions.user_id = ${q(userId)} AND ${IS_COLLECTION}
-  AND subscriptions.id IN (${idsSql})`;
-  const collections = (await rows<{ id: string }>(db, lookupSql)).map((r) => r.id);
-  const feedArm = `${columns.subscriptionId} IN (${idsSql})`;
-  const lookup = { label: "collection_lookup", sql: lookupSql };
-  if (collections.length === 0) return { lookup, condition: feedArm };
-  const collectionArm = `EXISTS (SELECT 1 FROM collection_entries
-  WHERE collection_entries.user_id = ${q(userId)} AND collection_entries.entry_id = ${columns.entryId}
-    AND collection_entries.subscription_id IN (${list(collections)}))`;
-  const onlyCollections = Array.isArray(ids) && ids.every((id) => collections.includes(id));
-  return {
-    lookup,
-    condition: onlyCollections ? collectionArm : `(${feedArm} OR ${collectionArm})`,
-  };
+  return `EXISTS (SELECT 1 FROM subscription_entries
+  WHERE subscription_entries.user_id = ${columns.userId} AND subscription_entries.entry_id = ${columns.entryId}
+    AND subscription_entries.subscription_id IN (${idsSql})${paged ? " OFFSET 0" : ""})`;
 }
 
-const VE_COLUMNS = { entryId: "ve.id", subscriptionId: "ve.subscription_id" };
-const UE_COLUMNS = {
-  entryId: "user_entries.entry_id",
-  subscriptionId: "user_entries.subscription_id",
+/** `getSavedSubscriptionId` (services/subscriptions.ts): Saved lists walk the saved subscription. */
+const savedSubscriptionSql: Statement = {
+  label: "saved_subscription",
+  sql: `SELECT subscriptions.id FROM subscriptions
+WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.type = 'saved' LIMIT 1`,
 };
+
+const VE_COLUMNS = { userId: "ve.user_id", entryId: "ve.id" };
+const UE_COLUMNS = { userId: "user_entries.user_id", entryId: "user_entries.entry_id" };
 
 /** `getUserUnreadCounts` (services/counts.ts). */
 const userCountsSql = (userId: string): Statement => ({
   label: "counts.users",
-  sql: `SELECT all_unread_count, starred_unread_count, saved_unread_count, uncategorized_unread_count
+  sql: `SELECT all_unread_count, starred_unread_count,
+  COALESCE((SELECT s.unread_count FROM subscriptions s WHERE s.user_id = users.id AND s.type = 'saved'), 0),
+  uncategorized_unread_count
 FROM users WHERE users.id = ${q(userId)}`,
 });
 
@@ -216,21 +239,19 @@ async function bulkCounts(
 ): Promise<Statement[]> {
   const out: Statement[] = [];
   const entryIds = entries.flatMap((e) => (e.id ? [e.id] : []));
-  let collectionIds: string[] = [];
+  let memberOf: string[] = [];
   if (entryIds.length > 0) {
-    const sql = `SELECT DISTINCT collection_entries.subscription_id FROM collection_entries
-INNER JOIN subscriptions ON subscriptions.id = collection_entries.subscription_id
-WHERE collection_entries.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
-  AND collection_entries.entry_id = ANY(${uuidArray(entryIds)})`;
-    collectionIds = (await rows<{ subscription_id: string }>(db, sql)).map(
-      (r) => r.subscription_id
-    );
-    out.push({ label: "counts.collections", sql });
+    const sql = `SELECT DISTINCT subscription_entries.subscription_id FROM subscription_entries
+INNER JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
+WHERE subscription_entries.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
+  AND subscriptions.type <> 'saved' AND subscription_entries.entry_id = ANY(${uuidArray(entryIds)})`;
+    memberOf = (await rows<{ subscription_id: string }>(db, sql)).map((r) => r.subscription_id);
+    out.push({ label: "counts.memberships", sql });
   }
   const subscriptionIds = [
     ...new Set([
-      ...entries.flatMap((e) => (e.subscriptionId ? [e.subscriptionId] : [])),
-      ...collectionIds,
+      ...entries.flatMap((e) => (!e.id && e.subscriptionId ? [e.subscriptionId] : [])),
+      ...memberOf,
     ]),
   ];
   out.push(userCountsSql(userId));
@@ -310,6 +331,10 @@ async function unsubscribeStatements(
 ): Promise<Statement[]> {
   const sub = `subscriptions.id = ${q(subscriptionId)} AND subscriptions.user_id = ${q(userId)}`;
   const now = ts(nowIso());
+  const { type } = await one<{ type: string }>(
+    db,
+    `SELECT type FROM subscriptions WHERE id = ${q(subscriptionId)}`
+  );
   const formerTags = (
     await rows<{ tag_id: string }>(
       db,
@@ -332,8 +357,19 @@ WHERE ${sub} AND subscriptions.unsubscribed_at IS NULL LIMIT 1`,
       label: "soft_delete",
       sql: `UPDATE subscriptions SET unsubscribed_at = ${now}, updated_at = ${now}
 WHERE ${sub} AND subscriptions.unsubscribed_at IS NULL
-RETURNING subscriptions.id`,
+RETURNING subscriptions.id, subscriptions.type`,
     },
+    ...(type === "collection"
+      ? [
+          {
+            label: "touch_members",
+            sql: `UPDATE user_entries SET updated_at = ${now}
+WHERE user_entries.user_id = ${q(userId)} AND user_entries.entry_id IN (
+  SELECT subscription_entries.entry_id FROM subscription_entries
+  WHERE subscription_entries.subscription_id = ${q(subscriptionId)})`,
+          },
+        ]
+      : []),
     {
       label: "delete_tags",
       sql: `DELETE FROM subscription_tags
@@ -471,7 +507,6 @@ ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
   const since = (col: string) => (changes ? `(${after(col)} OR ${after(col)})` : after(col));
   const greatest = "GREATEST(entries.updated_at, user_entries.updated_at)";
   const visible = "(user_entries.starred = true OR user_entries.active_memberships > 0)";
-  const saved = savedFeedId(0);
   const entriesSql = `WITH changed_entries AS (
   (SELECT user_entries.entry_id FROM user_entries
    WHERE user_entries.user_id = ${q(U0)} AND user_entries.updated_at >= ${c})
@@ -482,13 +517,21 @@ ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
    WHERE subscriptions.user_id = ${q(U0)})
   UNION
   (SELECT user_entries.entry_id FROM user_entries
-   INNER JOIN entries ON entries.id = user_entries.entry_id AND entries.feed_id = ${q(saved)} AND entries.updated_at >= ${c}
+   INNER JOIN entries ON entries.id = user_entries.entry_id
+     AND entries.feed_id = (SELECT feeds.id FROM feeds WHERE feeds.user_id = ${q(U0)} AND feeds.type = 'saved')
+     AND entries.updated_at >= ${c}
    WHERE user_entries.user_id = ${q(U0)})
+  UNION
+  (SELECT subscription_entries.entry_id FROM subscriptions
+   INNER JOIN subscription_entries ON subscription_entries.subscription_id = subscriptions.id
+   INNER JOIN entries ON entries.id = subscription_entries.entry_id AND entries.updated_at >= ${c}
+   WHERE subscriptions.user_id = ${q(U0)} AND ${IS_COLLECTION} AND subscriptions.unsubscribed_at IS NULL)
 )
 SELECT entries.id, entries.title, entries.author, entries.summary, entries.url, entries.published_at,
   entries.fetched_at, entries.site_name, entries.is_spam, entries.is_backfill, user_entries.read,
-  user_entries.starred, user_entries.read_changed_at, subscriptions.id AS subscription_id, entries.type,
-  COALESCE(subscriptions.custom_title, feeds.title) AS feed_title,
+  user_entries.starred, user_entries.read_changed_at, subscriptions.id AS subscription_id,
+  ${subscriptionIdsSql("user_entries.user_id", "user_entries.entry_id")} AS subscription_ids, entries.type,
+  ${FEED_TITLE} AS feed_title,
   ${visible} AS visible,
   ${since("entries.updated_at")} AS metadata_changed,
   ${since("user_entries.updated_at")} AS state_changed,
@@ -498,7 +541,7 @@ FROM changed_entries
 INNER JOIN user_entries ON user_entries.user_id = ${q(U0)} AND user_entries.entry_id = changed_entries.entry_id
 INNER JOIN entries ON entries.id = user_entries.entry_id
 INNER JOIN feeds ON feeds.id = entries.feed_id
-LEFT JOIN subscriptions ON subscriptions.id = user_entries.subscription_id AND subscriptions.user_id = user_entries.user_id
+LEFT JOIN subscriptions ON ${originJoin("user_entries.user_id", "user_entries.entry_id")}
 WHERE ${after(greatest)}
   AND ${changes ? `(${visible} OR ${since("user_entries.updated_at")})` : visible}
 ORDER BY ${greatest}, entries.id
@@ -535,10 +578,6 @@ ORDER BY subscriptions.updated_at`;
   );
   return [
     ...(changes ? [{ label: "db_now", sql: "SELECT now() AS now" }] : []),
-    {
-      label: "saved_feed",
-      sql: `SELECT feeds.id FROM feeds WHERE feeds.type = 'saved' AND feeds.user_id = ${q(U0)} LIMIT 1`,
-    },
     { label: "entries", sql: entriesSql },
     ...(newEntries.length > 0
       ? prefixed("new", await bulkCounts(db, U0, toCountEntries(newEntries)))
@@ -567,11 +606,11 @@ FROM tags WHERE tags.user_id = ${q(U0)} AND tags.updated_at > ${ts(tagCursor.ts)
           // listCollectionMemberships
           {
             label: "collection_memberships",
-            sql: `SELECT collection_entries.entry_id, collection_entries.subscription_id
-FROM collection_entries
-INNER JOIN subscriptions ON subscriptions.id = collection_entries.subscription_id
-WHERE collection_entries.user_id = ${q(U0)} AND collection_entries.entry_id IN (${list(stateChanged.map((r) => r.id))})
-  AND subscriptions.unsubscribed_at IS NULL`,
+            sql: `SELECT subscription_entries.entry_id, subscription_entries.subscription_id
+FROM subscription_entries
+INNER JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
+WHERE subscription_entries.user_id = ${q(U0)} AND subscription_entries.entry_id IN (${list(stateChanged.map((r) => r.id))})
+  AND subscriptions.unsubscribed_at IS NULL AND ${IS_COLLECTION}`,
           },
         ]
       : []),
@@ -650,9 +689,17 @@ arm_saved AS (
   WHERE e.feed_id = (SELECT id FROM feeds WHERE user_id = ${q(U0)}::uuid AND type = 'saved')
     AND e.updated_at >= (SELECT ts FROM bound)
   ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
+),
+arm_collections AS (
+  SELECT e.updated_at AS ts, e.id FROM subscriptions s
+  JOIN subscription_entries se ON se.subscription_id = s.id
+  JOIN entries e ON e.id = se.entry_id AND e.updated_at >= (SELECT ts FROM bound)
+  WHERE s.user_id = ${q(U0)}::uuid AND s.type = 'collection' AND s.unsubscribed_at IS NULL
+  ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
 )
 SELECT ts, id FROM (
   SELECT ts, id FROM arm_ue UNION ALL SELECT ts, id FROM arm_sub UNION ALL SELECT ts, id FROM arm_saved
+  UNION ALL SELECT ts, id FROM arm_collections
 ) c WHERE ts IS NOT NULL ORDER BY ts DESC, id DESC LIMIT 1`,
         },
         {
@@ -697,12 +744,10 @@ ORDER BY published_or_fetched_at DESC, id DESC OFFSET 200 LIMIT 1`
         `SELECT id FROM subscriptions WHERE user_id = ${q(U0)} AND unsubscribed_at IS NULL
 ORDER BY unread_count DESC, id LIMIT 1`
       );
-      const filter = await entriesInSubscriptions(db, U0, [id], VE_COLUMNS);
       return {
         statements: [
           verifyOwnershipSql(U0, id),
-          filter.lookup,
-          { label: "list", sql: listEntriesSql({ userId: U0, where: [filter.condition] }) },
+          { label: "list", sql: listEntriesSql({ userId: U0, single: id }) },
         ],
       };
     },
@@ -711,18 +756,14 @@ ORDER BY unread_count DESC, id LIMIT 1`
     name: "ssr.list_tag",
     kind: "read",
     source: "services/entries.ts listEntries (/tag/:id; the tag also holds a collection)",
-    prepare: async (db) => {
-      const filter = await entriesInSubscriptions(
-        db,
-        U0,
+    prepare: async () => {
+      const filter = entriesInSubscriptions(
         { subquery: taggedSubscriptionIds(U0, tagId(0, 1)) },
-        VE_COLUMNS
+        VE_COLUMNS,
+        true
       );
       return {
-        statements: [
-          filter.lookup,
-          { label: "list", sql: listEntriesSql({ userId: U0, where: [filter.condition] }) },
-        ],
+        statements: [{ label: "list", sql: listEntriesSql({ userId: U0, where: [filter] }) }],
       };
     },
   },
@@ -742,7 +783,8 @@ ORDER BY unread_count DESC, id LIMIT 1`
     source: "services/entries.ts listEntries (/saved)",
     prepare: async () => ({
       statements: [
-        { label: "list", sql: listEntriesSql({ userId: U0, where: ["ve.type = 'saved'"] }) },
+        savedSubscriptionSql,
+        { label: "list", sql: listEntriesSql({ userId: U0, single: savedSubscriptionId(0) }) },
       ],
     }),
   },
@@ -750,18 +792,14 @@ ORDER BY unread_count DESC, id LIMIT 1`
     name: "ssr.list_uncategorized",
     kind: "read",
     source: "services/entries.ts listEntries (/uncategorized; includes untagged collections)",
-    prepare: async (db) => {
-      const filter = await entriesInSubscriptions(
-        db,
-        U0,
+    prepare: async () => {
+      const filter = entriesInSubscriptions(
         { subquery: uncategorizedSubscriptionIds(U0) },
-        VE_COLUMNS
+        VE_COLUMNS,
+        true
       );
       return {
-        statements: [
-          filter.lookup,
-          { label: "list", sql: listEntriesSql({ userId: U0, where: [filter.condition] }) },
-        ],
+        statements: [{ label: "list", sql: listEntriesSql({ userId: U0, where: [filter] }) }],
       };
     },
   },
@@ -826,13 +864,11 @@ LIMIT 1`,
     name: "list.collection",
     kind: "read",
     source: "services/entries.ts listEntries (/subscription/:id for a collection, unread)",
-    prepare: async (db) => {
-      const filter = await entriesInSubscriptions(db, U0, [readingList], VE_COLUMNS);
+    prepare: async () => {
       return {
         statements: [
           verifyOwnershipSql(U0, readingList),
-          filter.lookup,
-          { label: "list", sql: listEntriesSql({ userId: U0, where: [filter.condition] }) },
+          { label: "list", sql: listEntriesSql({ userId: U0, single: readingList }) },
         ],
       };
     },
@@ -841,13 +877,11 @@ LIMIT 1`,
     name: "list.mostly_read_feed_unread",
     kind: "read",
     source: "services/entries.ts listEntries (unread only, 3,000-entry feed with 40 unread)",
-    prepare: async (db) => {
-      const filter = await entriesInSubscriptions(db, U0, [subMostlyRead], VE_COLUMNS);
+    prepare: async () => {
       return {
         statements: [
           verifyOwnershipSql(U0, subMostlyRead),
-          filter.lookup,
-          { label: "list", sql: listEntriesSql({ userId: U0, where: [filter.condition] }) },
+          { label: "list", sql: listEntriesSql({ userId: U0, single: subMostlyRead }) },
         ],
       };
     },
@@ -897,23 +931,17 @@ LIMIT 11 OFFSET 0`,
         db,
         `SELECT greader_stream_id::text AS stream FROM subscriptions WHERE id = ${q(subA)}`
       );
-      const filter = await entriesInSubscriptions(db, U0, [subA], VE_COLUMNS);
-      const listSql = listEntriesSql({
-        userId: U0,
-        where: [filter.condition],
-        unreadOnly: false,
-        limit: 20,
-      });
+      const listSql = listEntriesSql({ userId: U0, single: subA, unreadOnly: false, limit: 20 });
       const ids = (await rows<{ id: string }>(db, listSql)).slice(0, 20).map((r) => r.id);
       return {
         statements: [
+          // resolveFeedStream
           {
             label: "resolve_stream",
-            sql: `SELECT subscriptions.id FROM subscriptions
+            sql: `SELECT subscriptions.id, subscriptions.type FROM subscriptions
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${stream} LIMIT 1`,
           },
           verifyOwnershipSql(U0, subA),
-          filter.lookup,
           { label: "list", sql: listSql },
           { label: "get_entries", sql: getEntriesSql(U0, ids) },
         ],
@@ -932,23 +960,20 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${s
       );
       const listSql = listEntriesSql({
         userId: U0,
-        where: ["ve.type = 'saved'"],
+        single: savedSubscriptionId(0),
         unreadOnly: false,
         limit: 20,
       });
       const ids = (await rows<{ id: string }>(db, listSql)).slice(0, 20).map((r) => r.id);
       return {
         statements: [
+          // resolveFeedStream
           {
             label: "resolve_subscription",
-            sql: `SELECT subscriptions.id FROM subscriptions
+            sql: `SELECT subscriptions.id, subscriptions.type FROM subscriptions
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${stream} LIMIT 1`,
           },
-          {
-            label: "resolve_saved",
-            sql: `SELECT feeds.id FROM feeds
-WHERE feeds.user_id = ${q(U0)} AND feeds.type = 'saved' AND feeds.greader_stream_id = ${stream} LIMIT 1`,
-          },
+          savedSubscriptionSql,
           { label: "list", sql: listSql },
           { label: "get_entries", sql: getEntriesSql(U0, ids) },
         ],
@@ -966,22 +991,11 @@ WHERE feeds.user_id = ${q(U0)} AND feeds.type = 'saved' AND feeds.greader_stream
           sql: `SELECT subscriptions.greader_stream_id AS stream_id, subscriptions.unread_count AS unread, latest.newest AS newest
 FROM subscriptions
 LEFT JOIN LATERAL (
-  SELECT ue.published_or_fetched_at AS newest FROM user_entries ue
-  WHERE ue.subscription_id = subscriptions.id
-  ORDER BY ue.published_or_fetched_at DESC, ue.entry_id DESC LIMIT 1
+  SELECT se.published_or_fetched_at AS newest FROM subscription_entries se
+  WHERE se.subscription_id = subscriptions.id
+  ORDER BY se.published_or_fetched_at DESC, se.entry_id DESC LIMIT 1
 ) latest ON true
-WHERE subscriptions.user_id = ${q(U0)}::uuid AND subscriptions.unsubscribed_at IS NULL AND NOT ${IS_COLLECTION}
-UNION ALL
-SELECT f.greader_stream_id AS stream_id, u.saved_unread_count AS unread, latest.newest AS newest
-FROM feeds f
-JOIN users u ON u.id = f.user_id
-LEFT JOIN LATERAL (
-  SELECT COALESCE(e.published_at, e.fetched_at) AS newest FROM entries e
-  JOIN user_entries ue ON ue.user_id = f.user_id AND ue.entry_id = e.id
-  WHERE e.feed_id = f.id
-  ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC LIMIT 1
-) latest ON true
-WHERE f.type = 'saved' AND f.user_id = ${q(U0)}::uuid`,
+WHERE subscriptions.user_id = ${q(U0)}::uuid AND subscriptions.unsubscribed_at IS NULL AND NOT ${IS_COLLECTION}`,
         },
         userCountsSql(U0),
       ],
@@ -1120,8 +1134,10 @@ const WRITES: Benchmark[] = [
           flagUpdateSql(U0, entry.id, "read"),
           {
             label: "readback",
-            sql: `SELECT ve.id, ve.subscription_id, ve.read, ve.starred, ve.type, ve.updated_at, ve.read_changed_at
-FROM visible_entries ve WHERE ve.user_id = ${q(U0)} AND ve.id IN (${q(entry.id)})`,
+            sql: `SELECT ve.id, subscriptions.id, ${subscriptionIdsSql("ve.user_id", "ve.id")}, ve.read,
+  ve.starred, ve.type, ve.updated_at, ve.read_changed_at
+FROM visible_entries ve LEFT JOIN subscriptions ON ${originJoin("ve.user_id", "ve.id")}
+WHERE ve.user_id = ${q(U0)} AND ve.id IN (${q(entry.id)})`,
           },
           ...(await bulkCounts(db, U0, [{ id: entry.id, subscriptionId: entry.subscription_id }])),
         ],
@@ -1133,7 +1149,7 @@ FROM visible_entries ve WHERE ve.user_id = ${q(U0)} AND ve.id IN (${q(entry.id)}
     kind: "write",
     source: "services/entries.ts markAllEntriesRead (subscription with 4,000 unread)",
     prepare: async (db) => {
-      const filter = await entriesInSubscriptions(db, U0, [subA], UE_COLUMNS);
+      const filter = entriesInSubscriptions([subA], UE_COLUMNS);
       const changedAt = ts(nowIso());
       const marked = await rows<{ id: string; subscription_id: string }>(
         db,
@@ -1143,7 +1159,6 @@ WHERE user_id = ${q(U0)} AND subscription_id = ${q(subA)} AND NOT read AND NOT i
       return {
         statements: [
           verifyOwnershipSql(U0, subA),
-          filter.lookup,
           {
             label: "update",
             sql: `UPDATE user_entries SET read = true, read_changed_at = ${changedAt}, updated_at = ${changedAt}
@@ -1151,13 +1166,13 @@ WHERE user_entries.user_id = ${q(U0)} AND user_entries.read = false
   AND (user_entries.read_changed_at IS NULL OR user_entries.read_changed_at <= ${changedAt})
   AND user_entries.entry_id IN (
     SELECT ve.id FROM visible_entries ve WHERE ve.user_id = ${q(U0)} AND ve.is_spam = false)
-  AND ${filter.condition}
-RETURNING user_entries.entry_id, user_entries.subscription_id`,
+  AND ${filter}
+RETURNING user_entries.entry_id`,
           },
           ...(await bulkCounts(
             db,
             U0,
-            marked.map((m) => ({ id: m.id, subscriptionId: m.subscription_id }))
+            marked.map((m) => ({ id: m.id, subscriptionId: null }))
           )),
         ],
       };
@@ -1175,9 +1190,12 @@ RETURNING user_entries.entry_id, user_entries.subscription_id`,
           // selectStarredEntryStates
           {
             label: "readback",
-            sql: `SELECT user_entries.entry_id, user_entries.subscription_id, user_entries.read, user_entries.starred,
-  entries.type, GREATEST(entries.updated_at, user_entries.updated_at), user_entries.read_changed_at
+            sql: `SELECT user_entries.entry_id, subscriptions.id,
+  ${subscriptionIdsSql("user_entries.user_id", "user_entries.entry_id")}, user_entries.read,
+  user_entries.starred, entries.type, GREATEST(entries.updated_at, user_entries.updated_at),
+  user_entries.read_changed_at
 FROM user_entries INNER JOIN entries ON entries.id = user_entries.entry_id
+LEFT JOIN subscriptions ON ${originJoin("user_entries.user_id", "user_entries.entry_id")}
 WHERE user_entries.user_id = ${q(U0)} AND user_entries.entry_id IN (${q(entry.id)})`,
           },
           ...(await bulkCounts(db, U0, [{ id: entry.id, subscriptionId: entry.subscription_id }])),
@@ -1322,6 +1340,12 @@ RETURNING entries.id`,
             label: "insert_user_entry",
             sql: `INSERT INTO user_entries (user_id, entry_id, read, starred) VALUES (${q(U0)}, ${q(entryId)}, false, false)`,
           },
+          // getSavedSubscriptionId, for the new_entry event
+          {
+            label: "saved_subscription",
+            sql: `SELECT subscriptions.id FROM subscriptions
+WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.type = 'saved' LIMIT 1`,
+          },
         ],
       };
     },
@@ -1453,11 +1477,11 @@ LIMIT 1`,
           },
           {
             label: "collections",
-            sql: `SELECT collection_entries.subscription_id FROM collection_entries
-INNER JOIN subscriptions ON subscriptions.id = collection_entries.subscription_id
-WHERE collection_entries.user_id = ${q(U0)} AND collection_entries.entry_id = ${q(id)}
-  AND subscriptions.unsubscribed_at IS NULL
-ORDER BY collection_entries.subscription_id`,
+            sql: `SELECT subscription_entries.subscription_id FROM subscription_entries
+INNER JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
+WHERE subscription_entries.user_id = ${q(U0)} AND subscription_entries.entry_id = ${q(id)}
+  AND ${IS_COLLECTION} AND subscriptions.unsubscribed_at IS NULL
+ORDER BY subscription_entries.subscription_id`,
           },
           {
             label: "delete_entry",

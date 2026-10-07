@@ -18,7 +18,8 @@
  * The definitions are #1846's, over memberships (`subscription_entries`):
  * - an article is visible if it's starred or in an active subscription;
  * - a subscription (active or not) counts its unread, non-spam memberships,
- *   and Saved is the saved subscription's count;
+ *   and Saved is the saved subscription's count (users.saved_unread_count, its
+ *   copy for the previous release, is left to the triggers);
  * - All counts visible, unread, non-spam articles, and Starred the starred ones;
  * - a tag counts distinct unread, non-spam articles in an active subscription
  *   with that tag, and Uncategorized the same for untagged subscriptions other
@@ -115,35 +116,23 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
       WHERE NOT ue.read AND NOT ue.is_spam
       GROUP BY ue.user_id
     ),
-    saved AS (
-      SELECT se.user_id, count(*)::int AS n
-      FROM subscription_entries se
-      JOIN subscriptions s ON s.id = se.subscription_id AND s.type = 'saved'
-      JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id
-      WHERE NOT ue.read AND NOT ue.is_spam
-      GROUP BY se.user_id
-    ),
     truth AS (
       SELECT u2.id,
              COALESCE(rows.visible, 0) AS all_n,
              COALESCE(rows.starred, 0) AS starred_n,
-             COALESCE(saved.n, 0) AS saved_n,
              COALESCE(uncategorized.n, 0) AS uncategorized_n
       FROM users u2
       LEFT JOIN rows ON rows.user_id = u2.id
-      LEFT JOIN saved ON saved.user_id = u2.id
       LEFT JOIN uncategorized ON uncategorized.user_id = u2.id
     )
     UPDATE users u
     SET all_unread_count = truth.all_n,
         starred_unread_count = truth.starred_n,
-        saved_unread_count = truth.saved_n,
         uncategorized_unread_count = truth.uncategorized_n
     FROM truth
     WHERE u.id = truth.id
-      AND (u.all_unread_count, u.starred_unread_count, u.saved_unread_count,
-           u.uncategorized_unread_count)
-        IS DISTINCT FROM (truth.all_n, truth.starred_n, truth.saved_n, truth.uncategorized_n)
+      AND (u.all_unread_count, u.starred_unread_count, u.uncategorized_unread_count)
+        IS DISTINCT FROM (truth.all_n, truth.starred_n, truth.uncategorized_n)
   `);
 
   const result: ReconcileCountersResult = {
