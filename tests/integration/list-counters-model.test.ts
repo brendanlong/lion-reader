@@ -724,8 +724,8 @@ async function expectBadgesMatchLists(userId: string): Promise<void> {
   const [globals] = await db
     .select({
       starred: users.starredUnreadCount,
-      saved: sql<number>`(SELECT unread_count FROM subscriptions s
-        WHERE s.user_id = users.id AND s.type = 'saved')`,
+      saved: sql<number>`COALESCE((SELECT unread_count FROM subscriptions s
+        WHERE s.user_id = users.id AND s.type = 'saved'), 0)`,
     })
     .from(users)
     .where(eq(users.id, userId));

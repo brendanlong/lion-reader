@@ -308,7 +308,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                     add(
                         SyncEvent.NewEntry(
                             e.id,
-                            e.subscriptionId,
+                            e.wireSubscriptionId(),
                             e.type,
                             e.eventEntry(),
                         )
@@ -329,7 +329,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.read,
                                 e.starred,
                                 e.readChangedAt?.let { e.time(it) },
-                                e.subscriptionId,
+                                e.wireSubscriptionId(),
                                 e.type,
                                 if (e.read) null else e.eventEntry(),
                             )
@@ -404,7 +404,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .map {
                     EntryState(
                         it.id,
-                        it.subscriptionId,
+                        it.wireSubscriptionId(),
                         it.read,
                         it.starred,
                         it.readChangedAt?.let { t -> it.time(t) },
@@ -417,6 +417,13 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     }
 
     private fun Entry.time(millis: Long) = Instant.fromEpochMilliseconds(millis).toString()
+
+    /**
+     * The subscription id the server reports: a saved article's origin is the user's saved
+     * subscription (#1846), which the subscription list never shows.
+     */
+    private fun Entry.wireSubscriptionId() =
+        if (type == "saved") SAVED_SUBSCRIPTION_ID else subscriptionId
 
     private fun Entry.eventEntry() =
         EventEntry(
@@ -431,7 +438,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     private fun Entry.listItem() =
         EntryListItem(
             id = id,
-            subscriptionId = subscriptionId,
+            subscriptionId = wireSubscriptionId(),
             type = type,
             title = id,
             publishedAt = time(published),
@@ -444,7 +451,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     private fun Entry.full() =
         FullEntry(
             id = id,
-            subscriptionId = subscriptionId,
+            subscriptionId = wireSubscriptionId(),
             type = type,
             title = id,
             publishedAt = time(published),
@@ -473,5 +480,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
 
     private companion object {
         val WRITES = setOf("/entries/mark-read", "/entries/starred")
+        const val SAVED_SUBSCRIPTION_ID = "saved-subscription"
     }
 }

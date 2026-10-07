@@ -275,7 +275,7 @@ describe("getGreaderUnreadCounts", () => {
     expect(subscriptions.find((s) => s.streamId === streamId)?.unreadCount).toBe(2);
   });
 
-  it("reports the saved feed count from users.saved_unread_count", async () => {
+  it("reports Saved Articles' count from the saved subscription", async () => {
     const userId = await createUser();
     const { feedId: savedFeedId, streamId } = await createSavedFeed(userId);
     await addEntry({

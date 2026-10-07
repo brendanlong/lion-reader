@@ -191,6 +191,21 @@ describe("EntryContent", () => {
     });
   });
 
+  it.each([
+    ["a feed article", { type: "web", subscriptionId: "sub-1" }, true],
+    // Its subscription is the saved one (#1846), which has no settings.
+    ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, false],
+  ])("offers the full-content toggle for %s: %s", async (_label, fields, offered) => {
+    renderEntryContent(<EntryContent entryId="entry-1" />, {
+      ...baseHandlers(),
+      "entries.get": () => ({ entry: createEntry(fields) }),
+    });
+    await screen.findByText("The Great Article");
+    expect(
+      screen.queryByRole("button", { name: "Fetch and display full article content" }) !== null
+    ).toBe(offered);
+  });
+
   it("shows the error fallback when entries.get fails", async () => {
     renderEntryContent(
       <EntryContent entryId="entry-1" />,

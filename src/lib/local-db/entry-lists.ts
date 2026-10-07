@@ -199,8 +199,8 @@ const INSERT_SUPPORTED_FILTER_KEYS = new Set([
 /**
  * Which tags the entry's subscription has. `undefined` when the subscription
  * isn't known, in which case tag and uncategorized lists are conservatively
- * skipped. Saved articles (no subscription) belong to no tag list, so an
- * empty scope is exact for them.
+ * skipped. Saved articles belong to no tag list, so an empty scope is exact
+ * for them.
  */
 export interface EntryTagScope {
   tagIds: Set<string>;

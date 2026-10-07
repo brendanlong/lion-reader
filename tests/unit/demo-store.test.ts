@@ -88,11 +88,16 @@ describe("createDemoStore", () => {
       const sub = DEMO_SUBSCRIPTIONS[0];
       const subItems = procedures["entries.list"]({ subscriptionId: sub.id, limit: 100 }).items;
       expect(subItems).toHaveLength(sub.entryCount);
-      expect(subItems.every((i) => i.subscriptionId === sub.id)).toBe(true);
+      // A saved article's origin is the saved subscription, like the server's (#1846).
+      expect(
+        subItems.every((i) => i.subscriptionId === (i.type === "saved" ? "demo-saved" : sub.id))
+      ).toBe(true);
 
       const tag = DEMO_TAGS.find((t) => t.id === "features")!;
       const tagItems = procedures["entries.list"]({ tagId: tag.id, limit: 100 }).items;
-      expect(tagItems.every((i) => tag.subscriptionIds.includes(i.subscriptionId!))).toBe(true);
+      expect(
+        tagItems.every((i) => i.type === "saved" || tag.subscriptionIds.includes(i.subscriptionId!))
+      ).toBe(true);
       expect(tagItems.length).toBe(
         DEMO_ENTRIES.filter((e) => tag.subscriptionIds.includes(e.subscriptionId!)).length
       );

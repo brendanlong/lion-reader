@@ -157,6 +157,9 @@ interface EntryFilter {
   query?: string;
 }
 
+/** The demo user's saved subscription: saved articles' origin, never listed. */
+const DEMO_SAVED_SUBSCRIPTION_ID = "demo-saved";
+
 export function createDemoStore(): DemoStore {
   const tags = new Map(DEMO_TAGS.map((tag) => [tag.id, tag]));
 
@@ -208,12 +211,22 @@ export function createDemoStore(): DemoStore {
     return feed ? [feed, ...collections] : collections;
   }
 
+  /**
+   * The entry's origin as the API reports it: for a saved article the saved
+   * subscription (#1846), which no list shows and nothing can update.
+   */
+  function originOf(state: EntryState): string | null {
+    if (state.entry.type === "saved") return DEMO_SAVED_SUBSCRIPTION_ID;
+    return subscriptionOf(state)?.id ?? null;
+  }
+
   /** The active subscriptions holding the entry, like the API's `subscriptionIds`. */
   function subscriptionIdsOf(state: EntryState): string[] {
-    return containersOf(state)
-      .filter((sub) => !sub.deleted)
-      .map((sub) => sub.id)
-      .sort();
+    const ids = containersOf(state)
+      .filter((sub) => !sub.deleted && sub !== subscriptionOf(state))
+      .map((sub) => sub.id);
+    const origin = originOf(state);
+    return (origin ? [origin, ...ids] : ids).sort();
   }
 
   /** Starred and collected entries stay visible after unsubscribing, like the app. */
@@ -273,9 +286,9 @@ export function createDemoStore(): DemoStore {
     const sub = subscriptionOf(state);
     return {
       id: entry.id,
-      subscriptionId: sub?.id ?? null,
+      subscriptionId: originOf(state),
       subscriptionIds: subscriptionIdsOf(state),
-      feedId: legacyFeedId(sub?.id ?? null),
+      feedId: legacyFeedId(originOf(state)),
       type: entry.type,
       url: entry.url,
       title: entry.title,
@@ -305,7 +318,8 @@ export function createDemoStore(): DemoStore {
       fullContentCleaned: state.fullContentFetchedAt ? contentCleaned : null,
       fullContentFetchedAt: state.fullContentFetchedAt,
       fullContentError: null,
-      fetchFullContent: subscriptionOf(state)?.fetchFullContent ?? false,
+      fetchFullContent:
+        state.entry.type === "saved" ? false : (subscriptionOf(state)?.fetchFullContent ?? false),
     };
   }
 
@@ -472,7 +486,7 @@ export function createDemoStore(): DemoStore {
         state.readChangedAt = writtenAt;
         results.push({
           id,
-          subscriptionId: subscriptionOf(state)?.id ?? null,
+          subscriptionId: originOf(state),
           subscriptionIds: subscriptionIdsOf(state),
           read: state.read,
           starred: state.starred,
@@ -566,8 +580,7 @@ export function createDemoStore(): DemoStore {
       return {
         items: page.map(toSubscription),
         nextCursor: start + limit < matching.length ? page[page.length - 1].id : undefined,
-        // The demo models saved articles without a saved subscription.
-        savedSubscriptionId: null,
+        savedSubscriptionId: DEMO_SAVED_SUBSCRIPTION_ID,
       };
     },
 

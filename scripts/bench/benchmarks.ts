@@ -516,10 +516,16 @@ ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
    INNER JOIN user_entries ON user_entries.entry_id = entries.id AND user_entries.user_id = subscriptions.user_id
    WHERE subscriptions.user_id = ${q(U0)})
   UNION
+  (SELECT user_entries.entry_id FROM user_entries
+   INNER JOIN entries ON entries.id = user_entries.entry_id
+     AND entries.feed_id = (SELECT feeds.id FROM feeds WHERE feeds.user_id = ${q(U0)} AND feeds.type = 'saved')
+     AND entries.updated_at >= ${c}
+   WHERE user_entries.user_id = ${q(U0)})
+  UNION
   (SELECT subscription_entries.entry_id FROM subscriptions
    INNER JOIN subscription_entries ON subscription_entries.subscription_id = subscriptions.id
    INNER JOIN entries ON entries.id = subscription_entries.entry_id AND entries.updated_at >= ${c}
-   WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.feed_id IS NULL)
+   WHERE subscriptions.user_id = ${q(U0)} AND ${IS_COLLECTION} AND subscriptions.unsubscribed_at IS NULL)
 )
 SELECT entries.id, entries.title, entries.author, entries.summary, entries.url, entries.published_at,
   entries.fetched_at, entries.site_name, entries.is_spam, entries.is_backfill, user_entries.read,
@@ -677,15 +683,23 @@ arm_sub AS (
   JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
   WHERE s.user_id = ${q(U0)}::uuid ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
 ),
-arm_members AS (
+arm_saved AS (
+  SELECT e.updated_at AS ts, e.id FROM entries e
+  JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
+  WHERE e.feed_id = (SELECT id FROM feeds WHERE user_id = ${q(U0)}::uuid AND type = 'saved')
+    AND e.updated_at >= (SELECT ts FROM bound)
+  ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
+),
+arm_collections AS (
   SELECT e.updated_at AS ts, e.id FROM subscriptions s
   JOIN subscription_entries se ON se.subscription_id = s.id
   JOIN entries e ON e.id = se.entry_id AND e.updated_at >= (SELECT ts FROM bound)
-  WHERE s.user_id = ${q(U0)}::uuid AND s.feed_id IS NULL
+  WHERE s.user_id = ${q(U0)}::uuid AND s.type = 'collection' AND s.unsubscribed_at IS NULL
   ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
 )
 SELECT ts, id FROM (
-  SELECT ts, id FROM arm_ue UNION ALL SELECT ts, id FROM arm_sub UNION ALL SELECT ts, id FROM arm_members
+  SELECT ts, id FROM arm_ue UNION ALL SELECT ts, id FROM arm_sub UNION ALL SELECT ts, id FROM arm_saved
+  UNION ALL SELECT ts, id FROM arm_collections
 ) c WHERE ts IS NOT NULL ORDER BY ts DESC, id DESC LIMIT 1`,
         },
         {

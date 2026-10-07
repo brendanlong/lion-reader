@@ -48,6 +48,7 @@ import {
   entryFeedTitleSql,
   entryOriginJoin,
   entrySubscriptionIdsSql,
+  inSavedSubscriptionSql,
 } from "./entry-filters";
 
 // ============================================================================
@@ -771,7 +772,9 @@ export async function listEntries(
   // Saved is the saved subscription's list, which `single` already is.
   conditions.push(
     ...buildEntryFilterConditions(
-      single && params.type === "saved" ? { ...params, type: undefined } : params
+      single && !params.subscriptionId && params.type === "saved"
+        ? { ...params, type: undefined }
+        : params
     )
   );
 
@@ -1342,8 +1345,12 @@ export async function markAllEntriesRead(
     conditions.push(eq(userEntries.starred, true));
   }
 
-  // Filter by feed type
-  if (params.type) {
+  // Filter by feed type; Saved is the saved subscription's list, as for listEntries.
+  if (params.type === "saved") {
+    conditions.push(
+      inSavedSubscriptionSql({ userId: userEntries.userId, entryId: userEntries.entryId })
+    );
+  } else if (params.type) {
     const typeEntryIdsSubquery = db
       .select({ id: entries.id })
       .from(entries)

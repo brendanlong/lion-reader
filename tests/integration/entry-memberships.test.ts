@@ -18,7 +18,12 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { getEntry, listEntries, markEntriesRead } from "../../src/server/services/entries";
+import {
+  getEntry,
+  listEntries,
+  markAllEntriesRead,
+  markEntriesRead,
+} from "../../src/server/services/entries";
 import { uploadArticle } from "../../src/server/services/saved";
 import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
@@ -139,6 +144,17 @@ describe("entry memberships (#1846)", () => {
 
     const saved = await listEntries(db, { userId, type: "saved", showSpam: false });
     expect(saved.items.map((i) => i.type)).toEqual(["saved"]);
+    // Both filters apply: a feed's list holds no saved articles.
+    expect(
+      (await listEntries(db, { userId, subscriptionId: sourceId, type: "saved", showSpam: false }))
+        .items
+    ).toEqual([]);
+
+    // Mark-all-read on Saved marks the saved subscription's articles only.
+    await markAllEntriesRead(db, { userId, type: "saved", showSpam: false });
+    const unread = await listEntries(db, { userId, unreadOnly: true, showSpam: false });
+    expect(unread.items.every((i) => i.type !== "saved")).toBe(true);
+    expect(unread.items.map((i) => i.id).sort()).toEqual([...ids].sort());
   });
 
   it("syncs memberships with entry events", async () => {

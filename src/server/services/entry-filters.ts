@@ -221,7 +221,7 @@ export function buildEntriesInSubscriptionsCondition(
 /**
  * Entries in the user's saved subscription (the Saved list, `type: "saved"`).
  */
-function inSavedSubscriptionSql(columns: { userId: AnyColumn; entryId: AnyColumn }): SQL {
+export function inSavedSubscriptionSql(columns: { userId: AnyColumn; entryId: AnyColumn }): SQL {
   return sql`EXISTS (
     SELECT 1 FROM ${subscriptionEntries}
     JOIN ${subscriptions} ON ${subscriptions.id} = ${subscriptionEntries.subscriptionId}
