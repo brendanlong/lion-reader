@@ -2,15 +2,20 @@
  * Randomized model test for the unread counters (#1806).
  *
  * Runs seeded random sequences of the operations that move counters — read,
- * star, collection membership, tagging, unsubscribing (with and without
- * dropping tags) and resubscribing, feed merges, spam, new and deleted
- * articles, mark-all-read, statements moving rows both ways, deleting tags,
- * collections and users — through the code the app runs. After every step it checks that:
- *   1. the reconcile job, which recomputes every counter from its definition,
- *      finds nothing to fix, and
- *   2. every badge equals the number of unread articles its list shows (tag,
- *      Uncategorized, each subscription, All), and
- *   3. the subscription_entries mirror matches the memberships it copies (#1846).
+ * star, collection membership, tagging, unsubscribing and resubscribing, feed
+ * merges (onto a new feed, and onto one the user already follows), spam, new
+ * articles, saving and deleting saved articles, mark-all-read, statements
+ * moving rows both ways, deleting tags, collections and users — through the
+ * code the app runs. After every step it checks that:
+ *   1. every counter and the set of visible articles equal what #1846's rules
+ *      give, computed here from the base facts (memberships, subscriptions,
+ *      tags, read/starred/spam) rather than through any app or trigger code
+ *      (`expectedState`),
+ *   2. the reconcile job, which recomputes every counter from its definition,
+ *      finds nothing to fix,
+ *   3. every badge equals the number of unread articles its list shows (tag,
+ *      Uncategorized, each subscription, All, Starred, Saved), and
+ *   4. the subscription_entries mirror matches the memberships it copies (#1846).
  * Interleavings that hand-written tests miss (an article reaching a tag through
  * both its feed and a collection, retagging while members are unread, ...)
  * come up here. Every random pick indexes a world's ids in creation order, so
@@ -24,6 +29,7 @@ import {
   collectionEntries,
   entries,
   feeds,
+  subscriptionEntries,
   subscriptionTags,
   subscriptions,
   tags,
@@ -37,6 +43,7 @@ import {
 } from "../../src/server/services/collections";
 import {
   countEntries,
+  listEntries,
   markAllEntriesRead,
   markEntriesRead,
   updateEntryStarred,
@@ -171,7 +178,183 @@ async function liveTagIds(w: World): Promise<string[]> {
   return w.tagIds.filter((id) => live.has(id));
 }
 
+async function membershipCount(subscriptionId: string): Promise<number> {
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(subscriptionEntries)
+    .where(eq(subscriptionEntries.subscriptionId, subscriptionId));
+  return n;
+}
+
+/**
+ * Where today's triggers differ from #1846's rules; phase 5 makes them agree
+ * and deletes these.
+ */
+const TODAY = {
+  /** Deleting a collection empties it, instead of keeping its memberships. */
+  deletedCollectionsEmptied: true,
+  /**
+   * A web or email subscription's counter counts the articles stamped with it
+   * (`user_entries.subscription_id`), not its memberships, so a merged-away
+   * subscription drops the articles it keeps, and the saved subscription
+   * counts nothing (Saved is `users.saved_unread_count`).
+   */
+  countsStampedArticles: true,
+};
+
+interface ExpectedState {
+  visible: string[];
+  subscriptions: Map<string, number>;
+  tags: Map<string, number>;
+  all: number;
+  uncategorized: number;
+  starred: number;
+  saved: number;
+}
+
+/**
+ * Every counter and the visible articles of one user, by #1846's rules,
+ * from the base facts alone:
+ * - visible: starred, or in at least one active subscription;
+ * - a subscription (active or not): its unread, non-spam memberships;
+ * - All: visible, unread, non-spam articles;
+ * - a tag: distinct unread, non-spam articles in an active subscription with
+ *   that tag; Uncategorized: the same for untagged subscriptions other than
+ *   saved;
+ * - Starred: starred, unread, non-spam articles; Saved: the saved
+ *   subscription's count.
+ */
+async function expectedState(userId: string): Promise<ExpectedState> {
+  const subs = await db
+    .select({
+      id: subscriptions.id,
+      type: subscriptions.type,
+      active: sql<boolean>`${subscriptions.unsubscribedAt} IS NULL`,
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId));
+  const tagRows = await db
+    .select({ id: tags.id })
+    .from(tags)
+    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
+  const tagLinks = await db
+    .select({ subscriptionId: subscriptionTags.subscriptionId, tagId: subscriptionTags.tagId })
+    .from(subscriptionTags)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionTags.subscriptionId))
+    .where(eq(subscriptions.userId, userId));
+  const memberships = await db
+    .select({
+      subscriptionId: subscriptionEntries.subscriptionId,
+      entryId: subscriptionEntries.entryId,
+    })
+    .from(subscriptionEntries)
+    .where(eq(subscriptionEntries.userId, userId));
+  const rows = await db
+    .select({
+      entryId: userEntries.entryId,
+      subscriptionId: userEntries.subscriptionId,
+      read: userEntries.read,
+      starred: userEntries.starred,
+      isSpam: userEntries.isSpam,
+    })
+    .from(userEntries)
+    .where(eq(userEntries.userId, userId));
+
+  const row = new Map(rows.map((r) => [r.entryId, r]));
+  const unread = (entryId: string) => !row.get(entryId)!.read && !row.get(entryId)!.isSpam;
+  const membersOf = (subscriptionId: string) =>
+    memberships.filter((m) => m.subscriptionId === subscriptionId).map((m) => m.entryId);
+  const tagsOf = (subscriptionId: string) =>
+    tagLinks.filter((l) => l.subscriptionId === subscriptionId).map((l) => l.tagId);
+  const active = subs.filter((s) => s.active);
+  const distinctUnread = (inLists: typeof subs) =>
+    new Set(inLists.flatMap((s) => membersOf(s.id)).filter(unread)).size;
+
+  const inActive = new Set(active.flatMap((s) => membersOf(s.id)));
+  const visible = rows
+    .filter((r) => r.starred || inActive.has(r.entryId))
+    .map((r) => r.entryId)
+    .sort();
+  const savedSubscription = subs.find((s) => s.type === "saved");
+
+  const subscriptionCounts = new Map(
+    subs.map((s) => {
+      if (TODAY.countsStampedArticles && s.type !== "collection") {
+        const stamped = rows.filter((r) => r.subscriptionId === s.id).map((r) => r.entryId);
+        return [s.id, stamped.filter(unread).length];
+      }
+      return [s.id, membersOf(s.id).filter(unread).length];
+    })
+  );
+  return {
+    visible,
+    subscriptions: subscriptionCounts,
+    tags: new Map(
+      tagRows.map((t) => [t.id, distinctUnread(active.filter((s) => tagsOf(s.id).includes(t.id)))])
+    ),
+    all: visible.filter(unread).length,
+    uncategorized: distinctUnread(
+      active.filter((s) => s.type !== "saved" && tagsOf(s.id).length === 0)
+    ),
+    starred: rows.filter((r) => r.starred && unread(r.entryId)).length,
+    saved: savedSubscription ? membersOf(savedSubscription.id).filter(unread).length : 0,
+  };
+}
+
+/** Every counter, and the visible articles, must be what #1846's rules give. */
+async function expectCountersMatchModel(userId: string, context: string): Promise<void> {
+  const expected = await expectedState(userId);
+  const visible = await db.execute<{ id: string }>(
+    sql`SELECT id FROM visible_entries WHERE user_id = ${userId} ORDER BY id`
+  );
+  expect(
+    visible.rows.map((r) => r.id),
+    `${context}\nvisible`
+  ).toEqual(expected.visible);
+
+  const [user] = await db
+    .select({
+      all: users.allUnreadCount,
+      uncategorized: users.uncategorizedUnreadCount,
+      starred: users.starredUnreadCount,
+      saved: users.savedUnreadCount,
+    })
+    .from(users)
+    .where(eq(users.id, userId));
+  expect(user, `${context}\nuser counters`).toEqual({
+    all: expected.all,
+    uncategorized: expected.uncategorized,
+    starred: expected.starred,
+    saved: expected.saved,
+  });
+
+  const subscriptionCounts = await db
+    .select({ id: subscriptions.id, unread: subscriptions.unreadCount })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId));
+  expect(
+    new Map(subscriptionCounts.map((s) => [s.id, s.unread])),
+    `${context}\nsubscription counters`
+  ).toEqual(expected.subscriptions);
+
+  const tagCounts = await db
+    .select({ id: tags.id, unread: tags.unreadCount })
+    .from(tags)
+    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)));
+  expect(new Map(tagCounts.map((t) => [t.id, t.unread])), `${context}\ntag counters`).toEqual(
+    expected.tags
+  );
+}
+
 type Op = (world: World, rng: ReturnType<typeof prng>) => Promise<string>;
+
+/**
+ * After a merge, the survivor takes the merged-away subscription's place
+ * everywhere, so later steps never resubscribe to a feed that redirects.
+ */
+function replaceFeed(w: World, subscriptionId: string, survivor: World["feeds"][number]): void {
+  w.feeds = w.feeds.map((f) => (f.subscriptionId === subscriptionId ? survivor : f));
+}
 
 const OPS: Array<[number, Op]> = [
   [
@@ -298,7 +481,10 @@ const OPS: Array<[number, Op]> = [
       const live = w.collections.filter((c) => active.has(c));
       if (live.length > 1 && rng.chance(0.5)) {
         const id = rng.pick(live);
+        const before = await membershipCount(id);
         await createCaller(await createAuthContext(w.userId)).subscriptions.delete({ id });
+        // A deleted collection's memberships stay, and stop counting.
+        expect(await membershipCount(id)).toBe(TODAY.deletedCollectionsEmptied ? 0 : before);
         return `delete collection ${id}`;
       }
       w.collections.push((await createCollection(db, w.userId, "New")).subscription.id);
@@ -325,8 +511,43 @@ OPS.push(
         .select({ id: subscriptions.id })
         .from(subscriptions)
         .where(and(eq(subscriptions.userId, w.userId), eq(subscriptions.feedId, newFeed.id)));
-      if (survivor) w.feeds[index] = { feedId: newFeed.id, subscriptionId: survivor.id };
+      if (survivor)
+        replaceFeed(w, old.subscriptionId, { feedId: newFeed.id, subscriptionId: survivor.id });
       return `merge ${old.feedId} into ${newFeed.id}`;
+    },
+  ],
+  [
+    1,
+    async (w, rng) => {
+      // A redirect merge onto another feed the user follows (or followed):
+      // the survivor already holds some articles and keeps its own tags.
+      const from = w.feeds.indexOf(rng.pick(w.feeds));
+      const onto = rng.pick(w.feeds.filter((f) => f.feedId !== w.feeds[from].feedId));
+      if (!onto) return "merge onto existing: one feed";
+      const old = w.feeds[from];
+      const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, old.feedId));
+      const [newFeed] = await db.select().from(feeds).where(eq(feeds.id, onto.feedId));
+      await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
+      const merged = !(await activeSubscriptionIds(w)).includes(old.subscriptionId);
+      if (merged) replaceFeed(w, old.subscriptionId, onto);
+      return `merge ${old.subscriptionId} onto ${onto.subscriptionId}${merged ? "" : " (inactive)"}`;
+    },
+  ],
+  [
+    1,
+    async (w, rng) => {
+      // A newsletter, spam or not, while the email subscription is active.
+      if (!(await activeSubscriptionIds(w)).includes(w.emailSubscriptionId)) {
+        return "new email: unsubscribed";
+      }
+      const [{ feedId }] = await db
+        .select({ feedId: subscriptions.feedId })
+        .from(subscriptions)
+        .where(eq(subscriptions.id, w.emailSubscriptionId));
+      const isSpam = rng.chance(0.5);
+      const id = await createTestEntry(feedId!, { type: "email", isSpam, userIds: [w.userId] });
+      w.entryIds.push(id);
+      return `new email ${id}${isSpam ? " (spam)" : ""}`;
     },
   ],
   [
@@ -376,9 +597,35 @@ async function expectBadgesMatchLists(userId: string): Promise<void> {
   for (const sub of await db
     .select({ id: subscriptions.id, unread: subscriptions.unreadCount })
     .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt)))) {
+    .where(
+      and(
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        // The saved subscription's list is Saved, below.
+        sql`${subscriptions.type} <> 'saved'`
+      )
+    )) {
     expect(sub.unread, `subscription ${sub.id}`).toBe(await count({ subscriptionId: sub.id }));
   }
+
+  // Starred and Saved count from counters, so count their lists' pages.
+  const listed = async (filter: { starredOnly?: boolean; type?: "saved" }) =>
+    (
+      await listEntries(db, {
+        userId,
+        ...filter,
+        unreadOnly: true,
+        showSpam: false,
+        limit: 1000,
+        maxLimit: 1000,
+      })
+    ).items.length;
+  const [globals] = await db
+    .select({ starred: users.starredUnreadCount, saved: users.savedUnreadCount })
+    .from(users)
+    .where(eq(users.id, userId));
+  expect(globals.starred, "Starred").toBe(await listed({ starredOnly: true }));
+  expect(globals.saved, "Saved").toBe(await listed({ type: "saved" }));
 }
 
 describe("unread counters under random operations", () => {
@@ -406,6 +653,7 @@ describe("unread counters under random operations", () => {
         const world = worlds[index];
         history.push(await pickOp(rng)(world, rng));
         const context = `seed ${seed}, step ${step}:\n${history.slice(-5).join("\n")}`;
+        for (const w of worlds) await expectCountersMatchModel(w.userId, context);
         expect(await reconcileCounters(db), context).toEqual({
           subscriptionsFixed: 0,
           usersFixed: 0,
