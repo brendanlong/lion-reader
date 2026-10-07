@@ -508,11 +508,7 @@ private fun Drawer(
             ) {
                 val subscriptions = all.filter(::shown)
                 if (hideEmpty && unread == 0 && selected != scope && subscriptions.isEmpty()) return
-                // The open feed's group shows its feeds, so the open list stays visible.
-                val expanded =
-                    key in expandedTags ||
-                        (selected is ListScope.Subscription &&
-                            subscriptions.any { it.id == selected.id })
+                val expanded = key in expandedTags
                 item(key = "group-$key") {
                     DrawerRow(
                         name,
