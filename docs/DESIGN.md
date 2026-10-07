@@ -73,6 +73,7 @@ The app, worker, and Discord bot are separate, independently scaled Fly process 
 Canonical `feeds`/`entries` rows are shared across users; `subscriptions` and `user_entries` hold each user's relationship and read/star state. Keys are UUIDv7. The schema is `migrations/schema.sql`; the invariants are in `src/server/CLAUDE.md`. The decisions that shape it:
 
 - **Entry visibility is decided at insert time**: a user sees an entry only if a `user_entries` row exists, and rows are only created for what a feed currently contains when the user subscribes or a fetch runs. That — not a timestamp rule in a view — is what keeps pre-subscription content private.
+- **Every subscription holds its articles through one membership table** (`subscription_entries`, #1846), whatever its type, so visibility (starred, or in an active subscription), lists and counters have one rule each.
 - **Unread counts are denormalized** onto trigger-maintained counters, so badges are arithmetic over subscriptions, never entry scans; a daily job repairs (and loudly reports) drift.
 - **Conflicting updates resolve to the newest user intent**: read/star carry per-field last-writer-wins watermarks, and `updated_at` moves only on a real change so re-asserts don't churn delta sync.
 - **Soft deletes** for subscriptions (`unsubscribed_at`), so resubscribing restores read state.
@@ -106,7 +107,7 @@ Workers publish to Redis; each app process forwards events over SSE; the client 
 
 ## API Design
 
-**Subscriptions, not feeds, are the user-facing identifier.** Feeds are shared internally, but clients see "their subscriptions" with feed metadata flattened in, and filter entries by `subscriptionId`. The `feeds` router is pre-subscription only (preview, discover).
+**Subscriptions, not feeds, are the user-facing identifier.** Feeds are shared internally, but clients see "their subscriptions" with feed metadata flattened in, and filter entries by `subscriptionId`. An entry names its origin subscription (`subscriptionId`) and every active subscription holding it (`subscriptionIds`). The `feeds` router is pre-subscription only (preview, discover).
 
 The same services back several surfaces under `src/app/api/`: the browser tRPC endpoint (`/api/trpc`); a REST API (`/api/v1/*`) generated from tRPC `openapi` meta, spec at `/api/openapi`; the Google Reader and Wallabag compatibility APIs; MCP (`/api/mcp`); and webhooks (Mailgun, WebSub).
 

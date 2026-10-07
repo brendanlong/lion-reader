@@ -37,6 +37,7 @@ import {
 import { uploadArticle } from "../../src/server/services/saved";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { checkSubscriptionEntries } from "../../src/server/services/subscription-entries";
+import { getGlobalUnreadCounts } from "../../src/server/services/counts";
 import { backfillSubscriptionEntries } from "../../scripts/backfill-subscription-entries";
 import {
   createTestEntry,
@@ -151,7 +152,7 @@ describe("subscription_entries mirror (#1846)", () => {
     expect(await membershipsOf(userId)).toEqual(pairs([oldSub, entryId], [survivor, entryId]));
   });
 
-  it("follows collection adds and removals, and a deleted collection's emptying", async () => {
+  it("follows collection adds and removals, and keeps a deleted collection's", async () => {
     const userId = await createTestUser();
     const feedId = await createTestFeed();
     const sourceId = await createTestSubscription(userId, feedId);
@@ -171,7 +172,9 @@ describe("subscription_entries mirror (#1846)", () => {
     );
 
     await unsubscribe(db, userId, later);
-    expect(await membershipsOf(userId)).toEqual(pairs([sourceId, a], [sourceId, b], [reading, a]));
+    expect(await membershipsOf(userId)).toEqual(
+      pairs([sourceId, a], [sourceId, b], [reading, a], [later, a])
+    );
   });
 
   it("puts saved articles in the saved subscription, created on the first save", async () => {
@@ -194,12 +197,7 @@ describe("subscription_entries mirror (#1846)", () => {
     expect(await membershipsOf(userId)).toEqual(
       pairs([saved[0].id, first.id], [saved[0].id, second.id])
     );
-    // Today's counters still see saved articles only through saved_unread_count.
-    const [state] = await db
-      .select({ savedUnread: users.savedUnreadCount, allUnread: users.allUnreadCount })
-      .from(users)
-      .where(eq(users.id, userId));
-    expect(state).toEqual({ savedUnread: 2, allUnread: 2 });
+    expect(await getGlobalUnreadCounts(db, userId)).toMatchObject({ savedUnread: 2, allUnread: 2 });
     expect(
       await db
         .select({ subscriptionId: userEntries.subscriptionId })

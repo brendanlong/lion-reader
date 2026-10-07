@@ -29,7 +29,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { isListedSubscription } from "@/server/services/subscriptions";
 import type { db as dbType } from "@/server/db";
-import { feeds, subscriptions, visibleEntries } from "@/server/db/schema";
+import { subscriptions, visibleEntries } from "@/server/db/schema";
 
 /**
  * Formats an int64 as a long-form Google Reader item ID.
@@ -161,22 +161,18 @@ export async function feedStreamIdToSubscriptionUuid(
 }
 
 /**
- * A resolved `feed/{int64}` stream: either a real subscription or the user's
- * synthetic saved-articles feed (which has no subscription row and is exposed
- * to Google Reader clients as an uncategorized "Saved Articles" subscription —
- * see issue #730).
+ * A resolved `feed/{int64}` stream: a listed subscription, or the user's saved
+ * subscription, which Google Reader clients see as an uncategorized "Saved
+ * Articles" subscription (#730) and which carries the saved feed's serial
+ * (#1846), so its `feed/{n}` never changed.
  */
 export type FeedStreamResolution =
-  { kind: "subscription"; subscriptionId: string } | { kind: "saved"; feedId: string };
+  { kind: "subscription"; subscriptionId: string } | { kind: "saved"; subscriptionId: string };
 
 /**
- * Resolves a `feed/{int64}` stream ID to either a subscription or the user's
- * saved-articles feed. Tries subscriptions first (the common case); if none
- * matches, checks the user's saved feed. Subscriptions and feeds draw their
- * stream ids from the same sequence, so the two seeks can only both match for
- * the user's saved subscription, which carries its saved feed's serial (#1846)
- * and which the first seek skips, so the stream stays the synthetic saved one.
- * Returns null when it matches nothing the user owns.
+ * Resolves a `feed/{int64}` stream ID to one of the user's subscriptions (one
+ * unique-index seek), telling the saved subscription apart. Returns null when
+ * it matches nothing the user owns.
  */
 export async function resolveFeedStream(
   db: typeof dbType,
@@ -185,18 +181,13 @@ export async function resolveFeedStream(
 ): Promise<FeedStreamResolution | null> {
   if (!isInt64(streamId)) return null;
 
-  const subscriptionId = await feedStreamIdToSubscriptionUuid(db, userId, streamId);
-  if (subscriptionId) {
-    return { kind: "subscription", subscriptionId };
-  }
-
-  const [saved] = await db
-    .select({ id: feeds.id })
-    .from(feeds)
-    .where(
-      and(eq(feeds.userId, userId), eq(feeds.type, "saved"), eq(feeds.greaderStreamId, streamId))
-    )
+  const [row] = await db
+    .select({ id: subscriptions.id, type: subscriptions.type })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.greaderStreamId, streamId)))
     .limit(1);
-
-  return saved ? { kind: "saved", feedId: saved.id } : null;
+  if (!row) return null;
+  return row.type === "saved"
+    ? { kind: "saved", subscriptionId: row.id }
+    : { kind: "subscription", subscriptionId: row.id };
 }

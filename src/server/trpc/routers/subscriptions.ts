@@ -321,15 +321,19 @@ export const subscriptionsRouter = createTRPCRouter({
       z.object({
         items: z.array(subscriptionOutputSchema),
         nextCursor: z.string().optional(),
+        // The user's saved subscription (#1846), which `items` never lists:
+        // entries' `subscriptionIds` name it for saved articles. Null until
+        // the first save creates it.
+        savedSubscriptionId: z.string().nullable(),
       })
     )
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const result = await subscriptionsService.listSubscriptions(ctx.db, {
-        userId,
-        ...input,
-      });
-      return { items: result.subscriptions, nextCursor: result.nextCursor };
+      const [result, savedSubscriptionId] = await Promise.all([
+        subscriptionsService.listSubscriptions(ctx.db, { userId, ...input }),
+        subscriptionsService.getSavedSubscriptionId(ctx.db, userId),
+      ]);
+      return { items: result.subscriptions, nextCursor: result.nextCursor, savedSubscriptionId };
     }),
 
   /**

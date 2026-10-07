@@ -12,7 +12,6 @@ import {
   inArray,
   isNull,
   notInArray,
-  or,
   sql,
   type AnyColumn,
   type SQL,
@@ -20,14 +19,14 @@ import {
 } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import {
-  collectionEntries,
   feeds,
+  subscriptionEntries,
   subscriptionTags,
   subscriptions,
   tags,
   visibleEntries,
 } from "@/server/db/schema";
-import { isCollectionSubscription, isListedSubscription } from "@/server/services/subscriptions";
+import { isListedSubscription } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Types
@@ -64,25 +63,50 @@ export interface EntryConditionParams {
 
 /**
  * An entry's source name as the user sees it: their custom title for the
- * subscription the entry came from, else the feed's title. Every read that
- * sends `feedTitle` to a client uses this, so a renamed subscription's
- * articles never show the original name. The query must join `feeds` on the
- * entry's feed and LEFT JOIN `subscriptions` on {@link entrySubscriptionJoin}.
- * Saved articles have no subscription and get the saved feed's title.
+ * entry's origin subscription, else the feed's title. Every read that sends
+ * `feedTitle` to a client uses this, so a renamed subscription's articles
+ * never show the original name. The query must join `feeds` on the entry's
+ * feed and LEFT JOIN `subscriptions` on {@link entryOriginJoin}. Saved
+ * articles get the saved feed's title, not the saved subscription's.
  */
 export function entryFeedTitleSql(): SQL<string | null> {
-  return sql<string | null>`COALESCE(${subscriptions.customTitle}, ${feeds.title})`;
+  return sql<
+    string | null
+  >`COALESCE(CASE WHEN ${subscriptions.type} <> 'saved' THEN ${subscriptions.customTitle} END, ${feeds.title})`;
 }
 
 /**
  * Joins `subscriptions` to a per-user entry row (`visible_entries` or
- * `user_entries`) on its stamped `subscription_id`, and on the row's user, so
- * the join can never reach another user's subscription (and its custom
- * title or settings) whatever stamped the id. Served by
- * `uq_subscriptions_id_user`.
+ * `user_entries`) on the entry's **origin** (#1846): its membership in a web,
+ * email or saved subscription (never a collection), an active one first,
+ * then the newest. Clients' single `subscriptionId`, Google Reader's origin
+ * stream and the custom title come from it. Scoped to the row's user, so it
+ * can never reach another user's subscription. Computed per row read (an
+ * index lookup on `idx_subscription_entries_user_entry`), so use it on pages,
+ * not scans.
  */
-export function entrySubscriptionJoin(row: { subscriptionId: AnyColumn; userId: AnyColumn }): SQL {
-  return and(eq(subscriptions.id, row.subscriptionId), eq(subscriptions.userId, row.userId))!;
+export function entryOriginJoin(row: { userId: AnyColumn; entryId: AnyColumn }): SQL {
+  return sql`${subscriptions.userId} = ${row.userId} AND ${subscriptions.id} = (
+    SELECT se.subscription_id FROM subscription_entries se
+    JOIN subscriptions os ON os.id = se.subscription_id
+    WHERE se.user_id = ${row.userId} AND se.entry_id = ${row.entryId} AND os.type <> 'collection'
+    ORDER BY os.unsubscribed_at IS NULL DESC, se.subscription_id DESC
+    LIMIT 1)`;
+}
+
+/**
+ * The active subscriptions holding an entry (#1846): its origin, its
+ * collections and, for a saved article, the saved subscription. Sorted.
+ */
+export function entrySubscriptionIdsSql(row: {
+  userId: AnyColumn;
+  entryId: AnyColumn;
+}): SQL<string[]> {
+  return sql<string[]>`ARRAY(
+    SELECT se.subscription_id::text FROM subscription_entries se
+    JOIN subscriptions ms ON ms.id = se.subscription_id AND ms.unsubscribed_at IS NULL
+    WHERE se.user_id = ${row.userId} AND se.entry_id = ${row.entryId}
+    ORDER BY se.subscription_id)`;
 }
 
 // ============================================================================
@@ -171,47 +195,39 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
 }
 
 /**
- * Matches entries contained in any of the given subscriptions: a feed's
- * entries through their stamped `subscription_id`, a collection's through
- * `collection_entries`. The collection arm is added only when a collection is
- * among them, so a feed-only filter keeps the plain form its indexes serve.
+ * Matches entries contained in any of the given subscriptions: one `EXISTS`
+ * over their memberships (#1846), so an entry in several of them still
+ * appears once and the query needs no `DISTINCT`.
+ *
+ * `paged` keeps it a per-row lookup (`OFFSET 0` stops Postgres turning it into
+ * a semi-join) for a page read newest first: walking the user's timeline stops
+ * after a page, while a semi-join reads every member of a tag's subscriptions
+ * first and sorts them. Counts and bulk updates, which read every match, leave
+ * the choice to the planner.
  */
-export async function buildEntriesInSubscriptionsCondition(
-  db: typeof dbType,
-  userId: string,
+export function buildEntriesInSubscriptionsCondition(
   subscriptionIds: string[] | SQLWrapper,
-  columns: { entryId: AnyColumn; subscriptionId: AnyColumn }
-): Promise<SQL> {
-  const collections = await db
-    .select({ id: subscriptions.id })
-    .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        isCollectionSubscription(),
-        inArray(subscriptions.id, subscriptionIds)
-      )
-    );
-  const feedArm = inArray(columns.subscriptionId, subscriptionIds);
-  if (collections.length === 0) {
-    return feedArm;
-  }
-  const collectionIds = collections.map((c) => c.id);
-  const collectionArm = exists(
-    db
-      .select({ one: sql`1` })
-      .from(collectionEntries)
-      .where(
-        and(
-          eq(collectionEntries.userId, userId),
-          eq(collectionEntries.entryId, columns.entryId),
-          inArray(collectionEntries.subscriptionId, collectionIds)
-        )
-      )
+  columns: { userId: AnyColumn; entryId: AnyColumn },
+  { paged = false }: { paged?: boolean } = {}
+): SQL {
+  return exists(
+    sql`(SELECT 1 FROM ${subscriptionEntries}
+      WHERE ${subscriptionEntries.userId} = ${columns.userId}
+        AND ${subscriptionEntries.entryId} = ${columns.entryId}
+        AND ${inArray(subscriptionEntries.subscriptionId, subscriptionIds)}${paged ? sql` OFFSET 0` : sql``})`
   );
-  const onlyCollections =
-    Array.isArray(subscriptionIds) && subscriptionIds.every((id) => collectionIds.includes(id));
-  return onlyCollections ? collectionArm : or(feedArm, collectionArm)!;
+}
+
+/**
+ * Entries in the user's saved subscription (the Saved list, `type: "saved"`).
+ */
+function inSavedSubscriptionSql(columns: { userId: AnyColumn; entryId: AnyColumn }): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM ${subscriptionEntries}
+    JOIN ${subscriptions} ON ${subscriptions.id} = ${subscriptionEntries.subscriptionId}
+      AND ${subscriptions.type} = 'saved'
+    WHERE ${subscriptionEntries.userId} = ${columns.userId}
+      AND ${subscriptionEntries.entryId} = ${columns.entryId})`;
 }
 
 // ============================================================================
@@ -226,12 +242,8 @@ export async function buildEntriesInSubscriptionsCondition(
  * 2. tagId - Filter to entries in tagged subscriptions
  * 3. uncategorized - Filter to entries in untagged subscriptions
  *
- * Collections contain their members (buildEntriesInSubscriptionsCondition).
- * Otherwise entries are attributed to exactly one subscription via
- * `user_entries.subscription_id` (surfaced as `visible_entries.subscription_id`),
- * which survives feed redirects/merges via the merge-job re-stamp — so
- * subscription-ID filtering always agrees with what the visibility view
- * attributes.
+ * Each matches the entries those subscriptions hold (their memberships), so a
+ * collection lists its members and a feed the articles it kept after a merge.
  *
  * @returns The condition to AND into the query, `undefined` when no subscription
  *          filter applies, or `null` when nothing can match (e.g. a subscription
@@ -240,14 +252,15 @@ export async function buildEntriesInSubscriptionsCondition(
 export async function buildEntrySubscriptionFilter(
   db: typeof dbType,
   params: EntryFilterParams,
-  userId: string
+  userId: string,
+  options: { paged?: boolean } = {}
 ): Promise<SQL | undefined | null> {
   // Filter by subscriptionId - validates ownership, early-exits when invalid
-  const columns = { entryId: visibleEntries.id, subscriptionId: visibleEntries.subscriptionId };
+  const columns = { userId: visibleEntries.userId, entryId: visibleEntries.id };
   if (params.subscriptionId) {
     const owned = await verifySubscriptionOwnership(db, params.subscriptionId, userId);
     return owned
-      ? buildEntriesInSubscriptionsCondition(db, userId, [params.subscriptionId], columns)
+      ? buildEntriesInSubscriptionsCondition([params.subscriptionId], columns, options)
       : null;
   }
 
@@ -255,19 +268,17 @@ export async function buildEntrySubscriptionFilter(
   // The subquery will return no rows if the tag doesn't exist or belongs to another user
   if (params.tagId) {
     return buildEntriesInSubscriptionsCondition(
-      db,
-      userId,
       buildTaggedSubscriptionIdsSubquery(db, params.tagId, userId),
-      columns
+      columns,
+      options
     );
   }
 
   if (params.uncategorized) {
     return buildEntriesInSubscriptionsCondition(
-      db,
-      userId,
       buildUncategorizedSubscriptionIdsSubquery(db, userId),
-      columns
+      columns,
+      options
     );
   }
 
@@ -299,7 +310,12 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
     conditions.push(eq(visibleEntries.starred, false));
   }
 
-  if (params.type) {
+  if (params.type === "saved") {
+    // Saved is the saved subscription's list.
+    conditions.push(
+      inSavedSubscriptionSql({ userId: visibleEntries.userId, entryId: visibleEntries.id })
+    );
+  } else if (params.type) {
     conditions.push(eq(visibleEntries.type, params.type));
   }
 
@@ -336,12 +352,12 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
   }
 
   for (const group of params.collectionIdGroups ?? []) {
-    conditions.push(sql`EXISTS (
-      SELECT 1 FROM ${collectionEntries}
-      WHERE ${collectionEntries.userId} = ${visibleEntries.userId}
-        AND ${collectionEntries.entryId} = ${visibleEntries.id}
-        AND ${inArray(collectionEntries.subscriptionId, group)}
-    )`);
+    conditions.push(
+      buildEntriesInSubscriptionsCondition(group, {
+        userId: visibleEntries.userId,
+        entryId: visibleEntries.id,
+      })
+    );
   }
 
   return conditions;

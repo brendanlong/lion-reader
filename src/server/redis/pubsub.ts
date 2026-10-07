@@ -154,6 +154,8 @@ const userEventSchema = z.discriminatedUnion("type", [
     subscriptionId: z.string().nullable().optional(),
     feedType: z.enum(["web", "email", "saved"]).optional(),
     entry: newEntryListDataSchema.optional(),
+    // Every active subscription holding the entry (#1846).
+    subscriptionIds: z.array(z.string()).optional(),
   }),
   // Mark-all-read signal. Mark-all-read is unbounded, so instead of shipping
   // every affected id (or one entry_state_changed per entry, which would storm
@@ -360,7 +362,7 @@ export async function publishNewEntry(
 /** Where an email or saved entry's events go: its one recipient. */
 interface UserEntryTarget {
   userId: string;
-  /** The email subscription's id; null for saved articles. */
+  /** The email subscription's id, or the saved subscription's (null when not looked up). */
   subscriptionId: string | null;
   feedType: "email" | "saved";
 }
@@ -671,7 +673,8 @@ export async function publishEntryStateChanged(
   starred: boolean,
   updatedAt: Date,
   counts: z.infer<typeof unreadCountsSchema>,
-  listData?: EntryStateListData
+  listData?: EntryStateListData,
+  subscriptionIds?: string[]
 ): Promise<number> {
   return publishUserEvent({
     type: "entry_state_changed",
@@ -683,6 +686,7 @@ export async function publishEntryStateChanged(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     ...(listData ?? {}),
+    ...(subscriptionIds ? { subscriptionIds } : {}),
   });
 }
 

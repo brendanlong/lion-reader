@@ -168,12 +168,12 @@ describe("the saved subscription (#1846)", () => {
     }
   });
 
-  it("leaves Google Reader's synthetic Saved stream in place", async () => {
-    const { userId, webId, savedFeedId, savedStreamId } = await setup();
+  it("is Google Reader's Saved stream, at the saved feed's stream id", async () => {
+    const { userId, webId, subscriptionId, savedStreamId } = await setup();
 
     expect((await listGreaderSubscriptions(db, userId)).map((s) => [s.id, s.type])).toEqual([
       [webId, "web"],
-      [savedFeedId, "saved"],
+      [subscriptionId, "saved"],
     ]);
     const { subscriptions: counts } = await getGreaderUnreadCounts(db, userId);
     expect(counts.filter((c) => c.streamId === savedStreamId.toString())).toEqual([

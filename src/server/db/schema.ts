@@ -120,7 +120,9 @@ export const users = pgTable(
     // excluded). saved = unread rows with no subscription (saved/uploaded);
     // starred = ALL starred unread rows (any subscription state + saved) — the
     // Starred badge directly.
-    savedUnreadCount: integer("saved_unread_count").notNull().default(0),
+    // saved_unread_count, kept by the counter triggers only for the previous
+    // release, is deliberately unmapped: Saved is the saved subscription's
+    // count, and the column is dropped in #1846 phase 5B.
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
     // Distinct unread, non-spam articles reachable through untagged active
     // subscriptions, and visible at all (`apply_unread_rows` / `recompute_list_counters` keep

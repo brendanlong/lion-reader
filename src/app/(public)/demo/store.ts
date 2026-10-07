@@ -208,6 +208,14 @@ export function createDemoStore(): DemoStore {
     return feed ? [feed, ...collections] : collections;
   }
 
+  /** The active subscriptions holding the entry, like the API's `subscriptionIds`. */
+  function subscriptionIdsOf(state: EntryState): string[] {
+    return containersOf(state)
+      .filter((sub) => !sub.deleted)
+      .map((sub) => sub.id)
+      .sort();
+  }
+
   /** Starred and collected entries stay visible after unsubscribing, like the app. */
   function isVisible(state: EntryState): boolean {
     return containersOf(state).length > 0 || state.starred;
@@ -266,6 +274,7 @@ export function createDemoStore(): DemoStore {
     return {
       id: entry.id,
       subscriptionId: sub?.id ?? null,
+      subscriptionIds: subscriptionIdsOf(state),
       feedId: legacyFeedId(sub?.id ?? null),
       type: entry.type,
       url: entry.url,
@@ -464,6 +473,7 @@ export function createDemoStore(): DemoStore {
         results.push({
           id,
           subscriptionId: subscriptionOf(state)?.id ?? null,
+          subscriptionIds: subscriptionIdsOf(state),
           read: state.read,
           starred: state.starred,
           type: state.entry.type,
@@ -556,6 +566,8 @@ export function createDemoStore(): DemoStore {
       return {
         items: page.map(toSubscription),
         nextCursor: start + limit < matching.length ? page[page.length - 1].id : undefined,
+        // The demo models saved articles without a saved subscription.
+        savedSubscriptionId: null,
       };
     },
 

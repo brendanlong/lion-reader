@@ -199,6 +199,16 @@ const subscriptionCursor = createCursorCodec(
   })
 );
 
+/** The user's saved subscription's id (#1846), or null before their first save. */
+export async function getSavedSubscriptionId(db: DbOrTx, userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "saved")))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 /**
  * Counts the user's active subscriptions (collections included, the hidden
  * saved one not) for the cap check, first taking a transaction-scoped lock that serializes concurrent
@@ -1008,9 +1018,29 @@ export async function unsubscribe(
           isNull(subscriptions.unsubscribedAt)
         )
       )
-      .returning({ id: subscriptions.id });
+      .returning({ id: subscriptions.id, type: subscriptions.type });
     if (softDeleted.length === 0) {
       return null;
+    }
+    if (softDeleted[0].type === "collection") {
+      // Its members leave a collection, which is per-user entry state: move
+      // their updated_at so delta sync re-delivers them (or reports them
+      // hidden), as removing them one by one would. Their rows are locked.
+      await tx
+        .update(userEntries)
+        .set({ updatedAt: now })
+        .where(
+          and(
+            eq(userEntries.userId, userId),
+            inArray(
+              userEntries.entryId,
+              tx
+                .select({ id: subscriptionEntries.entryId })
+                .from(subscriptionEntries)
+                .where(eq(subscriptionEntries.subscriptionId, subscriptionId))
+            )
+          )
+        );
     }
 
     if (blockedSenderValues) {

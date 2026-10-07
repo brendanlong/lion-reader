@@ -99,6 +99,7 @@ function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
     subscriptionGreaderStreamId: BigInt(7),
     feedGreaderStreamId: BigInt(7),
     subscriptionId: "01912345-0000-7000-8000-000000000003",
+    subscriptionIds: [],
     type: "web",
     url: "https://example.com/article",
     title: "An Article",

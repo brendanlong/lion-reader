@@ -80,6 +80,8 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   starred: boolean;
   readChangedAt: Date | null;
   subscriptionId: string | null;
+  /** Every active subscription holding the entry (#1846). */
+  subscriptionIds: string[];
   feedType: FeedType;
   feedTitle: string | null;
   /** The entry's content changed (or it was created) since the catch-up's start. */
@@ -116,6 +118,7 @@ export function entryRowToSyncEvents(
       events.push({
         type: "new_entry",
         subscriptionId: row.subscriptionId,
+        subscriptionIds: row.subscriptionIds,
         entryId: row.id,
         ...stamps,
         feedType: row.feedType,
@@ -142,6 +145,7 @@ export function entryRowToSyncEvents(
       starred: row.starred,
       readChangedAt: row.readChangedAt?.toISOString() ?? null,
       counts: counts.stateChanged,
+      subscriptionIds: row.subscriptionIds,
       ...stamps,
       ...(payload
         ? {

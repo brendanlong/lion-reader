@@ -284,7 +284,6 @@ function deserializeFromCache(data: string): SessionData {
       lastActiveAt: null,
       // Not cached in Redis; the badge queries read these from the DB directly,
       // never through the session user.
-      savedUnreadCount: 0,
       starredUnreadCount: 0,
       uncategorizedUnreadCount: 0,
       allUnreadCount: 0,

@@ -32,6 +32,7 @@ function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
     starred: false,
     readChangedAt: null,
     subscriptionId: "sub-1",
+    subscriptionIds: ["sub-1"],
     feedType: "web",
     feedTitle: "Example feed",
     metadataChanged: true,
@@ -51,6 +52,7 @@ describe("entryRowToSyncEvents", () => {
     expect(event).toEqual({
       type: "new_entry",
       subscriptionId: "sub-1",
+      subscriptionIds: ["sub-1"],
       entryId: "entry-1",
       timestamp: updatedAt,
       updatedAt,
@@ -93,6 +95,7 @@ describe("entryRowToSyncEvents", () => {
     expect(unread[0]).toMatchObject({
       type: "entry_state_changed",
       subscriptionId: "sub-1",
+      subscriptionIds: ["sub-1"],
       feedType: "web",
       entry: { title: "A post" },
     });

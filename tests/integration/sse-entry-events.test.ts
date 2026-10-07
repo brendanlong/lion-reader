@@ -23,6 +23,7 @@ import {
   publishUserEntryUpdated,
 } from "../../src/server/redis/pubsub";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
+import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
 import { uploadArticle } from "../../src/server/services/saved";
 import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -174,9 +175,10 @@ describe("SSE entry events", () => {
             feedTitle: "My Newsletter",
           },
           {
+            // A saved article's origin is the saved subscription (#1846).
             event: "new_entry",
             entryId: saved.id,
-            subscriptionId: null,
+            subscriptionId: await getSavedSubscriptionId(db, userId),
             feedType: "saved",
             feedTitle: "Saved Articles",
           },

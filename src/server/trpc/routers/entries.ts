@@ -111,7 +111,12 @@ const booleanQueryParam = z
  */
 const entryListItemSchema = z.object({
   id: z.string(),
-  subscriptionId: z.string().nullable(), // null only for saved/uploaded articles
+  // The entry's origin (#1846): its membership in a web, email or saved
+  // subscription, an active one first.
+  subscriptionId: z.string().nullable(),
+  // Every active subscription holding the entry: its origin, its collections,
+  // and for a saved article the saved subscription (#1846).
+  subscriptionIds: z.array(z.string()),
   feedId: legacyFeedIdSchema,
   type: feedTypeSchema,
   url: z.string().nullable(),
@@ -133,7 +138,12 @@ const entryListItemSchema = z.object({
  */
 const entryFullSchema = z.object({
   id: z.string(),
-  subscriptionId: z.string().nullable(), // null only for saved/uploaded articles
+  // The entry's origin (#1846): its membership in a web, email or saved
+  // subscription, an active one first.
+  subscriptionId: z.string().nullable(),
+  // Every active subscription holding the entry: its origin, its collections,
+  // and for a saved article the saved subscription (#1846).
+  subscriptionIds: z.array(z.string()),
   feedId: legacyFeedIdSchema,
   type: feedTypeSchema,
   url: z.string().nullable(),
@@ -221,6 +231,7 @@ const bulkStateChangeOutputSchema = z.object({
     z.object({
       id: z.string(),
       subscriptionId: z.string().nullable(),
+      subscriptionIds: z.array(z.string()),
       read: z.boolean(), // Actual read state after update
       starred: z.boolean(), // For updating starred unread count
       type: feedTypeSchema, // For updating saved/email counts

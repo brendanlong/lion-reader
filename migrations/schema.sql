@@ -307,23 +307,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.subscriptions_empty_unsubscribed_collection() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  WITH removed AS (
-    DELETE FROM collection_entries ce
-    WHERE ce.subscription_id = NEW.id
-    RETURNING ce.user_id, ce.entry_id
-  )
-  UPDATE user_entries ue
-  SET updated_at = now()
-  FROM removed r
-  WHERE ue.user_id = r.user_id AND ue.entry_id = r.entry_id;
-  RETURN NULL;
-END;
-$$;
-
 CREATE FUNCTION public.subscriptions_recompute_lists() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1355,8 +1338,6 @@ CREATE TRIGGER subscription_entries_counters_insert_trigger AFTER INSERT ON publ
 CREATE TRIGGER subscription_tags_recompute_lists_delete_trigger AFTER DELETE ON public.subscription_tags REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_tags_recompute_lists();
 
 CREATE TRIGGER subscription_tags_recompute_lists_insert_trigger AFTER INSERT ON public.subscription_tags REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_tags_recompute_lists();
-
-CREATE TRIGGER subscriptions_empty_unsubscribed_collection_trigger AFTER UPDATE OF unsubscribed_at ON public.subscriptions FOR EACH ROW WHEN (((old.unsubscribed_at IS NULL) AND (new.unsubscribed_at IS NOT NULL))) EXECUTE FUNCTION public.subscriptions_empty_unsubscribed_collection();
 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 

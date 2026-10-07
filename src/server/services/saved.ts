@@ -11,6 +11,7 @@ import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
+import { getSavedSubscriptionId } from "@/server/services/subscriptions";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { listEntryCollectionIds, publishEntryLeftCollections } from "./collections";
 import { recordEntryTombstone } from "./entry-tombstones";
@@ -531,7 +532,9 @@ async function insertSavedEntry(
       read: false,
       starred: false,
     });
-    return true;
+    // The membership trigger put it in the saved subscription (#1846), which
+    // is the article's origin.
+    return { savedSubscriptionId: await getSavedSubscriptionId(tx, userId) };
   });
 
   if (!inserted) {
@@ -541,7 +544,7 @@ async function insertSavedEntry(
   // Fire-and-forget: SSE is best-effort and must never fail the save response
   // (the entry transaction has already committed). See entry-events.ts.
   void publishUserNewEntry(
-    { userId, subscriptionId: null, feedType: "saved" },
+    { userId, subscriptionId: inserted.savedSubscriptionId, feedType: "saved" },
     entryId,
     now,
     entryListPayload(values, SAVED_FEED_TITLE)
