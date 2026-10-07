@@ -382,9 +382,13 @@ class HomeScreenTest {
         // Expanding doesn't also open the tag's list.
         assertEquals(ListScope.All, model.scope.value)
 
+        // Even with one of its feeds open.
+        drawerRow("Nested Feed").performClick()
+        composeRule.waitUntil { model.scope.value == ListScope.Subscription("sub") }
         composeRule.onNodeWithContentDescription("Collapse News").performClick()
         composeRule.waitUntil { settings.value.expandedTags.isEmpty() }
-        composeRule.onNodeWithText("Nested Feed").assertDoesNotExist()
+        // Only the top bar's title.
+        composeRule.onAllNodesWithText("Nested Feed").assertCountEquals(1)
     }
 
     @Test
@@ -516,12 +520,12 @@ class HomeScreenTest {
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("quiet", "tag")
         seed("b", "Old news", read = true, subscription = "quiet")
-        settings.value = settings.value.copy(hideEmptyLists = true)
+        settings.value = settings.value.copy(hideEmptyLists = true, expandedTags = setOf("tag"))
         show()
         model.select(ListScope.Subscription("quiet"))
 
         composeRule.onNodeWithContentDescription("Lists").performClick()
-        // The open feed, and its tag (expanded to show it).
+        // The open feed, and its tag.
         composeRule.onNodeWithText("News").assertIsDisplayed()
         // The top bar's title and the drawer's row.
         composeRule.onAllNodesWithText("Quiet Feed").assertCountEquals(2)
