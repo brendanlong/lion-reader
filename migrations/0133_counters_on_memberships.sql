@@ -31,12 +31,21 @@ LOCK TABLE subscriptions IN SHARE ROW EXCLUSIVE MODE;
 -- The previous release's daily reconcile_counters job recomputes the counters
 -- by its own rules, which differ for the saved subscription and merged-away
 -- ones. Park it for good, so neither that release nor a rollback to it ever
--- runs it; this release reconciles under a new singleton type.
-UPDATE jobs SET next_run_at = 'infinity' WHERE type = 'reconcile_counters';
+-- runs it; this release reconciles under a new singleton type. Clearing
+-- running_since takes the lease from a worker mid-run, so it can't reschedule
+-- the row; inserting the row if it's missing stops that release creating and
+-- running it.
 DROP INDEX jobs_singleton_type_unique;
 CREATE UNIQUE INDEX jobs_singleton_type_unique ON jobs (type)
   WHERE type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters',
                  'reconcile_membership_counters', 'backfill_getting_started');
+UPDATE jobs SET next_run_at = 'infinity', running_since = NULL WHERE type = 'reconcile_counters';
+INSERT INTO jobs (id, type, next_run_at)
+VALUES (uuidv7(), 'reconcile_counters', 'infinity')
+ON CONFLICT (type)
+  WHERE type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters',
+                 'reconcile_membership_counters', 'backfill_getting_started')
+  DO NOTHING;
 
 -- The old counter triggers, replaced below.
 DROP TRIGGER user_entries_counters_insert_trigger ON user_entries;

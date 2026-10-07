@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import pg from "pg";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   collectionEntries,
@@ -57,6 +57,18 @@ async function expectNoDrift(): Promise<void> {
     usersFixed: 0,
     tagsFixed: 0,
   });
+}
+
+/** Waits until some backend is waiting on a lock `pid` holds. */
+async function waitUntilBlockedBy(pid: number): Promise<void> {
+  for (let i = 0; i < 500; i++) {
+    const result = await db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`
+    );
+    if (result.rows[0].n > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`nothing waited on backend ${pid}`);
 }
 
 async function expectAllFulfilled(promises: Array<Promise<unknown>>): Promise<void> {
@@ -224,12 +236,15 @@ describe("unread counters under concurrent writes", () => {
       const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
       await client.connect();
       try {
+        const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
         await client.query("BEGIN");
         await client.query("UPDATE subscriptions SET unsubscribed_at = now() WHERE id = $1", [
           subscriptionId,
         ]);
         const fanout = createUserEntriesForFeed(feedId, [entryId]);
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        // Commit only once the fan-out is waiting on the unsubscribe's lock,
+        // so the race this test is about always happens.
+        await waitUntilBlockedBy(rows[0].pid);
         await client.query("COMMIT");
         await fanout;
       } finally {
