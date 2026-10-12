@@ -6,6 +6,9 @@
 # not a default — see ../docs/DEPLOYMENT.md. TXT and MX cannot be proxied, so
 # they carry no such field. Nothing in this zone is proxied at all — it serves
 # the app directly at the apex — so there is no apex redirect and no ruleset.
+#
+# TXT content is written quoted, as Cloudflare stores it. Unquoted values
+# resolve the same but are flagged with a warning in the dashboard.
 
 resource "cloudflare_zone" "lionreader" {
   account = {
@@ -114,7 +117,7 @@ resource "cloudflare_dns_record" "spf" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "app"
   type    = "TXT"
-  content = "v=spf1 include:mailgun.org ~all"
+  content = "\"v=spf1 include:mailgun.org ~all\""
   ttl     = 300
   comment = "Mailgun SPF"
 }
@@ -123,7 +126,7 @@ resource "cloudflare_dns_record" "dkim" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "krs._domainkey.app"
   type    = "TXT"
-  content = "k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDwjmL/6JMMVYdLu30HDMoAe/tt75hwN20W5bS6eRBUoEMwBIPPilwA+G8PzWDeMHUkAjzBhuDk0S2g8NVC/PqaU5oFRbPVmU0REq75ZyraAyUfPVDT6j/asvnA4LyJzqBWaAt183AK4VtOpS3KNr8VyI5jzyFbVDO6IAzMj8zF2wIDAQAB"
+  content = "\"k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDwjmL/6JMMVYdLu30HDMoAe/tt75hwN20W5bS6eRBUoEMwBIPPilwA+G8PzWDeMHUkAjzBhuDk0S2g8NVC/PqaU5oFRbPVmU0REq75ZyraAyUfPVDT6j/asvnA4LyJzqBWaAt183AK4VtOpS3KNr8VyI5jzyFbVDO6IAzMj8zF2wIDAQAB\""
   ttl     = 300
   comment = "Mailgun DKIM (selector krs)"
 }
@@ -132,7 +135,7 @@ resource "cloudflare_dns_record" "dmarc" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "_dmarc.app"
   type    = "TXT"
-  content = "v=DMARC1; p=none; pct=100; fo=1; ri=3600; rua=mailto:c7650f54@dmarc.mailgun.org,mailto:eb182582@inbox.ondmarc.com; ruf=mailto:c7650f54@dmarc.mailgun.org,mailto:eb182582@inbox.ondmarc.com;"
+  content = "\"v=DMARC1; p=none; pct=100; fo=1; ri=3600; rua=mailto:c7650f54@dmarc.mailgun.org,mailto:eb182582@inbox.ondmarc.com; ruf=mailto:c7650f54@dmarc.mailgun.org,mailto:eb182582@inbox.ondmarc.com;\""
   ttl     = 300
   comment = "DMARC, reporting to Mailgun + OnDMARC"
 }
@@ -185,7 +188,7 @@ resource "cloudflare_dns_record" "fastmail_spf" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "@"
   type    = "TXT"
-  content = "v=spf1 include:spf.messagingengine.com ?all"
+  content = "\"v=spf1 include:spf.messagingengine.com ?all\""
   ttl     = 300
   comment = "Fastmail SPF"
 }
@@ -206,7 +209,7 @@ resource "cloudflare_dns_record" "google_verification" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "@"
   type    = "TXT"
-  content = "google-site-verification=VaZJWXsqI7zVXMOAPZnWO1gqc7vbMTwUEyaqjhd-Js8"
+  content = "\"google-site-verification=VaZJWXsqI7zVXMOAPZnWO1gqc7vbMTwUEyaqjhd-Js8\""
   ttl     = 300
   comment = "Google Search Console"
 }
@@ -215,7 +218,7 @@ resource "cloudflare_dns_record" "discord_verification" {
   zone_id = cloudflare_zone.lionreader.id
   name    = "_discord"
   type    = "TXT"
-  content = "dh=a1c8abb6b4d9e85506d748e1ef7331dcbb5232ac"
+  content = "\"dh=a1c8abb6b4d9e85506d748e1ef7331dcbb5232ac\""
   ttl     = 3600
   comment = "Discord domain verification"
 }
