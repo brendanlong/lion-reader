@@ -24,7 +24,6 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
-import { canonicalGuidSql } from "@/server/feed/guid-identity";
 import { feedDefaultsToFullContent } from "@/server/plugins";
 import {
   publishSubscriptionCreated,
@@ -39,6 +38,11 @@ import {
   type BulkUnreadCounts,
 } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
+import {
+  holdsRedirectTwin,
+  insertUserEntriesWithMemberships,
+  legacyMembershipForms,
+} from "@/server/services/subscription-entries";
 import { errors } from "@/server/trpc/errors";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
 
@@ -326,31 +330,24 @@ async function populateInitialUserEntries(
   // backup poll and would otherwise reach a subscriber who joins in that window
   // as hundreds of unread articles (issue #1500).
   //
-  // Skips an entry the subscription already has under another feed by GUID, as
-  // the fetch-time fanout (`createUserEntriesForFeed`) does: a redirect merge
-  // re-attributes the old feed's entries to the subscription, and the new feed
-  // usually republishes the same articles. Same lookup direction as the fanout,
-  // which says why.
-  await tx.execute(sql`
-    INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
-    SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam, e.is_backfill
-    FROM entries e
-    JOIN feeds f ON f.id = e.owner_feed_id
-    WHERE e.owner_feed_id = ${feedId}
-      AND f.last_entries_updated_at IS NOT NULL
-      AND e.last_seen_at >= f.last_entries_updated_at
-      AND NOT EXISTS (
-        SELECT 1
-        FROM entries e_prev
-        JOIN user_entries ue_existing
-          ON ue_existing.user_id = ${userId} AND ue_existing.entry_id = e_prev.id
-        WHERE e_prev.type = 'web'
-          AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
-          AND e_prev.owner_feed_id != e.owner_feed_id
-          AND ue_existing.subscription_id = ${subscriptionId}
-      )
-    ON CONFLICT DO NOTHING
-  `);
+  // Skips an entry whose twin from another feed the subscription already
+  // holds, as the fetch-time fanout does (`holdsRedirectTwin`): a redirect
+  // merge copies the old feed's entries into the subscription, and the new
+  // feed usually republishes the same articles.
+  await insertUserEntriesWithMemberships(
+    tx,
+    sql`
+      SELECT ${subscriptionId}::uuid AS subscription_id, ${userId}::uuid AS user_id, e.id AS entry_id,
+             COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+             e.is_spam, e.is_backfill AS read
+      FROM entries e
+      JOIN feeds f ON f.id = e.owner_feed_id
+      WHERE e.owner_feed_id = ${feedId}
+        AND f.last_entries_updated_at IS NOT NULL
+        AND e.last_seen_at >= f.last_entries_updated_at
+        AND NOT ${holdsRedirectTwin(sql`${subscriptionId}::uuid`, "e")}
+    `
+  );
 }
 
 // ============================================================================
@@ -636,7 +633,6 @@ export async function createSubscription(
     .insert(feeds)
     .values({
       id: newFeedId,
-      type: "web",
       url: feed.url,
       title: feed.title ?? null,
       description: feed.description ?? null,
@@ -654,7 +650,7 @@ export async function createSubscription(
 
   const feedId = feedRecord.id;
   const feedData = {
-    type: feedRecord.type,
+    type: "web" as const,
     url: feedRecord.url,
     title: feedRecord.title,
     description: feedRecord.description,
@@ -1181,19 +1177,30 @@ export async function mergeSubscriptionIntoFeed(
       .from(subscriptions)
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeed.id)));
 
-    // Deliberately leaves user_entries.updated_at alone: nothing about the
-    // entries changes, and bumping it would flood the user's delta sync.
-    await tx
-      .update(userEntries)
-      .set({ subscriptionId: survivor.id })
-      .where(
-        and(eq(userEntries.userId, userId), eq(userEntries.subscriptionId, oldSubscriptionId))
-      );
+    // The survivor takes the old subscription's articles; the old one keeps
+    // them, unsubscribed. Deliberately leaves user_entries.updated_at alone:
+    // the articles stay visible, and bumping it would flood the user's delta
+    // sync.
+    await tx.execute(sql`
+      INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+      SELECT ${survivor.id}::uuid, user_id, entry_id, published_or_fetched_at
+      FROM subscription_entries
+      WHERE subscription_id = ${oldSubscriptionId}
+      ON CONFLICT DO NOTHING
+    `);
+    // For the previous release's redirect check and merges, which find a
+    // subscription's articles by the column (legacyMembershipForms).
+    if (await legacyMembershipForms(tx)) {
+      await tx.execute(sql`
+        UPDATE user_entries SET subscription_id = ${survivor.id}
+        WHERE user_id = ${userId} AND subscription_id = ${oldSubscriptionId}
+      `);
+    }
 
     if (!survivorWasActive) {
       // Tags left on an inactive subscription are stale (unsubscribing clears them).
       await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, survivor.id));
-      // After the re-stamp, so the populate's GUID check sees the old feed's entries.
+      // After the copy, so the populate's GUID check sees the old feed's entries.
       if (populate) {
         await populateInitialUserEntries(tx, userId, survivor.id, newFeed.id);
       }
@@ -1278,7 +1285,7 @@ export async function mergeSubscriptionIntoFeed(
         tags: survivorTags,
       },
       {
-        type: newFeed.type,
+        type: "web",
         url: newFeed.url,
         title: newFeed.title,
         description: newFeed.description,

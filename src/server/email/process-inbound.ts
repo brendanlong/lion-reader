@@ -14,7 +14,6 @@ import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
 import {
   entries,
   subscriptions,
-  userEntries,
   ingestAddresses,
   blockedSenders,
   type NewEntry,
@@ -25,6 +24,7 @@ import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { lockSubscriptionMembers } from "@/server/services/subscriptions";
+import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 
 // ============================================================================
 // Types
@@ -452,8 +452,17 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // rolls back the entry too, so the retry re-inserts both cleanly.
   await db.transaction(async (tx) => {
     await tx.insert(entries).values(newEntry);
-    // Create user_entry to make it visible to the user, in its subscription.
-    await tx.insert(userEntries).values({ userId, entryId, subscriptionId: owner.id });
+    // Make it visible to the user, in its subscription.
+    await insertUserEntriesWithMemberships(
+      tx,
+      sql`
+        SELECT ${owner.id}::uuid AS subscription_id, ${userId}::uuid AS user_id, e.id AS entry_id,
+               COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+               e.is_spam, false AS read
+        FROM entries e
+        WHERE e.id = ${entryId}
+      `
+    );
   });
 
   logger.info("Email processed successfully", {

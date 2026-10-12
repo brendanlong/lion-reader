@@ -11,7 +11,6 @@ import pg from "pg";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  collectionEntries,
   entries,
   feeds,
   subscriptionTags,
@@ -40,7 +39,6 @@ import {
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);

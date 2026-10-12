@@ -10,7 +10,6 @@ import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db, pool } from "../../src/server/db";
 import {
-  collectionEntries,
   entries,
   feeds,
   jobs,
@@ -49,7 +48,6 @@ import {
 const CONSISTENT = { missing: 0, extra: 0, misdated: 0 };
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);
@@ -196,12 +194,6 @@ describe("subscription_entries mirror (#1846)", () => {
       pairs([saved[0].id, first.id], [saved[0].id, second.id])
     );
     expect(await getGlobalUnreadCounts(db, userId)).toMatchObject({ savedUnread: 2, allUnread: 2 });
-    expect(
-      await db
-        .select({ subscriptionId: userEntries.subscriptionId })
-        .from(userEntries)
-        .where(eq(userEntries.userId, userId))
-    ).toEqual([{ subscriptionId: null }, { subscriptionId: null }]);
   });
 
   it("creates one saved subscription when two first saves race", async () => {

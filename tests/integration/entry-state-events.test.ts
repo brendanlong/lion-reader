@@ -24,7 +24,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import Redis from "ioredis";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptionEntries,
+  subscriptions,
+  userEntries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import * as entriesService from "../../src/server/services/entries";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
@@ -117,9 +124,9 @@ async function seedEntry(
  */
 async function unsubscribeEntryFeed(userId: string, entryId: string): Promise<void> {
   const [row] = await db
-    .select({ subscriptionId: userEntries.subscriptionId })
-    .from(userEntries)
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+    .select({ subscriptionId: subscriptionEntries.subscriptionId })
+    .from(subscriptionEntries)
+    .where(and(eq(subscriptionEntries.userId, userId), eq(subscriptionEntries.entryId, entryId)));
   if (!row?.subscriptionId) {
     throw new Error("seeded entry has no subscription to unsubscribe");
   }

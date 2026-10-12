@@ -9,7 +9,6 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  collectionEntries,
   entries,
   feeds,
   jobs,
@@ -37,7 +36,6 @@ import {
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptions);

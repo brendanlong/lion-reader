@@ -6,8 +6,10 @@
  * the same database.
  */
 
+import { sql } from "drizzle-orm";
 import { db } from "../src/server/db";
-import { entries, feeds, subscriptions, userEntries, users } from "../src/server/db/schema";
+import { entries, feeds, subscriptions, users } from "../src/server/db/schema";
+import { insertUserEntriesWithMemberships } from "../src/server/services/subscription-entries";
 import { generateUuidv7 } from "../src/lib/uuidv7";
 import { createTokens } from "../src/server/oauth/service";
 import { APP_CLIENT_ID, getAppResourceIdentifier } from "../src/server/oauth/app-client";
@@ -29,11 +31,11 @@ async function main(): Promise<void> {
   const feedId = generateUuidv7();
   await db.insert(feeds).values({
     id: feedId,
-    type: "web",
     url: `https://example.com/app-fixture-${feedId}.xml`,
     title: "Fixture Feed",
   });
-  await db.insert(subscriptions).values({ id: generateUuidv7(), userId, feedId, type: "web" });
+  const subscriptionId = generateUuidv7();
+  await db.insert(subscriptions).values({ id: subscriptionId, userId, feedId, type: "web" });
 
   const entryIds: string[] = [];
   for (let i = 0; i < 3; i++) {
@@ -51,7 +53,12 @@ async function main(): Promise<void> {
       publishedAt: fetchedAt,
       lastSeenAt: fetchedAt,
     });
-    await db.insert(userEntries).values({ userId, entryId: id, read: false, starred: false });
+    await insertUserEntriesWithMemberships(
+      db,
+      sql`SELECT ${subscriptionId}::uuid AS subscription_id, ${userId}::uuid AS user_id,
+                 ${id}::uuid AS entry_id, ${new Date(fetchedAt)}::timestamptz AS published_or_fetched_at,
+                 false AS is_spam, false AS read`
+    );
     entryIds.push(id);
   }
 

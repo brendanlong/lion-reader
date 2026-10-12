@@ -439,13 +439,12 @@ export const feeds = pgTable(
   "feeds",
   {
     id: uuid("id").primaryKey(),
-    type: feedTypeEnum("type").$type<EntryType>().notNull(), // never collection: those have no feed
+    // Every feed is a web feed (#1846). The columns left from the per-user email
+    // and saved feeds (`type`, always 'web' by default, `user_id` and
+    // `email_sender_pattern`, always NULL) aren't mapped, so #1846 phase 7B can
+    // drop them.
 
-    url: text("url").unique(), // For URL-based feeds
-
-    // For email feeds - user ownership and sender pattern
-    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }), // Only set for email feeds
-    emailSenderPattern: text("email_sender_pattern"), // Normalized sender email for email feeds
+    url: text("url").unique(),
 
     // Metadata from feed
     title: text("title"),
@@ -502,11 +501,6 @@ export const feeds = pgTable(
   (table) => [
     index("idx_feeds_next_fetch").on(table.nextFetchAt),
     uniqueIndex("idx_feeds_greader_stream_id").on(table.greaderStreamId),
-    // Feeds are web feeds, shared by their subscribers (#1846): only web
-    // subscriptions have one. user_id and email_sender_pattern, from the old
-    // per-user email and saved feeds, are always NULL until phase 7 drops them.
-    check("feeds_web_only", sql`type = 'web' AND user_id IS NULL AND email_sender_pattern IS NULL`),
-    unique("uq_feeds_email_user_sender").on(table.userId, table.emailSenderPattern),
   ]
 );
 
@@ -815,35 +809,9 @@ export const subscriptions = pgTable(
   ]
 );
 
-/**
- * Articles in a collection (#1806). A collection is a subscription of type
- * 'collection' with no feed; its members are articles from feeds, referenced
- * rather than copied, so read/star state stays shared.
- * Trigger-maintained counters on the collection's subscription row count its
- * unread members. (user_id, entry_id) references user_entries through a
- * deferred foreign key; the user_entries delete trigger removes memberships
- * (the `collection_entries` table definition in its migration says why).
- */
-export const collectionEntries = pgTable(
-  "collection_entries",
-  {
-    subscriptionId: uuid("subscription_id").notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    entryId: uuid("entry_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.subscriptionId, table.entryId] }),
-    // Scopes every membership to its collection's owner.
-    foreignKey({
-      columns: [table.subscriptionId, table.userId],
-      foreignColumns: [subscriptions.id, subscriptions.userId],
-    }).onDelete("cascade"),
-    index("idx_collection_entries_user_entry").on(table.userId, table.entryId),
-  ]
-);
+// `collection_entries`, the previous release's form of collection membership,
+// isn't mapped: only `legacyMembershipForms` callers write it, in raw SQL, so
+// #1846 phase 7B can drop it.
 
 // ============================================================================
 // USER ENTRIES (visibility + state)
@@ -896,15 +864,9 @@ export const userEntries = pgTable(
     // cursor sort key, where a Date's millisecond truncation corrupts pagination.
     publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at"),
 
-    // Direct 1:1 subscription attribution (issue #1117). NULL = saved/uploaded
-    // article (per-user feed with no subscription row). Filled inline by the bulk
-    // insert paths or by the user_entries_fill_denormalized trigger; re-stamped by
-    // the feed-merge job. Since migration 0087, visible_entries resolves entry
-    // visibility through this column (the old subscription_feeds junction was
-    // dropped in migration 0091).
-    subscriptionId: uuid("subscription_id").references(() => subscriptions.id, {
-      onDelete: "set null",
-    }),
+    // `subscription_id`, the previous release's source subscription, isn't
+    // mapped, so no insert names it and #1846 phase 7B can drop it: a trigger
+    // fills it until then (`legacyMembershipForms`).
 
     // Denormalized entries.is_spam (immutable after insert — set only by email
     // ingest from the provider's verdict). The DB enforces NOT NULL; left optional
@@ -934,11 +896,11 @@ export const userEntries = pgTable(
 );
 
 /**
- * Which articles each subscription holds, for every type (#1846). It will
- * replace `user_entries.subscription_id` and `collection_entries`; until then
- * the database's `*_copy_membership*` triggers keep it a copy of them plus the
- * saved articles (members of the user's saved subscription). The counters and
- * visibility read it. Never write it from app code yet.
+ * Which articles each subscription holds, for every type (#1846): an
+ * article's source subscription, its collections, and for a saved article the
+ * user's saved subscription. Every path that gives a user an article writes
+ * its membership (`services/subscription-entries.ts`); triggers keep the
+ * counters and `user_entries.active_memberships` from it.
  */
 export const subscriptionEntries = pgTable(
   "subscription_entries",
@@ -1031,8 +993,10 @@ export const userFeeds = pgView("user_feeds", {
 
 /**
  * visible_entries view - Entries the user can see: starred, or in at least one
- * active subscription (`user_entries.active_memberships > 0`, #1846).
- * `subscription_id` is the article's stamped source subscription.
+ * active subscription (`user_entries.active_memberships > 0`, #1846). Its
+ * `subscription_id` and `subscription_greader_stream_id` columns, from the
+ * previous release's `user_entries.subscription_id`, aren't mapped: an entry's
+ * subscriptions come from its memberships (`entryOriginJoin`).
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
  * (most recently redefined in 0133_counters_on_memberships.sql).
@@ -1070,9 +1034,6 @@ export const visibleEntries = pgView("visible_entries", {
   fullContentError: text("full_content_error"),
   read: boolean("read").notNull(),
   starred: boolean("starred").notNull(),
-  // NULL only for saved/uploaded articles. Subscriptions are soft-deleted, so
-  // an unsubscribed feed's starred entries keep theirs.
-  subscriptionId: uuid("subscription_id"),
   unsubscribeUrl: text("unsubscribe_url"), // extracted from email HTML body
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(), // denormalized timeline sort key (temporalTimestamp: µs-precise cursor sort key)
@@ -1080,11 +1041,6 @@ export const visibleEntries = pgView("visible_entries", {
   // it flows into EntryListItem/EntryFull's non-null greaderItemId without a cast.
   // Doubles as the Wallabag entry id (reversed by resolveWallabagEntry).
   greaderItemId: bigint("greader_item_id", { mode: "bigint" }).notNull(),
-  // The entry's subscription Google Reader stream id (subscriptions.greader_stream_id
-  // via the view's LEFT JOIN; migration 0097). NULL for saved/uploaded articles,
-  // where the Google Reader layer falls back to the feed's stream id. Compat id;
-  // stripped from main-app/MCP.
-  subscriptionGreaderStreamId: bigint("subscription_greader_stream_id", { mode: "bigint" }),
   // Stored full-text search vector (entries.search_vector; migration 0105).
   // searchEntries uses it for the `@@` match and the ts_rank sort — it is never
   // selected as a value, so the raw tsvector never crosses the service boundary.

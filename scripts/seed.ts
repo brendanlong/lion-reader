@@ -12,6 +12,7 @@
  */
 
 import { createHash } from "crypto";
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as argon2 from "argon2";
 import { Pool } from "pg";
@@ -68,7 +69,6 @@ async function seed() {
   const feedsData = [
     {
       id: generateUuidv7(),
-      type: "web" as const,
       url: "https://blog.rust-lang.org/feed.xml",
       title: "Rust Blog",
       description: "Empowering everyone to build reliable and efficient software",
@@ -76,7 +76,6 @@ async function seed() {
     },
     {
       id: generateUuidv7(),
-      type: "web" as const,
       url: "https://github.blog/feed/",
       title: "The GitHub Blog",
       description:
@@ -85,7 +84,6 @@ async function seed() {
     },
     {
       id: generateUuidv7(),
-      type: "web" as const,
       url: "https://blog.cloudflare.com/rss/",
       title: "The Cloudflare Blog",
       description: "The latest news on Cloudflare products, technology, and infrastructure",
@@ -138,7 +136,7 @@ async function seed() {
     id: generateUuidv7(),
     userId: user.id,
     feedId: feed.id,
-    type: feed.type,
+    type: "web" as const,
     subscribedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Subscribed 7 days ago
   }));
 
@@ -158,6 +156,16 @@ async function seed() {
   }));
 
   await db.insert(schema.userEntries).values(userEntriesData);
+  // Each in its feed's subscription (#1846).
+  await db.execute(sql`
+    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+    SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
+    FROM user_entries ue
+    JOIN entries e ON e.id = ue.entry_id
+    JOIN subscriptions s ON s.user_id = ue.user_id AND s.feed_id = e.owner_feed_id
+    WHERE ue.user_id = ${user.id}
+    ON CONFLICT DO NOTHING
+  `);
   console.log(`  Created ${userEntriesData.length} user entries`);
 
   // Create a sample job

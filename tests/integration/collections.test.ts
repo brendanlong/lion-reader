@@ -7,7 +7,6 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  collectionEntries,
   subscriptionEntries,
   entries,
   feeds,
@@ -43,7 +42,6 @@ import {
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);
@@ -415,25 +413,6 @@ describe("collections", () => {
       await expect(
         caller.collections.addEntries({ id: sourceId, entryIds: [entryA] })
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    });
-
-    it("refuses a membership row pointing at another user's collection", async () => {
-      // The other user can see the article too, so only the ownership key
-      // (not the user_entries one) can reject the row.
-      const { feedId, collectionId, entryA } = await setup();
-      const otherUser = await createTestUser();
-      await createTestSubscription(otherUser, feedId);
-      await db.insert(userEntries).values({ userId: otherUser, entryId: entryA });
-
-      await expect(
-        db.insert(collectionEntries).values({
-          subscriptionId: collectionId,
-          userId: otherUser,
-          entryId: entryA,
-        })
-      ).rejects.toMatchObject({
-        cause: { constraint: "collection_entries_subscription_id_user_id_fkey" },
-      });
     });
 
     it("skips an article the user has a row for but can't see", async () => {

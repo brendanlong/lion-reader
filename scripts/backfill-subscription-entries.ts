@@ -216,7 +216,8 @@ async function main(): Promise<void> {
     const started = Date.now();
     const check = await checkSubscriptionEntries(db);
     console.log(`Check (${((Date.now() - started) / 1000).toFixed(1)} s):`, JSON.stringify(check));
-    process.exitCode = check.missing > 0 || check.extra > 0 || check.misdated > 0 ? 1 : 0;
+    process.exitCode =
+      check && (check.missing > 0 || check.extra > 0 || check.misdated > 0) ? 1 : 0;
   } finally {
     await pool.end();
   }

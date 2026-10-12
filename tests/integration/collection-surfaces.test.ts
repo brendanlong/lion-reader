@@ -10,7 +10,6 @@ import Redis from "ioredis";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  collectionEntries,
   entries,
   feeds,
   subscriptionTags,
@@ -48,7 +47,6 @@ beforeAll(() => {
 });
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);

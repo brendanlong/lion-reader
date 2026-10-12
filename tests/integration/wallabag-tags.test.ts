@@ -7,7 +7,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { collectionEntries, entries, subscriptions, users } from "../../src/server/db/schema";
+import { entries, subscriptionEntries, subscriptions, users } from "../../src/server/db/schema";
 import { createTokens } from "../../src/server/oauth/service";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
@@ -120,9 +120,9 @@ async function activeCollectionIds(user: TestUser): Promise<string[]> {
 
 async function memberIds(subscriptionId: string): Promise<string[]> {
   const rows = await db
-    .select({ entryId: collectionEntries.entryId })
-    .from(collectionEntries)
-    .where(eq(collectionEntries.subscriptionId, subscriptionId));
+    .select({ entryId: subscriptionEntries.entryId })
+    .from(subscriptionEntries)
+    .where(eq(subscriptionEntries.subscriptionId, subscriptionId));
   return rows.map((row) => row.entryId);
 }
 

@@ -16,7 +16,11 @@ import type { NewEntryListDataSource } from "@/lib/events/schemas";
 import { newEntryAnnouncement } from "@/server/services/entry-sync-events";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
-import { canonicalGuid, canonicalGuidSql, guidMatchCandidates } from "./guid-identity";
+import { canonicalGuid, guidMatchCandidates } from "./guid-identity";
+import {
+  holdsRedirectTwin,
+  insertUserEntriesWithMemberships,
+} from "@/server/services/subscription-entries";
 import { logger } from "@/lib/logger";
 
 /**
@@ -494,11 +498,12 @@ async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Pr
 }
 
 /**
- * Creates user_entries records for a feed's active subscribers.
- * This makes entries visible to all currently-subscribed users.
+ * Gives a feed's active subscribers these entries: each subscriber's
+ * user_entries row and its membership in their subscription
+ * (`insertUserEntriesWithMemberships`), which make the entry visible.
  *
- * Uses INSERT ... ON CONFLICT DO NOTHING for efficiency and idempotency. Because
- * it is idempotent and driven purely by the entry IDs passed in (not by whether
+ * Idempotent: an entry a subscription already holds is skipped. Because it is
+ * idempotent and driven purely by the entry IDs passed in (not by whether
  * an entry is "new"), callers can safely pass *every* entry in the current fetch
  * to self-heal entries orphaned by an earlier crash — see `processEntries`.
  *
@@ -521,54 +526,28 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   // doesn't auto-convert JS arrays to pg arrays in raw SQL.
   const entryIdsArray = `{${entryIds.join(",")}}`;
 
-  // Single INSERT...SELECT query that:
-  // 1. Joins subscriptions with entries for the given feed to get all (user, entry) pairs
-  // 2. Excludes pairs where the user already has a user_entry for an entry
-  //    with the same GUID from one of their previous feeds (redirect
-  //    deduplication). "Previous feeds" = entries already attributed to this
-  //    subscription (user_entries.subscription_id) under a different owner_feed_id
-  //    — re-stamped by `mergeSubscriptionIntoFeed` when the fetch-feed
-  //    handler moves subscriptions off a redirected feed. GUIDs are
-  //    compared scheme-insensitively (see guid-identity.ts): a feed that moved
-  //    to https often re-spells its guids at the same time.
-  //    The check starts from the entry's twins in other feeds, found through
-  //    idx_entries_web_guid_canonical (normally none), then probes the
-  //    subscriber's row by primary key. Starting from the subscription's
-  //    history instead walks every entry it holds, per subscriber and entry
-  //    (#1861). `type = 'web'` lets the partial index serve the lookup and
-  //    drops nothing: only a merge re-stamps a row onto another feed's
-  //    subscription, and only web subscriptions are merged.
-  // 3. Uses ON CONFLICT DO NOTHING for idempotency
-  // We use db.execute() with raw SQL because Drizzle's INSERT...SELECT always
-  // generates column lists for all table columns. Since we only want to insert
-  // the identity + denormalized columns and let the rest use defaults, we need
-  // raw SQL to specify just those columns.
-  // https://github.com/drizzle-team/drizzle-orm/issues/3608
-  const result = await db.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
-      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam, e.is_backfill
+  // Each active subscriber gets every entry it doesn't hold yet (its row and
+  // its membership), except an entry whose twin from another feed it already
+  // holds (holdsRedirectTwin).
+  const added = await insertUserEntriesWithMemberships(
+    db,
+    sql`
+      SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
+             COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+             e.is_spam, e.is_backfill AS read
       FROM subscriptions s
       INNER JOIN entries e ON e.owner_feed_id = s.feed_id
       WHERE s.feed_id = ${feedId}::uuid
         AND s.unsubscribed_at IS NULL
         AND e.id = ANY(${entryIdsArray}::uuid[])
-        AND NOT EXISTS (
-          SELECT 1
-          FROM entries e_prev
-          JOIN user_entries ue_existing
-            ON ue_existing.user_id = s.user_id AND ue_existing.entry_id = e_prev.id
-          WHERE e_prev.type = 'web'
-            AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
-            AND e_prev.owner_feed_id != s.feed_id
-            AND ue_existing.subscription_id = s.id
-        )
-      ON CONFLICT DO NOTHING
-    `);
+        AND NOT ${holdsRedirectTwin(sql`s.id`, "e")}
+    `
+  );
 
   logger.debug("Created user entries for feed", {
     feedId,
     entryCount: entryIds.length,
-    rowsInserted: result.rowCount,
+    membershipsAdded: added.length,
   });
 }
 

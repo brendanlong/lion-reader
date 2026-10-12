@@ -388,9 +388,6 @@ const feedHealthEndpoints = {
 
       const conditions = [];
 
-      // Only web feeds
-      conditions.push(eq(feeds.type, "web"));
-
       // ORDER BY consecutiveFailures DESC, title ASC, id ASC. Tuple comparison
       // assumes uniform direction, so spell out the mixed-direction keyset.
       if (cursor) {
@@ -847,8 +844,7 @@ const overviewEndpoints = {
             total: count(),
             broken: sql<number>`COUNT(*) FILTER (WHERE ${feeds.consecutiveFailures} > 0)`,
           })
-          .from(feeds)
-          .where(eq(feeds.type, "web")),
+          .from(feeds),
 
         // Web feeds with at least one active subscriber
         ctx.db

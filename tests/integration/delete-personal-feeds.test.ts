@@ -16,7 +16,14 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import type { Transaction } from "../../src/server/db";
-import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
+import {
+  entries,
+  feeds,
+  subscriptionEntries,
+  subscriptions,
+  userEntries,
+  users,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import {
@@ -209,9 +216,14 @@ describe("migrations 0139–0141: per-user feeds go (#1846)", () => {
 
     expect(result.subscriptionId).toBe(legacy.emailSubscriptionId);
     const [row] = await db
-      .select({ subscriptionId: userEntries.subscriptionId })
-      .from(userEntries)
-      .where(and(eq(userEntries.userId, legacy.userId), eq(userEntries.entryId, result.entryId!)));
+      .select({ subscriptionId: subscriptionEntries.subscriptionId })
+      .from(subscriptionEntries)
+      .where(
+        and(
+          eq(subscriptionEntries.userId, legacy.userId),
+          eq(subscriptionEntries.entryId, result.entryId!)
+        )
+      );
     expect(row.subscriptionId).toBe(legacy.emailSubscriptionId);
   });
 
@@ -303,7 +315,7 @@ describe("migrations 0139–0141: per-user feeds go (#1846)", () => {
       await db
         .select({ id: feeds.id })
         .from(feeds)
-        .where(and(eq(feeds.userId, legacyUserId!)))
+        .where(sql`user_id = ${legacyUserId!}`)
     ).toEqual([]);
     expect(
       await db

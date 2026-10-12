@@ -23,6 +23,7 @@ import {
 import { canonicalGuid, canonicalGuidSql } from "../../src/server/feed/guid-identity";
 import type { ParsedEntry, ParsedFeed } from "../../src/server/feed/types";
 import {
+  createTestMembership,
   createTestSubscription,
   createTestUser,
   createTestFeed as insertTestFeed,
@@ -39,7 +40,7 @@ async function findEntryByGuid(feedId: string, guid: string) {
 }
 
 // Wraps the shared factory because these call sites want the feed row
-// (feed.url, feed.type), not just its id.
+// (feed.url), not just its id.
 async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}) {
   const feedId = await insertTestFeed({ title: "Test Feed", ...overrides });
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
@@ -946,12 +947,8 @@ describe("Entry Processor", () => {
           generateContentHash(oldParsed),
           new Date()
         );
-        await db.insert(userEntries).values({
-          userId,
-          entryId: oldEntry.id,
-          subscriptionId,
-          read: true,
-        });
+        // As a merge leaves it: the old feed's article in this subscription.
+        await createTestMembership(subscriptionId, userId, oldEntry.id, { read: true });
 
         const result = await processEntries(newFeed.id, {
           title: "T",
@@ -989,9 +986,7 @@ describe("Entry Processor", () => {
           generateContentHash(otherParsed),
           new Date()
         );
-        await db
-          .insert(userEntries)
-          .values({ userId, entryId: otherEntry.id, subscriptionId: otherSubscriptionId });
+        await createTestMembership(otherSubscriptionId, userId, otherEntry.id);
 
         const result = await processEntries(feed.id, {
           title: "T",

@@ -29,7 +29,6 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   blockedSenders,
-  collectionEntries,
   entries,
   feeds,
   subscriptionEntries,
@@ -94,7 +93,6 @@ function prng(seed: number) {
 
 async function cleanup(): Promise<void> {
   await db.delete(blockedSenders);
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);

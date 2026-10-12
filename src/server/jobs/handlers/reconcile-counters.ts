@@ -2,8 +2,8 @@
  * Handler for `reconcile_membership_counters` jobs (singleton).
  *
  * See src/server/services/reconcile-counters.ts for the reconciliation itself.
- * Until #1846 phase 7 it also checks the subscription_entries mirror
- * (src/server/services/subscription-entries.ts).
+ * Until #1846 phase 7B drops the previous release's membership forms, it also
+ * checks memberships against them (src/server/services/subscription-entries.ts).
  */
 
 import { db } from "../../db";

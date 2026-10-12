@@ -10,7 +10,6 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  collectionEntries,
   entries,
   feeds,
   jobs,
@@ -46,7 +45,6 @@ import {
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);
@@ -207,17 +205,9 @@ describe("the saved subscription (#1846)", () => {
 
   it("counts saved articles once, in Saved and in the saved subscription", async () => {
     const { userId, subscriptionId } = await setup();
-    // A saved article inserted while the saved subscription exists isn't
-    // stamped with it: the fill trigger stamps only web and email entries.
-    const laterId = await createTestEntry(userId, { type: "saved", userIds: [userId] });
+    await createTestEntry(userId, { type: "saved", userIds: [userId] });
     const caller = createCaller(await createAuthContext(userId));
 
-    expect(
-      await db
-        .select({ subscriptionId: userEntries.subscriptionId })
-        .from(userEntries)
-        .where(eq(userEntries.entryId, laterId))
-    ).toEqual([{ subscriptionId: null }]);
     expect(await caller.entries.count({ type: "saved" })).toEqual({ unread: 2 });
     expect(await caller.entries.count({})).toEqual({ unread: 3 });
     expect(

@@ -8,7 +8,6 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  collectionEntries,
   entries,
   feeds,
   subscriptionTags,
@@ -35,7 +34,6 @@ import {
 import { openSseStream, publishUntil } from "../utils/sse";
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);
@@ -67,6 +65,7 @@ describe("subscriptions without a feed (#1846)", () => {
   it("creating a collection creates no feed", async () => {
     const userId = await createTestUser();
     const caller = createCaller(await createAuthContext(userId));
+    const feedsBefore = await db.$count(feeds);
 
     const { subscription } = await caller.collections.create({ name: "Reading" });
 
@@ -76,9 +75,7 @@ describe("subscriptions without a feed (#1846)", () => {
         .from(subscriptions)
         .where(eq(subscriptions.id, subscription.id))
     ).toEqual([{ feedId: null }]);
-    expect(await db.select({ id: feeds.id }).from(feeds).where(eq(feeds.userId, userId))).toEqual(
-      []
-    );
+    expect(await db.$count(feeds)).toBe(feedsBefore);
     expect(subscription).toEqual({
       id: subscription.id,
       type: "collection",

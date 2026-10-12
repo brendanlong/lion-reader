@@ -9,12 +9,14 @@
  */
 
 import { test, expect } from "@playwright/test";
+import { sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import {
   getDb,
   closeTestConnections,
   createConfirmedUser,
   createSubscribedFeed,
+  giveEntry,
   loginAs,
 } from "./helpers";
 import * as schema from "../../src/server/db/schema";
@@ -68,7 +70,7 @@ test("narrates and highlights the shapes that used to be skipped", async ({ page
     lastSeenAt: now,
     contentHash: crypto.createHash("sha256").update(CONTENT).digest("hex"),
   });
-  await db.insert(schema.userEntries).values({ userId: user.id, entryId });
+  await giveEntry(db, user.id, entryId, sql`${feed.subscriptionId}::uuid`);
 
   await loginAs(page.context(), user, baseURL!);
   await page.goto("/all");
