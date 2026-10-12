@@ -226,7 +226,6 @@ interface ExpectedState {
   all: number;
   uncategorized: number;
   starred: number;
-  saved: number;
 }
 
 /**
@@ -239,8 +238,8 @@ interface ExpectedState {
  * - a tag: distinct unread, non-spam articles in an active subscription with
  *   that tag; Uncategorized: the same for untagged subscriptions other than
  *   saved;
- * - Starred: starred, unread, non-spam articles; Saved: the saved
- *   subscription's count.
+ * - Starred: starred, unread, non-spam articles (Saved is the saved
+ *   subscription's count, above).
  */
 async function expectedState(userId: string): Promise<ExpectedState> {
   const subs = await db
@@ -295,8 +294,6 @@ async function expectedState(userId: string): Promise<ExpectedState> {
     .filter((r) => r.starred || activeMemberships.get(r.entryId)! > 0)
     .map((r) => r.entryId)
     .sort();
-  const savedSubscription = subs.find((s) => s.type === "saved");
-
   return {
     visible,
     activeMemberships,
@@ -309,7 +306,6 @@ async function expectedState(userId: string): Promise<ExpectedState> {
       active.filter((s) => s.type !== "saved" && tagsOf(s.id).length === 0)
     ),
     starred: rows.filter((r) => r.starred && unread(r.entryId)).length,
-    saved: savedSubscription ? membersOf(savedSubscription.id).filter(unread).length : 0,
   };
 }
 
@@ -337,8 +333,6 @@ async function expectCountersMatchModel(userId: string, context: string): Promis
       all: users.allUnreadCount,
       uncategorized: users.uncategorizedUnreadCount,
       starred: users.starredUnreadCount,
-      // The previous release's copy of the saved subscription's count.
-      saved: sql<number>`users.saved_unread_count`,
     })
     .from(users)
     .where(eq(users.id, userId));
@@ -346,7 +340,6 @@ async function expectCountersMatchModel(userId: string, context: string): Promis
     all: expected.all,
     uncategorized: expected.uncategorized,
     starred: expected.starred,
-    saved: expected.saved,
   });
 
   const subscriptionCounts = await db

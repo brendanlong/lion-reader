@@ -119,25 +119,20 @@ BEGIN
 
   UPDATE users u
   SET uncategorized_unread_count = u.uncategorized_unread_count + d.uc,
-      saved_unread_count = u.saved_unread_count + d.sv,
       all_unread_count = u.all_unread_count + d.al,
       starred_unread_count = u.starred_unread_count + d.st
   FROM (
-    SELECT user_id, sum(uc)::int AS uc, sum(sv)::int AS sv, sum(al)::int AS al, sum(st)::int AS st
+    SELECT user_id, sum(uc)::int AS uc, sum(al)::int AS al, sum(st)::int AS st
     FROM (
-      SELECT l.user_id, l.n AS uc, 0 AS sv, 0 AS al, 0 AS st
+      SELECT l.user_id, l.n AS uc, 0 AS al, 0 AS st
       FROM unnest(l_user, l_tag, l_n) AS l(user_id, tag_id, n)
       WHERE l.tag_id IS NULL
       UNION ALL
-      SELECT c.user_id, 0, c.sign, 0, 0
-      FROM unnest(p_sign, p_user, p_sub) AS c(sign, user_id, subscription_id)
-      JOIN subscriptions s ON s.id = c.subscription_id AND s.type = 'saved'
-      UNION ALL
-      SELECT r.user_id, 0, 0, r.al, r.st
+      SELECT r.user_id, 0, r.al, r.st
       FROM unnest(p_count_user, p_all, p_starred) AS r(user_id, al, st)
     ) x
     GROUP BY user_id
-    HAVING sum(uc) <> 0 OR sum(sv) <> 0 OR sum(al) <> 0 OR sum(st) <> 0
+    HAVING sum(uc) <> 0 OR sum(al) <> 0 OR sum(st) <> 0
   ) d
   WHERE u.id = d.user_id;
 
@@ -960,7 +955,6 @@ CREATE TABLE public.users (
     privacy_policy_agreed_at timestamp with time zone,
     not_eu_agreed_at timestamp with time zone,
     last_active_at timestamp with time zone,
-    saved_unread_count integer DEFAULT 0 NOT NULL,
     starred_unread_count integer DEFAULT 0 NOT NULL,
     greader_user_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     narration_model text,
@@ -1311,7 +1305,7 @@ CREATE INDEX idx_users_last_active_at ON public.users USING btree (last_active_a
 
 CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (expires_at);
 
-CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_counters'::text, 'reconcile_membership_counters'::text, 'backfill_getting_started'::text]));
+CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_membership_counters'::text, 'backfill_getting_started'::text]));
 
 CREATE UNIQUE INDEX uq_entries_feed_guid_canonical ON public.entries USING btree (feed_id, regexp_replace(guid, '^https?://'::text, 'https://'::text)) WHERE (type = 'web'::public.feed_type);
 

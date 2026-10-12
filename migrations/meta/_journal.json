@@ -946,6 +946,13 @@
       "when": 1782956040000,
       "tag": "0135_keep_deleted_collection_memberships",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1782956100000,
+      "tag": "0136_drop_saved_unread_count",
+      "breakpoints": true
     }
   ]
 }

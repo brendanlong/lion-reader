@@ -90,9 +90,7 @@ export interface JobPayloads {
   cleanup: Record<string, never>;
   // Daily self-healing sweep of the denormalized unread counters (issue
   // #1117), by the membership rules of #1846. See
-  // src/server/services/reconcile-counters.ts. A new type, so a release
-  // reconciling by the old rules (`reconcile_counters`, whose row migration
-  // 0133 parks forever) never runs it.
+  // src/server/services/reconcile-counters.ts.
   reconcile_membership_counters: Record<string, never>;
   // Fills the Getting Started article in for users who predate it, a batch per
   // run (issue #1397). Stateless — `users.getting_started_at` is the progress

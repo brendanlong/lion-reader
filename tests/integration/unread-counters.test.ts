@@ -1,7 +1,7 @@
 /**
  * Integration tests for the denormalized unread counters (issue #1117; rules
- * from #1846): subscriptions.unread_count and users.saved_unread_count /
- * starred_unread_count, maintained by the counter triggers. Spam is
+ * from #1846): subscriptions.unread_count and users.starred_unread_count,
+ * maintained by the counter triggers. Spam is
  * permanently excluded. After exercising each mutation path, the counters
  * must equal ground truth, which is asserted two ways:
  *   1. explicit expected values, and
