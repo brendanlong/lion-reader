@@ -7,16 +7,26 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
 import { coalesce, eq } from "@tanstack/db";
-import { getLocalDb, type LocalDb } from "@/lib/local-db/local-db";
+import { getLocalDb, subscribeSavedSubscriptionId, type LocalDb } from "@/lib/local-db/local-db";
 import { entryListKey, isNewestFirst, type EntryListFilters } from "@/lib/local-db/entry-lists";
 import type { EntryRow } from "@/lib/local-db/entries";
 
 function useLocalDb(): LocalDb {
   return getLocalDb(useQueryClient());
+}
+
+/** The saved subscription's id as the store knows it (`LocalDb.saved`), re-rendering when learned. */
+function useStoredSavedSubscriptionId(db: LocalDb): string | null | undefined {
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeSavedSubscriptionId(db, listener),
+    [db]
+  );
+  const read = () => db.saved.id;
+  return useSyncExternalStore(subscribe, read, read);
 }
 
 /**
@@ -79,7 +89,7 @@ export function useLocalEntriesMatching(
 ): EntryRow[] | undefined {
   const db = useLocalDb();
   const newestFirst = isNewestFirst(filters);
-  const { savedSubscriptionId } = db;
+  const savedSubscriptionId = useStoredSavedSubscriptionId(db);
   const { subscriptionId, type, starredOnly, unreadOnly } = filters;
   const { data } = useLiveQuery({
     // The membership filters are functions, which the query's own identity
@@ -97,7 +107,9 @@ export function useLocalEntriesMatching(
     query: (q) => {
       if (subscriptionIds === null) return undefined;
       let query = q.from({ entry: db.entries.collection });
-      const memberOf = subscriptionId ?? (type === "saved" ? savedSubscriptionId : undefined);
+      // Nothing is in Saved until its subscription is known.
+      const memberOf =
+        subscriptionId ?? (type === "saved" ? (savedSubscriptionId ?? null) : undefined);
       if (memberOf !== undefined) {
         query = query.fn.where(
           ({ entry }) => !!memberOf && entry.subscriptionIds.includes(memberOf)

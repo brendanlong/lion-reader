@@ -21,18 +21,19 @@ afterEach(() => {
   cleanup();
 });
 
-const SAVED_LIST = { type: "saved", unreadOnly: true, sortOrder: "newest", limit: 10 } as const;
+const SAVED_LIST = { type: "saved", sortOrder: "newest", limit: 10 } as const;
 
-function savedEvent(entryId: string, savedUnread: number) {
+/** A saved article's new_entry; `read` as when saved already read elsewhere. */
+function savedEvent(entryId: string, day: number, read = false) {
   return createNewEntryEvent({
     entryId,
     subscriptionId: "sub-saved",
     subscriptionIds: ["sub-saved"],
     feedType: "saved",
     counts: {
-      all: { unread: savedUnread },
+      all: { unread: 0 },
       starred: { unread: 0 },
-      saved: { unread: savedUnread },
+      saved: { unread: 0 },
       subscriptions: [],
       tags: [],
     },
@@ -42,48 +43,99 @@ function savedEvent(entryId: string, savedUnread: number) {
       author: null,
       summary: null,
       publishedAt: null,
-      fetchedAt: `2024-07-0${savedUnread}T00:00:00.000Z`,
+      fetchedAt: `2024-07-0${day}T00:00:00.000Z`,
       siteName: "Example",
       feedTitle: "Saved Articles",
       type: "saved",
+      read,
     },
   });
 }
 
-describe("the saved subscription", () => {
-  it("is learned from the first save's event, which then joins the Saved list", async () => {
-    let savedSubscriptionId: string | null = null;
-    const rendered = renderHookWithTrpc(
-      () => ({ utils: trpc.useUtils(), saved: useEntryListEntries(SAVED_LIST, null) }),
-      {
-        handlers: {
-          "subscriptions.list": () => ({ items: [], savedSubscriptionId }),
-        },
-      }
-    );
-    const { queryClient, callsFor } = rendered;
-    // As in the browser, where a fetch of fresh data serves the cache.
-    queryClient.setDefaultOptions({ queries: { staleTime: 60 * 1000 } });
-    const ids = () => rendered.result.current.saved.map((entry) => entry.id);
-    // The app starts before the user has saved anything.
-    await act(() =>
-      rendered.result.current.utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT)
-    );
-    act(() => {
-      queryClient.setQueryData([["entries", "list"], { input: SAVED_LIST, type: "infinite" }], {
-        pages: [{ items: [] }],
-        pageParams: [undefined],
-      });
+/**
+ * The app as it starts before the user has saved anything, with the Saved list
+ * loaded (empty). `server.savedSubscriptionId` is what the server answers.
+ */
+async function setup() {
+  const server: { savedSubscriptionId: string | null } = { savedSubscriptionId: null };
+  const rendered = renderHookWithTrpc(
+    () => ({ utils: trpc.useUtils(), saved: useEntryListEntries(SAVED_LIST, null) }),
+    {
+      handlers: {
+        "subscriptions.list": () => ({
+          items: [],
+          savedSubscriptionId: server.savedSubscriptionId,
+        }),
+      },
+    }
+  );
+  const { queryClient, callsFor } = rendered;
+  // As in the browser, where a fetch of fresh data serves the cache.
+  queryClient.setDefaultOptions({ queries: { staleTime: 60 * 1000 } });
+  await act(() =>
+    rendered.result.current.utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT)
+  );
+  act(() => {
+    queryClient.setQueryData([["entries", "list"], { input: SAVED_LIST, type: "infinite" }], {
+      pages: [{ items: [] }],
+      pageParams: [undefined],
     });
+  });
+  return {
+    server,
+    queryClient,
+    ids: () => rendered.result.current.saved.map((entry) => entry.id),
+    lookups: () => callsFor("subscriptions.list").length - 1,
+    deliver: (event: ReturnType<typeof savedEvent>) =>
+      act(() => handleSyncEvent(rendered.result.current.utils, queryClient, event)),
+  };
+}
 
-    // The first save creates the saved subscription.
-    savedSubscriptionId = "sub-saved";
-    act(() => handleSyncEvent(rendered.result.current.utils, queryClient, savedEvent("first", 1)));
+describe("the saved subscription", () => {
+  it("is learned from the first save's event, even one already read, which then joins Saved", async () => {
+    const { server, ids, lookups, deliver } = await setup();
+
+    server.savedSubscriptionId = "sub-saved";
+    deliver(savedEvent("first", 1, true));
     await waitFor(() => expect(ids()).toEqual(["first"]));
 
     // Once known, later saves join directly.
-    act(() => handleSyncEvent(rendered.result.current.utils, queryClient, savedEvent("second", 2)));
+    deliver(savedEvent("second", 2));
     await waitFor(() => expect(ids()).toEqual(["second", "first"]));
-    expect(callsFor("subscriptions.list")).toHaveLength(2);
+    expect(lookups()).toBe(1);
+  });
+
+  it("is looked up at most once per page load while the server names none", async () => {
+    const { ids, lookups, deliver } = await setup();
+
+    deliver(savedEvent("first", 1));
+    await waitFor(() => expect(lookups()).toBe(1));
+    deliver(savedEvent("second", 2));
+    await act(async () => {});
+
+    expect(lookups()).toBe(1);
+    expect(ids()).toEqual([]);
+  });
+
+  it("isn't forgotten by a result fetched before the first save", async () => {
+    const { server, queryClient, ids, lookups, deliver } = await setup();
+    server.savedSubscriptionId = "sub-saved";
+    deliver(savedEvent("first", 1));
+    await waitFor(() => expect(ids()).toEqual(["first"]));
+
+    // A sidebar section's page whose fetch predates the save.
+    act(() => {
+      queryClient.setQueryData(
+        [
+          ["subscriptions", "list"],
+          { input: { uncategorized: true, limit: 50 }, type: "infinite" },
+        ],
+        { pages: [{ items: [], savedSubscriptionId: null }], pageParams: [undefined] }
+      );
+    });
+    deliver(savedEvent("second", 2));
+
+    await waitFor(() => expect(ids()).toEqual(["second", "first"]));
+    expect(lookups()).toBe(1);
   });
 });

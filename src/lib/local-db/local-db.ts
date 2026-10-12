@@ -43,12 +43,36 @@ export interface LocalDb {
   entries: EntryStore;
   lists: EntryLists;
   subscriptions: SubscriptionStore;
-  /**
-   * The user's saved subscription (#1846), from the latest `subscriptions.list`
-   * result (every one names it): its members are the Saved list. Null before
-   * the first save creates it; undefined until a result has landed.
-   */
-  savedSubscriptionId: string | null | undefined;
+  saved: SavedSubscription;
+}
+
+/**
+ * The user's saved subscription (#1846), whose members are the Saved list.
+ * Its id comes from `subscriptions.list` results (every one names it): null
+ * before the first save creates it, undefined until a result has landed.
+ * Components read it through `useStoredSavedSubscriptionId`.
+ */
+export interface SavedSubscription {
+  id: string | null | undefined;
+  /** Whether a save already made the client look the id up while it was null. */
+  lookedUp: boolean;
+  listeners: Set<() => void>;
+}
+
+/**
+ * Records the saved subscription's id. A known id never goes back to null: a
+ * result fetched before the first save can land after it, and the saved
+ * subscription is never deleted.
+ */
+function setSavedSubscriptionId(db: LocalDb, id: string | null): void {
+  if (db.saved.id === id || (id === null && db.saved.id)) return;
+  db.saved.id = id;
+  for (const listener of db.saved.listeners) listener();
+}
+
+export function subscribeSavedSubscriptionId(db: LocalDb, listener: () => void): () => void {
+  db.saved.listeners.add(listener);
+  return () => db.saved.listeners.delete(listener);
 }
 
 interface EntriesListData {
@@ -84,7 +108,7 @@ function createLocalDb(): LocalDb {
     entries,
     lists: { rows, meta: new Map() },
     subscriptions,
-    savedSubscriptionId: undefined,
+    saved: { id: undefined, lookedUp: false, listeners: new Set() },
   };
 }
 
@@ -130,7 +154,7 @@ function ingestSubscriptionPages(
   // The earlier pages are older than this fetch: don't write them again.
   const pages = mode === "append" ? data.pages.slice(-1) : data.pages;
   const saved = pages.at(-1)?.savedSubscriptionId;
-  if (saved !== undefined) db.savedSubscriptionId = saved;
+  if (saved !== undefined) setSavedSubscriptionId(db, saved);
   ingestFetchedSubscriptions(
     db.subscriptions,
     query.queryHash,
@@ -204,7 +228,7 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
 }
 
 function entryMembershipScope(db: LocalDb, entry: EntryRow): EntryMembershipScope {
-  const { savedSubscriptionId } = db;
+  const savedSubscriptionId = db.saved.id;
   const subscriptions = entry.subscriptionIds.flatMap((id) => {
     // Uncategorized excludes the saved subscription, whatever its tags.
     const row = id === savedSubscriptionId ? undefined : db.subscriptions.rows.getSynced(id);

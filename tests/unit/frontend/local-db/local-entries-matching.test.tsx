@@ -10,6 +10,7 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 import { act, cleanup, waitFor } from "@testing-library/react";
+import type { QueryClient } from "@tanstack/react-query";
 import { useLocalEntriesMatching } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
@@ -56,16 +57,26 @@ const STORED = [
   makeEntry("f", "2024-06-06", { read: true, subscriptionIds: ["sub-1", "col-1", "sub-saved"] }),
 ];
 
-function renderMatching(filters: EntryListFilters, subscriptionIds?: string[] | null) {
-  const rendered = renderHookWithTrpc(() => useLocalEntriesMatching(filters, subscriptionIds));
+/** Lands the `subscriptions.list` result that names the saved subscription. */
+function learnSavedSubscription(queryClient: QueryClient): void {
   act(() => {
-    rendered.queryClient.setQueryData(
+    queryClient.setQueryData(
       [["subscriptions", "list"], { input: SAVED_SUBSCRIPTION_LIST_INPUT, type: "query" }],
       { items: [], savedSubscriptionId: "sub-saved" }
     );
-    upsertServerEntries(getLocalDb(rendered.queryClient).entries, STORED);
   });
-  return () => rendered.result.current?.map((entry) => entry.id);
+}
+
+function renderMatching(
+  filters: EntryListFilters,
+  subscriptionIds?: string[] | null,
+  { savedKnown = true }: { savedKnown?: boolean } = {}
+) {
+  const rendered = renderHookWithTrpc(() => useLocalEntriesMatching(filters, subscriptionIds));
+  act(() => upsertServerEntries(getLocalDb(rendered.queryClient).entries, STORED));
+  if (savedKnown) learnSavedSubscription(rendered.queryClient);
+  const ids = () => rendered.result.current?.map((entry) => entry.id);
+  return Object.assign(ids, { learnSaved: () => learnSavedSubscription(rendered.queryClient) });
 }
 
 describe("useLocalEntriesMatching", () => {
@@ -107,6 +118,15 @@ describe("useLocalEntriesMatching", () => {
 
   it("shows Saved by membership in the saved subscription, whatever the type", async () => {
     const saved = renderMatching({ type: "saved" });
+    await waitFor(() => expect(saved()).toEqual(["f", "e"]));
+  });
+
+  it("shows nothing in Saved until the saved subscription is known, then its members", async () => {
+    const saved = renderMatching({ type: "saved" }, undefined, { savedKnown: false });
+    await act(async () => {});
+    expect(saved()).toEqual([]);
+
+    saved.learnSaved();
     await waitFor(() => expect(saved()).toEqual(["f", "e"]));
   });
 });

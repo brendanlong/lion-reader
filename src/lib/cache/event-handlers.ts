@@ -15,7 +15,6 @@ import {
   handleMarkAllRead,
   loadSubscriptionForSidebar,
   setEntryRelatedCounts,
-  type EntryRelatedCounts,
 } from "./operations";
 import {
   patchServerEntryMetadata,
@@ -75,21 +74,20 @@ function toEntryRow(
 }
 
 /**
- * A count-bearing event says the user has saved articles while the client
- * knows of no saved subscription: it was just created (by their first save),
- * so learn its id, then place the entry, which may be that save.
+ * A saved article arrived while the client knows of no saved subscription:
+ * this save created it (the user's first), so look its id up, then place the
+ * entry. Keyed on the entry's type, the one thing a first save's event surely
+ * says (it may be read already, so its counts needn't show it), and done at
+ * most once per page load, so a server answering null can't make every save
+ * refetch.
  */
-function learnNewSavedSubscription(
-  utils: TRPCClientUtils,
-  db: LocalDb,
-  counts: EntryRelatedCounts | undefined,
-  entryId: string
-): void {
-  if (db.savedSubscriptionId !== null || !counts?.saved?.unread) return;
+function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: EntryRow): void {
+  if (entry.type !== "saved" || db.saved.id !== null || db.saved.lookedUp) return;
+  db.saved.lookedUp = true;
   // The cached null is still fresh by the staleTime, but out of date now.
   void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT, { staleTime: 0 }).then(
     () => {
-      const stored = db.entries.getSynced(entryId);
+      const stored = db.entries.getSynced(entry.id);
       if (stored) insertEntryIntoLists(db, stored);
     },
     () => {
@@ -137,14 +135,12 @@ export function handleSyncEvent(
       // another device while this client was offline); the live path omits
       // them because a brand-new entry is always unread/unstarred.
       if (event.entry) {
-        addServerEntryToLists(
-          db,
-          toEntryRow(event, event.entry, {
-            read: event.entry.read ?? false,
-            starred: event.entry.starred ?? false,
-          })
-        );
-        learnNewSavedSubscription(utils, db, event.counts, event.entryId);
+        const row = toEntryRow(event, event.entry, {
+          read: event.entry.read ?? false,
+          starred: event.entry.starred ?? false,
+        });
+        addServerEntryToLists(db, row);
+        learnNewSavedSubscription(utils, db, row);
       }
       break;
 
