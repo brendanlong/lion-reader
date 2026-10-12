@@ -52,23 +52,8 @@ const createdFeeds: string[] = [];
 
 async function cleanup(): Promise<void> {
   if (createdFeeds.length > 0) await db.delete(feeds).where(inArray(feeds.id, createdFeeds));
-  if (createdUsers.length > 0) {
-    // The entries first: a user's cascade to their email subscriptions trips
-    // #1897 when it reaches the emails those own.
-    await db.delete(entries).where(inArray(entries.ownerUserId, createdUsers));
-    await db
-      .delete(entries)
-      .where(
-        inArray(
-          entries.ownerSubscriptionId,
-          db
-            .select({ id: subscriptions.id })
-            .from(subscriptions)
-            .where(inArray(subscriptions.userId, createdUsers))
-        )
-      );
-    await db.delete(users).where(inArray(users.id, createdUsers));
-  }
+  // Deleting a user cascades to their subscriptions and the entries they own.
+  if (createdUsers.length > 0) await db.delete(users).where(inArray(users.id, createdUsers));
   createdFeeds.length = 0;
   createdUsers.length = 0;
 }
@@ -121,8 +106,8 @@ async function migrateFromLegacy(
         (${legacy.emailFeedId}, 'email', ${userId}, 'news@example.com', 'News Weekly'),
         (${legacy.savedFeedId}, 'saved', ${userId}, NULL, 'Saved Articles')`);
     await tx.execute(sql`
-      INSERT INTO subscriptions (id, user_id, feed_id, type, email_sender)
-      VALUES (${legacy.emailSubscriptionId}, ${userId}, ${legacy.emailFeedId}, 'email', 'news@example.com')`);
+      INSERT INTO subscriptions (id, user_id, feed_id, type, email_sender, custom_title)
+      VALUES (${legacy.emailSubscriptionId}, ${userId}, ${legacy.emailFeedId}, 'email', 'news@example.com', '')`);
     await tx.execute(sql`
       INSERT INTO entries (id, owner_feed_id, owner_subscription_id, owner_user_id, type, guid, content_hash, fetched_at)
       VALUES
@@ -187,7 +172,8 @@ describe("migrations 0139–0141: per-user feeds go (#1846)", () => {
       .orderBy(subscriptions.id);
     expect(subs).toEqual(
       [
-        // The email subscription keeps its feed's title as its name.
+        // The email subscription keeps its feed's title as its name (a blank
+        // custom title counts as none).
         { id: legacy.emailSubscriptionId, feedId: null, title: "News Weekly" },
         { id: legacy.webSubscriptionId, feedId: legacy.webFeedId, title: null },
       ].sort((a, b) => a.id.localeCompare(b.id))

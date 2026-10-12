@@ -5,7 +5,7 @@
  */
 
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   blockedSenders,
@@ -33,20 +33,7 @@ const createdUsers: string[] = [];
 
 async function removeCreatedUsers(): Promise<void> {
   if (createdUsers.length === 0) return;
-  // The entries first: with no per-user feed, nothing but their owners
-  // cascades to them, and an email's cascade from its subscription trips #1897.
-  const ownSubscriptions = db
-    .select({ id: subscriptions.id })
-    .from(subscriptions)
-    .where(inArray(subscriptions.userId, createdUsers));
-  await db
-    .delete(entries)
-    .where(
-      or(
-        inArray(entries.ownerUserId, createdUsers),
-        inArray(entries.ownerSubscriptionId, ownSubscriptions)
-      )
-    );
+  // Cascades to their subscriptions and the entries they own.
   await db.delete(users).where(inArray(users.id, createdUsers));
   createdUsers.length = 0;
 }

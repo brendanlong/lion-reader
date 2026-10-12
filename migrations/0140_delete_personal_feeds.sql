@@ -6,8 +6,10 @@
 -- subscriptions naming it, so this aborts, rather than cascading, if anything
 -- but what it clears here still names an email or saved feed.
 SET LOCAL lock_timeout = '5s';
--- The previous release's writes touch feeds before entries and subscriptions.
-LOCK TABLE feeds, entries, subscriptions IN ACCESS EXCLUSIVE MODE;
+-- The previous release no longer touches feeds while writing an email or
+-- saved entry (since 0138); a web entry insert locks entries, then feeds
+-- for its foreign key check, then subscriptions in the fan-out.
+LOCK TABLE entries, feeds, subscriptions IN ACCESS EXCLUSIVE MODE;
 
 -- Emails the previous release wrote since 0139 still copy their
 -- subscription's feed (cleared below); 0139 checked the owners of the rest.
@@ -51,10 +53,16 @@ END $$;
 
 -- An email subscription keeps its name (its feed's title) itself, like a
 -- collection. The title shown doesn't change, so updated_at doesn't move.
+-- Blank names fall back like NULL ones, as the previous release's do when
+-- cleared.
 UPDATE subscriptions s
-SET feed_id = NULL, custom_title = COALESCE(s.custom_title, f.title, s.email_sender)
+SET feed_id = NULL,
+    custom_title = COALESCE(NULLIF(s.custom_title, ''), NULLIF(f.title, ''), s.email_sender)
 FROM feeds f
 WHERE f.id = s.feed_id AND s.type = 'email';
+UPDATE subscriptions
+SET custom_title = email_sender
+WHERE type = 'email' AND feed_id IS NULL AND COALESCE(custom_title, '') = '';
 
 -- Nothing names them now, so the cascades delete nothing.
 DELETE FROM feeds WHERE type <> 'web';

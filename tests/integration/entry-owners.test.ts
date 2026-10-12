@@ -141,9 +141,10 @@ describe("email_sender", () => {
 });
 
 describe("owner cascades", () => {
-  // #1897: the emails cascade in the same statement, and the membership
-  // trigger then updates their user_entries rows before those cascade.
-  it.skip("hard-deleting an email subscription removes its emails (#1897)", async () => {
+  // #1897: the emails cascade in the same statement, so their memberships go
+  // before their user_entries rows, which the membership trigger must skip.
+  // Account deletion takes this path too: nothing else deletes emails.
+  it("hard-deleting an email subscription removes its emails (#1897)", async () => {
     const userId = await user();
     const { entryId, subscriptionId } = await receiveEmail(userId, "news@example.com");
     await db.delete(subscriptions).where(eq(subscriptions.id, subscriptionId));

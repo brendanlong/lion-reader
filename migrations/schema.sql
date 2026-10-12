@@ -48,6 +48,7 @@ BEGIN
     WHERE EXISTS (
       SELECT 1 FROM user_entries x WHERE x.user_id = p.user_id AND x.entry_id = p.entry_id
     )
+      AND EXISTS (SELECT 1 FROM entries e WHERE e.id = p.entry_id)
   ) m
   WHERE ue.user_id = m.user_id AND ue.entry_id = m.entry_id AND ue.active_memberships <> m.n;
 END;
@@ -178,7 +179,8 @@ CREATE FUNCTION public.ensure_saved_subscriptions(p_users uuid[]) RETURNS intege
   WITH created AS (
     INSERT INTO subscriptions (id, user_id, type, custom_title, subscribed_at, created_at, updated_at)
     SELECT uuidv7(), u.user_id, 'saved', 'Saved', now(), now(), now()
-    FROM (SELECT DISTINCT user_id FROM unnest(p_users) AS u(user_id) ORDER BY user_id) u
+    FROM (SELECT DISTINCT user_id FROM unnest(p_users) AS u(user_id)) u
+    ORDER BY u.user_id
     ON CONFLICT (user_id) WHERE type = 'saved' DO NOTHING
     RETURNING 1
   )
@@ -629,6 +631,7 @@ CREATE TABLE public.entries (
     CONSTRAINT entries_owner_matches_type CHECK ((((type = 'web'::public.feed_type) = (owner_feed_id IS NOT NULL)) AND ((type = 'email'::public.feed_type) = (owner_subscription_id IS NOT NULL)) AND ((type = 'saved'::public.feed_type) = (owner_user_id IS NOT NULL)))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
+    CONSTRAINT entries_type_not_collection CHECK ((type <> 'collection'::public.feed_type)),
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
 ALTER TABLE ONLY public.entries ALTER COLUMN content_original SET COMPRESSION lz4;
@@ -1058,9 +1061,6 @@ ALTER TABLE ONLY public.discord_api_token_links
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_type_not_collection CHECK ((type <> 'collection'::public.feed_type)) NOT VALID;
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);
