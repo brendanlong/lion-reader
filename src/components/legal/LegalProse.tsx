@@ -49,11 +49,11 @@ export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
  */
 function HeadingSelfLink({ id, title }: { id: string; title: string }) {
   return (
-    <a href={`#${id}`} className="group text-inherit no-underline">
+    <a href={`#${id}`} className="not-prose group">
       {title}
       <span
         aria-hidden="true"
-        className="text-muted ml-2 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+        className="text-muted ml-2 opacity-0 select-none group-hover:opacity-100 group-focus-visible:opacity-100"
       >
         #
       </span>
