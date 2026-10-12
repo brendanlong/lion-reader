@@ -79,6 +79,7 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
     "entries.get": (input) => ({ entry: createEntry({ id: (input as { id: string }).id }) }),
     "summarization.isAvailable": () => ({ available: false }),
     "collections.listForEntry": () => ({ collectionIds: [] }),
+    "subscriptions.list": () => ({ items: [], savedSubscriptionId: "saved-sub" }),
     "entries.markRead": (input) => {
       const entries = (input as { entries: { id: string }[] }).entries;
       return {
@@ -193,7 +194,7 @@ describe("EntryContent", () => {
 
   it.each([
     ["a feed article", { type: "web", subscriptionId: "sub-1" }, true],
-    // Its subscription is the saved one (#1846), which has no settings.
+    // Its origin is the saved subscription (#1846), which has no settings.
     ["a saved article", { type: "saved", subscriptionId: "saved-sub" }, false],
   ])("offers the full-content toggle for %s: %s", async (_label, fields, offered) => {
     renderEntryContent(<EntryContent entryId="entry-1" />, {

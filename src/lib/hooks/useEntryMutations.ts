@@ -146,7 +146,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
         // "Unread only" — the toggle switches lists without a refetch).
         for (const id of ids) {
           const entry = db.entries.collection.get(id);
-          if (entry) insertEntryIntoLists(db, queryClient, { ...entry, read: false });
+          if (entry) insertEntryIntoLists(db, { ...entry, read: false });
         }
       }
       mutateEntries(

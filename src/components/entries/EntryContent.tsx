@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
 import { showOriginalKey, useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
+import { useSavedSubscriptionId } from "@/lib/hooks/useSavedSubscriptionId";
 import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
 import { useTrackEntryView } from "@/lib/analytics/useTrackEntryView";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
@@ -112,8 +113,12 @@ function EntryContentInner({
   // the displayed entry, so the neighbour prefetches below aren't counted.
   useTrackEntryView(entry?.id, entry?.type);
 
+  // Saved articles' origin is the saved subscription (#1846).
+  const savedSubscriptionId = useSavedSubscriptionId();
   const [showOriginal, setShowOriginal] = useShowOriginalPreference(
-    entry && showOriginalKey(entry)
+    entry && savedSubscriptionId !== undefined
+      ? showOriginalKey(entry, savedSubscriptionId)
+      : undefined
   );
 
   // Prefetch next and previous entries - use regular useQuery since these are optional
@@ -179,9 +184,12 @@ function EntryContentInner({
   });
 
   // Handle toggling fetchFullContent setting
-  // A saved article's subscription is the saved one, which has no settings:
-  // full content is a feed subscription's setting.
-  const fullContentSubscriptionId = entry?.type === "saved" ? null : entry?.subscriptionId;
+  // Full content is a feed subscription's setting; the saved subscription
+  // (a saved article's origin) has none.
+  const fullContentSubscriptionId =
+    savedSubscriptionId === undefined || entry?.subscriptionId === savedSubscriptionId
+      ? null
+      : entry?.subscriptionId;
   const handleToggleFetchFullContent = useCallback(() => {
     if (!entry || !fullContentSubscriptionId) return;
 

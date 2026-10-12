@@ -177,6 +177,7 @@ describe("UnifiedEntriesContent loading fallback", () => {
         {
           id: "stored",
           subscriptionId: "sub-1",
+          subscriptionIds: ["sub-1"],
           type: "web",
           url: null,
           title: "Stored Entry",

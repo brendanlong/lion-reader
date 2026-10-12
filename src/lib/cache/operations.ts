@@ -12,7 +12,8 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import { getLocalDb } from "@/lib/local-db/local-db";
+import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
+import { setStoredEntryCollection } from "@/lib/local-db/entries";
 import {
   patchLiveSubscription,
   removeLiveSubscriptions,
@@ -22,7 +23,7 @@ import {
   type SubscriptionRow,
 } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
-import { insertIntoCollectionLists, setLeftCollectionLists } from "@/lib/local-db/entry-lists";
+import { setLeftCollectionLists } from "@/lib/local-db/entry-lists";
 
 /**
  * Drops a deleted subscription's `subscriptions.get` data. Run once the server
@@ -131,9 +132,12 @@ export function applyCollectionEntriesChange(
       void utils.collections.listForEntry.invalidate({ entryId });
     }
     setLeftCollectionLists(db.lists, entryId, subscriptionId, !added);
+    setStoredEntryCollection(db.entries, entryId, subscriptionId, added);
     if (added) {
+      // Its new membership places it in the collection's lists and those of
+      // the collection's tags.
       const stored = db.entries.getSynced(entryId);
-      if (stored) insertIntoCollectionLists(db.lists, stored, subscriptionId);
+      if (stored) insertEntryIntoLists(db, stored);
     }
   }
 }

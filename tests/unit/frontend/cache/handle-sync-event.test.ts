@@ -33,6 +33,7 @@ import {
   createImportProgressEvent,
   DEFAULT_SUBSCRIPTIONS,
   DEFAULT_ENTRIES,
+  SEEDED_SAVED_SUBSCRIPTION_ID,
 } from "../../../utils/cache-test-helpers";
 import type { QueryClient } from "@tanstack/react-query";
 import { getLocalDb } from "@/lib/local-db/local-db";
@@ -303,6 +304,60 @@ describe("handleSyncEvent - new_entry", () => {
     expect(inserted?.updatedAt).toBeInstanceOf(Date);
   });
 
+  const LIVE_PAYLOAD = {
+    url: null,
+    title: "Live Entry",
+    author: null,
+    summary: null,
+    publishedAt: "2024-07-01T00:00:00.000Z",
+    fetchedAt: "2024-07-01T00:00:00.000Z",
+    siteName: "Example",
+    feedTitle: "Saved Articles",
+  };
+
+  it("puts a new saved article in Saved by its membership in the saved subscription", () => {
+    const saved = { type: "saved", unreadOnly: true, limit: 25 };
+    const all = { unreadOnly: true, limit: 25 };
+    seedList(saved, []);
+    seedList(all, []);
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createNewEntryEvent({
+        entryId: "entry-live",
+        subscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID,
+        subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
+        feedType: "saved",
+        entry: { ...LIVE_PAYLOAD, type: "saved" },
+      })
+    );
+
+    expect(listIds(saved)).toEqual(["entry-live"]);
+    expect(listIds(all)).toEqual(["entry-live"]);
+    expect(storedEntry("entry-live")?.subscriptionIds).toEqual([SEEDED_SAVED_SUBSCRIPTION_ID]);
+  });
+
+  it.each([
+    [
+      "takes the payload's type and the event's memberships",
+      { subscriptionIds: ["sub-1", "sub-2"], entry: { ...LIVE_PAYLOAD, type: "email" as const } },
+      { type: "email", subscriptionIds: ["sub-1", "sub-2"] },
+    ],
+    [
+      "falls back to feedType and the origin for a previous release's event",
+      { entry: LIVE_PAYLOAD },
+      { type: "web", subscriptionIds: ["sub-1"] },
+    ],
+  ])("%s", (_label, fields, expected) => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createNewEntryEvent({ entryId: "entry-live", subscriptionId: "sub-1", ...fields })
+    );
+    expect(storedEntry("entry-live")).toMatchObject(expected);
+  });
+
   it("is idempotent: applying the same list-data event twice inserts one row", () => {
     const event = createNewEntryEvent({
       entryId: "entry-live",
@@ -562,6 +617,30 @@ describe("handleSyncEvent - entry_state_changed", () => {
     // Nothing to insert from — the entry appears on the next navigation refresh.
     expect(listedEntries()).toHaveLength(before);
     expect(storedEntry("entry-uncached")).toBeUndefined();
+  });
+
+  it("updates the stored memberships with the state, unless older than the stored state", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        subscriptionIds: ["sub-1", "col-1"],
+        updatedAt: "2024-07-01T00:00:00.000Z",
+      })
+    );
+    expect(storedEntry("entry-1")?.subscriptionIds).toEqual(["sub-1", "col-1"]);
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createEntryStateChangedEvent({
+        entryId: "entry-1",
+        subscriptionIds: ["sub-1"],
+        updatedAt: "2024-06-30T00:00:00.000Z",
+      })
+    );
+    expect(storedEntry("entry-1")?.subscriptionIds).toEqual(["sub-1", "col-1"]);
   });
 
   it("updates the stored read and starred state", () => {

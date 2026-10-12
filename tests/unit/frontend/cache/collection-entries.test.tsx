@@ -4,8 +4,9 @@
 
 /**
  * Tests for collection membership changes (#1806) reaching the client: the
- * collection_entries_changed event updates the collection's loaded lists, the
- * entry's cached membership and the counts, without touching other lists.
+ * collection_entries_changed event updates the stored entry's memberships, the
+ * loaded lists of the collection (and of its tags, on an add), the
+ * entry's cached `collections.listForEntry` and the counts.
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -16,6 +17,8 @@ import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import { applyCollectionEntriesChange } from "@/lib/cache/operations";
 import { trpc } from "@/lib/trpc/client";
 import type { EntryRow } from "@/lib/local-db/entries";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 import { createRealTrpcUtils } from "../../../utils/cache-test-helpers";
 
@@ -32,6 +35,7 @@ function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow>
   return {
     id,
     subscriptionId: "sub-1",
+    subscriptionIds: ["sub-1"],
     type: "web",
     url: `https://example.com/${id}`,
     title: id,
@@ -114,6 +118,48 @@ describe("collection_entries_changed", () => {
     await waitFor(() => expect(ids("collection")).toEqual(["newer", "added", "older"]));
     // Read, so it doesn't belong in the unread-only view of the collection.
     expect(ids("unreadCollection")).toEqual(["newer", "older"]);
+  });
+
+  it("records the membership on the stored entry, which places it in the collection's tag lists", async () => {
+    const TAG_LIST = { tagId: "tag-2", sortOrder: "newest" as const, limit: 10 };
+    const rendered = renderHookWithTrpc(() => useEntryListEntries(TAG_LIST, null));
+    const { queryClient } = rendered;
+    const utils = createRealTrpcUtils(queryClient);
+    act(() => {
+      writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
+        {
+          id: COLLECTION,
+          type: "collection",
+          url: null,
+          title: "Reading",
+          originalTitle: null,
+          description: null,
+          siteUrl: null,
+          subscribedAt: new Date("2024-01-01T00:00:00Z"),
+          unreadCount: 0,
+          tags: [{ id: "tag-2", name: "Science", color: null }],
+          fetchFullContent: false,
+        },
+      ]);
+      seedList(queryClient, FEED_LIST, [makeEntry("a", "2024-06-01")]);
+      seedList(queryClient, TAG_LIST, []);
+    });
+    const change = (added: boolean) =>
+      act(() =>
+        applyCollectionEntriesChange(utils, queryClient, {
+          subscriptionId: COLLECTION,
+          entryIds: ["a"],
+          added,
+        })
+      );
+    const stored = () => getLocalDb(queryClient).entries.getSynced("a")?.subscriptionIds;
+
+    change(true);
+    await waitFor(() => expect(rendered.result.current.map((e) => e.id)).toEqual(["a"]));
+    expect(stored()).toEqual(["sub-1", COLLECTION]);
+
+    change(false);
+    expect(stored()).toEqual(["sub-1"]);
   });
 
   it("hides a removed entry from the collection's lists once it's no longer open", async () => {

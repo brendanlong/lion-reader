@@ -254,7 +254,13 @@ export function createDemoStore(): DemoStore {
       return false;
     }
     if (filter.uncategorized && !containers.some((sub) => sub.tagIds.length === 0)) return false;
-    if (filter.type !== undefined && state.entry.type !== filter.type) return false;
+    // Saved is the saved subscription's members, like the server's (#1846);
+    // other types filter on the entry's.
+    if (filter.type === "saved") {
+      if (!subscriptionIdsOf(state).includes(DEMO_SAVED_SUBSCRIPTION_ID)) return false;
+    } else if (filter.type !== undefined && state.entry.type !== filter.type) {
+      return false;
+    }
     if (filter.excludeTypes?.includes(state.entry.type)) return false;
     if (filter.unreadOnly && state.read) return false;
     if (filter.starredOnly && !state.starred) return false;
@@ -322,8 +328,11 @@ export function createDemoStore(): DemoStore {
       fullContentCleaned: state.fullContentFetchedAt ? contentCleaned : null,
       fullContentFetchedAt: state.fullContentFetchedAt,
       fullContentError: null,
+      // The saved subscription has no settings.
       fetchFullContent:
-        state.entry.type === "saved" ? false : (subscriptionOf(state)?.fetchFullContent ?? false),
+        originOf(state) === DEMO_SAVED_SUBSCRIPTION_ID
+          ? false
+          : (subscriptionOf(state)?.fetchFullContent ?? false),
     };
   }
 

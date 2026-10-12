@@ -27,7 +27,7 @@ import {
   removeEntryList,
   type EntryListMeta,
   type EntryLists,
-  type EntryTagScope,
+  type EntryMembershipScope,
   type ListEntryRow,
 } from "./entry-lists";
 import { createSyncedCollection } from "./synced-collection";
@@ -43,6 +43,12 @@ export interface LocalDb {
   entries: EntryStore;
   lists: EntryLists;
   subscriptions: SubscriptionStore;
+  /**
+   * The user's saved subscription (#1846), from the latest `subscriptions.list`
+   * result (every one names it): its members are the Saved list. Null before
+   * the first save creates it; undefined until a result has landed.
+   */
+  savedSubscriptionId: string | null | undefined;
 }
 
 interface EntriesListData {
@@ -74,7 +80,12 @@ function createLocalDb(): LocalDb {
     fetchStartedAt: new Map(),
     clock: { now: 0 },
   };
-  return { entries, lists: { rows, meta: new Map() }, subscriptions };
+  return {
+    entries,
+    lists: { rows, meta: new Map() },
+    subscriptions,
+    savedSubscriptionId: undefined,
+  };
 }
 
 function procedureOf(query: Query): string | undefined {
@@ -118,6 +129,8 @@ function ingestSubscriptionPages(
 ): void {
   // The earlier pages are older than this fetch: don't write them again.
   const pages = mode === "append" ? data.pages.slice(-1) : data.pages;
+  const saved = pages.at(-1)?.savedSubscriptionId;
+  if (saved !== undefined) db.savedSubscriptionId = saved;
   ingestFetchedSubscriptions(
     db.subscriptions,
     query.queryHash,
@@ -190,36 +203,33 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
   return db;
 }
 
-function entryTagScope(queryClient: QueryClient, entry: EntryRow): EntryTagScope | undefined {
-  // Saved articles (whose subscription is the saved one, which no list shows)
-  // belong to no tag list and not to Uncategorized.
-  if (!entry.subscriptionId || entry.type === "saved") {
-    return { tagIds: new Set(), uncategorized: false };
-  }
-  const subscription = getLocalDb(queryClient).subscriptions.rows.getSynced(entry.subscriptionId);
-  if (!subscription) return undefined;
+function entryMembershipScope(db: LocalDb, entry: EntryRow): EntryMembershipScope {
+  const { savedSubscriptionId } = db;
+  const subscriptions = entry.subscriptionIds.flatMap((id) => {
+    // Uncategorized excludes the saved subscription, whatever its tags.
+    const row = id === savedSubscriptionId ? undefined : db.subscriptions.rows.getSynced(id);
+    return row ? [row] : [];
+  });
   return {
-    tagIds: new Set(subscription.tags.map((tag) => tag.id)),
-    uncategorized: subscription.tags.length === 0,
+    tagIds: new Set(subscriptions.flatMap((row) => row.tags.map((tag) => tag.id))),
+    uncategorized: subscriptions.some((row) => row.tags.length === 0),
+    saved: !!savedSubscriptionId && entry.subscriptionIds.includes(savedSubscriptionId),
   };
 }
 
 /**
  * Inserts an entry into the loaded lists it belongs in, judged by `entry`'s
- * fields. Tag/uncategorized membership comes from the stored subscription;
- * when that isn't stored, those lists are skipped and pick the entry up on
- * their next refresh.
+ * fields and memberships (`subscriptionIds`). Tag/uncategorized membership
+ * comes from the stored subscriptions among them, and Saved from the saved
+ * subscription's id; lists the client can't place it in that way pick it up
+ * on their next refresh.
  */
-export function insertEntryIntoLists(db: LocalDb, queryClient: QueryClient, entry: EntryRow): void {
-  insertIntoMatchingLists(db.lists, entry, entryTagScope(queryClient, entry));
+export function insertEntryIntoLists(db: LocalDb, entry: EntryRow): void {
+  insertIntoMatchingLists(db.lists, entry, entryMembershipScope(db, entry));
 }
 
 /** Stores a server-provided entry and inserts it into the lists it now belongs in. */
-export function addServerEntryToLists(
-  db: LocalDb,
-  queryClient: QueryClient,
-  entry: EntryRow
-): void {
+export function addServerEntryToLists(db: LocalDb, entry: EntryRow): void {
   upsertServerEntries(db.entries, [entry]);
-  insertEntryIntoLists(db, queryClient, db.entries.getSynced(entry.id) ?? entry);
+  insertEntryIntoLists(db, db.entries.getSynced(entry.id) ?? entry);
 }

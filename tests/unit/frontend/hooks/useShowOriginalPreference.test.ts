@@ -145,14 +145,19 @@ describe("useShowOriginalPreference", () => {
   });
 
   describe("showOriginalKey", () => {
-    it("keys by subscription, and entries without one share a key per type", async () => {
+    it("keys by origin subscription, and entries without one share a key per type", async () => {
       const { showOriginalKey } = await import("@/lib/hooks/useShowOriginalPreference");
 
-      expect(showOriginalKey({ subscriptionId: "sub-1", type: "web" })).toBe("sub-1");
-      expect(showOriginalKey({ subscriptionId: null, type: "saved" })).toBe("saved");
-      // A saved article's subscription is the saved one (#1846); saved
-      // articles still share one preference.
-      expect(showOriginalKey({ subscriptionId: "saved-sub", type: "saved" })).toBe("saved");
+      expect(showOriginalKey({ subscriptionId: "sub-1", type: "web" }, "saved-sub")).toBe("sub-1");
+      expect(showOriginalKey({ subscriptionId: null, type: "web" }, "saved-sub")).toBe("web");
+      // Articles in the saved subscription (#1846) keep the key saved
+      // articles' preference is stored under, whatever their type.
+      expect(showOriginalKey({ subscriptionId: "saved-sub", type: "saved" }, "saved-sub")).toBe(
+        "saved"
+      );
+      expect(showOriginalKey({ subscriptionId: "saved-sub", type: "web" }, "saved-sub")).toBe(
+        "saved"
+      );
     });
   });
 

@@ -15,6 +15,7 @@ import {
   handleMarkAllRead,
   loadSubscriptionForSidebar,
   setEntryRelatedCounts,
+  type EntryRelatedCounts,
 } from "./operations";
 import {
   patchServerEntryMetadata,
@@ -22,7 +23,13 @@ import {
   setSubscriptionEntriesFeedTitle,
   type EntryRow,
 } from "@/lib/local-db/entries";
-import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
+import {
+  addServerEntryToLists,
+  getLocalDb,
+  insertEntryIntoLists,
+  type LocalDb,
+} from "@/lib/local-db/local-db";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { applySyncTagChanges, removeSyncTags } from "./tag-cache";
 import { patchLiveSubscription } from "@/lib/local-db/subscriptions";
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
@@ -31,17 +38,28 @@ import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 import type { NewEntryListData, SyncEvent } from "@/lib/events/schemas";
 export type { SyncEvent } from "@/lib/events/schemas";
 
-/** Builds the entry row for an event's list-item payload. */
+/**
+ * Builds the entry row for an event's list-item payload. A previous release's
+ * events carry no `subscriptionIds` (a new entry's one membership is then its
+ * origin) and no payload `type` (the event's `feedType` stands in).
+ */
 function toEntryRow(
-  event: { entryId: string; subscriptionId?: string | null; updatedAt: string },
-  type: EntryRow["type"],
+  event: {
+    entryId: string;
+    subscriptionId?: string | null;
+    subscriptionIds?: string[];
+    feedType: EntryRow["type"];
+    updatedAt: string;
+  },
   entry: NewEntryListData,
   state: { read: boolean; starred: boolean }
 ): EntryRow {
+  const subscriptionId = event.subscriptionId ?? null;
   return {
     id: event.entryId,
-    subscriptionId: event.subscriptionId ?? null,
-    type,
+    subscriptionId,
+    subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
+    type: entry.type ?? event.feedType,
     url: entry.url,
     title: entry.title,
     author: entry.author,
@@ -54,6 +72,29 @@ function toEntryRow(
     feedTitle: entry.feedTitle,
     siteName: entry.siteName,
   };
+}
+
+/**
+ * A count-bearing event says the user has saved articles while the client
+ * knows of no saved subscription: it was just created (by their first save),
+ * so learn its id, then place the entry, which may be that save.
+ */
+function learnNewSavedSubscription(
+  utils: TRPCClientUtils,
+  db: LocalDb,
+  counts: EntryRelatedCounts | undefined,
+  entryId: string
+): void {
+  if (db.savedSubscriptionId !== null || !counts?.saved?.unread) return;
+  void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT).then(
+    () => {
+      const stored = db.entries.getSynced(entryId);
+      if (stored) insertEntryIntoLists(db, stored);
+    },
+    () => {
+      // Lists pick the entry up on their next refresh.
+    }
+  );
 }
 
 // ============================================================================
@@ -97,12 +138,12 @@ export function handleSyncEvent(
       if (event.entry) {
         addServerEntryToLists(
           db,
-          queryClient,
-          toEntryRow(event, event.feedType, event.entry, {
+          toEntryRow(event, event.entry, {
             read: event.entry.read ?? false,
             starred: event.entry.starred ?? false,
           })
         );
+        learnNewSavedSubscription(utils, db, event.counts, event.entryId);
       }
       break;
 
@@ -122,6 +163,7 @@ export function handleSyncEvent(
       const state = { read: event.read, starred: event.starred };
       setServerEntryState(db.entries, event.entryId, {
         ...state,
+        subscriptionIds: event.subscriptionIds,
         updatedAt: new Date(event.updatedAt),
       });
 
@@ -133,15 +175,13 @@ export function handleSyncEvent(
       // live (issue #1237). Events without a payload (older servers,
       // star/unstar of an unread entry) fall back to the stored row.
       if (!event.read) {
-        if (event.entry && event.feedType) {
-          addServerEntryToLists(
-            db,
-            queryClient,
-            toEntryRow(event, event.feedType, event.entry, state)
-          );
+        const { entry } = event;
+        const feedType = entry?.type ?? event.feedType;
+        if (entry && feedType) {
+          addServerEntryToLists(db, toEntryRow({ ...event, feedType }, entry, state));
         } else {
           const stored = db.entries.getSynced(event.entryId);
-          if (stored) insertEntryIntoLists(db, queryClient, stored);
+          if (stored) insertEntryIntoLists(db, stored);
         }
       }
 

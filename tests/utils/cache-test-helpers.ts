@@ -43,8 +43,8 @@ export interface SeededTag {
 
 export interface SeededEntry {
   id: string;
-  feedId: string;
   subscriptionId: string | null;
+  subscriptionIds: string[];
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -74,10 +74,11 @@ export interface SeededEntry {
 //   entry-1:               sub-1, web, unread, starred
 //   entry-2:               sub-1, web, unread, not starred
 //   entry-3:               sub-2, web, read, not starred
-//   entry-saved:           null,  saved, unread, not starred (saved article, no subscription)
+//   entry-saved:           sub-saved, saved, unread, not starred (a saved article: the saved
+//                          subscription is its origin and its one membership)
 //   entry-starred-orphan:  null,  web, unread, starred (stands in for a starred entry from
-//                          an unsubscribed feed; the server would send that subscription's
-//                          id, which no cached subscription matches, never null for web)
+//                          an unsubscribed feed: no active membership; the server would send
+//                          the old subscription as origin, which no cached one matches)
 // ============================================================================
 
 export const DEFAULT_SUBSCRIPTIONS: SeededSubscription[] = [
@@ -146,11 +147,14 @@ const DEFAULT_TAGS: SeededTag[] = [
 
 const DEFAULT_UNCATEGORIZED = { feedCount: 1, unreadCount: 3 };
 
+/** The seeded user's saved subscription: the saved article's origin and membership. */
+export const SEEDED_SAVED_SUBSCRIPTION_ID = "sub-saved";
+
 export const DEFAULT_ENTRIES: SeededEntry[] = [
   {
     id: "entry-1",
-    feedId: "feed-1",
     subscriptionId: "sub-1",
+    subscriptionIds: ["sub-1"],
     type: "web",
     url: "https://example.com/1",
     title: "Old Title",
@@ -166,8 +170,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
   },
   {
     id: "entry-2",
-    feedId: "feed-1",
     subscriptionId: "sub-1",
+    subscriptionIds: ["sub-1"],
     type: "web",
     url: "https://example.com/2",
     title: "Entry Two",
@@ -183,8 +187,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
   },
   {
     id: "entry-3",
-    feedId: "feed-2",
     subscriptionId: "sub-2",
+    subscriptionIds: ["sub-2"],
     type: "web",
     url: "https://example.com/3",
     title: "Entry Three",
@@ -200,8 +204,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
   },
   {
     id: "entry-saved",
-    feedId: "feed-saved",
-    subscriptionId: null,
+    subscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID,
+    subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
     type: "saved",
     url: "https://example.com/saved-article",
     title: "Saved Article",
@@ -217,8 +221,8 @@ export const DEFAULT_ENTRIES: SeededEntry[] = [
   },
   {
     id: "entry-starred-orphan",
-    feedId: "feed-orphan",
     subscriptionId: null,
+    subscriptionIds: [],
     type: "web",
     url: "https://example.com/orphan",
     title: "Orphaned Starred Entry",
@@ -362,7 +366,12 @@ export function seedCacheState(
   const seedSidebarList = (input: { tagId: string } | { uncategorized: true }, items: unknown[]) =>
     (utils.subscriptions.list as unknown as { setInfiniteData: SetInfiniteData }).setInfiniteData(
       { ...input, limit: 50 },
-      { pages: [{ items, nextCursor: undefined }], pageParams: [undefined] }
+      {
+        pages: [
+          { items, nextCursor: undefined, savedSubscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID },
+        ],
+        pageParams: [undefined],
+      }
     );
   for (const tag of tagItems) {
     seedSidebarList(

@@ -130,7 +130,9 @@ sse-endpoint: SSE Endpoint {
       - new_entry: compute this user's absolute unread
         counts (getBulkEntryRelatedCounts) and attach them,
         so the client sets counts directly (idempotent, #892)
-      - Include feedType for cache decisions
+      - new_entry: subscriptionIds = [subscriptionId]
+        (a new entry's one membership); the entry payload
+        carries its type (display only)
 
       Other User Events:
       - Forward directly
@@ -212,8 +214,10 @@ cache-ops: Cache Operations {
       Stores the event's entry payload in the local
       entry store and inserts it into matching loaded
       lists (addServerEntryToLists): sorted position,
-      deduped by ID, tag/uncategorized membership from
-      the cached subscription. Skips search/Recently
+      deduped by ID, placed by its subscriptionIds:
+      tag/uncategorized lists through the stored
+      subscriptions, Saved through the saved
+      subscription's id. Skips search/Recently
       Read lists and entries beyond the loaded
       pagination window.
 
