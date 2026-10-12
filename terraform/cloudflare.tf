@@ -1,6 +1,6 @@
 # Cloudflare — the whole lionreader.com zone. Every record lives here, including
-# Mailgun's: Mailgun is part of the application, not a mailbox administered on
-# the side.
+# the mail records for both Mailgun (newsletter ingest) and Fastmail (mailboxes
+# at the apex).
 #
 # `proxied = false` on every proxyable record (A / AAAA / CNAME) is an invariant,
 # not a default — see ../docs/DEPLOYMENT.md. TXT and MX cannot be proxied, so
@@ -155,6 +155,54 @@ resource "cloudflare_dns_record" "ingest_mx_b" {
   priority = 10
   ttl      = 86400
   comment  = "Newsletter ingest (INGEST_EMAIL_DOMAIN)"
+}
+
+# --- Mailboxes at the apex (Fastmail) ---------------------------------------
+# Separate from newsletter ingest: that lives on in.app (Mailgun, above), so
+# these records can change without touching it, and vice versa. Don't test
+# ingest by mailing from a Fastmail account: Fastmail delivers mail for
+# subdomains of a domain it hosts internally, never consulting in.app's MX, and
+# bounces it as "User unknown in virtual mailbox table".
+
+resource "cloudflare_dns_record" "fastmail_mx_1" {
+  zone_id  = cloudflare_zone.lionreader.id
+  name     = "@"
+  type     = "MX"
+  content  = "us1-smtp.messagingengine.com"
+  priority = 10
+  ttl      = 300
+  comment  = "Fastmail"
+}
+
+resource "cloudflare_dns_record" "fastmail_mx_2" {
+  zone_id  = cloudflare_zone.lionreader.id
+  name     = "@"
+  type     = "MX"
+  content  = "us2-smtp.messagingengine.com"
+  priority = 20
+  ttl      = 300
+  comment  = "Fastmail"
+}
+
+resource "cloudflare_dns_record" "fastmail_spf" {
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "@"
+  type    = "TXT"
+  content = "v=spf1 include:spf.messagingengine.com ?all"
+  ttl     = 300
+  comment = "Fastmail SPF"
+}
+
+resource "cloudflare_dns_record" "fastmail_dkim" {
+  for_each = toset(["fm1", "fm2", "fm3"])
+
+  zone_id = cloudflare_zone.lionreader.id
+  name    = "${each.key}._domainkey"
+  type    = "CNAME"
+  content = "${each.key}.${var.domain}.dkim.fmhosted.com"
+  proxied = false
+  ttl     = 300
+  comment = "Fastmail DKIM. Never proxy"
 }
 
 resource "cloudflare_dns_record" "google_verification" {
