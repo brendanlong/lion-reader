@@ -34,7 +34,13 @@ import {
   waitForMessage,
   waitForMessages,
 } from "../utils/pubsub";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEmailSubscription,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 let subscriber: Redis;
 
@@ -72,17 +78,20 @@ async function seedEntry(
   // Spam is only valid on email entries (entries_spam_only_email constraint).
   const type = options.type ?? (options.isSpam ? "email" : "web");
   const now = new Date();
-  const feedId = await createTestFeed({
-    type,
-    // Email feeds are per-user (feed_type_user_id constraint)
-    userId: type === "email" ? userId : null,
-    title: "Test Feed",
-    lastFetchedAt: now,
-    lastEntriesUpdatedAt: now,
-  });
-  await createTestSubscription(userId, feedId);
+  // An email is owned by its subscription, a web entry by its feed (#1846).
+  let owner: string;
+  if (type === "email") {
+    owner = await createTestEmailSubscription(userId);
+  } else {
+    owner = await createTestFeed({
+      title: "Test Feed",
+      lastFetchedAt: now,
+      lastEntriesUpdatedAt: now,
+    });
+    await createTestSubscription(userId, owner);
+  }
 
-  const entryId = await createTestEntry(feedId, {
+  const entryId = await createTestEntry(owner, {
     type,
     title: "Entry",
     isSpam: options.isSpam ?? false,

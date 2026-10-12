@@ -20,6 +20,7 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
+  createTestEmailSubscription,
   createTestEntry as createSharedTestEntry,
   createTestFeed as createSharedTestFeed,
 } from "./helpers";
@@ -57,7 +58,8 @@ async function createTestEntry(
 ): Promise<string> {
   const entryId = generateUuidv7();
   const now = new Date();
-  // is_spam is only permitted on email entries (entries_spam_only_email).
+  // is_spam is only permitted on email entries (entries_spam_only_email),
+  // which are owned by an email subscription: pass its id as `feedId`.
   const type = options.type ?? (options.isSpam ? "email" : "web");
 
   return createSharedTestEntry(feedId, {
@@ -826,7 +828,8 @@ describe("Entries", () => {
       await createTestSubscription(userId, feedId);
 
       const normalId = await createTestEntry(feedId, { title: "Normal" });
-      const spamId = await createTestEntry(feedId, { title: "Spam", isSpam: true });
+      const spamFrom = await createTestEmailSubscription(userId);
+      const spamId = await createTestEntry(spamFrom, { title: "Spam", isSpam: true });
       await createUserEntry(userId, normalId, { read: false });
       await createUserEntry(userId, spamId, { read: false });
 

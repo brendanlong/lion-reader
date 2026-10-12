@@ -22,7 +22,6 @@ import { createCaller } from "../../src/server/trpc/root";
 import { getAppErrorCode } from "../../src/server/trpc/errors";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { DEFAULT_SUMMARIZATION_MODELS } from "../../src/lib/summarization/constants";
-import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import {
   createAuthContext,
   createTestEntry,
@@ -44,22 +43,22 @@ async function createVisibleEntry(
   options: { unsubscribed?: boolean; saved?: boolean; fullContentHash?: string } = {}
 ): Promise<string> {
   const now = new Date();
-  let feedId: string;
+  let owner: string; // the entry's feed, or for a saved article its user
   if (options.saved) {
-    feedId = await getOrCreateSavedFeed(db, userId);
+    owner = userId;
   } else {
     // The fetch timestamps are what make the entry current for this
     // subscription; createTestFeed builds a never-polled feed.
-    feedId = await createTestFeed({
+    owner = await createTestFeed({
       title: "Test Feed",
       lastFetchedAt: now,
       lastEntriesUpdatedAt: now,
     });
-    await createTestSubscription(userId, feedId, {
+    await createTestSubscription(userId, owner, {
       unsubscribedAt: options.unsubscribed ? now : null,
     });
   }
-  const entryId = await createTestEntry(feedId, {
+  const entryId = await createTestEntry(owner, {
     type: options.saved ? "saved" : "web",
     title: "Test Entry",
     contentCleaned: "<p>Some article content to summarize.</p>",

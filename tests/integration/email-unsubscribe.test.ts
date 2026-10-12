@@ -16,9 +16,8 @@ import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { feedStreamId } from "../../src/server/google-reader/id";
 import { POST as greaderSubscriptionEdit } from "../../src/app/api/greader.php/reader/api/0/subscription/edit/route";
 import {
+  createTestEmailSubscription,
   createTestEntry,
-  createTestFeed,
-  createTestSubscription,
   createTestTag,
   createTestUser,
 } from "./helpers";
@@ -58,27 +57,22 @@ beforeEach(() => {
   received = [];
 });
 
-async function createEmailFeedForUser(userId: string): Promise<string> {
-  return createTestFeed({
-    type: "email",
-    userId,
-    url: null,
-    emailSenderPattern: `sender-${userId}@example.com`,
-  });
+/** The user's email subscription to `sender-{userId}@example.com`. */
+async function createEmailSubscriptionForUser(userId: string): Promise<string> {
+  return createTestEmailSubscription(userId, { emailSender: `sender-${userId}@example.com` });
 }
 
-/** A new user's email subscription, which owns the emails (#1846), and its feed. */
-async function createEmailSubscription(): Promise<{ feedId: string; subscriptionId: string }> {
+/** A new user's email subscription, which owns the emails (#1846). */
+async function createEmailSubscription(): Promise<string> {
   const userId = await createTestUser();
   createdUserIds.push(userId);
-  const feedId = await createEmailFeedForUser(userId);
-  return { feedId, subscriptionId: await createTestSubscription(userId, feedId) };
+  return createEmailSubscriptionForUser(userId);
 }
 
 describe("attemptUnsubscribe", () => {
   it("sends the one-click POST even when a mailto: is also offered", async () => {
-    const { feedId, subscriptionId } = await createEmailSubscription();
-    await createTestEntry(feedId, {
+    const subscriptionId = await createEmailSubscription();
+    await createTestEntry(subscriptionId, {
       type: "email",
       listUnsubscribeMailto: "mailto:unsubscribe@example.com",
       listUnsubscribeHttps: `${baseUrl}/unsub`,
@@ -94,8 +88,8 @@ describe("attemptUnsubscribe", () => {
   });
 
   it("does not report a rejected one-click POST as sent", async () => {
-    const { feedId, subscriptionId } = await createEmailSubscription();
-    await createTestEntry(feedId, {
+    const subscriptionId = await createEmailSubscription();
+    await createTestEntry(subscriptionId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/broken`,
       listUnsubscribePost: true,
@@ -108,8 +102,8 @@ describe("attemptUnsubscribe", () => {
   });
 
   it("does not report a mailto-only sender as unsubscribed", async () => {
-    const { feedId, subscriptionId } = await createEmailSubscription();
-    await createTestEntry(feedId, {
+    const subscriptionId = await createEmailSubscription();
+    await createTestEntry(subscriptionId, {
       type: "email",
       listUnsubscribeMailto: "mailto:unsubscribe@example.com",
     });
@@ -121,8 +115,8 @@ describe("attemptUnsubscribe", () => {
   });
 
   it("does not request an HTTPS URL that lacks one-click support", async () => {
-    const { feedId, subscriptionId } = await createEmailSubscription();
-    await createTestEntry(feedId, {
+    const subscriptionId = await createEmailSubscription();
+    await createTestEntry(subscriptionId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/unsub`,
       listUnsubscribePost: false,
@@ -135,13 +129,13 @@ describe("attemptUnsubscribe", () => {
   });
 
   it("uses an older one-click entry when the newest only offers mailto:", async () => {
-    const { feedId, subscriptionId } = await createEmailSubscription();
-    await createTestEntry(feedId, {
+    const subscriptionId = await createEmailSubscription();
+    await createTestEntry(subscriptionId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/older`,
       listUnsubscribePost: true,
     });
-    await createTestEntry(feedId, {
+    await createTestEntry(subscriptionId, {
       type: "email",
       listUnsubscribeMailto: "mailto:unsubscribe@example.com",
     });
@@ -157,9 +151,8 @@ describe("Google Reader subscription/edit ac=unsubscribe", () => {
   it("unsubscribes from the newsletter and blocks the sender like the web app (#1819)", async () => {
     const userId = await createTestUser();
     createdUserIds.push(userId);
-    const feedId = await createEmailFeedForUser(userId);
-    const subscriptionId = await createTestSubscription(userId, feedId);
-    await createTestEntry(feedId, {
+    const subscriptionId = await createEmailSubscriptionForUser(userId);
+    await createTestEntry(subscriptionId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/unsub`,
       listUnsubscribePost: true,

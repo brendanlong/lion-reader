@@ -150,16 +150,10 @@ describe("handleFetchFeed", () => {
     });
 
     it("parks a feed with no URL rather than retrying it hourly", async () => {
-      // Email feeds have no URL and can never be fetched, so a tight retry loop
-      // would just burn worker cycles forever.
+      // A feed with no URL can never be fetched, so a tight retry loop would
+      // just burn worker cycles forever.
       const before = Date.now();
-      const ownerId = await createTestUser({ emailPrefix: "ff-nourl" });
-      const feedId = await createTestFeed({
-        type: "email",
-        url: null,
-        userId: ownerId,
-        emailSenderPattern: "sender@example.com",
-      });
+      const feedId = await createTestFeed({ url: null });
 
       const result = await handleFetchFeed({ feedId });
 

@@ -50,32 +50,9 @@ async function createTestSavedArticle(
   const now = options.savedAt ?? new Date();
   const url = options.url ?? `https://example.com/article-${articleId}`;
 
-  // Get or create the user's saved feed
-  let savedFeedId: string;
-  const existingFeed = await db
-    .select({ id: feeds.id })
-    .from(feeds)
-    .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)))
-    .limit(1);
-
-  if (existingFeed.length > 0) {
-    savedFeedId = existingFeed[0].id;
-  } else {
-    savedFeedId = generateUuidv7();
-    await db.insert(feeds).values({
-      id: savedFeedId,
-      type: "saved",
-      userId,
-      title: "Saved Articles",
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  // Create the entry
+  // Create the entry, which the user owns
   await db.insert(entries).values({
     id: articleId,
-    ownerFeedId: savedFeedId,
     ownerUserId: userId,
     type: "saved",
     guid: url, // For saved articles, guid = URL
@@ -1220,20 +1197,6 @@ describe("Saved Articles API", () => {
 
       expect(await savedArticleExistsByUrl(db, userId, url)).not.toBeNull();
       expect(await savedArticleExistsByUrl(db, otherId, url)).toBeNull();
-    });
-
-    it("is read-only: does not create the saved feed for a user who has none", async () => {
-      const userId = await createTestUser();
-
-      const result = await savedArticleExistsByUrl(db, userId, "https://example.com/whatever");
-
-      expect(result).toBeNull();
-      // The probe must not have created a saved feed as a side effect.
-      const savedFeeds = await db
-        .select({ id: feeds.id })
-        .from(feeds)
-        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
-      expect(savedFeeds).toHaveLength(0);
     });
   });
 

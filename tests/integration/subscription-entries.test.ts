@@ -35,7 +35,6 @@ import {
   unsubscribe,
 } from "../../src/server/services/subscriptions";
 import { uploadArticle } from "../../src/server/services/saved";
-import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { checkSubscriptionEntries } from "../../src/server/services/subscription-entries";
 import { getGlobalUnreadCounts } from "../../src/server/services/counts";
 import { backfillSubscriptionEntries } from "../../scripts/backfill-subscription-entries";
@@ -183,14 +182,13 @@ describe("subscription_entries mirror (#1846)", () => {
     const first = await uploadArticle(db, userId, { content: "# One\n\nBody", title: "" });
     const second = await uploadArticle(db, userId, { content: "# Two\n\nBody", title: "" });
 
-    const savedFeed = await feedRow(await getOrCreateSavedFeed(db, userId));
     const saved = await savedSubscriptionsOf(userId);
     expect(saved).toEqual([
       {
         id: expect.any(String),
         feedId: null,
         customTitle: "Saved",
-        greaderStreamId: savedFeed.greaderStreamId,
+        greaderStreamId: expect.any(BigInt),
         unsubscribedAt: null,
       },
     ]);
@@ -208,16 +206,15 @@ describe("subscription_entries mirror (#1846)", () => {
 
   it("creates one saved subscription when two first saves race", async () => {
     const userId = await createTestUser();
-    const savedFeedId = await getOrCreateSavedFeed(db, userId);
     const held = await pool.connect();
     const heldEntryId = generateUuidv7();
     try {
       // The first save creates the saved subscription and stays open...
       await held.query("BEGIN");
       await held.query(
-        `INSERT INTO entries (id, owner_feed_id, type, guid, content_hash, fetched_at)
+        `INSERT INTO entries (id, owner_user_id, type, guid, content_hash, fetched_at)
          VALUES ($1, $2, 'saved', $3, $3, now())`,
-        [heldEntryId, savedFeedId, `guid-${heldEntryId}`]
+        [heldEntryId, userId, `guid-${heldEntryId}`]
       );
       await held.query("INSERT INTO user_entries (user_id, entry_id) VALUES ($1, $2)", [
         userId,

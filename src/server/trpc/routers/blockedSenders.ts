@@ -2,7 +2,7 @@
  * Blocked Senders Router
  *
  * Handles CRUD operations for blocked email senders.
- * Users can view and unblock senders that were blocked when unsubscribing from email feeds.
+ * Users can view and unblock senders that were blocked when unsubscribing from email subscriptions.
  */
 
 import { z } from "zod";

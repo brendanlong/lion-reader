@@ -32,7 +32,6 @@ import {
   oauthClients,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -99,10 +98,7 @@ export async function createTestFeed(
 // Subscriptions
 // ============================================================================
 
-/**
- * Subscribes `userId` to `feedId`, with the feed's type unless overridden.
- * Returns the subscription id.
- */
+/** Subscribes `userId` to the web feed `feedId`. Returns the subscription id. */
 export async function createTestSubscription(
   userId: string,
   feedId: string,
@@ -114,9 +110,7 @@ export async function createTestSubscription(
     id: subscriptionId,
     userId,
     feedId,
-    type: sql`(SELECT ${feeds.type} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`,
-    // An email subscription records its sender (#1846), as email ingest does.
-    emailSender: sql`(SELECT ${feeds.emailSenderPattern} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`,
+    type: "web",
     subscribedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -126,32 +120,42 @@ export async function createTestSubscription(
 }
 
 /**
- * Gives `userId` a saved feed and the saved subscription (#1846), as a first
- * save does (`ensure_saved_subscriptions`), without saving anything. Returns
- * both ids.
+ * Gives `userId` an email subscription to `emailSender` (a unique address by
+ * default), as a sender's first email does: no feed, named after the sender.
+ * It owns the user's emails from that sender (#1846). Returns its id.
  */
-export async function createTestSavedSubscription(
-  userId: string
-): Promise<{ subscriptionId: string; savedFeedId: string }> {
-  const savedFeedId = await getOrCreateSavedFeed(db, userId);
+export async function createTestEmailSubscription(
+  userId: string,
+  overrides: Partial<typeof subscriptions.$inferInsert> = {}
+): Promise<string> {
+  const subscriptionId = overrides.id ?? generateUuidv7();
+  const emailSender = overrides.emailSender ?? `sender-${subscriptionId}@example.com`;
+  const now = new Date();
+  await db.insert(subscriptions).values({
+    id: subscriptionId,
+    userId,
+    type: "email",
+    emailSender,
+    customTitle: emailSender,
+    subscribedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  });
+  return subscriptionId;
+}
+
+/**
+ * Gives `userId` the saved subscription (#1846), as a first save does
+ * (`ensure_saved_subscriptions`), without saving anything. Returns its id.
+ */
+export async function createTestSavedSubscription(userId: string): Promise<string> {
   await db.execute(sql`SELECT ensure_saved_subscriptions(ARRAY[${userId}::uuid])`);
   const [{ subscriptionId }] = await db
     .select({ subscriptionId: subscriptions.id })
     .from(subscriptions)
     .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "saved")));
-  return { subscriptionId, savedFeedId };
-}
-
-/**
- * Gives `userId` the saved subscription without a saved feed, as a first save
- * does once the per-user feeds are gone (#1846 phase 6B2). Returns its id.
- */
-export async function createTestFeedlessSavedSubscription(userId: string): Promise<string> {
-  const id = generateUuidv7();
-  await db
-    .insert(subscriptions)
-    .values({ id, userId, type: "saved", customTitle: "Saved", subscribedAt: new Date(0) });
-  return id;
+  return subscriptionId;
 }
 
 // ============================================================================
@@ -162,7 +166,7 @@ export interface CreateTestEntryOptions extends Partial<typeof entries.$inferIns
   /**
    * Users to make the entry visible to, by inserting unread `user_entries`
    * rows. The BEFORE INSERT trigger stamps `subscription_id` from each user's
-   * subscription to this entry's feed.
+   * subscription to this entry's feed, or for an email its owner.
    */
   userIds?: string[];
   /** Users from `userIds` who have starred the entry. */
@@ -170,7 +174,9 @@ export interface CreateTestEntryOptions extends Partial<typeof entries.$inferIns
 }
 
 /**
- * Inserts an entry on `feedId`, defaulting to a web entry fetched now.
+ * Inserts an entry owned by `owner`, defaulting to a web entry fetched now.
+ * The owner is the entry's type's (#1846): a web entry's feed id, an email's
+ * subscription id, a saved article's user id.
  *
  * `lastSeenAt` defaults to `fetchedAt` on web entries and is forced to null
  * otherwise, because `entries_last_seen_only_fetched` makes both mismatch
@@ -183,7 +189,7 @@ export interface CreateTestEntryOptions extends Partial<typeof entries.$inferIns
  * stamp the feed's fetch timestamps itself.
  */
 export async function createTestEntry(
-  feedId: string,
+  owner: string,
   options: CreateTestEntryOptions = {}
 ): Promise<string> {
   const { userIds, starredBy = [], ...overrides } = options;
@@ -194,18 +200,9 @@ export async function createTestEntry(
 
   await db.insert(entries).values({
     id: entryId,
-    ownerFeedId: feedId,
-    // An email is owned by its subscription and a saved article by its user
-    // (#1846): here, the email feed's subscription and the saved feed's user.
-    ownerSubscriptionId:
-      type === "email"
-        ? sql`(SELECT ${subscriptions.id} FROM ${subscriptions}
-            WHERE ${subscriptions.feedId} = ${feedId} AND ${subscriptions.type} = 'email')`
-        : null,
-    ownerUserId:
-      type === "saved"
-        ? sql`(SELECT ${feeds.userId} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`
-        : null,
+    ownerFeedId: type === "web" ? owner : null,
+    ownerSubscriptionId: type === "email" ? owner : null,
+    ownerUserId: type === "saved" ? owner : null,
     type,
     guid: `guid-${entryId}`,
     title: `Entry ${entryId}`,

@@ -63,6 +63,7 @@ import { checkSubscriptionEntries } from "../../src/server/services/subscription
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
+  createTestEmailSubscription,
   createTestEntry,
   createTestIngestAddress,
   createTestFeed,
@@ -160,16 +161,16 @@ async function createWorld({ withSaved }: { withSaved: boolean }): Promise<World
   }
   for (let i = 0; i < 2; i++) world.tagIds.push(await createTestTag(userId));
   // Newsletters, the only source of spam (set once, at insert).
-  const emailFeedId = await createTestFeed({
-    type: "email",
-    url: null,
-    userId,
-    emailSenderPattern: `news-${userId}@example.com`,
+  world.emailSubscriptionId = await createTestEmailSubscription(userId, {
+    emailSender: `news-${userId}@example.com`,
   });
-  world.emailSubscriptionId = await createTestSubscription(userId, emailFeedId);
   for (const isSpam of [true, false, true]) {
     world.entryIds.push(
-      await createTestEntry(emailFeedId, { type: "email", isSpam, userIds: [userId] })
+      await createTestEntry(world.emailSubscriptionId, {
+        type: "email",
+        isSpam,
+        userIds: [userId],
+      })
     );
   }
   // The other world's first save comes later, creating its saved subscription.
@@ -565,12 +566,12 @@ OPS.push(
       if (!(await activeSubscriptionIds(w)).includes(w.emailSubscriptionId)) {
         return "new email: unsubscribed";
       }
-      const [{ feedId }] = await db
-        .select({ feedId: subscriptions.feedId })
-        .from(subscriptions)
-        .where(eq(subscriptions.id, w.emailSubscriptionId));
       const isSpam = rng.chance(0.5);
-      const id = await createTestEntry(feedId!, { type: "email", isSpam, userIds: [w.userId] });
+      const id = await createTestEntry(w.emailSubscriptionId, {
+        type: "email",
+        isSpam,
+        userIds: [w.userId],
+      });
       w.entryIds.push(id);
       return `new email ${id}${isSpam ? " (spam)" : ""}`;
     },
@@ -614,8 +615,13 @@ OPS.push(
           active: sql<boolean>`${subscriptions.unsubscribedAt} IS NULL`,
         })
         .from(subscriptions)
-        .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
-        .where(and(eq(subscriptions.userId, w.userId), eq(feeds.emailSenderPattern, sender)));
+        .where(
+          and(
+            eq(subscriptions.userId, w.userId),
+            eq(subscriptions.type, "email"),
+            eq(subscriptions.emailSender, sender)
+          )
+        );
       const caller = createCaller(await createAuthContext(w.userId));
       if (sub?.active && rng.chance(0.3)) {
         await caller.subscriptions.delete({ id: sub.id });

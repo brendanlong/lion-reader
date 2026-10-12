@@ -14,8 +14,7 @@
  * - **Feed stream ids** (`subscriptions.greader_stream_id` /
  *   `feeds.greader_stream_id`): reversed by `feedStreamIdToSubscriptionUuid` /
  *   `resolveFeedStream`. Both tables draw from the same sequence so their ids are
- *   globally unique — a `feed/{int}` resolves to at most one of {subscription,
- *   saved feed}.
+ *   globally unique — a `feed/{int}` resolves to at most one of them.
  * - **Tag sortids** (`tags.greader_sortid`) and **user ids**
  *   (`users.greader_user_id`) are opaque (never reversed) and read directly at
  *   format time.

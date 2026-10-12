@@ -5,7 +5,7 @@
  * Usage (with DATABASE_URL set, after migration 0132 is deployed):
  *   pnpm exec tsx scripts/backfill-subscription-entries.ts [--batch-size 5000] [--after <user_id>,<entry_id>] [--check-only]
  *
- * 1. Gives every user with a saved feed their saved subscription.
+ * 1. Gives every user with saved articles their saved subscription.
  * 2. Walks user_entries in primary-key order, one batch per statement: a row
  *    joins its `subscription_id`, or for a saved article the saved
  *    subscription.
@@ -79,8 +79,8 @@ export async function backfillSubscriptionEntries(
   { batchSize = 5000, after, log = () => {} }: BackfillOptions = {}
 ): Promise<BackfillResult> {
   const created = await db.execute<{ n: number }>(sql`
-    SELECT COALESCE(ensure_saved_subscriptions(array_agg(user_id)), 0) AS n
-    FROM feeds WHERE type = 'saved'
+    SELECT COALESCE(ensure_saved_subscriptions(array_agg(DISTINCT owner_user_id)), 0) AS n
+    FROM entries WHERE owner_user_id IS NOT NULL
   `);
   const savedSubscriptionsCreated = created.rows[0].n;
   log(`saved subscriptions created: ${savedSubscriptionsCreated}`);

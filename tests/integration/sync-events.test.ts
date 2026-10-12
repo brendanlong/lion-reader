@@ -24,6 +24,7 @@ import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
 import type { SyncEvent } from "../../src/lib/events/schemas";
 import {
   createAuthContext,
+  createTestEmailSubscription,
   createTestEntry,
   createTestFeed,
   createTestSubscription,
@@ -728,11 +729,10 @@ describe("sync.events", () => {
 
     it("includes saved-article content updates (the saved arm)", async () => {
       const userId = await createTestUser();
-      const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
 
       const stateTime = new Date("2024-06-01T00:00:00.000Z");
       const contentTime = new Date("2024-06-03T00:00:00.000Z");
-      const savedEntryId = await createTestEntry(savedFeedId, {
+      const savedEntryId = await createTestEntry(userId, {
         type: "saved",
         createdAt: stateTime,
         publishedAt: stateTime,
@@ -1422,8 +1422,8 @@ describe("sync.events", () => {
 
     it("delivers a saved-article content update via the saved arm (no subscription row)", async () => {
       const userId = await createTestUser();
-      const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
-      const entryId = await createTestEntry(savedFeedId, {
+
+      const entryId = await createTestEntry(userId, {
         type: "saved",
         title: "Saved Original",
         createdAt: OLD,
@@ -1506,23 +1506,17 @@ describe("sync.events", () => {
       const userId = await createTestUser();
       const feedId = await createFetchedFeed({ url: "https://example.com/explain.xml" });
       await createTestSubscription(userId, feedId);
-      const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
-      const emailFeedId = await createTestFeed({
-        type: "email",
-        userId,
-        url: null,
-        emailSenderPattern: "news@example.com",
-      });
-      await createTestSubscription(userId, emailFeedId);
+
+      const emailSubscriptionId = await createTestEmailSubscription(userId);
       // Give every owner volume with everything before the cursor, so the
       // (owner, updated_at) index — which seeks straight past the stale rows —
       // is strictly cheaper than an index that must scan + filter.
       for (let i = 0; i < 40; i++) {
         const e = await createTestEntry(feedId, { updatedAt: OLD });
         await createUserEntry(userId, e, { updatedAt: OLD });
-        const s = await createTestEntry(savedFeedId, { type: "saved", updatedAt: OLD });
+        const s = await createTestEntry(userId, { type: "saved", updatedAt: OLD });
         await createUserEntry(userId, s, { updatedAt: OLD });
-        const m = await createTestEntry(emailFeedId, { type: "email", updatedAt: OLD });
+        const m = await createTestEntry(emailSubscriptionId, { type: "email", updatedAt: OLD });
         await createUserEntry(userId, m, { updatedAt: OLD });
       }
       await db.execute(sql`ANALYZE user_entries`);

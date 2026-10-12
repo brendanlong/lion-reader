@@ -7,12 +7,11 @@
 
 import { createHash } from "crypto";
 import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
-import { db, type DbOrTx } from "../db";
+import { db } from "../db";
 import { generateSummary } from "../html/strip-html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
 import {
-  feeds,
   entries,
   subscriptions,
   userEntries,
@@ -26,8 +25,6 @@ import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { lockSubscriptionMembers } from "@/server/services/subscriptions";
-import { isUniqueViolation } from "@/server/db/errors";
-import { personalFeedsRequired } from "@/server/feed/saved-feed";
 
 // ============================================================================
 // Types
@@ -284,60 +281,40 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   const newSubscriptionId = generateUuidv7();
 
   // Reactivating moves the members' user_entries rows, which come first in
-  // the lock order.
-  const upsertSubscription = () =>
-    db.transaction(async (tx) => {
-      // While the schema keeps per-user email feeds (until #1846 phase 6B2's
-      // migration), a new subscription names one, and so do its emails (each
-      // copies its subscription's feed_id below). Without one, the
-      // subscription carries the sender's name itself.
-      const feedId = (await personalFeedsRequired(tx))
-        ? await getOrCreateEmailFeed(tx, userId, senderEmail, senderName, now)
-        : null;
-      await lockSubscriptionMembers(
-        tx,
+  // the lock order. The subscription carries the sender's name itself.
+  const [upsertedSubscription] = await db.transaction(async (tx) => {
+    await lockSubscriptionMembers(
+      tx,
+      userId,
+      and(emailSubscriptionFor(userId, senderEmail), isNotNull(subscriptions.unsubscribedAt))
+    );
+    return tx
+      .insert(subscriptions)
+      .values({
+        id: newSubscriptionId,
         userId,
-        and(emailSubscriptionFor(userId, senderEmail), isNotNull(subscriptions.unsubscribedAt))
-      );
-      return tx
-        .insert(subscriptions)
-        .values({
-          id: newSubscriptionId,
-          userId,
-          feedId,
-          type: "email",
-          emailSender: senderEmail,
-          customTitle: feedId ? null : senderName,
-          subscribedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [subscriptions.userId, subscriptions.emailSender],
-          targetWhere: sql`${subscriptions.type} = 'email'`,
-          set: { unsubscribedAt: null, updatedAt: now },
-          setWhere: isNotNull(subscriptions.unsubscribedAt),
-        })
-        .returning();
-    });
-  // Two first emails from a sender can race to create its subscription: while
-  // subscriptions name the email feed, the loser conflicts on (user_id,
-  // feed_id) too, which ON CONFLICT doesn't arbitrate, so it raises instead of
-  // finding the row. Once the winner has committed, the retry takes the ON
-  // CONFLICT path.
-  const [upsertedSubscription] = await upsertSubscription().catch((error: unknown) => {
-    if (!isUniqueViolation(error)) throw error;
-    return upsertSubscription();
+        type: "email",
+        emailSender: senderEmail,
+        customTitle: senderName,
+        subscribedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [subscriptions.userId, subscriptions.emailSender],
+        targetWhere: sql`${subscriptions.type} = 'email'`,
+        set: { unsubscribedAt: null, updatedAt: now },
+        setWhere: isNotNull(subscriptions.unsubscribedAt),
+      })
+      .returning();
   });
 
   const [owner] = await db
     .select({
       id: subscriptions.id,
-      feedId: subscriptions.feedId,
-      title: sql<string>`COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${subscriptions.emailSender})`,
+      title: sql<string>`COALESCE(${subscriptions.customTitle}, ${subscriptions.emailSender})`,
     })
     .from(subscriptions)
-    .leftJoin(feeds, eq(feeds.id, subscriptions.feedId))
     .where(emailSubscriptionFor(userId, senderEmail));
   if (!owner) {
     throw new Error(`No email subscription for sender ${senderEmail}`);
@@ -355,7 +332,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     // user's channel, so in order), so the client knows the subscription first
     publishSubscriptionCreated(
       userId,
-      owner.feedId,
+      null,
       owner.id,
       upsertedSubscription.updatedAt,
       {
@@ -445,8 +422,6 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   const newEntry: NewEntry = {
     id: entryId,
     ownerSubscriptionId: owner.id,
-    // Its subscription's per-user feed while the schema keeps one (#1846).
-    ownerFeedId: owner.feedId,
     type: "email",
     guid: email.messageId,
     url,
@@ -519,46 +494,4 @@ function emailSubscriptionFor(userId: string, senderEmail: string): SQL {
     eq(subscriptions.type, "email"),
     eq(subscriptions.emailSender, senderEmail)
   )!;
-}
-
-/**
- * Gets or creates the user's per-user feed for `senderEmail`, which new email
- * subscriptions and emails name while the schema still requires it
- * (`personalFeedsRequired`). Returns its id.
- */
-async function getOrCreateEmailFeed(
-  tx: DbOrTx,
-  userId: string,
-  senderEmail: string,
-  title: string,
-  now: Date
-): Promise<string> {
-  const [created] = await tx
-    .insert(feeds)
-    .values({
-      id: generateUuidv7(),
-      type: "email",
-      userId,
-      emailSenderPattern: senderEmail,
-      title,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({ target: [feeds.userId, feeds.emailSenderPattern] })
-    .returning({ id: feeds.id });
-  if (created) {
-    logger.info("Created email feed", { feedId: created.id, userId, senderEmail });
-    return created.id;
-  }
-  const [existing] = await tx
-    .select({ id: feeds.id })
-    .from(feeds)
-    .where(
-      and(
-        eq(feeds.userId, userId),
-        eq(feeds.emailSenderPattern, senderEmail),
-        eq(feeds.type, "email")
-      )
-    );
-  return existing.id;
 }

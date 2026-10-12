@@ -29,7 +29,6 @@ import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map"
 import { NARRATION_FORMAT_VERSION } from "../../src/lib/narration/constants";
 import { narrationContentHash } from "../../src/server/services/narration";
 import { sanitizeEntryHtml } from "../../src/server/html/sanitize";
-import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { encryptApiKey } from "../../src/lib/encryption";
 import {
   createAuthContext,
@@ -68,22 +67,22 @@ async function createVisibleEntry(
 ): Promise<string> {
   const entryId = generateUuidv7();
   const now = new Date();
-  let feedId: string;
+  let owner: string; // the entry's feed, or for a saved article its user
   if (options.saved) {
-    feedId = await getOrCreateSavedFeed(db, userId);
+    owner = userId;
   } else {
     // The fetch timestamps are what make the entry current for this
     // subscription; createTestFeed builds a never-polled feed.
-    feedId = await createTestFeed({
+    owner = await createTestFeed({
       title: "Test Feed",
       lastFetchedAt: now,
       lastEntriesUpdatedAt: now,
     });
-    await createTestSubscription(userId, feedId, {
+    await createTestSubscription(userId, owner, {
       unsubscribedAt: options.unsubscribed ? now : null,
     });
   }
-  await createTestEntry(feedId, {
+  await createTestEntry(owner, {
     id: entryId,
     type: options.saved ? "saved" : "web",
     title: "Test Entry",

@@ -14,7 +14,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -26,12 +25,10 @@ import {
   tags,
 } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
-import { createSubscription } from "../../src/server/services/subscriptions";
 import {
   createAuthContext,
   createTestEntry,
-  createTestFeed,
-  createTestSubscription,
+  createTestEmailSubscription,
   createTestUser,
 } from "./helpers";
 
@@ -41,36 +38,31 @@ import {
 
 interface SpamFixture {
   userId: string;
-  feedId: string;
-  feedUrl: string;
   subscriptionId: string;
 }
 
 /**
- * A subscription to an email feed holding one ordinary unread entry and one
- * unread *spam* entry, both visible to the user.
+ * An email subscription holding one ordinary unread entry and one unread
+ * *spam* entry, both visible to the user.
  *
- * Spam only exists on email entries (`entries_spam_only_email`), and email
- * entries must have a NULL `last_seen_at` (`entries_last_seen_only_fetched`),
- * so the feed is an email feed throughout. `createTestEntry`'s `userIds`
+ * Spam only exists on email entries (`entries_spam_only_email`), which an
+ * email subscription owns. `createTestEntry`'s `userIds`
  * inserts the `user_entries` rows; the `user_entries_fill_denormalized` trigger
  * copies `is_spam` off the entry.
  */
 async function seedSpammySubscription(): Promise<SpamFixture> {
   const userId = await createTestUser();
-  const feedId = await createTestFeed({ type: "email", userId });
-  const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
-  const subscriptionId = await createTestSubscription(userId, feedId);
+  const subscriptionId = await createTestEmailSubscription(userId);
 
-  await createTestEntry(feedId, { type: "email", title: "Real mail", userIds: [userId] });
-  await createTestEntry(feedId, {
+  await createTestEntry(subscriptionId, { type: "email", title: "Real mail", userIds: [userId] });
+  await createTestEntry(subscriptionId, {
     type: "email",
     title: "Spam mail",
     isSpam: true,
     userIds: [userId],
   });
 
-  return { userId, feedId, feedUrl: feed.url!, subscriptionId };
+  return { userId, subscriptionId };
 }
 
 /** The unread count `subscriptions.list` shows — the reference every surface must match. */
@@ -136,26 +128,5 @@ describe("unread counts exclude spam on every surface", () => {
     });
 
     expect(updated.unreadCount).toBe(await listedUnreadCount(userId, subscriptionId));
-  });
-
-  it("resubscribing matches subscriptions.list", async () => {
-    const { userId, feedUrl, subscriptionId } = await seedSpammySubscription();
-
-    // Soft-delete, then resubscribe: the reactivation path reuses the existing
-    // user_entries rows (an email feed populates nothing at subscribe time,
-    // since its entries have no last_seen_at), so this is the case where the
-    // old count(*) saw the spam row.
-    await db
-      .update(subscriptions)
-      .set({ unsubscribedAt: new Date() })
-      .where(eq(subscriptions.id, subscriptionId));
-
-    const result = await createSubscription(db, userId, { url: feedUrl });
-
-    expect(result.subscriptionId).toBe(subscriptionId);
-    expect(result.alreadyActive).toBe(false);
-    expect(result.unreadCount).toBe(await listedUnreadCount(userId, subscriptionId));
-    // The bulk counts published alongside the SSE event must agree too.
-    expect(result.counts?.subscriptions).toEqual([{ id: subscriptionId, unread: 1, tagIds: [] }]);
   });
 });

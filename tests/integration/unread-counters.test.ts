@@ -15,7 +15,6 @@ import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createSubscription } from "../../src/server/services/subscriptions";
 import {
@@ -27,7 +26,13 @@ import {
 import { uploadArticle, deleteSavedArticle } from "../../src/server/services/saved";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEmailSubscription,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 // ============================================================================
 // Helpers
@@ -94,15 +99,16 @@ describe("unread counters (triggers + reconciliation)", () => {
     await expectNoDrift();
   });
 
-  it("counts fanout entries per subscriber and excludes spam", async () => {
+  it("counts an email subscription's entries and excludes spam", async () => {
     const userId = await createTestUser();
-    // Email feed so a spam entry passes the entries_spam_only_email check.
-    const feedId = await createTestFeed({ type: "email", userId });
-    const subId = await createTestSubscription(userId, feedId);
-    const hamId = await createTestEntry(feedId, { type: "email" });
-    const spamId = await createTestEntry(feedId, { type: "email", isSpam: true });
-
-    await createUserEntriesForFeed(feedId, [hamId, spamId]);
+    // Email, so a spam entry passes the entries_spam_only_email check.
+    const subId = await createTestEmailSubscription(userId);
+    await createTestEntry(subId, { type: "email", userIds: [userId] });
+    const spamId = await createTestEntry(subId, {
+      type: "email",
+      isSpam: true,
+      userIds: [userId],
+    });
 
     // The spam row exists (visible when showSpam is on) but never counts.
     const [spamRow] = await db
@@ -291,12 +297,11 @@ describe("unread counters (triggers + reconciliation)", () => {
 
   it("countEntries never counts spam and serves the badge shapes from counters", async () => {
     const userId = await createTestUser();
-    // Email feed with one ham + one spam entry (spam is only valid on email).
-    const feedId = await createTestFeed({ type: "email", userId });
-    const subId = await createTestSubscription(userId, feedId);
-    const hamId = await createTestEntry(feedId, { type: "email" });
-    const spamId = await createTestEntry(feedId, { type: "email", isSpam: true });
-    await createUserEntriesForFeed(feedId, [hamId, spamId]);
+    // An email subscription with one ham + one spam entry (spam is only valid
+    // on email).
+    const subId = await createTestEmailSubscription(userId);
+    await createTestEntry(subId, { type: "email", userIds: [userId] });
+    await createTestEntry(subId, { type: "email", isSpam: true, userIds: [userId] });
 
     // The three sidebar badge shapes (counter fast-path) exclude spam, always —
     // there is no showSpam parameter anymore (issue #1117: unread counts never

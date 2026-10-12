@@ -1,16 +1,15 @@
 /**
- * Integration tests for email feed resubscription.
+ * Integration tests for email subscription creation and resubscription.
  *
  * These tests verify that when an unblocked sender sends a new email,
  * the user's subscription is reactivated if it was previously unsubscribed.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
-  feeds,
   entries,
   subscriptions,
   userEntries,
@@ -19,7 +18,7 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processInboundEmail, type InboundEmail } from "../../src/server/email/process-inbound";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import { createTestEmailSubscription, createTestUser } from "./helpers";
 
 // ============================================================================
 // Test Helpers
@@ -35,21 +34,6 @@ async function createTestIngestAddress(userId: string): Promise<{ id: string; to
     createdAt: new Date(),
   });
   return { id, token };
-}
-
-/** An email feed owned by `userId`; email feeds are per-user and have no URL. */
-async function createTestEmailFeed(
-  userId: string,
-  senderEmail: string,
-  title: string = "Test Sender"
-): Promise<string> {
-  return createTestFeed({
-    type: "email",
-    userId,
-    url: null,
-    emailSenderPattern: senderEmail.toLowerCase(),
-    title,
-  });
 }
 
 async function blockSender(userId: string, senderEmail: string): Promise<void> {
@@ -88,26 +72,16 @@ async function getSubscription(subscriptionId: string) {
   return sub;
 }
 
-async function getSubscriptionByUserAndFeed(userId: string, feedId: string) {
-  const [sub] = await db
-    .select()
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feedId)))
-    .limit(1);
-  return sub;
-}
-
 // ============================================================================
 // Tests
 // ============================================================================
 
-describe("Email Feed Resubscription", () => {
+describe("Email subscriptions", () => {
   async function cleanup(): Promise<void> {
     await db.delete(userEntries);
     await db.delete(entries);
     await db.delete(subscriptions);
     await db.delete(blockedSenders);
-    await db.delete(feeds);
     await db.delete(ingestAddresses);
     await db.delete(users);
   }
@@ -115,96 +89,54 @@ describe("Email Feed Resubscription", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
-  describe("Resubscribing unsubscribed feeds", () => {
+  describe("Resubscribing", () => {
     it("reactivates subscription when unblocked sender sends new email", async () => {
-      // Setup: user with ingest address, email feed, and unsubscribed subscription
       const userId = await createTestUser();
       const { token } = await createTestIngestAddress(userId);
       const senderEmail = "newsletter@example.com";
-      const feedId = await createTestEmailFeed(userId, senderEmail);
-      const subscriptionId = await createTestSubscription(userId, feedId, {
+      const subscriptionId = await createTestEmailSubscription(userId, {
+        emailSender: senderEmail,
         unsubscribedAt: new Date(),
       });
 
-      // Verify subscription is initially unsubscribed
-      let subscription = await getSubscription(subscriptionId);
-      expect(subscription.unsubscribedAt).not.toBeNull();
-
-      // Process new email from the sender (sender is NOT blocked)
-      const email = createTestEmail(token, senderEmail);
-      const result = await processInboundEmail(email);
+      const result = await processInboundEmail(createTestEmail(token, senderEmail));
 
       expect(result.success).toBe(true);
       expect(result.subscriptionId).toBe(subscriptionId);
-
-      // Verify subscription is now reactivated
-      subscription = await getSubscription(subscriptionId);
-      expect(subscription.unsubscribedAt).toBeNull();
+      expect((await getSubscription(subscriptionId)).unsubscribedAt).toBeNull();
     });
 
     it("does not process email when sender is blocked", async () => {
       const userId = await createTestUser();
       const { token } = await createTestIngestAddress(userId);
       const senderEmail = "blocked@example.com";
-      const feedId = await createTestEmailFeed(userId, senderEmail);
-      await createTestSubscription(userId, feedId, { unsubscribedAt: new Date() });
-
-      // Block the sender
+      await createTestEmailSubscription(userId, {
+        emailSender: senderEmail,
+        unsubscribedAt: new Date(),
+      });
       await blockSender(userId, senderEmail);
 
-      // Try to process email from blocked sender
-      const email = createTestEmail(token, senderEmail);
-      const result = await processInboundEmail(email);
+      const result = await processInboundEmail(createTestEmail(token, senderEmail));
 
       expect(result.success).toBe(false);
       expect(result.error).toBe("Sender blocked");
-    });
-
-    it("creates subscription when feed exists but no subscription record", async () => {
-      // This edge case might happen due to data inconsistency
-      const userId = await createTestUser();
-      const { token } = await createTestIngestAddress(userId);
-      const senderEmail = "orphan@example.com";
-      const feedId = await createTestEmailFeed(userId, senderEmail);
-      // No subscription created
-
-      // Verify no subscription exists
-      let subscription = await getSubscriptionByUserAndFeed(userId, feedId);
-      expect(subscription).toBeUndefined();
-
-      // Process email
-      const email = createTestEmail(token, senderEmail);
-      const result = await processInboundEmail(email);
-
-      expect(result.success).toBe(true);
-
-      // Verify subscription was created, with the existing feed
-      subscription = await getSubscriptionByUserAndFeed(userId, feedId);
-      expect(subscription.id).toBe(result.subscriptionId);
-      expect(subscription.unsubscribedAt).toBeNull();
     });
 
     it("does not modify active subscription", async () => {
       const userId = await createTestUser();
       const { token } = await createTestIngestAddress(userId);
       const senderEmail = "active@example.com";
-      const feedId = await createTestEmailFeed(userId, senderEmail);
-      const subscriptionId = await createTestSubscription(userId, feedId); // active
-
-      // Get original subscription state
-      const originalSub = await getSubscription(subscriptionId);
-      const originalUpdatedAt = originalSub.updatedAt;
+      const subscriptionId = await createTestEmailSubscription(userId, {
+        emailSender: senderEmail,
+      });
+      const originalUpdatedAt = (await getSubscription(subscriptionId)).updatedAt;
 
       // Wait a bit to ensure timestamps would differ
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Process email
-      const email = createTestEmail(token, senderEmail);
-      const result = await processInboundEmail(email);
+      const result = await processInboundEmail(createTestEmail(token, senderEmail));
 
       expect(result.success).toBe(true);
-
-      // Verify subscription was not modified
       const subscription = await getSubscription(subscriptionId);
       expect(subscription.unsubscribedAt).toBeNull();
       // updatedAt should not have changed since subscription was already active
@@ -212,43 +144,22 @@ describe("Email Feed Resubscription", () => {
     });
   });
 
-  describe("Email feed creation", () => {
-    it("creates new feed and subscription for first email from sender", async () => {
-      const userId = await createTestUser();
-      const { token } = await createTestIngestAddress(userId);
-      const senderEmail = "new-sender@example.com";
+  it("creates a subscription, named after the sender and without a feed, for a sender's first email", async () => {
+    const userId = await createTestUser();
+    const { token } = await createTestIngestAddress(userId);
 
-      // No feed exists yet
-      const [existingFeed] = await db
-        .select()
-        .from(feeds)
-        .where(
-          and(eq(feeds.userId, userId), eq(feeds.emailSenderPattern, senderEmail.toLowerCase()))
-        )
-        .limit(1);
-      expect(existingFeed).toBeUndefined();
+    const result = await processInboundEmail(
+      createTestEmail(token, "New-Sender@example.com", "Welcome!")
+    );
 
-      // Process first email
-      const email = createTestEmail(token, senderEmail, "Welcome!");
-      const result = await processInboundEmail(email);
-
-      expect(result.success).toBe(true);
-
-      // Verify the subscription was created, naming a new per-user feed while
-      // the schema still requires one (#1846 phase 6B)
-      const subscription = await getSubscription(result.subscriptionId!);
-      expect(subscription).toMatchObject({
-        userId,
-        type: "email",
-        emailSender: senderEmail.toLowerCase(),
-        unsubscribedAt: null,
-      });
-      const [feed] = await db.select().from(feeds).where(eq(feeds.id, subscription.feedId!));
-      expect(feed).toMatchObject({
-        type: "email",
-        userId,
-        emailSenderPattern: senderEmail.toLowerCase(),
-      });
+    expect(result.success).toBe(true);
+    expect(await getSubscription(result.subscriptionId!)).toMatchObject({
+      userId,
+      type: "email",
+      emailSender: "new-sender@example.com",
+      customTitle: "Test Sender",
+      feedId: null,
+      unsubscribedAt: null,
     });
   });
 });
