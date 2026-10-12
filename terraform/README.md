@@ -93,7 +93,9 @@ for q in "A lionreader.com" "AAAA lionreader.com" "CNAME cdn.lionreader.com" \
          "A in.app.lionreader.com" "AAAA in.app.lionreader.com" \
          "MX in.app.lionreader.com" "TXT lionreader.com" "TXT app.lionreader.com" \
          "TXT _dmarc.app.lionreader.com" "TXT krs._domainkey.app.lionreader.com" \
-         "TXT _discord.lionreader.com"; do
+         "TXT _discord.lionreader.com" "MX lionreader.com" \
+         "CNAME fm1._domainkey.lionreader.com" "CNAME fm2._domainkey.lionreader.com" \
+         "CNAME fm3._domainkey.lionreader.com"; do
   printf '%-40s %s\n' "$q" "$(dig +short ${q#* } ${q%% *} @$NS | tr '\n' ' ')"
 done
 ```
@@ -103,7 +105,10 @@ means it got proxied or flattened.
 
 After a Mailgun change, confirm the route still matches `INGEST_EMAIL_DOMAIN` in
 `../fly.toml` and send a message to a live ingest address — a broken route is
-silent until someone's newsletter goes missing.
+silent until someone's newsletter goes missing. Send it from outside Fastmail:
+Fastmail hosts the apex, so it delivers mail for any lionreader.com subdomain
+internally without consulting `in.app`'s MX, and bounces it as "User unknown in
+virtual mailbox table".
 
 ## Note: the CDN is US-only on purpose
 

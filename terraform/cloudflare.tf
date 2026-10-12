@@ -159,10 +159,7 @@ resource "cloudflare_dns_record" "ingest_mx_b" {
 
 # --- Mailboxes at the apex (Fastmail) ---------------------------------------
 # Separate from newsletter ingest: that lives on in.app (Mailgun, above), so
-# these records can change without touching it, and vice versa. Don't test
-# ingest by mailing from a Fastmail account: Fastmail delivers mail for
-# subdomains of a domain it hosts internally, never consulting in.app's MX, and
-# bounces it as "User unknown in virtual mailbox table".
+# these records can change without touching it, and vice versa.
 
 resource "cloudflare_dns_record" "fastmail_mx_1" {
   zone_id  = cloudflare_zone.lionreader.id
