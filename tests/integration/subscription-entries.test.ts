@@ -1,12 +1,14 @@
 /**
- * `subscription_entries` (#1846 phase 4B): triggers mirror every way an
- * article joins a subscription today (its stamped source, a collection, or the
- * user's saved subscription for a saved article) into one membership table.
- * Nothing reads it yet; these tests check each write path's copy, the saved
- * subscription it creates, the backfill script and the daily check.
+ * `subscription_entries` (#1846): every write path adds an article's
+ * memberships itself (its source, a collection, or the user's saved
+ * subscription for a saved article). The previous release still writes the
+ * older forms, which mirror triggers copy, so each write path runs with the
+ * mirror triggers on (both releases during a rollout: each membership counted
+ * once) and off (this release alone). Also the saved subscription a first save
+ * creates, the backfill script and the daily check against the older forms.
  */
 
-import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db, pool } from "../../src/server/db";
 import {
@@ -36,6 +38,7 @@ import {
 import { uploadArticle } from "../../src/server/services/saved";
 import { checkSubscriptionEntries } from "../../src/server/services/subscription-entries";
 import { getGlobalUnreadCounts } from "../../src/server/services/counts";
+import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { backfillSubscriptionEntries } from "../../scripts/backfill-subscription-entries";
 import {
   createTestEntry,
@@ -43,9 +46,11 @@ import {
   createTestIngestAddress,
   createTestSubscription,
   createTestUser,
+  setMembershipMirror,
 } from "./helpers";
 
 const CONSISTENT = { missing: 0, extra: 0, misdated: 0 };
+const NO_FIXES = { userEntriesFixed: 0, subscriptionsFixed: 0, usersFixed: 0, tagsFixed: 0 };
 
 async function cleanup(): Promise<void> {
   await db.delete(userEntries);
@@ -97,15 +102,24 @@ async function currentFeed(count: number): Promise<{ feedId: string; entryIds: s
   return { feedId, entryIds };
 }
 
-describe("subscription_entries mirror (#1846)", () => {
+describe.each([
+  ["on", true],
+  ["off", false],
+])("write paths, mirror triggers %s (#1846)", (_, mirror) => {
+  beforeAll(() => setMembershipMirror(mirror));
   beforeEach(cleanup);
-  // Every write path below leaves the copy matching the old forms.
+  // Every write path below keeps the counters exact and the previous
+  // release's forms matching.
   afterEach(async () => {
+    expect(await reconcileCounters(db)).toEqual(NO_FIXES);
     expect(await checkSubscriptionEntries(db)).toEqual(CONSISTENT);
   });
-  afterAll(cleanup);
+  afterAll(async () => {
+    await setMembershipMirror(true);
+    await cleanup();
+  });
 
-  it("copies a fetch's fan-out to each subscriber, idempotently", async () => {
+  it("adds a fetch's fan-out to each subscriber, idempotently", async () => {
     const [alice, bob] = [await createTestUser(), await createTestUser()];
     const { feedId, entryIds } = await currentFeed(2);
     const aliceSub = await createTestSubscription(alice, feedId);
@@ -120,7 +134,7 @@ describe("subscription_entries mirror (#1846)", () => {
     expect(await membershipsOf(bob)).toEqual(pairs([bobSub, entryIds[0]], [bobSub, entryIds[1]]));
   });
 
-  it("copies a new subscription's initial entries", async () => {
+  it("adds a new subscription's initial entries", async () => {
     const userId = await createTestUser();
     const { feedId, entryIds } = await currentFeed(2);
 
@@ -133,7 +147,7 @@ describe("subscription_entries mirror (#1846)", () => {
     );
   });
 
-  it("adds a redirect merge's survivor and keeps the old subscription's copy", async () => {
+  it("adds a redirect merge's survivor and keeps the old subscription's", async () => {
     const userId = await createTestUser();
     const oldFeedId = await createTestFeed();
     const oldSub = await createTestSubscription(userId, oldFeedId);
@@ -147,6 +161,30 @@ describe("subscription_entries mirror (#1846)", () => {
       .from(subscriptions)
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeedId)));
     expect(await membershipsOf(userId)).toEqual(pairs([oldSub, entryId], [survivor, entryId]));
+  });
+
+  it("skips the new feed's copy of an article a merge put in the survivor", async () => {
+    const userId = await createTestUser();
+    const oldFeedId = await createTestFeed();
+    const oldSub = await createTestSubscription(userId, oldFeedId);
+    const article = await createTestEntry(oldFeedId, {
+      guid: "http://example.com/a",
+      userIds: [userId],
+    });
+    const newFeedId = await createTestFeed();
+    await mergeSubscriptionIntoFeed(db, userId, oldSub, await feedRow(newFeedId));
+    const twin = await createTestEntry(newFeedId, { guid: "https://example.com/a" });
+    const fresh = await createTestEntry(newFeedId);
+
+    await createUserEntriesForFeed(newFeedId, [twin, fresh]);
+
+    const [{ id: survivor }] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeedId)));
+    expect(await membershipsOf(userId)).toEqual(
+      pairs([oldSub, article], [survivor, article], [survivor, fresh])
+    );
   });
 
   it("follows collection adds and removals, and keeps a deleted collection's", async () => {
@@ -201,17 +239,30 @@ describe("subscription_entries mirror (#1846)", () => {
     const held = await pool.connect();
     const heldEntryId = generateUuidv7();
     try {
-      // The first save creates the saved subscription and stays open...
+      // The first save creates the saved subscription and stays open: the
+      // previous release's (whose mirror trigger creates it) or this one's...
       await held.query("BEGIN");
       await held.query(
         `INSERT INTO entries (id, owner_user_id, type, guid, content_hash, fetched_at)
          VALUES ($1, $2, 'saved', $3, $3, now())`,
         [heldEntryId, userId, `guid-${heldEntryId}`]
       );
+      if (!mirror) {
+        await held.query("SELECT ensure_saved_subscriptions(ARRAY[$1::uuid])", [userId]);
+      }
       await held.query("INSERT INTO user_entries (user_id, entry_id) VALUES ($1, $2)", [
         userId,
         heldEntryId,
       ]);
+      if (!mirror) {
+        await held.query(
+          `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+           SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
+           FROM user_entries ue JOIN subscriptions s ON s.user_id = ue.user_id AND s.type = 'saved'
+           WHERE ue.user_id = $1 AND ue.entry_id = $2`,
+          [userId, heldEntryId]
+        );
+      }
       // ...so the second waits on the saved subscription's unique index.
       const second = uploadArticle(db, userId, { content: "# Two\n\nBody", title: "" });
       await expect
@@ -239,7 +290,7 @@ describe("subscription_entries mirror (#1846)", () => {
     }
   });
 
-  it("copies an email's entry into its email subscription", async () => {
+  it("adds an email's entry to its email subscription", async () => {
     const userId = await createTestUser();
     const token = `token-${generateUuidv7()}`;
     await createTestIngestAddress(userId, { token });
@@ -260,6 +311,11 @@ describe("subscription_entries mirror (#1846)", () => {
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "email")));
     expect(await membershipsOf(userId)).toEqual(pairs([emailSub, result.entryId!]));
   });
+});
+
+describe("subscription_entries foreign keys (#1846)", () => {
+  beforeEach(cleanup);
+  afterAll(cleanup);
 
   it("can't hold another user's subscription or article", async () => {
     const [alice, bob] = [await createTestUser(), await createTestUser()];

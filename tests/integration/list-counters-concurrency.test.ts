@@ -6,13 +6,14 @@
  * counters match their definition afterwards.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import pg from "pg";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   entries,
   feeds,
+  subscriptionEntries,
   subscriptionTags,
   subscriptions,
   tags,
@@ -36,6 +37,7 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
+  setMembershipMirror,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
@@ -101,9 +103,26 @@ async function feedWithEntries(userId: string, count: number) {
   return { subscriptionId, entryIds };
 }
 
-describe("unread counters under concurrent writes", () => {
+/** Fans each feed's new article out to its subscribers, as fetches do. */
+function fanOutNewEntries(feedIds: string[]): Array<Promise<unknown>> {
+  return feedIds.map(async (feedId) => {
+    const entryId = await createTestEntry(feedId);
+    await createUserEntriesForFeed(feedId, [entryId]);
+  });
+}
+
+// With the previous release's membership mirror triggers on (a rollout) and
+// off (this release alone; #1846).
+describe.each([
+  ["on", true],
+  ["off", false],
+])("unread counters under concurrent writes, mirror triggers %s", (_, mirror) => {
+  beforeAll(() => setMembershipMirror(mirror));
   beforeEach(cleanup);
-  afterAll(cleanup);
+  afterAll(async () => {
+    await setMembershipMirror(true);
+    await cleanup();
+  });
 
   it("concurrent adds to one collection all succeed", async () => {
     const userId = await createTestUser();
@@ -225,7 +244,28 @@ describe("unread counters under concurrent writes", () => {
     const userIds = await createUsers(20);
     const feeds = await subscribeAll(userIds, 20);
 
-    await expectAllFulfilled(feeds.map((feedId) => createTestEntry(feedId, { userIds })));
+    await expectAllFulfilled(fanOutNewEntries(feeds));
+    await expectNoDrift();
+  });
+
+  it("fan-outs while their subscribers mark articles read all succeed", async () => {
+    // A fan-out's membership triggers lock the subscriptions before its row
+    // triggers lock the users, the order a mark-read takes them in.
+    const userIds = await createUsers(10);
+    const feeds = await subscribeAll(userIds, 5);
+    const existing: string[] = [];
+    for (const feedId of feeds) {
+      const entryId = await createTestEntry(feedId);
+      await createUserEntriesForFeed(feedId, [entryId]);
+      existing.push(entryId);
+    }
+
+    await expectAllFulfilled([
+      ...fanOutNewEntries(feeds),
+      ...userIds.flatMap((userId) =>
+        existing.map((id) => markEntriesRead(db, userId, [{ id }], true))
+      ),
+    ]);
     await expectNoDrift();
   });
 
@@ -254,8 +294,7 @@ describe("unread counters under concurrent writes", () => {
       .where(eq(feeds.id, await createTestFeed()));
 
     const merge = migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
-    const fanouts = live.map((feedId) => createTestEntry(feedId, { userIds }));
-    await expectAllFulfilled([merge, ...fanouts]);
+    await expectAllFulfilled([merge, ...fanOutNewEntries(live)]);
     await expectNoDrift();
   });
 
@@ -330,6 +369,54 @@ describe("unread counters under concurrent writes", () => {
       await client.end();
     }
 
+    await expectNoDrift();
+  });
+});
+
+describe("this release's fan-out racing the previous release's (#1846)", () => {
+  beforeEach(cleanup);
+  afterAll(cleanup);
+
+  /** The previous release's createUserEntriesForFeed, which the mirror copies. */
+  async function previousReleaseFanOut(feedId: string, entryIds: string[]): Promise<void> {
+    await db.execute(sql`
+      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
+      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam, e.is_backfill
+      FROM subscriptions s
+      INNER JOIN entries e ON e.owner_feed_id = s.feed_id
+      WHERE s.feed_id = ${feedId}::uuid
+        AND s.unsubscribed_at IS NULL
+        AND e.id = ANY(${`{${entryIds.join(",")}}`}::uuid[])
+      ON CONFLICT DO NOTHING
+    `);
+  }
+
+  it("adds each membership once; a deadlock between them heals on the next fetch", async () => {
+    // A WebSub push runs outside the per-feed job, so during a rollout the two
+    // releases can fan out the same articles at once. This release inserts the
+    // memberships before the rows, the previous one the reverse (its mirror
+    // trigger), so they can deadlock; the loser's next fetch redoes it.
+    const userIds = await createUsers(10);
+    const [feedId] = await subscribeAll(userIds, 1);
+    const entryIds: string[] = [];
+    for (let i = 0; i < 5; i++) entryIds.push(await createTestEntry(feedId));
+
+    const results = await Promise.allSettled(
+      entryIds.flatMap((id) => [
+        createUserEntriesForFeed(feedId, [id]),
+        previousReleaseFanOut(feedId, [id]),
+      ])
+    );
+    expect(results.flatMap((r) => (r.status === "rejected" ? [r.reason.cause?.code] : []))).toEqual(
+      results.filter((r) => r.status === "rejected").map(() => "40P01")
+    );
+    await createUserEntriesForFeed(feedId, entryIds);
+
+    const memberships = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(subscriptionEntries)
+      .where(inArray(subscriptionEntries.entryId, entryIds));
+    expect(memberships).toEqual([{ n: userIds.length * entryIds.length }]);
     await expectNoDrift();
   });
 });

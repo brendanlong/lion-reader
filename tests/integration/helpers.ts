@@ -269,6 +269,26 @@ export async function createTestMembership(
   );
 }
 
+/**
+ * Turns the triggers that copy the previous release's membership writes into
+ * `subscription_entries` (#1846) off or on, so a test can show a write path
+ * adds its memberships itself. A schema change for every connection: turn them
+ * back on in `afterAll`.
+ */
+export async function setMembershipMirror(enabled: boolean): Promise<void> {
+  const action = enabled ? "ENABLE" : "DISABLE";
+  await db.execute(
+    sql.raw(`
+      ALTER TABLE user_entries
+        ${action} TRIGGER user_entries_copy_memberships_insert_trigger,
+        ${action} TRIGGER user_entries_copy_membership_restamp_trigger;
+      ALTER TABLE collection_entries
+        ${action} TRIGGER collection_entries_copy_memberships_insert_trigger,
+        ${action} TRIGGER collection_entries_copy_memberships_delete_trigger;
+    `)
+  );
+}
+
 // ============================================================================
 // Tags
 // ============================================================================
