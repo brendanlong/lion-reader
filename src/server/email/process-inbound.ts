@@ -6,8 +6,8 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, isNotNull } from "drizzle-orm";
-import { db } from "../db";
+import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
+import { db, type DbOrTx } from "../db";
 import { generateSummary } from "../html/strip-html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
@@ -27,6 +27,7 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { lockSubscriptionMembers } from "@/server/services/subscriptions";
 import { isUniqueViolation } from "@/server/db/errors";
+import { personalFeedsRequired } from "@/server/feed/saved-feed";
 
 // ============================================================================
 // Types
@@ -77,8 +78,8 @@ export interface ProcessEmailResult {
   error?: string;
   /** ID of the created entry (if successful) */
   entryId?: string;
-  /** ID of the feed (if successful) */
-  feedId?: string;
+  /** ID of the sender's subscription, which owns the entry (if successful) */
+  subscriptionId?: string;
 }
 
 // ============================================================================
@@ -208,11 +209,10 @@ function generateEmailContentHash(subject: string, content: string): string {
  * 2. Find ingest address (reject if not found or deleted)
  * 3. Normalize sender email
  * 4. Check if sender is blocked (reject silently)
- * 5. Find or create email feed for (user_id, sender_email)
- * 6. Auto-create subscription if new feed
- * 7. Check for duplicate Message-ID
- * 8. Create entry with email content
- * 9. Publish real-time event via Redis
+ * 5. Find, create or reactivate the subscription to the sender (the owner)
+ * 6. Check for duplicate Message-ID
+ * 7. Create entry with email content
+ * 8. Publish real-time event via Redis
  *
  * @param email - The normalized inbound email
  * @returns Processing result
@@ -275,101 +275,88 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     return { success: false, error: "Sender blocked" };
   }
 
-  // 5. Upsert email feed for (user_id, sender_email)
-  // ON CONFLICT updates updatedAt to ensure RETURNING always gives us the feed
+  // 5. The sender's subscription, which owns its emails (#1846): one per user
+  // and sender (`uq_subscriptions_user_email_sender`), created by the sender's
+  // first email and reactivated by a later one. RETURNING only returns a row if
+  // it inserted or reactivated one (not if it was already active).
   const now = new Date();
-  const feedId = generateUuidv7();
-  const feedTitle = email.from.name || senderEmail;
-
-  let [feed] = await db
-    .insert(feeds)
-    .values({
-      id: feedId,
-      type: "email",
-      userId,
-      emailSenderPattern: senderEmail,
-      title: feedTitle,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({
-      target: [feeds.userId, feeds.emailSenderPattern],
-    })
-    .returning();
-
-  const isNewFeed = feed != null;
-  if (isNewFeed) {
-    logger.info("Created email feed", { feedId, userId, senderEmail, title: feedTitle });
-  } else {
-    // Feed already exists, select since we can't return from `on conflict do nothing`
-    [feed] = await db
-      .select()
-      .from(feeds)
-      .where(
-        and(
-          eq(feeds.userId, userId),
-          eq(feeds.emailSenderPattern, senderEmail),
-          eq(feeds.type, "email")
-        )
-      )
-      .limit(1);
-  }
-
-  // 6. Upsert subscription: insert new, or reactivate if unsubscribed
-  // RETURNING only returns a row if inserted OR updated (not if already active)
-  const subscriptionId = generateUuidv7();
+  const senderName = email.from.name || senderEmail;
+  const newSubscriptionId = generateUuidv7();
 
   // Reactivating moves the members' user_entries rows, which come first in
   // the lock order.
   const upsertSubscription = () =>
     db.transaction(async (tx) => {
+      // While the schema keeps per-user email feeds (until #1846 phase 6B2's
+      // migration), a new subscription names one, and so do its emails (each
+      // copies its subscription's feed_id below). Without one, the
+      // subscription carries the sender's name itself.
+      const feedId = (await personalFeedsRequired(tx))
+        ? await getOrCreateEmailFeed(tx, userId, senderEmail, senderName, now)
+        : null;
       await lockSubscriptionMembers(
         tx,
         userId,
-        and(eq(subscriptions.feedId, feed.id), isNotNull(subscriptions.unsubscribedAt))
+        and(emailSubscriptionFor(userId, senderEmail), isNotNull(subscriptions.unsubscribedAt))
       );
       return tx
         .insert(subscriptions)
         .values({
-          id: subscriptionId,
+          id: newSubscriptionId,
           userId,
-          feedId: feed.id,
+          feedId,
           type: "email",
           emailSender: senderEmail,
+          customTitle: feedId ? null : senderName,
           subscribedAt: now,
           createdAt: now,
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: [subscriptions.userId, subscriptions.feedId],
+          target: [subscriptions.userId, subscriptions.emailSender],
+          targetWhere: sql`${subscriptions.type} = 'email'`,
           set: { unsubscribedAt: null, updatedAt: now },
-          where: isNotNull(subscriptions.unsubscribedAt),
+          setWhere: isNotNull(subscriptions.unsubscribedAt),
         })
         .returning();
     });
-  // Two first emails from a sender can race to create its subscription: the
-  // loser conflicts on (user_id, email_sender) too, which ON CONFLICT doesn't
-  // arbitrate, so it raises instead of finding the row. Once the winner has
-  // committed, the retry takes the ON CONFLICT path.
+  // Two first emails from a sender can race to create its subscription: while
+  // subscriptions name the email feed, the loser conflicts on (user_id,
+  // feed_id) too, which ON CONFLICT doesn't arbitrate, so it raises instead of
+  // finding the row. Once the winner has committed, the retry takes the ON
+  // CONFLICT path.
   const [upsertedSubscription] = await upsertSubscription().catch((error: unknown) => {
     if (!isUniqueViolation(error)) throw error;
     return upsertSubscription();
   });
 
+  const [owner] = await db
+    .select({
+      id: subscriptions.id,
+      feedId: subscriptions.feedId,
+      title: sql<string>`COALESCE(${subscriptions.customTitle}, ${feeds.title}, ${subscriptions.emailSender})`,
+    })
+    .from(subscriptions)
+    .leftJoin(feeds, eq(feeds.id, subscriptions.feedId))
+    .where(emailSubscriptionFor(userId, senderEmail));
+  if (!owner) {
+    throw new Error(`No email subscription for sender ${senderEmail}`);
+  }
+
   if (upsertedSubscription) {
-    const isNewSubscription = upsertedSubscription.id === subscriptionId;
+    const isNewSubscription = upsertedSubscription.id === newSubscriptionId;
     logger.info(isNewSubscription ? "Created subscription" : "Reactivated subscription", {
-      subscriptionId: upsertedSubscription.id,
-      feedId: feed.id,
+      subscriptionId: owner.id,
       userId,
+      senderEmail,
     });
 
     // Publish subscription_created BEFORE the new_entry event (both on the
     // user's channel, so in order), so the client knows the subscription first
     publishSubscriptionCreated(
       userId,
-      feed.id,
-      upsertedSubscription.id,
+      owner.feedId,
+      owner.id,
       upsertedSubscription.updatedAt,
       {
         customTitle: upsertedSubscription.customTitle,
@@ -380,49 +367,35 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
       {
         type: "email",
         url: null,
-        title: feed.title,
+        title: owner.title,
         description: null,
         siteUrl: null,
       }
     ).catch((err) => {
-      logger.error("Failed to publish subscription_created event for email feed", {
-        feedId: feed.id,
-        subscriptionId: upsertedSubscription.id,
+      logger.error("Failed to publish subscription_created event for email subscription", {
+        subscriptionId: owner.id,
         error: err instanceof Error ? err.message : String(err),
       });
     });
   }
 
-  // The subscription owns the email (#1846). The upsert above returns it only
-  // when it inserted or reactivated it; otherwise it's already active.
-  const ownerSubscriptionId =
-    upsertedSubscription?.id ??
-    (
-      await db
-        .select({ id: subscriptions.id })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feed.id)))
-    )[0]?.id;
-  if (!ownerSubscriptionId) {
-    throw new Error(`No email subscription for sender ${senderEmail}`);
-  }
-
-  // 7. Check for duplicate Message-ID
+  // 6. Check for duplicate Message-ID: a seek on the (owner_subscription_id,
+  // guid) unique index.
   const [existingEntry] = await db
-    .select()
+    .select({ id: entries.id })
     .from(entries)
-    .where(and(eq(entries.ownerFeedId, feed.id), eq(entries.guid, email.messageId)))
+    .where(and(eq(entries.ownerSubscriptionId, owner.id), eq(entries.guid, email.messageId)))
     .limit(1);
 
   if (existingEntry) {
     logger.info("Email rejected: duplicate Message-ID", {
       messageId: email.messageId,
-      feedId: feed.id,
+      subscriptionId: owner.id,
     });
     return { success: false, error: "Duplicate email" };
   }
 
-  // 8. Create entry with email content
+  // 7. Create entry with email content
   const contentOriginal = email.html || email.text || "";
   const contentHash = generateEmailContentHash(email.subject, contentOriginal);
 
@@ -471,9 +444,9 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
 
   const newEntry: NewEntry = {
     id: entryId,
-    // The per-user email feed until phase 6B; the subscription owns it.
-    ownerFeedId: feed.id,
-    ownerSubscriptionId,
+    ownerSubscriptionId: owner.id,
+    // Its subscription's per-user feed while the schema keeps one (#1846).
+    ownerFeedId: owner.feedId,
     type: "email",
     guid: email.messageId,
     url,
@@ -496,44 +469,37 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // Store only the raw columns; the read path sanitizes per read (issue #1282).
   //
   // The entry insert and the user_entries fanout MUST be atomic. Mailgun retries
-  // its webhook on any non-2xx/timeout, and step 7 above rejects a retry as a
+  // its webhook on any non-2xx/timeout, and step 6 above rejects a retry as a
   // duplicate Message-ID. If the entry were inserted but the process crashed
   // before creating the user_entries row, the retry would hit that duplicate
   // check and return early — leaving the newsletter permanently invisible to the
   // user (issue #952). Wrapping both writes in one transaction means a crash
   // rolls back the entry too, so the retry re-inserts both cleanly.
-  const entrySubscriptionId = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     await tx.insert(entries).values(newEntry);
-
-    // Create user_entry to make it visible to the user. Its subscription_id
-    // (filled by the insert trigger) is the email subscription's, for the event.
-    const [userEntry] = await tx
-      .insert(userEntries)
-      .values({ userId, entryId })
-      .returning({ subscriptionId: userEntries.subscriptionId });
-    return userEntry.subscriptionId;
+    // Create user_entry to make it visible to the user, in its subscription.
+    await tx.insert(userEntries).values({ userId, entryId, subscriptionId: owner.id });
   });
 
   logger.info("Email processed successfully", {
-    feedId: feed.id,
+    subscriptionId: owner.id,
     entryId,
     senderEmail,
     messageId: email.messageId,
-    isNewFeed,
     isSpam: email.isSpam ?? false,
   });
 
-  // 9. Publish real-time event via Redis
+  // 8. Publish real-time event via Redis
   // Fire and forget - we don't want publishing failures to affect email processing.
   // A spam entry's event still fires, for the counts.
   publishUserNewEntry(
-    { userId, subscriptionId: entrySubscriptionId, feedType: "email" },
+    { userId, subscriptionId: owner.id, feedType: "email" },
     entryId,
     now,
-    entryListPayload(newEntry, feed.title)
+    entryListPayload(newEntry, owner.title)
   ).catch((err) => {
     logger.error("Failed to publish new_entry event for email", {
-      feedId: feed.id,
+      subscriptionId: owner.id,
       entryId,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -542,6 +508,57 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   return {
     success: true,
     entryId,
-    feedId: feed.id,
+    subscriptionId: owner.id,
   };
+}
+
+/** The user's email subscription to `senderEmail` (active or not), if any. */
+function emailSubscriptionFor(userId: string, senderEmail: string): SQL {
+  return and(
+    eq(subscriptions.userId, userId),
+    eq(subscriptions.type, "email"),
+    eq(subscriptions.emailSender, senderEmail)
+  )!;
+}
+
+/**
+ * Gets or creates the user's per-user feed for `senderEmail`, which new email
+ * subscriptions and emails name while the schema still requires it
+ * (`personalFeedsRequired`). Returns its id.
+ */
+async function getOrCreateEmailFeed(
+  tx: DbOrTx,
+  userId: string,
+  senderEmail: string,
+  title: string,
+  now: Date
+): Promise<string> {
+  const [created] = await tx
+    .insert(feeds)
+    .values({
+      id: generateUuidv7(),
+      type: "email",
+      userId,
+      emailSenderPattern: senderEmail,
+      title,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: [feeds.userId, feeds.emailSenderPattern] })
+    .returning({ id: feeds.id });
+  if (created) {
+    logger.info("Created email feed", { feedId: created.id, userId, senderEmail });
+    return created.id;
+  }
+  const [existing] = await tx
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(
+      and(
+        eq(feeds.userId, userId),
+        eq(feeds.emailSenderPattern, senderEmail),
+        eq(feeds.type, "email")
+      )
+    );
+  return existing.id;
 }

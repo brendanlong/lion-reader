@@ -316,7 +316,7 @@ export async function POST(request: Request): Promise<Response> {
 
     if (result.success) {
       logger.info("Mailgun email webhook processed successfully", {
-        feedId: result.feedId,
+        subscriptionId: result.subscriptionId,
         entryId: result.entryId,
         from: email.from.address,
       });

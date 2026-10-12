@@ -106,11 +106,10 @@ function stripGreaderIds<
   T extends {
     greaderItemId: bigint;
     subscriptionGreaderStreamId: bigint | null;
-    feedGreaderStreamId: bigint;
   },
->(entry: T): Omit<T, "greaderItemId" | "subscriptionGreaderStreamId" | "feedGreaderStreamId"> {
+>(entry: T): Omit<T, "greaderItemId" | "subscriptionGreaderStreamId"> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { greaderItemId, subscriptionGreaderStreamId, feedGreaderStreamId, ...rest } = entry;
+  const { greaderItemId, subscriptionGreaderStreamId, ...rest } = entry;
   return rest;
 }
 

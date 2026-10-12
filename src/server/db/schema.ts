@@ -529,11 +529,10 @@ export const entries = pgTable(
     // (shared by every subscriber), an email's subscription, a saved article's
     // or upload's user. It scopes duplicate detection (a unique (owner, guid)
     // per kind) and cascades deletes; it's never used to list or count
-    // (memberships do that). Until phase 6B, email and saved entries also keep
-    // owner_feed_id = their per-user email/saved feed.
-    ownerFeedId: uuid("owner_feed_id")
-      .notNull()
-      .references(() => feeds.id, { onDelete: "cascade" }),
+    // (memberships do that). Until phase 6B2, email and saved entries also
+    // name their per-user email/saved feed in owner_feed_id (NOT NULL in the
+    // database until then), which nothing reads.
+    ownerFeedId: uuid("owner_feed_id").references(() => feeds.id, { onDelete: "cascade" }),
     type: feedTypeEnum("type").$type<EntryType>().notNull(), // Denormalized from feed for type-specific constraints and queries
 
     ownerSubscriptionId: uuid("owner_subscription_id").references(() => subscriptions.id, {
@@ -1044,7 +1043,7 @@ export const userFeeds = pgView("user_feeds", {
 export const visibleEntries = pgView("visible_entries", {
   userId: uuid("user_id").notNull(),
   id: uuid("id").notNull(),
-  ownerFeedId: uuid("owner_feed_id").notNull(),
+  ownerFeedId: uuid("owner_feed_id"),
   type: feedTypeEnum("type").$type<EntryType>().notNull(),
   guid: text("guid").notNull(),
   url: text("url"),

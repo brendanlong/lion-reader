@@ -17,7 +17,6 @@ import {
 } from "../../src/server/services/getting-started";
 import { GETTING_STARTED_TITLE } from "../../src/server/services/getting-started-content";
 import { deleteSavedArticle } from "../../src/server/services/saved";
-import { getSavedFeedId } from "../../src/server/feed/saved-feed";
 import { createTestUser } from "./helpers";
 import { getGlobalUnreadCounts } from "../../src/server/services/counts";
 
@@ -32,8 +31,6 @@ async function createUser(): Promise<string> {
 
 /** Every saved entry the user can see, newest first. */
 async function savedEntriesFor(userId: string) {
-  const savedFeedId = await getSavedFeedId(db, userId);
-  if (!savedFeedId) return [];
   return db
     .select({
       id: entries.id,
@@ -48,7 +45,7 @@ async function savedEntriesFor(userId: string) {
       userEntries,
       and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
     )
-    .where(eq(entries.ownerFeedId, savedFeedId));
+    .where(eq(entries.ownerUserId, userId));
 }
 
 async function gettingStartedAt(userId: string): Promise<Date | null> {

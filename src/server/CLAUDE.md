@@ -40,7 +40,7 @@ A subscription's kind is its own `subscriptions.type` (#1846): read it there, ne
 
 ## Entry Owners
 
-Every entry has an owner (#1846): `owner_feed_id` for a web entry (shared by every subscriber), `owner_subscription_id` for an email (its user's subscription to the sender, `subscriptions.email_sender`, unique per user) or `owner_user_id` for a saved article or upload. The owner scopes duplicate detection (a unique `(owner, guid)` per kind) and cascades deletes; **never list or count by it** — memberships do that. **Every entry insert writes its owner.** Until phase 6B, email and saved entries also carry their per-user feed in `owner_feed_id`, and lookups (dedup, saved-by-URL, List-Unsubscribe, sync) still go through it.
+Every entry has an owner (#1846): `owner_feed_id` for a web entry (shared by every subscriber), `owner_subscription_id` for an email (its user's subscription to the sender, `subscriptions.email_sender`, unique per user) or `owner_user_id` for a saved article or upload. The owner scopes duplicate detection (a unique `(owner, guid)` per kind) and cascades deletes; **never list or count by it** — memberships do that. **Every entry insert writes its owner, and every lookup of an email or saved article (dedup, saved-by-URL, List-Unsubscribe, sync) goes by it**, never by a feed: reach `feeds` from an entry only with a LEFT JOIN. Until phase 6B2's migration drops `owner_feed_id`'s NOT NULL and deletes the per-user email and saved feeds, new email and saved entries also name theirs there, which nothing reads (`personalFeedsRequired` in `feed/saved-feed.ts` decides per write, so the code runs on both schemas).
 
 ## Unread Counts
 

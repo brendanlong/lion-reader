@@ -115,6 +115,8 @@ export async function createTestSubscription(
     userId,
     feedId,
     type: sql`(SELECT ${feeds.type} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`,
+    // An email subscription records its sender (#1846), as email ingest does.
+    emailSender: sql`(SELECT ${feeds.emailSenderPattern} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`,
     subscribedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -181,6 +183,17 @@ export async function createTestEntry(
   await db.insert(entries).values({
     id: entryId,
     ownerFeedId: feedId,
+    // An email is owned by its subscription and a saved article by its user
+    // (#1846): here, the email feed's subscription and the saved feed's user.
+    ownerSubscriptionId:
+      type === "email"
+        ? sql`(SELECT ${subscriptions.id} FROM ${subscriptions}
+            WHERE ${subscriptions.feedId} = ${feedId} AND ${subscriptions.type} = 'email')`
+        : null,
+    ownerUserId:
+      type === "saved"
+        ? sql`(SELECT ${feeds.userId} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`
+        : null,
     type,
     guid: `guid-${entryId}`,
     title: `Entry ${entryId}`,
