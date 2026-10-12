@@ -10,6 +10,8 @@ import { LegalList, LegalPage, LegalParagraph, LegalSection } from "@/components
 import { Card } from "@/components/ui/card";
 import { PageLink } from "@/components/ui/page-link";
 import { TextLink } from "@/components/ui/text-link";
+import { CONTACT_EMAIL } from "@/lib/contact";
+import { LION_READER_ISSUES_URL } from "@/lib/github-issue";
 
 export const metadata: Metadata = {
   title: "Terms of Service - Lion Reader",
@@ -18,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function TermsOfServicePage() {
   return (
-    <LegalPage title="Terms of Service" lastUpdated="February 2026">
+    <LegalPage title="Terms of Service" lastUpdated="October 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is a free, open-source feed reader service. By creating an account or using
@@ -172,8 +174,10 @@ export default function TermsOfServicePage() {
 
       <LegalSection title="Contact">
         <LegalParagraph>
-          If you have any questions about these Terms of Service, please open an issue on our{" "}
-          <TextLink href="https://github.com/brendanlong/lion-reader" external>
+          If you have any questions about these Terms of Service, email us at{" "}
+          <TextLink href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</TextLink>. For bug reports and
+          feature requests, please open an issue on our{" "}
+          <TextLink href={LION_READER_ISSUES_URL} external>
             GitHub repository
           </TextLink>
           .
