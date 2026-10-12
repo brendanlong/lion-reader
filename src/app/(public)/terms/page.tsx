@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 export default function TermsOfServicePage() {
   return (
     <LegalPage title="Terms of Service" lastUpdated="October 2026">
-      <LegalSection title="Overview">
+      <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is a free, open-source feed reader service. By creating an account or using
           the service, you agree to these Terms of Service. If you do not agree to these terms, you
@@ -36,7 +36,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Eligibility and Geographic Restrictions">
+      <LegalSection id="eligibility" title="Eligibility and Geographic Restrictions">
         <LegalParagraph>
           Lion Reader is available only to users located in the United States. By using this
           service, you represent that you are located in the United States.
@@ -49,7 +49,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="The Service">
+      <LegalSection id="the-service" title="The Service">
         <LegalParagraph>
           Lion Reader is a free service provided on an &quot;as is&quot; and &quot;as
           available&quot; basis. We make no warranties or guarantees regarding uptime, availability,
@@ -58,7 +58,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Acceptable Use">
+      <LegalSection id="acceptable-use" title="Acceptable Use">
         <LegalParagraph>
           You agree to use Lion Reader only for lawful purposes and in a manner consistent with its
           intended use as a personal feed reader. You must not:
@@ -80,7 +80,7 @@ export default function TermsOfServicePage() {
         </LegalList>
       </LegalSection>
 
-      <LegalSection title="Usage Limits">
+      <LegalSection id="usage-limits" title="Usage Limits">
         <LegalParagraph>
           To ensure fair usage and maintain service stability, Lion Reader enforces the following
           limits. These limits are subject to change at any time.
@@ -113,7 +113,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Account Termination">
+      <LegalSection id="account-termination" title="Account Termination">
         <LegalParagraph>
           <strong>
             We reserve the right to suspend or terminate any account at any time and for any reason,
@@ -139,7 +139,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Intellectual Property">
+      <LegalSection id="intellectual-property" title="Intellectual Property">
         <LegalParagraph>
           Lion Reader is open-source software. The source code is available on{" "}
           <TextLink href="https://github.com/brendanlong/lion-reader" external>
@@ -150,7 +150,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Limitation of Liability">
+      <LegalSection id="limitation-of-liability" title="Limitation of Liability">
         <LegalParagraph>
           To the maximum extent permitted by law, Lion Reader and its operators shall not be liable
           for any indirect, incidental, special, consequential, or punitive damages, or any loss of
@@ -163,7 +163,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Changes to These Terms">
+      <LegalSection id="changes" title="Changes to These Terms">
         <LegalParagraph>
           We may update these Terms of Service from time to time. We will notify users of material
           changes by posting the updated terms on this page with a new &quot;Last updated&quot;
@@ -172,7 +172,7 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Contact">
+      <LegalSection id="contact" title="Contact">
         <LegalParagraph>
           If you have any questions about these Terms of Service, email us at{" "}
           <TextLink href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</TextLink>. For bug reports and
