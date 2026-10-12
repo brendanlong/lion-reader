@@ -43,17 +43,39 @@ export function LegalPage({ title, lastUpdated, children }: LegalPageProps) {
 }
 
 /**
+ * Heading text that links to its own anchor, so readers can copy a link
+ * to any section. The `id` is spelled out rather than derived from the
+ * title so editing a title (e.g. its provider list) doesn't break links.
+ */
+function HeadingSelfLink({ id, title }: { id: string; title: string }) {
+  return (
+    <a href={`#${id}`} className="not-prose group">
+      {title}
+      <span
+        aria-hidden="true"
+        className="text-muted ml-2 opacity-0 select-none group-hover:opacity-100 group-focus-visible:opacity-100"
+      >
+        #
+      </span>
+    </a>
+  );
+}
+
+/**
  * Top-level section with the standard heading.
  */
 export interface LegalSectionProps {
+  id: string;
   title: string;
   children: ReactNode;
 }
 
-export function LegalSection({ title, children }: LegalSectionProps) {
+export function LegalSection({ id, title, children }: LegalSectionProps) {
   return (
     <section className="mb-8">
-      <h2 className="ui-text-xl text-body font-semibold">{title}</h2>
+      <h2 id={id} className="ui-text-xl text-body scroll-mt-4 font-semibold">
+        <HeadingSelfLink id={id} title={title} />
+      </h2>
       {children}
     </section>
   );
@@ -63,14 +85,17 @@ export function LegalSection({ title, children }: LegalSectionProps) {
  * Titled subsection within a section (h3 + body).
  */
 export interface LegalSubsectionProps {
+  id: string;
   title: string;
   children: ReactNode;
 }
 
-export function LegalSubsection({ title, children }: LegalSubsectionProps) {
+export function LegalSubsection({ id, title, children }: LegalSubsectionProps) {
   return (
     <div>
-      <h3 className="text-body font-medium">{title}</h3>
+      <h3 id={id} className="text-body scroll-mt-4 font-medium">
+        <HeadingSelfLink id={id} title={title} />
+      </h3>
       {children}
     </div>
   );

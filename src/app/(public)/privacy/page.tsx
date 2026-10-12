@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default function PrivacyPolicyPage() {
   return (
     <LegalPage title="Privacy Policy" lastUpdated="October 12, 2026">
-      <LegalSection title="Overview">
+      <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
           provide our feed reading service. We do not sell, rent, or share your personal information
@@ -38,37 +38,41 @@ export default function PrivacyPolicyPage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Information We Collect">
+      <LegalSection id="information-we-collect" title="Information We Collect">
         <div className="mt-4 space-y-4">
-          <LegalSubsection title="Account Information">
+          <LegalSubsection id="account-information" title="Account Information">
             <LegalParagraph tight>
               When you create an account, we collect your email address and password. Passwords are
               securely hashed using argon2 (industry-standard). If you sign in with Google, Apple,
               or Discord, we store your email address and account ID from that provider, plus the
-              sign-in tokens it issues (see Authentication Providers below).
+              sign-in tokens it issues (see{" "}
+              <TextLink href="#authentication-providers">Authentication Providers</TextLink> below).
             </LegalParagraph>
           </LegalSubsection>
-          <LegalSubsection title="Session Information">
+          <LegalSubsection id="session-information" title="Session Information">
             <LegalParagraph tight>
               We store session tokens (SHA-256 hashed), IP addresses, and user agent strings to
               maintain your login sessions and prevent unauthorized access. You can view and revoke
               active sessions from your account settings.
             </LegalParagraph>
           </LegalSubsection>
-          <LegalSubsection title="Feed Data">
+          <LegalSubsection id="feed-data" title="Feed Data">
             <LegalParagraph tight>
               We store the RSS/Atom feeds you subscribe to, articles from those feeds, and your
               reading history (read/unread status, starred items, folder organization). This data is
               used to provide the core feed reading functionality.
             </LegalParagraph>
           </LegalSubsection>
-          <LegalSubsection title="Saved Articles">
+          <LegalSubsection id="saved-articles" title="Saved Articles">
             <LegalParagraph tight>
               When you save articles using our bookmarklet or save feature, we store the article
               content and metadata on our servers for your later access.
             </LegalParagraph>
           </LegalSubsection>
-          <LegalSubsection title="Email Newsletter Subscriptions">
+          <LegalSubsection
+            id="email-newsletter-subscriptions"
+            title="Email Newsletter Subscriptions"
+          >
             <LegalParagraph tight>
               Each account has a unique email address for forwarding newsletters to your feed. If
               you use this feature, we receive and store the newsletters sent to that address,
@@ -78,7 +82,7 @@ export default function PrivacyPolicyPage() {
         </div>
       </LegalSection>
 
-      <LegalSection title="How We Use Your Data">
+      <LegalSection id="how-we-use-your-data" title="How We Use Your Data">
         <LegalParagraph>
           We use the information we collect to provide, operate, and improve the Lion Reader
           service. This includes:
@@ -102,7 +106,8 @@ export default function PrivacyPolicyPage() {
           <li>To prevent abuse and maintain security of the service</li>
           <li>
             To administer the service, including managing user accounts, monitoring feed health, and
-            managing invite codes (see Administrative Access below)
+            managing invite codes (see{" "}
+            <TextLink href="#administrative-access">Administrative Access</TextLink> below)
           </li>
         </LegalList>
         <LegalParagraph>
@@ -113,7 +118,7 @@ export default function PrivacyPolicyPage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Administrative Access">
+      <LegalSection id="administrative-access" title="Administrative Access">
         <LegalParagraph>
           Lion Reader administrators have access to an internal admin portal used to operate and
           maintain the service. This portal is protected by a separate secret and is not accessible
@@ -140,11 +145,12 @@ export default function PrivacyPolicyPage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Data Sharing and Disclosure">
+      <LegalSection id="data-sharing" title="Data Sharing and Disclosure">
         <LegalParagraph>
           We do not sell, rent, or share your personal information with third parties for their
           marketing purposes. We only share data with third-party service providers as necessary to
-          operate the service (see Third-Party Services section below).
+          operate the service (see{" "}
+          <TextLink href="#third-party-services">Third-Party Services</TextLink> below).
         </LegalParagraph>
         <LegalParagraph>
           We may disclose your information if required by law, such as in response to a valid
@@ -152,14 +158,17 @@ export default function PrivacyPolicyPage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Third-Party Services">
+      <LegalSection id="third-party-services" title="Third-Party Services">
         <LegalParagraph>
           We use the following third-party services to operate Lion Reader:
         </LegalParagraph>
 
         <div className="mt-4 space-y-6">
           <Card padding="md">
-            <LegalSubsection title="Article Summarization (Anthropic, Cerebras, Groq, OpenRouter) — Optional">
+            <LegalSubsection
+              id="article-summarization"
+              title="Article Summarization (Anthropic, Cerebras, Groq, OpenRouter) — Optional"
+            >
               <LegalParagraph>
                 <strong>This feature is optional and off by default.</strong> Summarization only
                 happens when you explicitly request a summary for an article and a summarization
@@ -203,7 +212,10 @@ export default function PrivacyPolicyPage() {
           </Card>
 
           <Card padding="md">
-            <LegalSubsection title="Audio Narration (Cerebras, Groq, OpenRouter, DeepInfra, BreezeBlue) — Optional">
+            <LegalSubsection
+              id="audio-narration"
+              title="Audio Narration (Cerebras, Groq, OpenRouter, DeepInfra, BreezeBlue) — Optional"
+            >
               <LegalParagraph>
                 <strong>This feature is optional and disabled by default.</strong> When you enable
                 AI text processing in narration settings, article content is sent to the AI provider
@@ -260,7 +272,10 @@ export default function PrivacyPolicyPage() {
             </LegalSubsection>
           </Card>
 
-          <LegalSubsection title="Enhanced Voices (Hugging Face, jsDelivr) — Optional">
+          <LegalSubsection
+            id="enhanced-voices"
+            title="Enhanced Voices (Hugging Face, jsDelivr) — Optional"
+          >
             <LegalParagraph tight>
               <strong>Only if you use enhanced (Piper) voices.</strong> Downloading an enhanced
               voice fetches the voice model directly from Hugging Face, and using one fetches the
@@ -283,7 +298,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Hosting (Fly.io)">
+          <LegalSubsection id="hosting" title="Hosting (Fly.io)">
             <LegalParagraph tight>
               Our application and databases are hosted on Fly.io infrastructure in the United
               States. All data at rest is encrypted using Fly.io&apos;s managed PostgreSQL service.
@@ -298,7 +313,7 @@ export default function PrivacyPolicyPage() {
             </LegalParagraph>
           </LegalSubsection>
 
-          <LegalSubsection title="Content Delivery Network (Bunny.net)">
+          <LegalSubsection id="cdn" title="Content Delivery Network (Bunny.net)">
             <LegalParagraph tight>
               The app&apos;s static files (code, styles, fonts, and the demo&apos;s pre-recorded
               audio) are served from Bunny.net&apos;s content delivery network (cdn.lionreader.com),
@@ -315,7 +330,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Error Tracking (Sentry)">
+          <LegalSubsection id="error-tracking" title="Error Tracking (Sentry)">
             <LegalParagraph tight>
               We use Sentry to find and fix errors and performance problems. When something goes
               wrong, in your browser or on our servers, Sentry receives the error message and where
@@ -341,7 +356,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Monitoring (Grafana Cloud)">
+          <LegalSubsection id="monitoring" title="Monitoring (Grafana Cloud)">
             <LegalParagraph tight>
               We use Grafana Cloud for application metrics and logs to monitor service health and
               performance. This includes anonymized usage metrics (e.g., number of API requests) and
@@ -349,17 +364,21 @@ export default function PrivacyPolicyPage() {
             </LegalParagraph>
           </LegalSubsection>
 
-          <LegalSubsection title="Authentication Providers (Google, Apple, Discord)">
+          <LegalSubsection
+            id="authentication-providers"
+            title="Authentication Providers (Google, Apple, Discord)"
+          >
             <LegalParagraph tight>
               If you choose to sign in with Google, Apple, or Discord, we use their OAuth services.
               We store your email address and account ID from the provider, plus the tokens it
               issues at sign-in. The providers also share your name (and Google your profile
               picture, Discord your username and avatar); we do not store these. We use the stored
-              tokens only for Google Docs saving, described below.
+              tokens only for <TextLink href="#google-docs">Google Docs saving</TextLink>, described
+              below.
             </LegalParagraph>
           </LegalSubsection>
 
-          <LegalSubsection title="Google Docs Saving (Google) — Optional">
+          <LegalSubsection id="google-docs" title="Google Docs Saving (Google) — Optional">
             <LegalParagraph tight>
               <strong>Only if you save a Google Doc.</strong> When you save a Google Doc (from the
               browser extension, the save page, or the bookmarklet) and we don&apos;t yet have
@@ -382,7 +401,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Discord Bot — Optional">
+          <LegalSubsection id="discord-bot" title="Discord Bot — Optional">
             <LegalParagraph tight>
               You can optionally link your Discord account to save articles through our Discord bot
               (by reacting to a message or sending a link to the bot). If you enable this feature,
@@ -398,7 +417,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Inbound Email (Mailgun)">
+          <LegalSubsection id="inbound-email" title="Inbound Email (Mailgun)">
             <LegalParagraph tight>
               If you use the email newsletter feature, we use Mailgun to receive emails sent to your
               unique ingest address and forward them to our servers, where they are stored as feed
@@ -416,7 +435,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Page Counts (GoatCounter)">
+          <LegalSubsection id="page-counts" title="Page Counts (GoatCounter)">
             <LegalParagraph tight>
               We count page views using GoatCounter, a cookie-less analytics service, so we can see
               roughly how many people use Lion Reader and which parts of it get used. This covers
@@ -474,7 +493,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection title="Object Storage (Fly.io Tigris)">
+          <LegalSubsection id="object-storage" title="Object Storage (Fly.io Tigris)">
             <LegalParagraph tight>
               Images embedded in some articles (for example, images from imported Google Docs) are
               stored on Fly.io&apos;s Tigris object storage. These stored images are served from
@@ -484,7 +503,7 @@ export default function PrivacyPolicyPage() {
         </div>
       </LegalSection>
 
-      <LegalSection title="Cookies and Local Storage">
+      <LegalSection id="cookies" title="Cookies and Local Storage">
         <LegalParagraph>
           We use essential cookies for authentication and session management. We also use browser
           storage to save your preferences and cached data:
@@ -501,12 +520,13 @@ export default function PrivacyPolicyPage() {
           </li>
         </LegalList>
         <LegalParagraph>
-          We do not use tracking cookies or advertising cookies. Our page counts (see Page Counts
+          We do not use tracking cookies or advertising cookies. Our page counts (see{" "}
+          <TextLink href="#page-counts">Page Counts</TextLink>
           above) set no cookies and store nothing in your browser.
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Data Security">
+      <LegalSection id="data-security" title="Data Security">
         <LegalParagraph>
           We implement industry-standard security measures to protect your data:
         </LegalParagraph>
@@ -534,7 +554,7 @@ export default function PrivacyPolicyPage() {
         </LegalList>
       </LegalSection>
 
-      <LegalSection title="Data Retention">
+      <LegalSection id="data-retention" title="Data Retention">
         <LegalList>
           <li>
             <strong>Account data:</strong> Retained as long as your account is active
@@ -562,7 +582,7 @@ export default function PrivacyPolicyPage() {
         </LegalList>
       </LegalSection>
 
-      <LegalSection title="Your Rights">
+      <LegalSection id="your-rights" title="Your Rights">
         <LegalParagraph>You have the following rights regarding your personal data:</LegalParagraph>
         <LegalList>
           <li>
@@ -599,7 +619,7 @@ export default function PrivacyPolicyPage() {
         </LegalList>
       </LegalSection>
 
-      <LegalSection title="Changes to This Policy">
+      <LegalSection id="changes" title="Changes to This Policy">
         <LegalParagraph>
           We may update this privacy policy from time to time. We will notify users of any material
           changes by posting the updated policy on this page with a new &quot;Last updated&quot;
@@ -607,7 +627,7 @@ export default function PrivacyPolicyPage() {
         </LegalParagraph>
       </LegalSection>
 
-      <LegalSection title="Contact">
+      <LegalSection id="contact" title="Contact">
         <LegalParagraph>
           If you have any questions about this privacy policy or our data practices, or want to make
           a request about your data, email us at{" "}
