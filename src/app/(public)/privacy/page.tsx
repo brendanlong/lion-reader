@@ -16,6 +16,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { PageLink } from "@/components/ui/page-link";
 import { TextLink } from "@/components/ui/text-link";
+import { CONTACT_EMAIL } from "@/lib/contact";
 
 export const metadata: Metadata = {
   title: "Privacy Policy - Lion Reader",
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="October 3, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="October 12, 2026">
       <LegalSection title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -608,8 +609,9 @@ export default function PrivacyPolicyPage() {
 
       <LegalSection title="Contact">
         <LegalParagraph>
-          If you have any questions about this privacy policy or our data practices, please open an
-          issue on our GitHub repository.
+          If you have any questions about this privacy policy or our data practices, or want to make
+          a request about your data, email us at{" "}
+          <TextLink href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</TextLink>.
         </LegalParagraph>
       </LegalSection>
     </LegalPage>

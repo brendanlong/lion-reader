@@ -5,6 +5,7 @@
  */
 
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { CONTACT_EMAIL } from "@/lib/contact";
 
 export function AboutSection() {
   return (
@@ -39,6 +40,13 @@ export function AboutSection() {
           className="text-body hover:underline"
         >
           GitHub
+        </a>
+        .
+      </p>
+      <p className="ui-text-sm text-muted mt-2">
+        Questions or feedback? Email{" "}
+        <a href={`mailto:${CONTACT_EMAIL}`} className="text-body hover:underline">
+          {CONTACT_EMAIL}
         </a>
         .
       </p>
