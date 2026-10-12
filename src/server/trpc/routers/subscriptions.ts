@@ -397,16 +397,19 @@ export const subscriptionsRouter = createTRPCRouter({
         fetchFullContent?: boolean;
       } = {};
 
-      if (input.customTitle !== undefined) {
-        // A collection's name lives in custom_title (#1846), so it can't be
-        // cleared. The type never changes, so checking first can't race.
-        if (
-          !input.customTitle &&
-          (await subscriptionsService.isActiveCollection(ctx.db, userId, input.id))
-        ) {
+      if (input.customTitle) {
+        updateData.customTitle = input.customTitle;
+      } else if (input.customTitle !== undefined) {
+        // A subscription without a feed keeps its name in custom_title
+        // (#1846). Checked first: a collection never gains a feed, but 6B2's
+        // migration can drop an email subscription's feed in between, and
+        // the update then fails its name check (a 500) rather than leaving
+        // it untitled.
+        const cleared = await subscriptionsService.clearedCustomTitle(ctx.db, userId, input.id);
+        if (!cleared) {
           throw errors.validation("Collection name is required");
         }
-        updateData.customTitle = input.customTitle;
+        updateData.customTitle = cleared.customTitle;
       }
       if (input.fetchFullContent !== undefined) {
         updateData.fetchFullContent = input.fetchFullContent;
@@ -423,7 +426,7 @@ export const subscriptionsRouter = createTRPCRouter({
       const prev = alias(subscriptions, "prev");
       const changedFragments: SQL[] = [];
       if (input.customTitle !== undefined) {
-        changedFragments.push(sql`${prev.customTitle} IS DISTINCT FROM ${input.customTitle}`);
+        changedFragments.push(sql`${prev.customTitle} IS DISTINCT FROM ${updateData.customTitle}`);
       }
       if (input.fetchFullContent !== undefined) {
         changedFragments.push(sql`${prev.fetchFullContent} <> ${input.fetchFullContent}`);

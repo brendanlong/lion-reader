@@ -135,7 +135,7 @@ describe("Email Feed Resubscription", () => {
       const result = await processInboundEmail(email);
 
       expect(result.success).toBe(true);
-      expect(result.feedId).toBe(feedId);
+      expect(result.subscriptionId).toBe(subscriptionId);
 
       // Verify subscription is now reactivated
       subscription = await getSubscription(subscriptionId);
@@ -177,11 +177,10 @@ describe("Email Feed Resubscription", () => {
       const result = await processInboundEmail(email);
 
       expect(result.success).toBe(true);
-      expect(result.feedId).toBe(feedId);
 
-      // Verify subscription was created
+      // Verify subscription was created, with the existing feed
       subscription = await getSubscriptionByUserAndFeed(userId, feedId);
-      expect(subscription).toBeDefined();
+      expect(subscription.id).toBe(result.subscriptionId);
       expect(subscription.unsubscribedAt).toBeNull();
     });
 
@@ -234,19 +233,22 @@ describe("Email Feed Resubscription", () => {
       const result = await processInboundEmail(email);
 
       expect(result.success).toBe(true);
-      expect(result.feedId).toBeDefined();
 
-      // Verify feed was created
-      const [feed] = await db.select().from(feeds).where(eq(feeds.id, result.feedId!)).limit(1);
-      expect(feed).toBeDefined();
-      expect(feed.type).toBe("email");
-      expect(feed.userId).toBe(userId);
-      expect(feed.emailSenderPattern).toBe(senderEmail.toLowerCase());
-
-      // Verify subscription was created
-      const subscription = await getSubscriptionByUserAndFeed(userId, feed.id);
-      expect(subscription).toBeDefined();
-      expect(subscription.unsubscribedAt).toBeNull();
+      // Verify the subscription was created, naming a new per-user feed while
+      // the schema still requires one (#1846 phase 6B)
+      const subscription = await getSubscription(result.subscriptionId!);
+      expect(subscription).toMatchObject({
+        userId,
+        type: "email",
+        emailSender: senderEmail.toLowerCase(),
+        unsubscribedAt: null,
+      });
+      const [feed] = await db.select().from(feeds).where(eq(feeds.id, subscription.feedId!));
+      expect(feed).toMatchObject({
+        type: "email",
+        userId,
+        emailSenderPattern: senderEmail.toLowerCase(),
+      });
     });
   });
 });

@@ -114,13 +114,11 @@ export interface EntryListItem {
   // Google Reader item id (stored global serial). Ignored by the main app; used
   // by the Google Reader compat layer to address entries as int64 ids.
   greaderItemId: bigint;
-  // Google Reader feed stream ids (stored serials), used only by the compat
-  // layer to build each item's origin stream: the entry's subscription
-  // (null for saved/uploaded articles) and its feed (used for saved articles,
-  // which have no subscription — issue #730). Stripped from main-app and MCP
-  // responses.
+  // The origin subscription's Google Reader feed stream id (stored serial),
+  // used only by the compat layer to build each item's origin stream (a saved
+  // article's is the saved subscription, "Saved Articles" — issue #730).
+  // Stripped from main-app and MCP responses.
   subscriptionGreaderStreamId: bigint | null;
-  feedGreaderStreamId: bigint;
   /** The entry's origin subscription (`entryOriginJoin`). */
   subscriptionId: string | null;
   /** Every active subscription holding the entry (`entrySubscriptionIdsSql`). */
@@ -150,9 +148,8 @@ export interface EntryFull {
   id: string;
   // Google Reader item id (stored global serial); see EntryListItem.
   greaderItemId: bigint;
-  // Google Reader feed stream ids (stored serials); see EntryListItem.
+  // The origin's Google Reader feed stream id; see EntryListItem.
   subscriptionGreaderStreamId: bigint | null;
-  feedGreaderStreamId: bigint;
   /** See EntryListItem. */
   subscriptionId: string | null;
   subscriptionIds: string[];
@@ -234,7 +231,6 @@ interface EntryListRow {
   id: string;
   greaderItemId: bigint;
   subscriptionGreaderStreamId: bigint | null;
-  feedGreaderStreamId: bigint;
   subscriptionId: string | null;
   subscriptionIds: string[];
   type: "web" | "email" | "saved";
@@ -260,7 +256,6 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     id: row.id,
     greaderItemId: row.greaderItemId,
     subscriptionGreaderStreamId: row.subscriptionGreaderStreamId,
-    feedGreaderStreamId: row.feedGreaderStreamId,
     subscriptionId: row.subscriptionId,
     subscriptionIds: row.subscriptionIds,
     type: row.type,
@@ -312,13 +307,12 @@ const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
 
 /**
  * Columns shared by the list and search queries (each adds its feed title and
- * sort key). Callers must join `feeds`.
+ * sort key). Callers must LEFT JOIN `feeds` on the owner feed.
  */
 const entryListSelectFields = {
   id: visibleEntries.id,
   greaderItemId: visibleEntries.greaderItemId,
   subscriptionGreaderStreamId: subscriptions.greaderStreamId,
-  feedGreaderStreamId: feeds.greaderStreamId,
   type: visibleEntries.type,
   url: visibleEntries.url,
   title: visibleEntries.title,
@@ -344,10 +338,8 @@ const entryListSelectFields = {
 const entryFullSelectFields = {
   id: visibleEntries.id,
   greaderItemId: visibleEntries.greaderItemId,
-  // Google Reader feed stream ids (compat layer only): the origin
-  // subscription's, and the feed's from the feeds join every entry read performs.
+  // The origin's Google Reader feed stream id (compat layer only).
   subscriptionGreaderStreamId: subscriptions.greaderStreamId,
-  feedGreaderStreamId: feeds.greaderStreamId,
   type: visibleEntries.type,
   url: visibleEntries.url,
   title: visibleEntries.title,
@@ -395,7 +387,7 @@ function selectFullEntryRows(db: typeof dbType, where: SQL | undefined) {
   return db
     .select(fullEntrySelectFields)
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(where);
 }
@@ -670,7 +662,7 @@ export async function listExportableEntries(
       ...shownFullContentSelectFields,
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(
       and(
@@ -841,7 +833,7 @@ export async function listEntries(
       sortTs: sortTsInstant,
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .$dynamic();
   const queryResults = await (
@@ -950,7 +942,7 @@ async function searchEntries(
       rank: rankColumn.as("rank"),
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(and(...conditions))
     .as("ranked");
@@ -1009,7 +1001,7 @@ function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
       ...shownFullContentSelectFields,
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(condition);
 }
@@ -1354,8 +1346,7 @@ export async function markAllEntriesRead(
     const typeEntryIdsSubquery = db
       .select({ id: entries.id })
       .from(entries)
-      .innerJoin(feeds, eq(entries.ownerFeedId, feeds.id))
-      .where(eq(feeds.type, params.type));
+      .where(eq(entries.type, params.type));
 
     conditions.push(inArray(userEntries.entryId, typeEntryIdsSubquery));
   }

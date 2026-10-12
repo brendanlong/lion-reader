@@ -115,6 +115,8 @@ export async function createTestSubscription(
     userId,
     feedId,
     type: sql`(SELECT ${feeds.type} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`,
+    // An email subscription records its sender (#1846), as email ingest does.
+    emailSender: sql`(SELECT ${feeds.emailSenderPattern} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`,
     subscribedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -138,6 +140,18 @@ export async function createTestSavedSubscription(
     .from(subscriptions)
     .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "saved")));
   return { subscriptionId, savedFeedId };
+}
+
+/**
+ * Gives `userId` the saved subscription without a saved feed, as a first save
+ * does once the per-user feeds are gone (#1846 phase 6B2). Returns its id.
+ */
+export async function createTestFeedlessSavedSubscription(userId: string): Promise<string> {
+  const id = generateUuidv7();
+  await db
+    .insert(subscriptions)
+    .values({ id, userId, type: "saved", customTitle: "Saved", subscribedAt: new Date(0) });
+  return id;
 }
 
 // ============================================================================
@@ -181,6 +195,17 @@ export async function createTestEntry(
   await db.insert(entries).values({
     id: entryId,
     ownerFeedId: feedId,
+    // An email is owned by its subscription and a saved article by its user
+    // (#1846): here, the email feed's subscription and the saved feed's user.
+    ownerSubscriptionId:
+      type === "email"
+        ? sql`(SELECT ${subscriptions.id} FROM ${subscriptions}
+            WHERE ${subscriptions.feedId} = ${feedId} AND ${subscriptions.type} = 'email')`
+        : null,
+    ownerUserId:
+      type === "saved"
+        ? sql`(SELECT ${feeds.userId} FROM ${feeds} WHERE ${feeds.id} = ${feedId})`
+        : null,
     type,
     guid: `guid-${entryId}`,
     title: `Entry ${entryId}`,

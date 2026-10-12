@@ -176,20 +176,21 @@ async function currentSyncCursors(
     //             fanout stamps ue.updated_at = now()), via
     //             idx_user_entries_updated_at.
     //   arm_sub — max entries.updated_at (content refetches that bump the entry
-    //             but not the ue row) over the user's feeds, driven from
+    //             but not the ue row) over the user's web feeds, driven from
     //             subscriptions into idx_entries_owner_feed_updated_at per feed.
-    //   arm_saved — same, for saved articles, through the saved feed's
-    //             (owner_feed_id, updated_at) index (until #1846 phase 6B seeks
-    //             them by owner_user_id).
+    //   arm_email — same, for emails, driven from the email subscriptions
+    //             that own them (idx_entries_owner_subscription_updated_at).
+    //   arm_saved — same, for saved articles, which the user owns
+    //             (idx_entries_owner_user_updated_at).
     //   arm_collections — same, for active collections' members (a few
     //             hundred at most), whose feed may be unsubscribed.
-    // The two entry arms are bounded to updated_at >= arm_ue's max (the `bound`
+    // The entry arms are bounded to updated_at >= arm_ue's max (the `bound`
     // CTE): an entry only changes the answer when its content update is at least
     // as new as the newest state change, so this keeps the per-feed index seeks
     // near-empty in the common case (user activity is newest) while still
     // catching — and correctly id-tiebreaking, `>=` includes the tied boundary —
     // the rare case where a content update is the most recent change. Joining
-    // user_entries in both arms preserves the old query's set (entries the user
+    // user_entries in each arm preserves the old query's set (entries the user
     // actually has a row for). Driving arm_sub from ALL subscriptions (active
     // and unsubscribed) covers starred orphans, whose subscription row survives
     // unsubscribe. Measured ~1.3 ms / ~1.1k buffers on the same heavy user.
@@ -212,16 +213,26 @@ async function currentSyncCursors(
           AND e.updated_at >= (SELECT ts FROM bound)
         JOIN user_entries ue2
           ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
-        WHERE s.user_id = ${userId}::uuid
+        WHERE s.user_id = ${userId}::uuid AND s.type = 'web'
+        ORDER BY e.updated_at DESC, e.id DESC
+        LIMIT 1
+      ),
+      arm_email AS (
+        SELECT e.updated_at AS ts, e.id
+        FROM subscriptions s
+        JOIN entries e
+          ON e.owner_subscription_id = s.id
+          AND e.updated_at >= (SELECT ts FROM bound)
+        JOIN user_entries ue2
+          ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+        WHERE s.user_id = ${userId}::uuid AND s.type = 'email'
         ORDER BY e.updated_at DESC, e.id DESC
         LIMIT 1
       ),
       arm_saved AS (
         SELECT e.updated_at AS ts, e.id FROM entries e
         JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
-        WHERE e.owner_feed_id = (
-            SELECT id FROM feeds WHERE user_id = ${userId}::uuid AND type = 'saved'
-          )
+        WHERE e.owner_user_id = ${userId}::uuid
           AND e.updated_at >= (SELECT ts FROM bound)
         ORDER BY e.updated_at DESC, e.id DESC
         LIMIT 1
@@ -240,6 +251,7 @@ async function currentSyncCursors(
       SELECT ts, id FROM (
         SELECT ts, id FROM arm_ue
         UNION ALL SELECT ts, id FROM arm_sub
+        UNION ALL SELECT ts, id FROM arm_email
         UNION ALL SELECT ts, id FROM arm_saved
         UNION ALL SELECT ts, id FROM arm_collections
       ) c
@@ -475,7 +487,7 @@ async function collectSyncEvents(
     //            every state change (read/star flips, mark-all-read) AND new
     //            entries: the feed fanout inserts user_entries rows with
     //            updated_at = now(), so new entries ride this arm too.
-    //   Arm B1 — entries.updated_at for the user's SUBSCRIBED feeds. Catches
+    //   Arm B1 — entries.updated_at for the user's SUBSCRIBED web feeds. Catches
     //            content refetches that bump entries.updated_at WITHOUT
     //            touching the user_entries row (updateEntryContent) — the case
     //            Arm A misses. Drives from the user's subscriptions
@@ -493,9 +505,10 @@ async function collectSyncEvents(
     //            and permanently dropping the tail of a >MAX_ENTRIES same-poll
     //            content burst from the delta. The per-feed index seek already
     //            bounds the work; no pre-filter is needed.
-    //   Arm B2 — same, for saved articles, seeking the saved feed's
-    //            (owner_feed_id, updated_at) index (until #1846 phase 6B seeks
-    //            them by owner_user_id).
+    //   Arm B2 — same, for emails, driven from the email subscriptions that
+    //            own them into idx_entries_owner_subscription_updated_at, and
+    //            for saved articles, which the user owns
+    //            (idx_entries_owner_user_updated_at) (#1846).
     //   Arm B3 — same, for active collections' members (a few hundred at
     //            most), whose feed may be unsubscribed.
     //
@@ -523,7 +536,23 @@ async function collectSyncEvents(
         userEntries,
         and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
       )
-      .where(eq(subscriptions.userId, userId));
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "web")));
+
+    const emailEntryCandidates = db
+      .select({ entryId: userEntries.entryId })
+      .from(subscriptions)
+      .innerJoin(
+        entries,
+        and(
+          eq(entries.ownerSubscriptionId, subscriptions.id),
+          sql`${entries.updatedAt} >= ${cursorTs}`
+        )
+      )
+      .innerJoin(
+        userEntries,
+        and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
+      )
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "email")));
 
     const savedEntryCandidates = db
       .select({ entryId: userEntries.entryId })
@@ -532,8 +561,7 @@ async function collectSyncEvents(
         entries,
         and(
           eq(entries.id, userEntries.entryId),
-          sql`${entries.ownerFeedId} = (SELECT ${feeds.id} FROM ${feeds}
-            WHERE ${feeds.userId} = ${userId} AND ${feeds.type} = 'saved')`,
+          eq(entries.ownerUserId, userId),
           sql`${entries.updatedAt} >= ${cursorTs}`
         )
       )
@@ -557,6 +585,7 @@ async function collectSyncEvents(
 
     const candidates = stateChangedCandidates
       .union(subscribedEntryCandidates)
+      .union(emailEntryCandidates)
       .union(savedEntryCandidates)
       .union(collectionEntryCandidates);
 
@@ -599,7 +628,7 @@ async function collectSyncEvents(
         and(eq(userEntries.userId, userId), eq(userEntries.entryId, changed.entryId))
       )
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
-      .innerJoin(feeds, eq(feeds.id, entries.ownerFeedId))
+      .leftJoin(feeds, eq(feeds.id, entries.ownerFeedId))
       .leftJoin(subscriptions, entryOriginJoin(USER_ROW))
       .where(
         and(

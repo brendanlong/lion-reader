@@ -27,6 +27,7 @@ import {
   visibleEntries,
 } from "@/server/db/schema";
 import { isListedSubscription } from "@/server/services/subscriptions";
+import { SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
 
 // ============================================================================
 // Types
@@ -65,14 +66,14 @@ export interface EntryConditionParams {
  * An entry's source name as the user sees it: their custom title for the
  * entry's origin subscription, else the feed's title. Every read that sends
  * `feedTitle` to a client uses this, so a renamed subscription's articles
- * never show the original name. The query must join `feeds` on the entry's
- * feed and LEFT JOIN `subscriptions` on {@link entryOriginJoin}. Saved
- * articles get the saved feed's title, not the saved subscription's.
+ * never show the original name. An email's comes from its subscription
+ * (#1846), and saved articles all show "Saved Articles". The query must LEFT
+ * JOIN `feeds` on the entry's owner feed and `subscriptions` on
+ * {@link entryOriginJoin}.
  */
 export function entryFeedTitleSql(): SQL<string | null> {
-  return sql<
-    string | null
-  >`COALESCE(CASE WHEN ${subscriptions.type} <> 'saved' THEN ${subscriptions.customTitle} END, ${feeds.title})`;
+  return sql<string | null>`CASE WHEN ${subscriptions.type} = 'saved' THEN ${SAVED_FEED_TITLE}::text
+    ELSE COALESCE(${subscriptions.customTitle}, ${feeds.title}) END`;
 }
 
 /**

@@ -74,9 +74,8 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
     },
     author: entry.author ?? "",
     origin: {
-      // Saved articles have no subscription; address them by their saved-feed id
-      // (exposed as the synthetic "Saved Articles" subscription — issue #730) so
-      // clients attach them to a known feed instead of dropping an empty origin.
+      // Saved articles' origin is the saved subscription, which clients see as
+      // the "Saved Articles" subscription (issue #730).
       streamId: entryFeedStreamId(entry) ?? "",
       title: entry.feedTitle ?? "",
       htmlUrl: entry.feedUrl ?? entry.url ?? "",
@@ -86,25 +85,17 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
 }
 
 /**
- * The `feed/{int64}` stream an entry belongs to, or null if it has none. Regular
- * entries use their subscription's stream id; saved articles (no subscription)
- * use their saved-feed stream id (the synthetic "Saved Articles" subscription —
- * issue #730). Both ids are stored serials carried on the entry. Shared by item
- * formatting and the stream/items/ids item refs so both address saved articles
- * the same way.
+ * The `feed/{int64}` stream an entry belongs to, or null if it has none: its
+ * origin subscription's stored serial (for a saved article, the saved
+ * subscription's, which clients see as "Saved Articles", issue #730). Shared by
+ * item formatting and the stream/items/ids item refs so both agree.
  */
 export function entryFeedStreamId(entry: {
   subscriptionGreaderStreamId: bigint | null;
-  feedGreaderStreamId: bigint;
-  type: "web" | "email" | "saved";
 }): string | null {
-  if (entry.subscriptionGreaderStreamId !== null) {
-    return feedStreamId(entry.subscriptionGreaderStreamId);
-  }
-  if (entry.type === "saved") {
-    return feedStreamId(entry.feedGreaderStreamId);
-  }
-  return null;
+  return entry.subscriptionGreaderStreamId !== null
+    ? feedStreamId(entry.subscriptionGreaderStreamId)
+    : null;
 }
 
 // ============================================================================

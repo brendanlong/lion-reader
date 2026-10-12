@@ -103,7 +103,7 @@ describe("subscriptions.type", () => {
           headers: {},
         });
         expect(result.success).toBe(true);
-        return subscriptionTo(userId, result.feedId ?? "");
+        return result.subscriptionId ?? "";
       },
     },
     {

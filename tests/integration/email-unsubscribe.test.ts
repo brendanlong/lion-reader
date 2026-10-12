@@ -67,15 +67,17 @@ async function createEmailFeedForUser(userId: string): Promise<string> {
   });
 }
 
-async function createEmailFeed(): Promise<string> {
+/** A new user's email subscription, which owns the emails (#1846), and its feed. */
+async function createEmailSubscription(): Promise<{ feedId: string; subscriptionId: string }> {
   const userId = await createTestUser();
   createdUserIds.push(userId);
-  return createEmailFeedForUser(userId);
+  const feedId = await createEmailFeedForUser(userId);
+  return { feedId, subscriptionId: await createTestSubscription(userId, feedId) };
 }
 
 describe("attemptUnsubscribe", () => {
   it("sends the one-click POST even when a mailto: is also offered", async () => {
-    const feedId = await createEmailFeed();
+    const { feedId, subscriptionId } = await createEmailSubscription();
     await createTestEntry(feedId, {
       type: "email",
       listUnsubscribeMailto: "mailto:unsubscribe@example.com",
@@ -83,7 +85,7 @@ describe("attemptUnsubscribe", () => {
       listUnsubscribePost: true,
     });
 
-    const result = await attemptUnsubscribe(feedId);
+    const result = await attemptUnsubscribe(subscriptionId);
 
     expect(result).toEqual({ sent: true, method: "https" });
     expect(received).toEqual([
@@ -92,48 +94,48 @@ describe("attemptUnsubscribe", () => {
   });
 
   it("does not report a rejected one-click POST as sent", async () => {
-    const feedId = await createEmailFeed();
+    const { feedId, subscriptionId } = await createEmailSubscription();
     await createTestEntry(feedId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/broken`,
       listUnsubscribePost: true,
     });
 
-    const result = await attemptUnsubscribe(feedId);
+    const result = await attemptUnsubscribe(subscriptionId);
 
     expect(result.sent).toBe(false);
     expect(received.map((r) => r.path)).toEqual(["/broken"]);
   });
 
   it("does not report a mailto-only sender as unsubscribed", async () => {
-    const feedId = await createEmailFeed();
+    const { feedId, subscriptionId } = await createEmailSubscription();
     await createTestEntry(feedId, {
       type: "email",
       listUnsubscribeMailto: "mailto:unsubscribe@example.com",
     });
 
-    const result = await attemptUnsubscribe(feedId);
+    const result = await attemptUnsubscribe(subscriptionId);
 
     expect(result.sent).toBe(false);
     expect(received).toEqual([]);
   });
 
   it("does not request an HTTPS URL that lacks one-click support", async () => {
-    const feedId = await createEmailFeed();
+    const { feedId, subscriptionId } = await createEmailSubscription();
     await createTestEntry(feedId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/unsub`,
       listUnsubscribePost: false,
     });
 
-    const result = await attemptUnsubscribe(feedId);
+    const result = await attemptUnsubscribe(subscriptionId);
 
     expect(result.sent).toBe(false);
     expect(received).toEqual([]);
   });
 
   it("uses an older one-click entry when the newest only offers mailto:", async () => {
-    const feedId = await createEmailFeed();
+    const { feedId, subscriptionId } = await createEmailSubscription();
     await createTestEntry(feedId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/older`,
@@ -144,7 +146,7 @@ describe("attemptUnsubscribe", () => {
       listUnsubscribeMailto: "mailto:unsubscribe@example.com",
     });
 
-    const result = await attemptUnsubscribe(feedId);
+    const result = await attemptUnsubscribe(subscriptionId);
 
     expect(result).toEqual({ sent: true, method: "https" });
     expect(received.map((r) => r.path)).toEqual(["/older"]);
@@ -156,12 +158,12 @@ describe("Google Reader subscription/edit ac=unsubscribe", () => {
     const userId = await createTestUser();
     createdUserIds.push(userId);
     const feedId = await createEmailFeedForUser(userId);
+    const subscriptionId = await createTestSubscription(userId, feedId);
     await createTestEntry(feedId, {
       type: "email",
       listUnsubscribeHttps: `${baseUrl}/unsub`,
       listUnsubscribePost: true,
     });
-    const subscriptionId = await createTestSubscription(userId, feedId);
     await createTestTag(userId, { subscriptionIds: [subscriptionId] });
     const [{ greaderStreamId }] = await db
       .select({ greaderStreamId: subscriptions.greaderStreamId })

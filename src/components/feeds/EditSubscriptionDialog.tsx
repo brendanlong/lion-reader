@@ -27,6 +27,8 @@ interface EditSubscriptionFormProps {
   subscriptionId: string;
   currentTitle: string;
   isCollection: boolean;
+  /** An email subscription's title falls back to its sender (#1846). */
+  isEmail: boolean;
   currentCustomTitle: string | null;
   currentTagIds: string[];
   onClose: () => void;
@@ -67,6 +69,7 @@ function EditSubscriptionForm({
   subscriptionId,
   currentTitle,
   isCollection,
+  isEmail,
   currentCustomTitle,
   currentTagIds,
   onClose,
@@ -154,7 +157,13 @@ function EditSubscriptionForm({
           <Input
             id="custom-title"
             label={isCollection ? "Name" : "Custom Title (optional)"}
-            placeholder={isCollection ? undefined : "Leave empty to use feed's default title"}
+            placeholder={
+              isCollection
+                ? undefined
+                : isEmail
+                  ? "Leave empty to use the sender"
+                  : "Leave empty to use feed's default title"
+            }
             value={customTitle}
             onChange={(e) => setCustomTitle(e.target.value)}
             disabled={isPending}

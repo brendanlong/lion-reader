@@ -55,6 +55,7 @@ function defaultProps(
     subscriptionId: "sub-1",
     currentTitle: "Feed One",
     isCollection: false,
+    isEmail: false,
     currentCustomTitle: null,
     currentTagIds: [] as string[],
     onClose: vi.fn(),
@@ -83,6 +84,17 @@ describe("EditSubscriptionDialog", () => {
     expect(screen.getByText("Science")).toBeInTheDocument();
     // Feed title is shown for context.
     expect(screen.getByText("Feed One")).toBeInTheDocument();
+  });
+
+  it.each([
+    [false, "Leave empty to use feed's default title"],
+    [true, "Leave empty to use the sender"],
+  ])("says what an emptied title falls back to (email: %s)", async (isEmail, placeholder) => {
+    renderWithTrpc(<EditSubscriptionDialog {...defaultProps({ isEmail })} />, {
+      handlers: baseHandlers(),
+    });
+
+    expect(await screen.findByPlaceholderText(placeholder)).toBeInTheDocument();
   });
 
   it("shows the empty-state message when there are no tags", async () => {

@@ -30,7 +30,11 @@ import { type SupportedFileType } from "@/lib/upload-file-types";
 import { usageLimitsConfig } from "@/server/config/env";
 import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
-import { getOrCreateSavedFeed, getSavedFeedId, SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
+import {
+  getOrCreateSavedFeed,
+  personalFeedsRequired,
+  SAVED_FEED_TITLE,
+} from "@/server/feed/saved-feed";
 import { stripHtml } from "@/server/html/strip-html";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 import { escapeHtml } from "@/server/http/html";
@@ -472,28 +476,24 @@ interface InsertSavedEntryParams {
  * leave an entry with no user_entries row (which would make it invisible).
  *
  * Returns null when the entry already exists — the entry insert uses
- * `onConflictDoNothing` (a duplicate `(owner_feed_id, guid)`, which is also a
- * duplicate `(owner_user_id, guid)`), so a concurrent duplicate save
- * (e.g. a double-click) is idempotent instead of surfacing a raw unique-violation
- * 500 (issue #952). The caller re-selects the existing article in that case.
- * Uploads use a random `uploaded:{uuid}` guid, so they never conflict and always
- * get a row back.
+ * `onConflictDoNothing` (a duplicate `(owner_user_id, guid)`), so a concurrent
+ * duplicate save (e.g. a double-click) is idempotent instead of surfacing a raw
+ * unique-violation 500 (issue #952). The caller re-selects the existing article
+ * in that case. Uploads use a random `uploaded:{uuid}` guid, so they never
+ * conflict and always get a row back.
  */
 async function insertSavedEntry(
   db: typeof dbType,
   userId: string,
-  savedFeedId: string,
   params: InsertSavedEntryParams
 ): Promise<SavedArticle | null> {
   const now = new Date();
   const entryId = generateUuidv7();
 
   // Store only the raw columns; the read path sanitizes per read (issue #1282).
+  // Saved articles and uploads are owned by the user (#1846).
   const values = {
     id: entryId,
-    // The user's saved feed until phase 6B; saved articles and uploads are
-    // owned by the user (#1846).
-    ownerFeedId: savedFeedId,
     ownerUserId: userId,
     type: "saved" as const,
     guid: params.guid,
@@ -518,16 +518,20 @@ async function insertSavedEntry(
     updatedAt: now,
   };
   const inserted = await db.transaction(async (tx) => {
+    // The user's saved feed too, while the schema still requires one.
+    const ownerFeedId = (await personalFeedsRequired(tx))
+      ? await getOrCreateSavedFeed(tx, userId)
+      : null;
     const insertedRows = await tx
       .insert(entries)
-      .values(values)
-      // Untargeted: a duplicate violates both (owner_feed_id, guid) and
-      // (owner_user_id, guid), and whichever index sees it first must not
-      // raise.
+      .values({ ...values, ownerFeedId })
+      // Untargeted: while entries name the saved feed, a duplicate violates
+      // both (owner_feed_id, guid) and (owner_user_id, guid), and whichever
+      // index sees it first must not raise.
       .onConflictDoNothing()
       .returning({ id: entries.id });
 
-    // Conflict: another save already created this (owner_feed_id, guid). Abort so the
+    // Conflict: another save already created this (owner_user_id, guid). Abort so the
     // caller can return the existing article idempotently.
     if (insertedRows.length === 0) {
       return false;
@@ -605,12 +609,10 @@ async function insertUploadedArticle(
     throw errors.contentTooLarge("Uploaded article", maxSize);
   }
 
-  const savedFeedId = await getOrCreateSavedFeed(db, userId);
-
   // Fresh random guid → the insert can't conflict.
   const guid = `uploaded:${generateUuidv7()}`;
 
-  const saved = await insertSavedEntry(db, userId, savedFeedId, {
+  const saved = await insertSavedEntry(db, userId, {
     ...fields,
     guid,
     url: null,
@@ -1079,50 +1081,41 @@ function normalizeSavedUrl(url: string): string {
 
 /**
  * Checks whether the user has already saved an article for the given URL,
- * returning its entry id (or null). Read-only: unlike {@link saveArticle} it
- * never creates the user's saved feed, so it's safe on probe/exists paths.
- *
- * Indexed by the `uq_entries_owner_feed_guid` unique constraint on `(owner_feed_id, guid)`.
+ * returning its entry id (or null). Read-only, so it's safe on probe/exists
+ * paths.
  */
 export async function savedArticleExistsByUrl(
   db: typeof dbType,
   userId: string,
   url: string
 ): Promise<string | null> {
-  const savedFeedId = await getSavedFeedId(db, userId);
-  if (!savedFeedId) return null;
-
-  const normalizedUrl = normalizeSavedUrl(url);
-  const existing = await db
+  const [existing] = await db
     .select({ id: entries.id })
     .from(entries)
     .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
     .where(
       and(
-        eq(entries.ownerFeedId, savedFeedId),
-        eq(entries.guid, normalizedUrl),
+        eq(entries.ownerUserId, userId),
+        eq(entries.guid, normalizeSavedUrl(url)),
         eq(userEntries.userId, userId)
       )
     )
     .limit(1);
-
-  return existing[0]?.id ?? null;
+  return existing?.id ?? null;
 }
 
-/** The saved (entry, user state) row for this (user, normalized URL), if any. */
-async function selectExistingSavedRow(
-  db: typeof dbType,
-  userId: string,
-  savedFeedId: string,
-  normalizedUrl: string
-) {
+/**
+ * The saved (entry, user state) row for this (user, normalized URL), if any:
+ * a seek on the `(owner_user_id, guid)` unique index (#1846).
+ */
+async function selectExistingSavedRow(db: typeof dbType, userId: string, normalizedUrl: string) {
   const [row] = await db
     .select({ entry: entries, userState: userEntries })
     .from(entries)
     .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
     .where(
       and(
-        eq(entries.ownerFeedId, savedFeedId),
+        eq(entries.ownerUserId, userId),
         eq(entries.guid, normalizedUrl),
         eq(userEntries.userId, userId)
       )
@@ -1170,10 +1163,9 @@ async function toExistingSavedArticle({
 async function selectExistingSavedArticle(
   db: typeof dbType,
   userId: string,
-  savedFeedId: string,
   normalizedUrl: string
 ): Promise<SaveArticleResult | null> {
-  const row = await selectExistingSavedRow(db, userId, savedFeedId, normalizedUrl);
+  const row = await selectExistingSavedRow(db, userId, normalizedUrl);
   return row ? toExistingSavedArticle(row) : null;
 }
 
@@ -1184,16 +1176,13 @@ export async function saveArticle(
 ): Promise<SaveArticleResult> {
   const normalizedUrl = normalizeSavedUrl(params.url);
 
-  // Get or create the user's saved feed
-  const savedFeedId = await getOrCreateSavedFeed(db, userId);
-
   // Check if URL is already saved (guid = normalized URL for saved articles).
   // A placeholder (a failed-save stand-in, see savePlaceholderArticle) always
   // refetches on re-save so a transiently-failed URL self-heals into the real
   // article — even for the no-refetch callers (a plain Wallabag re-share, a
   // plain MCP save_article). A real saved article still returns instantly unless the
   // caller opted into refetch. See #1256.
-  const existingEntry = await selectExistingSavedRow(db, userId, savedFeedId, normalizedUrl);
+  const existingEntry = await selectExistingSavedRow(db, userId, normalizedUrl);
   if (existingEntry && !params.refetch && !existingEntry.entry.isPlaceholder) {
     return toExistingSavedArticle(existingEntry);
   }
@@ -1341,7 +1330,7 @@ export async function saveArticle(
     };
   }
 
-  const saved = await insertSavedEntry(db, userId, savedFeedId, {
+  const saved = await insertSavedEntry(db, userId, {
     guid: normalizedUrl,
     url: normalizedUrl,
     title: finalTitle,
@@ -1354,11 +1343,11 @@ export async function saveArticle(
     contentHash,
   });
 
-  // A concurrent save (e.g. a double-click) already inserted this (owner_feed_id,
+  // A concurrent save (e.g. a double-click) already inserted this (owner_user_id,
   // guid) between our existence check above and the insert. Return the existing
   // article idempotently instead of surfacing a unique-violation 500 (#952).
   if (!saved) {
-    const existingResult = await selectExistingSavedArticle(db, userId, savedFeedId, normalizedUrl);
+    const existingResult = await selectExistingSavedArticle(db, userId, normalizedUrl);
     if (!existingResult) {
       // Should not happen: the insert only aborts on an existing row.
       throw new Error(`Saved article vanished after conflict: ${normalizedUrl}`);
@@ -1411,7 +1400,6 @@ export async function savePlaceholderArticle(
   params: { url: string; reason: string }
 ): Promise<SaveArticleResult> {
   const normalizedUrl = normalizeSavedUrl(params.url);
-  const savedFeedId = await getOrCreateSavedFeed(db, userId);
 
   // The placeholder body is our own short, trusted text; escape the reason (it
   // embeds the failing URL / upstream message) so it can't inject markup. It's
@@ -1419,7 +1407,7 @@ export async function savePlaceholderArticle(
   const body = `<p>Lion Reader couldn't save this page.</p><p>${escapeHtml(params.reason)}</p>`;
   const contentHash = generateContentHash(params.url, body);
 
-  const saved = await insertSavedEntry(db, userId, savedFeedId, {
+  const saved = await insertSavedEntry(db, userId, {
     guid: normalizedUrl,
     url: normalizedUrl,
     title: params.url,
@@ -1441,7 +1429,7 @@ export async function savePlaceholderArticle(
     return { ...saved, outcome: "created" };
   }
 
-  // The (owner_feed_id, guid) already exists: this URL was previously saved (a real
+  // The (owner_user_id, guid) already exists: this URL was previously saved (a real
   // article or an earlier placeholder), or two queued retries raced. Return the
   // existing entry idempotently instead of a unique-violation.
   //
@@ -1451,7 +1439,7 @@ export async function savePlaceholderArticle(
   // draining the Wallabag queue with a 200. (This is reached only after our own
   // insert lost a race with an existing row, so a fresh fetch here would be
   // wasted work anyway.)
-  const existingResult = await selectExistingSavedArticle(db, userId, savedFeedId, normalizedUrl);
+  const existingResult = await selectExistingSavedArticle(db, userId, normalizedUrl);
   if (!existingResult) {
     // Should not happen: the insert only aborts on an existing row.
     throw new Error(`Saved placeholder vanished after conflict: ${normalizedUrl}`);
@@ -1469,13 +1457,7 @@ export async function deleteSavedArticle(
   userId: string,
   articleId: string
 ): Promise<boolean> {
-  // Read-only lookup: deleting can never need to create the saved feed, so avoid
-  // the write side effect. No saved feed → nothing to delete (matches
-  // savedArticleExistsByUrl).
-  const savedFeedId = await getSavedFeedId(db, userId);
-  if (!savedFeedId) return false;
-
-  // Verify the article exists and belongs to the user's saved feed
+  // Verify the article exists and is one the user saved (owns, #1846).
   const existing = await db
     .select({ id: entries.id })
     .from(entries)
@@ -1483,7 +1465,7 @@ export async function deleteSavedArticle(
     .where(
       and(
         eq(entries.id, articleId),
-        eq(entries.ownerFeedId, savedFeedId),
+        eq(entries.ownerUserId, userId),
         eq(userEntries.userId, userId)
       )
     )
@@ -1494,17 +1476,15 @@ export async function deleteSavedArticle(
   }
 
   // Delete the entry (will cascade to user_entries). Scope the DELETE to the
-  // user's own saved feed as well as the id — the ownership SELECT above already
-  // guarantees it, but pinning feedId keeps the mutation self-evidently
+  // user's own articles as well as the id — the ownership SELECT above already
+  // guarantees it, but pinning the owner keeps the mutation self-evidently
   // user-scoped in isolation (defense-in-depth against a future refactor).
   //
   // The tombstone lets delta-sync clients drop their copy; it commits with the
   // delete so a client can never see one without the other.
   const collectionIds = await listEntryCollectionIds(db, userId, articleId);
   await db.transaction(async (tx) => {
-    await tx
-      .delete(entries)
-      .where(and(eq(entries.id, articleId), eq(entries.ownerFeedId, savedFeedId)));
+    await tx.delete(entries).where(and(eq(entries.id, articleId), eq(entries.ownerUserId, userId)));
     await recordEntryTombstone(tx, userId, articleId);
   });
   await publishEntryLeftCollections(db, userId, articleId, collectionIds);

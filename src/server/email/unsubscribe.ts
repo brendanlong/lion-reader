@@ -69,17 +69,17 @@ async function sendUnsubscribePost(url: string): Promise<void> {
 }
 
 /**
- * Attempts to unsubscribe from an email feed using the most recent entry that
+ * Attempts to unsubscribe from an email subscription using the most recent email it owns that
  * advertises RFC 8058 one-click unsubscribe. Plain HTTPS unsubscribe URLs are
  * not requested, since they may require user interaction.
  */
-export async function attemptUnsubscribe(feedId: string): Promise<UnsubscribeResult> {
+export async function attemptUnsubscribe(subscriptionId: string): Promise<UnsubscribeResult> {
   const [entry] = await db
     .select({ listUnsubscribeHttps: entries.listUnsubscribeHttps })
     .from(entries)
     .where(
       and(
-        eq(entries.ownerFeedId, feedId),
+        eq(entries.ownerSubscriptionId, subscriptionId),
         isNotNull(entries.listUnsubscribeHttps),
         eq(entries.listUnsubscribePost, true)
       )
@@ -88,20 +88,20 @@ export async function attemptUnsubscribe(feedId: string): Promise<UnsubscribeRes
     .limit(1);
 
   if (!entry?.listUnsubscribeHttps) {
-    logger.info("No one-click unsubscribe available for feed", { feedId });
+    logger.info("No one-click unsubscribe available", { subscriptionId });
     return { sent: false };
   }
 
   try {
     await sendUnsubscribePost(entry.listUnsubscribeHttps);
     logger.info("One-click unsubscribe POST sent", {
-      feedId,
+      subscriptionId,
       url: entry.listUnsubscribeHttps,
     });
     return { sent: true, method: "https" };
   } catch (error) {
     logger.warn("One-click unsubscribe POST failed", {
-      feedId,
+      subscriptionId,
       error: error instanceof Error ? error.message : String(error),
     });
     return {
@@ -112,19 +112,21 @@ export async function attemptUnsubscribe(feedId: string): Promise<UnsubscribeRes
 }
 
 /**
- * Gets the most recent List-Unsubscribe mailto URL for a feed, which is
+ * Gets the most recent List-Unsubscribe mailto URL of an email subscription, which is
  * recorded on the blocked_senders row.
  *
- * @param feedId - The feed ID
+ * @param subscriptionId - The email subscription, which owns its emails (#1846)
  * @returns The mailto URL or null if not found
  */
-export async function getLatestUnsubscribeMailto(feedId: string): Promise<string | null> {
+export async function getLatestUnsubscribeMailto(subscriptionId: string): Promise<string | null> {
   const [entry] = await db
     .select({
       listUnsubscribeMailto: entries.listUnsubscribeMailto,
     })
     .from(entries)
-    .where(and(eq(entries.ownerFeedId, feedId), isNotNull(entries.listUnsubscribeMailto)))
+    .where(
+      and(eq(entries.ownerSubscriptionId, subscriptionId), isNotNull(entries.listUnsubscribeMailto))
+    )
     .orderBy(desc(entries.id))
     .limit(1);
 

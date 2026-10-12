@@ -726,7 +726,7 @@ describe("sync.events", () => {
       );
     });
 
-    it("includes saved-article content updates (the saved-feed arm)", async () => {
+    it("includes saved-article content updates (the saved arm)", async () => {
       const userId = await createTestUser();
       const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
 
@@ -1434,9 +1434,8 @@ describe("sync.events", () => {
       // visibility (subscription_id NULL).
       await createUserEntry(userId, entryId, { read: true, updatedAt: OLD });
 
-      // Later full-content fetch bumps entries.updated_at; the saved feed is never
-      // polled so its last_entries_updated_at stays NULL — the saved arm keys on
-      // the feed id, not last_entries_updated_at.
+      // Later full-content fetch bumps entries.updated_at; the saved arm keys on
+      // the owner (the user), not a feed's last_entries_updated_at.
       await db
         .update(entries)
         .set({ title: "Saved Updated", updatedAt: NEW })
@@ -1508,14 +1507,23 @@ describe("sync.events", () => {
       const feedId = await createFetchedFeed({ url: "https://example.com/explain.xml" });
       await createTestSubscription(userId, feedId);
       const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
-      // Give both feeds volume with everything before the cursor, so the
-      // (feed_id, updated_at) index — which seeks straight past the stale rows —
-      // is strictly cheaper than the (feed_id, id) index that must scan + filter.
+      const emailFeedId = await createTestFeed({
+        type: "email",
+        userId,
+        url: null,
+        emailSenderPattern: "news@example.com",
+      });
+      await createTestSubscription(userId, emailFeedId);
+      // Give every owner volume with everything before the cursor, so the
+      // (owner, updated_at) index — which seeks straight past the stale rows —
+      // is strictly cheaper than an index that must scan + filter.
       for (let i = 0; i < 40; i++) {
         const e = await createTestEntry(feedId, { updatedAt: OLD });
         await createUserEntry(userId, e, { updatedAt: OLD });
         const s = await createTestEntry(savedFeedId, { type: "saved", updatedAt: OLD });
         await createUserEntry(userId, s, { updatedAt: OLD });
+        const m = await createTestEntry(emailFeedId, { type: "email", updatedAt: OLD });
+        await createUserEntry(userId, m, { updatedAt: OLD });
       }
       await db.execute(sql`ANALYZE user_entries`);
       await db.execute(sql`ANALYZE entries`);
@@ -1530,7 +1538,7 @@ describe("sync.events", () => {
         .from(userEntries)
         .where(and(eq(userEntries.userId, userId), sql`${userEntries.updatedAt} >= ${cursorTs}`));
 
-      // Arm B1 — entries.updated_at within subscribed feeds (seek per feed)
+      // Arm B1 — entries.updated_at within subscribed web feeds (seek per feed)
       const armB1 = db
         .select({ entryId: userEntries.entryId })
         .from(subscriptions)
@@ -1545,17 +1553,34 @@ describe("sync.events", () => {
           userEntries,
           and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
         )
-        .where(eq(subscriptions.userId, userId));
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "web")));
 
-      // Arm B2 — entries.updated_at within the saved feed
-      const armB2 = db
+      // Arm B2 — entries.updated_at of the emails each email subscription owns
+      const armB2Email = db
+        .select({ entryId: userEntries.entryId })
+        .from(subscriptions)
+        .innerJoin(
+          entries,
+          and(
+            eq(entries.ownerSubscriptionId, subscriptions.id),
+            sql`${entries.updatedAt} >= ${cursorTs}`
+          )
+        )
+        .innerJoin(
+          userEntries,
+          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
+        )
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "email")));
+
+      // Arm B2 — entries.updated_at of the saved articles the user owns
+      const armB2Saved = db
         .select({ entryId: userEntries.entryId })
         .from(userEntries)
         .innerJoin(
           entries,
           and(
             eq(entries.id, userEntries.entryId),
-            eq(entries.ownerFeedId, savedFeedId),
+            eq(entries.ownerUserId, userId),
             sql`${entries.updatedAt} >= ${cursorTs}`
           )
         )
@@ -1576,9 +1601,13 @@ describe("sync.events", () => {
       expect(planB1).toContain("idx_entries_owner_feed_updated_at");
       expect(planB1).not.toContain("Seq Scan");
 
-      const planB2 = await explainOf(armB2);
-      expect(planB2).toContain("idx_entries_owner_feed_updated_at");
-      expect(planB2).not.toContain("Seq Scan");
+      const planB2Email = await explainOf(armB2Email);
+      expect(planB2Email).toContain("idx_entries_owner_subscription_updated_at");
+      expect(planB2Email).not.toContain("Seq Scan");
+
+      const planB2Saved = await explainOf(armB2Saved);
+      expect(planB2Saved).toContain("idx_entries_owner_user_updated_at");
+      expect(planB2Saved).not.toContain("Seq Scan");
     });
   });
 

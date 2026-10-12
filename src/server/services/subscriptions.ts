@@ -75,25 +75,36 @@ export function isCollectionSubscription(): SQL {
   return eq(subscriptions.type, "collection");
 }
 
-/** Whether the subscription is one of the user's active collections. */
-export async function isActiveCollection(
+/**
+ * What clearing one of the user's active subscriptions' custom title stores,
+ * or null if it can't be cleared. A subscription without a feed has only its
+ * own name (#1846): an active collection's is required, and an email
+ * subscription's falls back to the sender's address. Anything else clears to
+ * its feed's title.
+ */
+export async function clearedCustomTitle(
   db: DbOrTx,
   userId: string,
   subscriptionId: string
-): Promise<boolean> {
-  const rows = await db
-    .select({ id: subscriptions.id })
+): Promise<{ customTitle: string | null } | null> {
+  const [row] = await db
+    .select({
+      type: subscriptions.type,
+      feedId: subscriptions.feedId,
+      emailSender: subscriptions.emailSender,
+    })
     .from(subscriptions)
     .where(
       and(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt),
-        isCollectionSubscription()
+        isNull(subscriptions.unsubscribedAt)
       )
     )
     .limit(1);
-  return rows.length > 0;
+  if (row?.type === "collection") return null;
+  if (row?.type === "email" && row.feedId === null) return { customTitle: row.emailSender };
+  return { customTitle: null };
 }
 
 /** Matches `subscriptions` rows to web feeds, the only feeds shared between users. */
@@ -954,9 +965,12 @@ export async function unsubscribe(
   subscriptionId: string
 ): Promise<{ counts: BulkUnreadCounts } | null> {
   const [existing] = await db
-    .select({ feed: feeds })
+    .select({
+      feedId: subscriptions.feedId,
+      type: subscriptions.type,
+      emailSender: subscriptions.emailSender,
+    })
     .from(subscriptions)
-    .leftJoin(feeds, eq(subscriptions.feedId, feeds.id))
     .where(
       and(
         eq(subscriptions.id, subscriptionId),
@@ -972,21 +986,19 @@ export async function unsubscribe(
     return null;
   }
 
-  // Null for a subscription without a feed (#1846).
-  const { feed } = existing;
   const now = new Date();
 
   // The unsubscribe request and mailto lookup are network/side-effecting work,
   // so they run BEFORE the transaction; only the blocked_senders row is written
-  // inside it.
+  // inside it. Both read the emails the subscription owns (#1846).
   let blockedSenderValues: typeof blockedSenders.$inferInsert | null = null;
-  if (feed?.type === "email" && feed.emailSenderPattern) {
-    const unsubscribeResult = await attemptUnsubscribe(feed.id);
+  if (existing.type === "email" && existing.emailSender) {
+    const unsubscribeResult = await attemptUnsubscribe(subscriptionId);
 
     logger.info("Email unsubscribe attempt completed", {
-      feedId: feed.id,
+      subscriptionId,
       userId,
-      senderEmail: feed.emailSenderPattern,
+      senderEmail: existing.emailSender,
       sent: unsubscribeResult.sent,
       method: unsubscribeResult.method,
     });
@@ -994,9 +1006,9 @@ export async function unsubscribe(
     blockedSenderValues = {
       id: generateUuidv7(),
       userId,
-      senderEmail: feed.emailSenderPattern,
+      senderEmail: existing.emailSender,
       blockedAt: now,
-      listUnsubscribeMailto: await getLatestUnsubscribeMailto(feed.id),
+      listUnsubscribeMailto: await getLatestUnsubscribeMailto(subscriptionId),
       unsubscribeSentAt: unsubscribeResult.sent ? now : null,
     };
   }
@@ -1079,7 +1091,7 @@ export async function unsubscribe(
   // tags, so it omits counts and the client invalidates instead).
   const counts = await getSubscriptionDeletionCounts(db, userId, formerTagIds);
 
-  publishSubscriptionDeleted(userId, feed?.id ?? null, subscriptionId, now, counts).catch((err) => {
+  publishSubscriptionDeleted(userId, existing.feedId, subscriptionId, now, counts).catch((err) => {
     logger.error("Failed to publish subscription_deleted event", {
       err,
       userId,

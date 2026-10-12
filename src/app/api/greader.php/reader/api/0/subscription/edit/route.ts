@@ -22,7 +22,7 @@ import { db } from "@/server/db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
-import { isActiveCollection, unsubscribe } from "@/server/services/subscriptions";
+import { clearedCustomTitle, unsubscribe } from "@/server/services/subscriptions";
 import { isUniqueViolation } from "@/server/db/errors";
 
 export const dynamic = "force-dynamic";
@@ -121,7 +121,7 @@ async function renameSubscription(
 ): Promise<Response | null> {
   const title = rawTitle.trim();
   if (!title) {
-    return (await isActiveCollection(db, userId, subscriptionId))
+    return (await clearedCustomTitle(db, userId, subscriptionId)) === null
       ? errorResponse("Collection name is required", 400)
       : null;
   }

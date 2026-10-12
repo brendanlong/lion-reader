@@ -38,6 +38,7 @@ interface TagSubscriptionListProps {
     customTitle: string | null;
     tagIds: string[];
     isCollection: boolean;
+    isEmail: boolean;
   }) => void;
   /** Callback to unsubscribe */
   onUnsubscribe: (sub: { id: string; title: string; isCollection: boolean }) => void;
@@ -134,6 +135,7 @@ export function TagSubscriptionList({
               customTitle: sub.title !== sub.originalTitle ? sub.title : null,
               tagIds: sub.tags.map((t) => t.id),
               isCollection: sub.type === "collection",
+              isEmail: sub.type === "email",
             })
           }
           onUnsubscribe={() =>

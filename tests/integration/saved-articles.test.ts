@@ -76,6 +76,7 @@ async function createTestSavedArticle(
   await db.insert(entries).values({
     id: articleId,
     ownerFeedId: savedFeedId,
+    ownerUserId: userId,
     type: "saved",
     guid: url, // For saved articles, guid = URL
     url,
@@ -1159,17 +1160,10 @@ describe("Saved Articles API", () => {
       ).rejects.toThrow(/exceeds the maximum size/i);
 
       // Nothing persisted for this user.
-      const savedFeed = await db
-        .select({ id: feeds.id })
-        .from(feeds)
-        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
-      const savedEntries =
-        savedFeed.length > 0
-          ? await db
-              .select({ id: entries.id })
-              .from(entries)
-              .where(eq(entries.ownerFeedId, savedFeed[0].id))
-          : [];
+      const savedEntries = await db
+        .select({ id: entries.id })
+        .from(entries)
+        .where(eq(entries.ownerUserId, userId));
       expect(savedEntries).toHaveLength(0);
     });
   });
@@ -1197,17 +1191,10 @@ describe("Saved Articles API", () => {
       expect(getHTTPStatusCodeFromError(thrown as TRPCError)).toBe(400);
 
       // Nothing was persisted for this user.
-      const savedFeed = await db
-        .select({ id: feeds.id })
-        .from(feeds)
-        .where(and(eq(feeds.type, "saved"), eq(feeds.userId, userId)));
-      const savedEntries =
-        savedFeed.length > 0
-          ? await db
-              .select({ id: entries.id })
-              .from(entries)
-              .where(eq(entries.ownerFeedId, savedFeed[0].id))
-          : [];
+      const savedEntries = await db
+        .select({ id: entries.id })
+        .from(entries)
+        .where(eq(entries.ownerUserId, userId));
       expect(savedEntries).toHaveLength(0);
     });
   });

@@ -146,9 +146,8 @@ export async function GET(request: Request): Promise<Response> {
 
   const itemRefs = result.items.map((entry) => {
     const int64Id = entry.greaderItemId;
-    // Saved articles have no subscription; `entryFeedStreamId` addresses them by
-    // their saved-feed id (issue #730) so the ref points at the synthetic
-    // "Saved Articles" feed, matching the item's origin.
+    // The item's origin stream, as in its `origin` (saved articles' is the
+    // "Saved Articles" subscription, issue #730).
     const directStreamId = entryFeedStreamId(entry);
     return {
       id: int64Id.toString(),
