@@ -24,7 +24,10 @@ import {
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
 import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entries";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { setSubscriptionTags } from "../../src/server/services/subscriptions";
+import {
+  getSavedSubscriptionId,
+  setSubscriptionTags,
+} from "../../src/server/services/subscriptions";
 import { entries, tags, userEntries } from "../../src/server/db/schema";
 import { and, eq } from "drizzle-orm";
 import {
@@ -301,8 +304,8 @@ test("new_entry event updates a collapsed tag's unread count", async ({ page, ba
 });
 
 // Saved articles (like email) have one recipient, so their new_entry goes on
-// the user's channel and carries no subscription (#1846).
-test("a saved article's new_entry from the user channel inserts it and updates counts", async ({
+// the user's channel, naming the saved subscription (#1846).
+test("a first save's new_entry inserts it, updates counts and learns the saved subscription", async ({
   page,
   baseURL,
 }) => {
@@ -323,7 +326,11 @@ test("a saved article's new_entry from the user channel inserts it and updates c
     title: "Saved realtime post",
   });
   await publishUserNewEntry(
-    { userId: user.id, subscriptionId: null, feedType: "saved" },
+    {
+      userId: user.id,
+      subscriptionId: await getSavedSubscriptionId(db, user.id),
+      feedType: "saved",
+    },
     entry.id,
     entry.updatedAt,
     { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }
@@ -334,6 +341,48 @@ test("a saved article's new_entry from the user channel inserts it and updates c
   await expect(savedLink).toContainText("(1)");
   await expect(links.uncategorized).toContainText("(1)");
 
+  // The first save created the saved subscription, so the client fetches its
+  // id once (the Saved list is its members); nothing else is refetched.
+  await expect.poll(() => refetchProcedures(trpcCalls)).toEqual(["subscriptions.list"]);
+});
+
+test("a saved article's new_entry joins the open Saved list by its membership without refetching", async ({
+  page,
+  baseURL,
+}) => {
+  const db = getDb();
+  const { user, taggedFeed, trpcCalls } = await seedAndOpenAll(
+    page,
+    baseURL!,
+    ({ user }) => getUserEventsChannel(user.id),
+    {
+      expandTag: false,
+      beforeLogin: async ({ user }) => {
+        await createSavedArticle(db, { userId: user.id, title: "Saved earlier" });
+      },
+    }
+  );
+  const savedLink = page.getByRole("link", { name: /^Saved( \(\d+\))?$/ });
+  await savedLink.click();
+  await expect(page.locator('[aria-label*="article: Saved earlier"]')).toBeVisible();
+  await expect(savedLink).toContainText("(1)");
+
+  trpcCalls.length = 0;
+
+  const { entry } = await createSavedArticle(db, { userId: user.id, title: "Saved just now" });
+  await publishUserNewEntry(
+    {
+      userId: user.id,
+      subscriptionId: await getSavedSubscriptionId(db, user.id),
+      feedType: "saved",
+    },
+    entry.id,
+    entry.updatedAt,
+    { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }
+  );
+
+  await expect(page.locator('[aria-label*="article: Saved just now"]')).toBeVisible();
+  await expect(savedLink).toContainText("(2)");
   expect(refetchProcedures(trpcCalls)).toEqual([]);
 });
 

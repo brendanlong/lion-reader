@@ -62,6 +62,8 @@ describe("the saved subscription", () => {
       }
     );
     const { queryClient, callsFor } = rendered;
+    // As in the browser, where a fetch of fresh data serves the cache.
+    queryClient.setDefaultOptions({ queries: { staleTime: 60 * 1000 } });
     const ids = () => rendered.result.current.saved.map((entry) => entry.id);
     // The app starts before the user has saved anything.
     await act(() =>

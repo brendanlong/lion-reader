@@ -86,7 +86,8 @@ function learnNewSavedSubscription(
   entryId: string
 ): void {
   if (db.savedSubscriptionId !== null || !counts?.saved?.unread) return;
-  void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT).then(
+  // The cached null is still fresh by the staleTime, but out of date now.
+  void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT, { staleTime: 0 }).then(
     () => {
       const stored = db.entries.getSynced(entryId);
       if (stored) insertEntryIntoLists(db, stored);
