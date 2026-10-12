@@ -119,10 +119,7 @@ export const users = pgTable(
     // 0133, kept by `apply_unread_memberships` / `recompute_list_counters`):
     // starred = starred unread articles; uncategorized = distinct unread
     // articles in untagged active subscriptions other than saved; all =
-    // visible unread articles.
-    // saved_unread_count, kept by the counter triggers only for the previous
-    // release, is deliberately unmapped: Saved is the saved subscription's
-    // count, and the column is dropped in #1846 phase 5B.
+    // visible unread articles. Saved is the saved subscription's count.
     starredUnreadCount: integer("starred_unread_count").notNull().default(0),
     uncategorizedUnreadCount: integer("uncategorized_unread_count").notNull().default(0),
     allUnreadCount: integer("all_unread_count").notNull().default(0),
@@ -748,10 +745,10 @@ export const subscriptions = pgTable(
     unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }), // soft delete
 
     // The subscription's unread, non-spam memberships (#1846), kept by the
-    // counter triggers, also while it's unsubscribed. starred_unread_count is
-    // no longer maintained; it's dropped in #1846 phase 5B.
+    // counter triggers, also while it's unsubscribed. The unmaintained
+    // starred_unread_count column is deliberately unmapped (Drizzle inserts
+    // name every mapped column) until the next release drops it.
     unreadCount: integer("unread_count").notNull().default(0),
-    starredUnreadCount: integer("starred_unread_count").notNull().default(0),
 
     // Google Reader feed stream id (issue #1117, migration 0097). Backs the
     // feed/{int} stream id and the subscription sortid; reversed by
@@ -1109,11 +1106,10 @@ export const jobs = pgTable(
       .where(sql`type = 'fetch_feed'`),
     // Enforce one row per singleton job type so claimSingletonJob's
     // INSERT...catch actually races correctly (see SINGLETON_JOB_TYPES).
-    // reconcile_counters is the parked row of a retired type (migration 0133).
     uniqueIndex("jobs_singleton_type_unique")
       .on(table.type)
       .where(
-        sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_counters', 'reconcile_membership_counters', 'backfill_getting_started')`
+        sql`type IN ('renew_websub', 'monitor_feed_health', 'cleanup', 'reconcile_membership_counters', 'backfill_getting_started')`
       ),
   ]
 );

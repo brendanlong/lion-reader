@@ -18,8 +18,7 @@
  * The definitions are #1846's, over memberships (`subscription_entries`):
  * - an article is visible if it's starred or in an active subscription;
  * - a subscription (active or not) counts its unread, non-spam memberships,
- *   and Saved is the saved subscription's count (users.saved_unread_count, its
- *   copy for the previous release, is left to the triggers);
+ *   and Saved is the saved subscription's count;
  * - All counts visible, unread, non-spam articles, and Starred the starred ones;
  * - a tag counts distinct unread, non-spam articles in an active subscription
  *   with that tag, and Uncategorized the same for untagged subscriptions other
