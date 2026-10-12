@@ -105,10 +105,12 @@ means it got proxied or flattened.
 
 After a Mailgun change, confirm the route still matches `INGEST_EMAIL_DOMAIN` in
 `../fly.toml` and send a message to a live ingest address — a broken route is
-silent until someone's newsletter goes missing. Send it from outside Fastmail:
-Fastmail hosts the apex, so it delivers mail for any lionreader.com subdomain
-internally without consulting `in.app`'s MX, and bounces it as "User unknown in
-virtual mailbox table".
+silent until someone's newsletter goes missing.
+
+Fastmail hosts the apex, and its lionreader.com domain setting **Always route
+externally** must stay on. Without it, Fastmail delivers mail sent from Fastmail
+to any lionreader.com subdomain internally, never consulting `in.app`'s MX, and
+bounces ingest mail as "User unknown in virtual mailbox table".
 
 ## Note: the CDN is US-only on purpose
 
