@@ -435,23 +435,6 @@ export default function PrivacyPolicyPage() {
             </p>
           </LegalSubsection>
 
-          <LegalSubsection id="contact-email" title="Contact Email (Fastmail)">
-            <LegalParagraph tight>
-              Email you send to a lionreader.com address, such as our contact address, is received
-              and stored by Fastmail. Fastmail processes the sender, subject, and content of those
-              emails.
-            </LegalParagraph>
-            <p className="mt-2">
-              <TextLink
-                href="https://www.fastmail.com/policies/privacy/"
-                external
-                className="ui-text-sm"
-              >
-                View Fastmail&apos;s Privacy Policy &rarr;
-              </TextLink>
-            </p>
-          </LegalSubsection>
-
           <LegalSubsection id="page-counts" title="Page Counts (GoatCounter)">
             <LegalParagraph tight>
               We count page views using GoatCounter, a cookie-less analytics service, so we can see
