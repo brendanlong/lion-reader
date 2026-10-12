@@ -12,7 +12,7 @@ Pipeline diagram: `docs/diagrams/feed-fetcher.d2`. Scheduling and backoff are in
 
 ## Entry identity
 
-Entries are keyed on `(feed_id, guid)`, but feed guids compare **http/https-insensitively** and the stored guid is never rewritten (`guid-identity.ts` says why). **Compare feed-entry guids across rows only through its helpers** — a raw `guid = guid` reintroduces #1535's duplicates. The partial unique index `uq_entries_feed_guid_canonical` enforces the same rule in the database.
+Web entries are keyed on `(owner_feed_id, guid)` (#1846), but feed guids compare **http/https-insensitively** and the stored guid is never rewritten (`guid-identity.ts` says why). **Compare feed-entry guids across rows only through its helpers** — a raw `guid = guid` reintroduces #1535's duplicates. The partial unique index `uq_entries_owner_feed_guid_canonical` enforces the same rule in the database.
 
 ## Backfill Guard
 

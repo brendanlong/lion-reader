@@ -74,6 +74,7 @@ Canonical `feeds`/`entries` rows are shared across users; `subscriptions` and `u
 
 - **Entry visibility is decided at insert time**: a user sees an entry only if a `user_entries` row exists, and rows are only created for what a feed currently contains when the user subscribes or a fetch runs. That — not a timestamp rule in a view — is what keeps pre-subscription content private.
 - **Every subscription holds its articles through one membership table** (`subscription_entries`, #1846), whatever its type, so visibility (starred, or in an active subscription), lists and counters have one rule each.
+- **Every entry has one owner** (#1846): a web entry its shared feed, an email its subscription, a saved article its user. The owner is for duplicate detection and cascade delete only; membership, not ownership, decides who sees and counts an article.
 - **Unread counts are denormalized** onto trigger-maintained counters, so badges are arithmetic over subscriptions, never entry scans; a daily job repairs (and loudly reports) drift.
 - **Conflicting updates resolve to the newest user intent**: read/star carry per-field last-writer-wins watermarks, and `updated_at` moves only on a real change so re-asserts don't churn delta sync.
 - **Soft deletes** for subscriptions (`unsubscribed_at`), so resubscribing restores read state.

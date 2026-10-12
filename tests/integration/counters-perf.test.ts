@@ -107,7 +107,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
       FROM feeds f WHERE f.url LIKE 'https://perf.example.com/feed-%'
     `);
     await db.execute(sql`
-      INSERT INTO entries (id, feed_id, type, guid, title, content_hash, fetched_at, last_seen_at, published_at)
+      INSERT INTO entries (id, owner_feed_id, type, guid, title, content_hash, fetched_at, last_seen_at, published_at)
       SELECT gen_random_uuid(), f.id, 'web', 'perf-guid-' || f.id || '-' || g,
              'Perf Entry', 'hash', now(), now(), now() - (g || ' minutes')::interval
       FROM feeds f, generate_series(1, ${ENTRIES_PER_FEED}) g
@@ -119,7 +119,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
       INSERT INTO user_entries (user_id, entry_id, subscription_id, is_spam, published_or_fetched_at)
       SELECT ${userId}::uuid, e.id, s.id, false, COALESCE(e.published_at, e.fetched_at)
       FROM entries e
-      JOIN feeds f ON f.id = e.feed_id
+      JOIN feeds f ON f.id = e.owner_feed_id
       JOIN subscriptions s ON s.feed_id = f.id AND s.user_id = ${userId}::uuid
       WHERE f.url LIKE 'https://perf.example.com/feed-%'
       ON CONFLICT DO NOTHING
@@ -154,7 +154,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
       INSERT INTO user_entries (user_id, entry_id, subscription_id, is_spam, published_or_fetched_at)
       SELECT ${scratchUser}::uuid, e.id, s.id, false, COALESCE(e.published_at, e.fetched_at)
       FROM entries e
-      JOIN subscriptions s ON s.feed_id = e.feed_id AND s.user_id = ${scratchUser}::uuid
+      JOIN subscriptions s ON s.feed_id = e.owner_feed_id AND s.user_id = ${scratchUser}::uuid
       WHERE e.guid LIKE 'perf-guid-%'
         AND NOT EXISTS (
           SELECT 1 FROM user_entries ue

@@ -41,7 +41,7 @@ async function main(): Promise<void> {
     const fetchedAt = new Date(now - i * 60 * 60 * 1000);
     await db.insert(entries).values({
       id,
-      feedId,
+      ownerFeedId: feedId,
       type: "web",
       guid: `fixture-${id}`,
       title: `Fixture entry ${i + 1}`,

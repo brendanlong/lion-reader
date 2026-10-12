@@ -524,7 +524,7 @@ BEGIN
      OR NEW.subscription_id IS NULL THEN
     SELECT COALESCE(NEW.published_or_fetched_at, e.published_at, e.fetched_at),
            COALESCE(NEW.is_spam, e.is_spam),
-           e.feed_id, e.type
+           e.owner_feed_id, e.type
       INTO NEW.published_or_fetched_at, NEW.is_spam, v_feed_id, v_type
       FROM entries e
       WHERE e.id = NEW.entry_id;
@@ -585,7 +585,7 @@ CREATE TABLE public.discord_api_token_links (
 
 CREATE TABLE public.entries (
     id uuid NOT NULL,
-    feed_id uuid NOT NULL,
+    owner_feed_id uuid NOT NULL,
     guid text NOT NULL,
     url text,
     title text,
@@ -617,6 +617,8 @@ CREATE TABLE public.entries (
     is_placeholder boolean DEFAULT false NOT NULL,
     search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, "left"(((COALESCE(title, ''::text) || ' '::text) || COALESCE(NULLIF(content_cleaned, ''::text), content_original, ''::text)), 300000))) STORED,
     is_backfill boolean DEFAULT false NOT NULL,
+    owner_subscription_id uuid,
+    owner_user_id uuid,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
@@ -876,9 +878,9 @@ CREATE TABLE public.subscriptions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     fetch_full_content boolean DEFAULT false NOT NULL,
     unread_count integer DEFAULT 0 NOT NULL,
-    starred_unread_count integer DEFAULT 0 NOT NULL,
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     type public.feed_type NOT NULL,
+    email_sender text,
     CONSTRAINT subscriptions_collection_feedless CHECK (((type <> 'collection'::public.feed_type) OR (feed_id IS NULL))),
     CONSTRAINT subscriptions_collection_named CHECK (((type <> 'collection'::public.feed_type) OR (custom_title IS NOT NULL))),
     CONSTRAINT subscriptions_saved_feedless CHECK (((type <> 'saved'::public.feed_type) OR (feed_id IS NULL)))
@@ -966,7 +968,7 @@ CREATE TABLE public.users (
 CREATE VIEW public.visible_entries AS
  SELECT ue.user_id,
     e.id,
-    e.feed_id,
+    e.owner_feed_id,
     e.type,
     e.guid,
     e.url,
@@ -1149,7 +1151,7 @@ ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT uq_blocked_senders_user_email UNIQUE (user_id, sender_email);
 
 ALTER TABLE ONLY public.entries
-    ADD CONSTRAINT uq_entries_feed_guid UNIQUE (feed_id, guid);
+    ADD CONSTRAINT uq_entries_owner_feed_guid UNIQUE (owner_feed_id, guid);
 
 ALTER TABLE ONLY public.feeds
     ADD CONSTRAINT uq_feeds_email_user_sender UNIQUE (user_id, email_sender_pattern);
@@ -1189,23 +1191,27 @@ CREATE INDEX idx_collection_entries_user_entry ON public.collection_entries USIN
 
 CREATE INDEX idx_discord_api_token_links_token ON public.discord_api_token_links USING btree (token_id);
 
-CREATE INDEX idx_entries_feed ON public.entries USING btree (feed_id, id);
-
-CREATE INDEX idx_entries_feed_published_coalesce ON public.entries USING btree (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC);
-
-CREATE INDEX idx_entries_feed_updated_at ON public.entries USING btree (feed_id, updated_at);
-
-CREATE INDEX idx_entries_fetched ON public.entries USING btree (feed_id, fetched_at);
-
 CREATE UNIQUE INDEX idx_entries_greader_item_id ON public.entries USING btree (greader_item_id);
 
-CREATE INDEX idx_entries_last_seen ON public.entries USING btree (feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
+CREATE INDEX idx_entries_owner_feed ON public.entries USING btree (owner_feed_id, id);
+
+CREATE INDEX idx_entries_owner_feed_fetched ON public.entries USING btree (owner_feed_id, fetched_at);
+
+CREATE INDEX idx_entries_owner_feed_last_seen ON public.entries USING btree (owner_feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
+
+CREATE INDEX idx_entries_owner_feed_published_coalesce ON public.entries USING btree (owner_feed_id, COALESCE(published_at, fetched_at) DESC, id DESC);
+
+CREATE INDEX idx_entries_owner_feed_spam ON public.entries USING btree (owner_feed_id, is_spam);
+
+CREATE INDEX idx_entries_owner_feed_updated_at ON public.entries USING btree (owner_feed_id, updated_at);
+
+CREATE INDEX idx_entries_owner_subscription_updated_at ON public.entries USING btree (owner_subscription_id, updated_at) WHERE (owner_subscription_id IS NOT NULL);
+
+CREATE INDEX idx_entries_owner_user_updated_at ON public.entries USING btree (owner_user_id, updated_at) WHERE (owner_user_id IS NOT NULL);
 
 CREATE INDEX idx_entries_published_coalesce ON public.entries USING btree (COALESCE(published_at, fetched_at) DESC, id DESC);
 
 CREATE INDEX idx_entries_search_vector ON public.entries USING gin (search_vector);
-
-CREATE INDEX idx_entries_spam ON public.entries USING btree (feed_id, is_spam);
 
 CREATE INDEX idx_entries_type ON public.entries USING btree (type);
 
@@ -1307,7 +1313,11 @@ CREATE INDEX idx_websub_expiring ON public.websub_subscriptions USING btree (exp
 
 CREATE UNIQUE INDEX jobs_singleton_type_unique ON public.jobs USING btree (type) WHERE (type = ANY (ARRAY['renew_websub'::text, 'monitor_feed_health'::text, 'cleanup'::text, 'reconcile_membership_counters'::text, 'backfill_getting_started'::text]));
 
-CREATE UNIQUE INDEX uq_entries_feed_guid_canonical ON public.entries USING btree (feed_id, regexp_replace(guid, '^https?://'::text, 'https://'::text)) WHERE (type = 'web'::public.feed_type);
+CREATE UNIQUE INDEX uq_entries_owner_feed_guid_canonical ON public.entries USING btree (owner_feed_id, regexp_replace(guid, '^https?://'::text, 'https://'::text)) WHERE (type = 'web'::public.feed_type);
+
+CREATE UNIQUE INDEX uq_entries_owner_subscription_guid ON public.entries USING btree (owner_subscription_id, guid) WHERE (owner_subscription_id IS NOT NULL);
+
+CREATE UNIQUE INDEX uq_entries_owner_user_guid ON public.entries USING btree (owner_user_id, guid) WHERE (owner_user_id IS NOT NULL);
 
 CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 
@@ -1316,6 +1326,8 @@ CREATE UNIQUE INDEX uq_subscriptions_id_user ON public.subscriptions USING btree
 CREATE UNIQUE INDEX uq_subscriptions_saved_user ON public.subscriptions USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
 
 CREATE UNIQUE INDEX uq_subscriptions_user_collection_name ON public.subscriptions USING btree (user_id, lower(custom_title)) WHERE ((type = 'collection'::public.feed_type) AND (unsubscribed_at IS NULL));
+
+CREATE UNIQUE INDEX uq_subscriptions_user_email_sender ON public.subscriptions USING btree (user_id, email_sender) WHERE (type = 'email'::public.feed_type);
 
 CREATE UNIQUE INDEX uq_tags_user_lower_name ON public.tags USING btree (user_id, lower(name)) WHERE (deleted_at IS NULL);
 
@@ -1368,7 +1380,13 @@ ALTER TABLE ONLY public.discord_api_token_links
     ADD CONSTRAINT discord_api_token_links_token_id_fkey FOREIGN KEY (token_id) REFERENCES public.api_tokens(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.entries
-    ADD CONSTRAINT entries_feed_id_feeds_id_fk FOREIGN KEY (feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
+    ADD CONSTRAINT entries_owner_feed_id_feeds_id_fk FOREIGN KEY (owner_feed_id) REFERENCES public.feeds(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.entries
+    ADD CONSTRAINT entries_owner_subscription_id_fkey FOREIGN KEY (owner_subscription_id) REFERENCES public.subscriptions(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.entries
+    ADD CONSTRAINT entries_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;

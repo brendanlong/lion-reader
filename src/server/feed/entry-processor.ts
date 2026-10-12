@@ -279,7 +279,7 @@ export async function createEntry(
 
   const newEntry: NewEntry = {
     id: generateUuidv7(),
-    feedId,
+    ownerFeedId: feedId,
     type: "web",
     guid,
     ...entryContentColumns(parsedEntry, contentHash, feedUrl),
@@ -526,7 +526,7 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   // 2. Excludes pairs where the user already has a user_entry for an entry
   //    with the same GUID from one of their previous feeds (redirect
   //    deduplication). "Previous feeds" = entries already attributed to this
-  //    subscription (user_entries.subscription_id) under a different feed_id
+  //    subscription (user_entries.subscription_id) under a different owner_feed_id
   //    — re-stamped by `mergeSubscriptionIntoFeed` when the fetch-feed
   //    handler moves subscriptions off a redirected feed. GUIDs are
   //    compared scheme-insensitively (see guid-identity.ts): a feed that moved
@@ -548,7 +548,7 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
       INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
       SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam, e.is_backfill
       FROM subscriptions s
-      INNER JOIN entries e ON e.feed_id = s.feed_id
+      INNER JOIN entries e ON e.owner_feed_id = s.feed_id
       WHERE s.feed_id = ${feedId}::uuid
         AND s.unsubscribed_at IS NULL
         AND e.id = ANY(${entryIdsArray}::uuid[])
@@ -559,7 +559,7 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
             ON ue_existing.user_id = s.user_id AND ue_existing.entry_id = e_prev.id
           WHERE e_prev.type = 'web'
             AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
-            AND e_prev.feed_id != s.feed_id
+            AND e_prev.owner_feed_id != s.feed_id
             AND ue_existing.subscription_id = s.id
         )
       ON CONFLICT DO NOTHING
@@ -612,7 +612,7 @@ export async function processEntries(
 
   // Derive GUIDs from all items first, so we only query for entries we need.
   // Matching is http/https-insensitive (#1535), so look up every spelling a
-  // stored row might carry — exact values, so the (feed_id, guid) unique index
+  // stored row might carry — exact values, so the (owner_feed_id, guid) unique index
   // serves the query — and key the cache on the canonical form.
   const guidsToCheck = new Set<string>();
   const currentGuidKeys = new Set<string>();
@@ -640,10 +640,10 @@ export async function processEntries(
             contentHash: entries.contentHash,
           })
           .from(entries)
-          .where(and(eq(entries.feedId, feedId), inArray(entries.guid, [...guidsToCheck])))
+          .where(and(eq(entries.ownerFeedId, feedId), inArray(entries.guid, [...guidsToCheck])))
       : [];
 
-  // At most one row per key: uq_entries_feed_guid_canonical enforces it.
+  // At most one row per key: uq_entries_owner_feed_guid_canonical enforces it.
   const existingEntriesMap = new Map<string, CachedEntryInfo>(
     existingEntries.map((e) => [canonicalGuid(e.guid), e])
   );
@@ -705,7 +705,7 @@ export async function processEntries(
       .select({ guid: entries.guid })
       .from(entries)
       .where(
-        and(eq(entries.feedId, feedId), gte(entries.lastSeenAt, previousLastEntriesUpdatedAt))
+        and(eq(entries.ownerFeedId, feedId), gte(entries.lastSeenAt, previousLastEntriesUpdatedAt))
       );
 
     for (const entry of previouslyCurrentEntries) {

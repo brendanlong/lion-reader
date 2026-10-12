@@ -79,7 +79,7 @@ export async function attemptUnsubscribe(feedId: string): Promise<UnsubscribeRes
     .from(entries)
     .where(
       and(
-        eq(entries.feedId, feedId),
+        eq(entries.ownerFeedId, feedId),
         isNotNull(entries.listUnsubscribeHttps),
         eq(entries.listUnsubscribePost, true)
       )
@@ -124,7 +124,7 @@ export async function getLatestUnsubscribeMailto(feedId: string): Promise<string
       listUnsubscribeMailto: entries.listUnsubscribeMailto,
     })
     .from(entries)
-    .where(and(eq(entries.feedId, feedId), isNotNull(entries.listUnsubscribeMailto)))
+    .where(and(eq(entries.ownerFeedId, feedId), isNotNull(entries.listUnsubscribeMailto)))
     .orderBy(desc(entries.id))
     .limit(1);
 

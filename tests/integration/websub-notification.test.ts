@@ -240,7 +240,7 @@ describe("ingestWebsubNotification", () => {
 
     // The pushed entry is stamped above the (unmoved) generation pointer, which
     // is what keeps it visible to a new subscriber via the `>=` populate.
-    const [entry] = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+    const [entry] = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
     expect(entry.lastSeenAt!.getTime()).toBeGreaterThan(lastPoll.getTime());
     expect(await getUserEntry(userId)).toBeDefined();
   });
@@ -262,7 +262,7 @@ describe("ingestWebsubNotification", () => {
 
     // The push itself never touched the article: it queued a job for it.
     expect(articleRequests).toEqual([]);
-    const [pushed] = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+    const [pushed] = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
     expect(pushed.fullContentFetchedAt).toBeNull();
 
     // Run the queued job the way the worker does.
@@ -559,7 +559,7 @@ describe("ingestWebsubNotification", () => {
     // so the route acks the hub rather than asking for a retry.
     await expect(ingestWebsubNotification(feed, "not a feed at all")).resolves.toBe("unparseable");
 
-    expect(await db.select().from(entries).where(eq(entries.feedId, feed.id))).toHaveLength(0);
+    expect(await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id))).toHaveLength(0);
     expect(await getUserEntry(userId)).toBeUndefined();
   });
 });

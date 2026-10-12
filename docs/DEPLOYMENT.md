@@ -365,6 +365,17 @@ Fly does not manage this cluster, so these are ours:
   restore into a scratch cluster to prove it works. Full procedure in
   [Fly Postgres operations](fly-postgres-ops.md#backups--point-in-time-recovery-pitr).
 
+### Maintenance-mode deploys
+
+A migration the previous release can't run against (`migrations/CLAUDE.md`) ships under maintenance mode:
+
+1. Turn it on in `/admin` → Status. Within a few seconds the app serves the maintenance page (except the demo, `/admin` and health checks), the worker stops claiming jobs and the Discord bot stops touching the database. Open SSE streams stay up but only re-check their credential (sessions and tokens), and jobs already running finish.
+2. Wait for those: `SELECT type, running_since FROM jobs WHERE running_since IS NOT NULL;` must return nothing (jobs time out after 5 minutes).
+3. Deploy; `release_command` runs the migration, and the new machines start in maintenance.
+4. Run whatever the release's PR lists (backfills, checks), then turn maintenance off.
+
+A rollback is the same procedure with the reverse SQL from the release's PR.
+
 **Temporarily scaling for expensive migrations:** see [Fly Postgres operations](fly-postgres-ops.md#expensive-migrations-temporarily-scale-the-machine).
 
 ---

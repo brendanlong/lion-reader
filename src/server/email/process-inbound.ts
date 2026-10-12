@@ -26,6 +26,7 @@ import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { lockSubscriptionMembers } from "@/server/services/subscriptions";
+import { isUniqueViolation } from "@/server/db/errors";
 
 // ============================================================================
 // Types
@@ -320,29 +321,39 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
 
   // Reactivating moves the members' user_entries rows, which come first in
   // the lock order.
-  const [upsertedSubscription] = await db.transaction(async (tx) => {
-    await lockSubscriptionMembers(
-      tx,
-      userId,
-      and(eq(subscriptions.feedId, feed.id), isNotNull(subscriptions.unsubscribedAt))
-    );
-    return tx
-      .insert(subscriptions)
-      .values({
-        id: subscriptionId,
+  const upsertSubscription = () =>
+    db.transaction(async (tx) => {
+      await lockSubscriptionMembers(
+        tx,
         userId,
-        feedId: feed.id,
-        type: "email",
-        subscribedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [subscriptions.userId, subscriptions.feedId],
-        set: { unsubscribedAt: null, updatedAt: now },
-        where: isNotNull(subscriptions.unsubscribedAt),
-      })
-      .returning();
+        and(eq(subscriptions.feedId, feed.id), isNotNull(subscriptions.unsubscribedAt))
+      );
+      return tx
+        .insert(subscriptions)
+        .values({
+          id: subscriptionId,
+          userId,
+          feedId: feed.id,
+          type: "email",
+          emailSender: senderEmail,
+          subscribedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [subscriptions.userId, subscriptions.feedId],
+          set: { unsubscribedAt: null, updatedAt: now },
+          where: isNotNull(subscriptions.unsubscribedAt),
+        })
+        .returning();
+    });
+  // Two first emails from a sender can race to create its subscription: the
+  // loser conflicts on (user_id, email_sender) too, which ON CONFLICT doesn't
+  // arbitrate, so it raises instead of finding the row. Once the winner has
+  // committed, the retry takes the ON CONFLICT path.
+  const [upsertedSubscription] = await upsertSubscription().catch((error: unknown) => {
+    if (!isUniqueViolation(error)) throw error;
+    return upsertSubscription();
   });
 
   if (upsertedSubscription) {
@@ -382,11 +393,21 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     });
   }
 
+  // The subscription owns the email (#1846). The upsert above returns it only
+  // when it inserted or reactivated it.
+  const [ownerSubscription] = await db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feed.id)));
+  if (!ownerSubscription) {
+    throw new Error(`No email subscription for sender ${senderEmail}`);
+  }
+
   // 7. Check for duplicate Message-ID
   const [existingEntry] = await db
     .select()
     .from(entries)
-    .where(and(eq(entries.feedId, feed.id), eq(entries.guid, email.messageId)))
+    .where(and(eq(entries.ownerFeedId, feed.id), eq(entries.guid, email.messageId)))
     .limit(1);
 
   if (existingEntry) {
@@ -446,7 +467,9 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
 
   const newEntry: NewEntry = {
     id: entryId,
-    feedId: feed.id,
+    // The per-user email feed until phase 6B; the subscription owns it.
+    ownerFeedId: feed.id,
+    ownerSubscriptionId: ownerSubscription.id,
     type: "email",
     guid: email.messageId,
     url,

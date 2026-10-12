@@ -900,7 +900,9 @@ describe("WebSub Integration", () => {
       expect(after.lastFetchedAt?.getTime()).toBe(lastFetchedAt.getTime());
       // ...and it still clears the body hash so the next poll can't short-circuit.
       expect(after.bodyHash).toBeNull();
-      expect(await db.select().from(entries).where(eq(entries.feedId, feed.id))).toHaveLength(5);
+      expect(await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id))).toHaveLength(
+        5
+      );
     });
 
     it("leaves an already-overdue backup poll due", async () => {

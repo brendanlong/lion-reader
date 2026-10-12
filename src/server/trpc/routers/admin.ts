@@ -368,13 +368,13 @@ const feedHealthEndpoints = {
       const totalEntryCountSq = ctx.db
         .select({ count: count().as("count") })
         .from(entries)
-        .where(eq(entries.feedId, feeds.id));
+        .where(eq(entries.ownerFeedId, feeds.id));
 
       // Oldest entry timestamp subquery
       const oldestEntryAtSq = ctx.db
         .select({ minFetchedAt: sql`MIN(${entries.fetchedAt})`.as("min_fetched_at") })
         .from(entries)
-        .where(eq(entries.feedId, feeds.id));
+        .where(eq(entries.ownerFeedId, feeds.id));
 
       // Entries per week: count / weeks since oldest entry
       const entriesPerWeekExpr = sql<number | null>`

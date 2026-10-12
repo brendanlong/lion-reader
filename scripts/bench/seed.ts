@@ -482,11 +482,15 @@ BEGIN
   FOR r IN SELECT name FROM bench_entry_index LOOP EXECUTE 'DROP INDEX ' || r.name; END LOOP;
 END $$;
 INSERT INTO entries (
-  id, feed_id, type, guid, url, title, author, content_original, content_cleaned, summary,
+  id, owner_feed_id, owner_subscription_id, owner_user_id, type, guid, url, title, author,
+  content_original, content_cleaned, summary,
   published_at, fetched_at, created_at, updated_at, last_seen_at, content_hash,
   site_name, image_url, spam_score, is_spam, list_unsubscribe_mailto
 )
-SELECT e.id, e.feed_id, e.kind, e.guid,
+SELECT e.id, e.feed_id,
+       CASE WHEN e.kind = 'email' THEN (SELECT s.id FROM bench_sub s WHERE s.feed_id = e.feed_id) END,
+       CASE WHEN e.kind = 'saved' THEN (SELECT f.user_id FROM bench_feed f WHERE f.id = e.feed_id) END,
+       e.kind, e.guid,
        CASE WHEN e.kind = 'email' THEN NULL ELSE replace(e.guid, 'http://', 'https://') END,
        initcap(left(tp.body, 20 + floor(50 * pg_temp.h(e.id::text || ':tl'))::int)),
        CASE WHEN e.kind = 'saved' AND pg_temp.h(e.id::text || ':a') < 0.5 THEN NULL
@@ -735,15 +739,18 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
             ${A} - interval '1000 days', ${A}
      FROM bench_feed ORDER BY kind, web_idx, id`
   );
+  // Before entries: an email is owned by its subscription.
+  await step(
+    "subscriptions",
+    `INSERT INTO subscriptions (id, user_id, feed_id, type, custom_title, email_sender,
+                                subscribed_at, created_at, updated_at)
+     SELECT s.id, s.user_id, s.feed_id, f.kind, s.custom_title, f.sender,
+            s.subscribed_at, s.subscribed_at, s.subscribed_at
+     FROM bench_sub s JOIN bench_feed f ON f.id = s.feed_id ORDER BY s.subscribed_at, s.id`
+  );
   await step("paragraphs", PARAGRAPHS);
   await step("entry plan", ENTRY_PLAN);
   await step("entries", ENTRIES);
-  await step(
-    "subscriptions",
-    `INSERT INTO subscriptions (id, user_id, feed_id, type, custom_title, subscribed_at, created_at, updated_at)
-     SELECT s.id, s.user_id, s.feed_id, f.kind, s.custom_title, s.subscribed_at, s.subscribed_at, s.subscribed_at
-     FROM bench_sub s JOIN bench_feed f ON f.id = s.feed_id ORDER BY s.subscribed_at, s.id`
-  );
   const tagRows = plan.users.flatMap((u) =>
     Array.from({ length: u.tags }, (_, k) => [tagId(u.idx, k + 1), userId(u.idx), tagName(k + 1)])
   );

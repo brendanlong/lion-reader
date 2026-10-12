@@ -125,7 +125,7 @@ export const feedStatsRouter = createTRPCRouter({
           oldestFetchedAt: sql<Date | null>`MIN(${entries.fetchedAt})`.as("oldest_fetched_at"),
         })
         .from(entries)
-        .where(eq(entries.feedId, feeds.id))
+        .where(eq(entries.ownerFeedId, feeds.id))
         .as("entry_stats");
 
       // Entries per week: count / weeks since oldest entry

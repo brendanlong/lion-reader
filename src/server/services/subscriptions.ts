@@ -322,8 +322,8 @@ async function populateInitialUserEntries(
     INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
     SELECT ${userId}, e.id, COALESCE(e.published_at, e.fetched_at), ${subscriptionId}, e.is_spam, e.is_backfill
     FROM entries e
-    JOIN feeds f ON f.id = e.feed_id
-    WHERE e.feed_id = ${feedId}
+    JOIN feeds f ON f.id = e.owner_feed_id
+    WHERE e.owner_feed_id = ${feedId}
       AND f.last_entries_updated_at IS NOT NULL
       AND e.last_seen_at >= f.last_entries_updated_at
       AND NOT EXISTS (
@@ -333,7 +333,7 @@ async function populateInitialUserEntries(
           ON ue_existing.user_id = ${userId} AND ue_existing.entry_id = e_prev.id
         WHERE e_prev.type = 'web'
           AND ${sql.raw(canonicalGuidSql("e_prev.guid"))} = ${sql.raw(canonicalGuidSql("e.guid"))}
-          AND e_prev.feed_id != e.feed_id
+          AND e_prev.owner_feed_id != e.owner_feed_id
           AND ue_existing.subscription_id = ${subscriptionId}
       )
     ON CONFLICT DO NOTHING

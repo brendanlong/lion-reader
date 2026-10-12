@@ -837,7 +837,7 @@ describe("sync.events", () => {
         allIds.add(entryId);
         entryValues.push({
           id: entryId,
-          feedId,
+          ownerFeedId: feedId,
           type: "web" as const,
           guid: `guid-tied-${i}`,
           title: `Tied ${i}`,
@@ -1139,7 +1139,7 @@ describe("sync.events", () => {
         const entryId = generateUuidv7();
         entryValues.push({
           id: entryId,
-          feedId,
+          ownerFeedId: feedId,
           type: "web" as const,
           guid: `guid-straddle-${i}`,
           title: `Filler ${i}`,
@@ -1265,7 +1265,7 @@ describe("sync.events", () => {
         (hidden ? hiddenIds : visibleIds).add(entryId);
         entryValues.push({
           id: entryId,
-          feedId: hidden ? goneFeed : activeFeed,
+          ownerFeedId: hidden ? goneFeed : activeFeed,
           type: "web" as const,
           guid: `guid-hidden-${i}`,
           title: `Hidden ${i}`,
@@ -1536,7 +1536,10 @@ describe("sync.events", () => {
         .from(subscriptions)
         .innerJoin(
           entries,
-          and(eq(entries.feedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
+          and(
+            eq(entries.ownerFeedId, subscriptions.feedId),
+            sql`${entries.updatedAt} >= ${cursorTs}`
+          )
         )
         .innerJoin(
           userEntries,
@@ -1552,7 +1555,7 @@ describe("sync.events", () => {
           entries,
           and(
             eq(entries.id, userEntries.entryId),
-            eq(entries.feedId, savedFeedId),
+            eq(entries.ownerFeedId, savedFeedId),
             sql`${entries.updatedAt} >= ${cursorTs}`
           )
         )
@@ -1570,11 +1573,11 @@ describe("sync.events", () => {
       expect(planA).not.toContain("Seq Scan");
 
       const planB1 = await explainOf(armB1);
-      expect(planB1).toContain("idx_entries_feed_updated_at");
+      expect(planB1).toContain("idx_entries_owner_feed_updated_at");
       expect(planB1).not.toContain("Seq Scan");
 
       const planB2 = await explainOf(armB2);
-      expect(planB2).toContain("idx_entries_feed_updated_at");
+      expect(planB2).toContain("idx_entries_owner_feed_updated_at");
       expect(planB2).not.toContain("Seq Scan");
     });
   });

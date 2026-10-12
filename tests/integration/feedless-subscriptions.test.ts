@@ -263,10 +263,11 @@ describe("migration 0131: collections drop their feeds", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
+  // Replayed against the current schema, where 0137 renamed entries.feed_id.
   const migration = readFileSync(
     new URL("../../migrations/0131_collections_feedless.sql", import.meta.url),
     "utf8"
-  );
+  ).replace("e.feed_id", "e.owner_feed_id");
 
   /**
    * Gives the collection a feed of its own (with a fetch job, and optionally
@@ -294,7 +295,7 @@ describe("migration 0131: collections drop their feeds", () => {
         VALUES (${legacyFeedId}, 'collection', ${userId}, 'Reading')`);
       if (strayEntry) {
         await tx.execute(sql`
-          INSERT INTO entries (id, feed_id, type, guid, fetched_at, content_hash)
+          INSERT INTO entries (id, owner_feed_id, type, guid, fetched_at, content_hash)
           VALUES (${generateUuidv7()}, ${legacyFeedId}, 'saved', 'stray', now(), 'hash')`);
       }
       await tx

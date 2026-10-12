@@ -74,7 +74,7 @@ export async function checkSubscriptionEntries(
             SELECT 1 FROM entries e WHERE e.id = se.entry_id AND e.type = 'saved'
           )
           WHEN s.type = 'web' THEN s.unsubscribed_at IS NOT NULL OR EXISTS (
-            SELECT 1 FROM entries e WHERE e.id = se.entry_id AND e.feed_id = s.feed_id
+            SELECT 1 FROM entries e WHERE e.id = se.entry_id AND e.owner_feed_id = s.feed_id
           )
           ELSE false
         END AS explained

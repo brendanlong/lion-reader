@@ -75,7 +75,7 @@ async function createTestSavedArticle(
   // Create the entry
   await db.insert(entries).values({
     id: articleId,
-    feedId: savedFeedId,
+    ownerFeedId: savedFeedId,
     type: "saved",
     guid: url, // For saved articles, guid = URL
     url,
@@ -1124,7 +1124,7 @@ describe("Saved Articles API", () => {
       const html = "<html><head><title>Concurrent</title></head><body>Body text here</body></html>";
 
       // Two concurrent saves of the same URL can both pass the existence check
-      // before either inserts. The loser's INSERT hits uq_entries_feed_guid; it
+      // before either inserts. The loser's INSERT hits uq_entries_owner_feed_guid; it
       // must resolve to the existing article, not throw a unique-violation 500.
       const [a, b] = await Promise.all([
         saveArticle(db, userId, { url, html, refetch: false }),
@@ -1168,7 +1168,7 @@ describe("Saved Articles API", () => {
           ? await db
               .select({ id: entries.id })
               .from(entries)
-              .where(eq(entries.feedId, savedFeed[0].id))
+              .where(eq(entries.ownerFeedId, savedFeed[0].id))
           : [];
       expect(savedEntries).toHaveLength(0);
     });
@@ -1206,7 +1206,7 @@ describe("Saved Articles API", () => {
           ? await db
               .select({ id: entries.id })
               .from(entries)
-              .where(eq(entries.feedId, savedFeed[0].id))
+              .where(eq(entries.ownerFeedId, savedFeed[0].id))
           : [];
       expect(savedEntries).toHaveLength(0);
     });

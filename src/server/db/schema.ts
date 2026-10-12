@@ -525,10 +525,21 @@ export const entries = pgTable(
   "entries",
   {
     id: uuid("id").primaryKey(), // UUIDv7 gives us time ordering
-    feedId: uuid("feed_id")
+    // The entry's owner (#1846 phase 6), by its type: a web entry's feed
+    // (shared by every subscriber), an email's subscription, a saved article's
+    // or upload's user. It scopes duplicate detection (a unique (owner, guid)
+    // per kind) and cascades deletes; it's never used to list or count
+    // (memberships do that). Until phase 6B, email and saved entries also keep
+    // owner_feed_id = their per-user email/saved feed.
+    ownerFeedId: uuid("owner_feed_id")
       .notNull()
       .references(() => feeds.id, { onDelete: "cascade" }),
     type: feedTypeEnum("type").$type<EntryType>().notNull(), // Denormalized from feed for type-specific constraints and queries
+
+    ownerSubscriptionId: uuid("owner_subscription_id").references(() => subscriptions.id, {
+      onDelete: "cascade",
+    }),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }),
 
     // Identifier from source - meaning varies by type:
     // - web: <guid> or <id> from feed
@@ -607,28 +618,43 @@ export const entries = pgTable(
     isBackfill: boolean("is_backfill").notNull().default(false),
   },
   (table) => [
-    // Unique constraint on feed + guid
-    unique("uq_entries_feed_guid").on(table.feedId, table.guid),
+    // Unique constraint on owner feed + guid
+    unique("uq_entries_owner_feed_guid").on(table.ownerFeedId, table.guid),
     // For listing entries by feed, ordered by time (UUIDv7 is time-ordered)
-    index("idx_entries_feed").on(table.feedId, table.id),
+    index("idx_entries_owner_feed").on(table.ownerFeedId, table.id),
     // For finding entries by fetched time (visibility filtering)
-    index("idx_entries_fetched").on(table.feedId, table.fetchedAt),
+    index("idx_entries_owner_feed_fetched").on(table.ownerFeedId, table.fetchedAt),
     // No query filters on is_spam here, but nearly every row shares its key
     // with its neighbours, so B-tree deduplication makes this a fraction of
-    // idx_entries_feed's size, and the planner picks it for plain feed_id
-    // lookups (most of this table's index scans in production). Keep it.
-    index("idx_entries_spam").on(table.feedId, table.isSpam),
+    // idx_entries_owner_feed's size, and the planner picks it for plain
+    // owner_feed_id lookups (most of this table's index scans in production).
+    // Keep it.
+    index("idx_entries_owner_feed_spam").on(table.ownerFeedId, table.isSpam),
     // For filtering by entry type
     index("idx_entries_type").on(table.type),
     // sync.events / Wallabag delta: seek changed entries within a feed
-    // (feed_id = <subscribed/saved feed> AND updated_at >= cursor). Backs the
-    // entry-side arm of the sync.events UNION rewrite (#1105). Migration 0094.
-    index("idx_entries_feed_updated_at").on(table.feedId, table.updatedAt),
+    // (owner_feed_id = <subscribed/saved feed> AND updated_at >= cursor). Backs
+    // the entry-side arm of the sync.events UNION rewrite (#1105). Migration 0094.
+    index("idx_entries_owner_feed_updated_at").on(table.ownerFeedId, table.updatedAt),
     // Unique global Google Reader item id; backs the greader_item_id -> UUID
     // reverse lookup (greaderItemIdsToUuids) with an index seek.
     uniqueIndex("idx_entries_greader_item_id").on(table.greaderItemId),
+    // Email and saved owners (#1846, migration 0137): duplicate detection and
+    // delta sync's per-owner seek, partial on the owner being set.
+    uniqueIndex("uq_entries_owner_subscription_guid")
+      .on(table.ownerSubscriptionId, table.guid)
+      .where(sql`owner_subscription_id IS NOT NULL`),
+    uniqueIndex("uq_entries_owner_user_guid")
+      .on(table.ownerUserId, table.guid)
+      .where(sql`owner_user_id IS NOT NULL`),
+    index("idx_entries_owner_subscription_updated_at")
+      .on(table.ownerSubscriptionId, table.updatedAt)
+      .where(sql`owner_subscription_id IS NOT NULL`),
+    index("idx_entries_owner_user_updated_at")
+      .on(table.ownerUserId, table.updatedAt)
+      .where(sql`owner_user_id IS NOT NULL`),
     // Expression indexes (Drizzle can't express these, created via raw SQL):
-    // - uq_entries_feed_guid_canonical: UNIQUE (feed_id, regexp_replace(guid, '^https?://', 'https://'))
+    // - uq_entries_owner_feed_guid_canonical: UNIQUE (owner_feed_id, regexp_replace(guid, '^https?://', 'https://'))
     //   WHERE type = 'web'. Enforces src/server/feed/guid-identity.ts at the DB (#1535). Migration 0109.
     // - idx_entries_web_guid_canonical: (regexp_replace(guid, '^https?://', 'https://')) WHERE type = 'web'
     //   Finds an entry's twins in other feeds for the redirect-merge dedup (#1861). Migration 0125,
@@ -636,7 +662,7 @@ export const entries = pgTable(
     //   which the planner doesn't pick it.
     // - idx_entries_published_coalesce: (COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables limit pushdown for "all entries" queries. Migration 0060.
-    // - idx_entries_feed_published_coalesce: (feed_id, COALESCE(published_at, fetched_at) DESC, id DESC)
+    // - idx_entries_owner_feed_published_coalesce: (owner_feed_id, COALESCE(published_at, fetched_at) DESC, id DESC)
     //   Enables seek + limit pushdown for per-feed/subscription queries. Migration 0061.
     //
     // Type-specific check constraints (created via raw SQL in migrations):
@@ -745,10 +771,13 @@ export const subscriptions = pgTable(
     unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }), // soft delete
 
     // The subscription's unread, non-spam memberships (#1846), kept by the
-    // counter triggers, also while it's unsubscribed. The unmaintained
-    // starred_unread_count column is deliberately unmapped (Drizzle inserts
-    // name every mapped column) until the next release drops it.
+    // counter triggers, also while it's unsubscribed.
     unreadCount: integer("unread_count").notNull().default(0),
+
+    // An email subscription's (normalized) sender address, unique per user
+    // (#1846 phase 6). Its emails are owned by the subscription
+    // (entries.owner_subscription_id).
+    emailSender: text("email_sender"),
 
     // Google Reader feed stream id (issue #1117, migration 0097). Backs the
     // feed/{int} stream id and the subscription sortid; reversed by
@@ -782,6 +811,10 @@ export const subscriptions = pgTable(
       .on(table.userId)
       .where(sql`type = 'saved'`),
     check("subscriptions_saved_feedless", sql`type <> 'saved' OR feed_id IS NULL`),
+    // One email subscription per user and sender (#1846).
+    uniqueIndex("uq_subscriptions_user_email_sender")
+      .on(table.userId, table.emailSender)
+      .where(sql`type = 'email'`),
   ]
 );
 
@@ -1011,7 +1044,7 @@ export const userFeeds = pgView("user_feeds", {
 export const visibleEntries = pgView("visible_entries", {
   userId: uuid("user_id").notNull(),
   id: uuid("id").notNull(),
-  feedId: uuid("feed_id").notNull(),
+  ownerFeedId: uuid("owner_feed_id").notNull(),
   type: feedTypeEnum("type").$type<EntryType>().notNull(),
   guid: text("guid").notNull(),
   url: text("url"),

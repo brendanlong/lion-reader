@@ -1,7 +1,7 @@
 /**
  * Scheme-insensitive entry identity (issue #1535).
  *
- * Entries are keyed on (feed_id, guid), but the same article can arrive under
+ * Entries are keyed on (owner_feed_id, guid), but the same article can arrive under
  * `http://…` from one path and `https://…` from another: WordPress.com serves
  * `http://site/?p=N` guids in its polled feed while its WebSub hub pushes the
  * `https://` form, and some hosts flip the scheme between polls. Treating those
@@ -50,7 +50,7 @@ export function canonicalGuidSql(columnRef: string): string {
 
 /**
  * Every stored guid spelling that shares the incoming guid's `canonicalGuid`
- * key, for an exact-value lookup on the (feed_id, guid) unique index — cheaper
+ * key, for an exact-value lookup on the (owner_feed_id, guid) unique index — cheaper
  * than an expression scan over the feed's entries.
  */
 export function guidMatchCandidates(guid: string): string[] {
