@@ -48,6 +48,11 @@ import kotlinx.serialization.json.jsonObject
  * An in-memory stand-in for the server's `/api/v1`, at the HTTP boundary: the code under test
  * builds real requests and parses real JSON, and gets the real endpoints' 400 for more items than
  * they accept ([ServerLimits]).
+ *
+ * Entries it serves carry `subscriptionIds` as the server's do: their own, or else their
+ * `subscriptionId` and the [collections] holding them (a saved article's `subscriptionId` is the
+ * Saved subscription, [savedSubscriptionId]). [legacy] answers as a server from before #1846's
+ * memberships, without them.
  */
 class FakeServer {
     val entries = linkedMapOf<String, FullEntry>()
@@ -55,6 +60,12 @@ class FakeServer {
 
     /** Each collection's article ids, by its subscription id. */
     val collections = mutableMapOf<String, MutableSet<String>>()
+
+    /** The user's Saved subscription, which [subscriptions] doesn't list; null before a save. */
+    var savedSubscriptionId: String? = SAVED_SUBSCRIPTION
+
+    /** Answer as a server from before #1846 phase 5: no `subscriptionIds`, no Saved id. */
+    var legacy = false
 
     /** Summaries the server would generate, by entry id; others fail (500). */
     val summaries = mutableMapOf<String, String>()
@@ -125,17 +136,49 @@ class FakeServer {
         return LionReaderApi(http, AppAuth("https://lion.test", http, store) { 0L })
     }
 
+    /**
+     * Queues a page. Its entry events get the `subscriptionIds` the server would send (unless they
+     * have their own, or [legacy]): the entry's as served, without subscriptions the page deletes.
+     * Each state change brings its entry's [collections], as `collectionMemberships`.
+     */
     fun queueChanges(
         events: List<SyncEvent> = emptyList(),
         times: Int = 1,
         deletions: List<String> = emptyList(),
         resyncRequired: Boolean = false,
-        /** Entry id to the collections holding it. */
-        memberships: Map<String, List<String>> = emptyMap(),
         hasMore: Boolean = false,
         /** The page's next entries cursor. */
         entriesCursor: String = "2026-02-01T00:00:00Z",
     ) {
+        val deleted =
+            events.filterIsInstance<SyncEvent.SubscriptionDeleted>().map {
+                it.subscriptionId
+            }
+        fun membershipsOf(entryId: String, origin: String?): List<String>? =
+            if (legacy) null
+            else
+                (entries[entryId]?.let(::memberships)
+                        ?: (listOfNotNull(origin) + collectionsOf(entryId)).sorted())
+                    .filterNot { it in deleted }
+        val sent = events.map {
+            when (it) {
+                is SyncEvent.NewEntry ->
+                    it.copy(
+                        subscriptionIds =
+                            it.subscriptionIds ?: membershipsOf(it.entryId, it.subscriptionId)
+                    )
+                is SyncEvent.EntryStateChanged ->
+                    it.copy(
+                        subscriptionIds =
+                            it.subscriptionIds ?: membershipsOf(it.entryId, it.subscriptionId)
+                    )
+                else -> it
+            }
+        }
+        val memberships =
+            sent.filterIsInstance<SyncEvent.EntryStateChanged>().associate {
+                it.entryId to collectionsOf(it.entryId)
+            }
         val entryIds = events.mapNotNull {
             when (it) {
                 is SyncEvent.NewEntry -> it.entryId
@@ -151,7 +194,7 @@ class FakeServer {
             changes.addLast(
                 SyncChanges(
                     events =
-                        events.map {
+                        sent.map {
                             ApiJson.encodeToJsonElement(SyncEvent.serializer(), it).jsonObject
                         },
                     hasMore = hasMore,
@@ -197,19 +240,21 @@ class FakeServer {
             path == "/entries" -> {
                 val params = request.url.parameters
                 val recentlyRead = params["sortBy"] == "readChanged"
+                // Saved is the Saved subscription's list (before #1846, the entry type's).
+                val type = params["type"]
+                val savedList = type == "saved" && !legacy
+                val subscriptionIds =
+                    listOfNotNull(
+                        params["subscriptionId"],
+                        if (savedList) savedSubscriptionId ?: "none" else null,
+                    )
                 val matching =
                     entries.values
                         .filter { !recentlyRead || it.readChangedAt != null }
                         .filter { params["starredOnly"] != "true" || it.starred }
-                        .filter {
-                            params["type"] == null || it.type == params["type"]
-                        }
-                        .filter {
-                            val subscriptionId = params["subscriptionId"]
-                            subscriptionId == null ||
-                                it.subscriptionId == subscriptionId ||
-                                collections[subscriptionId]?.contains(it.id) == true
-                        }
+                        .filter { type == null || savedList || it.type == type }
+                        .filter { entry -> subscriptionIds.all { it in memberships(entry) } }
+                        .map(::served)
                         .sortedByDescending {
                             if (recentlyRead) it.readChangedAt else it.publishedAt ?: it.fetchedAt
                         }
@@ -233,7 +278,7 @@ class FakeServer {
                     duringBatch?.invoke(ids)
                     json(
                         GetManyResponse.serializer(),
-                        GetManyResponse(ids.mapNotNull { entries[it] }),
+                        GetManyResponse(ids.mapNotNull { entries[it]?.let(::served) }),
                     )
                 }
             }
@@ -275,7 +320,13 @@ class FakeServer {
                 stateWrite(body.entries.map { it.id }) { it.copy(starred = body.starred) }
             }
             path == "/subscriptions" ->
-                json(SubscriptionPage.serializer(), SubscriptionPage(subscriptions.toList()))
+                json(
+                    SubscriptionPage.serializer(),
+                    SubscriptionPage(
+                        subscriptions.toList(),
+                        savedSubscriptionId = savedSubscriptionId.takeUnless { legacy },
+                    ),
+                )
             path == "/tags" -> json(TagList.serializer(), TagList(emptyList()))
             else -> respond("", HttpStatusCode.NotFound)
         }
@@ -308,6 +359,24 @@ class FakeServer {
                 json(BulkStateResponse.serializer(), BulkStateResponse(states))
             }
 
+    private fun collectionsOf(entryId: String): List<String> =
+        collections.filterValues { entryId in it }.keys.sorted()
+
+    private fun memberships(entry: FullEntry): List<String> =
+        entry.subscriptionIds
+            ?: (listOfNotNull(entry.subscriptionId) + collectionsOf(entry.id)).sorted()
+
+    /** The entry as the server sends it (before #1846, a saved article had no subscription). */
+    private fun served(entry: FullEntry): FullEntry =
+        if (legacy) {
+            entry.copy(
+                subscriptionId = entry.subscriptionId.takeUnless { it == savedSubscriptionId },
+                subscriptionIds = null,
+            )
+        } else {
+            entry.copy(subscriptionIds = memberships(entry))
+        }
+
     private fun <T> body(request: HttpRequestData, serializer: KSerializer<T>): T =
         ApiJson.decodeFromString(serializer, (request.body as TextContent).text)
 
@@ -316,6 +385,9 @@ class FakeServer {
 
     private val jsonHeaders = headersOf(HttpHeaders.ContentType, "application/json")
 }
+
+/** The Saved subscription's id in [FakeServer]'s answers. */
+const val SAVED_SUBSCRIPTION = "saved-sub"
 
 /** What the real endpoints accept per request (src/server/trpc/routers/entries.ts, sync.ts). */
 object ServerLimits {
@@ -333,6 +405,7 @@ fun FullEntry.listItem() =
     EntryListItem(
         id = id,
         subscriptionId = subscriptionId,
+        subscriptionIds = subscriptionIds,
         type = type,
         url = url,
         title = title,

@@ -204,7 +204,7 @@ class SyncEngine(
         var cursor: String? = null
         do {
             val page = api.listSubscriptions(cursor)
-            writer.saveSubscriptions(page.items)
+            writer.saveSubscriptions(page)
             all += page.items
             cursor = page.nextCursor
         } while (cursor != null)
@@ -324,6 +324,28 @@ class SyncEngine(
             mentioned.distinct().filter {
                 it !in spam && it !in complete && (it in newIds || !writer.entryExists(it))
             }
+        val created = events.filterIsInstance<SyncEvent.SubscriptionCreated>()
+        val fetched = api.getEntries(ids)
+        val resubscribed = created.flatMap {
+            api.listEntries(ListFilter.ALL, null, it.subscription.id).items
+        }
+        // A subscription the device doesn't know is the Saved subscription created since it last
+        // listed them (by the first save): listing them again tells its id, so the page's saved
+        // articles go into Saved.
+        if (writer.savedSubscriptionUnknown) {
+            val memberships =
+                events.flatMap {
+                    when (it) {
+                        is SyncEvent.NewEntry -> it.subscriptionIds.orEmpty()
+                        is SyncEvent.EntryStateChanged -> it.subscriptionIds.orEmpty()
+                        else -> emptyList()
+                    }
+                } +
+                    fetched.flatMap { it.subscriptionIds.orEmpty() } +
+                    resubscribed.flatMap { it.subscriptionIds.orEmpty() }
+            val known = writer.subscriptionIds() + created.map { it.subscription.id }
+            if (memberships.any { it !in known }) listSubscriptions()
+        }
         return PulledPage(
             events = events,
             deletedIds = changes.deletions.map { it.entryId },
@@ -331,11 +353,8 @@ class SyncEngine(
             cursors = changes.cursors,
             hasMore = changes.hasMore,
             catchUpStart = start,
-            fetchedEntries = api.getEntries(ids),
-            resubscribedEntries =
-                events.filterIsInstance<SyncEvent.SubscriptionCreated>().flatMap {
-                    api.listEntries(ListFilter.ALL, null, it.subscription.id).items
-                },
+            fetchedEntries = fetched,
+            resubscribedEntries = resubscribed,
         )
     }
 

@@ -1,0 +1,48 @@
+-- Every subscription holds its entries through subscription_entry (#1846):
+-- collections' rows move over, each entry gets its own feed's, and saved
+-- articles get Saved's, under the id 'saved' (the server's id for it is learned
+-- on the next listing of subscriptions; before #1885 the server sent saved
+-- articles with no subscription at all). So lists, counts and what retention
+-- keeps are what they were, offline too.
+CREATE TABLE subscription_entry (
+  subscription_id TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  PRIMARY KEY (subscription_id, entry_id)
+);
+
+CREATE INDEX subscription_entry_entry ON subscription_entry(entry_id);
+
+INSERT OR IGNORE INTO subscription_entry(subscription_id, entry_id)
+SELECT subscription_id, entry_id FROM collection_entry;
+
+INSERT OR IGNORE INTO subscription_entry(subscription_id, entry_id)
+SELECT subscription_id, id FROM entry WHERE subscription_id IS NOT NULL AND type != 'saved';
+
+INSERT OR IGNORE INTO subscription_entry(subscription_id, entry_id)
+SELECT 'saved', id FROM entry WHERE type = 'saved';
+
+-- Saved articles synced since #1885 name the Saved subscription.
+INSERT OR IGNORE INTO app_metadata(key, value)
+SELECT 'saved_subscription_id', subscription_id FROM entry
+WHERE type = 'saved' AND subscription_id IS NOT NULL
+LIMIT 1;
+
+-- Subscriptions learn their type; until the next listing, the ones holding
+-- collection rows are known to be collections.
+ALTER TABLE subscription ADD COLUMN type TEXT;
+
+UPDATE subscription SET type = 'collection'
+WHERE id IN (SELECT subscription_id FROM collection_entry);
+
+DROP TABLE collection_entry;
+
+DROP INDEX entry_subscription;
+
+CREATE VIEW kept_entry AS
+SELECT entry_id FROM subscription_entry
+WHERE subscription_id = 'saved'
+  OR subscription_id IN (SELECT id FROM subscription WHERE type = 'collection');
+
+-- The next sync lists subscriptions (their types, Saved's id) and collections
+-- again.
+DELETE FROM app_metadata WHERE key = 'collections_listed';
