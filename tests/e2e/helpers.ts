@@ -219,7 +219,7 @@ export async function createUnreadEntry(
     .insert(schema.entries)
     .values({
       id,
-      feedId,
+      ownerFeedId: feedId,
       type: "web",
       guid: `e2e-${id}`,
       url: `https://example.com/e2e/posts/${id}`,
@@ -288,7 +288,7 @@ export async function createSavedArticle(
     .insert(schema.entries)
     .values({
       id,
-      feedId,
+      ownerFeedId: feedId,
       type: "saved",
       guid: url,
       url,

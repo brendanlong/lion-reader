@@ -367,6 +367,18 @@ Fly does not manage this cluster, so these are ours:
 
 **Temporarily scaling for expensive migrations:** see [Fly Postgres operations](fly-postgres-ops.md#expensive-migrations-temporarily-scale-the-machine).
 
+### Maintenance-mode deploys
+
+A release whose migration the previous release can't run against (`migrations/CLAUDE.md`) ships under maintenance mode. `deploy.yml` deploys every `master` commit once CI passes, so **maintenance goes on before the merge**:
+
+1. Run the release PR's read-only pre-flight queries, if it has any, and note the time and `SELECT pg_current_wal_lsn();` (a point-in-time-recovery target).
+2. Turn maintenance on in `/admin` → Status. Within a few seconds the app serves the maintenance page (except the demo, `/admin` and health checks), the worker stops claiming jobs and the Discord bot stops touching the database. Open SSE streams stay up but only re-check their credential (sessions and tokens), and jobs already running finish.
+3. Wait for those: `SELECT type, running_since FROM jobs WHERE running_since > now() - interval '5 minutes';` must return nothing. A slow handler keeps renewing its lease for up to 30 minutes; an older `running_since` is a crashed worker's, not a running job.
+4. Merge. The auto-deploy runs the migration in `release_command`, and the new machines start in maintenance. (Or deploy the commit with the workflow's manual `workflow_dispatch` trigger before merging.)
+5. Run whatever the release's PR lists (backfills, checks), then turn maintenance off.
+
+**If the migration committed but the new release doesn't come up, stay in maintenance**: fix forward, or run the PR's rollback SQL and deploy the previous release. Never lift maintenance while the previous release runs against the new schema. A rollback is the same procedure with the reverse SQL.
+
 ---
 
 ## DNS

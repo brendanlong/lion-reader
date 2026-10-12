@@ -180,7 +180,7 @@ export async function createTestEntry(
 
   await db.insert(entries).values({
     id: entryId,
-    feedId,
+    ownerFeedId: feedId,
     type,
     guid: `guid-${entryId}`,
     title: `Entry ${entryId}`,

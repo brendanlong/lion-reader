@@ -32,7 +32,7 @@ async function findEntryByGuid(feedId: string, guid: string) {
   const [entry] = await db
     .select()
     .from(entries)
-    .where(and(eq(entries.feedId, feedId), eq(entries.guid, guid)))
+    .where(and(eq(entries.ownerFeedId, feedId), eq(entries.guid, guid)))
     .limit(1);
 
   return entry ?? null;
@@ -258,7 +258,7 @@ describe("Entry Processor", () => {
       const entry = await createEntry(feed.id, parsedEntry, contentHash, fetchedAt);
 
       expect(entry.id).toBeDefined();
-      expect(entry.feedId).toBe(feed.id);
+      expect(entry.ownerFeedId).toBe(feed.id);
       expect(entry.guid).toBe("entry-456");
       expect(entry.url).toBe("https://example.com/article");
       expect(entry.title).toBe("Article Title");
@@ -794,7 +794,7 @@ describe("Entry Processor", () => {
         expect(second.entries[0].id).toBe(first.entries[0].id);
 
         // The stored guid keeps its original spelling.
-        const rows = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+        const rows = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
         expect(rows).toHaveLength(1);
         expect(rows[0].guid).toBe("http://example.com/?p=1");
         expect(rows[0].contentOriginal).toContain("v2 (edited)");
@@ -902,7 +902,7 @@ describe("Entry Processor", () => {
         expect(result.unchangedCount).toBe(2);
         expect(result.hasChanges).toBe(false);
 
-        const rows = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+        const rows = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
         expect(rows.map((r) => r.url).sort()).toEqual([
           "http://example.com/2024/06/post/",
           "http://example.com/?p=2",

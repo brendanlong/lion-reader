@@ -307,7 +307,7 @@ export async function fetchFullContentForNewEntries(
       and(
         inArray(entries.id, newEntryIds.slice(0, MAX_FULL_CONTENT_ENTRIES_PER_BATCH)),
         // Scoped to the feed so a caller can't reach another feed's entries.
-        eq(entries.feedId, feedId),
+        eq(entries.ownerFeedId, feedId),
         // Skip entries that already have a result (content or a recorded
         // error), so a retried job doesn't redo the work it finished before
         // failing. A new entry never has one.

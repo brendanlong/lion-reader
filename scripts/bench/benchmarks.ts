@@ -118,7 +118,7 @@ const FULL_COLUMNS = `ve.id, ve.greader_item_id, subscriptions.greader_stream_id
 
 /** The joins every entry read performs (`entryOriginJoin`). */
 const FROM_VISIBLE = `FROM visible_entries ve
-INNER JOIN feeds ON ve.feed_id = feeds.id
+INNER JOIN feeds ON ve.owner_feed_id = feeds.id
 LEFT JOIN subscriptions ON ${originJoin("ve.user_id", "ve.id")}`;
 
 interface ListOptions {
@@ -294,8 +294,8 @@ const populateSql = (userId: string, subscriptionId: string, feedId: string): St
   sql: `INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
 SELECT ${q(userId)}, e.id, COALESCE(e.published_at, e.fetched_at), ${q(subscriptionId)}, e.is_spam, e.is_backfill
 FROM entries e
-JOIN feeds f ON f.id = e.feed_id
-WHERE e.feed_id = ${q(feedId)}
+JOIN feeds f ON f.id = e.owner_feed_id
+WHERE e.owner_feed_id = ${q(feedId)}
   AND f.last_entries_updated_at IS NOT NULL
   AND e.last_seen_at >= f.last_entries_updated_at
   AND NOT EXISTS (
@@ -305,7 +305,7 @@ WHERE e.feed_id = ${q(feedId)}
       ON ue_existing.user_id = ${q(userId)} AND ue_existing.entry_id = e_prev.id
     WHERE e_prev.type = 'web'
       AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(e.guid, '^https?://', 'https://')
-      AND e_prev.feed_id != e.feed_id
+      AND e_prev.owner_feed_id != e.owner_feed_id
       AND ue_existing.subscription_id = ${q(subscriptionId)}
   )
 ON CONFLICT DO NOTHING`,
@@ -512,13 +512,13 @@ ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
    WHERE user_entries.user_id = ${q(U0)} AND user_entries.updated_at >= ${c})
   UNION
   (SELECT user_entries.entry_id FROM subscriptions
-   INNER JOIN entries ON entries.feed_id = subscriptions.feed_id AND entries.updated_at >= ${c}
+   INNER JOIN entries ON entries.owner_feed_id = subscriptions.feed_id AND entries.updated_at >= ${c}
    INNER JOIN user_entries ON user_entries.entry_id = entries.id AND user_entries.user_id = subscriptions.user_id
    WHERE subscriptions.user_id = ${q(U0)})
   UNION
   (SELECT user_entries.entry_id FROM user_entries
    INNER JOIN entries ON entries.id = user_entries.entry_id
-     AND entries.feed_id = (SELECT feeds.id FROM feeds WHERE feeds.user_id = ${q(U0)} AND feeds.type = 'saved')
+     AND entries.owner_feed_id = (SELECT feeds.id FROM feeds WHERE feeds.user_id = ${q(U0)} AND feeds.type = 'saved')
      AND entries.updated_at >= ${c}
    WHERE user_entries.user_id = ${q(U0)})
   UNION
@@ -540,7 +540,7 @@ SELECT entries.id, entries.title, entries.author, entries.summary, entries.url, 
 FROM changed_entries
 INNER JOIN user_entries ON user_entries.user_id = ${q(U0)} AND user_entries.entry_id = changed_entries.entry_id
 INNER JOIN entries ON entries.id = user_entries.entry_id
-INNER JOIN feeds ON feeds.id = entries.feed_id
+INNER JOIN feeds ON feeds.id = entries.owner_feed_id
 LEFT JOIN subscriptions ON ${originJoin("user_entries.user_id", "user_entries.entry_id")}
 WHERE ${after(greatest)}
   AND ${changes ? `(${visible} OR ${since("user_entries.updated_at")})` : visible}
@@ -679,14 +679,14 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.unsubscribed_at IS NULL
 bound AS (SELECT COALESCE((SELECT ts FROM arm_ue), '-infinity'::timestamptz) AS ts),
 arm_sub AS (
   SELECT e.updated_at AS ts, e.id FROM subscriptions s
-  JOIN entries e ON e.feed_id = s.feed_id AND e.updated_at >= (SELECT ts FROM bound)
+  JOIN entries e ON e.owner_feed_id = s.feed_id AND e.updated_at >= (SELECT ts FROM bound)
   JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
   WHERE s.user_id = ${q(U0)}::uuid ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
 ),
 arm_saved AS (
   SELECT e.updated_at AS ts, e.id FROM entries e
   JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
-  WHERE e.feed_id = (SELECT id FROM feeds WHERE user_id = ${q(U0)}::uuid AND type = 'saved')
+  WHERE e.owner_feed_id = (SELECT id FROM feeds WHERE user_id = ${q(U0)}::uuid AND type = 'saved')
     AND e.updated_at >= (SELECT ts FROM bound)
   ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
 ),
@@ -1021,7 +1021,7 @@ async function fetchStatements(db: ClientBase, fresh: number, kept: number): Pro
   );
   const current = await rows<{ id: string; guid: string }>(
     db,
-    `SELECT id, guid FROM entries WHERE feed_id = ${q(feedId)} AND last_seen_at >= ${ts(feed.last_entries_updated_at)}
+    `SELECT id, guid FROM entries WHERE owner_feed_id = ${q(feedId)} AND last_seen_at >= ${ts(feed.last_entries_updated_at)}
 ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ${kept}`
   );
   const fetchedAt = nowIso();
@@ -1040,11 +1040,11 @@ ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ${kept}`
     {
       label: "existing",
       sql: `SELECT entries.id, entries.guid, entries.content_hash FROM entries
-WHERE entries.feed_id = ${q(feedId)} AND entries.guid IN (${list(candidates)})`,
+WHERE entries.owner_feed_id = ${q(feedId)} AND entries.guid IN (${list(candidates)})`,
     },
     ...created.map((e, i) => ({
       label: `create_entry.${i}`,
-      sql: `INSERT INTO entries (id, feed_id, type, guid, url, title, author, content_original, content_cleaned,
+      sql: `INSERT INTO entries (id, owner_feed_id, type, guid, url, title, author, content_original, content_cleaned,
   summary, content_hash, published_at, fetched_at, last_seen_at, is_backfill)
 VALUES (${q(e.id)}, ${q(feedId)}, 'web', ${q(e.guid)}, ${q(e.guid)}, ${q(e.title)}, 'Author 1',
   ${q(`<article>${e.html}</article>`)}, ${q(e.html)}, ${q(e.summary)}, ${q(benchUuid(e.guid))},
@@ -1054,7 +1054,7 @@ RETURNING *`,
     {
       label: "previously_current",
       sql: `SELECT entries.guid FROM entries
-WHERE entries.feed_id = ${q(feedId)} AND entries.last_seen_at >= ${ts(feed.last_entries_updated_at)}`,
+WHERE entries.owner_feed_id = ${q(feedId)} AND entries.last_seen_at >= ${ts(feed.last_entries_updated_at)}`,
     },
     {
       label: "update_last_seen",
@@ -1067,7 +1067,7 @@ WHERE entries.id IN (${list(allIds)})
       sql: `INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
 SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam, e.is_backfill
 FROM subscriptions s
-INNER JOIN entries e ON e.feed_id = s.feed_id
+INNER JOIN entries e ON e.owner_feed_id = s.feed_id
 WHERE s.feed_id = ${q(feedId)}::uuid
   AND s.unsubscribed_at IS NULL
   AND e.id = ANY(${uuidArray(allIds)})
@@ -1078,7 +1078,7 @@ WHERE s.feed_id = ${q(feedId)}::uuid
       ON ue_existing.user_id = s.user_id AND ue_existing.entry_id = e_prev.id
     WHERE e_prev.type = 'web'
       AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(e.guid, '^https?://', 'https://')
-      AND e_prev.feed_id != s.feed_id
+      AND e_prev.owner_feed_id != s.feed_id
       AND ue_existing.subscription_id = s.id
   )
 ON CONFLICT DO NOTHING`,
@@ -1321,19 +1321,19 @@ ON CONFLICT DO NOTHING RETURNING feeds.id`,
             label: "existing",
             sql: `SELECT entries.*, user_entries.* FROM entries
 INNER JOIN user_entries ON user_entries.entry_id = entries.id
-WHERE entries.feed_id = ${q(saved)} AND entries.guid = ${q(url)} AND user_entries.user_id = ${q(U0)}
+WHERE entries.owner_feed_id = ${q(saved)} AND entries.guid = ${q(url)} AND user_entries.user_id = ${q(U0)}
 LIMIT 1`,
           },
           {
             label: "insert_entry",
-            sql: `INSERT INTO entries (id, feed_id, type, guid, url, title, author, content_original, content_cleaned,
+            sql: `INSERT INTO entries (id, owner_feed_id, owner_user_id, type, guid, url, title, author, content_original, content_cleaned,
   summary, site_name, image_url, is_placeholder, published_at, fetched_at, content_hash, spam_score, is_spam,
   list_unsubscribe_mailto, list_unsubscribe_https, list_unsubscribe_post, created_at, updated_at)
-VALUES (${q(entryId)}, ${q(saved)}, 'saved', ${q(url)}, ${q(url)}, ${q(article.title)}, 'A. Writer',
+VALUES (${q(entryId)}, ${q(saved)}, ${q(U0)}, 'saved', ${q(url)}, ${q(url)}, ${q(article.title)}, 'A. Writer',
   ${q(`<html><body><article>${article.html}</article></body></html>`)}, ${q(article.html)}, ${q(article.summary)},
   'news.example.org', 'https://news.example.org/lead.jpg', false, NULL, ${now}, ${q(benchUuid(url))}, NULL, false,
   NULL, NULL, NULL, ${now}, ${now})
-ON CONFLICT (feed_id, guid) DO NOTHING
+ON CONFLICT DO NOTHING
 RETURNING entries.id`,
           },
           {
@@ -1345,6 +1345,83 @@ RETURNING entries.id`,
             label: "saved_subscription",
             sql: `SELECT subscriptions.id FROM subscriptions
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.type = 'saved' LIMIT 1`,
+          },
+        ],
+      };
+    },
+  },
+  {
+    name: "write.receive_email",
+    kind: "write",
+    source:
+      "email/process-inbound.ts processInboundEmail: a new email from a sender U0 already has (steps 5–8)",
+    prepare: async (db) => {
+      const feed = await one<{ id: string; sender: string; title: string }>(
+        db,
+        `SELECT id, email_sender_pattern AS sender, title FROM feeds
+WHERE type = 'email' AND user_id = ${q(U0)} ORDER BY id LIMIT 1`
+      );
+      const owner = await one<{ id: string }>(
+        db,
+        `SELECT id FROM subscriptions WHERE feed_id = ${q(feed.id)} AND type = 'email'`
+      );
+      const article = articleHtml(91, 6);
+      const now = ts(nowIso());
+      const entryId = benchUuid("bench:email-entry");
+      const messageId = "<bench-email@example.net>";
+      return {
+        statements: [
+          {
+            label: "upsert_feed",
+            sql: `INSERT INTO feeds (id, type, user_id, email_sender_pattern, title, created_at, updated_at)
+VALUES (${q(benchUuid("bench:email-feed"))}, 'email', ${q(U0)}, ${q(feed.sender)}, ${q(feed.title)}, ${now}, ${now})
+ON CONFLICT (user_id, email_sender_pattern) DO NOTHING RETURNING *`,
+          },
+          {
+            label: "select_feed",
+            sql: `SELECT * FROM feeds WHERE feeds.user_id = ${q(U0)}
+  AND feeds.email_sender_pattern = ${q(feed.sender)} AND feeds.type = 'email' LIMIT 1`,
+          },
+          {
+            label: "lock_members",
+            sql: `SELECT user_entries.entry_id FROM user_entries
+INNER JOIN subscription_entries ON subscription_entries.user_id = user_entries.user_id
+  AND subscription_entries.entry_id = user_entries.entry_id
+INNER JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
+WHERE user_entries.user_id = ${q(U0)} AND subscriptions.user_id = ${q(U0)}
+  AND subscriptions.feed_id = ${q(feed.id)} AND subscriptions.unsubscribed_at IS NOT NULL
+ORDER BY user_entries.entry_id FOR NO KEY UPDATE OF user_entries`,
+          },
+          {
+            label: "upsert_subscription",
+            sql: `INSERT INTO subscriptions (id, user_id, feed_id, type, email_sender, subscribed_at, created_at, updated_at)
+VALUES (${q(benchUuid("bench:email-subscription"))}, ${q(U0)}, ${q(feed.id)}, 'email', ${q(feed.sender)}, ${now}, ${now}, ${now})
+ON CONFLICT (user_id, feed_id) DO UPDATE SET unsubscribed_at = NULL, updated_at = ${now}
+  WHERE subscriptions.unsubscribed_at IS NOT NULL
+RETURNING *`,
+          },
+          {
+            label: "owner_subscription",
+            sql: `SELECT subscriptions.id FROM subscriptions WHERE subscriptions.user_id = ${q(U0)}
+  AND subscriptions.feed_id = ${q(feed.id)}`,
+          },
+          {
+            label: "duplicate",
+            sql: `SELECT * FROM entries WHERE entries.owner_feed_id = ${q(feed.id)} AND entries.guid = ${q(messageId)} LIMIT 1`,
+          },
+          {
+            label: "insert_entry",
+            sql: `INSERT INTO entries (id, owner_feed_id, owner_subscription_id, type, guid, url, title, author, content_original,
+  content_cleaned, summary, published_at, fetched_at, content_hash, spam_score, is_spam, list_unsubscribe_mailto,
+  list_unsubscribe_https, list_unsubscribe_post, unsubscribe_url)
+VALUES (${q(entryId)}, ${q(feed.id)}, ${q(owner.id)}, 'email', ${q(messageId)}, NULL, ${q(article.title)}, ${q(feed.title)},
+  ${q(`<html><body>${article.html}</body></html>`)}, ${q(article.html)}, ${q(article.summary)}, ${now}, ${now},
+  ${q(benchUuid(messageId))}, 1.5, false, 'mailto:unsubscribe@example.net', NULL, false, NULL)`,
+          },
+          {
+            label: "insert_user_entry",
+            sql: `INSERT INTO user_entries (user_id, entry_id) VALUES (${q(U0)}, ${q(entryId)})
+RETURNING user_entries.subscription_id`,
           },
         ],
       };
@@ -1460,7 +1537,7 @@ WHERE subscription_tags.subscription_id IN (${q(survivor)})`,
       const saved = savedFeedId(0);
       const { id } = await one<{ id: string }>(
         db,
-        `SELECT id FROM entries WHERE feed_id = ${q(saved)} ORDER BY id LIMIT 1`
+        `SELECT id FROM entries WHERE owner_feed_id = ${q(saved)} ORDER BY id LIMIT 1`
       );
       return {
         statements: [
@@ -1472,7 +1549,7 @@ WHERE subscription_tags.subscription_id IN (${q(survivor)})`,
             label: "existing",
             sql: `SELECT entries.id FROM entries
 INNER JOIN user_entries ON user_entries.entry_id = entries.id
-WHERE entries.id = ${q(id)} AND entries.feed_id = ${q(saved)} AND user_entries.user_id = ${q(U0)}
+WHERE entries.id = ${q(id)} AND entries.owner_feed_id = ${q(saved)} AND user_entries.user_id = ${q(U0)}
 LIMIT 1`,
           },
           {
@@ -1485,7 +1562,7 @@ ORDER BY subscription_entries.subscription_id`,
           },
           {
             label: "delete_entry",
-            sql: `DELETE FROM entries WHERE entries.id = ${q(id)} AND entries.feed_id = ${q(saved)}`,
+            sql: `DELETE FROM entries WHERE entries.id = ${q(id)} AND entries.owner_feed_id = ${q(saved)}`,
           },
           {
             label: "tombstone",

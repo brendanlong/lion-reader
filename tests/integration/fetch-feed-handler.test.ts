@@ -251,7 +251,7 @@ describe("handleFetchFeed", () => {
 
       expect(result.metadata).toMatchObject({ fullContentFetched: 1, fullContentFailed: 0 });
       expect(articleRequests).toEqual(["/post/full"]);
-      const [entry] = await db.select().from(entries).where(eq(entries.feedId, feed.id));
+      const [entry] = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
       expect(entry.fullContentCleaned).toContain("Paragraph 6 of the complete article");
       expect(entry.fullContentError).toBeNull();
 
@@ -355,7 +355,9 @@ describe("handleFetchFeed", () => {
       expect(result.metadata).toMatchObject({ notModified: true });
 
       // Nothing was parsed, so no entries and no generation change...
-      expect(await db.select().from(entries).where(eq(entries.feedId, feed.id))).toHaveLength(0);
+      expect(await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id))).toHaveLength(
+        0
+      );
       const after = await readFeed(feed.id);
       expect(after.lastEntriesUpdatedAt).toBeNull();
       // ...but the poll still counts as a successful fetch.

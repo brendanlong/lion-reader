@@ -70,7 +70,7 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
           sql`NOT EXISTS (
             SELECT 1 FROM ${entries}
             INNER JOIN ${userEntries} ON ${userEntries.entryId} = ${entries.id}
-            WHERE ${entries.feedId} = ${feeds.id}
+            WHERE ${entries.ownerFeedId} = ${feeds.id}
           )`
         )
       );

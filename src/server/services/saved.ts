@@ -472,7 +472,8 @@ interface InsertSavedEntryParams {
  * leave an entry with no user_entries row (which would make it invisible).
  *
  * Returns null when the entry already exists — the entry insert uses
- * `onConflictDoNothing` on `(feed_id, guid)`, so a concurrent duplicate save
+ * `onConflictDoNothing` (a duplicate `(owner_feed_id, guid)`, which is also a
+ * duplicate `(owner_user_id, guid)`), so a concurrent duplicate save
  * (e.g. a double-click) is idempotent instead of surfacing a raw unique-violation
  * 500 (issue #952). The caller re-selects the existing article in that case.
  * Uploads use a random `uploaded:{uuid}` guid, so they never conflict and always
@@ -490,7 +491,10 @@ async function insertSavedEntry(
   // Store only the raw columns; the read path sanitizes per read (issue #1282).
   const values = {
     id: entryId,
-    feedId: savedFeedId,
+    // The user's saved feed until phase 6B; saved articles and uploads are
+    // owned by the user (#1846).
+    ownerFeedId: savedFeedId,
+    ownerUserId: userId,
     type: "saved" as const,
     guid: params.guid,
     url: params.url,
@@ -517,10 +521,13 @@ async function insertSavedEntry(
     const insertedRows = await tx
       .insert(entries)
       .values(values)
-      .onConflictDoNothing({ target: [entries.feedId, entries.guid] })
+      // Untargeted: a duplicate violates both (owner_feed_id, guid) and
+      // (owner_user_id, guid), and whichever index sees it first must not
+      // raise.
+      .onConflictDoNothing()
       .returning({ id: entries.id });
 
-    // Conflict: another save already created this (feed_id, guid). Abort so the
+    // Conflict: another save already created this (owner_feed_id, guid). Abort so the
     // caller can return the existing article idempotently.
     if (insertedRows.length === 0) {
       return false;
@@ -1075,7 +1082,7 @@ function normalizeSavedUrl(url: string): string {
  * returning its entry id (or null). Read-only: unlike {@link saveArticle} it
  * never creates the user's saved feed, so it's safe on probe/exists paths.
  *
- * Indexed by the `uq_entries_feed_guid` unique constraint on `(feed_id, guid)`.
+ * Indexed by the `uq_entries_owner_feed_guid` unique constraint on `(owner_feed_id, guid)`.
  */
 export async function savedArticleExistsByUrl(
   db: typeof dbType,
@@ -1092,7 +1099,7 @@ export async function savedArticleExistsByUrl(
     .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
     .where(
       and(
-        eq(entries.feedId, savedFeedId),
+        eq(entries.ownerFeedId, savedFeedId),
         eq(entries.guid, normalizedUrl),
         eq(userEntries.userId, userId)
       )
@@ -1115,7 +1122,7 @@ async function selectExistingSavedRow(
     .innerJoin(userEntries, eq(userEntries.entryId, entries.id))
     .where(
       and(
-        eq(entries.feedId, savedFeedId),
+        eq(entries.ownerFeedId, savedFeedId),
         eq(entries.guid, normalizedUrl),
         eq(userEntries.userId, userId)
       )
@@ -1347,7 +1354,7 @@ export async function saveArticle(
     contentHash,
   });
 
-  // A concurrent save (e.g. a double-click) already inserted this (feed_id,
+  // A concurrent save (e.g. a double-click) already inserted this (owner_feed_id,
   // guid) between our existence check above and the insert. Return the existing
   // article idempotently instead of surfacing a unique-violation 500 (#952).
   if (!saved) {
@@ -1434,7 +1441,7 @@ export async function savePlaceholderArticle(
     return { ...saved, outcome: "created" };
   }
 
-  // The (feed_id, guid) already exists: this URL was previously saved (a real
+  // The (owner_feed_id, guid) already exists: this URL was previously saved (a real
   // article or an earlier placeholder), or two queued retries raced. Return the
   // existing entry idempotently instead of a unique-violation.
   //
@@ -1476,7 +1483,7 @@ export async function deleteSavedArticle(
     .where(
       and(
         eq(entries.id, articleId),
-        eq(entries.feedId, savedFeedId),
+        eq(entries.ownerFeedId, savedFeedId),
         eq(userEntries.userId, userId)
       )
     )
@@ -1495,7 +1502,9 @@ export async function deleteSavedArticle(
   // delete so a client can never see one without the other.
   const collectionIds = await listEntryCollectionIds(db, userId, articleId);
   await db.transaction(async (tx) => {
-    await tx.delete(entries).where(and(eq(entries.id, articleId), eq(entries.feedId, savedFeedId)));
+    await tx
+      .delete(entries)
+      .where(and(eq(entries.id, articleId), eq(entries.ownerFeedId, savedFeedId)));
     await recordEntryTombstone(tx, userId, articleId);
   });
   await publishEntryLeftCollections(db, userId, articleId, collectionIds);

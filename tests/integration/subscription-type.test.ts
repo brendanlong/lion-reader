@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
+  entries,
   feeds,
   ingestAddresses,
   jobs,
@@ -48,6 +49,8 @@ async function subscriptionTo(userId: string, feedId: string): Promise<string> {
 }
 
 async function cleanup(): Promise<void> {
+  // Entries first: an email's cascades from its subscription (its owner).
+  await db.delete(entries);
   await db.delete(subscriptions);
   await db.delete(ingestAddresses);
   await db.delete(jobs);

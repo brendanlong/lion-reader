@@ -57,7 +57,7 @@ test("narrates and highlights the shapes that used to be skipped", async ({ page
   const now = new Date();
   await db.insert(schema.entries).values({
     id: entryId,
-    feedId: feed.feedId,
+    ownerFeedId: feed.feedId,
     type: "web",
     guid: `e2e-${entryId}`,
     url: `https://example.com/e2e/posts/${entryId}`,

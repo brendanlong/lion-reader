@@ -48,7 +48,7 @@ async function savedEntriesFor(userId: string) {
       userEntries,
       and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, userId))
     )
-    .where(eq(entries.feedId, savedFeedId));
+    .where(eq(entries.ownerFeedId, savedFeedId));
 }
 
 async function gettingStartedAt(userId: string): Promise<Date | null> {

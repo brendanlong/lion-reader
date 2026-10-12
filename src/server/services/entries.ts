@@ -395,7 +395,7 @@ function selectFullEntryRows(db: typeof dbType, where: SQL | undefined) {
   return db
     .select(fullEntrySelectFields)
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(where);
 }
@@ -670,7 +670,7 @@ export async function listExportableEntries(
       ...shownFullContentSelectFields,
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(
       and(
@@ -841,7 +841,7 @@ export async function listEntries(
       sortTs: sortTsInstant,
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .$dynamic();
   const queryResults = await (
@@ -950,7 +950,7 @@ async function searchEntries(
       rank: rankColumn.as("rank"),
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(and(...conditions))
     .as("ranked");
@@ -1009,7 +1009,7 @@ function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
       ...shownFullContentSelectFields,
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(visibleEntries.feedId, feeds.id))
+    .innerJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(condition);
 }
@@ -1354,7 +1354,7 @@ export async function markAllEntriesRead(
     const typeEntryIdsSubquery = db
       .select({ id: entries.id })
       .from(entries)
-      .innerJoin(feeds, eq(entries.feedId, feeds.id))
+      .innerJoin(feeds, eq(entries.ownerFeedId, feeds.id))
       .where(eq(feeds.type, params.type));
 
     conditions.push(inArray(userEntries.entryId, typeEntryIdsSubquery));

@@ -24,14 +24,21 @@ import {
 } from "../../src/server/db/schema";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
-const INDEX_NAME = "uq_entries_feed_guid_canonical";
+// Migration 0137 renamed entries.feed_id to owner_feed_id (and this index with
+// it), so the file's statements are replayed against the current names.
+const INDEX_NAME = "uq_entries_owner_feed_guid_canonical";
 
 const migrationStatements = readFileSync(
   new URL("../../migrations/0109_merge_scheme_twin_entries.sql", import.meta.url),
   "utf8"
 )
   .split("--> statement-breakpoint")
-  .map((statement) => statement.trim())
+  .map((statement) =>
+    statement
+      .trim()
+      .replace(/\bfeed_id\b/g, "owner_feed_id")
+      .replace(/\buq_entries_feed_guid_canonical\b/g, INDEX_NAME)
+  )
   .filter((statement) => statement.length > 0);
 
 const createIndexStatement = migrationStatements[migrationStatements.length - 1];
@@ -231,7 +238,7 @@ describe("migration 0109: merge scheme-twin entries", () => {
 
       await runMerge();
 
-      const remaining = await db.select().from(entries).where(eq(entries.feedId, feedId));
+      const remaining = await db.select().from(entries).where(eq(entries.ownerFeedId, feedId));
       expect(remaining.map((e) => e.id).sort()).toEqual([survivor, survivor2, unrelated].sort());
       const merged = remaining.find((e) => e.id === survivor)!;
       expect(merged.guid).toBe("http://example.com/?p=1");
@@ -246,7 +253,7 @@ describe("migration 0109: merge scheme-twin entries", () => {
       const savedRows = await db
         .select({ id: entries.id })
         .from(entries)
-        .where(eq(entries.feedId, savedFeedId));
+        .where(eq(entries.ownerFeedId, savedFeedId));
       expect(savedRows.map((r) => r.id).sort()).toEqual([savedA, savedB].sort());
 
       expect(await stateOf(userBoth, loser)).toBeNull();
@@ -306,7 +313,7 @@ describe("migration 0109: merge scheme-twin entries", () => {
     const rows = await db
       .select({ id: entries.id })
       .from(entries)
-      .where(eq(entries.feedId, feedId));
+      .where(eq(entries.ownerFeedId, feedId));
     expect(rows.map((r) => r.id).sort()).toEqual([a, b].sort());
     const [index] = await db
       .execute<{ indexname: string }>(

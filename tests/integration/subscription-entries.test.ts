@@ -215,7 +215,7 @@ describe("subscription_entries mirror (#1846)", () => {
       // The first save creates the saved subscription and stays open...
       await held.query("BEGIN");
       await held.query(
-        `INSERT INTO entries (id, feed_id, type, guid, content_hash, fetched_at)
+        `INSERT INTO entries (id, owner_feed_id, type, guid, content_hash, fetched_at)
          VALUES ($1, $2, 'saved', $3, $3, now())`,
         [heldEntryId, savedFeedId, `guid-${heldEntryId}`]
       );

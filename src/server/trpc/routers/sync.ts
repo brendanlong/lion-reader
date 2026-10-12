@@ -177,10 +177,10 @@ async function currentSyncCursors(
     //             idx_user_entries_updated_at.
     //   arm_sub — max entries.updated_at (content refetches that bump the entry
     //             but not the ue row) over the user's feeds, driven from
-    //             subscriptions into idx_entries_feed_updated_at per feed.
+    //             subscriptions into idx_entries_owner_feed_updated_at per feed.
     //   arm_saved — same, for saved articles, through the saved feed's
-    //             (feed_id, updated_at) index (until #1846 phase 6 gives
-    //             entries an owner).
+    //             (owner_feed_id, updated_at) index (until #1846 phase 6B seeks
+    //             them by owner_user_id).
     //   arm_collections — same, for active collections' members (a few
     //             hundred at most), whose feed may be unsubscribed.
     // The two entry arms are bounded to updated_at >= arm_ue's max (the `bound`
@@ -208,7 +208,7 @@ async function currentSyncCursors(
         SELECT e.updated_at AS ts, e.id
         FROM subscriptions s
         JOIN entries e
-          ON e.feed_id = s.feed_id
+          ON e.owner_feed_id = s.feed_id
           AND e.updated_at >= (SELECT ts FROM bound)
         JOIN user_entries ue2
           ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
@@ -219,7 +219,7 @@ async function currentSyncCursors(
       arm_saved AS (
         SELECT e.updated_at AS ts, e.id FROM entries e
         JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
-        WHERE e.feed_id = (
+        WHERE e.owner_feed_id = (
             SELECT id FROM feeds WHERE user_id = ${userId}::uuid AND type = 'saved'
           )
           AND e.updated_at >= (SELECT ts FROM bound)
@@ -479,8 +479,8 @@ async function collectSyncEvents(
     //            content refetches that bump entries.updated_at WITHOUT
     //            touching the user_entries row (updateEntryContent) — the case
     //            Arm A misses. Drives from the user's subscriptions
-    //            (uq_subscriptions_user_feed) into idx_entries_feed_updated_at
-    //            per feed, seeking (feed_id, updated_at >= cursor) directly.
+    //            (uq_subscriptions_user_feed) into idx_entries_owner_feed_updated_at
+    //            per feed, seeking (owner_feed_id, updated_at >= cursor) directly.
     //            NOTE: we deliberately do NOT pre-filter on
     //            feeds.last_entries_updated_at. It is stamped from the poll's
     //            start-time `now`, while each changed entry's updated_at is a
@@ -494,8 +494,8 @@ async function collectSyncEvents(
     //            content burst from the delta. The per-feed index seek already
     //            bounds the work; no pre-filter is needed.
     //   Arm B2 — same, for saved articles, seeking the saved feed's
-    //            (feed_id, updated_at) index (until #1846 phase 6 gives
-    //            entries an owner).
+    //            (owner_feed_id, updated_at) index (until #1846 phase 6B seeks
+    //            them by owner_user_id).
     //   Arm B3 — same, for active collections' members (a few hundred at
     //            most), whose feed may be unsubscribed.
     //
@@ -517,7 +517,7 @@ async function collectSyncEvents(
       .from(subscriptions)
       .innerJoin(
         entries,
-        and(eq(entries.feedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
+        and(eq(entries.ownerFeedId, subscriptions.feedId), sql`${entries.updatedAt} >= ${cursorTs}`)
       )
       .innerJoin(
         userEntries,
@@ -532,7 +532,7 @@ async function collectSyncEvents(
         entries,
         and(
           eq(entries.id, userEntries.entryId),
-          sql`${entries.feedId} = (SELECT ${feeds.id} FROM ${feeds}
+          sql`${entries.ownerFeedId} = (SELECT ${feeds.id} FROM ${feeds}
             WHERE ${feeds.userId} = ${userId} AND ${feeds.type} = 'saved')`,
           sql`${entries.updatedAt} >= ${cursorTs}`
         )
@@ -599,7 +599,7 @@ async function collectSyncEvents(
         and(eq(userEntries.userId, userId), eq(userEntries.entryId, changed.entryId))
       )
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
-      .innerJoin(feeds, eq(feeds.id, entries.feedId))
+      .innerJoin(feeds, eq(feeds.id, entries.ownerFeedId))
       .leftJoin(subscriptions, entryOriginJoin(USER_ROW))
       .where(
         and(

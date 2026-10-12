@@ -47,7 +47,7 @@ async function fetchUnreadListData(
       feedTitle: entryFeedTitleSql(),
     })
     .from(visibleEntries)
-    .innerJoin(feeds, eq(feeds.id, visibleEntries.feedId))
+    .innerJoin(feeds, eq(feeds.id, visibleEntries.ownerFeedId))
     .leftJoin(
       subscriptions,
       entryOriginJoin({ userId: visibleEntries.userId, entryId: visibleEntries.id })
