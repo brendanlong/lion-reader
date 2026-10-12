@@ -149,6 +149,17 @@ describe.each([
     });
   });
 
+  it("clearing an email subscription's name shows its feed's title or, without a feed, the sender", async () => {
+    const userId = await user();
+    const { subscriptionId } = await receiveEmail(userId);
+    const caller = createCaller(await createAuthContext(userId));
+
+    await caller.subscriptions.update({ id: subscriptionId!, customTitle: "Renamed" });
+    const cleared = await caller.subscriptions.update({ id: subscriptionId!, customTitle: null });
+
+    expect(cleared.title).toBe(feedless ? "news@example.com" : "The News");
+  });
+
   it("unsubscribing blocks the sender with its emails' List-Unsubscribe, and a later email reactivates it", async () => {
     const userId = await user();
     const { subscriptionId } = await receiveEmail(userId, {

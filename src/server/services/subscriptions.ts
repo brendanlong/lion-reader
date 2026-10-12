@@ -75,25 +75,36 @@ export function isCollectionSubscription(): SQL {
   return eq(subscriptions.type, "collection");
 }
 
-/** Whether the subscription is one of the user's active collections. */
-export async function isActiveCollection(
+/**
+ * What clearing one of the user's active subscriptions' custom title stores,
+ * or null if it can't be cleared. A subscription without a feed has only its
+ * own name (#1846): an active collection's is required, and an email
+ * subscription's falls back to the sender's address. Anything else clears to
+ * its feed's title.
+ */
+export async function clearedCustomTitle(
   db: DbOrTx,
   userId: string,
   subscriptionId: string
-): Promise<boolean> {
-  const rows = await db
-    .select({ id: subscriptions.id })
+): Promise<{ customTitle: string | null } | null> {
+  const [row] = await db
+    .select({
+      type: subscriptions.type,
+      feedId: subscriptions.feedId,
+      emailSender: subscriptions.emailSender,
+    })
     .from(subscriptions)
     .where(
       and(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt),
-        isCollectionSubscription()
+        isNull(subscriptions.unsubscribedAt)
       )
     )
     .limit(1);
-  return rows.length > 0;
+  if (row?.type === "collection") return null;
+  if (row?.type === "email" && row.feedId === null) return { customTitle: row.emailSender };
+  return { customTitle: null };
 }
 
 /** Matches `subscriptions` rows to web feeds, the only feeds shared between users. */
