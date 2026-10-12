@@ -233,6 +233,7 @@ class SyncEngineTest {
     @Test
     fun unreadEntriesOutsideTheWindowAreNotCounted() = runTest {
         policy = RetentionPolicy(windowDays = 3)
+        server.subscriptions += subscription("sub-1")
         serve(entry("recent"), entry("old", ageDays = 10))
 
         engine.sync()
@@ -641,6 +642,7 @@ class SyncEngineTest {
     @Test
     fun retentionDropsOldEntriesButKeepsStarredAndSaved() = runTest {
         policy = RetentionPolicy(windowDays = 3)
+        server.subscriptions += subscription("sub-1")
         serve(
             entry("recent", ageDays = 1),
             entry("old", ageDays = 5),
@@ -1032,6 +1034,7 @@ class SyncEngineTest {
     @Test
     fun retentionAndBodiesKeepTheSavedSubscriptionsArticlesNotSavedTypes() = runTest {
         policy = RetentionPolicy(windowDays = 3)
+        server.subscriptions += subscription("sub-1")
         serve(
             entry("member", ageDays = 5, read = true)
                 .copy(subscriptionIds = listOf(SAVED_SUBSCRIPTION)),
@@ -1049,6 +1052,8 @@ class SyncEngineTest {
 
     @Test
     fun articlesSavedAfterTheDeviceListedSubscriptionsGoIntoSaved() = runTest {
+        // Retention keeps no read article that isn't exempt.
+        policy = RetentionPolicy(maxReadEntries = 0)
         server.savedSubscriptionId = null
         engine.sync()
         // The first save creates the Saved subscription. Read elsewhere, s arrives through
@@ -1056,6 +1061,7 @@ class SyncEngineTest {
         server.savedSubscriptionId = SAVED_SUBSCRIPTION
         serve(saved("s", read = true).copy(readChangedAt = minutesAgo(1)), saved("t"))
         engine.sync(downloadContent = false)
+        // Kept, though the device doesn't know yet that its subscription is Saved.
         assertEquals(listOf("s"), timeline(ListScope.RecentlyRead))
 
         server.queueChanges(
@@ -1074,6 +1080,37 @@ class SyncEngineTest {
 
         assertEquals(listOf("t", "s"), timeline(ListScope.Saved))
         assertEquals(1, reader.navigation().first().savedUnread)
+    }
+
+    @Test
+    fun aSubscriptionNoListingExplainsIsListedForOnce() = runTest {
+        server.savedSubscriptionId = null
+        engine.sync()
+        serve(entry("a", subscriptionId = "unlisted"))
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryStateChanged("a", read = false, starred = false)),
+            times = 3,
+        )
+
+        repeat(3) { engine.sync(downloadContent = false) }
+
+        // The bootstrap's, and one more for the unknown subscription.
+        assertEquals(2, requests("/subscriptions").size)
+    }
+
+    @Test
+    fun aListingWithoutTypesKeepsCollectionsArticles() = runTest {
+        serveCollection()
+        engine.sync()
+        // An older server, whose listing doesn't say which subscriptions are collections.
+        server.legacy = true
+        server.subscriptions.replaceAll { it.copy(type = null) }
+        db.appMetadataQueries.delete("collections_listed")
+
+        engine.sync()
+
+        // c, older than the window, is still kept as a collection's article.
+        assertEquals(listOf("a", "c"), timeline(ListScope.Subscription("col-1")))
     }
 
     @Test

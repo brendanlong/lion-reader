@@ -40,8 +40,7 @@ DROP INDEX entry_subscription;
 
 CREATE VIEW kept_entry AS
 SELECT entry_id FROM subscription_entry
-WHERE subscription_id = 'saved'
-  OR subscription_id IN (SELECT id FROM subscription WHERE type = 'collection');
+WHERE subscription_id NOT IN (SELECT id FROM subscription WHERE type IS NOT 'collection');
 
 -- The next sync lists subscriptions (their types, Saved's id) and collections
 -- again.

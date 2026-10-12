@@ -17,9 +17,9 @@ private const val COLLECTIONS_LISTED_KEY = "collections_listed"
 private const val SAVED_SERVER_ID_KEY = "saved_subscription_id"
 
 /**
- * The id the device keeps the user's Saved subscription under (in `subscription_entry`, and
- * `kept_entry` names it), whatever its server id: memberships synced before that id was known (from
- * a server that predates it, or saved before this app version) are Saved too.
+ * The id the device keeps the user's Saved subscription under (in `subscription_entry`), whatever
+ * its server id: memberships synced before that id was known (from a server that predates it, or
+ * saved before this app version) are Saved too.
  */
 internal const val SAVED_SUBSCRIPTION_ID = "saved"
 

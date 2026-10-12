@@ -55,6 +55,9 @@ class SyncEngine(
      */
     private val contentMutex = Mutex()
 
+    /** Unknown subscription ids subscriptions were listed again for (see `fetchPage`). */
+    private var listedForUnknown = emptySet<String>()
+
     /**
      * A full sync: send, pull, then (if [downloadContent]) article bodies. Throws on network/server
      * failure (a failed send only once the rest is done); retry later.
@@ -331,7 +334,8 @@ class SyncEngine(
         }
         // A subscription the device doesn't know is the Saved subscription created since it last
         // listed them (by the first save): listing them again tells its id, so the page's saved
-        // articles go into Saved.
+        // articles go into Saved. Once per unknown id ([listedForUnknown]): one that listing
+        // doesn't explain (a race with a new subscription) mustn't cost a listing every page.
         if (writer.savedSubscriptionUnknown) {
             val memberships =
                 events.flatMap {
@@ -344,7 +348,11 @@ class SyncEngine(
                     fetched.flatMap { it.subscriptionIds.orEmpty() } +
                     resubscribed.flatMap { it.subscriptionIds.orEmpty() }
             val known = writer.subscriptionIds() + created.map { it.subscription.id }
-            if (memberships.any { it !in known }) listSubscriptions()
+            val unknown = memberships.toSet() - known
+            if ((unknown - listedForUnknown).isNotEmpty()) {
+                listSubscriptions()
+                listedForUnknown = listedForUnknown + unknown
+            }
         }
         return PulledPage(
             events = events,

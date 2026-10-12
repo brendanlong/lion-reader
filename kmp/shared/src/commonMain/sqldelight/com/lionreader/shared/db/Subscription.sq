@@ -22,8 +22,15 @@ CREATE TABLE subscription_tag (
   PRIMARY KEY (subscription_id, tag_id)
 );
 
-upsertSubscription:
-INSERT OR REPLACE INTO subscription(id, title, url, original_title, type) VALUES (?, ?, ?, ?, ?);
+-- Insert-or-ignore + update (kmp/CLAUDE.md). A null type (a server that didn't
+-- say) keeps the known one, which kept_entry depends on.
+upsertSubscription {
+  INSERT OR IGNORE INTO subscription(id, title, url, original_title, type)
+  VALUES (:id, :title, :url, :originalTitle, :type);
+  UPDATE subscription
+  SET title = :title, url = :url, original_title = :originalTitle, type = COALESCE(:type, type)
+  WHERE id = :id;
+}
 
 -- A null custom title means there is none.
 updateSubscriptionTitle:
