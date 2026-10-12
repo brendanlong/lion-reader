@@ -28,7 +28,13 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createSubscription } from "../../src/server/services/subscriptions";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEmailSubscription,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 // ============================================================================
 // Test Helpers
@@ -65,15 +71,14 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
   afterAll(cleanupTables);
 
   describe("fill trigger (single-row insert paths)", () => {
-    it("fills subscription_id, is_spam, and sort key when omitted", async () => {
+    it("fills an email's subscription (its owner), is_spam, and sort key when omitted", async () => {
       const userId = await createTestUser();
-      // Email feed: is_spam=true is only valid on email entries
+      // Email: is_spam=true is only valid on email entries
       // (entries_spam_only_email check constraint).
-      const feedId = await createTestFeed({ type: "email", userId });
-      const subscriptionId = await createTestSubscription(userId, feedId);
+      const subscriptionId = await createTestEmailSubscription(userId);
       // publishedAt stays null so the sort key has to come from the trigger's
       // fetched_at arm — the point of the assertion below.
-      const entryId = await createTestEntry(feedId, {
+      const entryId = await createTestEntry(subscriptionId, {
         isSpam: true,
         type: "email",
         publishedAt: null,
@@ -88,11 +93,9 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       expect(row.publishedOrFetchedAt).not.toBeNull();
     });
 
-    it("leaves subscription_id NULL for entries in a feed with no subscription (saved articles)", async () => {
+    it("leaves subscription_id NULL for saved articles", async () => {
       const userId = await createTestUser();
-      // Saved-articles feed: per-user, no subscription row.
-      const feedId = await createTestFeed({ type: "saved", userId });
-      const entryId = await createTestEntry(feedId, { type: "saved", publishedAt: null });
+      const entryId = await createTestEntry(userId, { type: "saved", publishedAt: null });
 
       await db.insert(userEntries).values({ userId, entryId });
 
@@ -154,20 +157,6 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       expect(row1.subscriptionId).toBe(sub1);
       expect(row2.subscriptionId).toBe(sub2);
       expect(row1.isSpam).toBe(false);
-    });
-
-    it("copies is_spam from the entry", async () => {
-      const userId = await createTestUser({ emailPrefix: "fanout-spam" });
-      // Email feed (user-owned) so the spam entry passes entries_spam_only_email.
-      const feedId = await createTestFeed({ type: "email", userId });
-      await createTestSubscription(userId, feedId);
-      const spamEntryId = await createTestEntry(feedId, { isSpam: true, type: "email" });
-      const hamEntryId = await createTestEntry(feedId, { type: "email" });
-
-      await createUserEntriesForFeed(feedId, [spamEntryId, hamEntryId]);
-
-      expect((await getUserEntry(userId, spamEntryId)).isSpam).toBe(true);
-      expect((await getUserEntry(userId, hamEntryId)).isSpam).toBe(false);
     });
   });
 

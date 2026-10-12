@@ -45,7 +45,6 @@ import {
 import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { deleteSavedArticle } from "../../src/server/services/saved";
-import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { GET as restHandler } from "../../src/app/api/v1/[...path]/route";
 import { GET as authorizeGet } from "../../src/app/(spa)/oauth/authorize/route";
 import {
@@ -485,8 +484,7 @@ describe("sync.changes", () => {
   it("reports deleted saved articles as tombstones", async () => {
     const userId = await createUser();
     const token = await appToken(userId);
-    const savedFeed = await getOrCreateSavedFeed(db, userId);
-    const articleId = await createTestEntry(savedFeed, { type: "saved", userIds: [userId] });
+    const articleId = await createTestEntry(userId, { type: "saved", userIds: [userId] });
 
     const bootstrap = await (await rest(token, "GET", "/sync/changes")).json();
     expect(await deleteSavedArticle(db, userId, articleId)).toBe(true);

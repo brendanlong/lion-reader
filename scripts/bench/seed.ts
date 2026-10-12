@@ -487,7 +487,7 @@ INSERT INTO entries (
   published_at, fetched_at, created_at, updated_at, last_seen_at, content_hash,
   site_name, image_url, spam_score, is_spam, list_unsubscribe_mailto
 )
-SELECT e.id, e.feed_id,
+SELECT e.id, CASE WHEN e.kind = 'web' THEN e.feed_id END,
        CASE WHEN e.kind = 'email' THEN (SELECT s.id FROM bench_sub s WHERE s.feed_id = e.feed_id) END,
        CASE WHEN e.kind = 'saved' THEN (SELECT f.user_id FROM bench_feed f WHERE f.id = e.feed_id) END,
        e.kind, e.guid,
@@ -737,15 +737,18 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
             CASE WHEN kind = 'web' THEN last_upd END, CASE WHEN kind = 'web' THEN last_upd END,
             CASE WHEN kind = 'web' THEN last_upd + interval '1 hour' END,
             ${A} - interval '1000 days', ${A}
-     FROM bench_feed ORDER BY kind, web_idx, id`
+     FROM bench_feed WHERE kind = 'web' ORDER BY web_idx, id`
   );
-  // Before entries: an email is owned by its subscription.
+  // Before entries: an email is owned by its subscription. The plan's email
+  // "feeds" are only its senders: an email subscription has no feed (#1846),
+  // and carries the sender's name.
   await step(
     "subscriptions",
     `INSERT INTO subscriptions (id, user_id, feed_id, type, custom_title, email_sender,
                                 subscribed_at, created_at, updated_at)
-     SELECT s.id, s.user_id, s.feed_id, f.kind, s.custom_title, f.sender,
-            s.subscribed_at, s.subscribed_at, s.subscribed_at
+     SELECT s.id, s.user_id, CASE WHEN f.kind = 'web' THEN s.feed_id END, f.kind,
+            CASE WHEN f.kind = 'email' THEN COALESCE(s.custom_title, f.title) ELSE s.custom_title END,
+            f.sender, s.subscribed_at, s.subscribed_at, s.subscribed_at
      FROM bench_sub s JOIN bench_feed f ON f.id = s.feed_id ORDER BY s.subscribed_at, s.id`
   );
   await step("paragraphs", PARAGRAPHS);
@@ -769,12 +772,10 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
   const savedUsers = plan.users.filter((u) => u.saved > 0);
   await step(
     "saved subscriptions",
-    `INSERT INTO subscriptions (id, user_id, type, custom_title, greader_stream_id,
-                                subscribed_at, created_at, updated_at)
-     SELECT v.id, f.user_id, 'saved', 'Saved', f.greader_stream_id, f.created_at, ${A}, ${A}
-     FROM unnest($1::uuid[], $2::uuid[]) AS v(id, feed_id)
-     JOIN feeds f ON f.id = v.feed_id`,
-    [savedUsers.map((u) => savedSubscriptionId(u.idx)), savedUsers.map((u) => savedFeedId(u.idx))]
+    `INSERT INTO subscriptions (id, user_id, type, custom_title, subscribed_at, created_at, updated_at)
+     SELECT v.id, v.user_id, 'saved', 'Saved', ${A} - interval '1000 days', ${A}, ${A}
+     FROM unnest($1::uuid[], $2::uuid[]) AS v(id, user_id)`,
+    [savedUsers.map((u) => savedSubscriptionId(u.idx)), savedUsers.map((u) => userId(u.idx))]
   );
   await step("user_entries", USER_ENTRIES);
   await step(

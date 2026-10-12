@@ -22,7 +22,7 @@ import { logger } from "@/lib/logger";
  * - Web feeds the user subscribed to that no other user subscribes to or
  *   has entries from
  * - Entries belonging to orphaned feeds (cascaded from feed deletion)
- * - Email/saved feeds are always user-specific and cascade automatically
+ * - The user's emails and saved articles cascade from their owners (#1846)
  *
  * @param db - Database instance
  * @param userId - The user ID to delete
@@ -37,7 +37,6 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
 
   await db.transaction(async (tx) => {
     // Step 1: The web feeds the user subscribes to may become orphaned.
-    // Email and saved feeds are user-specific and cascade automatically.
     const candidates = await tx
       .select({ id: feeds.id })
       .from(subscriptions)
@@ -51,7 +50,7 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
     // - user_entries, tags
     // - ingest_addresses, blocked_senders, opml_imports
     // - entry_summaries
-    // - email/saved feeds (user_id FK with cascade)
+    // - emails (owned by its subscriptions) and saved articles (owned by it)
     // - invites.used_by_user_id is set to NULL
     await tx.delete(users).where(eq(users.id, userId));
 

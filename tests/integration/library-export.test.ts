@@ -6,12 +6,17 @@ import JSZip from "jszip";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
-import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { createSession } from "../../src/server/auth/session";
 import { RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
 import { GET } from "../../src/app/api/v1/export/route";
 import { EXPORT_PAGE_SIZE, streamLibraryExport } from "../../src/server/services/library-export";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEmailSubscription,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 async function readExport(userId: string): Promise<JSZip> {
   const chunks: Uint8Array[] = [];
@@ -58,25 +63,26 @@ describe("streamLibraryExport", () => {
       starredBy: [userId],
     });
 
-    const savedFeedId = await getOrCreateSavedFeed(db, userId);
-    const savedId = await createTestEntry(savedFeedId, {
+    const savedId = await createTestEntry(userId, {
       type: "saved",
       url: "https://news.example/article",
       title: "Saved <one>",
       contentCleaned: '<p onclick="evil()">saved body<script>alert(1)</script></p>',
       userIds: [userId],
     });
-    const uploadId = await createTestEntry(savedFeedId, {
+    const uploadId = await createTestEntry(userId, {
       type: "saved",
       url: null,
       contentCleaned: "<p>uploaded body</p>",
       userIds: [userId],
     });
 
-    const emailFeedId = await createTestFeed({ type: "email", userId });
-    await createTestSubscription(userId, emailFeedId);
-    const newsletterId = await createTestEntry(emailFeedId, { type: "email", userIds: [userId] });
-    const spamId = await createTestEntry(emailFeedId, {
+    const emailSubscriptionId = await createTestEmailSubscription(userId);
+    const newsletterId = await createTestEntry(emailSubscriptionId, {
+      type: "email",
+      userIds: [userId],
+    });
+    const spamId = await createTestEntry(emailSubscriptionId, {
       type: "email",
       isSpam: true,
       userIds: [userId],
@@ -88,8 +94,7 @@ describe("streamLibraryExport", () => {
       starredBy: [otherUserId],
     });
 
-    const otherSavedFeedId = await getOrCreateSavedFeed(db, otherUserId);
-    const otherUsersId = await createTestEntry(otherSavedFeedId, {
+    const otherUsersId = await createTestEntry(otherUserId, {
       type: "saved",
       url: "https://other.example/private",
       userIds: [otherUserId],
@@ -130,8 +135,7 @@ describe("streamLibraryExport", () => {
 
   it("never writes a non-http URL as a link", async () => {
     const userId = await createTestUser();
-    const savedFeedId = await getOrCreateSavedFeed(db, userId);
-    const id = await createTestEntry(savedFeedId, {
+    const id = await createTestEntry(userId, {
       type: "saved",
       url: "javascript:alert(1)",
       userIds: [userId],
@@ -145,11 +149,10 @@ describe("streamLibraryExport", () => {
 
   it("pages through libraries larger than one query page", async () => {
     const userId = await createTestUser();
-    const savedFeedId = await getOrCreateSavedFeed(db, userId);
     const ids: string[] = [];
     for (let i = 0; i < EXPORT_PAGE_SIZE + 1; i++) {
       ids.push(
-        await createTestEntry(savedFeedId, {
+        await createTestEntry(userId, {
           type: "saved",
           url: `https://example.com/${i}`,
           userIds: [userId],

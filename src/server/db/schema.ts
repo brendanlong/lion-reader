@@ -502,14 +502,11 @@ export const feeds = pgTable(
   (table) => [
     index("idx_feeds_next_fetch").on(table.nextFetchAt),
     uniqueIndex("idx_feeds_greader_stream_id").on(table.greaderStreamId),
-    // Per-user feeds require user_id, shared web feeds must not have it
-    check("feed_type_user_id", sql`(type IN ('email', 'saved')) = (user_id IS NOT NULL)`),
-    // Collections are subscriptions without a feed (#1846).
-    check("feeds_type_not_collection", sql`type <> 'collection'`),
-    // Unique constraint for email feeds: one feed per (user, sender)
+    // Feeds are web feeds, shared by their subscribers (#1846): only web
+    // subscriptions have one. user_id and email_sender_pattern, from the old
+    // per-user email and saved feeds, are always NULL until phase 7 drops them.
+    check("feeds_web_only", sql`type = 'web' AND user_id IS NULL AND email_sender_pattern IS NULL`),
     unique("uq_feeds_email_user_sender").on(table.userId, table.emailSenderPattern),
-    // Unique constraint for saved feeds: one saved feed per user (partial index)
-    // Note: This is created as a raw SQL index in the migration
   ]
 );
 
@@ -529,9 +526,8 @@ export const entries = pgTable(
     // (shared by every subscriber), an email's subscription, a saved article's
     // or upload's user. It scopes duplicate detection (a unique (owner, guid)
     // per kind) and cascades deletes; it's never used to list or count
-    // (memberships do that). Until phase 6B2, email and saved entries also
-    // name their per-user email/saved feed in owner_feed_id (NOT NULL in the
-    // database until then), which nothing reads.
+    // (memberships do that). Exactly the owner column for the entry's type is
+    // set (`entries_owner_matches_type`).
     ownerFeedId: uuid("owner_feed_id").references(() => feeds.id, { onDelete: "cascade" }),
     type: feedTypeEnum("type").$type<EntryType>().notNull(), // Denormalized from feed for type-specific constraints and queries
 
@@ -652,6 +648,10 @@ export const entries = pgTable(
     index("idx_entries_owner_user_updated_at")
       .on(table.ownerUserId, table.updatedAt)
       .where(sql`owner_user_id IS NOT NULL`),
+    check(
+      "entries_owner_matches_type",
+      sql`(type = 'web') = (owner_feed_id IS NOT NULL) AND (type = 'email') = (owner_subscription_id IS NOT NULL) AND (type = 'saved') = (owner_user_id IS NOT NULL)`
+    ),
     // Expression indexes (Drizzle can't express these, created via raw SQL):
     // - uq_entries_owner_feed_guid_canonical: UNIQUE (owner_feed_id, regexp_replace(guid, '^https?://', 'https://'))
     //   WHERE type = 'web'. Enforces src/server/feed/guid-identity.ts at the DB (#1535). Migration 0109.
@@ -800,16 +800,14 @@ export const subscriptions = pgTable(
     uniqueIndex("uq_subscriptions_user_collection_name")
       .on(table.userId, sql`lower(${table.customTitle})`)
       .where(sql`type = 'collection' AND unsubscribed_at IS NULL`),
-    // Every collection has a name (#1846).
-    check("subscriptions_collection_named", sql`type <> 'collection' OR custom_title IS NOT NULL`),
-    // Collections have no feed (#1846).
-    check("subscriptions_collection_feedless", sql`type <> 'collection' OR feed_id IS NULL`),
-    // One saved subscription per user, with no feed (#1846), so the
-    // user_entries fill trigger never stamps a saved article with it.
+    // Only web subscriptions have a feed, and every other one has its own
+    // name (#1846).
+    check("subscriptions_feed_iff_web", sql`(type = 'web') = (feed_id IS NOT NULL)`),
+    check("subscriptions_named_unless_web", sql`type = 'web' OR custom_title IS NOT NULL`),
+    // One saved subscription per user (#1846).
     uniqueIndex("uq_subscriptions_saved_user")
       .on(table.userId)
       .where(sql`type = 'saved'`),
-    check("subscriptions_saved_feedless", sql`type <> 'saved' OR feed_id IS NULL`),
     // One email subscription per user and sender (#1846).
     uniqueIndex("uq_subscriptions_user_email_sender")
       .on(table.userId, table.emailSender)

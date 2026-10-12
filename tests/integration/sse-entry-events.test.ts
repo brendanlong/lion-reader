@@ -25,10 +25,10 @@ import {
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
 import { uploadArticle } from "../../src/server/services/saved";
-import { getOrCreateSavedFeed } from "../../src/server/feed/saved-feed";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { openSseStream, type SseStream } from "../utils/sse";
 import {
+  createTestEmailSubscription,
   createTestEntry,
   createTestFeed,
   createTestIngestAddress,
@@ -105,21 +105,13 @@ describe("SSE entry events", () => {
     const webEntryId = await createTestEntry(webFeedId, { userIds: [userId] });
 
     const sender = "news@example.com";
-    const emailFeedId = await createTestFeed({
-      type: "email",
-      userId,
-      url: null,
-      emailSenderPattern: sender,
-      title: "Newsletter",
-    });
     // The user renamed the newsletter; its live new_entry must say so.
-    const emailSubscriptionId = await createTestSubscription(userId, emailFeedId, {
+    const emailSubscriptionId = await createTestEmailSubscription(userId, {
+      emailSender: sender,
       customTitle: "My Newsletter",
     });
     const ingestToken = `sse-${generateUuidv7()}`;
     await createTestIngestAddress(userId, { token: ingestToken });
-
-    const savedFeedId = await getOrCreateSavedFeed(db, userId);
 
     const stream = await openSseStream(userId);
     const otherStream = await openSseStream(otherUserId);
@@ -199,9 +191,6 @@ describe("SSE entry events", () => {
         ])
       );
       expect(stream.events("entry_updated")[0].metadata).toMatchObject({ title: "Renamed" });
-      // Clients only ever see subscription IDs.
-      expect(stream.text).not.toContain(emailFeedId);
-      expect(stream.text).not.toContain(savedFeedId);
 
       await waitForMarker(otherUserId, otherStream);
       expect(entryEvents(otherStream)).toEqual([]);

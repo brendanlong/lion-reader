@@ -26,8 +26,7 @@ import {
   tags,
   visibleEntries,
 } from "@/server/db/schema";
-import { isListedSubscription } from "@/server/services/subscriptions";
-import { SAVED_FEED_TITLE } from "@/server/feed/saved-feed";
+import { isListedSubscription, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Types
@@ -72,7 +71,9 @@ export interface EntryConditionParams {
  * {@link entryOriginJoin}.
  */
 export function entryFeedTitleSql(): SQL<string | null> {
-  return sql<string | null>`CASE WHEN ${subscriptions.type} = 'saved' THEN ${SAVED_FEED_TITLE}::text
+  return sql<
+    string | null
+  >`CASE WHEN ${subscriptions.type} = 'saved' THEN ${SAVED_ARTICLES_TITLE}::text
     ELSE COALESCE(${subscriptions.customTitle}, ${feeds.title}) END`;
 }
 

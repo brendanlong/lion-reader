@@ -16,7 +16,13 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, userEntries, subscriptions } from "../../src/server/db/schema";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEntry,
+  createTestFeed,
+  createTestSavedSubscription,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 import { getGreaderUnreadCounts } from "../../src/server/google-reader/subscriptions";
 
 /**
@@ -62,21 +68,20 @@ async function createSubscribedFeed(
   return { feedId, subId, streamId: sub.greaderStreamId.toString() };
 }
 
-async function createSavedFeed(userId: string): Promise<{ feedId: string; streamId: string }> {
-  // Saved feeds carry no URL (see getOrCreateSavedFeed).
-  const feedId = await createTestFeed({ type: "saved", userId, url: null });
-  const [feed] = await db
-    .select({ greaderStreamId: feeds.greaderStreamId })
-    .from(feeds)
-    .where(eq(feeds.id, feedId));
-  createdFeedIds.push(feedId);
-  return { feedId, streamId: feed.greaderStreamId.toString() };
+/** The saved subscription's stream; `feedId` is its articles' owner, the user. */
+async function createSaved(userId: string): Promise<{ feedId: string; streamId: string }> {
+  const subscriptionId = await createTestSavedSubscription(userId);
+  const [sub] = await db
+    .select({ greaderStreamId: subscriptions.greaderStreamId })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, subscriptionId));
+  return { feedId: userId, streamId: sub.greaderStreamId.toString() };
 }
 
 /** Inserts an entry and (optionally) the user's user_entries row for it. */
 async function addEntry(opts: {
   userId: string;
-  feedId: string;
+  feedId: string; // the entry's owner: a web feed, or for a saved article the user
   type: "web" | "saved";
   publishedAt: Date | null;
   fetchedAt: Date;
@@ -177,12 +182,12 @@ describe("getGreaderUnreadCounts", () => {
     expect(map.get(streamId)?.toISOString()).toBe("2026-06-15T10:00:00.000Z");
   });
 
-  it("includes the saved feed keyed by its stream serial", async () => {
+  it("includes the saved subscription keyed by its stream serial", async () => {
     const userId = await createUser();
-    const { feedId: savedFeedId, streamId } = await createSavedFeed(userId);
+    const { feedId: savedOwner, streamId } = await createSaved(userId);
     await addEntry({
       userId,
-      feedId: savedFeedId,
+      feedId: savedOwner,
       type: "saved",
       publishedAt: null,
       fetchedAt: T("2026-03-03T03:03:00Z"),
@@ -191,7 +196,7 @@ describe("getGreaderUnreadCounts", () => {
     });
     await addEntry({
       userId,
-      feedId: savedFeedId,
+      feedId: savedOwner,
       type: "saved",
       publishedAt: null,
       fetchedAt: T("2026-07-07T07:07:00Z"),
@@ -277,10 +282,10 @@ describe("getGreaderUnreadCounts", () => {
 
   it("reports Saved Articles' count from the saved subscription", async () => {
     const userId = await createUser();
-    const { feedId: savedFeedId, streamId } = await createSavedFeed(userId);
+    const { feedId: savedOwner, streamId } = await createSaved(userId);
     await addEntry({
       userId,
-      feedId: savedFeedId,
+      feedId: savedOwner,
       type: "saved",
       publishedAt: null,
       fetchedAt: T("2026-05-05T05:05:00Z"),

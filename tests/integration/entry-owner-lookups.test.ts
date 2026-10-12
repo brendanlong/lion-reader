@@ -1,17 +1,11 @@
 /**
- * Every lookup of an email or saved article goes by its owner (#1846 phase
- * 6B1): its subscription or its user, never a feed. So each path works for
- * entries that still name a per-user feed in `owner_feed_id` (today's data)
- * and for entries that don't, which is what 6B2's migration leaves.
- *
- * The second run drops `owner_feed_id`'s NOT NULL, as 6B2 does, which is what
- * tells email ingest and saving to stop creating per-user feeds
- * (`personalFeedsRequired`). 6B2 also makes a first save create the saved
- * subscription without a saved feed; here that run creates it up front.
+ * Every lookup of an email or saved article goes by its owner (#1846): its
+ * subscription or its user, never a feed, which email and saved entries no
+ * longer have.
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   blockedSenders,
@@ -30,12 +24,7 @@ import {
 import { listEntries } from "../../src/server/services/entries";
 import { unsubscribe } from "../../src/server/services/subscriptions";
 import { createCaller } from "../../src/server/trpc/root";
-import {
-  createAuthContext,
-  createTestFeedlessSavedSubscription,
-  createTestIngestAddress,
-  createTestUser,
-} from "./helpers";
+import { createAuthContext, createTestIngestAddress, createTestUser } from "./helpers";
 
 const ARTICLE_HTML =
   "<html><body><article><p>A saved article body, long enough to keep.</p></article></body></html>";
@@ -44,20 +33,7 @@ const createdUsers: string[] = [];
 
 async function removeCreatedUsers(): Promise<void> {
   if (createdUsers.length === 0) return;
-  // The entries first: with no per-user feed, nothing but their owners
-  // cascades to them, and an email's cascade from its subscription trips #1897.
-  const ownSubscriptions = db
-    .select({ id: subscriptions.id })
-    .from(subscriptions)
-    .where(inArray(subscriptions.userId, createdUsers));
-  await db
-    .delete(entries)
-    .where(
-      or(
-        inArray(entries.ownerUserId, createdUsers),
-        inArray(entries.ownerSubscriptionId, ownSubscriptions)
-      )
-    );
+  // Cascades to their subscriptions and the entries they own.
   await db.delete(users).where(inArray(users.id, createdUsers));
   createdUsers.length = 0;
 }
@@ -88,27 +64,13 @@ async function subscriptionRow(subscriptionId: string) {
   return row;
 }
 
-describe.each([
-  { schema: "with per-user feeds (before 6B2)", feedless: false },
-  { schema: "without per-user feeds (after 6B2)", feedless: true },
-])("$schema", ({ feedless }) => {
-  beforeAll(async () => {
-    if (feedless) {
-      await db.execute(sql`ALTER TABLE entries ALTER COLUMN owner_feed_id DROP NOT NULL`);
-    }
-  });
+describe("email and saved lookups by owner (#1846)", () => {
   afterEach(removeCreatedUsers);
-  afterAll(async () => {
-    await removeCreatedUsers();
-    if (feedless) {
-      await db.execute(sql`ALTER TABLE entries ALTER COLUMN owner_feed_id SET NOT NULL`);
-    }
-  });
+  afterAll(removeCreatedUsers);
 
   async function user(): Promise<string> {
     const id = await createTestUser();
     createdUsers.push(id);
-    if (feedless) await createTestFeedlessSavedSubscription(id);
     return id;
   }
 
@@ -124,14 +86,14 @@ describe.each([
       type: "email",
       emailSender: "news@example.com",
       unreadCount: 1,
-      // Without a feed, the subscription carries the sender's name.
-      customTitle: feedless ? "The News" : null,
+      // The subscription carries the sender's name.
+      customTitle: "The News",
+      feedId: null,
     });
-    expect(subscription.feedId === null).toBe(feedless);
 
     const entry = await entryRow(result.entryId!);
     expect(entry.ownerSubscriptionId).toBe(subscriptionId);
-    expect(entry.ownerFeedId).toBe(subscription.feedId);
+    expect(entry.ownerFeedId).toBeNull();
     const [{ stamped }] = await db
       .select({ stamped: userEntries.subscriptionId })
       .from(userEntries)
@@ -149,7 +111,7 @@ describe.each([
     });
   });
 
-  it("clearing an email subscription's name shows its feed's title or, without a feed, the sender", async () => {
+  it("clearing an email subscription's name shows its sender", async () => {
     const userId = await user();
     const { subscriptionId } = await receiveEmail(userId);
     const caller = createCaller(await createAuthContext(userId));
@@ -157,7 +119,7 @@ describe.each([
     await caller.subscriptions.update({ id: subscriptionId!, customTitle: "Renamed" });
     const cleared = await caller.subscriptions.update({ id: subscriptionId!, customTitle: null });
 
-    expect(cleared.title).toBe(feedless ? "news@example.com" : "The News");
+    expect(cleared.title).toBe("news@example.com");
   });
 
   it("unsubscribing blocks the sender with its emails' List-Unsubscribe, and a later email reactivates it", async () => {
@@ -190,7 +152,7 @@ describe.each([
 
     const entry = await entryRow(saved.id);
     expect(entry.ownerUserId).toBe(userId);
-    expect(entry.ownerFeedId === null).toBe(feedless);
+    expect(entry.ownerFeedId).toBeNull();
 
     expect(await savedArticleExistsByUrl(db, userId, url)).toBe(saved.id);
     expect(await savedArticleExistsByUrl(db, otherId, url)).toBeNull();

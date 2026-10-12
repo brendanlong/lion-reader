@@ -33,7 +33,6 @@ interface WallabagTagJson {
 interface TestUser {
   id: string;
   token: string;
-  savedFeedId: string;
 }
 
 const createdUserIds: string[] = [];
@@ -52,13 +51,12 @@ async function createUser(): Promise<TestUser> {
     userId: id,
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
   });
-  const savedFeedId = await createTestFeed({ type: "saved", userId: id, url: null });
-  return { id, token: accessToken, savedFeedId };
+  return { id, token: accessToken };
 }
 
 /** A saved article; returns its UUID and Wallabag id. */
 async function createSaved(user: TestUser): Promise<{ id: string; wallabagId: number }> {
-  const id = await createTestEntry(user.savedFeedId, { type: "saved", userIds: [user.id] });
+  const id = await createTestEntry(user.id, { type: "saved", userIds: [user.id] });
   const [row] = await db
     .select({ serial: entries.greaderItemId })
     .from(entries)

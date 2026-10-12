@@ -11,7 +11,7 @@ import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
-import { getSavedSubscriptionId } from "@/server/services/subscriptions";
+import { getSavedSubscriptionId, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { listEntryCollectionIds, publishEntryLeftCollections } from "./collections";
 import { recordEntryTombstone } from "./entry-tombstones";
@@ -30,11 +30,6 @@ import { type SupportedFileType } from "@/lib/upload-file-types";
 import { usageLimitsConfig } from "@/server/config/env";
 import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
-import {
-  getOrCreateSavedFeed,
-  personalFeedsRequired,
-  SAVED_FEED_TITLE,
-} from "@/server/feed/saved-feed";
 import { stripHtml } from "@/server/html/strip-html";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 import { escapeHtml } from "@/server/http/html";
@@ -518,16 +513,9 @@ async function insertSavedEntry(
     updatedAt: now,
   };
   const inserted = await db.transaction(async (tx) => {
-    // The user's saved feed too, while the schema still requires one.
-    const ownerFeedId = (await personalFeedsRequired(tx))
-      ? await getOrCreateSavedFeed(tx, userId)
-      : null;
     const insertedRows = await tx
       .insert(entries)
-      .values({ ...values, ownerFeedId })
-      // Untargeted: while entries name the saved feed, a duplicate violates
-      // both (owner_feed_id, guid) and (owner_user_id, guid), and whichever
-      // index sees it first must not raise.
+      .values(values)
       .onConflictDoNothing()
       .returning({ id: entries.id });
 
@@ -558,7 +546,7 @@ async function insertSavedEntry(
     { userId, subscriptionId: inserted.savedSubscriptionId, feedType: "saved" },
     entryId,
     now,
-    entryListPayload(values, SAVED_FEED_TITLE)
+    entryListPayload(values, SAVED_ARTICLES_TITLE)
   ).catch(() => {});
 
   // Sanitize the body for the returned SavedArticle: callers like the Wallabag

@@ -69,13 +69,13 @@ async function setup() {
     updatedAt: new Date("2026-01-01T00:00:00Z"),
   });
   await createTestEntry(feedId, { userIds: [userId] });
-  const saved = await createTestSavedSubscription(userId);
-  await createTestEntry(saved.savedFeedId, { type: "saved", userIds: [userId] });
+  const subscriptionId = await createTestSavedSubscription(userId);
+  await createTestEntry(userId, { type: "saved", userIds: [userId] });
   const [row] = await db
     .select({ greaderStreamId: subscriptions.greaderStreamId })
     .from(subscriptions)
-    .where(eq(subscriptions.id, saved.subscriptionId));
-  return { userId, webId, ...saved, savedStreamId: row.greaderStreamId };
+    .where(eq(subscriptions.id, subscriptionId));
+  return { userId, webId, subscriptionId, savedStreamId: row.greaderStreamId };
 }
 
 function callTool(name: string, userId: string, args: unknown) {
@@ -206,10 +206,10 @@ describe("the saved subscription (#1846)", () => {
   });
 
   it("counts saved articles once, in Saved and in the saved subscription", async () => {
-    const { userId, subscriptionId, savedFeedId } = await setup();
+    const { userId, subscriptionId } = await setup();
     // A saved article inserted while the saved subscription exists isn't
-    // stamped with it: the saved subscription has no feed to match on.
-    const laterId = await createTestEntry(savedFeedId, { type: "saved", userIds: [userId] });
+    // stamped with it: the fill trigger stamps only web and email entries.
+    const laterId = await createTestEntry(userId, { type: "saved", userIds: [userId] });
     const caller = createCaller(await createAuthContext(userId));
 
     expect(

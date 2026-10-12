@@ -70,6 +70,12 @@ export interface Subscription {
 // Helper Functions
 // ============================================================================
 
+/**
+ * What clients see as the source of a saved article, and Google Reader as the
+ * saved subscription's title (#730).
+ */
+export const SAVED_ARTICLES_TITLE = "Saved Articles";
+
 /** Matches `subscriptions` rows that are collections. */
 export function isCollectionSubscription(): SQL {
   return eq(subscriptions.type, "collection");
@@ -88,11 +94,7 @@ export async function clearedCustomTitle(
   subscriptionId: string
 ): Promise<{ customTitle: string | null } | null> {
   const [row] = await db
-    .select({
-      type: subscriptions.type,
-      feedId: subscriptions.feedId,
-      emailSender: subscriptions.emailSender,
-    })
+    .select({ type: subscriptions.type, emailSender: subscriptions.emailSender })
     .from(subscriptions)
     .where(
       and(
@@ -103,7 +105,7 @@ export async function clearedCustomTitle(
     )
     .limit(1);
   if (row?.type === "collection") return null;
-  if (row?.type === "email" && row.feedId === null) return { customTitle: row.emailSender };
+  if (row?.type === "email") return { customTitle: row.emailSender };
   return { customTitle: null };
 }
 
@@ -955,7 +957,7 @@ export async function setSubscriptionTags(
  * Unsubscribes (soft-deletes) one of the user's active subscriptions, returning
  * the affected lists' post-delete absolute counts, or null if there is no such
  * active subscription. Every unsubscribe path goes through here so they all do
- * the same thing: for an email feed, send the sender's list-unsubscribe request
+ * the same thing: for an email subscription, send the sender's list-unsubscribe request
  * and block the sender; then remove its tags, soft-delete it, and publish
  * subscription_deleted.
  */

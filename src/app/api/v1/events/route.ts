@@ -102,7 +102,7 @@ async function getUserCustomTitles(userId: string): Promise<Map<string, string |
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        // Saved articles keep the saved feed's title.
+        // Saved articles show "Saved Articles", not the saved subscription's name.
         isListedSubscription()
       )
     );

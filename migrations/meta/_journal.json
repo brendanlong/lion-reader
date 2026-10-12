@@ -960,6 +960,34 @@
       "when": 1782956160000,
       "tag": "0137_entry_owners",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1782956220000,
+      "tag": "0138_entry_owner_feed_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1782956280000,
+      "tag": "0139_clear_personal_feed_owners",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1782956340000,
+      "tag": "0140_delete_personal_feeds",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1782956400000,
+      "tag": "0141_validate_entry_owners",
+      "breakpoints": true
     }
   ]
 }

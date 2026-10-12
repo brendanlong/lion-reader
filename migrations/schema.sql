@@ -48,6 +48,7 @@ BEGIN
     WHERE EXISTS (
       SELECT 1 FROM user_entries x WHERE x.user_id = p.user_id AND x.entry_id = p.entry_id
     )
+      AND EXISTS (SELECT 1 FROM entries e WHERE e.id = p.entry_id)
   ) m
   WHERE ue.user_id = m.user_id AND ue.entry_id = m.entry_id AND ue.active_memberships <> m.n;
 END;
@@ -176,12 +177,10 @@ CREATE FUNCTION public.ensure_saved_subscriptions(p_users uuid[]) RETURNS intege
     LANGUAGE sql
     AS $$
   WITH created AS (
-    INSERT INTO subscriptions (id, user_id, type, custom_title, greader_stream_id,
-                               subscribed_at, created_at, updated_at)
-    SELECT uuidv7(), f.user_id, 'saved', 'Saved', f.greader_stream_id, f.created_at, now(), now()
-    FROM feeds f
-    WHERE f.type = 'saved' AND f.user_id = ANY (p_users)
-    ORDER BY f.user_id
+    INSERT INTO subscriptions (id, user_id, type, custom_title, subscribed_at, created_at, updated_at)
+    SELECT uuidv7(), u.user_id, 'saved', 'Saved', now(), now(), now()
+    FROM (SELECT DISTINCT user_id FROM unnest(p_users) AS u(user_id)) u
+    ORDER BY u.user_id
     ON CONFLICT (user_id) WHERE type = 'saved' DO NOTHING
     RETURNING 1
   )
@@ -517,6 +516,7 @@ CREATE FUNCTION public.user_entries_fill_denormalized() RETURNS trigger
     AS $$
 DECLARE
   v_feed_id uuid;
+  v_owner_subscription_id uuid;
   v_type feed_type;
 BEGIN
   IF NEW.published_or_fetched_at IS NULL
@@ -524,16 +524,24 @@ BEGIN
      OR NEW.subscription_id IS NULL THEN
     SELECT COALESCE(NEW.published_or_fetched_at, e.published_at, e.fetched_at),
            COALESCE(NEW.is_spam, e.is_spam),
-           e.owner_feed_id, e.type
-      INTO NEW.published_or_fetched_at, NEW.is_spam, v_feed_id, v_type
+           e.owner_feed_id, e.owner_subscription_id, e.type
+      INTO NEW.published_or_fetched_at, NEW.is_spam, v_feed_id, v_owner_subscription_id, v_type
       FROM entries e
       WHERE e.id = NEW.entry_id;
     IF NEW.subscription_id IS NULL THEN
-      SELECT s.id
-        INTO NEW.subscription_id
-        FROM subscriptions s
-        WHERE s.user_id = NEW.user_id
-          AND s.feed_id = v_feed_id;
+      IF v_owner_subscription_id IS NOT NULL THEN
+        SELECT s.id
+          INTO NEW.subscription_id
+          FROM subscriptions s
+          WHERE s.id = v_owner_subscription_id
+            AND s.user_id = NEW.user_id;
+      ELSIF v_feed_id IS NOT NULL THEN
+        SELECT s.id
+          INTO NEW.subscription_id
+          FROM subscriptions s
+          WHERE s.user_id = NEW.user_id
+            AND s.feed_id = v_feed_id;
+      END IF;
     END IF;
   END IF;
   IF NEW.subscription_id IS NOT NULL THEN
@@ -585,7 +593,7 @@ CREATE TABLE public.discord_api_token_links (
 
 CREATE TABLE public.entries (
     id uuid NOT NULL,
-    owner_feed_id uuid NOT NULL,
+    owner_feed_id uuid,
     guid text NOT NULL,
     url text,
     title text,
@@ -620,8 +628,10 @@ CREATE TABLE public.entries (
     owner_subscription_id uuid,
     owner_user_id uuid,
     CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
+    CONSTRAINT entries_owner_matches_type CHECK ((((type = 'web'::public.feed_type) = (owner_feed_id IS NOT NULL)) AND ((type = 'email'::public.feed_type) = (owner_subscription_id IS NOT NULL)) AND ((type = 'saved'::public.feed_type) = (owner_user_id IS NOT NULL)))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
+    CONSTRAINT entries_type_not_collection CHECK ((type <> 'collection'::public.feed_type)),
     CONSTRAINT entries_unsubscribe_only_email CHECK (((type = 'email'::public.feed_type) OR ((list_unsubscribe_mailto IS NULL) AND (list_unsubscribe_https IS NULL) AND (list_unsubscribe_post IS NULL))))
 );
 ALTER TABLE ONLY public.entries ALTER COLUMN content_original SET COMPRESSION lz4;
@@ -698,8 +708,7 @@ CREATE TABLE public.feeds (
     ttl_minutes integer,
     syndication_update_period text,
     syndication_update_frequency integer,
-    CONSTRAINT feed_type_user_id CHECK (((type = ANY (ARRAY['email'::public.feed_type, 'saved'::public.feed_type])) = (user_id IS NOT NULL))),
-    CONSTRAINT feeds_type_not_collection CHECK ((type <> 'collection'::public.feed_type))
+    CONSTRAINT feeds_web_only CHECK (((type = 'web'::public.feed_type) AND (user_id IS NULL) AND (email_sender_pattern IS NULL)))
 );
 
 CREATE TABLE public.ingest_addresses (
@@ -881,9 +890,8 @@ CREATE TABLE public.subscriptions (
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     type public.feed_type NOT NULL,
     email_sender text,
-    CONSTRAINT subscriptions_collection_feedless CHECK (((type <> 'collection'::public.feed_type) OR (feed_id IS NULL))),
-    CONSTRAINT subscriptions_collection_named CHECK (((type <> 'collection'::public.feed_type) OR (custom_title IS NOT NULL))),
-    CONSTRAINT subscriptions_saved_feedless CHECK (((type <> 'saved'::public.feed_type) OR (feed_id IS NULL)))
+    CONSTRAINT subscriptions_feed_iff_web CHECK (((type = 'web'::public.feed_type) = (feed_id IS NOT NULL))),
+    CONSTRAINT subscriptions_named_unless_web CHECK (((type = 'web'::public.feed_type) OR (custom_title IS NOT NULL)))
 );
 
 CREATE TABLE public.tags (
@@ -1053,9 +1061,6 @@ ALTER TABLE ONLY public.discord_api_token_links
 
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT entries_pkey PRIMARY KEY (id);
-
-ALTER TABLE public.entries
-    ADD CONSTRAINT entries_type_not_collection CHECK ((type <> 'collection'::public.feed_type)) NOT VALID;
 
 ALTER TABLE ONLY public.entry_summaries
     ADD CONSTRAINT entry_summaries_pkey PRIMARY KEY (id);

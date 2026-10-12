@@ -19,7 +19,6 @@ import {
   benchUuid,
   collectionSubscriptionId,
   prng,
-  savedFeedId,
   savedSubscriptionId,
   searchQuery,
   tagId,
@@ -83,10 +82,6 @@ const IS_COLLECTION = "subscriptions.type = 'collection'";
 /** `entryFeedTitleSql()` (services/entry-filters.ts). */
 const FEED_TITLE =
   "CASE WHEN subscriptions.type = 'saved' THEN 'Saved Articles'::text ELSE COALESCE(subscriptions.custom_title, feeds.title) END";
-
-/** `personalFeedsRequired` (feed/saved-feed.ts). */
-const PERSONAL_FEEDS_REQUIRED = `SELECT attnotnull AS required FROM pg_attribute
-WHERE attrelid = 'entries'::regclass AND attname = 'owner_feed_id'`;
 
 /** `entrySubscriptionIdsSql` (services/entry-filters.ts) for a row's user and entry columns. */
 const subscriptionIdsSql = (userCol: string, entryCol: string): string => `ARRAY(
@@ -1309,14 +1304,12 @@ WHERE subscription_tags.subscription_id IN (${q(newSub)})`,
   {
     name: "write.save_article",
     kind: "write",
-    source:
-      "services/saved.ts saveArticle: selectExistingSavedRow + insertSavedEntry (with the saved feed while personalFeedsRequired)",
-    prepare: async (db) => {
+    source: "services/saved.ts saveArticle: selectExistingSavedRow + insertSavedEntry",
+    prepare: async () => {
       const url = "https://news.example.org/2026/10/05/a-new-article";
       const article = articleHtml(77, 12);
       const now = ts(nowIso());
       const entryId = benchUuid("bench:saved-entry");
-      const { required } = await one<{ required: boolean }>(db, PERSONAL_FEEDS_REQUIRED);
       return {
         statements: [
           {
@@ -1326,27 +1319,12 @@ INNER JOIN user_entries ON user_entries.entry_id = entries.id
 WHERE entries.owner_user_id = ${q(U0)} AND entries.guid = ${q(url)} AND user_entries.user_id = ${q(U0)}
 LIMIT 1`,
           },
-          { label: "personal_feeds_required", sql: PERSONAL_FEEDS_REQUIRED },
-          ...(required
-            ? [
-                {
-                  label: "create_saved_feed",
-                  sql: `INSERT INTO feeds (id, type, user_id, title, created_at, updated_at)
-VALUES (${q(benchUuid("bench:saved-feed"))}, 'saved', ${q(U0)}, 'Saved Articles', ${now}, ${now})
-ON CONFLICT DO NOTHING RETURNING feeds.id`,
-                },
-                {
-                  label: "select_saved_feed",
-                  sql: `SELECT id FROM feeds WHERE type = 'saved' AND user_id = ${q(U0)} LIMIT 1`,
-                },
-              ]
-            : []),
           {
             label: "insert_entry",
-            sql: `INSERT INTO entries (id, owner_feed_id, owner_user_id, type, guid, url, title, author, content_original, content_cleaned,
+            sql: `INSERT INTO entries (id, owner_user_id, type, guid, url, title, author, content_original, content_cleaned,
   summary, site_name, image_url, is_placeholder, published_at, fetched_at, content_hash, spam_score, is_spam,
   list_unsubscribe_mailto, list_unsubscribe_https, list_unsubscribe_post, created_at, updated_at)
-VALUES (${q(entryId)}, ${required ? q(savedFeedId(0)) : "NULL"}, ${q(U0)}, 'saved', ${q(url)}, ${q(url)}, ${q(article.title)}, 'A. Writer',
+VALUES (${q(entryId)}, ${q(U0)}, 'saved', ${q(url)}, ${q(url)}, ${q(article.title)}, 'A. Writer',
   ${q(`<html><body><article>${article.html}</article></body></html>`)}, ${q(article.html)}, ${q(article.summary)},
   'news.example.org', 'https://news.example.org/lead.jpg', false, NULL, ${now}, ${q(benchUuid(url))}, NULL, false,
   NULL, NULL, NULL, ${now}, ${now})
@@ -1373,19 +1351,12 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.type = 'saved' LIMIT 1`
     source:
       "email/process-inbound.ts processInboundEmail: a new email from a sender U0 already has (steps 5–7)",
     prepare: async (db) => {
-      const owner = await one<{
-        id: string;
-        feed_id: string | null;
-        sender: string;
-        title: string;
-      }>(
+      const owner = await one<{ id: string; sender: string; title: string }>(
         db,
-        `SELECT s.id, s.feed_id, s.email_sender AS sender,
-  COALESCE(s.custom_title, f.title, s.email_sender) AS title
-FROM subscriptions s LEFT JOIN feeds f ON f.id = s.feed_id
+        `SELECT s.id, s.email_sender AS sender, COALESCE(s.custom_title, s.email_sender) AS title
+FROM subscriptions s
 WHERE s.user_id = ${q(U0)} AND s.type = 'email' ORDER BY s.email_sender LIMIT 1`
       );
-      const { required } = await one<{ required: boolean }>(db, PERSONAL_FEEDS_REQUIRED);
       const article = articleHtml(91, 6);
       const now = ts(nowIso());
       const entryId = benchUuid("bench:email-entry");
@@ -1394,22 +1365,6 @@ WHERE s.user_id = ${q(U0)} AND s.type = 'email' ORDER BY s.email_sender LIMIT 1`
   AND subscriptions.email_sender = ${q(owner.sender)}`;
       return {
         statements: [
-          { label: "personal_feeds_required", sql: PERSONAL_FEEDS_REQUIRED },
-          ...(required
-            ? [
-                {
-                  label: "upsert_feed",
-                  sql: `INSERT INTO feeds (id, type, user_id, email_sender_pattern, title, created_at, updated_at)
-VALUES (${q(benchUuid("bench:email-feed"))}, 'email', ${q(U0)}, ${q(owner.sender)}, ${q(owner.title)}, ${now}, ${now})
-ON CONFLICT (user_id, email_sender_pattern) DO NOTHING RETURNING feeds.id`,
-                },
-                {
-                  label: "select_feed",
-                  sql: `SELECT feeds.id FROM feeds WHERE feeds.user_id = ${q(U0)}
-  AND feeds.email_sender_pattern = ${q(owner.sender)} AND feeds.type = 'email'`,
-                },
-              ]
-            : []),
           {
             label: "lock_members",
             sql: `SELECT user_entries.entry_id FROM user_entries
@@ -1421,18 +1376,17 @@ ORDER BY user_entries.entry_id FOR NO KEY UPDATE OF user_entries`,
           },
           {
             label: "upsert_subscription",
-            sql: `INSERT INTO subscriptions (id, user_id, feed_id, type, email_sender, custom_title, subscribed_at, created_at, updated_at)
-VALUES (${q(benchUuid("bench:email-subscription"))}, ${q(U0)}, ${owner.feed_id ? q(owner.feed_id) : "NULL"}, 'email',
-  ${q(owner.sender)}, ${owner.feed_id ? "NULL" : q(owner.title)}, ${now}, ${now}, ${now})
+            sql: `INSERT INTO subscriptions (id, user_id, type, email_sender, custom_title, subscribed_at, created_at, updated_at)
+VALUES (${q(benchUuid("bench:email-subscription"))}, ${q(U0)}, 'email', ${q(owner.sender)}, ${q(owner.title)},
+  ${now}, ${now}, ${now})
 ON CONFLICT (user_id, email_sender) WHERE subscriptions.type = 'email'
   DO UPDATE SET unsubscribed_at = NULL, updated_at = ${now} WHERE subscriptions.unsubscribed_at IS NOT NULL
 RETURNING *`,
           },
           {
             label: "owner_subscription",
-            sql: `SELECT subscriptions.id, subscriptions.feed_id,
-  COALESCE(subscriptions.custom_title, feeds.title, subscriptions.email_sender)
-FROM subscriptions LEFT JOIN feeds ON feeds.id = subscriptions.feed_id WHERE ${isSender}`,
+            sql: `SELECT subscriptions.id, COALESCE(subscriptions.custom_title, subscriptions.email_sender)
+FROM subscriptions WHERE ${isSender}`,
           },
           {
             label: "duplicate",
@@ -1441,10 +1395,10 @@ WHERE entries.owner_subscription_id = ${q(owner.id)} AND entries.guid = ${q(mess
           },
           {
             label: "insert_entry",
-            sql: `INSERT INTO entries (id, owner_subscription_id, owner_feed_id, type, guid, url, title, author, content_original,
+            sql: `INSERT INTO entries (id, owner_subscription_id, type, guid, url, title, author, content_original,
   content_cleaned, summary, published_at, fetched_at, content_hash, spam_score, is_spam, list_unsubscribe_mailto,
   list_unsubscribe_https, list_unsubscribe_post, unsubscribe_url)
-VALUES (${q(entryId)}, ${q(owner.id)}, ${owner.feed_id ? q(owner.feed_id) : "NULL"}, 'email', ${q(messageId)}, NULL,
+VALUES (${q(entryId)}, ${q(owner.id)}, 'email', ${q(messageId)}, NULL,
   ${q(article.title)}, ${q(owner.title)}, ${q(`<html><body>${article.html}</body></html>`)}, ${q(article.html)},
   ${q(article.summary)}, ${now}, ${now}, ${q(benchUuid(messageId))}, 1.5, false, 'mailto:unsubscribe@example.net',
   NULL, false, NULL)`,

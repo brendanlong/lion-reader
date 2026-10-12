@@ -51,17 +51,16 @@ async function createSubscription(userId: string): Promise<{ subId: string; stre
   return { subId, streamId: sub.greaderStreamId };
 }
 
-/** The user's saved subscription, which carries the saved feed's stream serial (#1846). */
-async function createSavedFeed(
+/** The user's saved subscription and its stream serial (#1846). */
+async function createSavedSubscription(
   userId: string
 ): Promise<{ subscriptionId: string; streamId: bigint }> {
-  const { subscriptionId, savedFeedId } = await createTestSavedSubscription(userId);
-  createdFeedIds.push(savedFeedId);
-  const [feed] = await db
-    .select({ greaderStreamId: feeds.greaderStreamId })
-    .from(feeds)
-    .where(eq(feeds.id, savedFeedId));
-  return { subscriptionId, streamId: feed.greaderStreamId };
+  const subscriptionId = await createTestSavedSubscription(userId);
+  const [sub] = await db
+    .select({ greaderStreamId: subscriptions.greaderStreamId })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, subscriptionId));
+  return { subscriptionId, streamId: sub.greaderStreamId };
 }
 
 describe("feedStreamIdToSubscriptionUuid", () => {
@@ -106,7 +105,7 @@ describe("resolveFeedStream", () => {
 
   it("resolves the saved feed's stream id to the saved subscription", async () => {
     const userId = await createUser();
-    const { subscriptionId, streamId } = await createSavedFeed(userId);
+    const { subscriptionId, streamId } = await createSavedSubscription(userId);
     expect(await resolveFeedStream(db, userId, streamId)).toEqual({
       kind: "saved",
       subscriptionId,
@@ -116,7 +115,7 @@ describe("resolveFeedStream", () => {
   it("does not resolve another user's saved feed", async () => {
     const owner = await createUser();
     const other = await createUser();
-    const { streamId } = await createSavedFeed(owner);
+    const { streamId } = await createSavedSubscription(owner);
     expect(await resolveFeedStream(db, other, streamId)).toBeNull();
   });
 
@@ -127,17 +126,7 @@ describe("resolveFeedStream", () => {
   });
 });
 
-describe("greader stream id uniqueness across subscriptions and feeds", () => {
-  it("draws subscription and saved-feed stream ids from one sequence (no collision)", async () => {
-    // Both tables default from the shared greader_id_seq, so a saved feed can
-    // never share a subscription's stream id — the invariant resolveFeedStream
-    // relies on to try subscriptions first, then the saved feed, unambiguously.
-    const userId = await createUser();
-    const { streamId: subStream } = await createSubscription(userId);
-    const { streamId: savedStream } = await createSavedFeed(userId);
-    expect(subStream).not.toBe(savedStream);
-  });
-
+describe("greader stream id uniqueness across subscriptions", () => {
   it("keeps greader_stream_id unique across all subscriptions", async () => {
     const userId = await createUser();
     const a = await createSubscription(userId);

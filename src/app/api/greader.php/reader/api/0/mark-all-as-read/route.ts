@@ -52,7 +52,7 @@ export async function POST(request: Request): Promise<Response> {
         return textResponse("OK");
       }
 
-      // `filter` is the saved-feed type filter or a real subscription id (issue
+      // `filter` is the Saved type filter or a real subscription id (issue
       // #730), resolved identically to the stream/contents endpoints.
       await markAllEntriesRead(db, { userId, ...filter, before: beforeDate, showSpam });
       break;

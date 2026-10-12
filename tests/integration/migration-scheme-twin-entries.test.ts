@@ -160,12 +160,11 @@ describe("migration 0109: merge scheme-twin entries", () => {
       const unrelated = await createTestEntry(feedId, { guid: "https://example.com/?p=2" });
       // Saved-article twins are outside the rule and must be left alone.
       const savedUser = await createTestUser({ emailPrefix: "saved" });
-      const savedFeedId = await createTestFeed({ type: "saved", url: null, userId: savedUser });
-      const savedA = await createTestEntry(savedFeedId, {
+      const savedA = await createTestEntry(savedUser, {
         type: "saved",
         guid: "http://example.com/a",
       });
-      const savedB = await createTestEntry(savedFeedId, {
+      const savedB = await createTestEntry(savedUser, {
         type: "saved",
         guid: "https://example.com/a",
       });
@@ -253,7 +252,7 @@ describe("migration 0109: merge scheme-twin entries", () => {
       const savedRows = await db
         .select({ id: entries.id })
         .from(entries)
-        .where(eq(entries.ownerFeedId, savedFeedId));
+        .where(eq(entries.ownerUserId, savedUser));
       expect(savedRows.map((r) => r.id).sort()).toEqual([savedA, savedB].sort());
 
       expect(await stateOf(userBoth, loser)).toBeNull();
@@ -331,8 +330,7 @@ describe("migration 0109: merge scheme-twin entries", () => {
     ).rejects.toMatchObject({ cause: { constraint: INDEX_NAME } });
 
     const userId = await createTestUser({ emailPrefix: "saved" });
-    const savedFeedId = await createTestFeed({ type: "saved", url: null, userId });
-    await createTestEntry(savedFeedId, { type: "saved", guid: "http://example.com/a" });
-    await createTestEntry(savedFeedId, { type: "saved", guid: "https://example.com/a" });
+    await createTestEntry(userId, { type: "saved", guid: "http://example.com/a" });
+    await createTestEntry(userId, { type: "saved", guid: "https://example.com/a" });
   });
 });

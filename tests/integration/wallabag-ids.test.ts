@@ -13,7 +13,7 @@ import { db } from "../../src/server/db";
 import { users, entries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { resolveWallabagEntry, entryIdToWallabagId } from "../../src/server/wallabag/id";
-import { createTestEntry, createTestFeed, createTestUser } from "./helpers";
+import { createTestEntry, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 
@@ -27,8 +27,7 @@ async function createUser(): Promise<string> {
 async function createTestSavedArticle(
   userId: string
 ): Promise<{ entryId: string; serial: bigint }> {
-  const savedFeedId = await createTestFeed({ type: "saved", userId, url: null });
-  const entryId = await createTestEntry(savedFeedId, { type: "saved", userIds: [userId] });
+  const entryId = await createTestEntry(userId, { type: "saved", userIds: [userId] });
   const [entry] = await db
     .select({ greaderItemId: entries.greaderItemId })
     .from(entries)
@@ -38,7 +37,7 @@ async function createTestSavedArticle(
 
 afterAll(async () => {
   if (createdUserIds.length > 0) {
-    // Feeds (and their entries / user_entries) cascade from the user delete
+    // Their saved articles (and user_entries) cascade from the user delete
     await db.delete(users).where(inArray(users.id, createdUserIds));
   }
 });

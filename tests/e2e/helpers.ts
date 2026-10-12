@@ -252,33 +252,15 @@ export async function createUnreadEntry(
 }
 
 /**
- * Creates the user's saved-articles feed (type='saved', no subscription) and a
- * saved entry in it, plus the user_entries row that makes it visible (unread).
- * Mirrors the shape produced by the saved-articles service. Returns the saved
- * feed id and the entry.
+ * Creates a saved article the user owns, plus the user_entries row that makes
+ * it visible (unread) and puts it in the saved subscription (created by the
+ * first save, as the saved-articles service does). Returns the entry.
  */
 export async function createSavedArticle(
   db: TestDb,
   params: { userId: string; title: string }
-): Promise<{ savedFeedId: string; entry: TestEntry }> {
+): Promise<{ entry: TestEntry }> {
   const { userId, title } = params;
-
-  // One saved feed per user (unique index on (user_id) WHERE type='saved').
-  const savedFeedId = generateUuidv7();
-  const inserted = await db
-    .insert(schema.feeds)
-    .values({ id: savedFeedId, type: "saved", userId, title: "Saved Articles" })
-    .onConflictDoNothing()
-    .returning({ id: schema.feeds.id });
-  const feedId =
-    inserted[0]?.id ??
-    (
-      await db
-        .select({ id: schema.feeds.id })
-        .from(schema.feeds)
-        .where(and(eq(schema.feeds.type, "saved"), eq(schema.feeds.userId, userId)))
-        .limit(1)
-    )[0].id;
 
   const id = generateUuidv7();
   const now = new Date();
@@ -288,7 +270,6 @@ export async function createSavedArticle(
     .insert(schema.entries)
     .values({
       id,
-      ownerFeedId: feedId,
       ownerUserId: userId,
       type: "saved",
       guid: url,
@@ -307,7 +288,6 @@ export async function createSavedArticle(
   await db.insert(schema.userEntries).values({ userId, entryId: id });
 
   return {
-    savedFeedId: feedId,
     entry: {
       id,
       title,
