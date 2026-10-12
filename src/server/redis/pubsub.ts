@@ -355,7 +355,7 @@ export async function publishNewEntry(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     feedType: "web",
-    ...(entry ? { entry } : {}),
+    ...(entry ? { entry: { ...entry, type: "web" as const } } : {}),
   });
 }
 
@@ -391,7 +391,7 @@ export async function publishUserNewEntry(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     feedType: target.feedType,
-    ...(entry ? { entry } : {}),
+    ...(entry ? { entry: { ...entry, type: target.feedType } } : {}),
   });
 }
 
@@ -685,7 +685,7 @@ export async function publishEntryStateChanged(
     counts,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-    ...(listData ?? {}),
+    ...(listData && { ...listData, entry: { ...listData.entry, type: listData.feedType } }),
     ...(subscriptionIds ? { subscriptionIds } : {}),
   });
 }

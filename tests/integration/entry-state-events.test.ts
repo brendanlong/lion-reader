@@ -199,6 +199,7 @@ describe("markEntriesRead SSE publishing", () => {
     expect(event.entry).toMatchObject({
       title: "Entry",
       feedTitle: "Test Feed",
+      type: "web",
     });
     expect(typeof event.entry.fetchedAt).toBe("string");
   });
