@@ -289,6 +289,7 @@ export async function createSavedArticle(
     .values({
       id,
       ownerFeedId: feedId,
+      ownerUserId: userId,
       type: "saved",
       guid: url,
       url,

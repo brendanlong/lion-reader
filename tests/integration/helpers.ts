@@ -142,6 +142,18 @@ export async function createTestSavedSubscription(
   return { subscriptionId, savedFeedId };
 }
 
+/**
+ * Gives `userId` the saved subscription without a saved feed, as a first save
+ * does once the per-user feeds are gone (#1846 phase 6B2). Returns its id.
+ */
+export async function createTestFeedlessSavedSubscription(userId: string): Promise<string> {
+  const id = generateUuidv7();
+  await db
+    .insert(subscriptions)
+    .values({ id, userId, type: "saved", customTitle: "Saved", subscribedAt: new Date(0) });
+  return id;
+}
+
 // ============================================================================
 // Entries
 // ============================================================================

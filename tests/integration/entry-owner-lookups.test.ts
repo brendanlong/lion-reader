@@ -1,0 +1,247 @@
+/**
+ * Every lookup of an email or saved article goes by its owner (#1846 phase
+ * 6B1): its subscription or its user, never a feed. So each path works for
+ * entries that still name a per-user feed in `owner_feed_id` (today's data)
+ * and for entries that don't, which is what 6B2's migration leaves.
+ *
+ * The second run drops `owner_feed_id`'s NOT NULL, as 6B2 does, which is what
+ * tells email ingest and saving to stop creating per-user feeds
+ * (`personalFeedsRequired`). 6B2 also makes a first save create the saved
+ * subscription without a saved feed; here that run creates it up front.
+ */
+
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { db } from "../../src/server/db";
+import {
+  blockedSenders,
+  entries,
+  subscriptions,
+  userEntries,
+  users,
+} from "../../src/server/db/schema";
+import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { processInboundEmail } from "../../src/server/email/process-inbound";
+import {
+  deleteSavedArticle,
+  saveArticle,
+  savedArticleExistsByUrl,
+} from "../../src/server/services/saved";
+import { listEntries } from "../../src/server/services/entries";
+import { unsubscribe } from "../../src/server/services/subscriptions";
+import { createCaller } from "../../src/server/trpc/root";
+import {
+  createAuthContext,
+  createTestFeedlessSavedSubscription,
+  createTestIngestAddress,
+  createTestUser,
+} from "./helpers";
+
+const ARTICLE_HTML =
+  "<html><body><article><p>A saved article body, long enough to keep.</p></article></body></html>";
+
+const createdUsers: string[] = [];
+
+async function removeCreatedUsers(): Promise<void> {
+  if (createdUsers.length === 0) return;
+  // The entries first: with no per-user feed, nothing but their owners
+  // cascades to them, and an email's cascade from its subscription trips #1897.
+  const ownSubscriptions = db
+    .select({ id: subscriptions.id })
+    .from(subscriptions)
+    .where(inArray(subscriptions.userId, createdUsers));
+  await db
+    .delete(entries)
+    .where(
+      or(
+        inArray(entries.ownerUserId, createdUsers),
+        inArray(entries.ownerSubscriptionId, ownSubscriptions)
+      )
+    );
+  await db.delete(users).where(inArray(users.id, createdUsers));
+  createdUsers.length = 0;
+}
+
+async function receiveEmail(
+  userId: string,
+  options: { messageId?: string; listUnsubscribe?: string } = {}
+) {
+  const token = `token-${generateUuidv7()}`;
+  await createTestIngestAddress(userId, { token });
+  return processInboundEmail({
+    to: `${token}@ingest.lionreader.com`,
+    from: { address: "news@example.com", name: "The News" },
+    subject: "Hello",
+    messageId: options.messageId ?? `<${generateUuidv7()}@example.com>`,
+    html: "<p>Hi</p>",
+    headers: { listUnsubscribe: options.listUnsubscribe },
+  });
+}
+
+async function entryRow(entryId: string) {
+  const [row] = await db.select().from(entries).where(eq(entries.id, entryId));
+  return row;
+}
+
+async function subscriptionRow(subscriptionId: string) {
+  const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
+  return row;
+}
+
+describe.each([
+  { schema: "with per-user feeds (before 6B2)", feedless: false },
+  { schema: "without per-user feeds (after 6B2)", feedless: true },
+])("$schema", ({ feedless }) => {
+  beforeAll(async () => {
+    if (feedless) {
+      await db.execute(sql`ALTER TABLE entries ALTER COLUMN owner_feed_id DROP NOT NULL`);
+    }
+  });
+  afterEach(removeCreatedUsers);
+  afterAll(async () => {
+    await removeCreatedUsers();
+    if (feedless) {
+      await db.execute(sql`ALTER TABLE entries ALTER COLUMN owner_feed_id SET NOT NULL`);
+    }
+  });
+
+  async function user(): Promise<string> {
+    const id = await createTestUser();
+    createdUsers.push(id);
+    if (feedless) await createTestFeedlessSavedSubscription(id);
+    return id;
+  }
+
+  it("an email belongs to its sender's subscription, which holds, counts and names it", async () => {
+    const userId = await user();
+    const messageId = `<${generateUuidv7()}@example.com>`;
+    const result = await receiveEmail(userId, { messageId });
+    expect(result.success).toBe(true);
+    const subscriptionId = result.subscriptionId!;
+
+    const subscription = await subscriptionRow(subscriptionId);
+    expect(subscription).toMatchObject({
+      type: "email",
+      emailSender: "news@example.com",
+      unreadCount: 1,
+      // Without a feed, the subscription carries the sender's name.
+      customTitle: feedless ? "The News" : null,
+    });
+    expect(subscription.feedId === null).toBe(feedless);
+
+    const entry = await entryRow(result.entryId!);
+    expect(entry.ownerSubscriptionId).toBe(subscriptionId);
+    expect(entry.ownerFeedId).toBe(subscription.feedId);
+    const [{ stamped }] = await db
+      .select({ stamped: userEntries.subscriptionId })
+      .from(userEntries)
+      .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entry.id)));
+    expect(stamped).toBe(subscriptionId);
+
+    const listed = await listEntries(db, { userId, type: "email", showSpam: false });
+    expect(listed.items).toMatchObject([
+      { id: entry.id, subscriptionId, feedTitle: "The News", subscriptionIds: [subscriptionId] },
+    ]);
+
+    expect(await receiveEmail(userId, { messageId })).toEqual({
+      success: false,
+      error: "Duplicate email",
+    });
+  });
+
+  it("unsubscribing blocks the sender with its emails' List-Unsubscribe, and a later email reactivates it", async () => {
+    const userId = await user();
+    const { subscriptionId } = await receiveEmail(userId, {
+      listUnsubscribe: "<mailto:leave@example.com>",
+    });
+
+    await unsubscribe(db, userId, subscriptionId!);
+
+    const [blocked] = await db
+      .select()
+      .from(blockedSenders)
+      .where(eq(blockedSenders.userId, userId));
+    expect(blocked).toMatchObject({
+      senderEmail: "news@example.com",
+      listUnsubscribeMailto: "mailto:leave@example.com",
+    });
+
+    await db.delete(blockedSenders).where(eq(blockedSenders.userId, userId));
+    const again = await receiveEmail(userId);
+    expect(again.subscriptionId).toBe(subscriptionId);
+    expect((await subscriptionRow(subscriptionId!)).unsubscribedAt).toBeNull();
+  });
+
+  it("a saved article belongs to its user, who alone finds it by URL and deletes it", async () => {
+    const [userId, otherId] = [await user(), await user()];
+    const url = `https://example.com/${generateUuidv7()}`;
+    const saved = await saveArticle(db, userId, { url, html: ARTICLE_HTML, refetch: false });
+
+    const entry = await entryRow(saved.id);
+    expect(entry.ownerUserId).toBe(userId);
+    expect(entry.ownerFeedId === null).toBe(feedless);
+
+    expect(await savedArticleExistsByUrl(db, userId, url)).toBe(saved.id);
+    expect(await savedArticleExistsByUrl(db, otherId, url)).toBeNull();
+    const again = await saveArticle(db, userId, { url, html: ARTICLE_HTML, refetch: false });
+    expect(again).toMatchObject({ id: saved.id, outcome: "existing" });
+
+    const [{ savedSubscriptionId, streamId }] = await db
+      .select({ savedSubscriptionId: subscriptions.id, streamId: subscriptions.greaderStreamId })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "saved")));
+    const listed = await listEntries(db, { userId, type: "saved", showSpam: false });
+    expect(listed.items).toMatchObject([
+      {
+        id: saved.id,
+        subscriptionId: savedSubscriptionId,
+        // Google Reader's "Saved Articles" stream (#730).
+        subscriptionGreaderStreamId: streamId,
+        feedTitle: "Saved Articles",
+      },
+    ]);
+
+    expect(await deleteSavedArticle(db, otherId, saved.id)).toBe(false);
+    expect(await deleteSavedArticle(db, userId, saved.id)).toBe(true);
+    expect(await entryRow(saved.id)).toBeUndefined();
+    expect(await deleteSavedArticle(db, userId, saved.id)).toBe(false);
+  });
+
+  it("sync delivers content updates to emails and saved articles through their owners", async () => {
+    const userId = await user();
+    const email = await receiveEmail(userId);
+    const saved = await saveArticle(db, userId, {
+      url: `https://example.com/${generateUuidv7()}`,
+      html: ARTICLE_HTML,
+      refetch: false,
+    });
+    const ids = [email.entryId!, saved.id];
+
+    // A content update moves only entries.updated_at, which only the owner
+    // arms see: the user_entries rows stay older than the cursor.
+    const old = new Date("2024-01-01T00:00:00Z");
+    const cursor = new Date("2024-01-02T00:00:00Z");
+    const updated = new Date("2024-01-03T00:00:00Z");
+    await db
+      .update(userEntries)
+      .set({ updatedAt: old })
+      .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, ids)));
+    await db
+      .update(entries)
+      .set({ createdAt: old, updatedAt: updated })
+      .where(inArray(entries.id, ids));
+
+    const caller = createCaller(await createAuthContext(userId));
+    const { events } = await caller.sync.events({ cursors: { entries: cursor.toISOString() } });
+    expect(
+      events
+        .filter((e) => e.type === "entry_updated")
+        .map((e) => ("entryId" in e ? e.entryId : null))
+        .sort()
+    ).toEqual([...ids].sort());
+
+    const cursors = await caller.sync.cursors();
+    expect(new Date(cursors.entries!).getTime()).toBe(updated.getTime());
+    expect(cursors.entriesAfterId).toBe([...ids].sort().at(-1));
+  });
+});
