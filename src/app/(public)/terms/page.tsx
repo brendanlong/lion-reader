@@ -124,7 +124,9 @@ export default function TermsOfServicePage() {
         </LegalParagraph>
         <LegalList>
           <li>Violation of these Terms of Service</li>
-          <li>Violation of the Acceptable Use policy above</li>
+          <li>
+            Violation of the <TextLink href="#acceptable-use">Acceptable Use</TextLink> policy above
+          </li>
           <li>Abusive or excessive usage that impacts the service for other users</li>
           <li>Inactivity for an extended period</li>
           <li>Any reason at our sole discretion</li>

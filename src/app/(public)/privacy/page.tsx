@@ -45,7 +45,8 @@ export default function PrivacyPolicyPage() {
               When you create an account, we collect your email address and password. Passwords are
               securely hashed using argon2 (industry-standard). If you sign in with Google, Apple,
               or Discord, we store your email address and account ID from that provider, plus the
-              sign-in tokens it issues (see Authentication Providers below).
+              sign-in tokens it issues (see{" "}
+              <TextLink href="#authentication-providers">Authentication Providers</TextLink> below).
             </LegalParagraph>
           </LegalSubsection>
           <LegalSubsection id="session-information" title="Session Information">
@@ -105,7 +106,8 @@ export default function PrivacyPolicyPage() {
           <li>To prevent abuse and maintain security of the service</li>
           <li>
             To administer the service, including managing user accounts, monitoring feed health, and
-            managing invite codes (see Administrative Access below)
+            managing invite codes (see{" "}
+            <TextLink href="#administrative-access">Administrative Access</TextLink> below)
           </li>
         </LegalList>
         <LegalParagraph>
@@ -147,7 +149,8 @@ export default function PrivacyPolicyPage() {
         <LegalParagraph>
           We do not sell, rent, or share your personal information with third parties for their
           marketing purposes. We only share data with third-party service providers as necessary to
-          operate the service (see Third-Party Services section below).
+          operate the service (see{" "}
+          <TextLink href="#third-party-services">Third-Party Services</TextLink> below).
         </LegalParagraph>
         <LegalParagraph>
           We may disclose your information if required by law, such as in response to a valid
@@ -370,7 +373,8 @@ export default function PrivacyPolicyPage() {
               We store your email address and account ID from the provider, plus the tokens it
               issues at sign-in. The providers also share your name (and Google your profile
               picture, Discord your username and avatar); we do not store these. We use the stored
-              tokens only for Google Docs saving, described below.
+              tokens only for <TextLink href="#google-docs">Google Docs saving</TextLink>, described
+              below.
             </LegalParagraph>
           </LegalSubsection>
 
@@ -516,7 +520,8 @@ export default function PrivacyPolicyPage() {
           </li>
         </LegalList>
         <LegalParagraph>
-          We do not use tracking cookies or advertising cookies. Our page counts (see Page Counts
+          We do not use tracking cookies or advertising cookies. Our page counts (see{" "}
+          <TextLink href="#page-counts">Page Counts</TextLink>
           above) set no cookies and store nothing in your browser.
         </LegalParagraph>
       </LegalSection>
