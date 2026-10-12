@@ -332,7 +332,7 @@ export async function POST(request: Request): Promise<Response> {
     // Unexpected throw (e.g. transient DB failure): the event was NOT durably
     // handled and the token was NOT marked seen, so return 500 to make Mailgun
     // retry — the retry passes the (unmarked) nonce check and reprocesses.
-    // Reprocessing is idempotent (uq_entries_owner_feed_guid + Message-ID dedup), and
+    // Reprocessing is idempotent (uq_entries_owner_subscription_guid + Message-ID dedup), and
     // Mailgun's retry schedule is bounded (~8 attempts over ~8h), so a
     // persistent failure can't retry forever. Returning 200 here instead would
     // silently drop the email.

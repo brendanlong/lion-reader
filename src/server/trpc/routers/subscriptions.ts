@@ -401,8 +401,10 @@ export const subscriptionsRouter = createTRPCRouter({
         updateData.customTitle = input.customTitle;
       } else if (input.customTitle !== undefined) {
         // A subscription without a feed keeps its name in custom_title
-        // (#1846). Its type and feed never change back, so checking first
-        // can't race.
+        // (#1846). Checked first: a collection never gains a feed, but 6B2's
+        // migration can drop an email subscription's feed in between, and
+        // the update then fails its name check (a 500) rather than leaving
+        // it untitled.
         const cleared = await subscriptionsService.clearedCustomTitle(ctx.db, userId, input.id);
         if (!cleared) {
           throw errors.validation("Collection name is required");
