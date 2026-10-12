@@ -48,11 +48,10 @@ export async function getFeedFetchHealthSnapshot(
     WITH pollable AS (
       SELECT f.id, f.last_fetched_at, f.last_error, f.consecutive_failures
       FROM feeds f
-      WHERE f.type = 'web'
-        AND EXISTS (
-          SELECT 1 FROM subscriptions s
-          WHERE s.feed_id = f.id AND s.unsubscribed_at IS NULL
-        )
+      WHERE EXISTS (
+        SELECT 1 FROM subscriptions s
+        WHERE s.feed_id = f.id AND s.unsubscribed_at IS NULL
+      )
     )
     SELECT
       count(*)::int AS pollable_feed_count,
