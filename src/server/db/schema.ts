@@ -431,9 +431,8 @@ export const oauthConsentGrants = pgTable(
 // ============================================================================
 
 /**
- * Feeds table - stores canonical feed data shared across users.
- * For email feeds (type='email'), the feed is user-specific and uses email_sender_pattern.
- * For URL-based feeds (type='web'), feeds are shared across users.
+ * Feeds table - web feeds' canonical data and fetch state, shared by every
+ * subscriber (#1846: only web subscriptions have a feed).
  */
 export const feeds = pgTable(
   "feeds",
@@ -486,11 +485,10 @@ export const feeds = pgTable(
     redirectUrl: text("redirect_url"), // URL we're being redirected to (301/308)
     redirectFirstSeenAt: timestamp("redirect_first_seen_at", { withTimezone: true }), // When redirect was first observed
 
-    // Google Reader feed stream id (issue #1117, migration 0097). Only the
-    // per-user saved-articles feed is exposed as a stream, but every feed gets one
-    // from the shared greader_id_seq so the value space stays disjoint from
-    // subscriptions (resolveFeedStream tries subscriptions first, then the saved
-    // feed). DB-assigned via a sequence default, so inserts omit it.
+    // Google Reader feed stream id (issue #1117, migration 0097). Clients see
+    // subscriptions' stream ids, never a feed's, but every feed takes one from
+    // the shared greader_id_seq, so the saved subscription could keep its old
+    // saved feed's. DB-assigned via a sequence default, so inserts omit it.
     greaderStreamId: bigint("greader_stream_id", { mode: "bigint" })
       .notNull()
       .default(sql`nextval('greader_id_seq'::regclass)`),
