@@ -5,6 +5,12 @@
  * Usage (with DATABASE_URL set, after migration 0137, while maintenance mode
  * is still on):
  *   pnpm exec tsx scripts/backfill-entry-owners.ts [--batch-size 5000] [--check-only]
+ *   pnpm exec tsx scripts/backfill-entry-owners.ts --preflight
+ *
+ * `--preflight` is read-only and reads only feeds and subscriptions, so it
+ * runs against the previous release's schema too: run it in production before
+ * the maintenance window. Each count it reports must be 0, or the migration's
+ * unique index or the backfill would fail on that row.
  *
  * A web entry's owner is its feed (`owner_feed_id`, which 0137 renamed from
  * `feed_id`), so it needs nothing. An email gets `owner_subscription_id`, the
@@ -27,6 +33,21 @@ export interface EntryOwnersCheck {
   unowned: number;
   /** Entries whose email/saved owner isn't the one their type and feed give, or a web entry with one. */
   mismatched: number;
+  /** Email subscriptions without `email_sender`. */
+  emailSubscriptionsWithoutSender: number;
+}
+
+export interface Preflight {
+  /** Email feeds with more than one email subscription (the backfill's lookup expects one). */
+  emailFeedsWithSeveralSubscriptions: number;
+  /** Email feeds with no email subscription: their emails would stay unowned. */
+  emailFeedsWithoutSubscription: number;
+  /** Email feeds without a sender: their subscription would get no `email_sender`. */
+  emailFeedsWithoutSender: number;
+  /** Saved feeds without a user: their articles would stay unowned. */
+  savedFeedsWithoutUser: number;
+  /** Subscriptions to another user's email or saved feed (would break the per-user sender index). */
+  subscriptionsToAnotherUsersFeed: number;
 }
 
 /** The owners 0137's rule gives the entry `e`: (owner_subscription_id, owner_user_id). */
@@ -78,7 +99,7 @@ export async function backfillEntryOwners(
 
 /** Counts email and saved entries without their owner, and wrong owners. */
 export async function checkEntryOwners(db: typeof dbType): Promise<EntryOwnersCheck> {
-  const result = await db.execute<{ unowned: number; mismatched: number }>(sql`
+  const result = await db.execute<EntryOwnersCheck & Record<string, unknown>>(sql`
     SELECT count(*) FILTER (
              WHERE e.type IN ('email', 'saved')
                AND e.owner_subscription_id IS NULL AND e.owner_user_id IS NULL
@@ -87,31 +108,64 @@ export async function checkEntryOwners(db: typeof dbType): Promise<EntryOwnersCh
              WHERE (e.owner_subscription_id IS NOT NULL OR e.owner_user_id IS NOT NULL)
                AND (e.owner_subscription_id, e.owner_user_id)
                  IS DISTINCT FROM (${EXPECTED_SUBSCRIPTION}, ${EXPECTED_USER})
-           )::int AS mismatched
+           )::int AS mismatched,
+           (SELECT count(*) FROM subscriptions
+             WHERE type = 'email' AND email_sender IS NULL)::int AS "emailSubscriptionsWithoutSender"
     FROM entries e
   `);
   return result.rows[0];
 }
 
-function parseArgs(argv: string[]): { batchSize?: number; checkOnly: boolean } {
+/** Read-only checks of the feeds and subscriptions the migration and backfill rely on. */
+export async function preflight(db: typeof dbType): Promise<Preflight> {
+  const result = await db.execute<Preflight & Record<string, unknown>>(sql`
+    WITH email_feeds AS (
+      SELECT f.id, f.email_sender_pattern,
+             (SELECT count(*) FROM subscriptions s WHERE s.feed_id = f.id AND s.type = 'email') AS n
+      FROM feeds f WHERE f.type = 'email'
+    )
+    SELECT
+      (SELECT count(*) FROM email_feeds WHERE n > 1)::int AS "emailFeedsWithSeveralSubscriptions",
+      (SELECT count(*) FROM email_feeds WHERE n = 0)::int AS "emailFeedsWithoutSubscription",
+      (SELECT count(*) FROM email_feeds WHERE email_sender_pattern IS NULL)::int AS "emailFeedsWithoutSender",
+      (SELECT count(*) FROM feeds WHERE type = 'saved' AND user_id IS NULL)::int AS "savedFeedsWithoutUser",
+      (SELECT count(*) FROM subscriptions s JOIN feeds f ON f.id = s.feed_id
+        WHERE f.user_id IS NOT NULL AND s.user_id <> f.user_id)::int AS "subscriptionsToAnotherUsersFeed"
+  `);
+  return result.rows[0];
+}
+
+function parseArgs(argv: string[]): {
+  batchSize?: number;
+  checkOnly: boolean;
+  preflightOnly: boolean;
+} {
   let batchSize: number | undefined;
   let checkOnly = false;
+  let preflightOnly = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--check-only") checkOnly = true;
+    else if (arg === "--preflight") preflightOnly = true;
     else if (arg === "--batch-size") batchSize = Number(argv[++i]);
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (batchSize !== undefined && !(batchSize > 0)) {
     throw new Error("--batch-size must be a positive number");
   }
-  return { batchSize, checkOnly };
+  return { batchSize, checkOnly, preflightOnly };
 }
 
 async function main(): Promise<void> {
-  const { batchSize, checkOnly } = parseArgs(process.argv.slice(2));
+  const { batchSize, checkOnly, preflightOnly } = parseArgs(process.argv.slice(2));
   const { db, pool } = await import("../src/server/db");
   try {
+    if (preflightOnly) {
+      const result = await preflight(db);
+      console.log("Preflight:", JSON.stringify(result));
+      process.exitCode = Object.values(result).some((n) => n > 0) ? 1 : 0;
+      return;
+    }
     if (!checkOnly) {
       const started = Date.now();
       const result = await backfillEntryOwners(db, { batchSize, log: (m) => console.log(m) });
@@ -123,7 +177,7 @@ async function main(): Promise<void> {
     const started = Date.now();
     const check = await checkEntryOwners(db);
     console.log(`Check (${((Date.now() - started) / 1000).toFixed(1)} s):`, JSON.stringify(check));
-    process.exitCode = check.unowned > 0 || check.mismatched > 0 ? 1 : 0;
+    process.exitCode = Object.values(check).some((n) => n > 0) ? 1 : 0;
   } finally {
     await pool.end();
   }

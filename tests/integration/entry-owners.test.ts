@@ -7,8 +7,9 @@
  * email and saved entries written before.
  */
 
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, pool } from "../../src/server/db";
 import { entries, feeds, subscriptions, users } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -20,7 +21,11 @@ import {
 } from "../../src/server/services/saved";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import { deleteUser } from "../../src/server/services/users";
-import { backfillEntryOwners, checkEntryOwners } from "../../scripts/backfill-entry-owners";
+import {
+  backfillEntryOwners,
+  checkEntryOwners,
+  preflight,
+} from "../../scripts/backfill-entry-owners";
 import {
   createTestEntry,
   createTestFeed,
@@ -68,6 +73,11 @@ async function receiveEmail(
     .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "email")));
   return { entryId: result.entryId!, subscriptionId };
 }
+
+/** Migration 0137's statement that fills existing email subscriptions' sender. */
+const MIGRATION_EMAIL_SENDER_FILL = /UPDATE subscriptions s\b[^;]*;/.exec(
+  readFileSync(new URL("../../migrations/0137_entry_owners.sql", import.meta.url), "utf8")
+)![0];
 
 const ARTICLE_HTML =
   "<html><body><article><p>A saved article body, long enough.</p></article></body></html>";
@@ -158,11 +168,42 @@ describe("email_sender", () => {
     });
     await expect(
       createTestSubscription(alice, otherFeed, { emailSender: "news@example.com" })
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ cause: { constraint: "uq_subscriptions_user_email_sender" } });
+  });
+
+  it("is filled from the email feed by migration 0137, and the check counts any left without", async () => {
+    const userId = await user();
+    const { subscriptionId } = await receiveEmail(userId, "news@example.com");
+    // Relative: the check covers the whole table, which other files share.
+    const without = async () => (await checkEntryOwners(db)).emailSubscriptionsWithoutSender;
+    const base = await without();
+    await db
+      .update(subscriptions)
+      .set({ emailSender: null })
+      .where(eq(subscriptions.id, subscriptionId));
+    expect(await without()).toBe(base + 1);
+
+    await db.execute(sql.raw(MIGRATION_EMAIL_SENDER_FILL));
+
+    const [{ emailSender }] = await db
+      .select({ emailSender: subscriptions.emailSender })
+      .from(subscriptions)
+      .where(eq(subscriptions.id, subscriptionId));
+    expect(emailSender).toBe("news@example.com");
+    expect(await without()).toBeLessThanOrEqual(base);
   });
 });
 
 describe("owner cascades", () => {
+  // #1897: the emails cascade in the same statement, and the membership
+  // trigger then updates their user_entries rows before those cascade.
+  it.skip("hard-deleting an email subscription removes its emails (#1897)", async () => {
+    const userId = await user();
+    const { entryId, subscriptionId } = await receiveEmail(userId, "news@example.com");
+    await db.delete(subscriptions).where(eq(subscriptions.id, subscriptionId));
+    expect(await db.select().from(entries).where(eq(entries.id, entryId))).toEqual([]);
+  });
+
   it("deleting an account removes its emails and saved articles, which it owns", async () => {
     const userId = await user();
     const email = await receiveEmail(userId, "news@example.com");
@@ -239,13 +280,13 @@ describe("backfill and check (#1846)", () => {
         .from(entries)
         .where(inArray(entries.id, [web, ...ids]));
     const before = await updatedAt();
-    expect(await checkEntryOwners(db)).toEqual({ unowned: 3, mismatched: 0 });
+    expect(await checkEntryOwners(db)).toMatchObject({ unowned: 3, mismatched: 0 });
 
     expect(await backfillEntryOwners(db, { batchSize: 2 })).toEqual({ updated: 3 });
     expect(await Promise.all(ids.map(ownerOf))).toEqual(expected);
     expect(await ownerOf(web)).toEqual(NONE);
     expect(await updatedAt()).toEqual(before);
-    expect(await checkEntryOwners(db)).toEqual({ unowned: 0, mismatched: 0 });
+    expect(await checkEntryOwners(db)).toMatchObject({ unowned: 0, mismatched: 0 });
 
     expect(await backfillEntryOwners(db, { batchSize: 2 })).toEqual({ updated: 0 });
   });
@@ -256,6 +297,33 @@ describe("backfill and check (#1846)", () => {
     const otherUser = await user();
     await db.update(entries).set({ ownerUserId: otherUser }).where(eq(entries.id, web));
     await db.update(entries).set({ ownerUserId: otherUser }).where(eq(entries.id, ids[2]));
-    expect(await checkEntryOwners(db)).toEqual({ unowned: 0, mismatched: 2 });
+    expect(await checkEntryOwners(db)).toMatchObject({ unowned: 0, mismatched: 2 });
+  });
+
+  it("preflight flags email feeds without exactly one subscription and subscriptions to another user's feed", async () => {
+    const [alice, bob] = [await user(), await user()];
+    await receiveEmail(alice, "news@example.com");
+    // Relative: preflight covers the whole table, which other files share.
+    const base = await preflight(db);
+
+    // An email feed nobody subscribes to, and Bob subscribed to Alice's.
+    await createTestFeed({
+      type: "email",
+      userId: alice,
+      url: null,
+      emailSenderPattern: "a@x.com",
+    });
+    const alicesFeed = await createTestFeed({
+      type: "email",
+      userId: alice,
+      url: null,
+      emailSenderPattern: "b@x.com",
+    });
+    await createTestSubscription(bob, alicesFeed, { emailSender: "b@x.com" });
+    expect(await preflight(db)).toEqual({
+      ...base,
+      emailFeedsWithoutSubscription: base.emailFeedsWithoutSubscription + 1,
+      subscriptionsToAnotherUsersFeed: base.subscriptionsToAnotherUsersFeed + 1,
+    });
   });
 });

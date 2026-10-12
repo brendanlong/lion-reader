@@ -394,12 +394,16 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   }
 
   // The subscription owns the email (#1846). The upsert above returns it only
-  // when it inserted or reactivated it.
-  const [ownerSubscription] = await db
-    .select({ id: subscriptions.id })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feed.id)));
-  if (!ownerSubscription) {
+  // when it inserted or reactivated it; otherwise it's already active.
+  const ownerSubscriptionId =
+    upsertedSubscription?.id ??
+    (
+      await db
+        .select({ id: subscriptions.id })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, feed.id)))
+    )[0]?.id;
+  if (!ownerSubscriptionId) {
     throw new Error(`No email subscription for sender ${senderEmail}`);
   }
 
@@ -469,7 +473,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     id: entryId,
     // The per-user email feed until phase 6B; the subscription owns it.
     ownerFeedId: feed.id,
-    ownerSubscriptionId: ownerSubscription.id,
+    ownerSubscriptionId,
     type: "email",
     guid: email.messageId,
     url,
