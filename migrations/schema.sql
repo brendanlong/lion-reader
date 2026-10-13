@@ -1066,8 +1066,6 @@ CREATE INDEX idx_entry_tombstones_user_deleted_at ON public.entry_tombstones USI
 
 CREATE UNIQUE INDEX idx_feeds_greader_stream_id ON public.feeds USING btree (greader_stream_id);
 
-CREATE INDEX idx_feeds_next_fetch ON public.feeds USING btree (next_fetch_at);
-
 CREATE INDEX idx_ingest_addresses_user ON public.ingest_addresses USING btree (user_id);
 
 CREATE INDEX idx_invites_expires ON public.invites USING btree (expires_at);

@@ -489,10 +489,7 @@ export const feeds = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("idx_feeds_next_fetch").on(table.nextFetchAt),
-    uniqueIndex("idx_feeds_greader_stream_id").on(table.greaderStreamId),
-  ]
+  (table) => [uniqueIndex("idx_feeds_greader_stream_id").on(table.greaderStreamId)]
 );
 
 // ============================================================================
