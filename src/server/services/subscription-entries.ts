@@ -105,8 +105,9 @@ export function holdsRedirectTwin(subscriptionId: SQL, entry: string): SQL {
  * together; until then this release keeps them current for the previous
  * release, which still reads them: `collection_entries` to add and remove
  * collection members, and the column for its fan-out's redirect check and its
- * merges. Ask inside the transaction that writes: a write racing 7B's
- * migration fails rather than writing a bad row.
+ * merges. Ask inside the transaction that writes, after it has touched
+ * `user_entries`: 7B's migration then waits for it to commit, so the answer
+ * holds for the rest of the transaction.
  *
  * Temporary: 7B removes it with the forms.
  */

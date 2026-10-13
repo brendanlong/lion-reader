@@ -373,50 +373,58 @@ describe.each([
   });
 });
 
-describe("this release's fan-out racing the previous release's (#1846)", () => {
+describe("a fan-out that loses a deadlock (#1846)", () => {
   beforeEach(cleanup);
-  afterAll(cleanup);
+  afterAll(async () => {
+    await setMembershipMirror(true);
+    await cleanup();
+  });
 
-  /** The previous release's createUserEntriesForFeed, which the mirror copies. */
-  async function previousReleaseFanOut(feedId: string, entryIds: string[]): Promise<void> {
-    await db.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
-      SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam, e.is_backfill
-      FROM subscriptions s
-      INNER JOIN entries e ON e.owner_feed_id = s.feed_id
-      WHERE s.feed_id = ${feedId}::uuid
-        AND s.unsubscribed_at IS NULL
-        AND e.id = ANY(${`{${entryIds.join(",")}}`}::uuid[])
-      ON CONFLICT DO NOTHING
-    `);
-  }
+  it("retries, so the fetch's new entries still reach every subscriber", async () => {
+    // A WebSub push runs outside the per-feed job, so another fan-out of the
+    // same entries can take the rows before the memberships: the previous
+    // release does (its mirror trigger copies the row at the end of the
+    // statement). Replay that by hand, with the mirror off, so the fetch's
+    // fan-out (memberships first) waits on the other's row while the other
+    // waits on its membership. The fetch waited first, so it's the victim; a
+    // fetch never fans the same entries out again, so it must retry.
+    await setMembershipMirror(false);
+    const [first, second] = await createUsers(2);
+    const [feedId] = await subscribeAll([first, second], 1);
+    const entryId = await createTestEntry(feedId);
+    const [{ id: firstSub }] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, first), eq(subscriptions.feedId, feedId)));
 
-  it("adds each membership once; a deadlock between them heals on the next fetch", async () => {
-    // A WebSub push runs outside the per-feed job, so during a rollout the two
-    // releases can fan out the same articles at once. This release inserts the
-    // memberships before the rows, the previous one the reverse (its mirror
-    // trigger), so they can deadlock; the loser's next fetch redoes it.
-    const userIds = await createUsers(10);
-    const [feedId] = await subscribeAll(userIds, 1);
-    const entryIds: string[] = [];
-    for (let i = 0; i < 5; i++) entryIds.push(await createTestEntry(feedId));
+    const other = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await other.connect();
+    try {
+      const { rows } = await other.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      await other.query("BEGIN");
+      await other.query("INSERT INTO user_entries (user_id, entry_id) VALUES ($1, $2)", [
+        first,
+        entryId,
+      ]);
+      const fanout = createUserEntriesForFeed(feedId, [entryId]);
+      await waitUntilBlockedBy(rows[0].pid);
+      await other.query(
+        `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+         SELECT $1, user_id, entry_id, published_or_fetched_at FROM user_entries
+         WHERE user_id = $2 AND entry_id = $3`,
+        [firstSub, first, entryId]
+      );
+      await other.query("COMMIT");
+      await fanout;
+    } finally {
+      await other.end();
+    }
 
-    const results = await Promise.allSettled(
-      entryIds.flatMap((id) => [
-        createUserEntriesForFeed(feedId, [id]),
-        previousReleaseFanOut(feedId, [id]),
-      ])
-    );
-    expect(results.flatMap((r) => (r.status === "rejected" ? [r.reason.cause?.code] : []))).toEqual(
-      results.filter((r) => r.status === "rejected").map(() => "40P01")
-    );
-    await createUserEntriesForFeed(feedId, entryIds);
-
-    const memberships = await db
-      .select({ n: sql<number>`count(*)::int` })
+    const held = await db
+      .select({ userId: subscriptionEntries.userId })
       .from(subscriptionEntries)
-      .where(inArray(subscriptionEntries.entryId, entryIds));
-    expect(memberships).toEqual([{ n: userIds.length * entryIds.length }]);
+      .where(eq(subscriptionEntries.entryId, entryId));
+    expect(held.map((r) => r.userId).sort()).toEqual([first, second].sort());
     await expectNoDrift();
   });
 });

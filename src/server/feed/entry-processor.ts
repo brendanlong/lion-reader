@@ -22,6 +22,10 @@ import {
   insertUserEntriesWithMemberships,
 } from "@/server/services/subscription-entries";
 import { logger } from "@/lib/logger";
+import { isDeadlock } from "../db/errors";
+
+/** Tries of a fan-out that keeps losing deadlocks (see createUserEntriesForFeed). */
+const FANOUT_ATTEMPTS = 3;
 
 /**
  * Result of processing a single entry.
@@ -529,9 +533,10 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
   // Each active subscriber gets every entry it doesn't hold yet (its row and
   // its membership), except an entry whose twin from another feed it already
   // holds (holdsRedirectTwin).
-  const added = await insertUserEntriesWithMemberships(
-    db,
-    sql`
+  const fanOut = () =>
+    insertUserEntriesWithMemberships(
+      db,
+      sql`
       SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
              COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
              e.is_spam, e.is_backfill AS read
@@ -542,7 +547,21 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
         AND e.id = ANY(${entryIdsArray}::uuid[])
         AND NOT ${holdsRedirectTwin(sql`s.id`, "e")}
     `
-  );
+    );
+  // A WebSub push runs outside the feed's job, so two fan-outs of the same
+  // entries can deadlock (they insert many rows each). Retry the loser: its
+  // fetch has already stamped last_seen_at, so an unchanged next fetch
+  // wouldn't fan these entries out again.
+  let added: Awaited<ReturnType<typeof fanOut>>;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      added = await fanOut();
+      break;
+    } catch (err) {
+      if (attempt >= FANOUT_ATTEMPTS || !isDeadlock(err)) throw err;
+      logger.warn("Fan-out lost a deadlock; retrying", { feedId, attempt });
+    }
+  }
 
   logger.debug("Created user entries for feed", {
     feedId,
