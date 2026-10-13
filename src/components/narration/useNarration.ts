@@ -54,6 +54,7 @@ import {
 import {
   narrationParagraphForElement,
   splitNarrationParagraphs,
+  withEndOfArticle,
 } from "@/lib/narration/paragraph-map";
 import type { NarrationStatus } from "@/lib/narration/types";
 import {
@@ -360,15 +361,13 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
       setIsGenerating(true);
 
       try {
-        let narration: string;
-        let paragraphMap: ParagraphMapEntry[];
+        let generated: { narrationText: string; paragraphMap: ParagraphMapEntry[] };
         let processedHtmlResult: string | null = null;
 
         if (!settings.useLlmNormalization && content) {
           const clientResult = htmlToClientNarration(content);
-          narration = clientResult.narrationText;
+          generated = clientResult;
           processedHtmlResult = clientResult.processedHtml;
-          paragraphMap = clientResult.paragraphMap;
         } else {
           const result = await generateMutation.mutateAsync({
             id,
@@ -376,9 +375,9 @@ export function useNarration(config: UseNarrationConfig): UseNarrationReturn {
             showFullContent: showFullContent ?? false,
             showOriginal: showOriginal ?? false,
           });
-          narration = result.narration;
-          paragraphMap = result.paragraphMap;
+          generated = { narrationText: result.narration, paragraphMap: result.paragraphMap };
         }
+        const { narrationText: narration, paragraphMap } = withEndOfArticle(generated);
 
         if (isStale()) {
           releasePrimedAudio();

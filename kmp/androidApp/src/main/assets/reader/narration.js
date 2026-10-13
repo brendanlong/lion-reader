@@ -92,6 +92,15 @@
       paragraphMap: paragraphMap2
     };
   }
+  var END_OF_ARTICLE = "End of article.";
+  function withEndOfArticle(narration) {
+    const paragraphs = splitNarrationParagraphs(narration.narrationText);
+    if (paragraphs.length === 0) return narration;
+    return {
+      narrationText: [...paragraphs, END_OF_ARTICLE].join("\n\n"),
+      paragraphMap: [...narration.paragraphMap, { n: paragraphs.length, o: -1 }]
+    };
+  }
   function narrationParagraphForElement(paragraphMap2, elementIndex) {
     return paragraphMap2.find((entry) => entry.o >= elementIndex)?.n ?? null;
   }
@@ -502,8 +511,8 @@
       narrationTargets(document.body).forEach(
         (el, index) => el.setAttribute("data-para-id", `para-${index}`)
       );
-      const { narrationText, paragraphMap: paragraphMap2 } = buildAlignedNarration(
-        narrationRuns(document.body, DIRECT_TTS_VOICE)
+      const { narrationText, paragraphMap: paragraphMap2 } = withEndOfArticle(
+        buildAlignedNarration(narrationRuns(document.body, DIRECT_TTS_VOICE))
       );
       window.lionReader?.postMessage(
         JSON.stringify({

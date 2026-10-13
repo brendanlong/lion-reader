@@ -18,6 +18,7 @@ import {
   buildAlignedNarration,
   narrationParagraphForElement,
   splitNarrationParagraphs,
+  withEndOfArticle,
   type ParagraphMapEntry,
 } from "./paragraph-map";
 import { DIRECT_TTS_VOICE, narrationRuns } from "./runs";
@@ -56,8 +57,8 @@ function prepare(): ParagraphMapEntry[] {
     narrationTargets(document.body).forEach((el, index) =>
       el.setAttribute("data-para-id", `para-${index}`)
     );
-    const { narrationText, paragraphMap } = buildAlignedNarration(
-      narrationRuns(document.body, DIRECT_TTS_VOICE)
+    const { narrationText, paragraphMap } = withEndOfArticle(
+      buildAlignedNarration(narrationRuns(document.body, DIRECT_TTS_VOICE))
     );
     window.lionReader?.postMessage(
       JSON.stringify({

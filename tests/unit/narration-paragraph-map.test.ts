@@ -14,6 +14,8 @@ import {
   buildAlignedNarration,
   narrationParagraphForElement,
   splitNarrationParagraphs,
+  withEndOfArticle,
+  END_OF_ARTICLE,
   type NarrationElement,
 } from "../../src/lib/narration/paragraph-map";
 
@@ -126,5 +128,32 @@ describe("narrationParagraphForElement", () => {
 
   it("returns null past the last narrated element", () => {
     expect(narrationParagraphForElement(paragraphMap, 6)).toBeNull();
+  });
+});
+
+describe("withEndOfArticle", () => {
+  it("ends the narration with a paragraph that highlights nothing", () => {
+    const narration = buildAlignedNarration([
+      { o: 0, text: "First." },
+      { o: 1, text: "Second.\n\nThird." },
+    ]);
+    const ended = withEndOfArticle(narration);
+    expect(splitNarrationParagraphs(ended.narrationText)).toEqual([
+      "First.",
+      "Second.",
+      "Third.",
+      END_OF_ARTICLE,
+    ]);
+    expect(ended.paragraphMap).toEqual([...narration.paragraphMap, { n: 3, o: -1 }]);
+  });
+
+  it("can't be chosen from an element", () => {
+    const ended = withEndOfArticle(buildAlignedNarration([{ o: 0, text: "Only." }]));
+    expect(narrationParagraphForElement(ended.paragraphMap, 1)).toBeNull();
+  });
+
+  it("leaves an article with nothing to narrate silent", () => {
+    const empty = buildAlignedNarration([{ o: 0, text: "  " }]);
+    expect(withEndOfArticle(empty)).toEqual(empty);
   });
 });

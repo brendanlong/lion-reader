@@ -33,7 +33,7 @@
 export interface ParagraphMapEntry {
   /** Narration paragraph index (0-based, matches the player's paragraph index) */
   n: number;
-  /** Original HTML element index (corresponds to `data-para-id="para-{o}"`) */
+  /** Original HTML element index (corresponds to `data-para-id="para-{o}"`), or -1 for none */
   o: number;
 }
 
@@ -91,6 +91,29 @@ export function buildAlignedNarration(elements: NarrationElement[]): {
   return {
     narrationText: paragraphs.join("\n\n"),
     paragraphMap,
+  };
+}
+
+/** Spoken after an article's last paragraph, so the listener hears it end rather than stop. */
+export const END_OF_ARTICLE = "End of article.";
+
+/**
+ * `narration` with {@link END_OF_ARTICLE} as its final paragraph, which
+ * highlights nothing (`o: -1`) but is otherwise a paragraph like any other, to
+ * skip to and back from. Nothing to narrate stays nothing.
+ *
+ * Added where a player is handed the narration, not where it is generated, so
+ * the LLM never sees it and narration cached before it existed still ends with it.
+ */
+export function withEndOfArticle(narration: {
+  narrationText: string;
+  paragraphMap: ParagraphMapEntry[];
+}): { narrationText: string; paragraphMap: ParagraphMapEntry[] } {
+  const paragraphs = splitNarrationParagraphs(narration.narrationText);
+  if (paragraphs.length === 0) return narration;
+  return {
+    narrationText: [...paragraphs, END_OF_ARTICLE].join("\n\n"),
+    paragraphMap: [...narration.paragraphMap, { n: paragraphs.length, o: -1 }],
   };
 }
 
