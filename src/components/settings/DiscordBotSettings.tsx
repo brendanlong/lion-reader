@@ -13,6 +13,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
 import { InlineCode } from "@/components/ui/inline-code";
+import { TextLink } from "@/components/ui/text-link";
 import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icons";
 
 /**
@@ -85,21 +86,20 @@ export function DiscordBotSettings() {
 
       {botConfig.serverInviteUrl && (
         <div className="mt-6">
-          <h3 className="ui-text-sm text-body font-medium">Don&apos;t Have a Server?</h3>
+          <h3 className="ui-text-sm text-body font-medium">No Server With the Bot?</h3>
           <p className="ui-text-sm text-muted mt-1">
             Discord only lets you message a bot you share a server with. Join the Lion Reader server
             and you can save links by messaging the bot directly.
           </p>
-          <a
+          <TextLink
+            external
             href={botConfig.serverInviteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ui-text-sm text-accent hover:text-accent-hover mt-3 inline-flex items-center gap-1.5 font-medium"
+            className="ui-text-sm mt-1 inline-flex min-h-[44px] items-center gap-1.5"
           >
             <DiscordIcon className="h-4 w-4" />
             Join the Lion Reader server
             <ExternalLinkIcon className="h-3.5 w-3.5" />
-          </a>
+          </TextLink>
         </div>
       )}
 

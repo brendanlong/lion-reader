@@ -92,6 +92,8 @@ kill_timeout = 30
   DISCORD_SAVE_EMOJI='savetolionreader'
   DISCORD_SUCCESS_EMOJI='salutinglionreader'
   DISCORD_ERROR_EMOJI='cryinglionreader'
+
+  # Server users can join to DM the bot
   DISCORD_SERVER_INVITE_URL='https://discord.gg/5w4BYRVWXR'
 
   # Object storage
