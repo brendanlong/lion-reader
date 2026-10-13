@@ -15,10 +15,8 @@ import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEna
 /**
  * Context value for keyboard shortcuts.
  *
- * Whether shortcuts are enabled is deliberately not in here (read it with
- * `useKeyboardShortcutsEnabled`): it's stored in localStorage, so it changes
- * right after hydration, and a context change before the server-rendered entry
- * list's Suspense boundary hydrates makes React discard its server HTML (see
+ * Whether shortcuts are enabled is deliberately not in here: it's stored in
+ * localStorage, so read it with `useKeyboardShortcutsEnabled` (see
  * `useCanRenderStreamedQuery`).
  */
 interface KeyboardShortcutsContextValue {

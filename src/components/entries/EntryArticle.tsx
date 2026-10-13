@@ -7,7 +7,7 @@
  * as slots from client components.
  */
 
-import { type ReactNode, type CSSProperties, type RefObject } from "react";
+import { type ReactNode, type RefObject } from "react";
 import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { LocalTime } from "@/components/ui/local-time";
 import { getDomain } from "@/lib/format";
@@ -39,10 +39,6 @@ export interface EntryArticleProps {
   contentHtml: string | null;
   /** Fallback text content (summary or excerpt) */
   fallbackContent: string | null;
-  /** CSS class for text size (from useEntryTextStyles or default) */
-  textSizeClass?: string;
-  /** Inline style for text appearance */
-  textStyle?: CSSProperties;
   /** Optional domain for footer link (defaults to extracting from url) */
   footerLinkDomain?: string;
   /** Unsubscribe URL extracted from email newsletter (null for non-email entries) */
@@ -80,8 +76,6 @@ export function EntryArticle({
   datePrefix,
   contentHtml,
   fallbackContent,
-  textSizeClass = "prose prose-zinc dark:prose-invert",
-  textStyle,
   footerLinkDomain,
   unsubscribeUrl,
   isContentLoading,
@@ -179,8 +173,6 @@ export function EntryArticle({
           fallbackContent={fallbackContent}
           contentRef={contentRef}
           onClick={onContentClick}
-          textSizeClass={textSizeClass}
-          textStyle={textStyle ?? {}}
         />
       )}
 

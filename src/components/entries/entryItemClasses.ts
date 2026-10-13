@@ -2,10 +2,8 @@
  * Entry list CSS classes, shared by the list, its loading fallback, and its
  * skeleton.
  *
- * Density is styled with the `comfortable:`/`compact:` variants (the stored
- * setting on `<html>`; see src/app/globals.css), never a React prop: the list
- * is server-rendered without access to the stored setting, and switching it
- * after hydration would reflow the list.
+ * Density is styled with the `comfortable:`/`compact:` variants (see
+ * src/app/globals.css), never a React prop.
  *
  * Selection is *not* styled here: the keyboard/`j`-`k` cursor and Tab focus are
  * unified onto the browser's single `:focus-visible` outline (the selected row is

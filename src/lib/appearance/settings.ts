@@ -1,8 +1,8 @@
 /**
  * Appearance settings management.
  *
- * Provides utilities for loading, saving, and managing text appearance preferences
- * including text size, text justification, and font family.
+ * Loads, saves and applies the appearance preferences (text size,
+ * justification, font family, list density).
  *
  * Note: Theme (dark/light mode) is managed separately by next-themes.
  */
@@ -18,9 +18,7 @@ import {
   type AppearanceSettings,
 } from "./config";
 
-// The appearance types and config are single-sourced in ./config (shared with
-// the blocking <head> script in the root layout); re-exported here so existing
-// `@/lib/appearance/settings` importers are unaffected.
+// The types are single-sourced in ./config (shared with the <head> script).
 export type {
   AppearanceSettings,
   TextSize,

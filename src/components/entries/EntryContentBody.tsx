@@ -23,7 +23,6 @@ import { useNarrationHighlight } from "@/components/narration/useNarrationHighli
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { selectDisplayedContent, showsFullContent } from "@/lib/narration/select-content";
 import { useNarrationSettings } from "@/lib/narration/settings";
-import { ENTRY_TEXT_CLASS_NAME, ENTRY_TEXT_STYLE } from "@/lib/appearance/entry-text-styles";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
@@ -368,8 +367,6 @@ export function EntryContentBody({
       datePrefix={datePrefix}
       contentHtml={sanitizedContent}
       fallbackContent={fallbackContent}
-      textSizeClass={ENTRY_TEXT_CLASS_NAME}
-      textStyle={ENTRY_TEXT_STYLE}
       footerLinkDomain={footerLinkDomain}
       unsubscribeUrl={unsubscribeUrl}
       isContentLoading={isContentLoading}

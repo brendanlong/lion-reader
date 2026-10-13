@@ -12,11 +12,8 @@
  *   size/font on navigation.
  *
  * The settings take effect only through the document (CSS vars and the
- * list-density attribute), never through React state: a value that differs
- * between the server render (which can't see localStorage) and the client
- * would make React re-render the server-rendered entry list after hydration,
- * and a context change before that list's Suspense boundary hydrates makes
- * React discard its server HTML (see `useCanRenderStreamedQuery`).
+ * list-density attribute), never through React state (see
+ * `useCanRenderStreamedQuery`).
  *
  * Theme (dark/light) config lives in `../theme/config.ts`.
  */

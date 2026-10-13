@@ -131,10 +131,10 @@ test("a stored compact density is in the server-rendered list, which hydrates in
     );
     localStorage.setItem("lion-reader:keyboard-shortcuts-enabled", "false");
   });
-  // Record every context provider whose value changes, through the hook React
-  // DevTools uses (production builds call it too). A provider changing value
-  // before the list's boundary hydrates discards the server HTML, which only
-  // shows when the list is slower than hydration, so assert the cause too.
+  // Record every context provider whose value changes before the list
+  // hydrates, through the hook React DevTools uses (production builds call it
+  // too). Such a change discards the server HTML, which only shows when the
+  // list is slower than hydration, so assert the cause too.
   await page.addInitScript(() => {
     const CONTEXT_PROVIDER = 10; // React's fiber tag for <Context value>
     type Fiber = {
@@ -146,12 +146,13 @@ test("a stored compact density is in the server-rendered list, which hydrates in
     };
     const values = new WeakMap<Fiber, unknown>();
     const changes: string[] = [];
+    let listHydrated = false;
     const walk = (fiber: Fiber | null): void => {
       for (; fiber; fiber = fiber.sibling) {
         if (fiber.tag === CONTEXT_PROVIDER) {
           const value = fiber.memoizedProps?.value;
           const known = values.has(fiber) ? fiber : fiber.alternate;
-          if (known && values.has(known) && values.get(known) !== value) {
+          if (!listHydrated && known && values.has(known) && values.get(known) !== value) {
             changes.push(
               JSON.stringify(value, (_, v: unknown) => (typeof v === "function" ? "fn" : v))
             );
@@ -172,7 +173,11 @@ test("a stored compact density is in the server-rendered list, which hydrates in
         onScheduleFiberRoot: () => {},
         onCommitFiberUnmount: () => {},
         onPostCommitFiberRoot: () => {},
-        onCommitFiberRoot: (_id: number, root: { current: Fiber }) => walk(root.current),
+        onCommitFiberRoot: (_id: number, root: { current: Fiber }) => {
+          walk(root.current);
+          const row = document.querySelector("[data-entry-id]");
+          listHydrated ||= !!row && Object.keys(row).some((key) => key.startsWith("__reactFiber$"));
+        },
       },
     });
   });

@@ -17,12 +17,9 @@
    taps. Use this variant to give such controls an always-visible fallback. */
 @custom-variant hover-none (@media (hover: none));
 
-/* Entry list density, from data-list-density on <html> (set by the appearance
-   head script and the settings store; see src/lib/appearance/config.ts). The
-   list is styled through these variants rather than React state so the
-   server-rendered list already has the stored density. The two are mutually
-   exclusive, so give each density its own classes rather than overriding one
-   with the other. */
+/* Entry list density, from data-list-density on <html> (see
+   src/lib/appearance/config.ts). The two are mutually exclusive, so give each
+   density its own classes rather than overriding one with the other. */
 @custom-variant compact (&:where([data-list-density="compact"] *));
 @custom-variant comfortable (&:where(:root:not([data-list-density="compact"]) *));
 
