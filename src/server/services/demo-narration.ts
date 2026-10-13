@@ -8,7 +8,7 @@
 import { DEMO_ENTRIES } from "@/app/(public)/demo/data";
 import { DEMO_NARRATION_VOICE } from "@/app/(public)/demo/narration";
 import { cloudSpeechTexts } from "@/lib/narration/cloud-speech";
-import { buildAlignedNarration } from "@/lib/narration/paragraph-map";
+import { buildAlignedNarration, withEndOfArticle } from "@/lib/narration/paragraph-map";
 import { parseBodyAsBrowser } from "@/lib/narration/parse-html";
 import { prerecordedSpeechKey, type PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 import { DIRECT_TTS_VOICE, narrationRuns } from "@/lib/narration/runs";
@@ -23,8 +23,9 @@ export interface PrerecordedChunk {
  * from the browser's tree as the server builds it.
  */
 export function demoNarrationText(html: string): string {
-  return buildAlignedNarration(narrationRuns(parseBodyAsBrowser(html), DIRECT_TTS_VOICE))
-    .narrationText;
+  return withEndOfArticle(
+    buildAlignedNarration(narrationRuns(parseBodyAsBrowser(html), DIRECT_TTS_VOICE))
+  ).narrationText;
 }
 
 async function buildCatalog(): Promise<Map<string, PrerecordedChunk>> {

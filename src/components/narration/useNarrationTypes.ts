@@ -51,7 +51,8 @@ export interface UseNarrationConfig {
  * narrate as several paragraphs and an element can narrate as none (see
  * `@/lib/narration/paragraph-map`).
  *
- * So `currentParagraph` is a DOM element index and `currentNarrationParagraph`
+ * So `currentParagraph` is a DOM element index (-1 when the paragraph has no
+ * element, like the closing "End of article.") and `currentNarrationParagraph`
  * is the untranslated player index. `totalParagraphs` is a count of *narration*
  * paragraphs, so anything comparing a position against it (skip bounds, the
  * "X of Y" readout) must use `currentNarrationParagraph`; only highlighting uses

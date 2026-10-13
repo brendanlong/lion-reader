@@ -21,7 +21,8 @@
  * its map together so the invariant `splitNarrationParagraphs(narrationText)[i]`
  * ↔ `paragraphMap[i]` holds by construction, regardless of how the source text
  * is chunked. Every generation path (client-side, server LLM, server fallback)
- * goes through it.
+ * goes through it, and every player's narration then through `withEndOfArticle`,
+ * which keeps the invariant.
  *
  * @module narration/paragraph-map
  */
@@ -33,7 +34,7 @@
 export interface ParagraphMapEntry {
   /** Narration paragraph index (0-based, matches the player's paragraph index) */
   n: number;
-  /** Original HTML element index (corresponds to `data-para-id="para-{o}"`) */
+  /** Original HTML element index (corresponds to `data-para-id="para-{o}"`), or -1 for none */
   o: number;
 }
 
@@ -95,11 +96,43 @@ export function buildAlignedNarration(elements: NarrationElement[]): {
 }
 
 /**
+ * Whether `text` has a letter or digit to say. Voices garble text that's only
+ * symbols (a footnote's "↩", a "* * *" separator), so it isn't synthesized.
+ */
+export function isSpeakable(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
+}
+
+/** Spoken after an article's last paragraph, so the listener hears it end rather than stop. */
+export const END_OF_ARTICLE = "End of article.";
+
+/**
+ * `narration` with {@link END_OF_ARTICLE} as its final paragraph, which
+ * highlights nothing (`o: -1`) but is otherwise a paragraph like any other, to
+ * skip to and back from. An article with nothing speakable stays silent.
+ *
+ * Added where a player is handed the narration, not where it is generated, so
+ * the LLM never sees it and narration cached before it existed still ends with it.
+ */
+export function withEndOfArticle(narration: {
+  narrationText: string;
+  paragraphMap: ParagraphMapEntry[];
+}): { narrationText: string; paragraphMap: ParagraphMapEntry[] } {
+  const paragraphs = splitNarrationParagraphs(narration.narrationText);
+  if (!paragraphs.some(isSpeakable)) return narration;
+  return {
+    narrationText: [...paragraphs, END_OF_ARTICLE].join("\n\n"),
+    paragraphMap: [...narration.paragraphMap, { n: paragraphs.length, o: -1 }],
+  };
+}
+
+/**
  * The first narration paragraph at or after DOM element `elementIndex`, so
  * choosing an element that narrates as nothing (an empty or decorative block)
  * starts at the next one that does. Null when nothing after it is narrated.
  *
- * Relies on `buildAlignedNarration` emitting entries in element order.
+ * Relies on `buildAlignedNarration` emitting entries in element order, and on
+ * `withEndOfArticle`'s `o: -1` entry coming last (it never matches).
  */
 export function narrationParagraphForElement(
   paragraphMap: ParagraphMapEntry[],

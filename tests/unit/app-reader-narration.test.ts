@@ -4,6 +4,7 @@ import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
 import {
   narrationParagraphForElement,
   splitNarrationParagraphs,
+  withEndOfArticle,
 } from "@/lib/narration/paragraph-map";
 
 const ARTICLE =
@@ -24,7 +25,7 @@ beforeAll(async () => {
 });
 
 describe("the app reader's narration", () => {
-  const web = htmlToClientNarration(ARTICLE);
+  const web = withEndOfArticle(htmlToClientNarration(ARTICLE));
 
   it("narrates the article as the web does, without the header or summary", () => {
     expect(messages[0]).toEqual({
@@ -36,7 +37,7 @@ describe("the app reader's narration", () => {
   it("numbers the article's elements as the web does, and leaves the rest alone", () => {
     const article = document.body.cloneNode(true) as HTMLElement;
     article.querySelectorAll(".lr-header, .lr-summary").forEach((el) => el.remove());
-    expect(article.innerHTML).toBe(web.processedHtml);
+    expect(article.innerHTML).toBe(htmlToClientNarration(ARTICLE).processedHtml);
     expect(document.querySelector(".lr-header [data-para-id]")).toBeNull();
     expect(document.body.firstElementChild?.className).toBe("lr-header");
   });
@@ -49,6 +50,12 @@ describe("the app reader's narration", () => {
     expect(highlighted[0].getAttribute("data-para-id")).toBe(`para-${element}`);
 
     window.lionNarration?.highlight(null, false);
+    expect(document.querySelectorAll(".lr-narrating")).toHaveLength(0);
+  });
+
+  it("highlights nothing for the end of the article", () => {
+    window.lionNarration?.highlight(1, false);
+    window.lionNarration?.highlight(web.paragraphMap.length - 1, false);
     expect(document.querySelectorAll(".lr-narrating")).toHaveLength(0);
   });
 
