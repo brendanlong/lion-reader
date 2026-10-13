@@ -293,8 +293,10 @@ const insertWithMembershipsSql = (label: string, candidates: string): Statement 
   sql: `WITH c AS (${candidates}),
 missing AS (
   SELECT c.subscription_id, c.user_id, c.entry_id, c.is_spam, c.read,
+         (s.unsubscribed_at IS NULL)::int AS active_memberships,
          COALESCE(ue.published_or_fetched_at, c.published_or_fetched_at) AS published_or_fetched_at
   FROM c
+  JOIN subscriptions s ON s.id = c.subscription_id
   LEFT JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
   WHERE NOT EXISTS (
     SELECT 1 FROM subscription_entries se
@@ -302,8 +304,8 @@ missing AS (
   )
 ),
 new_rows AS (
-  INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, is_spam, read)
-  SELECT user_id, entry_id, published_or_fetched_at, is_spam, read FROM missing
+  INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, is_spam, read, active_memberships)
+  SELECT user_id, entry_id, published_or_fetched_at, is_spam, read, active_memberships FROM missing
   ON CONFLICT DO NOTHING
 )
 INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
@@ -322,12 +324,6 @@ const holdsRedirectTwinSql = (subscriptionId: string, entry: string): string => 
       AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(${entry}.guid, '^https?://', 'https://')
       AND e_prev.owner_feed_id <> ${entry}.owner_feed_id
   )`;
-
-/** `legacyMembershipForms` (services/subscription-entries.ts). */
-const legacyFormsSql: Statement = {
-  label: "legacy_forms",
-  sql: `SELECT to_regclass('public.collection_entries') IS NOT NULL AS present`,
-};
 
 /** `populateInitialUserEntries` (services/subscriptions.ts). */
 const populateSql = (userId: string, subscriptionId: string, feedId: string): Statement =>
@@ -451,15 +447,6 @@ WHERE ve.user_id = ${q(userId)} AND ve.id IN (${ids})
 ON CONFLICT DO NOTHING
 RETURNING subscription_entries.entry_id`,
     },
-    // For the previous release, every article inserted (all of them: the
-    // benchmark's collection starts empty).
-    legacyFormsSql,
-    {
-      label: "insert_legacy",
-      sql: `INSERT INTO collection_entries (subscription_id, user_id, entry_id)
-SELECT ${q(collection)}::uuid, ${q(userId)}::uuid, unnest(${uuidArray(entryIds)})
-ON CONFLICT DO NOTHING`,
-    },
     // touchUserEntries
     {
       label: "touch",
@@ -494,15 +481,21 @@ const readingList = collectionSubscriptionId(0, COLLECTIONS.readingList.key);
 const emptyCollection = collectionSubscriptionId(0, COLLECTIONS.empty.key);
 const archive = collectionSubscriptionId(1, COLLECTIONS.archive.key);
 
+/** Whether `alias` (with user_id and entry_id) is in one of its user's collections. */
+const inCollection = (alias: string, entryColumn: string) => `EXISTS (
+    SELECT 1 FROM subscription_entries ce JOIN subscriptions cs ON cs.id = ce.subscription_id
+    WHERE cs.type = 'collection' AND ce.user_id = ${alias}.user_id AND ce.entry_id = ${alias}.${entryColumn})`;
+
 /** U0's newest unread web entry in a tagged subscription and no collection. */
 async function plainUnreadEntry(db: ClientBase): Promise<{ id: string; subscription_id: string }> {
   return one(
     db,
-    `SELECT ue.entry_id AS id, ue.subscription_id FROM user_entries ue
-JOIN subscriptions s ON s.id = ue.subscription_id AND s.unsubscribed_at IS NULL
+    `SELECT ue.entry_id AS id, s.id AS subscription_id FROM user_entries ue
+JOIN subscription_entries se ON se.user_id = ue.user_id AND se.entry_id = ue.entry_id
+JOIN subscriptions s ON s.id = se.subscription_id AND s.unsubscribed_at IS NULL AND s.type = 'web'
 WHERE ue.user_id = ${q(U0)} AND NOT ue.read AND NOT ue.starred AND NOT ue.is_spam
   AND EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = s.id)
-  AND NOT EXISTS (SELECT 1 FROM collection_entries ce WHERE ce.user_id = ue.user_id AND ce.entry_id = ue.entry_id)
+  AND NOT ${inCollection("ue", "entry_id")}
 ORDER BY ue.published_or_fetched_at DESC, ue.entry_id DESC LIMIT 1`
   );
 }
@@ -514,7 +507,7 @@ async function newestVisibleIds(db: ClientBase, n: number): Promise<string[]> {
       db,
       `SELECT ve.id FROM visible_entries ve
 WHERE ve.user_id = ${q(U0)}
-  AND NOT EXISTS (SELECT 1 FROM collection_entries ce WHERE ce.user_id = ve.user_id AND ce.entry_id = ve.id)
+  AND NOT ${inCollection("ve", "id")}
 ORDER BY ve.published_or_fetched_at DESC, ve.id DESC LIMIT ${n}`
     )
   ).map((r) => r.id);
@@ -1197,8 +1190,9 @@ WHERE ve.user_id = ${q(U0)} AND ve.id IN (${q(entry.id)})`,
       const changedAt = ts(nowIso());
       const marked = await rows<{ id: string; subscription_id: string }>(
         db,
-        `SELECT entry_id AS id, subscription_id FROM user_entries
-WHERE user_id = ${q(U0)} AND subscription_id = ${q(subA)} AND NOT read AND NOT is_spam`
+        `SELECT ue.entry_id AS id, se.subscription_id FROM subscription_entries se
+JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id
+WHERE se.subscription_id = ${q(subA)} AND NOT ue.read AND NOT ue.is_spam`
       );
       return {
         statements: [
@@ -1507,12 +1501,6 @@ SELECT ${q(survivor)}::uuid, user_id, entry_id, published_or_fetched_at
 FROM subscription_entries
 WHERE subscription_id = ${q(subMergeSource)}
 ON CONFLICT DO NOTHING`,
-          },
-          legacyFormsSql,
-          {
-            label: "restamp",
-            sql: `UPDATE user_entries SET subscription_id = ${q(survivor)}
-WHERE user_id = ${q(U0)} AND subscription_id = ${q(subMergeSource)}`,
           },
           {
             label: "clear_survivor_tags",
