@@ -14,6 +14,7 @@ import type { ClientBase } from "pg";
 
 import {
   COLLECTIONS,
+  SPARSE_TAG,
   U0,
   WEB,
   benchUuid,
@@ -122,8 +123,8 @@ LEFT JOIN subscriptions ON ${originJoin("ve.user_id", "ve.id")}`;
 
 interface ListOptions {
   userId: string;
-  /** One subscription's list, walked through its memberships' timeline. */
-  single?: string;
+  /** The subscriptions whose timelines the list merges (`mergedMembershipTimelines`). */
+  members?: string[];
   where?: string[];
   unreadOnly?: boolean;
   limit?: number;
@@ -136,24 +137,34 @@ function listEntriesSql(o: ListOptions): string {
   const sortColumn =
     o.sortBy === "readChanged"
       ? "ve.read_changed_at"
-      : o.single
-        ? "se.published_or_fetched_at"
+      : o.members
+        ? "members.published_or_fetched_at"
         : "ve.published_or_fetched_at";
-  const idColumn = o.single ? "se.entry_id" : "ve.id";
+  const idColumn = o.members ? "members.entry_id" : "ve.id";
   const where = [`ve.user_id = ${q(o.userId)}`, ...(o.where ?? [])];
   if (o.unreadOnly ?? true) where.push("ve.read = false");
   where.push("ve.is_spam = false");
   if (o.sortBy === "readChanged") where.push("ve.read_changed_at IS NOT NULL");
-  if (o.cursor) {
+  if (o.cursor && !o.members) {
     where.push(
       `(${sortColumn} < ${ts(o.cursor.ts)} OR (${sortColumn} = ${ts(o.cursor.ts)} AND ${idColumn} < ${q(o.cursor.id)}))`
     );
   }
-  const join = o.single
-    ? `\nINNER JOIN subscription_entries se ON se.subscription_id = ${q(o.single)}
-  AND se.user_id = ve.user_id AND se.entry_id = ve.id`
+  const bound = o.cursor
+    ? ` AND (published_or_fetched_at, entry_id) < (${ts(o.cursor.ts)}, ${q(o.cursor.id)}::uuid)`
     : "";
-  return `SELECT ${LIST_COLUMNS}, ${sortColumn} AS sort_ts
+  const join = o.members
+    ? `\nINNER JOIN (${o.members
+        .map(
+          (id) => `(SELECT entry_id, published_or_fetched_at FROM subscription_entries
+  WHERE subscription_id = ${q(id)}${bound}
+  ORDER BY published_or_fetched_at DESC, entry_id DESC)`
+        )
+        .join("\n  UNION ALL ")}) AS members ON ve.id = members.entry_id`
+    : "";
+  const distinct =
+    o.members && o.members.length > 1 ? `DISTINCT ON (${sortColumn}, ${idColumn}) ` : "";
+  return `SELECT ${distinct}${LIST_COLUMNS}, ${sortColumn} AS sort_ts
 ${FROM_VISIBLE}${join}
 WHERE ${where.join("\n  AND ")}
 ORDER BY ${sortColumn} DESC, ${idColumn} DESC
@@ -185,7 +196,8 @@ const taggedSubscriptionIds = (
 ): string => `SELECT subscription_tags.subscription_id
 FROM subscription_tags
 INNER JOIN tags ON subscription_tags.tag_id = tags.id AND tags.user_id = ${q(userId)} AND tags.deleted_at IS NULL
-INNER JOIN subscriptions ON subscriptions.id = subscription_tags.subscription_id AND subscriptions.unsubscribed_at IS NULL
+INNER JOIN subscriptions ON subscriptions.id = subscription_tags.subscription_id
+  AND subscriptions.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
 WHERE subscription_tags.tag_id = ${q(tag)}`;
 
 /** `buildUncategorizedSubscriptionIdsSubquery` (services/entry-filters.ts). */
@@ -193,7 +205,28 @@ const uncategorizedSubscriptionIds = (userId: string): string => `SELECT subscri
 FROM subscriptions
 LEFT JOIN subscription_tags ON subscription_tags.subscription_id = subscriptions.id
 WHERE subscriptions.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
-  AND subscription_tags.subscription_id IS NULL`;
+  AND subscriptions.type <> 'saved' AND subscription_tags.subscription_id IS NULL`;
+
+/**
+ * A tag's or Uncategorized's `listEntries` (services/entries.ts
+ * `timelineSubscriptionsOf`): its subscription ids, then the list, merging
+ * their timelines unless there are more than `MAX_MERGED_TIMELINES` (50), when
+ * it walks the user's timeline with the subscriptions as a filter.
+ */
+async function listOfSubscriptionsStatements(db: ClientBase, idsSql: string): Promise<Statement[]> {
+  const resolve = { label: "list_subscriptions", sql: `${idsSql}\nLIMIT 51` };
+  const ids = (await rows<{ id: string }>(db, `SELECT id FROM (${idsSql}) s(id) LIMIT 51`)).map(
+    (r) => r.id
+  );
+  const list =
+    ids.length > 50
+      ? listEntriesSql({
+          userId: U0,
+          where: [entriesInSubscriptions({ subquery: idsSql }, VE_COLUMNS, true)],
+        })
+      : listEntriesSql({ userId: U0, members: ids });
+  return [resolve, { label: "list", sql: list }];
+}
 
 /** `buildEntriesInSubscriptionsCondition` (services/entry-filters.ts). */
 function entriesInSubscriptions(
@@ -793,7 +826,7 @@ ORDER BY unread_count DESC, id LIMIT 1`
       return {
         statements: [
           verifyOwnershipSql(U0, id),
-          { label: "list", sql: listEntriesSql({ userId: U0, single: id }) },
+          { label: "list", sql: listEntriesSql({ userId: U0, members: [id] }) },
         ],
       };
     },
@@ -802,16 +835,20 @@ ORDER BY unread_count DESC, id LIMIT 1`
     name: "ssr.list_tag",
     kind: "read",
     source: "services/entries.ts listEntries (/tag/:id; the tag also holds a collection)",
-    prepare: async () => {
-      const filter = entriesInSubscriptions(
-        { subquery: taggedSubscriptionIds(U0, tagId(0, 1)) },
-        VE_COLUMNS,
-        true
-      );
-      return {
-        statements: [{ label: "list", sql: listEntriesSql({ userId: U0, where: [filter] }) }],
-      };
-    },
+    prepare: async (db) => ({
+      statements: await listOfSubscriptionsStatements(db, taggedSubscriptionIds(U0, tagId(0, 1))),
+    }),
+  },
+  {
+    name: "ssr.list_tag_sparse",
+    kind: "read",
+    source: "services/entries.ts listEntries (/tag/:id; the tag holds one ~60-entry feed)",
+    prepare: async (db) => ({
+      statements: await listOfSubscriptionsStatements(
+        db,
+        taggedSubscriptionIds(U0, tagId(0, SPARSE_TAG))
+      ),
+    }),
   },
   {
     name: "ssr.list_starred",
@@ -830,24 +867,18 @@ ORDER BY unread_count DESC, id LIMIT 1`
     prepare: async () => ({
       statements: [
         savedSubscriptionSql,
-        { label: "list", sql: listEntriesSql({ userId: U0, single: savedSubscriptionId(0) }) },
+        { label: "list", sql: listEntriesSql({ userId: U0, members: [savedSubscriptionId(0)] }) },
       ],
     }),
   },
   {
     name: "ssr.list_uncategorized",
     kind: "read",
-    source: "services/entries.ts listEntries (/uncategorized; includes untagged collections)",
-    prepare: async () => {
-      const filter = entriesInSubscriptions(
-        { subquery: uncategorizedSubscriptionIds(U0) },
-        VE_COLUMNS,
-        true
-      );
-      return {
-        statements: [{ label: "list", sql: listEntriesSql({ userId: U0, where: [filter] }) }],
-      };
-    },
+    source:
+      "services/entries.ts listEntries (/uncategorized; includes untagged collections; too many subscriptions to merge)",
+    prepare: async (db) => ({
+      statements: await listOfSubscriptionsStatements(db, uncategorizedSubscriptionIds(U0)),
+    }),
   },
   {
     name: "ssr.list_recently_read",
@@ -914,7 +945,7 @@ LIMIT 1`,
       return {
         statements: [
           verifyOwnershipSql(U0, readingList),
-          { label: "list", sql: listEntriesSql({ userId: U0, single: readingList }) },
+          { label: "list", sql: listEntriesSql({ userId: U0, members: [readingList] }) },
         ],
       };
     },
@@ -927,7 +958,7 @@ LIMIT 1`,
       return {
         statements: [
           verifyOwnershipSql(U0, subMostlyRead),
-          { label: "list", sql: listEntriesSql({ userId: U0, single: subMostlyRead }) },
+          { label: "list", sql: listEntriesSql({ userId: U0, members: [subMostlyRead] }) },
         ],
       };
     },
@@ -977,7 +1008,7 @@ LIMIT 11 OFFSET 0`,
         db,
         `SELECT greader_stream_id::text AS stream FROM subscriptions WHERE id = ${q(subA)}`
       );
-      const listSql = listEntriesSql({ userId: U0, single: subA, unreadOnly: false, limit: 20 });
+      const listSql = listEntriesSql({ userId: U0, members: [subA], unreadOnly: false, limit: 20 });
       const ids = (await rows<{ id: string }>(db, listSql)).slice(0, 20).map((r) => r.id);
       return {
         statements: [
@@ -1006,7 +1037,7 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${s
       );
       const listSql = listEntriesSql({
         userId: U0,
-        single: savedSubscriptionId(0),
+        members: [savedSubscriptionId(0)],
         unreadOnly: false,
         limit: 20,
       });

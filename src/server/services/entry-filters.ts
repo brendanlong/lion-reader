@@ -155,7 +155,8 @@ export async function verifySubscriptionOwnership(
  * query. Excluding tombstoned tags means a client can't filter/mark-read
  * entries through a tag that no longer appears in listTags. Active only, like
  * the tag's badge: an unsubscribed feed's starred leftovers belong to
- * Starred, not the tag.
+ * Starred, not the tag. The subscriptions are checked to be the user's too,
+ * since `listEntries` joins their memberships on the entry alone.
  */
 export function buildTaggedSubscriptionIdsSubquery(
   db: typeof dbType,
@@ -173,6 +174,7 @@ export function buildTaggedSubscriptionIdsSubquery(
       subscriptions,
       and(
         eq(subscriptions.id, subscriptionTags.subscriptionId),
+        eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt)
       )
     )

@@ -687,18 +687,85 @@ export async function listExportableEntries(
 }
 
 /**
- * The one subscription a list shows, when it shows exactly one: the
- * `subscriptionId` filter (already checked by `buildEntrySubscriptionFilter`)
- * or, for Saved, the saved subscription.
+ * The most subscriptions whose timelines a list merges. Each one costs an index
+ * descent at startup and a branch to plan (~0.05 ms together), so a set this
+ * large is cheaper read from the user's timeline unless its share of it is
+ * small: on the benchmark seed, merging 99 subscriptions cost about as much as
+ * walking the timeline for a quarter of it.
+ * @testonly
  */
-async function singleSubscriptionOf(
+export const MAX_MERGED_TIMELINES = 50;
+
+/**
+ * The subscriptions whose timelines (`idx_subscription_entries_timeline`,
+ * sorted like the user's) a published-sorted list merges, rather than walking
+ * the user's timeline and keeping the rows in them: one subscription's list
+ * (`subscriptionId`, or Saved) and a tag's or Uncategorized's, unless it has
+ * more than {@link MAX_MERGED_TIMELINES}. The user's timeline may hold them
+ * sparsely, and walking it costs a page divided by their share of it (50k
+ * rows for a tag of one quiet feed), while merging costs a page plus one index
+ * descent per subscription.
+ *
+ * Returns `null` to walk the user's timeline with `buildEntrySubscriptionFilter`,
+ * or the ids (none when nothing can match, as for a subscription the user may
+ * not filter by). `saved` says the list is Saved, which walking the saved
+ * subscription already is.
+ */
+async function timelineSubscriptionsOf(
   db: typeof dbType,
   params: ListEntriesParams
-): Promise<string | null> {
-  if (params.tagId || params.uncategorized) return null;
-  if (params.subscriptionId) return params.subscriptionId;
-  if (params.type === "saved") return getSavedSubscriptionId(db, params.userId);
+): Promise<{ ids: string[]; saved: boolean } | null> {
+  if (params.subscriptionId) {
+    const owned = await verifySubscriptionOwnership(db, params.subscriptionId, params.userId);
+    return { ids: owned ? [params.subscriptionId] : [], saved: false };
+  }
+  if (params.tagId || params.uncategorized) {
+    const rows = await (
+      params.tagId
+        ? buildTaggedSubscriptionIdsSubquery(db, params.tagId, params.userId)
+        : buildUncategorizedSubscriptionIdsSubquery(db, params.userId)
+    ).limit(MAX_MERGED_TIMELINES + 1);
+    if (rows.length > MAX_MERGED_TIMELINES) return null;
+    return { ids: rows.map((r) => r.subscriptionId), saved: false };
+  }
+  if (params.type === "saved") {
+    const saved = await getSavedSubscriptionId(db, params.userId);
+    return saved ? { ids: [saved], saved: true } : null;
+  }
   return null;
+}
+
+/** The merged memberships' alias in `listEntries`, and its columns. */
+const MEMBERS = "members";
+const membersEntryId = sql<string>`${sql.identifier(MEMBERS)}.entry_id`;
+const membersSortKey = sql`${sql.identifier(MEMBERS)}.published_or_fetched_at`;
+
+/**
+ * The memberships of `subscriptionIds` in timeline order, as the derived table
+ * `members (entry_id, published_or_fetched_at)`: one ordered index scan per
+ * subscription, which Postgres merges (Merge Append) and reads only as far as
+ * the page needs. Each branch must be ordered itself, or Postgres reads every
+ * membership and sorts them. `bounds` (the cursor, `ot`/`nt`) go in each
+ * branch, where they're index conditions.
+ *
+ * An entry in several of the subscriptions appears once per membership, with
+ * the same sort key (`insertUserEntriesWithMemberships` copies the row's), so
+ * its rows are adjacent and the caller drops all but one with `DISTINCT ON`.
+ * The ids must be the user's: the caller joins on the entry alone.
+ */
+function mergedMembershipTimelines(
+  subscriptionIds: string[],
+  bounds: SQL[],
+  sortOrder: "newest" | "oldest"
+): SQL {
+  const dir = sortOrder === "newest" ? sql`DESC` : sql`ASC`;
+  const branches = subscriptionIds.map(
+    (id) => sql`(SELECT ${subscriptionEntries.entryId}, ${subscriptionEntries.publishedOrFetchedAt}
+      FROM ${subscriptionEntries}
+      WHERE ${and(eq(subscriptionEntries.subscriptionId, id), ...bounds)}
+      ORDER BY ${subscriptionEntries.publishedOrFetchedAt} ${dir}, ${subscriptionEntries.entryId} ${dir})`
+  );
+  return sql`(${sql.join(branches, sql` UNION ALL `)}) AS ${sql.identifier(MEMBERS)}`;
 }
 
 // ============================================================================
@@ -738,32 +805,27 @@ export async function listEntries(
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
 
-  // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
-    paged: true,
-  });
-  if (subscriptionFilter === null) {
+  // A list of particular subscriptions merges their timelines when it can
+  // (`timelineSubscriptionsOf`); otherwise it walks the user's, filtered.
+  const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
+  const merged = timelineSort ? await timelineSubscriptionsOf(db, params) : null;
+  if (merged?.ids.length === 0) {
     return { items: [], nextCursor: undefined };
   }
-
-  // One subscription's list (a subscription filter, or Saved) walks that
-  // subscription's timeline (idx_subscription_entries_timeline, whose sort key
-  // is the row's) rather than the user's: joining one subscription's
-  // memberships can't fan out, and the user's timeline may hold it sparsely.
-  const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
-  const single = timelineSort ? await singleSubscriptionOf(db, params) : null;
-  if (subscriptionFilter && !single) {
-    conditions.push(subscriptionFilter);
+  if (!merged) {
+    const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
+      paged: true,
+    });
+    if (subscriptionFilter === null) {
+      return { items: [], nextCursor: undefined };
+    }
+    if (subscriptionFilter) conditions.push(subscriptionFilter);
   }
 
   // Apply entry filter conditions (read/starred/type/spam/timestamp filters).
-  // Saved is the saved subscription's list, which `single` already is.
+  // Saved is the saved subscription's list, which merging it already is.
   conditions.push(
-    ...buildEntryFilterConditions(
-      single && !params.subscriptionId && params.type === "saved"
-        ? { ...params, type: undefined }
-        : params
-    )
+    ...buildEntryFilterConditions(merged?.saved ? { ...params, type: undefined } : params)
   );
 
   // Recently Read: exclude entries that were never explicitly read-state-changed.
@@ -775,15 +837,16 @@ export async function listEntries(
 
   // Sort column (all choices are served by an existing index):
   //  - "published" (default) uses the denormalized user_entries sort key so the
-  //    planner can serve filter + sort from idx_user_entries_published_or_fetched.
+  //    planner can serve filter + sort from idx_user_entries_published_or_fetched,
+  //    or the merged memberships' copy of it (idx_subscription_entries_timeline).
   //  - "readChanged"/"archived" sort by when read state was last changed
   //    (idx_user_entries_read_changed_at).
   const sortColumn = !timelineSort
     ? visibleEntries.readChangedAt
-    : single
-      ? subscriptionEntries.publishedOrFetchedAt
+    : merged
+      ? membersSortKey
       : visibleEntries.publishedOrFetchedAt;
-  const idColumn = single ? subscriptionEntries.entryId : visibleEntries.id;
+  const idColumn = merged ? membersEntryId : visibleEntries.id;
 
   // Full-precision sort key for cursor encoding. The pool hands back Postgres's
   // raw microsecond string for timestamptz (see parseTimestamptz); mapWith decodes
@@ -802,48 +865,58 @@ export async function listEntries(
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve
   // microsecond precision. Using new Date(ts) would truncate to milliseconds,
   // causing entries to fall into gaps between cursor and actual timestamps.
+  // Merged timelines take it (and `ot`/`nt`) in each branch, as a row comparison
+  // the index can start from.
+  const memberBounds: SQL[] = [];
   if (params.cursor) {
     const { ts, id } = timelineCursor.decode(params.cursor);
-    if (sortOrder === "newest") {
-      conditions.push(
-        sql`(${sortColumn} < ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${idColumn} < ${id}))`
+    const op = sortOrder === "newest" ? sql`<` : sql`>`;
+    if (merged) {
+      memberBounds.push(
+        sql`(${subscriptionEntries.publishedOrFetchedAt}, ${subscriptionEntries.entryId}) ${op} (${ts}::timestamptz, ${id}::uuid)`
       );
     } else {
       conditions.push(
-        sql`(${sortColumn} > ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${idColumn} > ${id}))`
+        sql`(${sortColumn} ${op} ${ts}::timestamptz OR (${sortColumn} = ${ts}::timestamptz AND ${idColumn} ${op} ${id}))`
       );
     }
+  }
+  if (merged && params.publishedAfter) {
+    memberBounds.push(sql`${subscriptionEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
+  }
+  if (merged && params.publishedBefore) {
+    memberBounds.push(
+      sql`${subscriptionEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`
+    );
   }
 
   // Query
   const orderByClause =
     sortOrder === "newest" ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)];
 
-  // visible_entries emits exactly one row per (user, entry), and so does a
-  // join on one subscription's memberships, so no DISTINCT ON dedup is needed
-  // and the (sortColumn, id) keyset cursor resumes cleanly over unique rows.
-  const base = db
-    .select({
-      ...entryListSelectFields,
-      feedTitle: entryFeedTitleSql(),
-      sortTs: sortTsInstant,
-    })
-    .from(visibleEntries)
+  // visible_entries emits exactly one row per (user, entry), and so do one
+  // subscription's memberships, so the (sortColumn, id) keyset cursor resumes
+  // cleanly over unique rows. Several subscriptions' memberships can hold an
+  // entry more than once, in adjacent rows, which DISTINCT ON collapses.
+  const fields = {
+    ...entryListSelectFields,
+    feedTitle: entryFeedTitleSql(),
+    sortTs: sortTsInstant,
+  };
+  const query = merged
+    ? (merged.ids.length > 1
+        ? db.selectDistinctOn([sortColumn, idColumn], fields)
+        : db.select(fields)
+      )
+        .from(visibleEntries)
+        .innerJoin(
+          mergedMembershipTimelines(merged.ids, memberBounds, sortOrder),
+          eq(visibleEntries.id, idColumn)
+        )
+    : db.select(fields).from(visibleEntries);
+  const queryResults = await query
     .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
-    .$dynamic();
-  const queryResults = await (
-    single
-      ? base.innerJoin(
-          subscriptionEntries,
-          and(
-            eq(subscriptionEntries.subscriptionId, single),
-            eq(subscriptionEntries.userId, visibleEntries.userId),
-            eq(subscriptionEntries.entryId, visibleEntries.id)
-          )
-        )
-      : base
-  )
     .where(and(...conditions))
     .orderBy(...orderByClause)
     .limit(limit + 1)

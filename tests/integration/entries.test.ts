@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -14,7 +14,10 @@ import {
   markAllEntriesRead,
   markEntriesRead,
   listEntries,
+  MAX_MERGED_TIMELINES,
+  type ListEntriesParams,
 } from "../../src/server/services/entries";
+import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import {
   createAuthContext,
   createTestSubscription,
@@ -282,6 +285,145 @@ describe("Entries", () => {
       const ids = result.items.map((e) => e.id);
       expect(ids).toEqual([entryIdB]);
     });
+  });
+
+  describe("list of a tag or Uncategorized", () => {
+    type ListKind = "tag" | "uncategorized";
+    type ListFilter = Pick<ListEntriesParams, "tagId" | "uncategorized">;
+
+    /** Every page of a list, at `limit` per page. */
+    async function pageThrough(
+      params: Omit<ListEntriesParams, "cursor" | "limit">,
+      limit: number
+    ): Promise<string[]> {
+      const ids: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await listEntries(db, { ...params, limit, cursor });
+        ids.push(...page.items.map((e) => e.id));
+        cursor = page.nextCursor;
+      } while (cursor);
+      return ids;
+    }
+
+    /**
+     * Makes `subscriptionIds`, plus `extra` empty subscriptions, a tag's list
+     * or Uncategorized (the user's other subscriptions go under another tag).
+     */
+    async function createList(
+      userId: string,
+      kind: ListKind,
+      subscriptionIds: string[],
+      otherSubscriptionIds: string[],
+      extra: number
+    ): Promise<ListFilter> {
+      for (let i = 0; i < extra; i++) {
+        const feedId = await createTestFeed(`https://extra-${i}.example.com/rss`);
+        subscriptionIds.push(await createTestSubscription(userId, feedId));
+      }
+      await createTestTag(userId, { subscriptionIds: otherSubscriptionIds });
+      if (kind === "uncategorized") return { uncategorized: true };
+      return { tagId: await createTestTag(userId, { subscriptionIds }) };
+    }
+
+    // Merging the subscriptions' timelines and, above MAX_MERGED_TIMELINES
+    // subscriptions, walking the user's must list the same.
+    const cases: Array<[ListKind, string, number]> = [
+      ["tag", "merged", 0],
+      ["tag", "walked", MAX_MERGED_TIMELINES + 1],
+      ["uncategorized", "merged", 0],
+      ["uncategorized", "walked", MAX_MERGED_TIMELINES + 1],
+    ];
+
+    it.each(cases)(
+      "%s (%s) lists each article once, in timeline order, on pages of any size",
+      async (kind, _how, extra) => {
+        const userId = await createTestUser();
+        const feedA = await createTestFeed("https://a.example.com/rss");
+        const feedB = await createTestFeed("https://b.example.com/rss");
+        const feedOut = await createTestFeed("https://out.example.com/rss");
+        const subA = await createTestSubscription(userId, feedA);
+        const subB = await createTestSubscription(userId, feedB);
+        const subOut = await createTestSubscription(userId, feedOut);
+        const at = (minutes: number): Date => new Date(Date.UTC(2026, 0, 1, 0, minutes));
+        const entry = (feedId: string, minutes: number): Promise<string> =>
+          createSharedTestEntry(feedId, { publishedAt: at(minutes), userIds: [userId] });
+        const a1 = await entry(feedA, 0);
+        const b1 = await entry(feedB, 1);
+        await entry(feedOut, 2);
+        const a2 = await entry(feedA, 3);
+        const b2 = await entry(feedB, 4);
+        // A collection in the list holding an article of each feed, so each
+        // is in the list twice.
+        const collection = (await createCollection(db, userId, "Reading list")).subscription.id;
+        await addEntriesToCollection(db, userId, collection, [b1, a2]);
+        const filter = await createList(userId, kind, [subA, subB, collection], [subOut], extra);
+        const newestFirst = [b2, a2, b1, a1];
+
+        const base = { userId, ...filter, showSpam: false };
+        for (const limit of [1, 2, 10]) {
+          expect(await pageThrough(base, limit)).toEqual(newestFirst);
+          expect(await pageThrough({ ...base, sortOrder: "oldest" }, limit)).toEqual(
+            [...newestFirst].reverse()
+          );
+          // Google Reader's ot/nt
+          expect(
+            await pageThrough({ ...base, publishedAfter: at(1), publishedBefore: at(3) }, limit)
+          ).toEqual([a2, b1]);
+        }
+
+        await markEntriesRead(db, userId, [{ id: a2 }], true);
+        expect(await pageThrough({ ...base, unreadOnly: true }, 1)).toEqual([b2, b1, a1]);
+      }
+    );
+
+    // The cursor keeps microseconds (#680) and breaks ties by id, across
+    // subscriptions as within one.
+    it.each(cases)(
+      "%s (%s) pages through articles sharing a timestamp, to the microsecond",
+      async (kind, _how, extra) => {
+        const userId = await createTestUser();
+        const feedA = await createTestFeed("https://a.example.com/rss");
+        const feedB = await createTestFeed("https://b.example.com/rss");
+        const feedOut = await createTestFeed("https://out.example.com/rss");
+        const subA = await createTestSubscription(userId, feedA);
+        const subB = await createTestSubscription(userId, feedB);
+        const subOut = await createTestSubscription(userId, feedOut);
+        const tie = "2026-01-01T00:00:00.000001Z";
+        const listed: Array<{ id: string; at: string }> = [];
+        for (const [feedId, at] of [
+          [feedA, "2026-01-01T00:00:00.000002Z"],
+          [feedB, tie],
+          [feedA, tie],
+          [feedOut, tie],
+          [feedB, tie],
+          [feedA, tie],
+          [feedB, "2026-01-01T00:00:00.000000Z"],
+        ]) {
+          const id = await createSharedTestEntry(feedId);
+          // A Date can't carry microseconds: stamp them before the user's row
+          // copies the sort key.
+          await db.execute(
+            sql`UPDATE entries SET published_at = ${at}::timestamptz WHERE id = ${id}::uuid`
+          );
+          await createTestUserEntries({ userId, entryId: id, read: false });
+          if (feedId !== feedOut) listed.push({ id, at });
+        }
+        const filter = await createList(userId, kind, [subA, subB], [subOut], extra);
+        // The stamps are fixed-width ISO strings, so they sort as text.
+        const newestFirst = listed
+          .sort((x, y) => (x.at === y.at ? y.id.localeCompare(x.id) : y.at.localeCompare(x.at)))
+          .map((e) => e.id);
+
+        const base = { userId, ...filter, showSpam: false };
+        for (const limit of [1, 2, 3]) {
+          expect(await pageThrough(base, limit)).toEqual(newestFirst);
+          expect(await pageThrough({ ...base, sortOrder: "oldest" }, limit)).toEqual(
+            [...newestFirst].reverse()
+          );
+        }
+      }
+    );
   });
 
   describe("list with offset", () => {
