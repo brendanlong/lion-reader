@@ -922,7 +922,7 @@ LIMIT 1`,
           label: "get",
           sql: `SELECT user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
   user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
-  user_feeds.site_url, user_feeds.unread_count,
+  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id,
   COALESCE(json_agg(json_build_object('id', tags.id, 'name', tags.name, 'color', tags.color))
            FILTER (WHERE tags.id IS NOT NULL), '[]'::json) AS tags
 FROM user_feeds
@@ -931,7 +931,7 @@ LEFT JOIN tags ON tags.id = subscription_tags.tag_id
 WHERE user_feeds.id = ${q(subLarge)} AND user_feeds.user_id = ${q(U0)}
 GROUP BY user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
   user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
-  user_feeds.site_url, user_feeds.unread_count
+  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id
 LIMIT 1`,
         },
       ],
