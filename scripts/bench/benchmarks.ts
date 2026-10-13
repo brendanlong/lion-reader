@@ -15,6 +15,7 @@ import type { ClientBase } from "pg";
 import {
   COLLECTIONS,
   U0,
+  U_KEEPS_UP,
   WEB,
   benchUuid,
   collectionSubscriptionId,
@@ -951,6 +952,15 @@ LIMIT 1`,
     },
   },
   {
+    name: "list.keeps_up_unread",
+    kind: "read",
+    source:
+      "services/entries.ts listEntries (/all, unread, a user with 60 unread of 30,000 entries)",
+    prepare: async () => ({
+      statements: [{ label: "list", sql: listEntriesSql({ userId: U_KEEPS_UP }) }],
+    }),
+  },
+  {
     name: "search",
     kind: "read",
     source: "services/entries.ts searchEntries (all entries, two-word query)",
@@ -1040,6 +1050,28 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.greader_stream_id = ${s
           savedSubscriptionSql,
           { label: "list", sql: listSql },
           { label: "get_entries", sql: getEntriesSql(U0, ids) },
+        ],
+      };
+    },
+  },
+  {
+    name: "greader.items_ids",
+    kind: "read",
+    source:
+      "greader stream/items/ids route: listEntries + resolveGreaderIdsForEntries (unread reading list, n=10000)",
+    prepare: async (db) => {
+      const listSql = listEntriesSql({ userId: U0, limit: 10_000 });
+      const ids = (await rows<{ id: string }>(db, listSql)).slice(0, 10_000).map((r) => r.id);
+      return {
+        statements: [
+          { label: "list", sql: listSql },
+          {
+            label: "resolve_ids",
+            sql: `SELECT ve.id, ve.greader_item_id, subscriptions.greader_stream_id
+FROM visible_entries ve
+LEFT JOIN subscriptions ON ${originJoin("ve.user_id", "ve.id")}
+WHERE ve.user_id = ${q(U0)} AND ve.id IN (${list(ids)})`,
+          },
         ],
       };
     },

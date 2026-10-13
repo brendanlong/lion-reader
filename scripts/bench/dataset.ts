@@ -35,6 +35,10 @@ export const userEmail = (idx: number): string => `bench-u${idx}@example.com`;
 /** The benchmarks' target user (~130k entries, almost all unread). */
 export const U0 = userId(0);
 
+/** The user who keeps up with reading (`KEEPS_UP` in `seed.ts`): the first after the heavy libraries. */
+export const KEEPS_UP_IDX = 5;
+export const U_KEEPS_UP = userId(KEEPS_UP_IDX);
+
 /**
  * Web feeds with a fixed role, by index into the web-feed list. The rest
  * (`FIRST_POOL_FEED` onwards) are assigned to subscribers at random.

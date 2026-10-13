@@ -26,6 +26,7 @@ import {
   ANCHOR,
   COLLECTIONS,
   FIRST_POOL_FEED,
+  KEEPS_UP_IDX,
   WEB,
   benchUuid,
   collectionSubscriptionId,
@@ -76,6 +77,13 @@ const HEAVY: HeavyUser[] = [
   { total: 55_342, unread: 55_333, webSubs: 125, unsubWebSubs: 5, emailSubs: 5, emailEntries: 300, saved: 50, starredFrac: 0.005, tags: 5, taggedFrac: 0.5 },
   { total: 32_257, unread: 32_227, webSubs: 105, unsubWebSubs: 5, emailSubs: 5, emailEntries: 300, saved: 50, starredFrac: 0.005, tags: 5, taggedFrac: 0.5 },
 ]; // prettier-ignore
+
+/**
+ * The first noise user (`U_KEEPS_UP`) keeps up with reading: a mid-sized
+ * library with a handful of unread articles scattered through it, where an
+ * unread list's pages are sparse in the timeline.
+ */
+const KEEPS_UP = { total: 30_000, unread: 60 };
 
 /** U0's feeds with a fixed size (all their entries are in U0's library). */
 const U0_SPECIAL: Array<[feedIdx: number, entries: number]> = [
@@ -186,11 +194,16 @@ function buildPlan() {
 
   // The other 43 users share the rest of the subscriptions and user_entries.
   const noiseIdx = Array.from({ length: TARGET.users - HEAVY.length }, (_, i) => i + HEAVY.length);
-  const noiseTotals = apportion(
-    TARGET.userEntries - HEAVY.reduce((a, h) => a + h.total, 0),
-    noiseIdx.map(() => 0.05 + rand() ** 2),
-    200
-  );
+  if (noiseIdx[0] !== KEEPS_UP_IDX) throw new Error("KEEPS_UP_IDX must be the first noise user");
+  const noiseWeights = noiseIdx.map(() => 0.05 + rand() ** 2);
+  const noiseTotals = [
+    KEEPS_UP.total,
+    ...apportion(
+      TARGET.userEntries - HEAVY.reduce((a, h) => a + h.total, 0) - KEEPS_UP.total,
+      noiseWeights.slice(1),
+      200
+    ),
+  ];
   const emailFeedsSoFar = HEAVY.reduce((a, h) => a + h.emailSubs, 0);
   const collectionCount = Object.keys(COLLECTIONS).length;
   // Email subscriptions: two each for the first 30 noise users.
@@ -205,10 +218,11 @@ function buildPlan() {
   noiseIdx.forEach((idx, i) => {
     const total = noiseTotals[i];
     const emailSize = () => Math.min(20 + Math.floor(rand() * 60), Math.floor(total * 0.15));
+    const unreadFrac = 0.2 + rand() * 0.75;
     users.push({
       idx,
       total,
-      unreadFrac: 0.2 + rand() * 0.75,
+      unreadFrac: idx === KEEPS_UP_IDX ? KEEPS_UP.unread / KEEPS_UP.total : unreadFrac,
       starredFrac: 0.005 + rand() * 0.025,
       webSubs: noiseWebSubs[i],
       unsubWebSubs: i < 40 ? 1 : 0,
@@ -626,6 +640,8 @@ UNION ALL SELECT 'U0 user_entries', count(*) FROM user_entries WHERE user_id = '
 UNION ALL SELECT 'U0 unread', count(*) FROM user_entries WHERE user_id = '${userId(0)}' AND NOT read
 UNION ALL SELECT 'U1 user_entries', count(*) FROM user_entries WHERE user_id = '${userId(1)}'
 UNION ALL SELECT 'U1 unread', count(*) FROM user_entries WHERE user_id = '${userId(1)}' AND NOT read
+UNION ALL SELECT 'keeps-up user_entries', count(*) FROM user_entries WHERE user_id = '${userId(KEEPS_UP_IDX)}'
+UNION ALL SELECT 'keeps-up unread', count(*) FROM user_entries WHERE user_id = '${userId(KEEPS_UP_IDX)}' AND NOT read
 `;
 
 // ---------------------------------------------------------------------------
