@@ -11,8 +11,8 @@ import com.lionreader.shared.db.LionReaderDatabase
  * (`entry_search`, Search.sq) in step with entries and their bodies. They're plain SQL here because
  * SQLDelight can't compile statements that name an FTS4 table's columns. Open databases with this,
  * not the generated schema. The index is keyed by `entry`'s implicit rowid, so a migration that
- * rebuilds `entry` keeps each row's rowid (7.sqm), and has the triggers on `entry`, which dropping
- * it drops, recreated after it ([ENTRY_REBUILDS]). A VACUUM renumbers rowids too.
+ * rebuilds `entry` must keep each row's rowid (as 7.sqm does) and be listed in [ENTRY_REBUILDS],
+ * since dropping `entry` drops its triggers. Don't VACUUM: it renumbers rowids.
  */
 object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Schema {
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {

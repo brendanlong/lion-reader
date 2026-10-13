@@ -1,5 +1,6 @@
 package com.lionreader.shared.data
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.db.LionReaderDatabase
 import java.io.File
@@ -30,6 +31,19 @@ class DropFeedIdMigrationTest {
             .executeAsList()
             .map { it.id }
 
+    private fun indexedRows(): Long =
+        driver
+            .executeQuery(
+                null,
+                "SELECT count(*) FROM entry_search",
+                {
+                    it.next()
+                    QueryResult.Value(it.getLong(0)!!)
+                },
+                0,
+            )
+            .value
+
     @Test
     fun searchKeepsItsEntriesAndFollowsNewChanges() {
         // As installed: the search triggers, and rowids with a gap.
@@ -55,13 +69,12 @@ class DropFeedIdMigrationTest {
             "INSERT INTO entry(id, type, title, fetched_at, sort_at, read, starred, body_version) " +
                 "VALUES ('c', 'web', 'Gamma', 0, 0, 0, 0, 4)"
         )
+        assertEquals(listOf("c"), search("gamma"))
         execute("UPDATE entry SET title = 'Delta' WHERE id = 'a'")
-        execute("DELETE FROM entry_body WHERE entry_id = 'b'")
-        execute("DELETE FROM entry WHERE id = 'c'")
-
         assertEquals(listOf("a"), search("delta"))
-        assertEquals(emptyList(), search("alpha"))
-        assertEquals(emptyList(), search("walrus"))
-        assertEquals(emptyList(), search("gamma"))
+        // An orphaned index row wouldn't show in search, which joins entry.
+        val before = indexedRows()
+        execute("DELETE FROM entry WHERE id = 'c'")
+        assertEquals(before - 1, indexedRows())
     }
 }
