@@ -39,9 +39,9 @@ import {
  */
 export interface NarrationControlsProps {
   /**
-   * The narration engine to drive. Owned by the parent because it also needs
-   * the state for highlighting, and because a second `useNarration` would mean
-   * a second speech engine for the same article.
+   * The narration engine to drive, as reported by `NarrationEngine` to the
+   * article view (which also needs the state for highlighting). A second
+   * `useNarration` would mean a second speech engine for the same article.
    */
   narration: UseNarrationReturn;
 }

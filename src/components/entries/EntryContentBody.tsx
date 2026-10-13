@@ -7,20 +7,22 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { CollectionsButton } from "@/components/entries/CollectionsButton";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
-import { NarrationControls } from "@/components/narration";
+import { NarrationControls, NarrationEngine } from "@/components/narration";
 import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
 import { NarrationHighlightStyles } from "@/components/narration/NarrationHighlightStyles";
-import { useNarration } from "@/components/narration/useNarration";
-import { getNarrationPhase } from "@/components/narration/useNarrationTypes";
+import {
+  DEFAULT_NARRATION_STATE,
+  getNarrationPhase,
+  type NarrationEngineView,
+} from "@/components/narration/useNarrationTypes";
 import { useNarrationHighlight } from "@/components/narration/useNarrationHighlight";
-import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { selectDisplayedContent, showsFullContent } from "@/lib/narration/select-content";
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
@@ -197,36 +199,18 @@ export function EntryContentBody({
     { showFullContent, showOriginal }
   );
 
-  // Set up narration with highlighting support. Pass the current view state so
-  // the server narrates (and maps highlights against) exactly the variant on
-  // screen, not a fixed full/cleaned/original priority.
-  const narration = useNarration({
-    id: articleId,
-    title,
-    feedTitle: source,
-    content: contentToDisplay,
-    showFullContent,
-    showOriginal,
-    prerecordedVoice: prerecordedNarration,
-  });
-
-  // Get narration settings for auto-scroll preference
   const [narrationSettings] = useNarrationSettings();
-
-  // Stop narration if user disables it in settings while audio is playing
-  useEffect(() => {
-    if (!narrationSettings.enabled) {
-      narration.stop();
-    }
-    // Only trigger when enabled changes, not on every narration object change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrationSettings.enabled]);
-
   const showNarration = narrationSettings.enabled;
-  const isNarrationActive = getNarrationPhase(narration.state).isActive;
+
+  // The engine loads lazily and reports its state here. It's only mounted while
+  // narration is enabled, so disabling narration mid-playback stops it.
+  const [narrationEngine, setNarrationEngine] = useState<NarrationEngineView | null>(null);
+  const narration = showNarration ? narrationEngine : null;
+  const narrationState = narration?.state ?? DEFAULT_NARRATION_STATE;
+  const isNarrationActive = getNarrationPhase(narrationState).isActive;
 
   const { highlightedParagraphIds } = useNarrationHighlight({
-    currentParagraphIndex: narration.state.currentParagraph,
+    currentParagraphIndex: narrationState.currentParagraph,
     isActive: isNarrationActive,
   });
 
@@ -234,7 +218,7 @@ export function EntryContentBody({
   // paused narration moves there and stays paused). Clicks
   // that mean something else — following a link, finishing a text selection —
   // are left alone.
-  const { playFromElement } = narration;
+  const playFromElement = narration?.playFromElement;
   // The press that dismisses a selection collapses it before `click` fires, so
   // whether one existed has to be captured on the way down.
   const hadSelectionAtPointerDownRef = useRef(false);
@@ -249,41 +233,18 @@ export function EntryContentBody({
 
   const handleContentClick = useCallback(
     (event: React.MouseEvent) => {
-      if (!showNarration || !isNarrationActive) return;
+      if (!playFromElement || !isNarrationActive) return;
       const elementIndex = seekTargetElement(event, hadSelectionAtPointerDownRef.current);
       if (elementIndex !== null) playFromElement(elementIndex);
     },
-    [showNarration, isNarrationActive, playFromElement]
+    [isNarrationActive, playFromElement]
   );
 
   // Get text appearance settings
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
-  // Determine if we should process HTML for highlighting
-  // We process it whenever narration has been activated (processedHtml exists or state is not idle)
-  const shouldProcessForHighlighting =
-    narration.isSupported &&
-    (narration.processedHtml !== null || narration.state.status !== "idle");
-
-  // Content is sanitized on the server (src/server/html/sanitize.ts), so here we
-  // only apply narration highlighting markup.
-  const sanitizedContent = useMemo(() => {
-    if (!contentToDisplay) return null;
-
-    // Client-side narration produces processedHtml (with data-para-id) from the
-    // already-sanitized content; use it directly so the highlight paragraph IDs
-    // exactly match the mapping.
-    if (shouldProcessForHighlighting && narration.processedHtml) {
-      return narration.processedHtml;
-    }
-
-    // Server-side narration path: add highlighting wrappers to sanitized content.
-    if (shouldProcessForHighlighting) {
-      return processHtmlForHighlighting(contentToDisplay);
-    }
-
-    return contentToDisplay;
-  }, [contentToDisplay, shouldProcessForHighlighting, narration.processedHtml]);
+  const shouldProcessForHighlighting = narration?.isHighlighting ?? false;
+  const contentHtml = contentToDisplay ? (narration?.highlightHtml ?? contentToDisplay) : null;
 
   // Image prefetching is owned by EntryContentRenderer (shared with the demo
   // reader); contentRef is still forwarded there for narration highlighting.
@@ -293,7 +254,7 @@ export function EntryContentBody({
   useEffect(() => {
     if (!contentRef.current || !shouldProcessForHighlighting) return;
     if (!narrationSettings.autoScrollEnabled) return;
-    if (narration.state.status !== "playing") return;
+    if (narrationState.status !== "playing") return;
     if (highlightedParagraphIds.size === 0) return;
 
     // Find the first highlighted element for scrolling
@@ -321,7 +282,7 @@ export function EntryContentBody({
     highlightedParagraphIds,
     shouldProcessForHighlighting,
     narrationSettings.autoScrollEnabled,
-    narration.state.status,
+    narrationState.status,
   ]);
 
   const {
@@ -361,155 +322,174 @@ export function EntryContentBody({
   );
 
   return (
-    <EntryArticle
-      title={title}
-      url={url}
-      source={source}
-      author={author}
-      date={date}
-      dateTimeZone={dateTimeZone}
-      datePrefix={datePrefix}
-      contentHtml={sanitizedContent}
-      fallbackContent={fallbackContent}
-      textSizeClass={textSizeClass}
-      textStyle={textStyle}
-      footerLinkDomain={footerLinkDomain}
-      unsubscribeUrl={unsubscribeUrl}
-      isContentLoading={isContentLoading}
-      contentRef={contentRef}
-      onContentClick={handleContentClick}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchCancel}
-      onBack={onBack}
-      actionButtons={
-        <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Star + Read/Unread toggles (shared with the fallback and demo readers) */}
-          <StarButton starred={starred} onToggle={onToggleStar} />
-          <ReadToggleButton read={read} onToggle={onToggleRead} />
-          <CollectionsButton entryId={articleId} />
-
-          {/* Content view toggle - only show when both versions exist and not showing full content */}
-          {hasBothVersions && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowOriginal(!showOriginal)}
-              aria-label={showOriginal ? "Show cleaned content" : "Show original content"}
-            >
-              <span>{showOriginal ? "Show Cleaned" : "Show Original"}</span>
-            </Button>
-          )}
-
-          {/* Full content toggle - shows when URL exists */}
-          {url && onToggleFetchFullContent && (
-            <Button
-              variant={fullContentError ? "secondary" : fetchFullContent ? "primary" : "secondary"}
-              size="sm"
-              onClick={onToggleFetchFullContent}
-              disabled={isFullContentFetching}
-              className={
-                fullContentError ? "border-danger-border text-danger hover:bg-danger-subtle" : ""
-              }
-              aria-label={
-                fullContentError
-                  ? `Retry fetching full content (previous error: ${fullContentError})`
-                  : fetchFullContent
-                    ? "Switch to feed content"
-                    : "Fetch and display full article content"
-              }
-              title={fullContentError ? `Error: ${fullContentError}` : undefined}
-            >
-              {isFullContentFetching ? (
-                <>
-                  <SpinnerIcon className="h-4 w-4" />
-                  <span className="ml-2">Fetching...</span>
-                </>
-              ) : fullContentError ? (
-                <>
-                  <AlertIcon className="h-4 w-4" />
-                  <span className="ml-2">Retry Fetch</span>
-                </>
-              ) : (
-                <span>Full Content</span>
-              )}
-            </Button>
-          )}
-
-          {/* Narration controls - pass narration state for controlled mode */}
-          {showNarration && <NarrationControls narration={narration} />}
-
-          {/* Summarize button */}
-          {isSummarizationAvailable && onSummarize && (
-            <Button
-              variant={showSummary && summary ? "primary" : "secondary"}
-              size="sm"
-              onClick={onSummarize}
-              disabled={isSummarizing}
-              aria-label={summary ? "Toggle summary" : "Generate AI summary"}
-            >
-              {isSummarizing ? (
-                <>
-                  <SpinnerIcon className="h-4 w-4" />
-                  <span className="ml-2">Summarizing...</span>
-                </>
-              ) : summary ? (
-                <>
-                  <SparklesIcon className="h-4 w-4" filled={showSummary} />
-                  <span className="ml-2">{showSummary ? "Hide Summary" : "Show Summary"}</span>
-                </>
-              ) : (
-                <>
-                  <SparklesIcon className="h-4 w-4" />
-                  <span className="ml-2">Summarize</span>
-                </>
-              )}
-            </Button>
-          )}
-        </div>
-      }
-      beforeContent={
-        <>
-          {/* Summary card - shown above content when available */}
-          {showSummary && (summary || summaryError || isSummarizing) && (
-            <SummaryCard
-              summary={summary?.text ?? ""}
-              modelId={summary?.modelId ?? ""}
-              generatedAt={summary?.generatedAt ?? null}
-              isLoading={isSummarizing}
-              error={summaryError}
-              onClose={onSummaryClose}
-              onRegenerate={
-                summaryError || summary?.settingsChanged ? onSummaryRegenerate : undefined
-              }
-            />
-          )}
-
-          {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
-          {showNarration && shouldProcessForHighlighting && (
-            <NarrationHighlightStyles
-              highlightedParagraphIds={highlightedParagraphIds}
-              enabled={narrationSettings.highlightEnabled}
-              seekable={isNarrationActive}
-            />
-          )}
-
-          {beforeContent}
-        </>
-      }
-      afterContent={afterContent}
-      stickyControls={
-        <StickyEntryControls
-          actionButtonsRef={actionButtonsRef}
-          starred={starred}
-          read={read}
-          onToggleStar={onToggleStar}
-          onToggleRead={onToggleRead}
-          extraControls={
-            showNarration ? <FloatingNarrationControls narration={narration} /> : undefined
-          }
+    <>
+      {showNarration && (
+        // Pass the current view state so the server narrates (and maps
+        // highlights against) exactly the variant on screen, not a fixed
+        // full/cleaned/original priority.
+        <NarrationEngine
+          id={articleId}
+          title={title}
+          feedTitle={source}
+          content={contentToDisplay}
+          showFullContent={showFullContent}
+          showOriginal={showOriginal}
+          prerecordedVoice={prerecordedNarration}
+          onChange={setNarrationEngine}
         />
-      }
-    />
+      )}
+      <EntryArticle
+        title={title}
+        url={url}
+        source={source}
+        author={author}
+        date={date}
+        dateTimeZone={dateTimeZone}
+        datePrefix={datePrefix}
+        contentHtml={contentHtml}
+        fallbackContent={fallbackContent}
+        textSizeClass={textSizeClass}
+        textStyle={textStyle}
+        footerLinkDomain={footerLinkDomain}
+        unsubscribeUrl={unsubscribeUrl}
+        isContentLoading={isContentLoading}
+        contentRef={contentRef}
+        onContentClick={handleContentClick}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        onBack={onBack}
+        actionButtons={
+          <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {/* Star + Read/Unread toggles (shared with the fallback and demo readers) */}
+            <StarButton starred={starred} onToggle={onToggleStar} />
+            <ReadToggleButton read={read} onToggle={onToggleRead} />
+            <CollectionsButton entryId={articleId} />
+
+            {/* Content view toggle - only show when both versions exist and not showing full content */}
+            {hasBothVersions && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowOriginal(!showOriginal)}
+                aria-label={showOriginal ? "Show cleaned content" : "Show original content"}
+              >
+                <span>{showOriginal ? "Show Cleaned" : "Show Original"}</span>
+              </Button>
+            )}
+
+            {/* Full content toggle - shows when URL exists */}
+            {url && onToggleFetchFullContent && (
+              <Button
+                variant={
+                  fullContentError ? "secondary" : fetchFullContent ? "primary" : "secondary"
+                }
+                size="sm"
+                onClick={onToggleFetchFullContent}
+                disabled={isFullContentFetching}
+                className={
+                  fullContentError ? "border-danger-border text-danger hover:bg-danger-subtle" : ""
+                }
+                aria-label={
+                  fullContentError
+                    ? `Retry fetching full content (previous error: ${fullContentError})`
+                    : fetchFullContent
+                      ? "Switch to feed content"
+                      : "Fetch and display full article content"
+                }
+                title={fullContentError ? `Error: ${fullContentError}` : undefined}
+              >
+                {isFullContentFetching ? (
+                  <>
+                    <SpinnerIcon className="h-4 w-4" />
+                    <span className="ml-2">Fetching...</span>
+                  </>
+                ) : fullContentError ? (
+                  <>
+                    <AlertIcon className="h-4 w-4" />
+                    <span className="ml-2">Retry Fetch</span>
+                  </>
+                ) : (
+                  <span>Full Content</span>
+                )}
+              </Button>
+            )}
+
+            {/* Narration controls - pass narration state for controlled mode */}
+            {showNarration && <NarrationControls narration={narration} />}
+
+            {/* Summarize button */}
+            {isSummarizationAvailable && onSummarize && (
+              <Button
+                variant={showSummary && summary ? "primary" : "secondary"}
+                size="sm"
+                onClick={onSummarize}
+                disabled={isSummarizing}
+                aria-label={summary ? "Toggle summary" : "Generate AI summary"}
+              >
+                {isSummarizing ? (
+                  <>
+                    <SpinnerIcon className="h-4 w-4" />
+                    <span className="ml-2">Summarizing...</span>
+                  </>
+                ) : summary ? (
+                  <>
+                    <SparklesIcon className="h-4 w-4" filled={showSummary} />
+                    <span className="ml-2">{showSummary ? "Hide Summary" : "Show Summary"}</span>
+                  </>
+                ) : (
+                  <>
+                    <SparklesIcon className="h-4 w-4" />
+                    <span className="ml-2">Summarize</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        }
+        beforeContent={
+          <>
+            {/* Summary card - shown above content when available */}
+            {showSummary && (summary || summaryError || isSummarizing) && (
+              <SummaryCard
+                summary={summary?.text ?? ""}
+                modelId={summary?.modelId ?? ""}
+                generatedAt={summary?.generatedAt ?? null}
+                isLoading={isSummarizing}
+                error={summaryError}
+                onClose={onSummaryClose}
+                onRegenerate={
+                  summaryError || summary?.settingsChanged ? onSummaryRegenerate : undefined
+                }
+              />
+            )}
+
+            {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
+            {showNarration && shouldProcessForHighlighting && (
+              <NarrationHighlightStyles
+                highlightedParagraphIds={highlightedParagraphIds}
+                enabled={narrationSettings.highlightEnabled}
+                seekable={isNarrationActive}
+              />
+            )}
+
+            {beforeContent}
+          </>
+        }
+        afterContent={afterContent}
+        stickyControls={
+          <StickyEntryControls
+            actionButtonsRef={actionButtonsRef}
+            starred={starred}
+            read={read}
+            onToggleStar={onToggleStar}
+            onToggleRead={onToggleRead}
+            extraControls={
+              narration ? <FloatingNarrationControls narration={narration} /> : undefined
+            }
+          />
+        }
+      />
+    </>
   );
 }

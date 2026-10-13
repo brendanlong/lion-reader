@@ -91,6 +91,18 @@ export interface UseNarrationReturn {
   processedHtml: string | null;
 }
 
+/**
+ * What the lazily loaded `NarrationEngine` reports to the article view. Its
+ * controls are stable across renders (they forward to the latest engine), so
+ * the view can hold the report in state without a render loop.
+ */
+export interface NarrationEngineView extends UseNarrationReturn {
+  /** Whether the article renders with paragraph ids, i.e. narration has started */
+  isHighlighting: boolean;
+  /** The displayed content with paragraph ids, while `isHighlighting` */
+  highlightHtml: string | null;
+}
+
 // ============================================================================
 // Default State
 // ============================================================================
