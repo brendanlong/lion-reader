@@ -181,9 +181,8 @@ mod tests {
 
     #[test]
     fn many_small_svgs_sanitize_in_linear_time() {
-        // Reinserting SVGs one whole-body `replace` at a time made this input
-        // (~450 KB) take a minute; a linear pipeline does it in under a second
-        // even unoptimized. The bound is loose enough for a loaded CI box.
+        // A per-SVG rescan of the body takes about a minute here; a linear
+        // pipeline takes under a second unoptimized. Loose for a loaded CI box.
         let html = "<svg><g/></svg>".repeat(30_000);
         let start = std::time::Instant::now();
         let out = run(&html);

@@ -1821,8 +1821,9 @@ mod tests {
         let case = std::fs::read_to_string(&case_file).unwrap_or_default();
         let _ = std::fs::remove_file(&case_file);
         let stdout = String::from_utf8_lossy(&output.stdout);
+        // "1 passed", not just success: a filtered-out worker passes vacuously.
         assert!(
-            stdout.contains("1 passed"),
+            output.status.success() && stdout.contains("1 passed"),
             "worker failed ({}) on {} bytes: {:?}\n{}{}",
             output.status,
             case.len(),
@@ -1871,7 +1872,11 @@ mod tests {
             r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
             "</iframe>",
         ];
-        let case_file = std::env::var_os(FUZZ_CASE_FILE_ENV);
+        // Run in-process (e.g. by `--include-ignored`), a crash would take the
+        // runner down — the very thing the parent exists to prevent.
+        let Some(case_file) = std::env::var_os(FUZZ_CASE_FILE_ENV) else {
+            return;
+        };
         // Node runs the sanitizer on 8 MB stacks (main thread and libuv pool),
         // not the test harness's 2 MB.
         std::thread::Builder::new()
@@ -1899,9 +1904,7 @@ mod tests {
                         input.push_str(&piece.repeat(count));
                         input.push_str(PIECES[next() % PIECES.len()]);
                     }
-                    if let Some(path) = &case_file {
-                        std::fs::write(path, &input).unwrap();
-                    }
+                    std::fs::write(&case_file, &input).unwrap();
                     // A refusal serves nothing, so only crashes and output fail.
                     let Ok(out) = crate::sanitize_entry_html(&input, &mut Vec::new()) else {
                         continue;

@@ -23,9 +23,9 @@
 use scraper::Html;
 
 /// Largest input [`crate::sanitize_entry_html`] accepts; anything bigger fails
-/// closed (no body). It sits above every ingest cap (`usageLimitsConfig` in
-/// `src/server/config/env.ts`: 10 MB per feed, 5 MB per saved page), so only
-/// content that bypassed or out-grew those reaches it. At the slowest
+/// closed (no body). It sits above the default ingest caps (`usageLimitsConfig`
+/// in `src/server/config/env.ts`), so only content that bypassed them reaches
+/// it; raising an ingest cap past it means raising this too. At the slowest
 /// per-byte shape measured (a body of bare `<`) a full-size input costs a few
 /// seconds of a release build's time.
 pub const MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;

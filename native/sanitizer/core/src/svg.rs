@@ -573,7 +573,11 @@ impl SvgExtraction {
                 .bytes()
                 .take_while(u8::is_ascii_digit)
                 .count();
-            let index = text[digits_at..digits_at + digits].parse::<usize>().ok();
+            let index_text = &text[digits_at..digits_at + digits];
+            // Only the exact spelling `svg_placeholder` wrote: no leading zero.
+            let index = (!index_text.starts_with('0') || index_text == "0")
+                .then(|| index_text.parse::<usize>().ok())
+                .flatten();
             let end = digits_at + digits + nonce.len();
             match index {
                 Some(i) if text[digits_at + digits..].starts_with(nonce) && i < self.svgs.len() => {
@@ -603,9 +607,7 @@ impl SvgExtraction {
 /// main pass saw as text (`seen`, from [`SvgExtraction::mark_placeholders_in`]).
 /// Any other token is left where it is: removing it could change how the
 /// bytes around it tokenize, and it is inert text of the pass's own choosing.
-///
-/// Must stay a single pass: replacing token by token rescans the whole body
-/// per SVG, and a body of many tiny SVGs then took tens of seconds per read.
+/// One pass over `html`, however many SVGs (see `limits.rs`).
 pub fn reinsert_inline_svg(html: &str, extraction: &SvgExtraction, seen: &[bool]) -> String {
     let mut result = String::with_capacity(html.len());
     let mut cursor = 0;
@@ -709,6 +711,21 @@ mod tests {
         extraction.mark_placeholders_in(&one[..one.len() - 1], &mut seen);
         extraction.mark_placeholders_in(&one[1..], &mut seen);
         assert_eq!(seen, [false; 3]);
+        // Nor is a respelled index.
+        let nonce = &extraction.nonce;
+        extraction.mark_placeholders_in(&format!("{nonce}01{nonce}"), &mut seen);
+        assert_eq!(seen, [false; 3]);
+    }
+
+    #[test]
+    fn only_tokens_the_pass_saw_are_reinserted() {
+        // An unseen token sat where the pass did not read text (an attribute,
+        // raw text), so splicing markup there could make it live.
+        let extraction = extract("<svg/>a<svg/>");
+        let token = |i| svg_placeholder(&extraction.nonce, i);
+        let html = format!("{}<p title=\"{}\">", token(0), token(1));
+        let out = reinsert_inline_svg(&html, &extraction, &[true, false]);
+        assert_eq!(out, format!("<svg/><p title=\"{}\">", token(1)));
     }
 
     #[test]
