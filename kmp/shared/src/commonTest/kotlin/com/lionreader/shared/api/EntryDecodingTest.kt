@@ -3,10 +3,7 @@ package com.lionreader.shared.api
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/**
- * The server drops entries' `feedId` once no install reads it (#1846); installed apps must keep
- * decoding entries without one.
- */
+/** Entries carry no `feedId` (#1841): clients only ever see subscription ids. */
 class EntryDecodingTest {
     @Test
     fun entriesDecodeWithoutAFeedId() {
