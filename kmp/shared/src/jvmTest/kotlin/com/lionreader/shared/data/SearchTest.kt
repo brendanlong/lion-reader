@@ -3,6 +3,7 @@ package com.lionreader.shared.data
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.api.EntryMetadata
 import com.lionreader.shared.api.FullEntry
+import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.sync.FakeServer
@@ -143,6 +144,34 @@ class SearchTest {
         // The old body's words, replaced in place.
         assertEquals(emptyList(), search("nothing"))
         assertEquals(emptyList(), search("doomed"))
+    }
+
+    @Test
+    fun entriesFollowTheirSubscriptionsTitle() = runTest {
+        server.subscriptions +=
+            Subscription(
+                "sub-1",
+                title = "Rust Weekly",
+                originalTitle = "Rust Weekly",
+                tags = emptyList(),
+            )
+        serve("a", hoursAgo = 1, title = "A")
+        engine.sync()
+        suspend fun source() = reader.search("a", 1).first().single().source
+
+        // Renamed with no event for it (#1856): the next listing of subscriptions (as after 5.sqm)
+        // catches the entries up.
+        server.subscriptions[0] = server.subscriptions[0].copy(title = "Oxide")
+        driver.execute(null, "DELETE FROM app_metadata WHERE key = 'collections_listed'", 0)
+        engine.sync()
+        assertEquals("Oxide", source())
+        assertEquals(emptyList(), search("weekly"))
+
+        server.queueChanges(
+            events = listOf(SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = null))
+        )
+        engine.sync()
+        assertEquals("Rust Weekly", source())
     }
 
     @Test

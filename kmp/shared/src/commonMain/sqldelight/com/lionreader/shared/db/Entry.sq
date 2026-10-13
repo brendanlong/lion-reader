@@ -4,8 +4,9 @@
 CREATE TABLE entry (
   id TEXT NOT NULL PRIMARY KEY,
   -- The server's origin subscription (its `subscriptionId`), as it sent it.
-  -- Lists go by subscription_entry; only syncing with a server that predates
-  -- `subscriptionIds` reads this.
+  -- Lists go by subscription_entry; this says whose title feed_title follows
+  -- (refreshFeedTitles), and what a server that predates `subscriptionIds`
+  -- adds the entry to.
   subscription_id TEXT,
   -- Unused (the server sends only subscription ids); SQLite 3.18 can't drop a
   -- column without rebuilding the table.
@@ -80,6 +81,22 @@ updateMetadata:
 UPDATE entry SET title = ?, author = ?, summary = ?, url = ?, published_at = ?,
   sort_at = COALESCE(?, fetched_at)
 WHERE id = ?;
+
+-- The server sends an entry's feed_title as its subscription's title (custom
+-- if set), but a rename doesn't re-send the entries, so they follow it here.
+-- Saved isn't in subscription, so its entries keep theirs.
+refreshFeedTitles:
+UPDATE entry SET feed_title = (SELECT title FROM subscription WHERE id = entry.subscription_id)
+WHERE subscription_id IN (SELECT id FROM subscription)
+  AND feed_title IS NOT (SELECT title FROM subscription WHERE id = entry.subscription_id);
+
+refreshFeedTitlesFor:
+UPDATE entry SET feed_title = (SELECT title FROM subscription WHERE id = :subscriptionId)
+-- Through subscription_entry for its index (an origin is always a membership).
+WHERE id IN (SELECT entry_id FROM subscription_entry WHERE subscription_id = :subscriptionId)
+  AND subscription_id = :subscriptionId
+  AND EXISTS (SELECT 1 FROM subscription WHERE id = :subscriptionId)
+  AND feed_title IS NOT (SELECT title FROM subscription WHERE id = :subscriptionId);
 
 updateServerState:
 UPDATE entry SET read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at) WHERE id = ?;
