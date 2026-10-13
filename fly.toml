@@ -93,6 +93,9 @@ kill_timeout = 30
   DISCORD_SUCCESS_EMOJI='salutinglionreader'
   DISCORD_ERROR_EMOJI='cryinglionreader'
 
+  # Server users can join to DM the bot
+  DISCORD_SERVER_INVITE_URL='https://discord.gg/5w4BYRVWXR'
+
   # Object storage
   STORAGE_BUCKET = "lion-reader-prod"
   STORAGE_ENDPOINT = "https://t3.storage.dev"

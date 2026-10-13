@@ -35,7 +35,7 @@ const article: DemoArticle = {
 
     <h3>Getting Started</h3>
 
-    <p>Sign in to Lion Reader with Discord and the bot already knows who you are. Then react in any server that has the bot, or send it a direct message. Others in the channel can see your reaction, but what you save goes only to your own reading list. If your server doesn&rsquo;t have the bot yet, ask an admin to add it &mdash; or add it to a server of your own and save by direct message.</p>
+    <p>Sign in to Lion Reader with Discord and the bot already knows who you are. Then react in any server that has the bot, or send it a direct message. Others in the channel can see your reaction, but what you save goes only to your own reading list. Discord only lets you message the bot if you share a server with it, so if none of yours has the bot, <a href="https://discord.gg/5w4BYRVWXR" target="_blank" rel="noopener noreferrer">join the Lion Reader server</a> and save by direct message. You can also ask a server admin to add the bot.</p>
 
     <details>
       <summary>Adding the bot to a server</summary>

@@ -2411,6 +2411,12 @@
                         "null"
                       ]
                     },
+                    "serverInviteUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "saveEmoji": {
                       "type": [
                         "string",
@@ -2433,6 +2439,7 @@
                   "required": [
                     "enabled",
                     "inviteUrl",
+                    "serverInviteUrl",
                     "saveEmoji",
                     "successEmoji",
                     "errorEmoji"

@@ -13,6 +13,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { NoteBox } from "@/components/ui/note-box";
 import { InlineCode } from "@/components/ui/inline-code";
+import { TextLink } from "@/components/ui/text-link";
 import { DiscordIcon, ExternalLinkIcon } from "@/components/ui/icons";
 
 /**
@@ -83,6 +84,25 @@ export function DiscordBotSettings() {
         </div>
       </div>
 
+      {botConfig.serverInviteUrl && (
+        <div className="mt-6">
+          <h3 className="ui-text-sm text-body font-medium">No Server With the Bot?</h3>
+          <p className="ui-text-sm text-muted mt-1">
+            Discord only lets you message a bot you share a server with. Join the Lion Reader server
+            and you can save links by messaging the bot directly.
+          </p>
+          <TextLink
+            external
+            href={botConfig.serverInviteUrl}
+            className="ui-text-sm mt-1 inline-flex min-h-[44px] items-center gap-1.5"
+          >
+            <DiscordIcon className="h-4 w-4" />
+            Join the Lion Reader server
+            <ExternalLinkIcon className="h-3.5 w-3.5" />
+          </TextLink>
+        </div>
+      )}
+
       {/* Usage Instructions */}
       <CardSection>
         <h3 className="ui-text-sm text-body font-medium">How to Use</h3>
@@ -100,7 +120,8 @@ export function DiscordBotSettings() {
             ) : (
               "Add the configured emoji reaction to any message containing a URL"
             )}
-            . You can also send or forward a message with a link directly to the bot in a DM.
+            . You can also send or forward a message with a link directly to the bot in a DM, if you
+            share a server with it.
           </li>
           <li>
             <strong className="text-body">Look for the reaction</strong> -{" "}
