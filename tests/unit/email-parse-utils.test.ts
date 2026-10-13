@@ -116,6 +116,13 @@ describe("parseFromAddress", () => {
       });
     });
 
+    it("parses a name containing a line break", () => {
+      expect(parseFromAddress("John\nDoe <john@example.com>")).toEqual({
+        name: "John\nDoe",
+        address: "john@example.com",
+      });
+    });
+
     it.each([
       ["repeated <", "a" + "<".repeat(30000) + ">>"],
       ["repeated ' <'", "a <".repeat(10000) + ">>"],

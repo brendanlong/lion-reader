@@ -159,8 +159,6 @@ export function absolutizeUrls(
   }
 }
 
-/** Where the document head ends: its close tag, or the body opening without one. */
-const HEAD_END_PATTERN = /<\/head[\s>]|<body[\s>]/i;
 /**
  * The first `<base href>`. The attribute run is `[^<>]*`, not `[^>]*`: with
  * `[^>]*`, a page of `<base ` repeated without a `>` makes every attempt scan
@@ -183,10 +181,7 @@ const BASE_HREF_PATTERN = /<base\s[^<>]*href\s*=\s*["']([^"']+)["']/i;
  * @returns The effective base URL (from <base> tag or fallback)
  */
 export function extractBaseHref(html: string, fallbackUrl: string): string {
-  // <base> belongs in the head, so don't scan a whole (up to 5 MB) page body.
-  const headEnd = html.search(HEAD_END_PATTERN);
-  const head = headEnd < 0 ? html : html.slice(0, headEnd);
-  const match = BASE_HREF_PATTERN.exec(head);
+  const match = BASE_HREF_PATTERN.exec(html);
   if (!match) {
     return fallbackUrl;
   }
