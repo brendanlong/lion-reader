@@ -29,8 +29,8 @@ class AccountStorageTest {
     private fun SqlDriver.withLargeArticle(): Reader {
         execute(
             null,
-            "INSERT INTO entry(id, feed_id, type, fetched_at, sort_at, read, starred, body_version) " +
-                "VALUES ('a', 'f', 'web', 0, 0, 0, 0, 1)",
+            "INSERT INTO entry(id, type, fetched_at, sort_at, read, starred, body_version) " +
+                "VALUES ('a', 'web', 0, 0, 0, 0, 1)",
             0,
         )
         execute(
