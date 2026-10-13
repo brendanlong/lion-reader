@@ -27,6 +27,14 @@ When prompted:
 
 This creates the app on Fly.io and updates your `fly.toml` with the app name.
 
+### 2. Replace lionreader.com's Settings
+
+`fly.toml` is lionreader.com's own deploy config. Change or delete every value commented "lionreader.com only" before your first deploy. Left as they are, your instance:
+
+- reports page counts to lionreader.com's GoatCounter (`NEXT_PUBLIC_GOATCOUNTER_URL`; delete it to send none);
+- loads its scripts from lionreader.com's CDN (`ASSET_PREFIX`; delete it to serve them yourself);
+- hands out newsletter addresses on lionreader.com's mail domain, so newsletters never reach you (`INGEST_EMAIL_DOMAIN`; delete it to turn newsletters off, or set up your own domain as in the README's "Email Newsletter Subscriptions").
+
 ---
 
 ## Database Provisioning (Postgres)

@@ -140,10 +140,12 @@ Inbound email is delivered by [Mailgun](https://www.mailgun.com) receiving route
 2. Create a Mailgun route that forwards matching messages to `https://your-app/api/webhooks/email/mailgun` (enable "Store and notify")
 3. Configure Lion Reader:
 
-| Variable                      | Default                 | Description                                                    |
-| ----------------------------- | ----------------------- | -------------------------------------------------------------- |
-| `INGEST_EMAIL_DOMAIN`         | `ingest.lionreader.com` | Domain for ingest email addresses                              |
-| `MAILGUN_WEBHOOK_SIGNING_KEY` | -                       | Mailgun webhook signing key (Sending → Webhooks); **required** |
+| Variable                      | Description                                                    |
+| ----------------------------- | -------------------------------------------------------------- |
+| `INGEST_EMAIL_DOMAIN`         | Domain for ingest email addresses; **required**                |
+| `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun webhook signing key (Sending → Webhooks); **required** |
+
+Newsletters are off until both are set.
 
 The webhook verifies Mailgun's HMAC-SHA256 signature; requests with invalid signatures are rejected.
 

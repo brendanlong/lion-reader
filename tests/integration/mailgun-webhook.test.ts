@@ -12,9 +12,6 @@
  *   with a captured triple would send — is acked 200 but NOT processed
  *   (the Redis nonce, not Message-ID dedup, blocks it)
  * - a bad signature / missing fields are rejected with 406
- *
- * The signing key is injected via env BEFORE the route module is imported,
- * because `ingestConfig` freezes `process.env` values at import time.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -23,14 +20,11 @@ import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { ingestAddresses, entries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { POST } from "../../src/app/api/webhooks/email/mailgun/route";
 import { createTestUser } from "./helpers";
 
 const SIGNING_KEY = "test-mailgun-signing-key";
 process.env.MAILGUN_WEBHOOK_SIGNING_KEY = SIGNING_KEY;
-
-// Dynamic import AFTER the env var is set — the route reads the key from the
-// import-time-frozen ingestConfig.
-const { POST } = await import("../../src/app/api/webhooks/email/mailgun/route");
 
 /** Signs (timestamp, token) the way Mailgun does: HMAC-SHA256(timestamp + token). */
 function sign(timestamp: string, token: string): string {

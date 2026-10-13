@@ -1,12 +1,11 @@
-# Fly.io configuration for Lion Reader
+# Fly.io configuration for lionreader.com
 # IMPORTANT: Before editing, read docs/references/fly-toml.md for valid options
 # See also: https://fly.io/docs/reference/configuration/
 #
-# Before deploying:
-# 1. Run: fly launch --no-deploy (to create the app and set app name)
-# 2. Set secrets:
-#    fly secrets set DATABASE_URL="..." REDIS_URL="..."
-# 3. Deploy: fly deploy
+# Self-hosting: this is lionreader.com's own deploy config. Change or delete
+# every value marked "lionreader.com only" before deploying, or your instance
+# sends page counts to our analytics, loads assets from our CDN and hands out
+# newsletter addresses on our domain. See docs/DEPLOYMENT.md.
 
 app = "lion-reader"
 primary_region = "sjc"
@@ -22,15 +21,16 @@ kill_timeout = 30
   # These must be build args, not [env]: Next.js inlines them into the client
   # bundle at build time, so a runtime var would have no effect.
   [build.args]
-    # CDN base URL for the hashed /_next/static assets (a Bunny pull zone with
-    # the app as origin). See next.config.ts.
+    # lionreader.com only. CDN base URL for the hashed /_next/static assets (a
+    # Bunny pull zone with the app as origin). See next.config.ts.
     ASSET_PREFIX = "https://cdn.lionreader.com"
 
     # Client-side Sentry DSN. Not secret — it ships in the client bundle by
     # design.
     # NEXT_PUBLIC_SENTRY_DSN = "https://<key>@<org>.ingest.sentry.io/<project>"
 
-    # GoatCounter count endpoint. See src/lib/analytics/goatcounter.ts.
+    # lionreader.com only. GoatCounter count endpoint. See
+    # src/lib/analytics/goatcounter.ts.
     NEXT_PUBLIC_GOATCOUNTER_URL = "https://lionreader.goatcounter.com/count"
 
 [deploy]
@@ -64,10 +64,12 @@ kill_timeout = 30
   # certification at signup and show the "not available in the EU" notice. Unset
   # (the default) on self-hosted instances, which take on no EU obligation.
   EU_RESTRICTED = "true"
+  # lionreader.com only.
   NEXT_PUBLIC_APP_URL = "https://lionreader.com"
   NODE_ENV = "production"
   PORT = "3000"
 
+  # lionreader.com only.
   FETCHER_CONTACT_EMAIL = "self@brendanlong.com"
 
   # Models the server's AI keys may run (see .env.example): gpt-oss-120b on
@@ -81,6 +83,7 @@ kill_timeout = 30
 
   WORKER_CONCURRENCY = "1"
 
+  # lionreader.com only: the Apple, Discord and storage values below.
   # Sign in with Apple
   APPLE_CLIENT_ID = "com.lionreader.web"
   APPLE_TEAM_ID = "ZA3392677W"
@@ -99,7 +102,8 @@ kill_timeout = 30
   STORAGE_REGION = "auto"
   STORAGE_PUBLIC_URL_BASE = "https://lion-reader-prod.t3.storage.dev/"
 
-  # Newsletters
+  # lionreader.com only. Newsletters (off unless this and the
+  # MAILGUN_WEBHOOK_SIGNING_KEY secret are both set).
   INGEST_EMAIL_DOMAIN = "in.app.lionreader.com"
 
   # Prometheus metrics

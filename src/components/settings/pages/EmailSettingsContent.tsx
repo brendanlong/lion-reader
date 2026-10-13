@@ -106,6 +106,17 @@ function IngestAddressesSection() {
 
   const addresses = addressesQuery.data?.items ?? [];
 
+  if (addressesQuery.data?.enabled === false) {
+    return (
+      <section>
+        <h3 className="ui-text-sm text-body font-medium">Ingest Addresses</h3>
+        <p className="ui-text-sm text-muted mt-2">
+          Email newsletters aren&apos;t set up on this server.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
