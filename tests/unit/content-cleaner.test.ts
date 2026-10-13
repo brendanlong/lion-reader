@@ -401,6 +401,17 @@ describe("absolutizeUrls", () => {
       expect(result).toContain("https://res.cloudinary.com/example/f_auto,q_auto/img.jpg 1x");
       expect(result).toContain("https://example.com/images/fallback.jpg 2x");
     });
+
+    it.each([
+      ["many commas", "a,".repeat(100000)],
+      ["a long whitespace run", `a${" ".repeat(50000)}a,b`],
+    ])("stays linear on a srcset with %s", (_case, srcset) => {
+      // Re-testing each growing entry, and an unanchored leading `\s+`, took
+      // ~6.5s and ~2s on these (quadratic).
+      const started = performance.now();
+      absolutizeUrls(`<img srcset="${srcset}">`, baseUrl);
+      expect(performance.now() - started).toBeLessThan(200);
+    });
   });
 
   describe("video poster attributes", () => {

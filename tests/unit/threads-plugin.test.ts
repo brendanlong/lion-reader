@@ -130,6 +130,13 @@ describe("parseThreadsAuthor", () => {
     expect(parseThreadsAuthor("Anuj Shah (@anujs3) on Threads")).toBe("Anuj Shah (@anujs3)");
   });
 
+  it("stays linear on a long whitespace run", () => {
+    // An unanchored leading `\s+` rescanned the run from each position: ~1s.
+    const started = performance.now();
+    expect(parseThreadsAuthor(`a${" ".repeat(40000)}b`)).toBe(`a${" ".repeat(40000)}b`);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
   it("passes through a title that doesn't match the expected shape", () => {
     expect(parseThreadsAuthor("Something else")).toBe("Something else");
   });

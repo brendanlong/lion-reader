@@ -149,8 +149,12 @@
     let spokeWords = false;
     let flushes = 0;
     const push = (highlight, value) => {
-      for (const segment of value.replace(/\s*\u0000\s*/g, BREAK).split(/\u0000{2,}/)) {
-        const paragraph = segment.replace(/[\s\u0000]+/g, " ").trim();
+      const paragraphs = value.replace(
+        /[\s\u0000]+/g,
+        (gap) => gap.indexOf(BREAK) === gap.lastIndexOf(BREAK) ? " " : BREAK
+      );
+      for (const segment of paragraphs.split(BREAK)) {
+        const paragraph = segment.trim();
         if (paragraph) runs.push({ highlight, text: paragraph });
       }
     };

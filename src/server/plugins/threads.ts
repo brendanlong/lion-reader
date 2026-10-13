@@ -161,7 +161,9 @@ export function parseThreadsAuthor(ogTitle: string | null): string | null {
   if (!ogTitle) {
     return null;
   }
-  const trimmed = ogTitle.replace(/\s+on\s+Threads\s*$/i, "").trim();
+  // `\son`, not `\s+on`: an unanchored leading `\s+` is quadratic on a long
+  // whitespace run; the `.trim()` drops whatever whitespace it leaves.
+  const trimmed = ogTitle.replace(/\son\s+Threads\s*$/i, "").trim();
   return trimmed || null;
 }
 

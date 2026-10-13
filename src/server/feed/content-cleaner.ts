@@ -268,7 +268,9 @@ function asDirectoryUrl(url: string): string {
  * Checks if a srcset entry ends with a descriptor (e.g., "1x", "2x", "480w").
  */
 function hasDescriptor(entry: string): boolean {
-  return /\s+\d+(\.\d+)?[wx]\s*$/.test(entry);
+  // `\s`, not `\s+`: an unanchored leading `\s+` rescans a whitespace run from
+  // each of its positions, quadratic on a long one.
+  return /\s\d+(\.\d+)?[wx]\s*$/.test(entry);
 }
 
 /**
@@ -310,29 +312,25 @@ function absolutizeSrcset(srcset: string, base: ResolveBase): string {
   // 1. The previous part ending with a descriptor (1x, 2x, 480w, etc.)
   // 2. The current part starting with a URL scheme or absolute path
   const entries: string[] = [];
+  // Whether the previous entry ends with a descriptor. Its last part decides
+  // that (a descriptor can't span a comma), so test each part once rather than
+  // re-testing an entry that grows with every rejoined part — quadratic.
+  let previousHasDescriptor = false;
 
   for (const raw of rawParts) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
 
-    // First entry is always accepted
-    if (entries.length === 0) {
-      entries.push(trimmed);
-      continue;
-    }
-
-    // Check if this should be a new entry or rejoined with previous
-    const previousEntry = entries[entries.length - 1];
-    const previousHasDescriptor = hasDescriptor(previousEntry);
-    const currentLooksLikeNewEntry = looksLikeNewSrcsetEntry(trimmed);
-
-    if (previousHasDescriptor || currentLooksLikeNewEntry) {
+    // First entry is always accepted; otherwise check if this should be a new
+    // entry or rejoined with previous
+    if (entries.length === 0 || previousHasDescriptor || looksLikeNewSrcsetEntry(trimmed)) {
       // This is a new srcset entry
       entries.push(trimmed);
     } else {
       // This is a continuation of the previous entry (comma was inside URL)
       entries[entries.length - 1] += "," + trimmed;
     }
+    previousHasDescriptor = hasDescriptor(trimmed);
   }
 
   return entries
