@@ -38,8 +38,7 @@ import { logger } from "@/lib/logger";
 import { publishUserNewEntry, publishUserEntryUpdated } from "@/server/redis/pubsub";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import { errors, getAppErrorCode } from "@/server/errors";
-import { markEntriesRead } from "@/server/services/entries";
-import { publishMarkReadStateChanges } from "@/server/services/entry-events";
+import { finishEntriesRead, writeEntriesRead } from "@/server/services/entries";
 import { acquireArticleContent, type AcquiredArticle, type PluginArticle } from "@/server/plugins";
 import {
   isGoogleDocsUrl,
@@ -1177,27 +1176,18 @@ export async function saveArticle(
       isPlaceholder: false,
     };
     // Update the content and flip the entry back to unread atomically. The
-    // unread flip is routed through markEntriesRead (rather than a bare
+    // unread flip is routed through writeEntriesRead (rather than a bare
     // `read=false` UPDATE) so it maintains read_changed_at (the changedAt
     // idempotency contract — otherwise a stale queued offline "mark read" older
     // than this refetch would win later) and bumps updated_at (so sync.events
     // reports it to offline clients). Both writes share one transaction so a
-    // crash can't leave new content with the old read state. Publishing is
-    // suppressed inside the tx and done after commit (below) so a rolled-back
-    // mark can't emit a phantom entry_state_changed event.
-    const { changed: readChanged, counts: readCounts } = await db.transaction(async (tx) => {
+    // crash can't leave new content with the old read state.
+    const { changed: readChanged } = await db.transaction(async (tx) => {
       await tx.update(entries).set(update).where(eq(entries.id, oldEntry.id));
-      return markEntriesRead(tx, userId, [{ id: oldEntry.id, changedAt: now }], false, {
-        publish: false,
-      });
+      return writeEntriesRead(tx, userId, [{ id: oldEntry.id, changedAt: now }], false);
     });
-
-    // Post-commit: notify other tabs of the unread flip + refreshed counts.
-    // Both are absent when the article was already unread (a re-save flips
-    // nothing) — nothing to publish then.
-    if (readChanged.length > 0 && readCounts) {
-      publishMarkReadStateChanges(db, userId, readChanged, readCounts);
-    }
+    // Notifies other tabs of the unread flip, if it was one.
+    await finishEntriesRead(db, userId, readChanged);
 
     logger.info("Refetched saved article", {
       entryId: oldEntry.id,

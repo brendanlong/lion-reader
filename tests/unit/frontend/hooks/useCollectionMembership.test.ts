@@ -8,7 +8,8 @@ import { useCollectionMembership } from "@/lib/hooks/useCollectionMembership";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { upsertServerEntries } from "@/lib/local-db/entries";
-import { DEFAULT_ENTRIES } from "../../../utils/cache-test-helpers";
+import { createSubscriptionRow, DEFAULT_ENTRIES } from "../../../utils/cache-test-helpers";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -28,7 +29,7 @@ const EXISTING = {
 const NO_COUNTS = { subscriptions: [], tags: [], uncategorized: null, all: null };
 
 describe("useCollectionMembership.collectionIds", () => {
-  it("is the stored entry's memberships other than its origin and Saved", async () => {
+  it("is the stored entry's memberships other than its origin, Saved and other feeds", async () => {
     const { result, queryClient } = renderHookWithTrpc(() => useCollectionMembership("entry-1"), {
       handlers: {
         "subscriptions.list": () => ({ items: [], savedSubscriptionId: "saved-sub" }),
@@ -42,8 +43,13 @@ describe("useCollectionMembership.collectionIds", () => {
           ...DEFAULT_ENTRIES[0],
           id: "entry-1",
           subscriptionId: "sub-1",
-          subscriptionIds: ["sub-1", "collection-1", "saved-sub", "collection-2"],
+          subscriptionIds: ["sub-1", "collection-1", "saved-sub", "collection-2", "merged-feed"],
         },
+      ])
+    );
+    act(() =>
+      writeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [
+        createSubscriptionRow({ id: "merged-feed", type: "web" }),
       ])
     );
 

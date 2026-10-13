@@ -160,9 +160,9 @@ const DEMO_SAVED_SUBSCRIPTION_ID = "demo-saved";
 let lastAsOfMicros = 0;
 
 /**
- * A count stamp (`countsAsOfSchema`) for a count read now: wall-clock time, so
- * the prerendered seed's are older than any the visitor's own store makes, and
- * strictly increasing, as the server's are for counts read in turn.
+ * A count stamp (`countsAsOfSchema`) for a count read now: strictly
+ * increasing, as the server's are for counts read in turn. The only output
+ * that isn't deterministic, and never rendered.
  */
 function nextCountsAsOf(): string {
   lastAsOfMicros = Math.max(Date.now() * 1000, lastAsOfMicros + 1);

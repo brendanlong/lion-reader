@@ -45,7 +45,7 @@ function forgetDeletedSubscription(utils: TRPCClientUtils, subscriptionId: strin
  * Removes a subscription from the local store, and so from the sidebar,
  * without touching unread counts. Used for the optimistic unsubscribe in
  * onMutate, where the server-absolute counts are applied later in onSuccess.
- * Returns the removal's version (see `restoreRemovedSubscription`).
+ * Returns the removal's version (see `restoreRemovedRow`).
  */
 export function removeSubscriptionFromCaches(
   subscriptionId: string,

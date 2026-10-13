@@ -21,8 +21,8 @@
 
 import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import { isListedSubscription } from "./subscriptions";
-import { Temporal } from "temporal-polyfill";
-import type { db as dbType, DbOrTx } from "@/server/db";
+import type { Temporal } from "temporal-polyfill";
+import type { db as dbType } from "@/server/db";
 import { parseTimestamptz } from "@/server/db/temporal";
 import {
   subscriptionEntries,
@@ -49,12 +49,25 @@ export interface TagCount {
 // ============================================================================
 
 /**
+ * Counts are read with the global `db`, never inside a transaction: a stamp
+ * taken before the commit of the write it reflects would let an older read
+ * stamped after it win on the client.
+ */
+type CountsDb = typeof dbType;
+
+/**
  * A select column stamping the counts a statement reads (`countsAsOfSchema`).
  * Counts read by several statements take the earliest stamp
  * (`earliestCountsAsOf`): each value is at least that new.
  */
 export function countsAsOfColumn() {
   return sql`statement_timestamp()`.mapWith(parseTimestamptz);
+}
+
+/** A stamp for counts read now that no statement read (a list that doesn't exist). */
+export async function countsAsOfNow(db: CountsDb): Promise<Temporal.Instant> {
+  const { rows } = await db.execute<{ as_of: string }>(sql`SELECT statement_timestamp() AS as_of`);
+  return parseTimestamptz(rows[0].as_of);
 }
 
 export function earliestCountsAsOf(...stamps: Temporal.Instant[]): Temporal.Instant {
@@ -80,7 +93,7 @@ interface UserUnreadCounts {
   asOf: Temporal.Instant;
 }
 
-export async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<UserUnreadCounts> {
+export async function getUserUnreadCounts(db: CountsDb, userId: string): Promise<UserUnreadCounts> {
   const [row] = await db
     .select({
       allUnread: users.allUnreadCount,
@@ -102,14 +115,14 @@ export async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<U
       starredUnread: 0,
       savedUnread: 0,
       uncategorizedUnread: 0,
-      asOf: Temporal.Now.instant(),
+      asOf: await countsAsOfNow(db),
     }
   );
 }
 
 /** Global unread counts (all + starred + saved) for a user. */
 export async function getGlobalUnreadCounts(
-  db: DbOrTx,
+  db: CountsDb,
   userId: string
 ): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
   const { allUnread, starredUnread, savedUnread } = await getUserUnreadCounts(db, userId);
@@ -122,7 +135,7 @@ export async function getGlobalUnreadCounts(
  * badge.
  */
 async function getTagUnreadCounts(
-  db: DbOrTx,
+  db: CountsDb,
   userId: string,
   tagIds: string[]
 ): Promise<TagCount[]> {
@@ -173,7 +186,7 @@ export interface BulkUnreadCounts {
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
-  db: DbOrTx,
+  db: CountsDb,
   userId: string,
   entries: Array<{ id?: string; subscriptionId: string | null }>
 ): Promise<BulkUnreadCounts> {

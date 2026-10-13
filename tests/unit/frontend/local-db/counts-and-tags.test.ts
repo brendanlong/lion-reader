@@ -111,6 +111,7 @@ describe("tags", () => {
     await fetching(queryClient, TAGS_KEY, tagsList([], LATER)).settle();
 
     expect(storedTagsList(queryClient)?.items).toEqual([]);
+    expect(storedCount(queryClient, { tagId: "tag-1" })).toBeUndefined();
   });
 
   it("keeps a tag created, or renamed, while a fetch that predates it ran", async () => {

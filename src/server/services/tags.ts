@@ -12,8 +12,12 @@ import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isListedSubscription } from "@/server/services/subscriptions";
 import { publishTagCreated, publishTagUpdated, publishTagDeleted } from "@/server/redis/pubsub";
-import { Temporal } from "temporal-polyfill";
-import { countsAsOfColumn, earliestCountsAsOf, formatCountsAsOf } from "@/server/services/counts";
+import {
+  countsAsOfColumn,
+  countsAsOfNow,
+  earliestCountsAsOf,
+  formatCountsAsOf,
+} from "@/server/services/counts";
 
 // ============================================================================
 // Types
@@ -99,6 +103,7 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
       .where(eq(users.id, userId)),
   ]);
 
+  const stamps = [...uncategorizedUnread, ...userTags.slice(0, 1)].map((row) => row.asOf);
   return {
     items: userTags.map((tag) => ({
       id: tag.id,
@@ -113,10 +118,7 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
       unreadCount: uncategorizedUnread[0]?.unreadCount ?? 0,
     },
     asOf: formatCountsAsOf(
-      earliestCountsAsOf(
-        ...[...uncategorizedUnread, ...userTags.slice(0, 1)].map((row) => row.asOf),
-        Temporal.Now.instant()
-      )
+      stamps.length > 0 ? earliestCountsAsOf(...stamps) : await countsAsOfNow(db)
     ),
   };
 }

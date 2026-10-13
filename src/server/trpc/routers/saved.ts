@@ -32,7 +32,7 @@ import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";
-import type { DbOrTx } from "@/server/db";
+import type { db as dbType } from "@/server/db";
 import { getGlobalUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
 import * as collectionsService from "@/server/services/collections";
@@ -96,7 +96,7 @@ const savedUnreadCountsSchema = z.object({
  * subscription or tags, so only the global counters move.
  */
 async function getSavedUnreadCounts(
-  db: DbOrTx,
+  db: typeof dbType,
   userId: string
 ): Promise<z.infer<typeof savedUnreadCountsSchema>> {
   const counts = await getGlobalUnreadCounts(db, userId);

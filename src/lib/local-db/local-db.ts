@@ -38,7 +38,13 @@ import {
   type SubscriptionRow,
   type SubscriptionStore,
 } from "./subscriptions";
-import { countedListOf, writeCounts, type CountRow, type CountStore } from "./counts";
+import {
+  countedListOf,
+  removeTagCount,
+  writeCounts,
+  type CountRow,
+  type CountStore,
+} from "./counts";
 import { ingestFetchedTags, type TagRow, type TagStore } from "./tags";
 import { createVersionedStore, markFetchStarted } from "./versioned-store";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
@@ -58,7 +64,7 @@ type TagsListData = NonNullable<ReturnType<TRPCClientUtils["tags"]["list"]["getD
  * The user's saved subscription (#1846), whose members are the Saved list.
  * Its id comes from `subscriptions.list` results (every one names it): null
  * before the first save creates it, undefined until a result has landed.
- * Components read it through `useStoredSavedSubscriptionId`.
+ * Components read it through `useSavedSubscriptionId`.
  */
 export interface SavedSubscription {
   id: string | null | undefined;
@@ -182,7 +188,7 @@ function ingestCount(
 }
 
 function ingestTags(db: LocalDb, queryHash: string, data: TagsListData): void {
-  ingestFetchedTags(db.tags, queryHash, data);
+  for (const id of ingestFetchedTags(db.tags, queryHash, data)) removeTagCount(db.counts, id);
   writeCounts(
     db.counts,
     [

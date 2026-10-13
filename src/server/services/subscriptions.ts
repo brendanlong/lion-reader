@@ -34,6 +34,7 @@ import {
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import {
   countsAsOfColumn,
+  countsAsOfNow,
   formatCountsAsOf,
   getBulkEntryRelatedCounts,
   getSubscriptionDeletionCounts,
@@ -41,7 +42,6 @@ import {
   type BulkUnreadCounts,
 } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
-import { Temporal } from "temporal-polyfill";
 import {
   holdsRedirectTwin,
   insertUserEntriesWithMemberships,
@@ -802,7 +802,7 @@ export async function createSubscription(
       subscribedAt: txResult.subscribedAt,
       unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
       unreadCountAsOf: formatCountsAsOf(
-        viewResults.length > 0 ? viewResults[0].unreadCountAsOf : Temporal.Now.instant()
+        viewResults.length > 0 ? viewResults[0].unreadCountAsOf : await countsAsOfNow(db)
       ),
       alreadyActive: true,
       customTitle: txResult.customTitle,
