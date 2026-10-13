@@ -12,7 +12,7 @@ import crypto from "node:crypto";
 import * as argon2 from "argon2";
 import { Pool } from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import Redis from "ioredis";
 import type { BrowserContext, Page } from "@playwright/test";
 import * as schema from "../../src/server/db/schema";
@@ -161,13 +161,10 @@ export async function createSubscribedFeed(db: TestDb, userId: string): Promise<
 
   await db.insert(schema.feeds).values({
     id: feedId,
-    type: "web",
     url: `https://example.com/e2e/${feedId}/feed.xml`,
     title,
     siteUrl: `https://example.com/e2e/${feedId}`,
   });
-  // The user_entries fill trigger stamps subscription_id on later user_entries
-  // inserts by matching (user_id, entry's feed_id) against this row.
   await db.insert(schema.subscriptions).values({ id: subscriptionId, userId, feedId, type: "web" });
 
   return { feedId, subscriptionId, title };
@@ -233,12 +230,14 @@ export async function createUnreadEntry(
     })
     .returning();
 
-  // publishedOrFetchedAt is filled by the user_entries_fill_denormalized trigger
-  // (COALESCE(published_at, fetched_at)), matching the production write paths.
-  await db.insert(schema.userEntries).values({
+  await giveEntry(
+    db,
     userId,
-    entryId: id,
-  });
+    id,
+    sql`(
+    SELECT id FROM subscriptions WHERE user_id = ${userId} AND feed_id = ${feedId}
+  )`
+  );
 
   return {
     id,
@@ -284,8 +283,15 @@ export async function createSavedArticle(
     })
     .returning();
 
-  // publishedOrFetchedAt is filled by the user_entries_fill_denormalized trigger.
-  await db.insert(schema.userEntries).values({ userId, entryId: id });
+  await db.execute(sql`SELECT ensure_saved_subscriptions(ARRAY[${userId}::uuid])`);
+  await giveEntry(
+    db,
+    userId,
+    id,
+    sql`(
+    SELECT id FROM subscriptions WHERE user_id = ${userId} AND type = 'saved'
+  )`
+  );
 
   return {
     entry: {
@@ -298,6 +304,25 @@ export async function createSavedArticle(
       fetchedAt: now,
     },
   };
+}
+
+/**
+ * Makes an entry visible to the user, unread, as a member of `subscriptionId`
+ * (#1846), as the app's insert paths do (`insertUserEntriesWithMemberships`).
+ */
+export async function giveEntry(
+  db: TestDb,
+  userId: string,
+  entryId: string,
+  subscriptionId: SQL
+): Promise<void> {
+  await db.insert(schema.userEntries).values({ userId, entryId });
+  await db.execute(sql`
+    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+    SELECT ${subscriptionId}, user_id, entry_id, published_or_fetched_at
+    FROM user_entries WHERE user_id = ${userId} AND entry_id = ${entryId}
+    ON CONFLICT DO NOTHING
+  `);
 }
 
 /** Marks an entry read directly in the database, returning the update timestamp. */

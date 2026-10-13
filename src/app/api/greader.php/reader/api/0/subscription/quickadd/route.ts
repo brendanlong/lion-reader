@@ -95,7 +95,6 @@ export async function POST(request: Request): Promise<Response> {
       feedId = generateUuidv7();
       await db.insert(feeds).values({
         id: feedId,
-        type: "web",
         url: feedUrl,
         nextFetchAt: new Date(), // Fetch immediately
       });

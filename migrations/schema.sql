@@ -680,7 +680,7 @@ CREATE SEQUENCE public.greader_id_seq
 
 CREATE TABLE public.feeds (
     id uuid NOT NULL,
-    type public.feed_type NOT NULL,
+    type public.feed_type DEFAULT 'web'::public.feed_type NOT NULL,
     url text,
     title text,
     description text,

@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -40,17 +40,18 @@ import {
 // Test Helpers
 // ============================================================================
 
+// The column isn't mapped (the previous release's form; #1846 phase 7).
 async function getUserEntry(userId: string, entryId: string) {
-  const [row] = await db
-    .select({
-      subscriptionId: userEntries.subscriptionId,
-      isSpam: userEntries.isSpam,
-      publishedOrFetchedAt: userEntries.publishedOrFetchedAt,
-    })
-    .from(userEntries)
-    .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)))
-    .limit(1);
-  return row;
+  const result = await db.execute<{
+    subscriptionId: string | null;
+    isSpam: boolean;
+    publishedOrFetchedAt: string | null;
+  }>(sql`
+    SELECT subscription_id AS "subscriptionId", is_spam AS "isSpam",
+           published_or_fetched_at AS "publishedOrFetchedAt"
+    FROM user_entries WHERE user_id = ${userId} AND entry_id = ${entryId}
+  `);
+  return result.rows[0];
 }
 
 async function cleanupTables() {
@@ -128,12 +129,10 @@ describe("user_entries.subscription_id / is_spam denormalization", () => {
       const otherSubscriptionId = await createTestSubscription(userId, otherFeedId);
       const entryId = await createTestEntry(feedId, { isSpam: false });
 
-      await db.insert(userEntries).values({
-        userId,
-        entryId,
-        subscriptionId: otherSubscriptionId,
-        isSpam: true,
-      });
+      await db.execute(sql`
+        INSERT INTO user_entries (user_id, entry_id, subscription_id, is_spam)
+        VALUES (${userId}, ${entryId}, ${otherSubscriptionId}, true)
+      `);
 
       const row = await getUserEntry(userId, entryId);
       expect(row.subscriptionId).toBe(otherSubscriptionId);

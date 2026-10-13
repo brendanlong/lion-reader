@@ -4,15 +4,14 @@
  * A collection is a list of articles the user fills by hand (or through an AI
  * assistant). It is a subscription of type 'collection' with no feed (#1846),
  * so everything that handles subscriptions (tags, renaming, unread counters,
- * the sidebar, deletion) handles collections too. Members are referenced
- * through `collection_entries`, never copied: an article keeps its source feed
- * and its read/starred state.
+ * the sidebar, deletion) handles collections too. Members are memberships
+ * (`subscription_entries`), never copies: an article keeps its source feed and
+ * its read/starred state.
  */
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx, Transaction } from "@/server/db";
 import {
-  collectionEntries,
   subscriptionEntries,
   subscriptions,
   userEntries,
@@ -32,6 +31,7 @@ import {
 import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 import { isUniqueViolation } from "@/server/db/errors";
+import { legacyMembershipForms } from "@/server/services/subscription-entries";
 
 /** The user's active collections holding an entry. */
 export async function listEntryCollectionIds(
@@ -291,21 +291,28 @@ export async function addEntriesToCollection(
       throw errors.validation(`A collection can hold at most ${MAX_COLLECTION_ENTRIES} articles`);
     }
     const inserted = await tx
-      .insert(collectionEntries)
+      .insert(subscriptionEntries)
       .select(
         tx
           .select({
             subscriptionId: sql<string>`${subscriptionId}::uuid`.as("subscription_id"),
             userId: visibleEntries.userId,
             entryId: visibleEntries.id,
-            createdAt: sql<Date>`now()`.as("created_at"),
+            publishedOrFetchedAt: visibleEntries.publishedOrFetchedAt,
           })
           .from(visibleEntries)
           .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)))
       )
       .onConflictDoNothing()
-      .returning({ entryId: collectionEntries.entryId });
+      .returning({ entryId: subscriptionEntries.entryId });
     const ids = inserted.map((row) => row.entryId);
+    if (ids.length > 0 && (await legacyMembershipForms(tx))) {
+      await tx.execute(sql`
+        INSERT INTO collection_entries (subscription_id, user_id, entry_id)
+        SELECT ${subscriptionId}::uuid, ${userId}::uuid, unnest(${`{${ids.join(",")}}`}::uuid[])
+        ON CONFLICT DO NOTHING
+      `);
+    }
     await touchUserEntries(tx, userId, ids);
     return ids;
   });
@@ -324,16 +331,25 @@ export async function removeEntriesFromCollection(
     await assertOwnedCollections(tx, userId, [subscriptionId], { lock: true });
     if (entryIds.length === 0) return [];
     const deleted = await tx
-      .delete(collectionEntries)
+      .delete(subscriptionEntries)
       .where(
         and(
-          eq(collectionEntries.subscriptionId, subscriptionId),
-          eq(collectionEntries.userId, userId),
-          inArray(collectionEntries.entryId, entryIds)
+          eq(subscriptionEntries.subscriptionId, subscriptionId),
+          eq(subscriptionEntries.userId, userId),
+          inArray(subscriptionEntries.entryId, entryIds)
         )
       )
-      .returning({ entryId: collectionEntries.entryId });
+      .returning({ entryId: subscriptionEntries.entryId });
     const ids = deleted.map((row) => row.entryId);
+    if (await legacyMembershipForms(tx)) {
+      // All of entryIds, not just ids: a member only the previous release's
+      // form still holds would block its re-adding it.
+      await tx.execute(sql`
+        DELETE FROM collection_entries
+        WHERE subscription_id = ${subscriptionId} AND user_id = ${userId}
+          AND entry_id = ANY(${`{${entryIds.join(",")}}`}::uuid[])
+      `);
+    }
     await touchUserEntries(tx, userId, ids);
     return ids;
   });

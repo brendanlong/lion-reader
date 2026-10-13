@@ -6,14 +6,14 @@
  * counters match their definition afterwards.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import pg from "pg";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
-  collectionEntries,
   entries,
   feeds,
+  subscriptionEntries,
   subscriptionTags,
   subscriptions,
   tags,
@@ -37,10 +37,10 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
+  setMembershipMirror,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
-  await db.delete(collectionEntries);
   await db.delete(userEntries);
   await db.delete(entries);
   await db.delete(subscriptionTags);
@@ -103,9 +103,26 @@ async function feedWithEntries(userId: string, count: number) {
   return { subscriptionId, entryIds };
 }
 
-describe("unread counters under concurrent writes", () => {
+/** Fans each feed's new article out to its subscribers, as fetches do. */
+function fanOutNewEntries(feedIds: string[]): Array<Promise<unknown>> {
+  return feedIds.map(async (feedId) => {
+    const entryId = await createTestEntry(feedId);
+    await createUserEntriesForFeed(feedId, [entryId]);
+  });
+}
+
+// With the previous release's membership mirror triggers on (a rollout) and
+// off (this release alone; #1846).
+describe.each([
+  ["on", true],
+  ["off", false],
+])("unread counters under concurrent writes, mirror triggers %s", (_, mirror) => {
+  beforeAll(() => setMembershipMirror(mirror));
   beforeEach(cleanup);
-  afterAll(cleanup);
+  afterAll(async () => {
+    await setMembershipMirror(true);
+    await cleanup();
+  });
 
   it("concurrent adds to one collection all succeed", async () => {
     const userId = await createTestUser();
@@ -227,7 +244,28 @@ describe("unread counters under concurrent writes", () => {
     const userIds = await createUsers(20);
     const feeds = await subscribeAll(userIds, 20);
 
-    await expectAllFulfilled(feeds.map((feedId) => createTestEntry(feedId, { userIds })));
+    await expectAllFulfilled(fanOutNewEntries(feeds));
+    await expectNoDrift();
+  });
+
+  it("fan-outs while their subscribers mark articles read all succeed", async () => {
+    // A fan-out's membership triggers lock the subscriptions before its row
+    // triggers lock the users, the order a mark-read takes them in.
+    const userIds = await createUsers(10);
+    const feeds = await subscribeAll(userIds, 5);
+    const existing: string[] = [];
+    for (const feedId of feeds) {
+      const entryId = await createTestEntry(feedId);
+      await createUserEntriesForFeed(feedId, [entryId]);
+      existing.push(entryId);
+    }
+
+    await expectAllFulfilled([
+      ...fanOutNewEntries(feeds),
+      ...userIds.flatMap((userId) =>
+        existing.map((id) => markEntriesRead(db, userId, [{ id }], true))
+      ),
+    ]);
     await expectNoDrift();
   });
 
@@ -256,8 +294,7 @@ describe("unread counters under concurrent writes", () => {
       .where(eq(feeds.id, await createTestFeed()));
 
     const merge = migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
-    const fanouts = live.map((feedId) => createTestEntry(feedId, { userIds }));
-    await expectAllFulfilled([merge, ...fanouts]);
+    await expectAllFulfilled([merge, ...fanOutNewEntries(live)]);
     await expectNoDrift();
   });
 
@@ -332,6 +369,62 @@ describe("unread counters under concurrent writes", () => {
       await client.end();
     }
 
+    await expectNoDrift();
+  });
+});
+
+describe("a fan-out that loses a deadlock (#1846)", () => {
+  beforeEach(cleanup);
+  afterAll(async () => {
+    await setMembershipMirror(true);
+    await cleanup();
+  });
+
+  it("retries, so the fetch's new entries still reach every subscriber", async () => {
+    // A WebSub push runs outside the per-feed job, so another fan-out of the
+    // same entries can take the rows before the memberships: the previous
+    // release does (its mirror trigger copies the row at the end of the
+    // statement). Replay that by hand, with the mirror off, so the fetch's
+    // fan-out (memberships first) waits on the other's row while the other
+    // waits on its membership. The fetch waited first, so it's the victim; a
+    // fetch never fans the same entries out again, so it must retry.
+    await setMembershipMirror(false);
+    const [first, second] = await createUsers(2);
+    const [feedId] = await subscribeAll([first, second], 1);
+    const entryId = await createTestEntry(feedId);
+    const [{ id: firstSub }] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, first), eq(subscriptions.feedId, feedId)));
+
+    const other = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await other.connect();
+    try {
+      const { rows } = await other.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      await other.query("BEGIN");
+      await other.query("INSERT INTO user_entries (user_id, entry_id) VALUES ($1, $2)", [
+        first,
+        entryId,
+      ]);
+      const fanout = createUserEntriesForFeed(feedId, [entryId]);
+      await waitUntilBlockedBy(rows[0].pid);
+      await other.query(
+        `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+         SELECT $1, user_id, entry_id, published_or_fetched_at FROM user_entries
+         WHERE user_id = $2 AND entry_id = $3`,
+        [firstSub, first, entryId]
+      );
+      await other.query("COMMIT");
+      await fanout;
+    } finally {
+      await other.end();
+    }
+
+    const held = await db
+      .select({ userId: subscriptionEntries.userId })
+      .from(subscriptionEntries)
+      .where(eq(subscriptionEntries.entryId, entryId));
+    expect(held.map((r) => r.userId).sort()).toEqual([first, second].sort());
     await expectNoDrift();
   });
 });

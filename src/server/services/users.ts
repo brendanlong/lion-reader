@@ -41,7 +41,7 @@ export async function deleteUser(db: Database, userId: string): Promise<void> {
       .select({ id: feeds.id })
       .from(subscriptions)
       .innerJoin(feeds, eq(feeds.id, subscriptions.feedId))
-      .where(and(eq(subscriptions.userId, userId), eq(feeds.type, "web")));
+      .where(eq(subscriptions.userId, userId));
 
     // Step 2: Delete the user. This cascades to:
     // - sessions, api_tokens, oauth_accounts

@@ -287,28 +287,62 @@ DO UPDATE SET next_run_at = COALESCE(jobs.next_run_at, now()), updated_at = now(
 RETURNING *`,
 });
 
+/** `insertUserEntriesWithMemberships` (services/subscription-entries.ts) for `candidates`. */
+const insertWithMembershipsSql = (label: string, candidates: string): Statement => ({
+  label,
+  sql: `WITH c AS (${candidates}),
+missing AS (
+  SELECT c.subscription_id, c.user_id, c.entry_id, c.is_spam, c.read,
+         COALESCE(ue.published_or_fetched_at, c.published_or_fetched_at) AS published_or_fetched_at
+  FROM c
+  LEFT JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+  WHERE NOT EXISTS (
+    SELECT 1 FROM subscription_entries se
+    WHERE se.subscription_id = c.subscription_id AND se.entry_id = c.entry_id
+  )
+),
+new_rows AS (
+  INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, is_spam, read)
+  SELECT user_id, entry_id, published_or_fetched_at, is_spam, read FROM missing
+  ON CONFLICT DO NOTHING
+)
+INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+SELECT subscription_id, user_id, entry_id, published_or_fetched_at FROM missing
+ON CONFLICT DO NOTHING
+RETURNING subscription_id, entry_id`,
+});
+
+/** `holdsRedirectTwin` (services/subscription-entries.ts). */
+const holdsRedirectTwinSql = (subscriptionId: string, entry: string): string => `EXISTS (
+    SELECT 1
+    FROM entries e_prev
+    JOIN subscription_entries se_prev
+      ON se_prev.subscription_id = ${subscriptionId} AND se_prev.entry_id = e_prev.id
+    WHERE e_prev.type = 'web'
+      AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(${entry}.guid, '^https?://', 'https://')
+      AND e_prev.owner_feed_id <> ${entry}.owner_feed_id
+  )`;
+
+/** `legacyMembershipForms` (services/subscription-entries.ts). */
+const legacyFormsSql: Statement = {
+  label: "legacy_forms",
+  sql: `SELECT to_regclass('public.collection_entries') IS NOT NULL AS present`,
+};
+
 /** `populateInitialUserEntries` (services/subscriptions.ts). */
-const populateSql = (userId: string, subscriptionId: string, feedId: string): Statement => ({
-  label: "populate",
-  sql: `INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
-SELECT ${q(userId)}, e.id, COALESCE(e.published_at, e.fetched_at), ${q(subscriptionId)}, e.is_spam, e.is_backfill
+const populateSql = (userId: string, subscriptionId: string, feedId: string): Statement =>
+  insertWithMembershipsSql(
+    "populate",
+    `SELECT ${q(subscriptionId)}::uuid AS subscription_id, ${q(userId)}::uuid AS user_id, e.id AS entry_id,
+       COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+       e.is_spam, e.is_backfill AS read
 FROM entries e
 JOIN feeds f ON f.id = e.owner_feed_id
 WHERE e.owner_feed_id = ${q(feedId)}
   AND f.last_entries_updated_at IS NOT NULL
   AND e.last_seen_at >= f.last_entries_updated_at
-  AND NOT EXISTS (
-    SELECT 1
-    FROM entries e_prev
-    JOIN user_entries ue_existing
-      ON ue_existing.user_id = ${q(userId)} AND ue_existing.entry_id = e_prev.id
-    WHERE e_prev.type = 'web'
-      AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(e.guid, '^https?://', 'https://')
-      AND e_prev.owner_feed_id != e.owner_feed_id
-      AND ue_existing.subscription_id = ${q(subscriptionId)}
-  )
-ON CONFLICT DO NOTHING`,
-});
+  AND NOT ${holdsRedirectTwinSql(`${q(subscriptionId)}::uuid`, "e")}`
+  );
 
 /** `lockSubscriptionMembers` (services/subscriptions.ts) for the subscriptions matching `where`. */
 const lockMembersSql = (userId: string, where: string): Statement => ({
@@ -406,16 +440,25 @@ FOR NO KEY UPDATE OF subscriptions`,
     },
     {
       label: "count",
-      sql: `SELECT count(*)::int FROM collection_entries WHERE collection_entries.subscription_id = ${q(collection)}`,
+      sql: `SELECT count(*)::int FROM subscription_entries WHERE subscription_entries.subscription_id = ${q(collection)}`,
     },
     {
       label: "insert",
-      sql: `INSERT INTO collection_entries (subscription_id, user_id, entry_id, created_at)
-SELECT ${q(collection)}::uuid AS subscription_id, ve.user_id, ve.id, now() AS created_at
+      sql: `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+SELECT ${q(collection)}::uuid AS subscription_id, ve.user_id, ve.id, ve.published_or_fetched_at
 FROM visible_entries ve
 WHERE ve.user_id = ${q(userId)} AND ve.id IN (${ids})
 ON CONFLICT DO NOTHING
-RETURNING collection_entries.entry_id`,
+RETURNING subscription_entries.entry_id`,
+    },
+    // For the previous release, every article inserted (all of them: the
+    // benchmark's collection starts empty).
+    legacyFormsSql,
+    {
+      label: "insert_legacy",
+      sql: `INSERT INTO collection_entries (subscription_id, user_id, entry_id)
+SELECT ${q(collection)}::uuid, ${q(userId)}::uuid, unnest(${uuidArray(entryIds)})
+ON CONFLICT DO NOTHING`,
     },
     // touchUserEntries
     {
@@ -1072,27 +1115,18 @@ WHERE entries.owner_feed_id = ${q(feedId)} AND entries.last_seen_at >= ${ts(feed
 WHERE entries.id IN (${list(allIds)})
   AND (entries.last_seen_at IS NULL OR entries.last_seen_at < ${ts(fetchedAt)})`,
     },
-    {
-      label: "fanout",
-      sql: `INSERT INTO user_entries (user_id, entry_id, published_or_fetched_at, subscription_id, is_spam, read)
-SELECT s.user_id, e.id, COALESCE(e.published_at, e.fetched_at), s.id, e.is_spam, e.is_backfill
+    insertWithMembershipsSql(
+      "fanout",
+      `SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
+       COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+       e.is_spam, e.is_backfill AS read
 FROM subscriptions s
 INNER JOIN entries e ON e.owner_feed_id = s.feed_id
 WHERE s.feed_id = ${q(feedId)}::uuid
   AND s.unsubscribed_at IS NULL
   AND e.id = ANY(${uuidArray(allIds)})
-  AND NOT EXISTS (
-    SELECT 1
-    FROM entries e_prev
-    JOIN user_entries ue_existing
-      ON ue_existing.user_id = s.user_id AND ue_existing.entry_id = e_prev.id
-    WHERE e_prev.type = 'web'
-      AND regexp_replace(e_prev.guid, '^https?://', 'https://') = regexp_replace(e.guid, '^https?://', 'https://')
-      AND e_prev.owner_feed_id != s.feed_id
-      AND ue_existing.subscription_id = s.id
-  )
-ON CONFLICT DO NOTHING`,
-    },
+  AND NOT ${holdsRedirectTwinSql("s.id", "e")}`
+    ),
   ];
 }
 
@@ -1227,8 +1261,8 @@ WHERE user_entries.user_id = ${q(U0)} AND user_entries.entry_id IN (${q(entry.id
         statements: [
           {
             label: "upsert_feed",
-            sql: `INSERT INTO feeds (id, type, url, title, description, site_url, next_fetch_at, created_at, updated_at)
-VALUES (${q(benchUuid("bench:new-feed"))}, 'web', ${q(url)}, NULL, NULL, NULL, ${now}, ${now}, ${now})
+            sql: `INSERT INTO feeds (id, url, title, description, site_url, next_fetch_at, created_at, updated_at)
+VALUES (${q(benchUuid("bench:new-feed"))}, ${q(url)}, NULL, NULL, NULL, ${now}, ${now}, ${now})
 ON CONFLICT (url) DO NOTHING`,
           },
           { label: "select_feed", sql: `SELECT * FROM feeds WHERE feeds.url = ${q(url)} LIMIT 1` },
@@ -1332,15 +1366,18 @@ ON CONFLICT DO NOTHING
 RETURNING entries.id`,
           },
           {
-            label: "insert_user_entry",
-            sql: `INSERT INTO user_entries (user_id, entry_id, read, starred) VALUES (${q(U0)}, ${q(entryId)}, false, false)`,
+            label: "ensure_saved_subscription",
+            sql: `SELECT ensure_saved_subscriptions(ARRAY[${q(U0)}::uuid])`,
           },
-          // getSavedSubscriptionId, for the new_entry event
-          {
-            label: "saved_subscription",
-            sql: `SELECT subscriptions.id FROM subscriptions
-WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.type = 'saved' LIMIT 1`,
-          },
+          insertWithMembershipsSql(
+            "insert_user_entry",
+            `SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
+       COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+       e.is_spam, false AS read
+FROM subscriptions s
+JOIN entries e ON e.id = ${q(entryId)}
+WHERE s.user_id = ${q(U0)} AND s.type = 'saved'`
+          ),
         ],
       };
     },
@@ -1403,11 +1440,14 @@ VALUES (${q(entryId)}, ${q(owner.id)}, 'email', ${q(messageId)}, NULL,
   ${q(article.summary)}, ${now}, ${now}, ${q(benchUuid(messageId))}, 1.5, false, 'mailto:unsubscribe@example.net',
   NULL, false, NULL)`,
           },
-          {
-            label: "insert_user_entry",
-            sql: `INSERT INTO user_entries (user_id, entry_id, subscription_id)
-VALUES (${q(U0)}, ${q(entryId)}, ${q(owner.id)})`,
-          },
+          insertWithMembershipsSql(
+            "insert_user_entry",
+            `SELECT ${q(owner.id)}::uuid AS subscription_id, ${q(U0)}::uuid AS user_id, e.id AS entry_id,
+       COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+       e.is_spam, false AS read
+FROM entries e
+WHERE e.id = ${q(entryId)}`
+          ),
         ],
       };
     },
@@ -1461,9 +1501,18 @@ RETURNING id`,
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.feed_id = ${q(newFeed)}`,
           },
           {
+            label: "copy_memberships",
+            sql: `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+SELECT ${q(survivor)}::uuid, user_id, entry_id, published_or_fetched_at
+FROM subscription_entries
+WHERE subscription_id = ${q(subMergeSource)}
+ON CONFLICT DO NOTHING`,
+          },
+          legacyFormsSql,
+          {
             label: "restamp",
             sql: `UPDATE user_entries SET subscription_id = ${q(survivor)}
-WHERE user_entries.user_id = ${q(U0)} AND user_entries.subscription_id = ${q(subMergeSource)}`,
+WHERE user_id = ${q(U0)} AND subscription_id = ${q(subMergeSource)}`,
           },
           {
             label: "clear_survivor_tags",

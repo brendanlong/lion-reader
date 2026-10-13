@@ -10,6 +10,7 @@ import { db } from "../../src/server/db";
 import {
   blockedSenders,
   entries,
+  subscriptionEntries,
   subscriptions,
   userEntries,
   users,
@@ -94,11 +95,14 @@ describe("email and saved lookups by owner (#1846)", () => {
     const entry = await entryRow(result.entryId!);
     expect(entry.ownerSubscriptionId).toBe(subscriptionId);
     expect(entry.ownerFeedId).toBeNull();
-    const [{ stamped }] = await db
-      .select({ stamped: userEntries.subscriptionId })
-      .from(userEntries)
-      .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entry.id)));
-    expect(stamped).toBe(subscriptionId);
+    expect(
+      await db
+        .select({ subscriptionId: subscriptionEntries.subscriptionId })
+        .from(subscriptionEntries)
+        .where(
+          and(eq(subscriptionEntries.userId, userId), eq(subscriptionEntries.entryId, entry.id))
+        )
+    ).toEqual([{ subscriptionId }]);
 
     const listed = await listEntries(db, { userId, type: "email", showSpam: false });
     expect(listed.items).toMatchObject([

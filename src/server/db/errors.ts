@@ -14,9 +14,21 @@ const PG_UNIQUE_VIOLATION = "23505";
  * cause chain.
  */
 export function isUniqueViolation(error: unknown): boolean {
+  return hasSqlState(error, PG_UNIQUE_VIOLATION);
+}
+
+/** Postgres SQLSTATE for a transaction aborted as a deadlock victim. */
+const PG_DEADLOCK_DETECTED = "40P01";
+
+/** Returns true if the error is a Postgres deadlock abort (walks `cause` like `isUniqueViolation`). */
+export function isDeadlock(error: unknown): boolean {
+  return hasSqlState(error, PG_DEADLOCK_DETECTED);
+}
+
+function hasSqlState(error: unknown, code: string): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && typeof current === "object" && current !== null; depth++) {
-    if ((current as { code?: unknown }).code === PG_UNIQUE_VIOLATION) {
+    if ((current as { code?: unknown }).code === code) {
       return true;
     }
     current = (current as { cause?: unknown }).cause;

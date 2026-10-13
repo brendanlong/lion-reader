@@ -32,6 +32,7 @@ import {
   oauthClients,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { insertUserEntriesWithMemberships } from "../../src/server/services/subscription-entries";
 import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
 import type { Context } from "../../src/server/trpc/context";
 
@@ -84,7 +85,6 @@ export async function createTestFeed(
   const now = new Date();
   await db.insert(feeds).values({
     id: feedId,
-    type: "web",
     url: `https://example.com/feed-${feedId}.xml`,
     title: `Test Feed ${feedId}`,
     createdAt: now,
@@ -165,8 +165,9 @@ export async function createTestSavedSubscription(userId: string): Promise<strin
 export interface CreateTestEntryOptions extends Partial<typeof entries.$inferInsert> {
   /**
    * Users to make the entry visible to, by inserting unread `user_entries`
-   * rows. The BEFORE INSERT trigger stamps `subscription_id` from each user's
-   * subscription to this entry's feed, or for an email its owner.
+   * rows and each user's membership (#1846) in the entry's source: their
+   * subscription to its feed, for an email its owner, for a saved article
+   * their saved subscription (created if missing, as a first save does).
    */
   userIds?: string[];
   /** Users from `userIds` who have starred the entry. */
@@ -227,9 +228,65 @@ export async function createTestEntry(
         starred: starredBy.includes(userId),
       }))
     );
+    if (type === "saved") {
+      await db.execute(sql`SELECT ensure_saved_subscriptions(${`{${userIds.join(",")}}`}::uuid[])`);
+    }
+    await db.execute(sql`
+      INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+      SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
+      FROM user_entries ue
+      JOIN entries e ON e.id = ue.entry_id
+      JOIN subscriptions s ON s.user_id = ue.user_id
+        AND (s.feed_id = e.owner_feed_id OR s.id = e.owner_subscription_id
+             OR (e.type = 'saved' AND s.type = 'saved'))
+      WHERE ue.entry_id = ${entryId}
+      ON CONFLICT DO NOTHING
+    `);
   }
 
   return entryId;
+}
+
+/**
+ * Puts a user's article in `subscriptionId` (#1846), as a redirect merge
+ * copies an old feed's articles into the survivor, creating the user's row
+ * (unread unless `read`) if they have none.
+ */
+export async function createTestMembership(
+  subscriptionId: string,
+  userId: string,
+  entryId: string,
+  { read = false }: { read?: boolean } = {}
+): Promise<void> {
+  await insertUserEntriesWithMemberships(
+    db,
+    sql`
+      SELECT ${subscriptionId}::uuid AS subscription_id, ${userId}::uuid AS user_id, e.id AS entry_id,
+             COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+             e.is_spam, ${read}::boolean AS read
+      FROM entries e WHERE e.id = ${entryId}
+    `
+  );
+}
+
+/**
+ * Turns the triggers that copy the previous release's membership writes into
+ * `subscription_entries` (#1846) off or on, so a test can show a write path
+ * adds its memberships itself. A schema change for every connection: turn them
+ * back on in `afterAll`.
+ */
+export async function setMembershipMirror(enabled: boolean): Promise<void> {
+  const action = enabled ? "ENABLE" : "DISABLE";
+  await db.execute(
+    sql.raw(`
+      ALTER TABLE user_entries
+        ${action} TRIGGER user_entries_copy_memberships_insert_trigger,
+        ${action} TRIGGER user_entries_copy_membership_restamp_trigger;
+      ALTER TABLE collection_entries
+        ${action} TRIGGER collection_entries_copy_memberships_insert_trigger,
+        ${action} TRIGGER collection_entries_copy_memberships_delete_trigger;
+    `)
+  );
 }
 
 // ============================================================================

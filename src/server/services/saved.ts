@@ -5,13 +5,14 @@
  * Uses the plugin system for special URL handling (LessWrong, ArXiv, Google Docs, etc.).
  */
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { Parser } from "htmlparser2";
 import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
-import { getSavedSubscriptionId, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
+import { SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
+import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { listEntryCollectionIds, publishEntryLeftCollections } from "./collections";
 import { recordEntryTombstone } from "./entry-tombstones";
@@ -525,15 +526,22 @@ async function insertSavedEntry(
       return false;
     }
 
-    await tx.insert(userEntries).values({
-      userId,
-      entryId,
-      read: false,
-      starred: false,
-    });
-    // The membership trigger put it in the saved subscription (#1846), which
-    // is the article's origin.
-    return { savedSubscriptionId: await getSavedSubscriptionId(tx, userId) };
+    // The article belongs to the user's saved subscription (#1846), its origin,
+    // which their first save creates. (The one exception to the lock order:
+    // only another first save for this user contends for it.)
+    await tx.execute(sql`SELECT ensure_saved_subscriptions(ARRAY[${userId}::uuid])`);
+    const [membership] = await insertUserEntriesWithMemberships(
+      tx,
+      sql`
+        SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
+               COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+               e.is_spam, false AS read
+        FROM subscriptions s
+        JOIN entries e ON e.id = ${entryId}
+        WHERE s.user_id = ${userId} AND s.type = 'saved'
+      `
+    );
+    return { savedSubscriptionId: membership.subscriptionId };
   });
 
   if (!inserted) {
