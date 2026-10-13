@@ -19,7 +19,8 @@
  * `apply_unread_memberships` and `recompute_list_counters` maintain them.
  */
 
-import { eq, and, inArray, isNull, ne, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
+import { isListedSubscription } from "./subscriptions";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   subscriptionEntries,
@@ -152,8 +153,7 @@ export async function getBulkEntryRelatedCounts(
               and(
                 eq(subscriptionEntries.userId, userId),
                 isNull(subscriptions.unsubscribedAt),
-                // isListedSubscription(): the saved subscription is no list.
-                ne(subscriptions.type, "saved"),
+                isListedSubscription(),
                 // One array parameter: a mark-all-read can pass more ids than a
                 // statement takes parameters.
                 sql`${subscriptionEntries.entryId} = ANY(${`{${entryIds.join(",")}}`}::uuid[])`

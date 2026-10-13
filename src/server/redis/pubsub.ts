@@ -25,6 +25,7 @@ import {
 import { ANNOUNCEMENT_LEVELS, type Announcement } from "@/server/services/site-status";
 import { toEntryMetadata } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
+import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Event Schemas (single source of truth for both publishing and parsing)
@@ -152,7 +153,7 @@ const userEventSchema = z.discriminatedUnion("type", [
     // spam), so clients can insert it into cached lists it's missing from —
     // mirroring the new_entry payload (issue #1237).
     subscriptionId: z.string().nullable().optional(),
-    feedType: z.enum(["web", "email", "saved"]).optional(),
+    feedType: z.enum(ENTRY_TYPES).optional(),
     entry: newEntryListDataSchema.optional(),
     // Every active subscription holding the entry (#1846).
     subscriptionIds: z.array(z.string()).optional(),
@@ -364,7 +365,7 @@ interface UserEntryTarget {
   userId: string;
   /** The email subscription's id, or the saved subscription's (null when not looked up). */
   subscriptionId: string | null;
-  feedType: "email" | "saved";
+  feedType: Exclude<EntryType, "web">;
 }
 
 /**
@@ -649,7 +650,7 @@ export async function publishImportCompleted(
  */
 export interface EntryStateListData {
   subscriptionId: string | null;
-  feedType: "web" | "email" | "saved";
+  feedType: EntryType;
   entry: NewEntryListData;
 }
 

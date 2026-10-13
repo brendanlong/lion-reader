@@ -13,6 +13,7 @@ import superjson from "superjson";
 import type { SyncEvent } from "@/lib/events/schemas";
 import type { AppRouter } from "@/server/trpc/root";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
+import type { EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Types
@@ -20,7 +21,7 @@ import type { TRPCClientUtils } from "@/lib/trpc/client";
 
 export interface SeededSubscription {
   id: string;
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string | null;
   originalTitle: string | null;
@@ -45,7 +46,7 @@ export interface SeededEntry {
   id: string;
   subscriptionId: string | null;
   subscriptionIds: string[];
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;

@@ -10,11 +10,7 @@
  */
 
 import { extractParamsFromPathname } from "@/lib/navigation";
-
-/**
- * Entry type filter options.
- */
-export type EntryType = "web" | "email" | "saved";
+import type { EntryType } from "@/lib/entry-types";
 
 /**
  * Input parameters for entries.list query.

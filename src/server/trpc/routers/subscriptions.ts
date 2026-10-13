@@ -24,6 +24,7 @@ import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
 import { getDomainFromUrl } from "@/server/feed/types";
 import { getFeedHooks } from "@/server/plugins";
+import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
 import { OpmlParseError } from "@/server/feed/opml";
 import { scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
@@ -70,7 +71,7 @@ const tagOutputSchema = z.object({
  */
 export const subscriptionOutputSchema = z.object({
   id: z.string(), // subscription ID (primary key)
-  type: z.enum(["web", "email", "saved", "collection"]),
+  type: z.enum(SUBSCRIPTION_TYPES),
   url: z.string().nullable(),
   title: z.string().nullable(), // resolved title (custom or original)
   originalTitle: z.string().nullable(), // feed's original title for rename UI

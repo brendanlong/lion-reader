@@ -12,6 +12,7 @@
 import { hashKey } from "@tanstack/react-query";
 import type { EntryRow } from "./entries";
 import type { SyncedCollection } from "./synced-collection";
+import type { EntryType } from "@/lib/entry-types";
 
 export type ListEntryRow = {
   key: string;
@@ -35,7 +36,7 @@ export interface EntryListFilters {
   starredOnly?: boolean;
   sortOrder?: "newest" | "oldest";
   sortBy?: "published" | "readChanged";
-  type?: "web" | "email" | "saved";
+  type?: EntryType;
   query?: string;
   limit?: number;
 }
