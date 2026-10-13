@@ -86,9 +86,8 @@ export interface ListEntriesParams {
   // time (index-backed); "readChanged" = read-state-change time (the recently-read
   // view, which also excludes never-read entries); "archived" = read-state-change
   // time WITHOUT the recently-read exclusion (Wallabag sort=archived). All three
-  // are served by an existing index; there is deliberately no "updated"
-  // (GREATEST(entry, user_entry)) sort — it can't be index-served (see #1070), so
-  // the Wallabag route approximates sort=updated as the default published sort.
+  // are served by an existing index. There is no "updated" sort: the Wallabag
+  // route approximates sort=updated as the default published sort.
   sortBy?: "published" | "readChanged" | "archived";
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
@@ -96,7 +95,7 @@ export interface ListEntriesParams {
   maxLimit?: number; // Override MAX_ENTRIES_PAGE_SIZE (e.g., for Google Reader API which needs larger batches)
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
-  updatedAfter?: Date; // Only entries modified at/after this timestamp (GREATEST(entry.updated_at, user_entries.updated_at); powers Wallabag `since` delta sync)
+  updatedAfter?: Date; // Only entries modified at/after this timestamp (user_entries.changed_at; powers Wallabag `since` delta sync)
   collectionIdGroups?: string[][]; // See EntryConditionParams.collectionIdGroups
   showSpam: boolean;
 }
@@ -1243,7 +1242,7 @@ export async function getEntries(
  * The two roles are carried by two columns (issue #1118 Part 2): `read_changed_at`
  * is the last-writer-wins watermark and advances on every accepted write, while
  * `updated_at` is the "meaningful change" timestamp that drives delta sync
- * (`sync.events`, Wallabag `since`, both through `visible_entries.updated_at`) and
+ * (`sync.events`, Wallabag `since`, both through `user_entries.changed_at`) and
  * moves ONLY on a real flip. So a same-value re-assert advances the watermark but
  * leaves `updated_at` alone, and offline/polling clients don't re-fetch it.
  *
@@ -1327,8 +1326,8 @@ export async function writeEntriesRead(
   );
 
   // `updated_at` is the "meaningful change" timestamp that drives delta sync
-  // (`sync.events` and Wallabag `since`, both via `visible_entries.updated_at =
-  // GREATEST(entry, user_entry)`), so it moves ONLY when the read value actually
+  // (`sync.events` and Wallabag `since`, both via `user_entries.changed_at`),
+  // so it moves ONLY when the read value actually
   // flips — a same-value re-assert must not re-deliver the entry to offline
   // clients (issue #1118 Part 2). The last-writer-wins watermark
   // (`read_changed_at`) is a SEPARATE column and still advances on every
@@ -1553,8 +1552,7 @@ export async function markAllEntriesRead(
  * still matches no row.
  *
  * The projected columns are what a read through the view gives: the view
- * emits `GREATEST(entries.updated_at, user_entries.updated_at)` as
- * `updated_at`, and the origin and memberships are looked up the same way.
+ * emits `user_entries.changed_at` as `updated_at`, and the origin and memberships are looked up the same way.
  */
 async function selectStarredEntryStates(
   db: DbOrTx,
@@ -1569,9 +1567,7 @@ async function selectStarredEntryStates(
       read: userEntries.read,
       starred: userEntries.starred,
       type: entries.type,
-      updatedAt: sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`.mapWith(
-        userEntries.updatedAt
-      ),
+      updatedAt: sql`${userEntries.changedAt}`.mapWith(userEntries.updatedAt),
       readChangedAt: userEntries.readChangedAt,
     })
     .from(userEntries)
