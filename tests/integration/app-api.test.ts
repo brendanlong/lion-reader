@@ -25,6 +25,7 @@ import {
 import { createApiToken } from "../../src/server/auth/api-token";
 import { RATE_LIMIT_CONFIGS } from "../../src/server/rate-limit";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { BUILD_ID } from "../../src/lib/build-id";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
@@ -47,6 +48,7 @@ import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { GET as restHandler } from "../../src/app/api/v1/[...path]/route";
 import { GET as authorizeGet } from "../../src/app/(spa)/oauth/authorize/route";
+import { openSseStream } from "../utils/sse";
 import {
   createTestEntry,
   createTestFeed,
@@ -175,6 +177,16 @@ describe("app token authentication", () => {
     expect((await events(mcpAudience)).status).toBe(401);
     const { token: apiToken } = await createApiToken(userId, ["mcp"]);
     expect((await events(apiToken)).status).toBe(401);
+  });
+
+  it("opens every SSE stream with a hello naming the server's build", async () => {
+    const stream = await openSseStream(await createUser());
+    try {
+      expect(await stream.waitFor("hello")).toEqual({ buildId: BUILD_ID });
+      expect(stream.text.startsWith("event: hello\n")).toBe(true);
+    } finally {
+      await stream.close();
+    }
   });
 
   it("rejects the app's token without reader:full-access", async () => {

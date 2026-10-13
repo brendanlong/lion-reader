@@ -195,6 +195,8 @@ No-op re-saves publish no `subscription_updated` ("Row Written vs. Value Flipped
 
 **Key principle:** SSE events write the local store and caches directly and must NOT trigger `entries.*` refetches (enforced by e2e tests via `recordTrpcProcedures`). Counts are always set to absolute server-provided values (idempotent — duplicate SSE/sync delivery can't drift them). The **one deliberate exception** is `mark_all_read`: mark-all-read is unbounded, so patching every entry (or shipping every id) isn't worth it, and the event invalidates `entries.list` instead — refetching a list the user just cleared is an acceptable rare cost.
 
+**Another deploy's server:** every stream opens with a `hello` naming the server's build (`BUILD_ID`). When it differs from the page's, `RealtimeProvider` turns the next client-side navigation into a full page load, so a tab left open across a deploy picks up the new JavaScript. Events from the newer server still apply in the meantime, so event schemas still tolerate fields one release apart.
+
 **Catch-up sync after (re)connect (#1081):** on SSE `open`, `useRealtimeUpdates` runs a catch-up sync against `sync.events` from the current cursors. Its decisions live in the pure reducer `reduceSyncSession` (`src/lib/events/sync-session.ts`), which upholds these invariants so it can't lose changes made while disconnected:
 
 - **Retry on failure.** A failed catch-up sync is retried with exponential backoff (2s→30s) even in the `connected` phase (the `polling` phase already retries every 30s). Without the retry, one failure would strand the gap on an idle view.

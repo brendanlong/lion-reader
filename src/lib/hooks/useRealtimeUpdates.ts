@@ -36,7 +36,8 @@ import {
   type ConnectionStatus,
 } from "@/lib/events/connection-state";
 import type { SyncCursors } from "@/lib/events/cursors";
-import { parseSyncEvent } from "@/lib/events/parse";
+import { parseHelloEvent, parseSyncEvent } from "@/lib/events/parse";
+import { BUILD_ID, isOtherBuild } from "@/lib/build-id";
 import {
   initialSyncSession,
   reduceSyncSession,
@@ -63,6 +64,9 @@ export interface UseRealtimeUpdatesResult {
    * Manually trigger a reconnection attempt.
    */
   reconnect: () => void;
+
+  /** The server runs another deploy than this page's JavaScript. */
+  serverBuildChanged: boolean;
 }
 
 /**
@@ -114,6 +118,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   const queryClient = useQueryClient();
 
   const [state, setState] = useState<ConnectionState>(INITIAL_CONNECTION_STATE);
+  const [serverBuildChanged, setServerBuildChanged] = useState(false);
 
   // Refs to persist across renders
   const stateRef = useRef<ConnectionState>(state);
@@ -313,6 +318,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         dispatchEvent({ type: "open" });
       };
 
+      eventSource.addEventListener("hello", (event) => {
+        const hello = parseHelloEvent(event.data);
+        if (hello && isOtherBuild(hello.buildId, BUILD_ID)) setServerBuildChanged(true);
+      });
       for (const eventName of SSE_EVENT_NAMES) {
         eventSource.addEventListener(eventName, (event) => handleEventRef.current(event));
       }
@@ -397,5 +406,6 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
   return {
     status: connectionStatusForPhase(state.phase),
     reconnect,
+    serverBuildChanged,
   };
 }

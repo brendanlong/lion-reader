@@ -436,6 +436,13 @@ const coreEventSchema = z.discriminatedUnion("type", [
   collectionEntriesChangedEventSchema,
 ]);
 
+/**
+ * The first event on every SSE stream, naming the build the server runs
+ * (`BUILD_ID` in `src/lib/build-id.ts`). Not a sync event: it carries no
+ * state and never advances a cursor.
+ */
+export const helloEventSchema = z.object({ buildId: z.string().optional() });
+
 export const ANNOUNCEMENT_LEVELS = ["info", "warning"] as const;
 
 /**

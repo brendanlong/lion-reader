@@ -19,6 +19,9 @@
  * - import_completed: OPML import completed
  * - announcement_changed: Global announcement banner changed (broadcast to all)
  *
+ * hello: Sent first on every stream, with the server's build id, so a page
+ * running another deploy's JavaScript can reload.
+ *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat). Each heartbeat
  * also re-checks the session or app token the stream was opened with, and
  * closes the stream once it's revoked or expired — otherwise a stream would
@@ -47,8 +50,10 @@ import { eq, and, isNull } from "drizzle-orm";
 import type {
   NewEntryListData,
   entryUpdatedEventSchema,
+  helloEventSchema,
   newEntryEventSchema,
 } from "@/lib/events/schemas";
+import { BUILD_ID } from "@/lib/build-id";
 import type { z } from "zod";
 import {
   incrementSSEConnections,
@@ -156,6 +161,10 @@ function withoutFeedId(event: UserEvent): object {
 function formatSSEUserEvent(event: UserEvent): string {
   const cursor = new Date().toISOString();
   return `event: ${event.type}\nid: ${cursor}\ndata: ${JSON.stringify(withoutFeedId(event))}\n\n`;
+}
+
+function formatSSEHello(): string {
+  return `event: hello\ndata: ${JSON.stringify({ buildId: BUILD_ID } satisfies z.input<typeof helloEventSchema>)}\n\n`;
 }
 
 /**
@@ -604,12 +613,11 @@ export async function GET(req: Request): Promise<Response> {
           void closeIfCredentialInactive();
         }, HEARTBEAT_INTERVAL_MS);
 
-        // Send an initial heartbeat to confirm the connection. (The client
-        // detects "connected" from the EventSource open event, and tracks sync
-        // cursors from the events themselves, so no separate cursor event is
-        // sent.)
-        send(formatSSEHeartbeat());
-        trackSSEEventSent("heartbeat");
+        // Flush the headers with a first event. (The client detects
+        // "connected" from the EventSource open event, and tracks sync cursors
+        // from the events themselves, so no separate cursor event is sent.)
+        send(formatSSEHello());
+        trackSSEEventSent("hello");
       } catch (err) {
         console.error("Failed to set up SSE connection:", err);
         cleanup();
