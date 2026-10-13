@@ -764,6 +764,21 @@ describe("extractBaseHref", () => {
     const html = '<html><head><base target="_blank"></head></html>';
     expect(extractBaseHref(html, "https://example.com/page")).toBe("https://example.com/page");
   });
+
+  it.each([
+    ["after </head>", '<html><head></head><base href="/body/"></html>'],
+    ["after <body> with no </head>", '<html><head><body class="x"><base href="/body/"></html>'],
+  ])("ignores a <base> %s", (_case, html) => {
+    expect(extractBaseHref(html, "https://example.com/page")).toBe("https://example.com/page");
+  });
+
+  it("stays linear on repeated unclosed <base fragments", () => {
+    // `[^>]*` here took ~1.5s on this 120 KB input (quadratic).
+    const hostile = "<base ".repeat(20000) + '><base href="/real/">';
+    const started = performance.now();
+    expect(extractBaseHref(hostile, "https://example.com")).toBe("https://example.com/real/");
+    expect(performance.now() - started).toBeLessThan(200);
+  });
 });
 
 describe("cleanLessWrongContent", () => {
