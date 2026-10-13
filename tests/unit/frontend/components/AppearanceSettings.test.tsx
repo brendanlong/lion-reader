@@ -89,8 +89,10 @@ describe("AppearanceSettings hydration", () => {
 
       expect(recoverableErrors).toEqual([]);
       // After hydration the stored theme shows.
-      const selected = container.querySelector("button.bg-primary-solid");
-      expect(selected?.textContent).toBe(stored === "dark" ? "Dark" : "Auto");
+      const selectedTheme = [...container.querySelectorAll('button[aria-pressed="true"]')]
+        .map((button) => button.textContent)
+        .find((label) => label && ["Auto", "Light", "Dark", "E-paper"].includes(label));
+      expect(selectedTheme).toBe(stored === "dark" ? "Dark" : "Auto");
 
       await act(async () => {
         root?.unmount();

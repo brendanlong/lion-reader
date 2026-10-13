@@ -32,6 +32,7 @@ function OptionButton({ selected, onClick, children }: OptionButtonProps) {
   return (
     <button
       type="button"
+      aria-pressed={selected}
       onClick={onClick}
       className={`ui-text-sm rounded-md px-4 py-2 font-medium transition-colors ${
         selected

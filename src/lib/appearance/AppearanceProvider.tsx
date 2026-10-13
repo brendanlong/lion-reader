@@ -8,17 +8,12 @@
 "use client";
 
 import { createContext, useContext, useEffect, useCallback, useMemo, type ReactNode } from "react";
-import { useTheme } from "next-themes";
 import { useAppearanceSettings, type AppearanceSettings } from "./settings";
 import { ENTRY_TEXT_STYLE, entryTextStyleVars } from "./config";
 
 interface AppearanceContextValue {
   settings: AppearanceSettings;
   updateSettings: (settings: Partial<AppearanceSettings>) => void;
-  /** The resolved theme (never "system"). Undefined during SSR. */
-  resolvedTheme: "light" | "dark" | "epaper" | undefined;
-  /** Set the theme ("light", "dark", "epaper", or "system") */
-  setTheme: (theme: string) => void;
 }
 
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
@@ -29,7 +24,6 @@ interface AppearanceProviderProps {
 
 export function AppearanceProvider({ children }: AppearanceProviderProps) {
   const [settings, setSettings] = useAppearanceSettings();
-  const { resolvedTheme, setTheme } = useTheme();
 
   const updateSettings = useCallback(
     (partial: Partial<AppearanceSettings>) => {
@@ -42,10 +36,8 @@ export function AppearanceProvider({ children }: AppearanceProviderProps) {
     () => ({
       settings,
       updateSettings,
-      resolvedTheme: resolvedTheme as "light" | "dark" | "epaper" | undefined,
-      setTheme,
     }),
-    [settings, updateSettings, resolvedTheme, setTheme]
+    [settings, updateSettings]
   );
 
   return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
