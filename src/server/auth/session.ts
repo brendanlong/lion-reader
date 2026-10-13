@@ -409,15 +409,16 @@ export async function validateSession(
 }
 
 /**
- * How stale the denormalized users.last_active_at may be before we refresh it.
- * The per-session timestamp updates on every request, but the user row only
- * needs to be roughly current (it feeds the admin activity view), so we skip
- * the write when it was updated within this window to avoid write/index churn.
+ * How stale a session's or user's last_active_at may be before we refresh it.
+ * Both only need to be roughly current (the session list, the admin activity
+ * view), so skipping writes within this window avoids per-request write churn.
+ *
+ * @testonly
  */
-const USER_LAST_ACTIVE_REFRESH_MS = 60 * 1000;
+export const LAST_ACTIVE_REFRESH_MS = 60 * 1000;
 
 /**
- * Updates last_active_at for the session and (throttled) the user row.
+ * Updates last_active_at for the session and the user row, each throttled.
  * Done asynchronously (fire-and-forget) so it never blocks the request.
  *
  * The user-row copy is denormalized so the admin "last active" view survives
@@ -433,29 +434,31 @@ const USER_LAST_ACTIVE_REFRESH_MS = 60 * 1000;
  * looking perpetually "active" (and inflate the active-users stats) despite
  * never opening the reader.
  *
- * For a full-access (browser) session this is a single round-trip via a
- * writable CTE rather than two sequential statements. The session row is always
- * touched; the user row is only touched when its timestamp is stale, so the
- * common case is a no-op on the users table (no row write, no index churn) while
- * still costing just one query.
+ * Every authenticated request lands here, so each row is only written when its
+ * timestamp is stale: the common case writes nothing. For a full-access
+ * (browser) session both rows go in one round trip via a writable CTE.
+ *
+ * @testonly
  */
-async function updateLastActiveAt(
+export async function updateLastActiveAt(
   sessionId: string,
   userId: string,
   isScoped: boolean
 ): Promise<void> {
   const now = new Date();
+  const staleCutoff = new Date(now.getTime() - LAST_ACTIVE_REFRESH_MS);
   try {
     if (isScoped) {
       await db.execute(sql`
-        UPDATE ${sessions} SET last_active_at = ${now} WHERE id = ${sessionId}
+        UPDATE ${sessions} SET last_active_at = ${now}
+        WHERE id = ${sessionId} AND last_active_at < ${staleCutoff}
       `);
       return;
     }
-    const staleCutoff = new Date(now.getTime() - USER_LAST_ACTIVE_REFRESH_MS);
     await db.execute(sql`
       WITH touched_session AS (
-        UPDATE ${sessions} SET last_active_at = ${now} WHERE id = ${sessionId}
+        UPDATE ${sessions} SET last_active_at = ${now}
+        WHERE id = ${sessionId} AND last_active_at < ${staleCutoff}
       )
       UPDATE ${users} SET last_active_at = ${now}
       WHERE id = ${userId}

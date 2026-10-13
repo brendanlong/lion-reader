@@ -361,7 +361,11 @@ const entryFullSelectFields = {
 const fullEntrySelectFields = {
   ...entryFullSelectFields,
   // Raw (untrusted) full-content columns, sanitized on read (see toFullEntry).
-  fullContentOriginal: visibleEntries.fullContentOriginal,
+  // The original is the whole fetched page and is served only when there's no
+  // cleaned version, so don't load it otherwise.
+  fullContentOriginal: sql<
+    string | null
+  >`CASE WHEN ${visibleEntries.fullContentCleaned} IS NULL THEN ${visibleEntries.fullContentOriginal} END`,
   fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,

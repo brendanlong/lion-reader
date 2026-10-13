@@ -36,6 +36,7 @@ export interface RecordedCall {
   path: string;
   type: "query" | "mutation" | "subscription";
   input: unknown;
+  context: Record<string, unknown>;
 }
 
 /**
@@ -63,7 +64,7 @@ export function createHandlerLink(
   return () =>
     ({ op }) =>
       observable((observer) => {
-        onCall?.({ path: op.path, type: op.type, input: op.input });
+        onCall?.({ path: op.path, type: op.type, input: op.input, context: op.context });
 
         const handler = handlers[op.path];
         if (!handler) {

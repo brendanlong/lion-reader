@@ -21,7 +21,7 @@
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { trpc } from "@/lib/trpc/client";
+import { trpc, UNBATCHED } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
@@ -36,6 +36,8 @@ import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
 import { EntryListFallback } from "./EntryListFallback";
 import { EntryListSkeleton } from "./EntryListSkeleton";
+
+const SELECTION_PREFETCH_DELAY_MS = 100;
 
 interface EntryListContainerProps {
   emptyMessage: string;
@@ -204,7 +206,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Prefetch entry on mousedown (fires ~100-200ms before click)
   const handleEntryMouseDown = useCallback(
     (entryId: string) => {
-      void utils.entries.get.prefetch({ id: entryId });
+      void utils.entries.get.prefetch({ id: entryId }, UNBATCHED);
     },
     [utils]
   );
@@ -229,6 +231,21 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     onNavigateNext: goToNextEntry,
     onNavigatePrevious: goToPreviousEntry,
   });
+
+  // Keyboard selection has no mousedown to prefetch on, so prefetch the row
+  // once j/k stops on it. Only if uncached: closing an entry selects it again.
+  useEffect(() => {
+    if (!selectedEntryId || openEntryId) return;
+    const timer = setTimeout(
+      () =>
+        void utils.entries.get.prefetch(
+          { id: selectedEntryId },
+          { ...UNBATCHED, staleTime: Infinity }
+        ),
+      SELECTION_PREFETCH_DELAY_MS
+    );
+    return () => clearTimeout(timer);
+  }, [selectedEntryId, openEntryId, utils]);
 
   // Sync selection with browser focus so Tabbing to a row makes `m`/`s` act on
   // it (they key off the shortcut selection, which j/k also sets).
