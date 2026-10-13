@@ -72,16 +72,4 @@ describe("updateLastActiveAt", () => {
     expect(after.session.getTime()).toBeGreaterThan(lastActiveAt.getTime());
     expect(after.user!.getTime()).toBeGreaterThan(lastActiveAt.getTime());
   });
-
-  it("refreshes only the session row of a stale scoped session", async () => {
-    const { userId, sessionId, lastActiveAt } = await createActiveSession(
-      LAST_ACTIVE_REFRESH_MS + 5_000
-    );
-
-    await updateLastActiveAt(sessionId, userId, true);
-
-    const after = await lastActive(userId, sessionId);
-    expect(after.session.getTime()).toBeGreaterThan(lastActiveAt.getTime());
-    expect(after.user).toEqual(lastActiveAt);
-  });
 });

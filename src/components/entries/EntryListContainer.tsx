@@ -206,7 +206,7 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // Prefetch entry on mousedown (fires ~100-200ms before click)
   const handleEntryMouseDown = useCallback(
     (entryId: string) => {
-      void utils.entries.get.prefetch({ id: entryId });
+      void utils.entries.get.prefetch({ id: entryId }, UNBATCHED);
     },
     [utils]
   );
@@ -233,11 +233,15 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   });
 
   // Keyboard selection has no mousedown to prefetch on, so prefetch the row
-  // once j/k stops on it.
+  // once j/k stops on it. Only if uncached: closing an entry selects it again.
   useEffect(() => {
     if (!selectedEntryId || openEntryId) return;
     const timer = setTimeout(
-      () => void utils.entries.get.prefetch({ id: selectedEntryId }, UNBATCHED),
+      () =>
+        void utils.entries.get.prefetch(
+          { id: selectedEntryId },
+          { ...UNBATCHED, staleTime: Infinity }
+        ),
       SELECTION_PREFETCH_DELAY_MS
     );
     return () => clearTimeout(timer);

@@ -128,6 +128,8 @@ placed by title among them.
 
 ## Core Queries
 
+Speculative fetches (prefetches) pass `UNBATCHED` (`src/lib/trpc/client.ts`).
+
 | Query                           | Used In                                                    | Notes                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `entries.list` (infinite)       | `EntryList`, `EntryListContainer`, `UnifiedEntriesContent` | `staleTime: Infinity`                                                                                                                                                                                                                                                                                                            |
@@ -139,8 +141,6 @@ placed by title among them.
 | `tags.list`                     | `Sidebar`, `EditSubscriptionDialog`, `TagManagement`       | All tags with unread + uncategorized counts                                                                                                                                                                                                                                                                                      |
 
 `sortBy: "readChanged"` backs the `/recently-read` view (entries sorted by `read_changed_at` rather than publish time; defaults to `unreadOnly=false`). It and search (`query`) lists get **no** live inserts: `insertIntoMatchingLists` (`src/lib/local-db/entry-lists.ts`) skips any list whose input has a `query` or a `sortBy` other than `"published"`, because their ordering (relevance rank / read-time) can't be derived from an entry's fields. Those views instead refresh on navigation like any other list.
-
-Queries issued in the same tick share one HTTP request, which answers only when its slowest call does. **Speculative fetches** (`entries.get` for the reader's neighbours and the j/k selection) pass `UNBATCHED` (`src/lib/trpc/client.ts`) so they never hold up what the user is waiting on.
 
 Search (`?q=`) is an ordinary `entries.list` scoped to the current view's filters. With a query present, `unreadOnly` defaults to `false` and sort order is canonicalized in the input, since results are ranked by relevance and a stray `?sort=` must not fragment the cache key.
 
