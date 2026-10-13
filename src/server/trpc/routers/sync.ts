@@ -184,16 +184,26 @@ async function currentSyncCursors(
     //             (idx_entries_owner_user_updated_at).
     //   arm_collections — same, for active collections' members (a few
     //             hundred at most), whose feed may be unsubscribed.
-    // The entry arms are bounded to updated_at >= arm_ue's max (the `bound`
-    // CTE): an entry only changes the answer when its content update is at least
-    // as new as the newest state change, so this keeps the per-feed index seeks
-    // near-empty in the common case (user activity is newest) while still
-    // catching — and correctly id-tiebreaking, `>=` includes the tied boundary —
-    // the rare case where a content update is the most recent change. Joining
-    // user_entries in each arm preserves the old query's set (entries the user
-    // actually has a row for). Driving arm_sub from ALL subscriptions (active
-    // and unsubscribed) covers starred orphans, whose subscription row survives
-    // unsubscribe. Measured ~1.3 ms / ~1.1k buffers on the same heavy user.
+    // The entry arms are bounded to updated_at >= arm_ue's max: an entry only
+    // changes the answer when its content update is at least as new as the
+    // newest state change, so this keeps the per-feed index seeks near-empty in
+    // the common case (user activity is newest) while still catching — and
+    // correctly id-tiebreaking, `>=` includes the tied boundary — the rare case
+    // where a content update is the most recent change. A user with no
+    // user_entries row has nothing in any arm (memberships reference
+    // user_entries): arm_ue is empty, so the bound is NULL and every arm's seek
+    // ends at once.
+    // Joining user_entries in each arm preserves the old query's set (entries
+    // the user actually has a row for). Driving arm_sub from ALL subscriptions
+    // (active and unsubscribed) covers starred orphans, whose subscription row
+    // survives unsubscribe.
+    //
+    // arm_sub and arm_email take each subscription's newest entry in a LATERAL
+    // `LIMIT 1`, which can only run as one index seek per subscription. As a
+    // plain join, the planner can't see the bound (it's computed by the query
+    // itself), so it guesses a third of entries pass it and, for a user with
+    // hundreds of feeds, picked a parallel seq scan of all entries: ~55 ms /
+    // ~70k buffers instead of ~1.3 ms / ~1.4k (#1863).
     db.execute<{ ts: string | null; id: string | null }>(sql`
       WITH arm_ue AS (
         SELECT ue.updated_at AS ts, ue.entry_id AS id
@@ -202,38 +212,45 @@ async function currentSyncCursors(
         ORDER BY ue.updated_at DESC, ue.entry_id DESC
         LIMIT 1
       ),
-      bound AS (
-        SELECT COALESCE((SELECT ts FROM arm_ue), '-infinity'::timestamptz) AS ts
-      ),
       arm_sub AS (
-        SELECT e.updated_at AS ts, e.id
+        SELECT newest.ts, newest.id
         FROM subscriptions s
-        JOIN entries e
-          ON e.owner_feed_id = s.feed_id
-          AND e.updated_at >= (SELECT ts FROM bound)
-        JOIN user_entries ue2
-          ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+        CROSS JOIN LATERAL (
+          SELECT e.updated_at AS ts, e.id
+          FROM entries e
+          JOIN user_entries ue2
+            ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+          WHERE e.owner_feed_id = s.feed_id
+            AND e.updated_at >= (SELECT ts FROM arm_ue)
+          ORDER BY e.updated_at DESC, e.id DESC
+          LIMIT 1
+        ) newest
         WHERE s.user_id = ${userId}::uuid AND s.type = 'web'
-        ORDER BY e.updated_at DESC, e.id DESC
+        ORDER BY newest.ts DESC, newest.id DESC
         LIMIT 1
       ),
       arm_email AS (
-        SELECT e.updated_at AS ts, e.id
+        SELECT newest.ts, newest.id
         FROM subscriptions s
-        JOIN entries e
-          ON e.owner_subscription_id = s.id
-          AND e.updated_at >= (SELECT ts FROM bound)
-        JOIN user_entries ue2
-          ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+        CROSS JOIN LATERAL (
+          SELECT e.updated_at AS ts, e.id
+          FROM entries e
+          JOIN user_entries ue2
+            ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
+          WHERE e.owner_subscription_id = s.id
+            AND e.updated_at >= (SELECT ts FROM arm_ue)
+          ORDER BY e.updated_at DESC, e.id DESC
+          LIMIT 1
+        ) newest
         WHERE s.user_id = ${userId}::uuid AND s.type = 'email'
-        ORDER BY e.updated_at DESC, e.id DESC
+        ORDER BY newest.ts DESC, newest.id DESC
         LIMIT 1
       ),
       arm_saved AS (
         SELECT e.updated_at AS ts, e.id FROM entries e
         JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${userId}::uuid
         WHERE e.owner_user_id = ${userId}::uuid
-          AND e.updated_at >= (SELECT ts FROM bound)
+          AND e.updated_at >= (SELECT ts FROM arm_ue)
         ORDER BY e.updated_at DESC, e.id DESC
         LIMIT 1
       ),
@@ -243,7 +260,7 @@ async function currentSyncCursors(
         JOIN subscription_entries se ON se.subscription_id = s.id
         JOIN entries e
           ON e.id = se.entry_id
-          AND e.updated_at >= (SELECT ts FROM bound)
+          AND e.updated_at >= (SELECT ts FROM arm_ue)
         WHERE s.user_id = ${userId}::uuid AND s.type = 'collection' AND s.unsubscribed_at IS NULL
         ORDER BY e.updated_at DESC, e.id DESC
         LIMIT 1

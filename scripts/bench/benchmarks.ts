@@ -716,30 +716,37 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.unsubscribed_at IS NULL
   SELECT ue.updated_at AS ts, ue.entry_id AS id FROM user_entries ue
   WHERE ue.user_id = ${q(U0)}::uuid ORDER BY ue.updated_at DESC, ue.entry_id DESC LIMIT 1
 ),
-bound AS (SELECT COALESCE((SELECT ts FROM arm_ue), '-infinity'::timestamptz) AS ts),
 arm_sub AS (
-  SELECT e.updated_at AS ts, e.id FROM subscriptions s
-  JOIN entries e ON e.owner_feed_id = s.feed_id AND e.updated_at >= (SELECT ts FROM bound)
-  JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
-  WHERE s.user_id = ${q(U0)}::uuid AND s.type = 'web' ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
+  SELECT newest.ts, newest.id FROM subscriptions s
+  CROSS JOIN LATERAL (
+    SELECT e.updated_at AS ts, e.id FROM entries e
+    JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
+    WHERE e.owner_feed_id = s.feed_id AND e.updated_at >= (SELECT ts FROM arm_ue)
+    ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
+  ) newest
+  WHERE s.user_id = ${q(U0)}::uuid AND s.type = 'web' ORDER BY newest.ts DESC, newest.id DESC LIMIT 1
 ),
 arm_email AS (
-  SELECT e.updated_at AS ts, e.id FROM subscriptions s
-  JOIN entries e ON e.owner_subscription_id = s.id AND e.updated_at >= (SELECT ts FROM bound)
-  JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
-  WHERE s.user_id = ${q(U0)}::uuid AND s.type = 'email' ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
+  SELECT newest.ts, newest.id FROM subscriptions s
+  CROSS JOIN LATERAL (
+    SELECT e.updated_at AS ts, e.id FROM entries e
+    JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
+    WHERE e.owner_subscription_id = s.id AND e.updated_at >= (SELECT ts FROM arm_ue)
+    ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
+  ) newest
+  WHERE s.user_id = ${q(U0)}::uuid AND s.type = 'email' ORDER BY newest.ts DESC, newest.id DESC LIMIT 1
 ),
 arm_saved AS (
   SELECT e.updated_at AS ts, e.id FROM entries e
   JOIN user_entries ue2 ON ue2.entry_id = e.id AND ue2.user_id = ${q(U0)}::uuid
   WHERE e.owner_user_id = ${q(U0)}::uuid
-    AND e.updated_at >= (SELECT ts FROM bound)
+    AND e.updated_at >= (SELECT ts FROM arm_ue)
   ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
 ),
 arm_collections AS (
   SELECT e.updated_at AS ts, e.id FROM subscriptions s
   JOIN subscription_entries se ON se.subscription_id = s.id
-  JOIN entries e ON e.id = se.entry_id AND e.updated_at >= (SELECT ts FROM bound)
+  JOIN entries e ON e.id = se.entry_id AND e.updated_at >= (SELECT ts FROM arm_ue)
   WHERE s.user_id = ${q(U0)}::uuid AND s.type = 'collection' AND s.unsubscribed_at IS NULL
   ORDER BY e.updated_at DESC, e.id DESC LIMIT 1
 )
