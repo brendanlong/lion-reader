@@ -906,12 +906,15 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
   });
   if (subscriptionFilter === null) return null;
 
-  // One subscription's list (a subscription filter, or Saved) walks that
-  // subscription's timeline (idx_subscription_entries_timeline, whose sort key
-  // is the row's) rather than the user's: joining one subscription's
-  // memberships can't fan out, and the user's timeline may hold it sparsely.
+  // One subscription's list (a subscription filter, or Saved) joins that
+  // subscription's memberships, which can't fan out. Sorted by the timeline,
+  // it walks them (idx_subscription_entries_timeline, whose sort key is the
+  // row's) rather than the user's timeline, which may hold them sparsely.
+  // Sorted otherwise, the join still lets Postgres start from the
+  // memberships when they're few, where an EXISTS filter left it walking the
+  // user's whole history for a sparse page (Wallabag's Saved by `archived`).
   const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
-  const single = timelineSort ? await singleSubscriptionOf(db, params) : null;
+  const single = await singleSubscriptionOf(db, params);
   if (subscriptionFilter && !single) {
     conditions.push(subscriptionFilter);
   }
@@ -944,7 +947,7 @@ async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, 
     : single
       ? subscriptionEntries.publishedOrFetchedAt
       : visibleEntries.publishedOrFetchedAt;
-  const idColumn = single ? subscriptionEntries.entryId : visibleEntries.id;
+  const idColumn = single && timelineSort ? subscriptionEntries.entryId : visibleEntries.id;
 
   // Cursor condition
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve

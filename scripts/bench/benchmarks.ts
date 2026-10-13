@@ -80,6 +80,14 @@ async function one<T>(db: ClientBase, sql: string): Promise<T> {
 /** `isCollectionSubscription()` (services/subscriptions.ts) over the unaliased `subscriptions`. */
 const IS_COLLECTION = "subscriptions.type = 'collection'";
 
+/** `inSavedSubscriptionSql` (services/entry-filters.ts) for a `visible_entries` alias. */
+const inSaved = (alias: string): string => `EXISTS (
+    SELECT 1 FROM subscription_entries
+    JOIN subscriptions ON subscriptions.id = subscription_entries.subscription_id
+      AND subscriptions.type = 'saved'
+    WHERE subscription_entries.user_id = ${alias}.user_id
+      AND subscription_entries.entry_id = ${alias}.id)`;
+
 /** `entryFeedTitleSql()` (services/entry-filters.ts). */
 const FEED_TITLE =
   "CASE WHEN subscriptions.type = 'saved' THEN 'Saved Articles'::text ELSE COALESCE(subscriptions.custom_title, feeds.title) END";
@@ -140,7 +148,8 @@ interface ListOptions {
   where?: string[];
   unreadOnly?: boolean;
   limit?: number;
-  sortBy?: "published" | "readChanged";
+  /** "archived" is Wallabag's: by read_changed_at, without Recently Read's exclusion. */
+  sortBy?: "published" | "readChanged" | "archived";
   cursor?: { ts: string; id: string };
   /** `listGreaderItemRefs`' columns rather than `listEntries`'. */
   refs?: boolean;
@@ -151,13 +160,13 @@ interface ListOptions {
  * With `refs`, `listGreaderItemRefs`, which pages the same way.
  */
 function listEntriesSql(o: ListOptions): string {
-  const sortColumn =
-    o.sortBy === "readChanged"
-      ? "ve.read_changed_at"
-      : o.single
-        ? "se.published_or_fetched_at"
-        : "ve.published_or_fetched_at";
-  const idColumn = o.single ? "se.entry_id" : "ve.id";
+  const timelineSort = o.sortBy !== "readChanged" && o.sortBy !== "archived";
+  const sortColumn = !timelineSort
+    ? "ve.read_changed_at"
+    : o.single
+      ? "se.published_or_fetched_at"
+      : "ve.published_or_fetched_at";
+  const idColumn = o.single && timelineSort ? "se.entry_id" : "ve.id";
   const where = [`ve.user_id = ${q(o.userId)}`, ...(o.where ?? [])];
   if (o.unreadOnly ?? true) where.push("ve.read = false");
   where.push("ve.is_spam = false");
@@ -970,6 +979,32 @@ LIMIT 1`,
       "services/entries.ts listEntries (/all, unread, a user with 60 unread of 30,000 entries)",
     prepare: async () => ({
       statements: [{ label: "list", sql: listEntriesSql({ userId: U_KEEPS_UP }) }],
+    }),
+  },
+  {
+    name: "wallabag.entries_archived",
+    kind: "read",
+    source:
+      "wallabag entries route: listEntries + countTotalEntries (type saved, sort archived, perPage 30)",
+    prepare: async () => ({
+      statements: [
+        savedSubscriptionSql,
+        {
+          label: "list",
+          sql: listEntriesSql({
+            userId: U0,
+            single: savedSubscriptionId(0),
+            unreadOnly: false,
+            sortBy: "archived",
+            limit: 30,
+          }),
+        },
+        {
+          label: "count",
+          sql: `SELECT count(*)::int FROM visible_entries ve
+WHERE ve.user_id = ${q(U0)} AND ${inSaved("ve")} AND ve.is_spam = false`,
+        },
+      ],
     }),
   },
   {
