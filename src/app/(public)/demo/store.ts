@@ -18,6 +18,7 @@ import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
 import { legacyFeedId } from "@/lib/events/schemas";
+import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { entryMatchesList, entryMembershipScope } from "@/lib/local-db/entry-lists";
 import {
   DEMO_ENTRIES,
@@ -327,7 +328,7 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       updatedAt: state.updatedAt,
       // Demo entries never change, only their state does.
       entryUpdatedAt: entry.publishedAt ?? entry.fetchedAt,
-      feedTitle: sub?.title ?? entry.feedTitle,
+      feedTitle: entry.type === "saved" ? SAVED_ARTICLES_TITLE : (sub?.title ?? entry.feedTitle),
       siteName: entry.siteName,
     };
   }

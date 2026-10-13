@@ -37,7 +37,7 @@ import {
 } from "@/lib/events/connection-state";
 import type { SyncCursors } from "@/lib/events/cursors";
 import { parseHelloEvent, parseSyncEvent } from "@/lib/events/parse";
-import { BUILD_ID, isOtherBuild } from "@/lib/build-id";
+import { BUILD_ID, isNewerBuild } from "@/lib/build-id";
 import {
   initialSyncSession,
   reduceSyncSession,
@@ -65,7 +65,7 @@ export interface UseRealtimeUpdatesResult {
    */
   reconnect: () => void;
 
-  /** The server runs another deploy than this page's JavaScript. */
+  /** The server runs a later deploy than this page's JavaScript. */
   serverBuildChanged: boolean;
 }
 
@@ -320,7 +320,7 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
 
       eventSource.addEventListener("hello", (event) => {
         const hello = parseHelloEvent(event.data);
-        if (hello && isOtherBuild(hello.buildId, BUILD_ID)) setServerBuildChanged(true);
+        if (hello && isNewerBuild(hello.buildId, BUILD_ID)) setServerBuildChanged(true);
       });
       for (const eventName of SSE_EVENT_NAMES) {
         eventSource.addEventListener(eventName, (event) => handleEventRef.current(event));

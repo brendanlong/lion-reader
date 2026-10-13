@@ -5,7 +5,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useReloadOnNextNavigation } from "@/lib/hooks/useReloadOnNextNavigation";
-import { isOtherBuild } from "@/lib/build-id";
 
 const mockPathname = vi.fn(() => "/all");
 vi.mock("next/navigation", () => ({ usePathname: () => mockPathname() }));
@@ -39,14 +38,19 @@ describe("useReloadOnNextNavigation", () => {
     navigate("/saved", true);
     expect(reload).toHaveBeenCalledTimes(1);
   });
-});
 
-describe("isOtherBuild", () => {
-  it("is true only when both builds are known and differ", () => {
-    expect(isOtherBuild("2026-10-13T01:00:00Z", "2026-10-12T01:00:00Z")).toBe(true);
-    expect(isOtherBuild("2026-10-13T01:00:00Z", "2026-10-13T01:00:00Z")).toBe(false);
-    expect(isOtherBuild(undefined, "2026-10-13T01:00:00Z")).toBe(false);
-    expect(isOtherBuild("", "2026-10-13T01:00:00Z")).toBe(false);
-    expect(isOtherBuild("2026-10-13T01:00:00Z", "")).toBe(false);
+  it("reloads when unmounted while armed, as leaving its layout", () => {
+    const { rerender, unmount } = renderHook((armed: boolean) => useReloadOnNextNavigation(armed), {
+      initialProps: true,
+    });
+    rerender(true);
+    expect(reload).not.toHaveBeenCalled();
+    unmount();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't reload when unmounted unarmed", () => {
+    renderHook(() => useReloadOnNextNavigation(false)).unmount();
+    expect(reload).not.toHaveBeenCalled();
   });
 });

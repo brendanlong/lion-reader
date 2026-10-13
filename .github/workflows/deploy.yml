@@ -58,9 +58,9 @@ jobs:
         # Short SHA to match the previous git-derived value.
         #
         # NEXT_PUBLIC_BUILD_TIME is separate: it must be a build arg because
-        # Next inlines NEXT_PUBLIC_* into the client bundle at build time (it's
-        # also the build id, src/lib/build-id.ts). It's
-        # also passed as a runtime env var, using the SAME timestamp as
+        # Next inlines NEXT_PUBLIC_* into the client bundle at build time; it's
+        # the build id (src/lib/build-id.ts). It's also passed as a runtime
+        # env var, using the SAME timestamp as
         # BUILD_TIME, so the demo's "Welcome" published time matches between the
         # client and server renders (see
         # src/lib/demo/articles/welcome-published-at.ts).

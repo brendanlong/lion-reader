@@ -157,7 +157,7 @@ ARG NEXT_PUBLIC_GOATCOUNTER_URL=""
 ENV NEXT_PUBLIC_GOATCOUNTER_URL=$NEXT_PUBLIC_GOATCOUNTER_URL
 
 # Deploy timestamp, inlined into the client bundle. It is the build id SSE uses
-# to spot a tab running another deploy's JavaScript (src/lib/build-id.ts), and
+# to spot a tab running an earlier deploy's JavaScript (src/lib/build-id.ts), and
 # gives the demo's "Welcome" article a stable published time that matches the
 # server render (src/lib/demo/articles/welcome-published-at.ts). CI passes the same value as a
 # runtime --env too, so the server reads an identical value; unset builds fall

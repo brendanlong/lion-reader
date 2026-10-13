@@ -6,7 +6,11 @@
  */
 export const BUILD_ID: string = process.env.NEXT_PUBLIC_BUILD_TIME ?? "";
 
-/** Whether the server runs a different build than this page; unknown on either side counts as the same. */
-export function isOtherBuild(serverBuildId: string | undefined, clientBuildId: string): boolean {
-  return !!serverBuildId && !!clientBuildId && serverBuildId !== clientBuildId;
+/**
+ * Whether the server runs a later build than this page; unknown on either side
+ * counts as the same. Only later: while a canary deploy splits the machines, a
+ * new page can reach an old server, and reloading would roll it back.
+ */
+export function isNewerBuild(serverBuildId: string | undefined, clientBuildId: string): boolean {
+  return !!serverBuildId && !!clientBuildId && serverBuildId > clientBuildId;
 }

@@ -213,7 +213,7 @@ describe("SSE credential re-check", () => {
     revoke: () => Promise<void>
   ): Promise<boolean> {
     const reader = body.getReader();
-    // The initial heartbeat.
+    // The hello.
     expect((await reader.read()).done).toBe(false);
     await revoke();
     for (let i = 0; i < 3; i++) {

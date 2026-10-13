@@ -20,7 +20,7 @@
  * - announcement_changed: Global announcement banner changed (broadcast to all)
  *
  * hello: Sent first on every stream, with the server's build id, so a page
- * running another deploy's JavaScript can reload.
+ * running an earlier deploy's JavaScript can reload.
  *
  * Heartbeat: Sent every 30 seconds as a comment (: heartbeat). Each heartbeat
  * also re-checks the session or app token the stream was opened with, and

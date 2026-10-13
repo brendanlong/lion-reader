@@ -1,3 +1,9 @@
+/**
+ * What clients see as the source of a saved article, and Google Reader as the
+ * saved subscription's title (#730).
+ */
+export const SAVED_ARTICLES_TITLE = "Saved Articles";
+
 /** The kinds of entry. */
 export const ENTRY_TYPES = ["web", "email", "saved"] as const;
 

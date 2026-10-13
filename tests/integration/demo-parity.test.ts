@@ -54,12 +54,8 @@ interface Side {
   normalize(value: unknown): unknown;
 }
 
-/**
- * Fields that differ by when, not what (write times and count stamps), and
- * `url`, which demo subscriptions don't have.
- */
-const UNCOMPARED_FIELDS = new Set([
-  "url",
+/** Fields that differ by when, not what: write times and count stamps. */
+const TIME_FIELDS = new Set([
   "asOf",
   "unreadCountAsOf",
   "updatedAt",
@@ -72,8 +68,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Replaces ids found in `ids`, names ids it doesn't know (made during the
- * scenario, like a new collection's) by first appearance, drops uncompared fields
- * and sorts id'd arrays, whose order the API doesn't promise.
+ * scenario, like a new collection's) by first appearance, drops time fields
+ * and sorts arrays, whose order the API doesn't promise, except an `order`.
  */
 function normalizer(ids: Map<string, string>): (value: unknown) => unknown {
   const created = new Map<string, string>();
@@ -96,8 +92,10 @@ function normalizer(ids: Map<string, string>): (value: unknown) => unknown {
     if (value instanceof Date || value === null || typeof value !== "object") return value;
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key, v]) => !UNCOMPARED_FIELDS.has(key) && v !== undefined)
-        .map(([key, v]) => [key, walk(v)])
+        // Demo subscriptions have no feed URL.
+        .filter(([key]) => !(key === "url" && "originalTitle" in value))
+        .filter(([key, v]) => !TIME_FIELDS.has(key) && v !== undefined)
+        .map(([key, v]) => [key, key === "order" && Array.isArray(v) ? v.map(walk) : walk(v)])
     );
   };
   return walk;
@@ -205,6 +203,12 @@ async function counts(side: Side): Promise<unknown> {
   };
 }
 
+/** A list's entries, and their ids in the order served. */
+async function listOrder(side: Side, input: Input<"entries.list">): Promise<unknown> {
+  const { items } = await side.call("entries.list", input);
+  return { order: items.map((item) => item.id), items };
+}
+
 const webEntry = FIXTURES.entries.find((entry) => entry.type === "web" && !entry.starred)!;
 const starredEntry = FIXTURES.entries.find((entry) => entry.type === "web" && entry.starred)!;
 const savedEntry = FIXTURES.entries.find((entry) => entry.type === "saved")!;
@@ -233,6 +237,7 @@ const SCENARIOS: Record<string, (side: Side) => Promise<unknown[]>> = {
     await counts(side),
     await side.call("entries.setStarred", { id: starredEntry.id, starred: false }),
     await counts(side),
+    await listOrder(side, { starredOnly: true }),
   ],
   "mark all read in a tag": async (side) => [
     await side.call("entries.markAllRead", { tagId: firstTag.id }),
@@ -249,7 +254,7 @@ const SCENARIOS: Record<string, (side: Side) => Promise<unknown[]>> = {
   unsubscribe: async (side) => [
     await side.call("subscriptions.delete", { id: webEntry.subscriptionId! }),
     await counts(side),
-    await side.call("entries.list", { subscriptionId: webEntry.subscriptionId! }),
+    await listOrder(side, { subscriptionId: webEntry.subscriptionId! }),
   ],
   "add to and remove from a collection": async (side) => {
     const created = await side.call("collections.create", { name: "Reading list" });
