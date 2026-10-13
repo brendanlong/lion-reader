@@ -183,14 +183,11 @@ const starEntriesArgs = z.object({
 const countEntriesArgs = z.object({
   subscriptionId: uuidSchema
     .optional()
-    .describe("Filter by subscription ID (a feed or a collection)"),
-  tagId: uuidSchema.optional().describe("Filter by tag ID"),
-  uncategorized: z.boolean().optional().describe("Count only uncategorized entries"),
-  type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
-  unreadOnly: z.boolean().optional().describe("Count only unread entries"),
-  readOnly: z.boolean().optional().describe("Count only read entries"),
-  starredOnly: z.boolean().optional().describe("Count only starred entries"),
-  unstarredOnly: z.boolean().optional().describe("Count only unstarred entries"),
+    .describe("Count a subscription's unread entries (a feed or a collection)"),
+  tagId: uuidSchema.optional().describe("Count a tag's unread entries"),
+  uncategorized: z.boolean().optional().describe("Count unread entries in untagged subscriptions"),
+  type: z.enum(["saved"]).optional().describe("Count unread saved articles"),
+  starredOnly: z.boolean().optional().describe("Count unread starred entries"),
 });
 
 const saveCollectionIdsArg = z
@@ -457,7 +454,8 @@ function buildTools(): Tool[] {
 
     {
       name: "count_entries",
-      description: "Get count of entries with filters. Returns total and unread counts.",
+      description:
+        "Get the unread count of one list: all entries by default, or at most one of subscriptionId, tagId, uncategorized, type and starredOnly.",
       inputSchema: toInputSchema(countEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(countEntriesArgs, args);

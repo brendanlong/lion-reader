@@ -2,7 +2,7 @@
  * Entry Filters Service
  *
  * Shared filter builder and select fragments for entry queries. Used by
- * listEntries, searchEntries, countEntries, and markAllRead.
+ * listEntries, searchEntries, countTotalEntries, and markAllRead.
  */
 
 import {
@@ -294,7 +294,7 @@ export async function buildEntrySubscriptionFilter(
 /**
  * Builds shared filter conditions for entry queries (unreadOnly, starredOnly,
  * type, excludeTypes, showSpam, timestamp bounds). Used by listEntries,
- * searchEntries, countEntries, and countTotalEntries to avoid duplicating the
+ * searchEntries and countTotalEntries to avoid duplicating the
  * same filter logic.
  */
 export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] {

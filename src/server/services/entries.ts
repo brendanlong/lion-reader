@@ -26,9 +26,10 @@ import {
   subscriptionEntries,
   userEntries,
   subscriptions,
+  tags,
   visibleEntries,
 } from "@/server/db/schema";
-import { getSavedSubscriptionId } from "./subscriptions";
+import { getSavedSubscriptionId, isListedSubscription } from "./subscriptions";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -36,7 +37,7 @@ import { showsFullContent } from "@/lib/narration/select-content";
 import { errors } from "@/server/trpc/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";
-import { getBulkEntryRelatedCounts, getGlobalUnreadCounts, type BulkUnreadCounts } from "./counts";
+import { getBulkEntryRelatedCounts, getUserUnreadCounts, type BulkUnreadCounts } from "./counts";
 import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry-events";
 import {
   buildEntrySubscriptionFilter,
@@ -1283,7 +1284,7 @@ export async function markAllEntriesRead(
     or(isNull(userEntries.readChangedAt), lte(userEntries.readChangedAt, changedAt))!,
   ];
 
-  // Only mark entries the user can actually see, matching listEntries/countEntries
+  // Only mark entries the user can actually see, matching listEntries
   // (which go through visible_entries). This excludes hidden spam (unless
   // showSpam) and unsubscribed-feed orphans that aren't starred/saved.
   const visibleConditions = [eq(visibleEntries.userId, params.userId)];
@@ -1322,7 +1323,7 @@ export async function markAllEntriesRead(
   }
 
   // Filter by uncategorized (no tags). Reuse the shared subquery builder so this
-  // stays in sync with buildEntrySubscriptionFilter (listEntries/countEntries).
+  // stays in sync with buildEntrySubscriptionFilter (listEntries).
   if (params.uncategorized) {
     conditions.push(
       buildEntriesInSubscriptionsCondition(
@@ -1590,96 +1591,80 @@ export async function updateEntriesStarred(
 }
 
 /**
- * Counts unread entries with filters. Spam is NEVER counted (issue #1117):
- * unread counts exclude spam everywhere, regardless of the user's showSpam
- * list preference — matching the denormalized counters that serve the other
- * badges.
+ * The lists `countEntries` counts: All (no scope) or exactly one of these,
+ * each of which has a trigger-maintained counter.
+ */
+export interface CountEntriesParams {
+  subscriptionId?: string;
+  tagId?: string;
+  uncategorized?: boolean;
+  type?: "saved";
+  starredOnly?: boolean;
+}
+
+/**
+ * Counts the unread articles of one list (All, Starred, Saved, Uncategorized,
+ * a tag or a subscription of any listed type) by reading its counter
+ * (`services/counts.ts`), never by scanning. Spam is never counted (#1117),
+ * whatever the list's showSpam.
  *
- * The three sidebar top-level badge shapes (`{}`, `{starredOnly}`,
- * `{type:'saved'}`) are served straight from the counters (O(subscriptions)
- * arithmetic); every other filter combination falls back to the
- * visible_entries scan.
+ * Returns 0 where the list shows nothing: a subscription or tag that isn't
+ * the user's, is unsubscribed or deleted, or is the saved subscription (whose
+ * list is Saved). Combining scopes has no counter, so it's rejected.
  */
 export async function countEntries(
   db: typeof dbType,
   userId: string,
-  params: {
-    subscriptionId?: string;
-    tagId?: string;
-    uncategorized?: boolean;
-    type?: "web" | "email" | "saved";
-    excludeTypes?: Array<"web" | "email" | "saved">;
-    unreadOnly?: boolean;
-    readOnly?: boolean;
-    starredOnly?: boolean;
-    unstarredOnly?: boolean;
-  }
+  params: CountEntriesParams
 ): Promise<{ unread: number }> {
-  // Counter fast-path for the global badge shapes. Deliberately conservative:
-  // any scoping or shape-altering filter falls through to the scan.
-  const unscoped =
-    !params.subscriptionId &&
-    !params.tagId &&
-    !params.uncategorized &&
-    !params.excludeTypes?.length &&
-    !params.readOnly &&
-    !params.unstarredOnly;
-  if (unscoped) {
-    if (!params.type && !params.starredOnly) {
-      const counts = await getGlobalUnreadCounts(db, userId);
-      return { unread: counts.allUnread };
-    }
-    if (params.starredOnly && !params.type) {
-      const counts = await getGlobalUnreadCounts(db, userId);
-      return { unread: counts.starredUnread };
-    }
-    if (params.type === "saved" && !params.starredOnly) {
-      const counts = await getGlobalUnreadCounts(db, userId);
-      return { unread: counts.savedUnread };
-    }
+  const scopes = [
+    params.subscriptionId,
+    params.tagId,
+    params.uncategorized,
+    params.type,
+    params.starredOnly,
+  ].filter(Boolean);
+  if (scopes.length > 1) {
+    throw errors.validation(
+      "Count one list at a time: pass at most one of subscriptionId, tagId, uncategorized, type and starredOnly"
+    );
   }
 
-  const conditions = [eq(visibleEntries.userId, userId)];
-
-  // Apply subscription filters (subscriptionId, tagId, uncategorized)
-  const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, userId);
-  if (subscriptionFilter === null) {
-    return { unread: 0 };
+  if (params.subscriptionId) {
+    // The subscriptions the list accepts (verifySubscriptionOwnership).
+    const [row] = await db
+      .select({ unread: subscriptions.unreadCount })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.id, params.subscriptionId),
+          eq(subscriptions.userId, userId),
+          isNull(subscriptions.unsubscribedAt),
+          isListedSubscription()
+        )
+      );
+    return { unread: row?.unread ?? 0 };
   }
-  if (subscriptionFilter) {
-    conditions.push(subscriptionFilter);
+
+  if (params.tagId) {
+    const [row] = await db
+      .select({ unread: tags.unreadCount })
+      .from(tags)
+      .where(and(eq(tags.id, params.tagId), eq(tags.userId, userId), isNull(tags.deletedAt)));
+    return { unread: row?.unread ?? 0 };
   }
 
-  // Apply entry filter conditions. showSpam is hard-coded false: unread counts
-  // never include spam (the list may, when the user opts in — the badge doesn't).
-  conditions.push(...buildEntryFilterConditions({ ...params, showSpam: false }));
-
-  // Callers only consume `unread`, so push read=false into the WHERE clause
-  // (rather than a FILTER over all visible entries) — this lets the partial
-  // idx_user_entries_unread index drive the scan instead of counting every
-  // visible entry, matching how counts.ts computes unread counts.
-  conditions.push(eq(visibleEntries.read, false));
-
-  // The view emits one row per (user, entry) (migration 0087), so count(*) is
-  // exact and consistent with the counts.ts service.
-  const result = await db
-    .select({
-      unread: sql<number>`count(*)::int`,
-    })
-    .from(visibleEntries)
-    .where(and(...conditions));
-
-  return {
-    unread: result[0]?.unread ?? 0,
-  };
+  const counts = await getUserUnreadCounts(db, userId);
+  if (params.uncategorized) return { unread: counts.uncategorizedUnread };
+  if (params.type === "saved") return { unread: counts.savedUnread };
+  if (params.starredOnly) return { unread: counts.starredUnread };
+  return { unread: counts.allUnread };
 }
 
 /**
- * Counts total entries matching filters. Used only by APIs that need total
- * counts for pagination metadata (e.g., Wallabag compatibility API).
- *
- * Most callers should use `countEntries` instead, which only counts unread
- * entries and can leverage partial indexes for better performance.
+ * Counts the entries matching filters, for Wallabag's pagination totals. A
+ * scan: never use it for an unread count, which `countEntries` reads from the
+ * counters.
  */
 export async function countTotalEntries(
   db: typeof dbType,
@@ -1711,7 +1696,8 @@ export async function countTotalEntries(
 
   conditions.push(...buildEntryFilterConditions(params));
 
-  // One row per (user, entry), so count(*) is exact (see countEntries).
+  // One row per (user, entry), so count(*) is exact.
+  // eslint-disable-next-line no-restricted-syntax -- Wallabag page total, not an unread count
   const result = await db
     .select({
       total: sql<number>`count(*)::int`,

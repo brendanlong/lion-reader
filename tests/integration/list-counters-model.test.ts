@@ -44,6 +44,7 @@ import {
 } from "../../src/server/services/collections";
 import {
   countEntries,
+  type CountEntriesParams,
   listEntries,
   markAllEntriesRead,
   markEntriesRead,
@@ -668,67 +669,39 @@ function pickOp(rng: ReturnType<typeof prng>): Op {
   return rng.pick(weighted);
 }
 
-/** Every badge must match the unread count of the list it labels. */
+/**
+ * Every badge (`countEntries`, which serves `entries.count` and MCP from the
+ * counters) must match the number of unread articles its list shows, spam
+ * excluded (#1117). Covers every subscription and tag, including unsubscribed
+ * and deleted ones and the saved subscription, whose lists are empty.
+ */
 async function expectBadgesMatchLists(userId: string): Promise<void> {
-  const [user] = await db
-    .select({
-      all: users.allUnreadCount,
-      uncategorized: users.uncategorizedUnreadCount,
-    })
-    .from(users)
-    .where(eq(users.id, userId));
-  const visibleUnread = await db.execute<{ n: number }>(
-    sql`SELECT count(*)::int AS n FROM visible_entries
-        WHERE user_id = ${userId} AND NOT read AND NOT is_spam`
-  );
-  expect(user.all, "All").toBe(visibleUnread.rows[0].n);
+  const expectBadge = async (filter: CountEntriesParams, label: string) => {
+    const page = await listEntries(db, {
+      userId,
+      ...filter,
+      unreadOnly: true,
+      showSpam: false,
+      limit: 1000,
+      maxLimit: 1000,
+    });
+    expect(page.nextCursor, label).toBeUndefined();
+    expect((await countEntries(db, userId, filter)).unread, label).toBe(page.items.length);
+  };
 
-  const count = (filter: { tagId?: string; uncategorized?: boolean; subscriptionId?: string }) =>
-    countEntries(db, userId, { ...filter, unreadOnly: true }).then((r) => r.unread);
-  expect(user.uncategorized, "Uncategorized").toBe(await count({ uncategorized: true }));
-
-  for (const tag of await db
-    .select({ id: tags.id, unread: tags.unreadCount })
-    .from(tags)
-    .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)))) {
-    expect(tag.unread, `tag ${tag.id}`).toBe(await count({ tagId: tag.id }));
+  await expectBadge({}, "All");
+  await expectBadge({ starredOnly: true }, "Starred");
+  await expectBadge({ type: "saved" }, "Saved");
+  await expectBadge({ uncategorized: true }, "Uncategorized");
+  for (const tag of await db.select({ id: tags.id }).from(tags).where(eq(tags.userId, userId))) {
+    await expectBadge({ tagId: tag.id }, `tag ${tag.id}`);
   }
   for (const sub of await db
-    .select({ id: subscriptions.id, unread: subscriptions.unreadCount })
+    .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt),
-        // The saved subscription's list is Saved, below.
-        sql`${subscriptions.type} <> 'saved'`
-      )
-    )) {
-    expect(sub.unread, `subscription ${sub.id}`).toBe(await count({ subscriptionId: sub.id }));
+    .where(eq(subscriptions.userId, userId))) {
+    await expectBadge({ subscriptionId: sub.id }, `subscription ${sub.id}`);
   }
-
-  // Starred and Saved count from counters, so count their lists' pages.
-  const listed = async (filter: { starredOnly?: boolean; type?: "saved" }) =>
-    (
-      await listEntries(db, {
-        userId,
-        ...filter,
-        unreadOnly: true,
-        showSpam: false,
-        limit: 1000,
-        maxLimit: 1000,
-      })
-    ).items.length;
-  const [globals] = await db
-    .select({
-      starred: users.starredUnreadCount,
-      saved: sql<number>`COALESCE((SELECT unread_count FROM subscriptions s
-        WHERE s.user_id = users.id AND s.type = 'saved'), 0)`,
-    })
-    .from(users)
-    .where(eq(users.id, userId));
-  expect(globals.starred, "Starred").toBe(await listed({ starredOnly: true }));
-  expect(globals.saved, "Saved").toBe(await listed({ type: "saved" }));
 }
 
 describe("unread counters under random operations", () => {

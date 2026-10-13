@@ -621,6 +621,7 @@ const userEndpoints = {
         );
 
       // Subquery: count of user_entries
+      // eslint-disable-next-line no-restricted-syntax -- an admin's per-user row total, not an unread count
       const entryCountSq = ctx.db
         .select({ count: count().as("count") })
         .from(userEntries)

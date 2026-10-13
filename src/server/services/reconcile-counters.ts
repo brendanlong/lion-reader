@@ -27,6 +27,7 @@
  * they check the triggers rather than repeating them.
  */
 
+/* eslint-disable no-restricted-syntax -- recomputing the counters from their definitions is a scan by design */
 import { sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { logger } from "@/lib/logger";

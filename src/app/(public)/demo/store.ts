@@ -472,7 +472,6 @@ export function createDemoStore(): DemoStore {
         tagId: input?.tagId,
         uncategorized: bool(input?.uncategorized),
         type: input?.type,
-        excludeTypes: input?.excludeTypes,
         starredOnly: bool(input?.starredOnly),
       }),
     }),

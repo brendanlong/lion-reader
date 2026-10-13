@@ -6142,42 +6142,7 @@
             "schema": {
               "type": "string",
               "enum": [
-                "web",
-                "email",
                 "saved"
-              ]
-            }
-          },
-          {
-            "in": "query",
-            "name": "excludeTypes",
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "web",
-                  "email",
-                  "saved"
-                ]
-              }
-            }
-          },
-          {
-            "in": "query",
-            "name": "unreadOnly",
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "true",
-                    "false"
-                  ]
-                }
               ]
             }
           },
