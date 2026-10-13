@@ -389,7 +389,10 @@ class FakeServer {
 /** The Saved subscription's id in [FakeServer]'s answers. */
 const val SAVED_SUBSCRIPTION = "saved-sub"
 
-/** What the real endpoints accept per request (src/server/trpc/routers/entries.ts, src/server/services/sync.ts). */
+/**
+ * What the real endpoints accept per request (src/server/trpc/routers/entries.ts,
+ * src/server/services/sync.ts).
+ */
 object ServerLimits {
     /** `/entries/batch` ids. */
     const val BATCH_IDS = 100
