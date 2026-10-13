@@ -26,7 +26,7 @@ import { USER_AGENT } from "@/server/http/user-agent";
 import { detectFeedType, parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "@/server/feed/discovery";
 import { getDomainFromUrl, type ParsedEntry, type ParsedFeed } from "@/server/feed/types";
-import { pluginRegistry, getFeedPlugin } from "@/server/plugins";
+import { pluginRegistry, getFeedHooks, getFeedPlugin, type FeedHooks } from "@/server/plugins";
 
 // ============================================================================
 // Constants
@@ -108,10 +108,13 @@ function truncateText(text: string | undefined, maxLength: number): string | nul
  * before generating the summary.
  *
  * @param entry - The parsed entry
- * @param feedUrl - The feed URL (for feed-specific cleaning)
+ * @param feedHooks - The feed's plugin hooks (for feed-specific cleaning)
  * @returns A sample entry object
  */
-function toSampleEntry(entry: ParsedEntry, feedUrl: string): z.infer<typeof sampleEntrySchema> {
+function toSampleEntry(
+  entry: ParsedEntry,
+  feedHooks: FeedHooks
+): z.infer<typeof sampleEntrySchema> {
   // Get the content to use for summary. mediaDescription is the fallback for
   // feeds that provide neither (YouTube); it's plain text, which truncateText
   // handles the same way.
@@ -119,10 +122,7 @@ function toSampleEntry(entry: ParsedEntry, feedUrl: string): z.infer<typeof samp
 
   // Apply feed-specific cleaning via the matching plugin (if any)
   if (content) {
-    const cleaner = getFeedPlugin(feedUrl)?.capabilities.feed.cleanEntryContent;
-    if (cleaner) {
-      content = cleaner(content);
-    }
+    content = feedHooks.cleanEntryContent(content);
   }
 
   return {
@@ -357,21 +357,19 @@ export const feedsRouter = createTRPCRouter({
         return b.pubDate.getTime() - a.pubDate.getTime();
       });
 
+      const feedHooks = getFeedHooks(finalFeedUrl);
       const sampleEntries = sortedItems
         .slice(0, MAX_SAMPLE_ENTRIES)
-        .map((entry) => toSampleEntry(entry, finalFeedUrl));
+        .map((entry) => toSampleEntry(entry, feedHooks));
 
       // Use domain as fallback if feed has no title
       const fallbackTitle = getDomainFromUrl(finalFeedUrl) ?? "Untitled Feed";
-      let feedTitle = parsedFeed.title ?? fallbackTitle;
-
       // Let a matching plugin transform the title (e.g. LessWrong user feeds get
       // the author appended)
-      const transformTitle = getFeedPlugin(finalFeedUrl)?.capabilities.feed.transformFeedTitle;
-      if (transformTitle) {
-        const firstAuthor = parsedFeed.items.find((item) => item.author)?.author ?? null;
-        feedTitle = transformTitle(feedTitle, new URL(finalFeedUrl), { firstAuthor });
-      }
+      const feedTitle = feedHooks.transformFeedTitle(
+        parsedFeed.title ?? fallbackTitle,
+        parsedFeed.items
+      );
 
       return {
         feed: {

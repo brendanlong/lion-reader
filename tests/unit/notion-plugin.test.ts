@@ -134,14 +134,6 @@ describe("notionPlugin", () => {
     expect(notionPlugin.matchUrl(new URL("https://www.notion.so/pricing"))).toBe(false);
   });
 
-  it("declines a fetched page that is not the Notion shell without any network call", async () => {
-    const content = await notionPlugin.capabilities.savedArticle!.fetchContentFromPage!({
-      html: "<html><body><article>Real article</article></body></html>",
-      url: new URL("https://example.com/post"),
-    });
-    expect(content).toBeNull();
-  });
-
   it("declines a site-root shell that names no page", async () => {
     const content = await notionPlugin.capabilities.savedArticle!.fetchContentFromPage!({
       html: NOTION_ROOT_SHELL,

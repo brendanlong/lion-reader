@@ -1,9 +1,9 @@
 /**
- * Unit tests for plugin registry lookups: exact and wildcard hosts, and the
- * fetched-page handler list.
+ * Unit tests for plugin registry lookups (exact and wildcard hosts, the
+ * fetched-page handler list), and the checks every registered plugin must pass.
  */
 
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { pluginRegistry } from "../../src/server/plugins";
 import { notionPlugin } from "../../src/server/plugins/notion";
 import { lessWrongPlugin } from "../../src/server/plugins/lesswrong";
@@ -48,4 +48,54 @@ describe("pluginRegistry.fetchedPageHandlers", () => {
       expect(plugin.capabilities.savedArticle.fetchContentFromPage).toBeTypeOf("function");
     }
   });
+});
+
+describe("every registered plugin", () => {
+  const plugins = pluginRegistry.plugins;
+
+  /** Plugins whose bare site root is itself a URL they handle, and why. */
+  const HANDLES_SITE_ROOT: Record<string, string> = {
+    lesswrong: "the front page maps to the frontpage feed",
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("declares lowercase hosts, none claimed by two plugins", () => {
+    const owners = new Map<string, string>();
+    for (const plugin of plugins) {
+      for (const host of plugin.hosts) {
+        expect(host).toBe(host.toLowerCase());
+        expect(owners.get(host), `${host} is claimed twice`).toBeUndefined();
+        owners.set(host, plugin.name);
+      }
+    }
+  });
+
+  it.each(plugins.map((plugin) => [plugin.name, plugin] as const))(
+    "%s declines its bare site roots unless it handles them on purpose",
+    (name, plugin) => {
+      const exactHosts = plugin.hosts.filter((host) => !host.startsWith("*."));
+      const rootMatches = exactHosts.map((host) => plugin.matchUrl(new URL(`https://${host}/`)));
+      if (name in HANDLES_SITE_ROOT) {
+        expect(rootMatches).toContain(true);
+      } else {
+        expect(rootMatches.every((matched) => !matched)).toBe(true);
+      }
+    }
+  );
+
+  it.each(pluginRegistry.fetchedPageHandlers.map((plugin) => [plugin.name, plugin] as const))(
+    "%s declines an ordinary fetched page without a network call",
+    async (_name, plugin) => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no network"));
+      const content = await plugin.capabilities.savedArticle.fetchContentFromPage!({
+        html: "<html><head><title>Post</title></head><body><article>Real article</article></body></html>",
+        url: new URL("https://example.com/post"),
+      });
+      expect(content).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    }
+  );
 });

@@ -18,7 +18,6 @@ import { listEntryCollectionIds, publishEntryLeftCollections } from "./collectio
 import { recordEntryTombstone } from "./entry-tombstones";
 import { normalizeUrl } from "@/lib/url";
 import {
-  fetchHtmlPage,
   fetchUrl as fetchRawUrl,
   HttpFetchError,
   ContentTooLargeError,
@@ -41,8 +40,7 @@ import { entryListPayload } from "@/server/services/entry-sync-events";
 import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { markEntriesRead } from "@/server/services/entries";
 import { publishMarkReadStateChanges } from "@/server/services/entry-events";
-import { pluginRegistry, claimFetchedPage } from "@/server/plugins";
-import type { SavedArticleCapability, SavedArticleContent } from "@/server/plugins/types";
+import { acquireArticleContent, type AcquiredArticle, type PluginArticle } from "@/server/plugins";
 import {
   isGoogleDocsUrl,
   normalizeGoogleDocsUrl,
@@ -819,7 +817,7 @@ type AcquiredArticleContent = Omit<ArticleContentBundle, "contentUrl"> & { conte
  * opts in via `googleDocsAuth`) > plain HTML fetch. Enforces
  * maxSavedArticleSizeBytes on every path.
  */
-async function acquireArticleContent(
+async function acquireSavedArticleContent(
   userId: string,
   params: SaveArticleParams,
   normalizedUrl: string
@@ -842,114 +840,54 @@ async function acquireArticleContent(
     };
   }
 
-  // Try to find a plugin for this URL (public Google Docs, LessWrong, ArXiv, …)
-  let urlObj: URL | null = null;
-  try {
-    urlObj = new URL(params.url);
-  } catch {
-    // Invalid URL, continue to normal fetch
-  }
+  // Private Google Docs: the public Google Docs plugin only fetches public
+  // docs. When the caller opts in, try the user's stored OAuth credentials.
+  // This needs no interactivity once the account is linked and the scopes are
+  // granted, so the compat surfaces (Wallabag/MCP) use "non-interactive" mode —
+  // the only difference is the message thrown when auth isn't set up yet.
+  const googleDocsAuth = params.googleDocsAuth;
+  const beforePageFetch =
+    googleDocsAuth && isGoogleDocsUrl(params.url)
+      ? async (): Promise<PluginArticle | null> => {
+          const doc = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl, googleDocsAuth);
+          if (!doc) return null;
+          logger.debug("Successfully fetched private Google Docs content", {
+            userId,
+            docId: doc.docId,
+            title: doc.title,
+          });
+          return {
+            kind: "plugin",
+            source: "google-docs-oauth",
+            content: { html: doc.html, title: doc.title },
+            siteName: "Google Docs",
+            skipReadability: true,
+            baseUrl: normalizedUrl,
+          };
+        }
+      : undefined;
 
-  const plugin = urlObj ? pluginRegistry.findWithCapability(urlObj, "savedArticle") : null;
-
-  if (plugin) {
-    logger.debug("Attempting plugin fetch for saved article", {
-      url: params.url,
-      plugin: plugin.name,
-    });
-
-    try {
-      const content = await plugin.capabilities.savedArticle.fetchContent(urlObj!);
-      if (content) {
-        const bundle = bundleFromPlugin(
-          content,
-          plugin.capabilities.savedArticle,
-          params.url,
-          maxSize
-        );
-        logger.debug("Successfully fetched content via plugin", {
-          url: params.url,
-          plugin: plugin.name,
-          title: content.title,
-        });
-        return bundle;
-      }
-    } catch (error) {
-      // A size-limit violation is a hard failure — surfacing it beats
-      // silently degrading to a plain scrape of the same oversized page.
-      if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
-        throw error;
-      }
-      // Rate limit errors should not fall back to a normal fetch — the same
-      // site would rate limit us again.
-      if (error instanceof HttpFetchError && error.isRateLimited()) {
-        logger.warn("Plugin fetch rate limited", {
-          url: params.url,
-          plugin: plugin.name,
-          status: error.status,
-        });
-        throw errors.upstreamRateLimited(params.url);
-      }
-      logger.warn("Plugin fetch failed, falling back to normal fetch", {
-        url: params.url,
-        plugin: plugin.name,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // Private Google Docs: the plugin only fetches public docs. When the caller
-  // opts in, try the user's stored OAuth credentials. This needs no
-  // interactivity once the account is linked and the scopes are granted, so
-  // the compat surfaces (Wallabag/MCP) use "non-interactive" mode — the only
-  // difference is the message thrown when auth isn't set up yet.
-  if (params.googleDocsAuth && isGoogleDocsUrl(params.url)) {
-    const googleDocsContent = await fetchPrivateGoogleDocWithAuth(
-      userId,
-      normalizedUrl,
-      params.googleDocsAuth
-    );
-    if (googleDocsContent) {
-      if (googleDocsContent.html.length > maxSize) {
-        throw errors.contentTooLarge("Article", maxSize);
-      }
-      logger.debug("Successfully fetched private Google Docs content", {
-        userId,
-        docId: googleDocsContent.docId,
-        title: googleDocsContent.title,
-      });
-      return {
-        // Bare fragment — a wrapped document would leak the <title> text
-        // into the sanitized body (see SavedArticleContent in plugins/types.ts)
-        html: googleDocsContent.html,
-        contentUrl: normalizedUrl,
-        pluginContent: {
-          html: googleDocsContent.html,
-          title: googleDocsContent.title,
-          siteName: "Google Docs",
-          skipReadability: true,
-        },
-        preCleanedContent: null,
-      };
-    }
-  }
-
-  // Fall back to a normal HTML fetch.
-  // For Google Docs use the normalized URL for consistent fetching.
-  const fetchUrl = isGoogleDocsUrl(params.url) ? normalizedUrl : params.url;
-
-  // Scope the try to the fetch itself. Every failure `fetchHtmlPage` can raise —
-  // an upstream error status, a network/DNS failure, a timeout, an SSRF block,
-  // an unusable content type — is a problem with the user-provided URL, not a
-  // bug in our server, so it maps to the client-facing SAVED_ARTICLE_FETCH_ERROR
-  // (a 4xx that isn't reported to Sentry). Post-fetch processing (Markdown
+  // Scope the try to the fetch itself. Every failure the fetch can raise — an
+  // upstream error status, a network/DNS failure, a timeout, an SSRF block, an
+  // unusable content type — is a problem with the user-provided URL, not a bug
+  // in our server, so it maps to the client-facing SAVED_ARTICLE_FETCH_ERROR (a
+  // 4xx that isn't reported to Sentry). Post-fetch processing (Markdown
   // conversion, Readability upstream) is deliberately OUTSIDE this catch: a
   // failure there is our bug and must surface as a 500 → Sentry, not be masked
   // as a "fetch error".
-  let result;
+  // For Google Docs use the normalized URL for consistent fetching.
+  const fetchUrl = isGoogleDocsUrl(params.url) ? normalizedUrl : params.url;
+  let acquired: AcquiredArticle;
   try {
-    result = await fetchHtmlPage(fetchUrl);
+    acquired = await acquireArticleContent(params.url, {
+      pageUrl: fetchUrl,
+      beforePageFetch,
+    });
   } catch (error) {
+    // Already classified (e.g. the private Google Docs consent prompts).
+    if (error instanceof TRPCError) {
+      throw error;
+    }
     logger.warn("Failed to fetch URL for saved article", {
       url: fetchUrl,
       error: error instanceof Error ? error.message : String(error),
@@ -979,74 +917,40 @@ async function acquireArticleContent(
     );
   }
 
-  // If we got Markdown, convert it to HTML and extract title
-  if (result.isMarkdown) {
+  if (acquired.kind === "plugin") {
+    const { content } = acquired;
+    return {
+      html: content.html,
+      contentUrl: content.canonicalUrl ?? acquired.baseUrl,
+      pluginContent: {
+        html: content.html,
+        title: content.title,
+        author: content.author,
+        excerpt: content.excerpt,
+        siteName: acquired.siteName,
+        skipReadability: acquired.skipReadability,
+      },
+      preCleanedContent: null,
+    };
+  }
+
+  if (acquired.isMarkdown) {
     logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
       url: fetchUrl,
     });
-    const markdownResult = await processMarkdown(result.content);
+    const markdownResult = await processMarkdown(acquired.content);
     return {
       html: markdownResult.html,
-      contentUrl: result.finalUrl,
+      contentUrl: acquired.finalUrl,
       pluginContent: null,
       preCleanedContent: markdownResult,
     };
   }
-  // A page no hostname-matched plugin handled may still be a source a plugin
-  // recognizes from the document itself (a Notion page on a custom domain).
-  if (!plugin) {
-    const claimed = await claimFetchedPage({ html: result.content, url: new URL(result.finalUrl) });
-    if (claimed && claimed.content.html.length > maxSize) {
-      // Unlike the hostname-matched path, a claimed page has a fallback in hand.
-      logger.warn("Plugin content for the fetched page is too large, keeping the page as fetched", {
-        url: result.finalUrl,
-        plugin: claimed.plugin.name,
-      });
-    } else if (claimed) {
-      const bundle = bundleFromPlugin(
-        claimed.content,
-        claimed.plugin.capabilities.savedArticle,
-        result.finalUrl,
-        maxSize
-      );
-      logger.debug("Plugin claimed the fetched page", {
-        url: result.finalUrl,
-        plugin: claimed.plugin.name,
-        title: claimed.content.title,
-      });
-      return bundle;
-    }
-  }
 
   return {
-    html: result.content,
-    contentUrl: result.finalUrl,
+    html: acquired.content,
+    contentUrl: acquired.finalUrl,
     pluginContent: null,
-    preCleanedContent: null,
-  };
-}
-
-/** Wrap plugin-fetched content as a bundle; a size-limit breach is a hard failure. */
-function bundleFromPlugin(
-  content: SavedArticleContent,
-  capability: SavedArticleCapability,
-  fallbackUrl: string,
-  maxSize: number
-): AcquiredArticleContent {
-  if (content.html.length > maxSize) {
-    throw errors.contentTooLarge("Article", maxSize);
-  }
-  return {
-    html: content.html,
-    contentUrl: content.canonicalUrl ?? fallbackUrl,
-    pluginContent: {
-      html: content.html,
-      title: content.title,
-      author: content.author,
-      excerpt: content.excerpt,
-      siteName: capability.siteName,
-      skipReadability: capability.skipReadability,
-    },
     preCleanedContent: null,
   };
 }
@@ -1183,7 +1087,7 @@ export async function saveArticle(
     return toExistingSavedArticle(existingEntry);
   }
 
-  const bundle = await acquireArticleContent(userId, params, normalizedUrl);
+  const bundle = await acquireSavedArticleContent(userId, params, normalizedUrl);
   const { html } = bundle;
 
   // Derive the stored fields from the acquired content. Shared with the upload

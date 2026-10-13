@@ -32,7 +32,7 @@ import type { ParsedCacheHeaders } from "../../feed/cache-headers";
 import type { JobPayloads } from "../queue";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, type FeedFetchStatus } from "../../metrics/metrics";
-import { getFeedPlugin } from "@/server/plugins";
+import { getFeedHooks, getFeedPlugin } from "@/server/plugins";
 import {
   findPermanentRedirectUrl,
   isHttpToHttpsUpgrade,
@@ -245,22 +245,8 @@ async function processSuccessfulFetch(
   // Let a matching plugin transform the feed title. For LessWrong user feeds this
   // appends the author name (e.g. "LessWrong - Brendan Long" instead of just
   // "LessWrong"), and automatically updates if the user changes their display name.
-  if (feed.url && feedTitle) {
-    const transformTitle = feedPlugin?.capabilities.feed.transformFeedTitle;
-    if (transformTitle) {
-      // Isolate plugin failures: a throwing hook must not fail the whole fetch.
-      // Fall back to the untransformed title.
-      try {
-        const firstAuthor = parsedFeed.items.find((item) => item.author)?.author ?? null;
-        feedTitle = transformTitle(feedTitle, new URL(feed.url), { firstAuthor });
-      } catch (error) {
-        logger.warn("Plugin transformFeedTitle hook threw; using untransformed title", {
-          feedId: feed.id,
-          feedUrl: feed.url,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+  if (feedTitle) {
+    feedTitle = getFeedHooks(feed.url).transformFeedTitle(feedTitle, parsedFeed.items);
   }
 
   const feedMetadata = {

@@ -10,8 +10,11 @@ class PluginRegistry {
   private hostIndex = new Map<string, UrlPlugin[]>();
   private wildcardHosts: { suffix: string; plugin: UrlPlugin }[] = [];
   private fetchedPagePlugins: PluginWith<"savedArticle">[] = [];
+  private registeredPlugins: UrlPlugin[] = [];
 
+  /** Registration order is precedence order when two plugins match a URL. */
   register(plugin: UrlPlugin): void {
+    this.registeredPlugins.push(plugin);
     for (const host of plugin.hosts) {
       const normalized = host.toLowerCase();
       if (normalized.startsWith("*.")) {
@@ -70,6 +73,10 @@ class PluginRegistry {
     return this.pluginsForHostname(feedUrl.hostname).some(
       (p) => p.feedDefaultsToFullContent?.(feedUrl) ?? false
     );
+  }
+
+  get plugins(): readonly UrlPlugin[] {
+    return this.registeredPlugins;
   }
 
   /**
