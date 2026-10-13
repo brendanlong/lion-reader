@@ -45,11 +45,11 @@ client: {
     style.fill: "#ffcc80"
 
     description: |md
-      **Server state cache**
+      **Network layer** (results ingested into the local store)
       - entries.list (infinite)
-      - entries.get
+      - entries.get (content stays here)
       - entries.count
-      - subscriptions.list
+      - subscriptions.list / get
       - tags.list
     |
   }
@@ -64,6 +64,8 @@ client: {
       - entries (one row per entry, updatedAt-guarded)
       - list membership (listKey, entryId, order)
       - subscriptions (one row per loaded subscription; sidebar sections derive from them)
+      - tags
+      - unread counts (one per list; newest server stamp wins)
     |
   }
 
@@ -74,9 +76,9 @@ client: {
 
     description: |md
       **src/lib/cache/**
-      - setBulkCounts (absolute counts)
+      - applyUnreadCounts (absolute counts)
       - handleSubscriptionCreated/Deleted
-      - applySyncTagChanges
+      - applyTagChange / applyTagDeleted
     |
   }
 }

@@ -195,21 +195,23 @@ cache-ops: Cache Operations {
   style.fill: "#fff7ed"
   tooltip: "src/lib/cache/operations.ts"
 
-  new-entry-handler: setEntryRelatedCounts {
+  new-entry-handler: applyUnreadCounts {
     style.fill: "#fed7aa"
 
     updates: |
-      Sets absolute counts from event.counts (no refetch):
+      Sets absolute counts from event.counts (no refetch)
+      in the local store, keeping each list's newest:
       - stored subscriptions: unreadCount (one the store
         lacks that now has unread entries is fetched when
         a loaded sidebar section may list it)
-      - tags.list: unreadCount (works even when the
-        subscription isn't cached, #892)
-      - entries.count({}) / ({ type: "saved" })
+      - tag and Uncategorized counts (work even when the
+        subscription isn't stored, #892)
+      - All, Starred, Saved
 
-      Absolute (not delta) → idempotent: a reconnect
-      catch-up sync re-delivering the same new_entry
-      can't double-count.
+      Absolute (not delta) and stamped → idempotent: a
+      reconnect catch-up sync re-delivering the same
+      new_entry can't double-count, and a late one can't
+      regress a newer count.
 
       Stores the event's entry payload in the local
       entry store and inserts it into matching loaded
@@ -244,7 +246,7 @@ cache-ops: Cache Operations {
       store (the sidebar sections derive from it)
 
       Counts (live path): set absolute counts from
-      event.counts via setEntryRelatedCounts.
+      event.counts via applyUnreadCounts.
       Sync catch-up path (no counts): invalidate
       tags.list + entries.count instead.
     |
@@ -396,7 +398,7 @@ entry-types: Entry Type Differences {
     description: |
       - Published from saved service/router
       - subscriptionId is NULL (no subscription row)
-      - Updates entries.count({ type: "saved" })
+      - Updates the Saved count
       - Does NOT update subscription/tag counts
     |
   }

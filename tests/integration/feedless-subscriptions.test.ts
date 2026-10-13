@@ -86,6 +86,7 @@ describe("subscriptions without a feed (#1846)", () => {
       siteUrl: null,
       subscribedAt: expect.any(Date),
       unreadCount: 0,
+      unreadCountAsOf: expect.any(String),
       tags: [],
       fetchFullContent: false,
     });
@@ -145,7 +146,9 @@ describe("subscriptions without a feed (#1846)", () => {
     expect((await caller.entries.list({ subscriptionId: collectionId })).items).toEqual([
       expect.objectContaining({ id: entryId }),
     ]);
-    expect(await caller.entries.count({ subscriptionId: collectionId })).toEqual({ unread: 1 });
+    expect(await caller.entries.count({ subscriptionId: collectionId })).toMatchObject({
+      unread: 1,
+    });
     expect((await caller.tags.list()).items).toEqual([
       expect.objectContaining({ id: tagId, feedCount: 1, unreadCount: 1 }),
     ]);

@@ -72,10 +72,6 @@ export type DemoProcedures = {
     Inputs["collections"]["removeEntries"],
     Outputs["collections"]["removeEntries"]
   >;
-  "collections.listForEntry": Handler<
-    Inputs["collections"]["listForEntry"],
-    Outputs["collections"]["listForEntry"]
-  >;
   "summarization.isAvailable": Handler<
     Inputs["summarization"]["isAvailable"],
     Outputs["summarization"]["isAvailable"]
@@ -687,12 +683,6 @@ export function createDemoStore(): DemoStore {
     "collections.addEntries": (input) => changeMembership(input.id, input.entryIds, true),
 
     "collections.removeEntries": (input) => changeMembership(input.id, input.entryIds, false),
-
-    "collections.listForEntry": (input) => ({
-      collectionIds: liveSubscriptions()
-        .filter((sub) => sub.members.has(input.entryId))
-        .map((sub) => sub.id),
-    }),
 
     "summarization.isAvailable": () => ({ available: true }),
 

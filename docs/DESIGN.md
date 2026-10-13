@@ -120,7 +120,7 @@ The same services back several surfaces under `src/app/api/`: the browser tRPC e
 
 ## Frontend Architecture
 
-**The app is a client-side SPA after the first load.** Next.js App Router renders the initial page; after hydration, `ClientLink` navigates with `history.pushState` and `AppRouter` (`src/components/app/AppRouter.tsx`) picks what to render from the pathname, served from the React Query cache and the local entry store, which SSE keeps fresh. Navigation costs no server requests. Native App Router navigation was rejected (#872): per-navigation RSC fetches defeat the SSE-fed cache. The `page.tsx` files exist to prefetch data for the initial load. Routes split into two root layouts, `(spa)` and `(public)` (`src/CLAUDE.md`).
+**The app is a client-side SPA after the first load.** Next.js App Router renders the initial page; after hydration, `ClientLink` navigates with `history.pushState` and `AppRouter` (`src/components/app/AppRouter.tsx`) picks what to render from the pathname, served from the local store (`src/FRONTEND_STATE.md`), which SSE keeps fresh. Navigation costs no server requests. Native App Router navigation was rejected (#872): per-navigation RSC fetches defeat the SSE-fed cache. The `page.tsx` files exist to prefetch data for the initial load. Routes split into two root layouts, `(spa)` and `(public)` (`src/CLAUDE.md`).
 
 ---
 

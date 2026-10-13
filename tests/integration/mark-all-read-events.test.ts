@@ -139,6 +139,7 @@ describe("entries.markAllRead SSE publishing", () => {
       ]),
       tags: [{ id: tagId, unread: 0 }],
       uncategorized: { unread: 0 },
+      asOf: expect.any(String),
     });
     expect(counts?.subscriptions).toHaveLength(2);
     expect(JSON.parse(await messagePromise).counts).toEqual(counts);

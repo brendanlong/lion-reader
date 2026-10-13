@@ -208,8 +208,8 @@ describe("the saved subscription (#1846)", () => {
     await createTestEntry(userId, { type: "saved", userIds: [userId] });
     const caller = createCaller(await createAuthContext(userId));
 
-    expect(await caller.entries.count({ type: "saved" })).toEqual({ unread: 2 });
-    expect(await caller.entries.count({})).toEqual({ unread: 3 });
+    expect(await caller.entries.count({ type: "saved" })).toMatchObject({ unread: 2 });
+    expect(await caller.entries.count({})).toMatchObject({ unread: 3 });
     expect(
       await db
         .select({ unread: subscriptions.unreadCount })

@@ -42,7 +42,10 @@ export function ingestFetchedTags(store: TagStore, queryHash: string, data: Tags
 }
 
 /** Writes a created or updated tag from an event; a new one has no subscriptions yet. */
-export function writeLiveTag(store: TagStore, tag: Pick<TagRow, "id" | "name" | "color">): void {
+export function writeLiveTag(
+  store: TagStore,
+  tag: Pick<TagRow, "id" | "name" | "color"> & Partial<TagRow>
+): void {
   const stored = store.rows.getSynced(tag.id);
   writeLiveRows(store, [{ feedCount: 0, createdAt: new Date(), ...stored, ...tag }]);
 }
