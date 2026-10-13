@@ -14,6 +14,8 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import com.lionreader.app.narration.NarrationService
 import com.lionreader.shared.account.AccountSession
 import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.settings.AppSettings
+import com.lionreader.shared.settings.SyncInterval
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -26,6 +28,7 @@ import io.ktor.http.headersOf
 import io.ktor.http.parseUrlEncodedParameters
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -193,6 +196,54 @@ class AccountLifecycleTest {
 
     private fun syncNow() =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork("sync-now").get()
+
+    private fun scheduledEvery() =
+        WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(SyncScheduler.PERIODIC)
+            .get()
+            .singleOrNull { !it.state.isFinished }
+            ?.periodicityInfo
+            ?.repeatIntervalMillis
+
+    private fun AppGraph.setSyncInterval(interval: SyncInterval) = runBlocking {
+        settings.update { it.copy(syncInterval = interval) }
+    }
+
+    private val hourly = TimeUnit.MINUTES.toMillis(SyncInterval.HOUR.minutes!!)
+
+    @Test
+    fun thePeriodicSyncFollowsTheSetting() {
+        val graph = AppGraph(context, http)
+        graph.followSyncInterval()
+        try {
+            graph.setSyncInterval(SyncInterval.HOUR)
+            until { scheduledEvery() == hourly }
+
+            graph.setSyncInterval(SyncInterval.NEVER)
+            until { scheduledEvery() == null }
+        } finally {
+            graph.setSyncInterval(AppSettings().syncInterval)
+        }
+    }
+
+    /** Signing out cancels the account's jobs, and the periodic sync comes back as set. */
+    @Test
+    fun signingOutKeepsThePeriodicSyncsInterval() {
+        val graph = AppGraph(context, http)
+        graph.followSyncInterval()
+        try {
+            graph.setSyncInterval(SyncInterval.HOUR)
+            until { scheduledEvery() == hourly }
+            graph.signInAndWait("alice")
+
+            graph.accounts.signOut()
+
+            // The revocation follows cancelling the jobs.
+            until { "POST /oauth/revoke" in requests && scheduledEvery() == hourly }
+        } finally {
+            graph.setSyncInterval(AppSettings().syncInterval)
+        }
+    }
 
     @Test
     fun startingUpDeletesFilesOfAccountsThatArentTheCurrentOne() {

@@ -38,6 +38,15 @@ enum class TextSize(val key: String, val label: String) {
     X_LARGE("x-large", "Extra large"),
 }
 
+/** How often the app syncs while it isn't open; [minutes] is null for never. */
+enum class SyncInterval(val minutes: Long?, val label: String) {
+    FIFTEEN_MINUTES(15, "15 minutes"),
+    THIRTY_MINUTES(30, "30 minutes"),
+    HOUR(60, "1 hour"),
+    FOUR_HOURS(240, "4 hours"),
+    NEVER(null, "Never"),
+}
+
 /** Where narration audio comes from. */
 enum class NarrationEngine {
     DEVICE,
@@ -54,6 +63,7 @@ data class AppSettings(
     /** Lists run oldest first (Recently Read: earliest read first), as the web's sort toggle. */
     val oldestFirst: Boolean = false,
     val retentionDays: Int = 30,
+    val syncInterval: SyncInterval = SyncInterval.THIRTY_MINUTES,
     /** Drawer tags shown with their feeds; the rest are collapsed. */
     val expandedTags: Set<String> = emptySet(),
     /** Leave feeds and tags with nothing unread out of the drawer. */
@@ -105,6 +115,7 @@ internal val STORED_SETTINGS: List<Stored<*>> =
         Stored(intPreferencesKey("retention_days"), { retentionDays }) {
             copy(retentionDays = it)
         },
+        enumStored("sync_interval", { syncInterval }) { copy(syncInterval = it) },
         Stored(stringSetPreferencesKey("expanded_tags"), { expandedTags }) {
             copy(expandedTags = it)
         },

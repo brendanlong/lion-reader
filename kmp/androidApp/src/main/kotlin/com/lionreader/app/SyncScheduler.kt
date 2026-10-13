@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.lionreader.shared.account.SyncOutcome
 import com.lionreader.shared.account.runBackgroundSync
+import com.lionreader.shared.settings.SyncInterval
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 
@@ -22,20 +23,22 @@ import kotlinx.coroutines.Dispatchers
  * full sync, and a quick flush of the outbox after the user acts.
  */
 object SyncScheduler {
-    private const val PERIODIC = "sync-periodic"
+    internal const val PERIODIC = "sync-periodic"
     private const val FLUSH = "sync-flush"
     private const val NOW = "sync-now"
 
     private val online = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-    fun schedulePeriodic(context: Context) {
+    /** Every [interval], or not at all; a change of interval doesn't restart the period. */
+    fun schedulePeriodic(context: Context, interval: SyncInterval) {
+        val workManager = WorkManager.getInstance(context)
+        val minutes = interval.minutes ?: return run { workManager.cancelUniqueWork(PERIODIC) }
         val request =
-            PeriodicWorkRequestBuilder<SyncWorker>(30, TimeUnit.MINUTES)
+            PeriodicWorkRequestBuilder<SyncWorker>(minutes, TimeUnit.MINUTES)
                 .setConstraints(online)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .build()
-        WorkManager.getInstance(context)
-            .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+        workManager.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     // A flush already running finishes; one more queues behind it and sends

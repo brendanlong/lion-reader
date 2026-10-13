@@ -32,6 +32,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,7 +78,7 @@ class AppGraph(
         Accounts(
             PrefsStore(context.getSharedPreferences("auth", Context.MODE_PRIVATE)),
             AndroidAccountStorage(context),
-            WorkManagerSync(context),
+            WorkManagerSync(context, scope, settings),
             http,
             BuildConfig.SIGN_IN_CALLBACK_PATH,
             allowHttp = BuildConfig.DEBUG,
@@ -119,6 +122,16 @@ class AppGraph(
     /** Only the setting: the narrator follows it. */
     fun setNarrationSpeed(speed: Float) {
         scope.launch { settings.update { it.copy(narrationSpeed = speed) } }
+    }
+
+    /** Keeps the periodic sync on the interval the settings say, as they change. */
+    fun followSyncInterval() {
+        scope.launch {
+            settings.settings
+                .map { it.syncInterval }
+                .distinctUntilChanged()
+                .collect { SyncScheduler.schedulePeriodic(context, it) }
+        }
     }
 
     /** A full sync (article bodies included) in a background job. */
@@ -209,12 +222,22 @@ private class PrefsStore(private val prefs: SharedPreferences) : KeyValueStore {
         }
 }
 
-private class WorkManagerSync(private val context: Context) : BackgroundSync {
+private class WorkManagerSync(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    private val settings: SettingsRepository,
+) : BackgroundSync {
     override fun flushSoon() = SyncScheduler.flushSoon(context)
 
     override fun syncNow() = SyncScheduler.syncNow(context)
 
-    override fun schedulePeriodic() = SyncScheduler.schedulePeriodic(context)
+    // The stored setting, not currentSettings, which can lag a change followSyncInterval has
+    // already applied and so bring back a sync the user just turned off.
+    override fun schedulePeriodic() {
+        scope.launch {
+            SyncScheduler.schedulePeriodic(context, settings.settings.first().syncInterval)
+        }
+    }
 
     override fun cancelAll() {
         SyncScheduler.cancelAll(context)

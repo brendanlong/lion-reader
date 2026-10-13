@@ -28,7 +28,7 @@ interface BackgroundSync {
     /** A full sync, article bodies included, soon. */
     fun syncNow()
 
-    /** The periodic full sync, if it isn't scheduled already. */
+    /** The periodic full sync, on the interval the settings say (or not at all). */
     fun schedulePeriodic()
 
     fun cancelAll()

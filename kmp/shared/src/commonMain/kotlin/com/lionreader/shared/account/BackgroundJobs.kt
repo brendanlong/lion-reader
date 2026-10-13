@@ -17,8 +17,7 @@ enum class SyncOutcome {
 
 /**
  * A background sync: a [full] one (article bodies included), or just sending the outbox. Only for
- * an account whose tokens are known to be its. Anything but signing out is tried again later: the
- * periodic sync would anyway.
+ * an account whose tokens are known to be its. Anything but signing out is tried again later.
  */
 suspend fun Accounts.runBackgroundSync(full: Boolean, io: CoroutineDispatcher): SyncOutcome {
     val session = account.value ?: return SyncOutcome.DONE
