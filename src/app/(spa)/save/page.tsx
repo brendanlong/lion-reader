@@ -34,10 +34,10 @@ interface SharedFile {
 }
 
 /**
- * Read the file the share-target service worker stashed in IndexedDB,
- * optionally deleting it once read.
+ * Read and delete the file the share-target service worker stashed in IndexedDB.
+ * The record is gone after this, so callers must keep the file to retry with it.
  */
-function readSharedFile(onFile: (file: SharedFile) => void, deleteAfterRead: boolean) {
+function takeSharedFile(onFile: (file: SharedFile) => void) {
   const dbRequest = indexedDB.open("lion-reader-share", 1);
 
   dbRequest.onsuccess = () => {
@@ -51,10 +51,8 @@ function readSharedFile(onFile: (file: SharedFile) => void, deleteAfterRead: boo
       if (fileData) {
         onFile({ content: fileData.content, filename: fileData.filename, title: fileData.title });
 
-        if (deleteAfterRead) {
-          const deleteTransaction = db.transaction("files", "readwrite");
-          deleteTransaction.objectStore("files").delete("pending");
-        }
+        const deleteTransaction = db.transaction("files", "readwrite");
+        deleteTransaction.objectStore("files").delete("pending");
       } else {
         console.error("No file found in IndexedDB");
       }
@@ -99,6 +97,7 @@ function SaveContent() {
 
   // Track if we've already initiated the save to prevent re-triggering
   const saveInitiatedRef = useRef(false);
+  const sharedFileRef = useRef<SharedFile | null>(null);
 
   const saveMutation = trpc.saved.save.useMutation({
     onSuccess: (data) => {
@@ -155,8 +154,10 @@ function SaveContent() {
     if (shareType === "file" && !saveInitiatedRef.current) {
       saveInitiatedRef.current = true;
 
-      // Upload the shared file, then delete it from IndexedDB
-      readSharedFile((file) => uploadFileMutation.mutate(file), true);
+      takeSharedFile((file) => {
+        sharedFileRef.current = file;
+        uploadFileMutation.mutate(file);
+      });
     }
   }, [shareType, uploadFileMutation]);
 
@@ -196,10 +197,8 @@ function SaveContent() {
     if (urlToSave) {
       saveInitiatedRef.current = false;
       saveMutation.mutate({ url: urlToSave });
-    } else if (shareType === "file") {
-      // Retry file upload - re-read from IndexedDB
-      saveInitiatedRef.current = false;
-      readSharedFile((file) => uploadFileMutation.mutate(file), false);
+    } else if (shareType === "file" && sharedFileRef.current) {
+      uploadFileMutation.mutate(sharedFileRef.current);
     }
   };
 
