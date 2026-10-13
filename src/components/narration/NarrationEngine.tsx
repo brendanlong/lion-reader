@@ -53,8 +53,25 @@ export function NarrationEngineImpl({ onChange, ...config }: NarrationEngineProp
 
   // Layout effects, so the view re-renders with a new state before paint.
   useLayoutEffect(() => {
-    onChange({ ...controls, state, isSupported, processedHtml, isHighlighting, highlightHtml });
-  }, [onChange, controls, state, isSupported, processedHtml, isHighlighting, highlightHtml]);
+    onChange({
+      ...controls,
+      state,
+      isSupported,
+      processedHtml,
+      isHighlighting,
+      highlightHtml,
+      highlightSource: content ?? null,
+    });
+  }, [
+    onChange,
+    controls,
+    state,
+    isSupported,
+    processedHtml,
+    isHighlighting,
+    highlightHtml,
+    content,
+  ]);
   useLayoutEffect(() => () => onChange(null), [onChange]);
 
   return null;

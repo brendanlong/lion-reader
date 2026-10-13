@@ -9,13 +9,15 @@
  *
  * Only renders if narration is supported in the current browser.
  *
- * NOTE: This component is loaded with next/dynamic ssr: false (see index.ts).
+ * NOTE: This component is loaded with next/dynamic ssr: false (see index.tsx).
  * This avoids hydration mismatches since we can't check browser support on the server.
  *
- * Usage:
+ * Usage: `narration` is the view `<NarrationEngine onChange={...}>` reports
+ * (the engine runs useNarration); null until the engine has loaded.
  * ```tsx
- * import { NarrationControls } from "@/components/narration";
+ * import { NarrationControls, NarrationEngine } from "@/components/narration";
  *
+ * <NarrationEngine id={id} content={content} onChange={setNarration} />
  * <NarrationControls narration={narration} />
  * ```
  */

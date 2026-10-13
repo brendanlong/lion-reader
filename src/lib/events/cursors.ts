@@ -22,18 +22,33 @@ import type { SyncEvent } from "./schemas";
  * (always 6), or `Date.toISOString()` (3), in UTC or with a numeric offset.
  */
 const INSTANT_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(?:Z|([+-])(\d{2}):?(\d{2})?)$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(?:Z|([+-])(\d{2})(?::?(\d{2}))?)$/;
 
-/** Exact epoch nanoseconds; a `Date` would truncate to milliseconds. */
+/**
+ * Exact epoch nanoseconds; a `Date` would truncate to milliseconds. Throws a
+ * RangeError for anything `Temporal.Instant.from` would reject, rather than
+ * letting `Date` roll an out-of-range field over into the next one.
+ */
 function epochNanoseconds(timestamp: string): bigint {
+  const invalid = () => new RangeError(`Invalid cursor timestamp: ${timestamp}`);
   const match = INSTANT_PATTERN.exec(timestamp);
-  if (!match) throw new RangeError(`Invalid cursor timestamp: ${timestamp}`);
+  if (!match) throw invalid();
   const [, year, month, day, hour, minute, second, fraction = "", sign, offsetH, offsetM] = match;
-  const offsetMinutes = sign
-    ? (sign === "-" ? -1 : 1) * (Number(offsetH) * 60 + Number(offsetM ?? 0))
-    : 0;
-  const epochMs =
-    Date.UTC(+year, +month - 1, +day, +hour, +minute, +second) - offsetMinutes * 60_000;
+  const [h, min, sec, offH, offMin] = [hour, minute, second, offsetH, offsetM].map((part) =>
+    Number(part ?? 0)
+  );
+  // Second 60 (a leap second) is accepted and read as 59, as Temporal does.
+  if (h > 23 || min > 59 || sec > 60 || offH > 23 || offMin > 59) throw invalid();
+
+  // setUTCFullYear, unlike Date.UTC, doesn't map years 0-99 to 1900-1999.
+  const date = new Date(0);
+  date.setUTCFullYear(+year, +month - 1, +day);
+  // A month or day out of range rolls over into the next month or year.
+  if (date.getUTCMonth() !== +month - 1 || date.getUTCDate() !== +day) throw invalid();
+  date.setUTCHours(h, min, Math.min(sec, 59));
+
+  const offsetMinutes = (sign === "-" ? -1 : 1) * (offH * 60 + offMin);
+  const epochMs = date.getTime() - offsetMinutes * 60_000;
   return BigInt(epochMs) * 1_000_000n + BigInt(fraction.padEnd(9, "0"));
 }
 

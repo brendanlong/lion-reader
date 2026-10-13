@@ -101,6 +101,11 @@ export interface NarrationEngineView extends UseNarrationReturn {
   isHighlighting: boolean;
   /** The displayed content with paragraph ids, while `isHighlighting` */
   highlightHtml: string | null;
+  /**
+   * The content `highlightHtml` was made from. The view lags a commit behind a
+   * content change, so only use `highlightHtml` when this matches.
+   */
+  highlightSource: string | null;
 }
 
 // ============================================================================

@@ -244,7 +244,9 @@ export function EntryContentBody({
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
   const shouldProcessForHighlighting = narration?.isHighlighting ?? false;
-  const contentHtml = contentToDisplay ? (narration?.highlightHtml ?? contentToDisplay) : null;
+  const highlightHtml =
+    narration?.highlightSource === contentToDisplay ? narration.highlightHtml : null;
+  const contentHtml = contentToDisplay ? (highlightHtml ?? contentToDisplay) : null;
 
   // Image prefetching is owned by EntryContentRenderer (shared with the demo
   // reader); contentRef is still forwarded there for narration highlighting.

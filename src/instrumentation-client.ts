@@ -7,7 +7,7 @@
  *
  * The SDK loads once the page is idle (see `@/lib/sentry/client`), keeping it
  * out of the critical path. Until then, uncaught errors and unhandled
- * rejections are buffered here and reported once it's initialized. Tracing
+ * rejections are buffered and reported once it's initialized. Tracing
  * still measures the page load from navigation start, but requests and
  * interactions before the SDK loads aren't traced.
  *
@@ -15,28 +15,18 @@
  * https://docs.sentry.io/platforms/javascript/guides/nextjs/
  */
 
-import { loadSentry } from "@/lib/sentry/client";
+import { bufferEarlyErrorsUntilLoaded, loadSentry } from "@/lib/sentry/client";
 
 type SentrySdk = NonNullable<Awaited<ReturnType<typeof loadSentry>>>;
 
 let sentry: SentrySdk | null = null;
 
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
-  const earlyErrors: unknown[] = [];
-  const onError = (event: ErrorEvent) => {
-    if (event.error !== undefined) earlyErrors.push(event.error);
-  };
-  const onRejection = (event: PromiseRejectionEvent) => earlyErrors.push(event.reason);
-  window.addEventListener("error", onError);
-  window.addEventListener("unhandledrejection", onRejection);
+  bufferEarlyErrorsUntilLoaded();
 
   const start = () => {
     void loadSentry().then((loaded) => {
-      // Sentry's own global handlers take over from here.
-      window.removeEventListener("error", onError);
-      window.removeEventListener("unhandledrejection", onRejection);
       sentry = loaded;
-      for (const error of earlyErrors.splice(0)) loaded?.captureException(error);
     });
   };
   const startWhenIdle = () => {
@@ -45,6 +35,12 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
   };
   if (document.readyState === "complete") startWhenIdle();
   else window.addEventListener("load", startWhenIdle, { once: true });
+  // Leaving before the page is idle: try to get buffered errors out anyway
+  // (best effort; the page may be gone before they're sent).
+  window.addEventListener("pagehide", start, { once: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") start();
+  });
 }
 
 // Instruments Next.js router transitions for tracing. Most in-app navigation

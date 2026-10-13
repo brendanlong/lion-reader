@@ -5,7 +5,11 @@
  * `@sentry/nextjs`: `instrumentation-client.ts` calls `loadSentry()` once the
  * page is idle, and client code reports errors through
  * `captureClientException`, which loads the SDK first if it isn't yet.
+ * Errors raised before then are buffered (`bufferEarlyErrorsUntilLoaded`) and
+ * reported as soon as the SDK is initialized, by whichever caller loaded it.
  */
+
+import { bufferEarlyErrors, type EarlyErrorBuffer } from "./early-errors";
 
 type SentrySdk = typeof import("./client-sdk");
 
@@ -14,6 +18,12 @@ type SentrySdk = typeof import("./client-sdk");
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
 let sdk: Promise<SentrySdk | null> | null = null;
+let earlyErrors: EarlyErrorBuffer | null = null;
+
+/** Buffers uncaught errors until `loadSentry()` has initialized the SDK. */
+export function bufferEarlyErrorsUntilLoaded(): void {
+  earlyErrors ??= bufferEarlyErrors(window);
+}
 
 /** Loads and initializes the SDK once. Resolves to null when it's not configured or fails to load. */
 export function loadSentry(): Promise<SentrySdk | null> {
@@ -21,9 +31,14 @@ export function loadSentry(): Promise<SentrySdk | null> {
     ? import("./client-sdk").then(
         (loaded) => {
           loaded.initSentry(dsn);
+          // Sentry's own global handlers take over from here.
+          earlyErrors?.flush(loaded);
           return loaded;
         },
-        () => null
+        () => {
+          earlyErrors?.flush(null);
+          return null;
+        }
       )
     : Promise.resolve(null);
   return sdk;
