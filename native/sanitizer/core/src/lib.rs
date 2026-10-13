@@ -17,9 +17,9 @@
 //! sanitized copy, so the next read of every entry uses the new rules (see
 //! `src/server/html/CLAUDE.md`).
 
-pub mod depth;
 pub mod embeds;
 pub mod idrefs;
+pub mod limits;
 pub mod mathjax;
 pub mod sanitize;
 pub mod scanner;
@@ -30,6 +30,13 @@ pub mod urls;
 /// Run the full sanitization pipeline. `warnings` collects non-fatal
 /// diagnostics (e.g. unrecognized MathJax wrappers) for the caller to log.
 pub fn sanitize_entry_html(html: &str, warnings: &mut Vec<String>) -> Result<String, String> {
+    if html.len() > limits::MAX_INPUT_BYTES {
+        return Err(format!(
+            "input is {} bytes, over the {}-byte limit",
+            html.len(),
+            limits::MAX_INPUT_BYTES
+        ));
+    }
     // MathJax CHTML → MathML. A pathological input must degrade to "math
     // stripped" rather than fail the write path, so scanner/parse panics are
     // caught and the raw HTML sanitized instead.
@@ -162,6 +169,26 @@ mod tests {
             assert_eq!(warnings.len(), 1, "{warnings:?}");
             assert!(warnings[0].contains("nested deeper"), "{warnings:?}");
         }
+    }
+
+    #[test]
+    fn input_over_the_size_limit_fails_closed() {
+        let at_limit = "a".repeat(limits::MAX_INPUT_BYTES);
+        assert_eq!(run(&at_limit).len(), limits::MAX_INPUT_BYTES);
+        let over = format!("{at_limit}a");
+        assert!(sanitize_entry_html(&over, &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn many_small_svgs_sanitize_in_linear_time() {
+        // A per-SVG rescan of the body takes about a minute here; a linear
+        // pipeline takes under a second unoptimized. Loose for a loaded CI box.
+        let html = "<svg><g/></svg>".repeat(30_000);
+        let start = std::time::Instant::now();
+        let out = run(&html);
+        assert_eq!(out.matches("<svg>").count(), 30_000);
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_secs() < 10, "took {elapsed:?}");
     }
 
     #[test]

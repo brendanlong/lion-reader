@@ -62,16 +62,22 @@ data class FullEntry(
     val contentCleaned: String? = null,
     val fullContentCleaned: String? = null,
     val fullContentOriginal: String? = null,
+    /**
+     * Set when the latest full-content fetch failed; the full-content fields then hold stale
+     * content.
+     */
+    val fullContentError: String? = null,
     val fetchFullContent: Boolean,
     val readChangedAt: String? = null,
 ) {
     /** The body the web reader shows by default for this entry. */
     val displayContent: String?
         get() =
-            (if (fetchFullContent) fullContentCleaned ?: fullContentOriginal else null)
-                ?: contentCleaned
-                ?: contentOriginal
-                ?: summary
+            (if (fetchFullContent && fullContentError == null) {
+                fullContentCleaned ?: fullContentOriginal
+            } else {
+                null
+            }) ?: contentCleaned ?: contentOriginal ?: summary
 }
 
 @Serializable data class GetManyRequest(val ids: List<String>)

@@ -314,19 +314,9 @@ export const entriesRouter = createTRPCRouter({
   // REST routes match in procedure order, so `GET /entries/count` must come
   // before `GET /entries/{id}` or the count request is read as an entry id.
   /**
-   * Get count of entries with optional filters.
-   *
-   * Entries are visible to a user only if they have a corresponding
-   * row in the user_entries table for their user_id.
-   *
-   * @param subscriptionId - Optional filter by subscription ID
-   * @param tagId - Optional filter by tag ID (entries from subscriptions with this tag)
-   * @param uncategorized - Optional filter to show only entries from uncategorized subscriptions
-   * @param type - Optional filter by entry type
-   * @param excludeTypes - Optional types to exclude
-   * @param unreadOnly - Optional filter to count only unread entries
-   * @param starredOnly - Optional filter to count only starred entries
-   * @returns Count of total and unread entries
+   * Unread count of one list (its badge): All, or at most one of
+   * subscriptionId, tagId, uncategorized, type "saved" and starredOnly
+   * (`countEntries`).
    */
   count: readerProcedure
     .meta({
@@ -338,14 +328,14 @@ export const entriesRouter = createTRPCRouter({
       },
     })
     .input(
+      // Strict: a removed filter (excludeTypes, readOnly, ...) must fail, not
+      // be stripped into a different list's count.
       z
-        .object({
+        .strictObject({
           subscriptionId: uuidSchema.optional(),
           tagId: uuidSchema.optional(),
           uncategorized: booleanQueryParam,
-          type: feedTypeSchema.optional(),
-          excludeTypes: z.array(feedTypeSchema).optional(),
-          unreadOnly: booleanQueryParam,
+          type: z.enum(["saved"]).optional(),
           starredOnly: booleanQueryParam,
         })
         .optional()

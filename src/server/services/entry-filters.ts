@@ -2,7 +2,7 @@
  * Entry Filters Service
  *
  * Shared filter builder and select fragments for entry queries. Used by
- * listEntries, searchEntries, countEntries, and markAllRead.
+ * listEntries, searchEntries, countTotalEntries, and markAllRead.
  */
 
 import {
@@ -116,8 +116,22 @@ export function entrySubscriptionIdsSql(row: {
 // ============================================================================
 
 /**
- * Verifies a subscription exists, is active, belongs to the user and is listed
- * (the saved subscription isn't a filter: Saved is `type: "saved"`).
+ * The `subscriptions` row a `subscriptionId` filter accepts: the user's,
+ * active and listed (the saved subscription isn't a filter: Saved is
+ * `type: "saved"`). The list (`verifySubscriptionOwnership`) and its badge
+ * (`countEntries`) both use it, so they accept the same subscriptions.
+ */
+export function filterableSubscriptionWhere(userId: string, subscriptionId: string): SQL {
+  return and(
+    eq(subscriptions.id, subscriptionId),
+    eq(subscriptions.userId, userId),
+    isNull(subscriptions.unsubscribedAt),
+    isListedSubscription()
+  )!;
+}
+
+/**
+ * Verifies the user may filter by a subscription (`filterableSubscriptionWhere`).
  * Queries the subscriptions table directly — the user_feeds view is
  * display-only (subscription list surfaces), not for ownership checks.
  */
@@ -129,14 +143,7 @@ export async function verifySubscriptionOwnership(
   const subExists = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.id, subscriptionId),
-        eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt),
-        isListedSubscription()
-      )
-    )
+    .where(filterableSubscriptionWhere(userId, subscriptionId))
     .limit(1);
   return subExists.length > 0;
 }
@@ -294,7 +301,7 @@ export async function buildEntrySubscriptionFilter(
 /**
  * Builds shared filter conditions for entry queries (unreadOnly, starredOnly,
  * type, excludeTypes, showSpam, timestamp bounds). Used by listEntries,
- * searchEntries, countEntries, and countTotalEntries to avoid duplicating the
+ * searchEntries and countTotalEntries to avoid duplicating the
  * same filter logic.
  */
 export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] {

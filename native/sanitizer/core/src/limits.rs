@@ -1,14 +1,18 @@
-//! Nesting-depth guard for the two tree-building passes.
+//! The crate's resource bounds. Sanitization runs on every read of attacker-
+//! controlled HTML, so every cost it can incur is bounded here, in one place.
 //!
-//! The lol_html allow-list pass streams, but the MathJax and SVG passes parse
-//! their located substrings into a real DOM and walk it with mutually
-//! recursive functions (`emit_svg_element`, `convert_element`,
-//! `serialize_subtree`, …) — one frame per nesting level. Feed HTML is fully
-//! attacker-controlled and a few hundred KB of `<g>` buys tens of thousands of
-//! levels, which **overflows the stack and kills the process**: a stack
-//! overflow is not an unwind, so the `catch_unwind` guards in `lib.rs` never
-//! see it. Sanitization runs on every read, so one stored entry would crash
-//! the server on every read of it.
+//! **Size.** Every stage is linear in the input (keep it so: a per-item rescan
+//! of the whole body made a few hundred KB of tiny SVGs cost tens of seconds),
+//! so [`MAX_INPUT_BYTES`] bounds the time and memory of one call.
+//!
+//! **Depth.** The lol_html allow-list pass streams, but the MathJax and SVG
+//! passes parse their located substrings into a real DOM and walk it with
+//! mutually recursive functions (`emit_svg_element`, `convert_element`,
+//! `serialize_subtree`, …) — one frame per nesting level. A few hundred KB of
+//! `<g>` buys tens of thousands of levels, which **overflows the stack and
+//! kills the process**: a stack overflow is not an unwind, so the
+//! `catch_unwind` guards in `lib.rs` never see it, and one stored entry would
+//! crash the server on every read of it.
 //!
 //! So each parsed fragment is depth-checked *before* anything recurses over
 //! it, and an over-deep fragment takes the degradation path that pass already
@@ -17,6 +21,14 @@
 //! exactly the input it exists to reject.
 
 use scraper::Html;
+
+/// Largest input [`crate::sanitize_entry_html`] accepts; anything bigger fails
+/// closed (no body). It sits above the default ingest caps (`usageLimitsConfig`
+/// in `src/server/config/env.ts`), so only content that bypassed them reaches
+/// it; raising an ingest cap past it means raising this too. At the slowest
+/// per-byte shape measured (a body of bare `<`) a full-size input costs a few
+/// seconds of a release build's time.
+pub const MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
 
 /// Maximum nesting depth of a fragment handed to a recursive pass. Matches
 /// `MAX_DOM_DEPTH` in `native/readability/src/lib.rs` and, like it, sits far

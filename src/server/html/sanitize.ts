@@ -61,6 +61,7 @@ function logWarnings(warnings: string[]): void {
  * `<select>` is open is genuinely ambiguous to a streaming rewriter, so it
  * refuses to guess rather than risk the `<select><xmp><script>` mXSS gadget.
  * That guard is load-bearing — do not disable it to make this case "work".
+ * The other known trigger is a body over the crate's `MAX_INPUT_BYTES`.
  *
  * The log line carries a SHA-256 of the input rather than the input itself:
  * entry bodies are untrusted and can be private (saved articles), and the hash

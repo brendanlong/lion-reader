@@ -557,9 +557,15 @@ describe("GET /entries/count", () => {
   it("reaches entries.count rather than GET /entries/{id}", async () => {
     const userId = await createUser();
     await subscribedEntries(userId, 2);
-    const res = await rest(await appToken(userId), "GET", "/entries/count?unreadOnly=true");
+    const res = await rest(await appToken(userId), "GET", "/entries/count");
     expect(res.status).toBe(200);
     expect((await res.json()).unread).toBe(2);
+  });
+
+  it("rejects a filter it has no counter for instead of ignoring it", async () => {
+    const userId = await createUser();
+    const res = await rest(await appToken(userId), "GET", "/entries/count?excludeTypes=web");
+    expect(res.status).toBe(400);
   });
 });
 
