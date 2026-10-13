@@ -14,7 +14,7 @@ import {
   expensiveScopedProtectedProcedure,
   scopedProtectedProcedure,
 } from "../trpc";
-import { errors } from "../errors";
+import { errors, markReported } from "../errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -353,6 +353,7 @@ export const summarizationRouter = createTRPCRouter({
             tags: { source: "summarization" },
             extra: { userId, modelId: currentModelId },
           });
+          markReported(failure.error);
         }
         throw failure.error;
       }

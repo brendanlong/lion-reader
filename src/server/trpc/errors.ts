@@ -291,3 +291,18 @@ export function isExpectedClientError(error: unknown): boolean {
   const code = getAppErrorCode(error);
   return code !== undefined && EXPECTED_CLIENT_ERROR_CODES.has(code);
 }
+
+const reportedErrors = new WeakSet<TRPCError>();
+
+/**
+ * Marks an error its thrower already reported to Sentry (typically with the
+ * underlying error, which the TRPCError doesn't carry), so the timing
+ * middleware doesn't report it a second time.
+ */
+export function markReported(error: TRPCError): void {
+  reportedErrors.add(error);
+}
+
+export function wasReported(error: TRPCError): boolean {
+  return reportedErrors.has(error);
+}
