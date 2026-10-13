@@ -14,13 +14,14 @@ import {
   invalidatedProcedures,
   getUtilsData,
   setUtilsData,
+  storedCount,
 } from "../../../utils/cache-test-helpers";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   refreshStoredCollections,
-  setEntryRelatedCounts,
+  applyUnreadCounts,
 } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { writeLiveSubscriptions, type SubscriptionRow } from "@/lib/local-db/subscriptions";
@@ -100,13 +101,6 @@ describe("handleSubscriptionCreated", () => {
   });
 
   it("sets absolute counts directly when the event provides them", () => {
-    // Seed tags.list so the uncategorized write has a cache to update (the
-    // updater no-ops on an empty cache), letting us assert it actually happened.
-    setUtilsData(utils.tags.list, undefined, {
-      items: [],
-      uncategorized: { feedCount: 1, unreadCount: 0 },
-    });
-
     const subscription = createSubscription({ unreadCount: 3 });
     handleSubscriptionCreated(utils, subscription, queryClient, {
       all: { unread: 21 },
@@ -119,14 +113,9 @@ describe("handleSubscriptionCreated", () => {
 
     // Counts are set directly, not invalidated (the subscriptions.list refresh
     // is a separate structural concern).
-    expect(getUtilsData<{ unread: number }>(utils.entries.count, {})).toEqual({ unread: 21 });
-    expect(getUtilsData<{ unread: number }>(utils.entries.count, { starredOnly: true })).toEqual({
-      unread: 1,
-    });
-    expect(
-      getUtilsData<{ uncategorized: { unreadCount: number } }>(utils.tags.list)?.uncategorized
-        .unreadCount
-    ).toBe(6);
+    expect(storedCount(queryClient, {})).toEqual({ unread: 21 });
+    expect(storedCount(queryClient, { starredOnly: true })).toEqual({ unread: 1 });
+    expect(storedCount(queryClient, { uncategorized: true })).toEqual({ unread: 6 });
     const paths = invalidatedProcedures(invalidateSpy);
     expect(paths).not.toContain("entries.count");
     expect(paths).not.toContain("tags.list");
@@ -200,7 +189,7 @@ describe("handleSubscriptionDeleted", () => {
   });
 });
 
-describe("setEntryRelatedCounts saved-count handling", () => {
+describe("applyUnreadCounts", () => {
   let queryClient: QueryClient;
   let utils: TRPCClientUtils;
 
@@ -209,38 +198,61 @@ describe("setEntryRelatedCounts saved-count handling", () => {
     utils = createRealTrpcUtils(queryClient);
   });
 
-  const baseCounts = {
-    all: { unread: 3 },
+  const EARLIER = "2026-01-01T00:00:00.000001Z";
+  const LATER = "2026-01-01T00:00:00.000002Z";
+
+  const counts = (all: number, asOf?: string) => ({
+    all: { unread: all },
     starred: { unread: 1 },
-    subscriptions: [],
-    tags: [],
-  };
-
-  it("does not fabricate a saved count when the event omits it and none is cached", () => {
-    // A web/email event omits `saved`; with nothing cached there is no value to
-    // preserve. Writing a { unread: 0 } here would seed a "fresh" saved count
-    // that a later Saved-view mount would trust instead of fetching.
-    setEntryRelatedCounts(utils, baseCounts, queryClient);
-
-    expect(utils.entries.count.getData({ type: "saved" })).toBeUndefined();
+    saved: { unread: 2 },
+    subscriptions: [{ id: "sub-1", unread: all }],
+    tags: [{ id: "tag-1", unread: all }],
+    uncategorized: { unread: all },
+    ...(asOf && { asOf }),
   });
 
-  it("preserves an existing cached saved count when the event omits it", () => {
-    setUtilsData(utils.entries.count, { type: "saved" }, { unread: 4 });
-
-    setEntryRelatedCounts(utils, baseCounts, queryClient);
-
-    expect(utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 4 });
+  const shown = () => ({
+    all: storedCount(queryClient, {})?.unread,
+    tag: storedCount(queryClient, { tagId: "tag-1" })?.unread,
+    uncategorized: storedCount(queryClient, { uncategorized: true })?.unread,
+    subscription: stored(queryClient, "sub-1")?.unreadCount,
   });
 
-  it("writes the saved count when the event provides one", () => {
-    setEntryRelatedCounts(utils, { ...baseCounts, saved: { unread: 7 } }, queryClient);
+  it("keeps the newer counts when older ones arrive after them", () => {
+    seedSubscription(queryClient, { id: "sub-1", unreadCount: 0, tags: [] });
 
-    expect(utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 7 });
+    applyUnreadCounts(utils, queryClient, counts(5, LATER));
+    applyUnreadCounts(utils, queryClient, counts(9, EARLIER));
+
+    expect(shown()).toEqual({ all: 5, tag: 5, uncategorized: 5, subscription: 5 });
+  });
+
+  it("takes counts newer than the stored ones, or with the same stamp", () => {
+    seedSubscription(queryClient, { id: "sub-1", unreadCount: 0, tags: [] });
+
+    applyUnreadCounts(utils, queryClient, counts(9, EARLIER));
+    applyUnreadCounts(utils, queryClient, counts(5, LATER));
+    applyUnreadCounts(utils, queryClient, counts(4, LATER));
+
+    expect(shown()).toEqual({ all: 4, tag: 4, uncategorized: 4, subscription: 4 });
+  });
+
+  it("takes unstamped counts (a previous release's) over stamped ones", () => {
+    applyUnreadCounts(utils, queryClient, counts(5, LATER));
+    applyUnreadCounts(utils, queryClient, counts(9));
+
+    expect(storedCount(queryClient, {})).toEqual({ unread: 9 });
+  });
+
+  it("keeps the Saved count when the counts omit it, as a previous release's events do", () => {
+    applyUnreadCounts(utils, queryClient, counts(5, EARLIER));
+    applyUnreadCounts(utils, queryClient, { ...counts(5, LATER), saved: undefined });
+
+    expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 });
   });
 });
 
-describe("setEntryRelatedCounts for subscriptions", () => {
+describe("applyUnreadCounts for subscriptions", () => {
   let queryClient: QueryClient;
   let utils: TRPCClientUtils;
   let fetchedIds: () => string[];
@@ -273,23 +285,23 @@ describe("setEntryRelatedCounts for subscriptions", () => {
   it("sets a stored subscription's count", () => {
     seedSubscription(queryClient, { id: "sub-1", unreadCount: 5, tags: [] });
 
-    setEntryRelatedCounts(utils, counts([{ id: "sub-1", unread: 2, tagIds: [] }]), queryClient);
+    applyUnreadCounts(utils, queryClient, counts([{ id: "sub-1", unread: 2, tagIds: [] }]));
 
     expect(stored(queryClient, "sub-1")?.unreadCount).toBe(2);
     expect(fetchedIds()).toEqual([]);
   });
 
   it("loads a newly unread subscription only a loaded section could list", () => {
-    setEntryRelatedCounts(
+    applyUnreadCounts(
       utils,
+      queryClient,
       counts([
         { id: "sub-in-loaded", unread: 1, tagIds: ["tag-1"] },
         { id: "sub-in-collapsed", unread: 1, tagIds: ["tag-2"] },
         { id: "sub-still-read", unread: 0, tagIds: ["tag-1"] },
         // A previous release's event: its tags are unknown, so it may be listed.
         { id: "sub-untold", unread: 1 },
-      ]),
-      queryClient
+      ])
     );
 
     expect(fetchedIds()).toEqual(["sub-in-loaded", "sub-untold"]);

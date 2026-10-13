@@ -12,6 +12,8 @@ import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { trpc } from "@/lib/trpc/client";
 import { NavLink } from "@/components/ui/nav-link";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { useUnreadCount } from "@/lib/hooks/useLocalTags";
+import type { CountedList } from "@/lib/local-db/counts";
 
 interface SidebarNavProps {
   /** Called with the link href when a nav link is clicked */
@@ -28,15 +30,18 @@ function CountBadge({ count }: { count: number }) {
   return <span className="ui-text-xs text-muted ml-2 shrink-0 tabular-nums">({count})</span>;
 }
 
-type CountInput = { starredOnly?: true; type?: "saved" };
+interface Count {
+  input: { starredOnly?: true; type?: "saved" };
+  list: CountedList;
+}
 
 /**
- * Suspending component that fetches and displays a single unread count.
- * Returns null when count is 0 (no badge shown).
+ * Suspends until the count has loaded, then shows the stored one (which
+ * mutations and events keep current). Returns null when it's 0.
  */
-function UnreadCount({ input }: { input: CountInput }) {
-  const [data] = trpc.entries.count.useSuspenseQuery(input);
-  return <CountBadge count={data.unread} />;
+function UnreadCount({ count: { input, list } }: { count: Count }) {
+  trpc.entries.count.useSuspenseQuery(input);
+  return <CountBadge count={useUnreadCount(list) ?? 0} />;
 }
 
 /**
@@ -51,10 +56,14 @@ function SuspenseCount({ children }: { children: React.ReactNode }) {
   );
 }
 
-const NAV_LINKS: Array<{ href: string; label: string; countInput?: CountInput }> = [
-  { href: "/all", label: "All Items", countInput: {} },
-  { href: "/starred", label: "Starred", countInput: { starredOnly: true } },
-  { href: "/saved", label: "Saved", countInput: { type: "saved" } },
+const NAV_LINKS: Array<{ href: string; label: string; count?: Count }> = [
+  { href: "/all", label: "All Items", count: { input: {}, list: { all: true } } },
+  {
+    href: "/starred",
+    label: "Starred",
+    count: { input: { starredOnly: true }, list: { starred: true } },
+  },
+  { href: "/saved", label: "Saved", count: { input: { type: "saved" }, list: { saved: true } } },
   { href: "/recently-read", label: "Recently Read" },
 ];
 
@@ -66,15 +75,15 @@ export function SidebarNav({ onNavigate, onPrefetch }: SidebarNavProps) {
 
   return (
     <div className="space-y-1 p-3">
-      {NAV_LINKS.map(({ href, label, countInput }) => (
+      {NAV_LINKS.map(({ href, label, count }) => (
         <NavLink
           key={href}
           href={href}
           isActive={pathname === href}
           countElement={
-            countInput && (
+            count && (
               <SuspenseCount>
-                <UnreadCount input={countInput} />
+                <UnreadCount count={count} />
               </SuspenseCount>
             )
           }

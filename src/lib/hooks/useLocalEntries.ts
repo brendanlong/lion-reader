@@ -7,11 +7,12 @@
 
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
 import { eq } from "@tanstack/db";
-import { getLocalDb, subscribeSavedSubscriptionId, type LocalDb } from "@/lib/local-db/local-db";
+import { getLocalDb, type LocalDb } from "@/lib/local-db/local-db";
+import { useSavedSubscriptionId } from "@/lib/hooks/useSavedSubscriptionId";
 import {
   compareListEntries,
   entryListKey,
@@ -25,16 +26,6 @@ import type { EntryRow } from "@/lib/local-db/entries";
 
 function useLocalDb(): LocalDb {
   return getLocalDb(useQueryClient());
-}
-
-/** The saved subscription's id as the store knows it (`LocalDb.saved`), re-rendering when learned. */
-function useStoredSavedSubscriptionId(db: LocalDb): string | null | undefined {
-  const subscribe = useCallback(
-    (listener: () => void) => subscribeSavedSubscriptionId(db, listener),
-    [db]
-  );
-  const read = () => db.saved.id;
-  return useSyncExternalStore(subscribe, read, read);
 }
 
 /**
@@ -94,7 +85,7 @@ const MATCHING_ENTRIES_LIMIT = 50;
  */
 export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
   const db = useLocalDb();
-  const savedSubscriptionId = useStoredSavedSubscriptionId(db);
+  const savedSubscriptionId = useSavedSubscriptionId();
   const subscriptions = useLocalSubscriptions();
   const { data: entries } = useLiveQuery({
     query: (q) => q.from({ entry: db.entries.collection }),

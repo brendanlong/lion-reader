@@ -37,6 +37,7 @@ import {
 import { type ViewType } from "@/lib/hooks/viewPreferences";
 import { trpc } from "@/lib/trpc/client";
 import { useLocalSubscription } from "@/lib/hooks/useLocalSubscriptions";
+import { useLocalTag } from "@/lib/hooks/useLocalTags";
 import { type MarkAllReadOptions } from "@/lib/hooks/useEntryMutations";
 
 /**
@@ -174,16 +175,17 @@ function SubscriptionTitle({ subscriptionId }: { subscriptionId: string }) {
 
 /**
  * Title component for tag pages. Non-suspending: deterministic skeleton until
- * hydrated, then the tag name from the (globally prefetched) tags.list cache.
+ * hydrated and `tags.list` (globally prefetched) has loaded, then the stored
+ * tag's name.
  */
 function TagTitle({ tagId }: { tagId: string }) {
   const canRenderFromCache = useCanRenderFromCache();
-  const { data: tagsData } = trpc.tags.list.useQuery(undefined, { throwOnError: true });
+  const tagsQuery = trpc.tags.list.useQuery(undefined, { throwOnError: true });
+  const tag = useLocalTag(tagId);
 
-  if (!canRenderFromCache || !tagsData) {
+  if (!canRenderFromCache || !tagsQuery.isSuccess) {
     return <TitleSkeleton />;
   }
-  const tag = tagsData.items.find((t) => t.id === tagId);
   return <TitleText>{tag?.name ?? "Unknown Tag"}</TitleText>;
 }
 
@@ -245,11 +247,12 @@ function UnifiedEntriesContentInner() {
     enabled: !!routeInfo.tagId,
     throwOnError: true,
   });
+  const tag = useLocalTag(routeInfo.tagId);
+  const isCollection = useLocalSubscription(routeInfo.subscriptionId)?.type === "collection";
 
   // Update empty messages with actual tag name if available
   const emptyMessages = useMemo(() => {
-    if (routeInfo.tagId && tagsQuery.data) {
-      const tag = tagsQuery.data.items.find((t) => t.id === routeInfo.tagId);
+    if (routeInfo.tagId && tagsQuery.isSuccess) {
       const tagName = tag?.name ?? "this tag";
       return {
         emptyMessageUnread: `No unread entries from feeds tagged with "${tagName}". Toggle to show all items.`,
@@ -257,7 +260,7 @@ function UnifiedEntriesContentInner() {
         markAllReadDescription: tag?.name ? `the "${tag.name}" tag` : "this tag",
       };
     }
-    if (subscriptionQuery.data?.type === "collection") {
+    if (isCollection) {
       return {
         emptyMessageUnread: "No unread articles in this collection. Toggle to show all items.",
         emptyMessageAll:
@@ -270,7 +273,7 @@ function UnifiedEntriesContentInner() {
       emptyMessageAll: routeInfo.emptyMessageAll,
       markAllReadDescription: routeInfo.markAllReadDescription,
     };
-  }, [routeInfo, tagsQuery.data, subscriptionQuery.data?.type]);
+  }, [routeInfo, tagsQuery.isSuccess, tag, isCollection]);
 
   // Mark-all-read acts on the current view, so it reuses the route's query
   // filters. `sortBy` only orders the list, so it isn't one of them.
@@ -311,11 +314,7 @@ function UnifiedEntriesContentInner() {
 
   // Show error if the tag list loaded but doesn't contain this tag. Fetch
   // errors are handled by throwOnError above, not this branch.
-  if (
-    routeInfo.tagId &&
-    tagsQuery.data &&
-    !tagsQuery.data.items.find((t) => t.id === routeInfo.tagId)
-  ) {
+  if (routeInfo.tagId && tagsQuery.isSuccess && !tag) {
     return (
       <NotFoundCard title="Tag not found" message="The tag you're looking for doesn't exist." />
     );

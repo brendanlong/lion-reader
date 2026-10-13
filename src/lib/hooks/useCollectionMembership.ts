@@ -2,9 +2,10 @@
  * useCollectionMembership Hook
  *
  * An entry's collection membership and the mutations that change it, for the
- * "Add to collection" picker. Membership lives in `collections.listForEntry`;
- * responses are applied through `applyCollectionEntriesChange`, the same
- * operation the SSE event runs, so the two can land in either order.
+ * "Add to collection" picker. Membership is the stored entry's
+ * `subscriptionIds`; responses are applied through
+ * `applyCollectionEntriesChange`, the same operation the SSE event runs, so
+ * the two can land in either order.
  */
 
 "use client";
@@ -13,11 +14,29 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { applyCollectionEntriesChange, handleSubscriptionCreated } from "@/lib/cache/operations";
+import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
+import { useSavedSubscriptionId } from "@/lib/hooks/useSavedSubscriptionId";
+import type { EntryRow } from "@/lib/local-db/entries";
+
+/**
+ * The collections holding an entry: every membership but its origin and the
+ * saved subscription, the only other kinds an entry can be in.
+ */
+function collectionIdsOf(entry: EntryRow, savedSubscriptionId: string | null): string[] {
+  return entry.subscriptionIds.filter(
+    (id) => id !== entry.subscriptionId && id !== savedSubscriptionId
+  );
+}
 
 export function useCollectionMembership(entryId: string) {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
-  const membership = trpc.collections.listForEntry.useQuery({ entryId });
+  const entry = useLocalEntry(entryId);
+  const savedSubscriptionId = useSavedSubscriptionId();
+  const collectionIds =
+    entry && savedSubscriptionId !== undefined
+      ? collectionIdsOf(entry, savedSubscriptionId)
+      : undefined;
 
   const onError = () => toast.error("Failed to update collection");
 
@@ -91,8 +110,8 @@ export function useCollectionMembership(entryId: string) {
   };
 
   return {
-    collectionIds: membership.data?.collectionIds,
-    membershipStatus: membership.status,
+    /** Undefined until the entry and the saved subscription's id are known. */
+    collectionIds,
     setMember,
     createWithEntry,
     isCreating: createMutation.isPending,

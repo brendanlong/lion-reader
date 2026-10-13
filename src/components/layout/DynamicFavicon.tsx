@@ -8,7 +8,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { useLocalTags } from "@/lib/hooks/useLocalTags";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { faviconUrl, faviconVariantForPathname } from "@/lib/favicon/dynamic-favicon";
 
@@ -52,11 +52,11 @@ function setFaviconSvg(svgUrl: string | null): void {
 
 export function DynamicFavicon() {
   const pathname = useAppPathname();
-  // Already cached: the sidebar's tag list keeps it loaded.
-  const { data: tagsData } = trpc.tags.list.useQuery();
+  // The sidebar's tag list keeps the tags loaded.
+  const tags = useLocalTags();
   const variant = faviconVariantForPathname(
     pathname,
-    (tagId) => tagsData?.items.find((tag) => tag.id === tagId)?.color
+    (tagId) => tags.find((tag) => tag.id === tagId)?.color
   );
   const svgUrl = variant ? faviconUrl(variant) : null;
 

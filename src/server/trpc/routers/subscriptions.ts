@@ -20,7 +20,7 @@ import { OpmlParseError } from "@/server/feed/opml";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { importOpml } from "@/server/services/imports";
-import { unreadCountsSchema } from "@/lib/events/schemas";
+import { countsAsOfSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
 
 // Endpoints exposed via the MCP tool surface; the native app uses them too.
@@ -70,6 +70,7 @@ export const subscriptionOutputSchema = z.object({
   siteUrl: z.string().nullable(),
   subscribedAt: z.date(),
   unreadCount: z.number(),
+  unreadCountAsOf: countsAsOfSchema,
   tags: z.array(tagOutputSchema),
   fetchFullContent: z.boolean(), // whether to fetch full article content from URL
 });
@@ -102,6 +103,7 @@ function formatSubscriptionResponse(
     siteUrl: result.feed.siteUrl,
     subscribedAt: result.subscribedAt,
     unreadCount: result.unreadCount,
+    unreadCountAsOf: result.unreadCountAsOf,
     tags: [],
     fetchFullContent: result.fetchFullContent,
     counts: result.counts,

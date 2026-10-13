@@ -13,7 +13,10 @@
 
 import { useState, Suspense } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
+import { applyTagChange, applyTagDeleted } from "@/lib/cache/operations";
+import { useLocalTags } from "@/lib/hooks/useLocalTags";
 import { useFormMessages } from "@/lib/hooks/useFormMessages";
 import { type Tag, TAG_COLORS, DEFAULT_TAG_COLOR } from "@/lib/types/tag";
 import { Button } from "@/components/ui/button";
@@ -44,9 +47,8 @@ function TagManagementContent() {
 
   // Use useSuspenseQuery to match the server-prefetched tags.list query,
   // preventing hydration mismatches between loading/loaded states
-  const [tagsData] = trpc.tags.list.useSuspenseQuery();
-
-  const tags = tagsData.items ?? [];
+  trpc.tags.list.useSuspenseQuery();
+  const tags = useLocalTags();
 
   return (
     <SettingsSection
@@ -114,7 +116,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
   const [color, setColor] = useState<string | null>(DEFAULT_TAG_COLOR);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   const createMutation = trpc.tags.create.useMutation({
     onSuccess: ({ tag, created }) => {
@@ -122,7 +124,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
       setName("");
       setColor(DEFAULT_TAG_COLOR);
       setShowColorPicker(false);
-      utils.tags.list.invalidate();
+      applyTagChange(queryClient, tag);
     },
     onError: (err) => {
       onError(err.message || "Failed to create tag");
@@ -205,13 +207,14 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   const updateMutation = trpc.tags.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       onSuccess("Tag updated successfully");
       setEditingValues(null);
       setShowColorPicker(false);
-      utils.tags.list.invalidate();
+      applyTagChange(queryClient, data.tag);
     },
     onError: (err) => {
       onError(err.message || "Failed to update tag");
@@ -220,10 +223,10 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
   });
 
   const deleteMutation = trpc.tags.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       onSuccess("Tag deleted successfully");
       setShowDeleteConfirm(false);
-      utils.tags.list.invalidate();
+      applyTagDeleted(utils, queryClient, variables.id);
     },
     onError: (err) => {
       onError(err.message || "Failed to delete tag");

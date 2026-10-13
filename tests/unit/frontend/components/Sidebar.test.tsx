@@ -23,7 +23,7 @@ import { act, screen, fireEvent, within } from "@testing-library/react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { setEntryRelatedCounts } from "@/lib/cache/operations";
+import { applyUnreadCounts } from "@/lib/cache/operations";
 import { trpc, type TRPCClientUtils } from "@/lib/trpc/client";
 import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
 import {
@@ -278,16 +278,12 @@ describe("Sidebar", () => {
 
     // An article in the (read, so unlisted) collection was marked unread.
     act(() =>
-      setEntryRelatedCounts(
-        caches!.utils,
-        {
-          all: { unread: 19 },
-          starred: { unread: 2 },
-          subscriptions: [{ id: "sub-2", unread: 1, tagIds: [TECH_TAG.id] }],
-          tags: [{ id: TECH_TAG.id, unread: 6 }],
-        },
-        caches!.queryClient
-      )
+      applyUnreadCounts(caches!.utils, caches!.queryClient, {
+        all: { unread: 19 },
+        starred: { unread: 2 },
+        subscriptions: [{ id: "sub-2", unread: 1, tagIds: [TECH_TAG.id] }],
+        tags: [{ id: TECH_TAG.id, unread: 6 }],
+      })
     );
 
     expect(await screen.findByRole("link", { name: /^Picks/ })).toHaveTextContent("(1)");

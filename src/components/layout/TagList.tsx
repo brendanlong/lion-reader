@@ -18,6 +18,8 @@ import { SIDEBAR_FEEDS_ATTRIBUTE } from "./sidebar-feed-navigation";
 import { isSidebarLinkCurrent, useSidebarSelection } from "@/lib/hooks/useSidebarSelection";
 import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/sidebar-sections";
 import { TagSubscriptionList } from "./TagSubscriptionList";
+import { useLocalTags, useUnreadCounts } from "@/lib/hooks/useLocalTags";
+import { countKey, type CountedList } from "@/lib/local-db/counts";
 
 interface TagListProps {
   /** Called with the link href when a tag/subscription link is clicked */
@@ -95,7 +97,8 @@ function TagSection({
 }
 
 /**
- * Inner component that suspends on tags.list query.
+ * Inner component that suspends on tags.list query, then renders the tags and
+ * their counts from the local store.
  */
 function TagListContent({
   onNavigate,
@@ -106,11 +109,11 @@ function TagListContent({
 }: TagListProps) {
   const selection = useSidebarSelection();
   const { pathname, subscription: activeSubscription } = selection;
-  const [tagsData] = trpc.tags.list.useSuspenseQuery();
+  trpc.tags.list.useSuspenseQuery();
   const { isExpanded, toggleExpanded } = useExpandedTags();
-
-  const tags = tagsData.items;
-  const uncategorized = tagsData.uncategorized;
+  const tags = useLocalTags();
+  const counts = useUnreadCounts();
+  const unreadOf = (list: CountedList) => counts.get(countKey(list)) ?? 0;
 
   const activeTagId = pathname.startsWith("/tag/") ? pathname.slice("/tag/".length) : null;
   const isUncategorizedActive = pathname === "/uncategorized";
@@ -122,19 +125,17 @@ function TagListContent({
   // has unread entries, is the current route, or holds the current
   // subscription, so what you're reading never drops out of the sidebar; in
   // show-read mode everything shows, including empty tags/sections.
-  const sortedTags = [...(tags ?? [])]
-    .filter(
-      (tag) =>
-        !unreadOnly ||
-        tag.unreadCount > 0 ||
-        tag.id === activeTagId ||
-        holdsActiveSubscription(tag.id)
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const sortedTags = tags.filter(
+    (tag) =>
+      !unreadOnly ||
+      unreadOf({ tagId: tag.id }) > 0 ||
+      tag.id === activeTagId ||
+      holdsActiveSubscription(tag.id)
+  );
 
   const hasUncategorized =
     !unreadOnly ||
-    (uncategorized?.unreadCount ?? 0) > 0 ||
+    unreadOf({ uncategorized: true }) > 0 ||
     isUncategorizedActive ||
     holdsActiveSubscription(UNCATEGORIZED_SECTION);
   const hasTags = sortedTags.length > 0 || hasUncategorized;
@@ -161,7 +162,7 @@ function TagListContent({
           isActive={isSidebarLinkCurrent(selection, `/tag/${tag.id}`)}
           color={tag.color}
           label={tag.name}
-          count={tag.unreadCount}
+          count={unreadOf({ tagId: tag.id })}
           expanded={isExpanded(tag.id)}
           onToggleExpanded={() => toggleExpanded(tag.id)}
           onNavigate={onNavigate}
@@ -177,7 +178,7 @@ function TagListContent({
           isActive={isSidebarLinkCurrent(selection, "/uncategorized")}
           color={null}
           label="Uncategorized"
-          count={uncategorized?.unreadCount ?? 0}
+          count={unreadOf({ uncategorized: true })}
           expanded={isExpanded(UNCATEGORIZED_SECTION)}
           onToggleExpanded={() => toggleExpanded(UNCATEGORIZED_SECTION)}
           onNavigate={onNavigate}

@@ -17,7 +17,8 @@ import {
   spyOnInvalidate,
   invalidatedProcedures,
   invalidatedQueries,
-  getUtilsData,
+  storedCount,
+  storedTagsList,
   setUtilsData,
   seedCacheState,
   createNewEntryEvent,
@@ -70,24 +71,12 @@ function getSidebarUnreadCount(id: string): number | undefined {
   return getLocalDb(queryClient).subscriptions.rows.getSynced(id)?.unreadCount;
 }
 
-function getTagsList():
-  | {
-      items: Array<{
-        id: string;
-        name: string;
-        color: string | null;
-        feedCount: number;
-        unreadCount: number;
-        [key: string]: unknown;
-      }>;
-      uncategorized: { feedCount: number; unreadCount: number };
-    }
-  | undefined {
-  return getUtilsData<ReturnType<typeof getTagsList>>(utils.tags.list);
+function getTagsList() {
+  return storedTagsList(queryClient);
 }
 
 function getEntriesCount(filters: Record<string, unknown> = {}): { unread: number } | undefined {
-  return getUtilsData<ReturnType<typeof getEntriesCount>>(utils.entries.count, filters);
+  return storedCount(queryClient, filters);
 }
 
 /** An entry as rendered from the local store (undefined when not held). */
@@ -973,29 +962,25 @@ describe("handleSyncEvent - subscription_created", () => {
 // ============================================================================
 
 describe("handleSyncEvent - subscription_updated", () => {
-  it("carries a changed full-content setting to every open entry of the subscription", () => {
-    const entryOf = (id: string, subscriptionId: string) => ({
-      entry: { ...DEFAULT_ENTRIES[0], id, subscriptionId, fetchFullContent: false },
-    });
-    setUtilsData(utils.entries.get, { id: "entry-1" }, entryOf("entry-1", "sub-1"));
-    setUtilsData(utils.entries.get, { id: "entry-2" }, entryOf("entry-2", "sub-1"));
-    setUtilsData(utils.entries.get, { id: "entry-3" }, entryOf("entry-3", "sub-2"));
-
+  it("stores a changed full-content setting, which the reader reads", () => {
     handleSyncEvent(
       utils,
       queryClient,
       createSubscriptionUpdatedEvent({ subscriptionId: "sub-1", fetchFullContent: true })
     );
 
-    const setting = (id: string) =>
-      getUtilsData<{ entry: { fetchFullContent: boolean } }>(utils.entries.get, { id })?.entry
-        .fetchFullContent;
-    expect([setting("entry-1"), setting("entry-2"), setting("entry-3")]).toEqual([
-      true,
-      true,
-      false,
-    ]);
     expect(findSubscription("sub-1")?.fetchFullContent).toBe(true);
+  });
+
+  it("refetches open entries for a full-content change to a subscription it doesn't hold", () => {
+    invalidateSpy.mockClear();
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createSubscriptionUpdatedEvent({ subscriptionId: "sub-unstored", fetchFullContent: true })
+    );
+
+    expect(invalidatedProcedures(invalidateSpy)).toContain("entries.get");
   });
 
   it("updates tags on subscription", () => {
@@ -1278,18 +1263,15 @@ describe("handleSyncEvent - tag_created", () => {
     expect(newTag?.unreadCount).toBe(0);
   });
 
-  it("does not create duplicate tag", () => {
+  it("keeps one tag, with its counts, when a created tag is delivered again", () => {
     const event = createTagCreatedEvent({
-      tag: { id: "tag-1", name: "Tech Duplicate", color: "#ff0000" },
+      tag: { id: "tag-1", name: "Tech", color: "#ff0000" },
     });
 
     handleSyncEvent(utils, queryClient, event);
 
-    const tagsList = getTagsList();
-    const techTags = tagsList?.items.filter((t) => t.id === "tag-1");
-    expect(techTags?.length).toBe(1);
-    // Name should NOT be overwritten by duplicate create event
-    expect(techTags?.[0]?.name).toBe("Tech");
+    const techTags = getTagsList()?.items.filter((t) => t.id === "tag-1");
+    expect(techTags).toMatchObject([{ name: "Tech", feedCount: 2, unreadCount: 15 }]);
   });
 });
 
@@ -1314,6 +1296,20 @@ describe("handleSyncEvent - tag_updated", () => {
     expect(tag1?.feedCount).toBe(2); // preserved
     expect(tag1?.unreadCount).toBe(15); // preserved
   });
+
+  it("renames the tag on the stored subscriptions carrying it", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createTagUpdatedEvent({ tag: { id: "tag-1", name: "Technology", color: "#ff00ff" } })
+    );
+
+    expect(findSubscription("sub-1")?.tags).toContainEqual({
+      id: "tag-1",
+      name: "Technology",
+      color: "#ff00ff",
+    });
+  });
 });
 
 // ============================================================================
@@ -1321,7 +1317,7 @@ describe("handleSyncEvent - tag_updated", () => {
 // ============================================================================
 
 describe("handleSyncEvent - tag_deleted", () => {
-  it("removes tag from tags.list", () => {
+  it("removes the tag, and takes it off the stored subscriptions", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -1334,6 +1330,17 @@ describe("handleSyncEvent - tag_deleted", () => {
     expect(tagsList?.items.find((t) => t.id === "tag-1")).toBeUndefined();
     // tag-2 should remain
     expect(tagsList?.items.find((t) => t.id === "tag-2")).toBeDefined();
+    // So a subscription whose only tag it was moves to Uncategorized.
+    for (const sub of getLocalDb(queryClient).subscriptions.rows.allSynced()) {
+      expect(sub.tags.map((t) => t.id)).not.toContain("tag-1");
+    }
+  });
+
+  it("refetches tags.list, whose Uncategorized count the deletion may change", () => {
+    invalidateSpy.mockClear();
+    handleSyncEvent(utils, queryClient, createTagDeletedEvent({ tagId: "tag-1" }));
+
+    expect(invalidatedProcedures(invalidateSpy)).toContain("tags.list");
   });
 });
 

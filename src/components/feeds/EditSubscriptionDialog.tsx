@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { applySubscriptionUpdate } from "@/lib/cache/operations";
+import { useLocalTags } from "@/lib/hooks/useLocalTags";
 import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 import type { Tag } from "@/lib/types/tag";
 import { Dialog, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
@@ -85,9 +86,8 @@ function EditSubscriptionForm({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(currentTagIds);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch all tags
-  const { data: tagsData } = trpc.tags.list.useQuery();
-  const tags: Tag[] = tagsData?.items ?? [];
+  trpc.tags.list.useQuery();
+  const tags: Tag[] = useLocalTags();
 
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();

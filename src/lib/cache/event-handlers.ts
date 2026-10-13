@@ -15,7 +15,9 @@ import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   handleMarkAllRead,
-  setEntryRelatedCounts,
+  applyTagChange,
+  applyTagDeleted,
+  applyUnreadCounts,
 } from "./operations";
 import { patchServerEntryMetadata, type EntryRow } from "@/lib/local-db/entries";
 import {
@@ -25,7 +27,6 @@ import {
   type LocalDb,
 } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
-import { applySyncTagChanges, removeSyncTags } from "./tag-cache";
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
@@ -120,7 +121,7 @@ export function handleSyncEvent(
       // servers may omit counts during a deploy; skip the update then and let
       // it self-heal on the next count-bearing event or refetch.
       if (event.counts) {
-        setEntryRelatedCounts(utils, event.counts, queryClient);
+        applyUnreadCounts(utils, queryClient, event.counts);
       }
 
       // Insert the entry into loaded lists so it appears live (deduped, so
@@ -232,15 +233,15 @@ export function handleSyncEvent(
       break;
 
     case "tag_created":
-      applySyncTagChanges(utils, [event.tag], []);
+      applyTagChange(queryClient, event.tag);
       break;
 
     case "tag_updated":
-      applySyncTagChanges(utils, [], [event.tag]);
+      applyTagChange(queryClient, event.tag);
       break;
 
     case "tag_deleted":
-      removeSyncTags(utils, [event.tagId]);
+      applyTagDeleted(utils, queryClient, event.tagId);
       break;
 
     case "import_progress":

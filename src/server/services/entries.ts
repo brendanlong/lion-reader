@@ -37,7 +37,14 @@ import { showsFullContent } from "@/lib/narration/select-content";
 import { errors } from "@/server/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";
-import { getBulkEntryRelatedCounts, getUserUnreadCounts, type BulkUnreadCounts } from "./counts";
+import { Temporal } from "temporal-polyfill";
+import {
+  countsAsOfColumn,
+  formatCountsAsOf,
+  getBulkEntryRelatedCounts,
+  getUserUnreadCounts,
+  type BulkUnreadCounts,
+} from "./counts";
 import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry-events";
 import {
   buildEntrySubscriptionFilter,
@@ -1640,7 +1647,7 @@ export async function countEntries(
   db: typeof dbType,
   userId: string,
   params: CountEntriesParams
-): Promise<{ unread: number }> {
+): Promise<{ unread: number; asOf: string }> {
   const scopes = [
     params.subscriptionId,
     params.tagId,
@@ -1656,25 +1663,31 @@ export async function countEntries(
 
   if (params.subscriptionId) {
     const [row] = await db
-      .select({ unread: subscriptions.unreadCount })
+      .select({ unread: subscriptions.unreadCount, asOf: countsAsOfColumn() })
       .from(subscriptions)
       .where(filterableSubscriptionWhere(userId, params.subscriptionId));
-    return { unread: row?.unread ?? 0 };
+    return row ? { unread: row.unread, asOf: formatCountsAsOf(row.asOf) } : unreadZero();
   }
 
   if (params.tagId) {
     const [row] = await db
-      .select({ unread: tags.unreadCount })
+      .select({ unread: tags.unreadCount, asOf: countsAsOfColumn() })
       .from(tags)
       .where(and(eq(tags.id, params.tagId), eq(tags.userId, userId), isNull(tags.deletedAt)));
-    return { unread: row?.unread ?? 0 };
+    return row ? { unread: row.unread, asOf: formatCountsAsOf(row.asOf) } : unreadZero();
   }
 
   const counts = await getUserUnreadCounts(db, userId);
-  if (params.uncategorized) return { unread: counts.uncategorizedUnread };
-  if (params.type === "saved") return { unread: counts.savedUnread };
-  if (params.starredOnly) return { unread: counts.starredUnread };
-  return { unread: counts.allUnread };
+  const asOf = formatCountsAsOf(counts.asOf);
+  if (params.uncategorized) return { unread: counts.uncategorizedUnread, asOf };
+  if (params.type === "saved") return { unread: counts.savedUnread, asOf };
+  if (params.starredOnly) return { unread: counts.starredUnread, asOf };
+  return { unread: counts.allUnread, asOf };
+}
+
+/** A list that doesn't exist (any more) has nothing unread, as of now. */
+function unreadZero(): { unread: number; asOf: string } {
+  return { unread: 0, asOf: formatCountsAsOf(Temporal.Now.instant()) };
 }
 
 /**

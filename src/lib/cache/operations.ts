@@ -1,28 +1,31 @@
 /**
  * Cache Operations
  *
- * Higher-level functions for cache updates that handle all the interactions
- * between different caches. These are the primary API for mutations and SSE
- * handlers - they don't need to know which low-level caches to update.
- *
- * Operations look up entry state from cache to handle interactions correctly:
- * - Starring an unread entry affects the starred unread count
- * - Marking a starred entry read affects the starred unread count
+ * One function per server-reported change, shared by the mutation response
+ * and the realtime event that report it, so the two can't drift. They write
+ * the local store (`src/lib/local-db/`); React Query caches are only
+ * invalidated, never patched.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
+import type { z } from "zod";
+import type { unreadCountsSchema } from "@/lib/events/schemas";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
 import {
+  removeStoredEntryMemberships,
   setServerEntryState,
   setStoredEntryCollection,
   setSubscriptionEntriesFeedTitle,
   type EntryRow,
 } from "@/lib/local-db/entries";
+import { removeTagCount, writeCounts } from "@/lib/local-db/counts";
+import { removeLiveTag, writeLiveTag, type TagRow } from "@/lib/local-db/tags";
+import { removeLiveRows } from "@/lib/local-db/versioned-store";
 import {
   patchLiveSubscription,
-  removeLiveSubscriptions,
   writeLiveSubscriptions,
+  writeSubscriptionCount,
   sidebarSectionOf,
   type SubscriptionListInput,
   type SubscriptionRow,
@@ -34,7 +37,7 @@ import { setLeftCollectionLists } from "@/lib/local-db/entry-lists";
  * Drops a deleted subscription's `subscriptions.get` data. Run once the server
  * has deleted it: the reset refetches (now NOT_FOUND) any open page.
  */
-export function forgetDeletedSubscription(utils: TRPCClientUtils, subscriptionId: string): void {
+function forgetDeletedSubscription(utils: TRPCClientUtils, subscriptionId: string): void {
   void utils.subscriptions.get.reset({ id: subscriptionId });
 }
 
@@ -48,7 +51,7 @@ export function removeSubscriptionFromCaches(
   subscriptionId: string,
   queryClient: QueryClient
 ): number {
-  return removeLiveSubscriptions(getLocalDb(queryClient).subscriptions, [subscriptionId]);
+  return removeLiveRows(getLocalDb(queryClient).subscriptions, [subscriptionId]);
 }
 
 /**
@@ -62,11 +65,11 @@ export function removeSubscriptionFromCaches(
  */
 function applySubscriptionCounts(
   utils: TRPCClientUtils,
-  counts: EntryRelatedCounts | undefined,
+  counts: UnreadCounts | undefined,
   queryClient: QueryClient
 ): void {
   if (counts) {
-    setEntryRelatedCounts(utils, counts, queryClient);
+    applyUnreadCounts(utils, queryClient, counts);
   } else {
     utils.tags.list.invalidate();
     utils.entries.count.invalidate();
@@ -88,7 +91,7 @@ export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
   subscription: SubscriptionRow,
   queryClient: QueryClient,
-  counts?: EntryRelatedCounts
+  counts?: UnreadCounts
 ): void {
   const store = getLocalDb(queryClient).subscriptions;
   // Guard against duplicate subscription events (e.g. the subscribing tab gets
@@ -110,8 +113,6 @@ export function handleSubscriptionCreated(
  * response, or what a subscription_updated event carries. An undefined field
  * is unknown and left as it is.
  */
-type EntryGetData = NonNullable<ReturnType<TRPCClientUtils["entries"]["get"]["getData"]>>;
-
 type SubscriptionUpdate = Pick<SubscriptionRow, "id" | "tags"> &
   Partial<Pick<SubscriptionRow, "title" | "fetchFullContent">>;
 
@@ -130,13 +131,10 @@ export function applySubscriptionUpdate(
   // Its entries show the same title (the server sends it as their
   // feedTitle), so a rename carries over to the ones already loaded.
   if (title !== undefined) setSubscriptionEntriesFeedTitle(db.entries, id, title);
-  if (fetchFullContent !== undefined) {
-    // Each entry carries its subscription's setting.
-    queryClient.setQueriesData<EntryGetData>({ queryKey: [["entries", "get"]] }, (old) =>
-      old && old.entry.subscriptionId === id && old.entry.fetchFullContent !== fetchFullContent
-        ? { ...old, entry: { ...old.entry, fetchFullContent } }
-        : old
-    );
+  // The reader reads the setting from the stored subscription, else from the
+  // entry's copy, which only a refetch updates.
+  if (!stored && fetchFullContent !== undefined && !isFullSubscriptionRow(update)) {
+    void utils.entries.get.invalidate();
   }
   // The stored row moves between sidebar sections with its tags.
   if (stored) {
@@ -172,9 +170,59 @@ function isFullSubscriptionRow(update: SubscriptionUpdate): update is Subscripti
 }
 
 /**
+ * Applies a created or updated tag, from its mutation response or its event,
+ * to the stored tag and to the stored subscriptions carrying it.
+ */
+export function applyTagChange(
+  queryClient: QueryClient,
+  tag: Pick<TagRow, "id" | "name" | "color"> & Partial<Pick<TagRow, "feedCount" | "createdAt">>
+): void {
+  const db = getLocalDb(queryClient);
+  const { id, name, color } = tag;
+  writeLiveTag(db.tags, {
+    id,
+    name,
+    color,
+    ...(tag.feedCount !== undefined && { feedCount: tag.feedCount }),
+    ...(tag.createdAt !== undefined && { createdAt: tag.createdAt }),
+  });
+  for (const row of db.subscriptions.rows.allSynced()) {
+    if (row.tags.some((t) => t.id === id && (t.name !== name || t.color !== color))) {
+      patchLiveSubscription(db.subscriptions, row.id, {
+        tags: row.tags.map((t) => (t.id === id ? { id, name, color } : t)),
+      });
+    }
+  }
+}
+
+/**
+ * Applies a deleted tag, from its mutation response or its event: removes it
+ * and its count, and takes it off the stored subscriptions, which may move
+ * them to Uncategorized. The event carries no counts, so `tags.list` (and with
+ * it Uncategorized's count) is refetched.
+ */
+export function applyTagDeleted(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  tagId: string
+): void {
+  const db = getLocalDb(queryClient);
+  removeLiveTag(db.tags, tagId);
+  removeTagCount(db.counts, tagId);
+  for (const row of db.subscriptions.rows.allSynced()) {
+    if (row.tags.some((t) => t.id === tagId)) {
+      patchLiveSubscription(db.subscriptions, row.id, {
+        tags: row.tags.filter((t) => t.id !== tagId),
+      });
+    }
+  }
+  utils.tags.list.invalidate();
+}
+
+/**
  * Applies articles being added to or removed from a collection: the absolute
- * counts, each article's cached `collections.listForEntry`, and the
- * collection's loaded entry lists. Idempotent, so the acting tab can apply
+ * counts, each stored article's `subscriptionIds` (its collections, as the
+ * picker shows them), and the collection's loaded entry lists. Idempotent, so the acting tab can apply
  * both its mutation response and the SSE event.
  */
 export function applyCollectionEntriesChange(
@@ -184,24 +232,13 @@ export function applyCollectionEntriesChange(
     subscriptionId: string;
     entryIds: string[];
     added: boolean;
-    counts?: EntryRelatedCounts;
+    counts?: UnreadCounts;
   }
 ): void {
   const { subscriptionId, entryIds, added, counts } = change;
-  if (counts) setEntryRelatedCounts(utils, counts, queryClient);
+  if (counts) applyUnreadCounts(utils, queryClient, counts);
   const db = getLocalDb(queryClient);
   for (const entryId of entryIds) {
-    const old = utils.collections.listForEntry.getData({ entryId });
-    if (old) {
-      const others = old.collectionIds.filter((id) => id !== subscriptionId);
-      utils.collections.listForEntry.setData(
-        { entryId },
-        { collectionIds: added ? [...others, subscriptionId] : others }
-      );
-    } else {
-      // Not loaded (or failed): the rest of its membership is unknown.
-      void utils.collections.listForEntry.invalidate({ entryId });
-    }
     setLeftCollectionLists(db.lists, entryId, subscriptionId, !added);
     setStoredEntryCollection(db.entries, entryId, subscriptionId, added);
     if (added) {
@@ -233,7 +270,7 @@ export interface EntryStateChange {
 export function applyEntryStateChanges(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  change: { entries: EntryStateChange[]; counts?: EntryRelatedCounts }
+  change: { entries: EntryStateChange[]; counts?: UnreadCounts }
 ): void {
   const db = getLocalDb(queryClient);
   for (const entry of change.entries) {
@@ -251,7 +288,7 @@ export function applyEntryStateChanges(
       if (stored) insertEntryIntoLists(db, stored);
     }
   }
-  if (change.counts) setEntryRelatedCounts(utils, change.counts, queryClient);
+  if (change.counts) applyUnreadCounts(utils, queryClient, change.counts);
 }
 
 /**
@@ -270,7 +307,7 @@ export function handleSubscriptionDeleted(
   utils: TRPCClientUtils,
   subscriptionId: string,
   queryClient: QueryClient,
-  counts?: EntryRelatedCounts
+  counts?: UnreadCounts
 ): void {
   // Run whether or not the store holds it: an optimistic unsubscribe already
   // removed it, or it was never loaded (its tag collapsed), and the counts and
@@ -279,13 +316,11 @@ export function handleSubscriptionDeleted(
 
   applySubscriptionCounts(utils, counts, queryClient);
 
+  // A deleted collection no longer holds anything, so its articles' pickers
+  // don't count it.
+  removeStoredEntryMemberships(getLocalDb(queryClient).entries, subscriptionId);
   // The collection picker searches on the server, so it refetches.
   void utils.subscriptions.list.invalidate({ type: "collection" });
-  // A deleted collection no longer holds anything.
-  queryClient.setQueriesData<{ collectionIds: string[] }>(
-    { queryKey: [["collections", "listForEntry"]] },
-    (old) => old && { collectionIds: old.collectionIds.filter((id) => id !== subscriptionId) }
-  );
   forgetDeletedSubscription(utils, subscriptionId);
 
   // Always invalidate entries.list - entries from this subscription should be filtered out
@@ -301,10 +336,10 @@ export function handleSubscriptionDeleted(
 export function handleMarkAllRead(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  counts: EntryRelatedCounts | undefined
+  counts: UnreadCounts | undefined
 ): void {
   if (counts) {
-    setEntryRelatedCounts(utils, counts, queryClient);
+    applyUnreadCounts(utils, queryClient, counts);
   } else {
     utils.entries.count.invalidate();
     utils.tags.list.invalidate();
@@ -334,110 +369,39 @@ export function refreshStoredCollections(utils: TRPCClientUtils, queryClient: Qu
 // Absolute Count Updates (Server-Provided Counts)
 // ============================================================================
 
-/**
- * Bulk unread counts, as returned by the markRead and setStarred mutations.
- */
-export interface BulkUnreadCounts {
-  all: { unread: number };
-  starred: { unread: number };
-  saved: { unread: number };
-  /** `tagIds` is absent from events a previous release published. */
-  subscriptions: Array<{ id: string; unread: number; tagIds?: string[] }>;
-  tags: Array<{ id: string; unread: number }>;
-  uncategorized?: { unread: number };
-}
+/** Absolute unread counts from a mutation response or event. */
+export type UnreadCounts = z.infer<typeof unreadCountsSchema>;
 
 /**
- * Sets absolute counts from the server. `saved` is optional: the server always
- * provides it, but events from a previous release may omit it (web/email
- * entries), in which case the write is skipped.
- *
- * @param utils - tRPC utils for cache access
- * @param counts - Absolute counts from server (saved optional)
- * @param queryClient - React Query client for updating infinite query caches
- */
-function setBulkCounts(
-  utils: TRPCClientUtils,
-  counts: EntryRelatedCounts,
-  queryClient: QueryClient
-): void {
-  // Set global counts
-  utils.entries.count.setData({}, counts.all);
-  utils.entries.count.setData({ starredOnly: true }, counts.starred);
-  // Only write the saved count when we actually have one. Events that omit it
-  // (web/email) and an empty cache leave it undefined; writing a fabricated
-  // { unread: 0 } would seed a "fresh" saved count that a later mount trusts.
-  if (counts.saved) {
-    utils.entries.count.setData({ type: "saved" }, counts.saved);
-  }
-
-  setSubscriptionUnreadCounts(utils, queryClient, counts.subscriptions);
-
-  // Set tag unread counts
-  for (const tag of counts.tags) {
-    setTagUnreadCount(utils, tag.id, tag.unread);
-  }
-
-  // Set uncategorized count
-  if (counts.uncategorized) {
-    setUncategorizedUnreadCount(utils, counts.uncategorized.unread);
-  }
-}
-
-/**
- * Counts carried by count-bearing realtime events (new_entry,
- * entry_state_changed). Same shape as BulkUnreadCounts but `saved` is optional,
- * since a previous release omitted it from web/email events.
- */
-export type EntryRelatedCounts = Omit<BulkUnreadCounts, "saved"> & {
-  saved?: { unread: number };
-};
-
-/**
- * Applies absolute unread counts from a count-bearing realtime event.
- *
- * Fills in `saved` from the current cache when the event omits it (events
- * from a previous release didn't compute it for web/email entries) so setBulkCounts doesn't clobber the
- * client's existing saved count with a wrong value. Because every value is set
- * absolutely, applying the same event twice — e.g. once from the live SSE
- * stream and once from a reconnect catch-up sync — leaves counts correct.
- *
- * @param utils - tRPC utils for cache access
- * @param counts - Absolute counts from the server (saved optional)
- * @param queryClient - React Query client for updating infinite query caches
- */
-export function setEntryRelatedCounts(
-  utils: TRPCClientUtils,
-  counts: EntryRelatedCounts,
-  queryClient: QueryClient
-): void {
-  // Fill in `saved` from the current cache when the event omits it so
-  // setBulkCounts doesn't clobber an existing saved count. If neither the event
-  // nor the cache has a value, leave it undefined — setBulkCounts then skips the
-  // write rather than fabricating a { unread: 0 } that a later mount serves as
-  // fresh.
-  const currentSaved = utils.entries.count.getData({ type: "saved" });
-  setBulkCounts(utils, { ...counts, saved: counts.saved ?? currentSaved }, queryClient);
-}
-
-/**
- * Sets stored subscriptions' unread counts. A subscription the store lacks
+ * Applies absolute unread counts from the server. Each list keeps the newest
+ * value (`countsAsOfSchema`), so applying the same counts twice, or older
+ * ones after newer, leaves counts correct. A subscription the store lacks
  * that now has unread entries is loaded (`loadSubscriptionForSidebar`), so an
  * unread-only sidebar section that hid it can list it.
  */
-function setSubscriptionUnreadCounts(
+export function applyUnreadCounts(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  subscriptions: BulkUnreadCounts["subscriptions"]
+  counts: UnreadCounts
 ): void {
-  const store = getLocalDb(queryClient).subscriptions;
-  for (const { id, unread, tagIds } of subscriptions) {
-    const row = store.rows.getSynced(id);
-    if (row) {
-      if (row.unreadCount !== unread) patchLiveSubscription(store, id, { unreadCount: unread });
-    } else if (unread > 0) {
-      loadSubscriptionForSidebar(utils, queryClient, id, tagIds);
-    }
+  const db = getLocalDb(queryClient);
+  writeCounts(
+    db.counts,
+    [
+      { list: { all: true }, unread: counts.all.unread },
+      { list: { starred: true }, unread: counts.starred.unread },
+      // A previous release's web/email events omit Saved.
+      ...(counts.saved ? [{ list: { saved: true } as const, unread: counts.saved.unread }] : []),
+      ...counts.tags.map((tag) => ({ list: { tagId: tag.id }, unread: tag.unread })),
+      ...(counts.uncategorized
+        ? [{ list: { uncategorized: true } as const, unread: counts.uncategorized.unread }]
+        : []),
+    ],
+    counts.asOf
+  );
+  for (const { id, unread, tagIds } of counts.subscriptions) {
+    const stored = writeSubscriptionCount(db.subscriptions, id, unread, counts.asOf);
+    if (!stored && unread > 0) loadSubscriptionForSidebar(utils, queryClient, id, tagIds);
   }
 }
 
@@ -467,33 +431,4 @@ function isSidebarSectionLoaded(queryClient: QueryClient, tagIds: string[]): boo
       if (section === undefined) return false;
       return section === UNCATEGORIZED_SECTION ? tagIds.length === 0 : tagIds.includes(section);
     });
-}
-
-/**
- * Sets the unread count for a specific tag.
- */
-function setTagUnreadCount(utils: TRPCClientUtils, tagId: string, unread: number): void {
-  utils.tags.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      items: oldData.items.map((tag) => (tag.id === tagId ? { ...tag, unreadCount: unread } : tag)),
-    };
-  });
-}
-
-/**
- * Sets the uncategorized unread count.
- */
-function setUncategorizedUnreadCount(utils: TRPCClientUtils, unread: number): void {
-  utils.tags.list.setData(undefined, (oldData) => {
-    if (!oldData) return oldData;
-    return {
-      ...oldData,
-      uncategorized: {
-        ...oldData.uncategorized,
-        unreadCount: unread,
-      },
-    };
-  });
 }

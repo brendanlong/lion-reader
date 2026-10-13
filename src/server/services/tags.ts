@@ -12,6 +12,8 @@ import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isListedSubscription } from "@/server/services/subscriptions";
 import { publishTagCreated, publishTagUpdated, publishTagDeleted } from "@/server/redis/pubsub";
+import { Temporal } from "temporal-polyfill";
+import { countsAsOfColumn, earliestCountsAsOf, formatCountsAsOf } from "@/server/services/counts";
 
 // ============================================================================
 // Types
@@ -34,6 +36,8 @@ export interface UncategorizedCounts {
 export interface ListTagsResult {
   items: Tag[];
   uncategorized: UncategorizedCounts;
+  /** When the unread counts were read (`countsAsOfSchema`). */
+  asOf: string;
 }
 
 export interface CreateTagParams {
@@ -68,6 +72,7 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
           WHERE ${subscriptionTags.tagId} = "tags"."id"
         )`,
         unreadCount: tags.unreadCount,
+        asOf: countsAsOfColumn(),
       })
       .from(tags)
       .where(and(eq(tags.userId, userId), isNull(tags.deletedAt)))
@@ -89,7 +94,7 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
         )
       ),
     db
-      .select({ unreadCount: users.uncategorizedUnreadCount })
+      .select({ unreadCount: users.uncategorizedUnreadCount, asOf: countsAsOfColumn() })
       .from(users)
       .where(eq(users.id, userId)),
   ]);
@@ -107,6 +112,12 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
       feedCount: uncategorizedFeedCount[0]?.feedCount ?? 0,
       unreadCount: uncategorizedUnread[0]?.unreadCount ?? 0,
     },
+    asOf: formatCountsAsOf(
+      earliestCountsAsOf(
+        ...[...uncategorizedUnread, ...userTags.slice(0, 1)].map((row) => row.asOf),
+        Temporal.Now.instant()
+      )
+    ),
   };
 }
 

@@ -178,11 +178,10 @@ export function useRealtimeUpdates(initialCursors: SyncCursors): UseRealtimeUpda
         });
         for (const event of events) handleSyncEvent(utils, queryClient, event);
         // Membership changes are SSE-only (collection_entries_changed isn't
-        // replayed): re-check cached memberships, and the sidebar counts of a
-        // collection an article joined or left while disconnected, which no
-        // replayed event carries.
+        // replayed; the replayed entries carry their memberships): refetch the
+        // sidebar counts of a collection an article joined or left while
+        // disconnected, which no replayed event carries.
         if (events.length > 0) {
-          void utils.collections.listForEntry.invalidate();
           void utils.subscriptions.list.invalidate();
           void utils.tags.list.invalidate();
           refreshStoredCollections(utils, queryClient);

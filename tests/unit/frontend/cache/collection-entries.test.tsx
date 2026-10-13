@@ -5,8 +5,7 @@
 /**
  * Tests for collection membership changes (#1806) reaching the client: the
  * collection_entries_changed event updates the stored entry's memberships, the
- * loaded lists of the collection (and of its tags, on an add), the
- * entry's cached `collections.listForEntry` and the counts.
+ * loaded lists of the collection (and of its tags, on an add) and the counts.
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -20,7 +19,11 @@ import type { EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
-import { createRealTrpcUtils } from "../../../utils/cache-test-helpers";
+import { createRealTrpcUtils, storedCount } from "../../../utils/cache-test-helpers";
+
+function storedEntry(queryClient: QueryClient, id: string): EntryRow | undefined {
+  return getLocalDb(queryClient).entries.getSynced(id);
+}
 
 afterEach(() => {
   cleanup();
@@ -328,14 +331,10 @@ describe("collection_entries_changed", () => {
     });
   });
 
-  it("drops a deleted collection from every cached membership", () => {
-    const { utils, queryClient } = setup({ feed: [], collection: [] });
-    act(() => {
-      utils.collections.listForEntry.setData({ entryId: "a" }, { collectionIds: [COLLECTION] });
-      utils.collections.listForEntry.setData(
-        { entryId: "b" },
-        { collectionIds: [COLLECTION, "other"] }
-      );
+  it("drops a deleted collection from its stored articles' memberships", () => {
+    const { utils, queryClient } = setup({
+      feed: [makeEntry("a", "2024-06-01", { subscriptionIds: ["sub-1", COLLECTION, "other"] })],
+      collection: [],
     });
 
     act(() =>
@@ -347,29 +346,19 @@ describe("collection_entries_changed", () => {
       })
     );
 
-    expect(utils.collections.listForEntry.getData({ entryId: "a" })).toEqual({
-      collectionIds: [],
-    });
-    expect(utils.collections.listForEntry.getData({ entryId: "b" })).toEqual({
-      collectionIds: ["other"],
-    });
+    expect(storedEntry(queryClient, "a")?.subscriptionIds).toEqual(["sub-1", "other"]);
   });
 
-  it("updates the entry's cached membership and the counts", () => {
+  it("updates the entry's stored membership and the counts", () => {
     const entry = makeEntry("a", "2024-06-01");
-    const { utils, changeMembership } = setup({ feed: [entry], collection: [] });
-    act(() => utils.collections.listForEntry.setData({ entryId: "a" }, { collectionIds: [] }));
+    const { queryClient, changeMembership } = setup({ feed: [entry], collection: [] });
 
     changeMembership(["a"], true);
-    expect(utils.collections.listForEntry.getData({ entryId: "a" })).toEqual({
-      collectionIds: [COLLECTION],
-    });
-    expect(utils.entries.count.getData({})).toEqual({ unread: 3 });
+    expect(storedEntry(queryClient, "a")?.subscriptionIds).toEqual(["sub-1", COLLECTION]);
+    expect(storedCount(queryClient, {})).toEqual({ unread: 3 });
 
     // Re-delivery (mutation response, then the SSE event) is a no-op.
     changeMembership(["a"], true);
-    expect(utils.collections.listForEntry.getData({ entryId: "a" })).toEqual({
-      collectionIds: [COLLECTION],
-    });
+    expect(storedEntry(queryClient, "a")?.subscriptionIds).toEqual(["sub-1", COLLECTION]);
   });
 });

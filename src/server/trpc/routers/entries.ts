@@ -25,7 +25,7 @@ import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import { verifySubscriptionOwnership } from "@/server/services/entry-filters";
 import { toServerTime } from "@/server/services/client-time";
-import { legacyFeedId, legacyFeedIdSchema } from "@/lib/events/schemas";
+import { countsAsOfSchema, legacyFeedId, legacyFeedIdSchema } from "@/lib/events/schemas";
 import { ENTRY_TYPES } from "@/lib/entry-types";
 
 // Endpoints exposed via the MCP tool surface, plus the ones the native app needs.
@@ -217,6 +217,7 @@ const bulkUnreadCountsSchema = z.object({
 
   // Uncategorized count (if any affected subscription has no tags)
   uncategorized: z.object({ unread: z.number() }).optional(),
+  asOf: countsAsOfSchema,
 });
 
 /**
@@ -352,6 +353,7 @@ export const entriesRouter = createTRPCRouter({
     .output(
       z.object({
         unread: z.number(),
+        asOf: countsAsOfSchema,
       })
     )
     .query(async ({ ctx, input }) => {

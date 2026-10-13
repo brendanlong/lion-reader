@@ -12,7 +12,11 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
-import { getGlobalUnreadCounts } from "@/server/services/counts";
+import {
+  countsAsOfColumn,
+  formatCountsAsOf,
+  getGlobalUnreadCounts,
+} from "@/server/services/counts";
 import type { ListEntriesParams } from "@/server/services/entries";
 import { resolveFeedStream } from "./id";
 
@@ -136,6 +140,7 @@ async function getSavedSubscription(
       id: subscriptions.id,
       greaderStreamId: subscriptions.greaderStreamId,
       unread: subscriptions.unreadCount,
+      unreadAsOf: countsAsOfColumn(),
     })
     .from(subscriptions)
     .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "saved")))
@@ -153,6 +158,7 @@ async function getSavedSubscription(
     siteUrl: null,
     subscribedAt: new Date(0),
     unreadCount: row.unread,
+    unreadCountAsOf: formatCountsAsOf(row.unreadAsOf),
     tags: [],
     fetchFullContent: false,
   };
