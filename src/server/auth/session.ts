@@ -36,7 +36,8 @@ const VALID_SESSION_SCOPES = new Set<string>(Object.values(OAUTH_SCOPES));
 // ============================================================================
 
 /**
- * Redis cache TTL for sessions (5 minutes)
+ * Redis cache TTL for sessions (5 minutes). Must not slide: activity is
+ * recorded only on a fill (`updateLastActiveAt`).
  */
 const SESSION_CACHE_TTL_SECONDS = 300;
 
@@ -336,7 +337,7 @@ export async function validateSession(
           if (data.session.scopes !== null && !allowScoped) {
             return null;
           }
-          // No last_active_at write here: the cache fill below does it.
+          // No last_active_at write here: the fill that cached this entry recorded activity.
           return data;
         }
 

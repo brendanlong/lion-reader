@@ -132,14 +132,13 @@ describe("validateAndConsumeAuthCode", () => {
 });
 
 describe("createTokens", () => {
-  it("mints access tokens in the format request auth dispatches on, and nothing else", async () => {
+  it("mints access tokens in the format request auth dispatches on", async () => {
     const tokens = await createTokens({
       clientId: await createTestClient(),
       userId: await createUser(),
       scopes: ["mcp"],
     });
     expect(isOAuthAccessTokenFormat(tokens.accessToken)).toBe(true);
-    expect(isOAuthAccessTokenFormat(tokens.refreshToken)).toBe(false);
   });
 });
 

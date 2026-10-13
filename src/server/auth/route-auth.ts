@@ -41,8 +41,8 @@ export async function authenticateRouteRequest(headers: Headers): Promise<RouteA
   const credential = getCredential(headers);
   if (!credential) return null;
 
-  // Same dispatch as the tRPC context (src/server/trpc/context.ts says why an
-  // unprefixed credential still falls through to the app token).
+  // Same dispatch as the tRPC context: an unprefixed credential still falls
+  // through to the app token until #1955.
   if (!isOAuthAccessTokenFormat(credential)) {
     const sessionData = await validateSession(credential);
     if (sessionData) {

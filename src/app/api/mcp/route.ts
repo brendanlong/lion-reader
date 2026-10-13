@@ -71,8 +71,8 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
     }
   }
 
-  // An unprefixed token may still be an OAuth token minted before the prefix
-  // existed (they live an hour), so it falls through to this check.
+  // Unprefixed OAuth access tokens are still accepted until #1955, so an
+  // unprefixed token falls through to this check.
   const oauthToken = await validateAccessToken(token);
   if (oauthToken) {
     // Check if OAuth token has MCP scope

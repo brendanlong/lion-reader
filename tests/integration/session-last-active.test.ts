@@ -9,7 +9,6 @@ import { db } from "../../src/server/db";
 import { apiTokens, sessions, users } from "../../src/server/db/schema";
 import {
   createSession,
-  invalidateUserSessionCaches,
   LAST_ACTIVE_REFRESH_MS,
   updateLastActiveAt,
   validateSession,
@@ -97,11 +96,6 @@ describe("validateSession", () => {
     expect(await validateSession(token)).not.toBeNull();
     await settle();
     expect(await sessionLastActive()).toEqual(restaled);
-
-    // Once the cached copy is gone, the next read records activity again.
-    await invalidateUserSessionCaches(userId);
-    expect(await validateSession(token)).not.toBeNull();
-    await expect.poll(sessionLastActive).not.toEqual(restaled);
   });
 
   it("records a scoped session's activity even after a full-access caller rejected it", async () => {

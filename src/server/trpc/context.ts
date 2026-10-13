@@ -134,8 +134,8 @@ function syntheticSession(
  *
  * An OAuth access token is recognized by its prefix and checked only as the
  * first-party app's token. Any other token is tried as a session (Redis cache,
- * then Postgres), then an API token, then an app token: access tokens minted
- * before the prefix existed still arrive unprefixed, and live an hour.
+ * then Postgres), then an API token, then an app token, since unprefixed
+ * access tokens are still accepted until #1955.
  */
 export async function createContext(opts: FetchCreateContextFnOptions): Promise<Context> {
   const { req } = opts;
