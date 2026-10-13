@@ -9,13 +9,13 @@ subscriptions additionally live in a **local normalized store** (TanStack DB,
 `src/lib/local-db/`), which is what entry lists, the reader, the loading
 fallbacks, and the sidebar's subscription rows render from:
 
-| Data                   | Lives in                                     | Updated by                                                                           |
-| ---------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Entry list-item fields | Local store: one row per entry               | Ingested fetches, mutation responses, SSE — newest `updatedAt` wins, per field group |
-| Entry list membership  | Local store: `{ listKey, entryId, order }`   | Ingested fetches; live inserts of new/newly-unread entries                           |
-| Entry content          | React Query `entries.get`                    | Fetch; `fetchFullContent` response                                                   |
-| Subscriptions          | Local store: one row per loaded subscription | Ingested fetches, responses and events; counts set its `unreadCount`                 |
-| Tag/global counts      | React Query (absolute values)                | Direct update from responses and events                                              |
+| Data                   | Lives in                                     | Updated by                                                                         |
+| ---------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Entry list-item fields | Local store: one row per entry               | Ingested fetches, mutation responses, SSE — the newest write wins, per field group |
+| Entry list membership  | Local store: `{ listKey, entryId, order }`   | Ingested fetches; live inserts of new/newly-unread entries                         |
+| Entry content          | React Query `entries.get`                    | Fetch; `fetchFullContent` response                                                 |
+| Subscriptions          | Local store: one row per loaded subscription | Ingested fetches, responses and events; counts set its `unreadCount`               |
+| Tag/global counts      | React Query (absolute values)                | Direct update from responses and events                                            |
 
 **Ingestion.** `getLocalDb(queryClient)` (one store per QueryClient — never
 module-global, since the server has one QueryClient per request) subscribes to
@@ -75,8 +75,9 @@ A next-page fetch can't clobber a mid-fetch change (#1081): entries live in the
 store, which tracks freshness separately for read/starred **state** and for the
 entry's **metadata** (title, summary, …), since writes like `entry_updated` or a
 mark-read response carry only one of them. A page fetched before a change
-carries an older `updatedAt` than the change, so that group is skipped for the
-entry while the other still applies (`mergeServerEntry`).
+carries an older timestamp for that group than the change, so that group is
+skipped for the entry while the other still applies (`mergeServerEntry` says
+which timestamp each write carries per group).
 
 ## Local Store (`src/lib/local-db/`)
 

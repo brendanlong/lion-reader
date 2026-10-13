@@ -125,6 +125,11 @@ export interface EntryListItem {
   publishedAt: Date | null;
   fetchedAt: Date;
   updatedAt: Date;
+  /**
+   * When the entry's own fields last changed (`entries.updated_at`), without
+   * the user's state: how fresh its metadata is (#1759).
+   */
+  entryUpdatedAt: Date;
   read: boolean;
   starred: boolean;
   /** When read state last changed (Recently Read's order); null if it never has. */
@@ -159,6 +164,8 @@ export interface EntryFull {
   publishedAt: Date | null;
   fetchedAt: Date;
   updatedAt: Date;
+  /** See EntryListItem. */
+  entryUpdatedAt: Date;
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
@@ -229,6 +236,7 @@ interface EntryListRow {
   publishedAt: Date | null;
   fetchedAt: Date;
   updatedAt: Date;
+  entryUpdatedAt: Date;
   read: boolean;
   starred: boolean;
   readChangedAt: Date | null;
@@ -255,6 +263,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
     starred: row.starred,
     readChangedAt: row.readChangedAt,
     updatedAt: row.updatedAt,
+    entryUpdatedAt: row.entryUpdatedAt,
     feedTitle: row.feedTitle,
     siteName: row.siteName,
   };
@@ -308,6 +317,7 @@ const entryListSelectFields = {
   starred: visibleEntries.starred,
   readChangedAt: visibleEntries.readChangedAt,
   updatedAt: visibleEntries.updatedAt,
+  entryUpdatedAt: visibleEntries.entryUpdatedAt,
   subscriptionId: subscriptions.id,
   subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
   siteName: visibleEntries.siteName,
@@ -334,6 +344,7 @@ const entryFullSelectFields = {
   read: visibleEntries.read,
   starred: visibleEntries.starred,
   updatedAt: visibleEntries.updatedAt,
+  entryUpdatedAt: visibleEntries.entryUpdatedAt,
   subscriptionId: subscriptions.id,
   subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
   siteName: visibleEntries.siteName,

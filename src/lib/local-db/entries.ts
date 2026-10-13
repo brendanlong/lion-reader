@@ -8,10 +8,14 @@
  * independently: the user's **state** (read/starred) and the entry's
  * **metadata** (everything else — title, summary, …). A full row carries the
  * server's `updatedAt` (`GREATEST(entry.updated_at, user_entry.updated_at)`),
- * which is at least the time of every change it includes, so it is as fresh
- * as both groups' watermarks it reaches. A state write (mutation response,
- * `entry_state_changed`) or metadata write (`entry_updated`) carries only its
- * own group and moves only that group's watermark — so a mark-read response
+ * which is at least the time of every change it includes, so its state is as
+ * fresh as that. Its metadata is as fresh as `entryUpdatedAt`
+ * (`entry.updated_at` alone), the clock `entry_updated` is stamped with: judged
+ * by `updatedAt`, a page fetched after a mark-read would look newer than a
+ * feed update that committed just after it, and drop its title (#1759).
+ * A state write (mutation response, `entry_state_changed`) or metadata write
+ * (`entry_updated`) carries only its own group and moves only that group's
+ * watermark — so a mark-read response
  * racing a feed refresh still lands, and a page fetched before an
  * `entry_updated` can't bring back the old title (#1081).
  */
@@ -38,6 +42,12 @@ export type EntryRow = {
   publishedAt: Date | null;
   fetchedAt: Date;
   updatedAt: Date;
+  /**
+   * When the entry's own fields last changed. Absent from a live new_entry
+   * (and a previous release's responses), whose metadata then counts as
+   * fresh as `updatedAt`.
+   */
+  entryUpdatedAt?: Date;
   read: boolean;
   starred: boolean;
   feedTitle: string | null;
@@ -61,12 +71,12 @@ type EntryStateWrite = EntryState & { subscriptionIds?: string[] };
 export type EntryMetadata = Pick<EntryRow, "title" | "author" | "summary" | "url" | "publishedAt">;
 
 export type EntryWrite =
-  /** A full row: both groups as of `row.updatedAt`. */
+  /** A full row: its state as of `updatedAt`, its metadata as of `entryUpdatedAt`. */
   | { kind: "row"; row: EntryRow }
   | { kind: "state"; state: EntryStateWrite; updatedAt: Date }
   | { kind: "metadata"; metadata: EntryMetadata; updatedAt: Date };
 
-export function toEntryRow(entry: EntryRow): EntryRow {
+function toEntryRow(entry: EntryRow): EntryRow {
   return {
     id: entry.id,
     subscriptionId: entry.subscriptionId,
@@ -121,9 +131,10 @@ export function mergeServerEntry(
   switch (write.kind) {
     case "row": {
       const row = toEntryRow(write.row);
-      if (!stored) return withWatermarks(row, row.updatedAt, row.updatedAt);
+      const rowMetadataUpdatedAt = write.row.entryUpdatedAt ?? row.updatedAt;
+      if (!stored) return withWatermarks(row, row.updatedAt, rowMetadataUpdatedAt);
       const stateFresh = isFresh(row.updatedAt, stored.stateUpdatedAt);
-      const metadataFresh = isFresh(row.updatedAt, stored.metadataUpdatedAt);
+      const metadataFresh = isFresh(rowMetadataUpdatedAt, stored.metadataUpdatedAt);
       if (!stateFresh && !metadataFresh) return undefined;
       const base = metadataFresh ? row : stored;
       const state = stateFresh ? row : stored;
@@ -135,7 +146,7 @@ export function mergeServerEntry(
           subscriptionIds: state.subscriptionIds,
         },
         stateFresh ? row.updatedAt : stored.stateUpdatedAt,
-        metadataFresh ? row.updatedAt : stored.metadataUpdatedAt
+        metadataFresh ? rowMetadataUpdatedAt : stored.metadataUpdatedAt
       );
     }
     case "state":

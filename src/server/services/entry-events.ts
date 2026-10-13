@@ -43,6 +43,7 @@ async function fetchUnreadListData(
       publishedAt: visibleEntries.publishedAt,
       fetchedAt: visibleEntries.fetchedAt,
       siteName: visibleEntries.siteName,
+      entryUpdatedAt: visibleEntries.entryUpdatedAt,
       isSpam: visibleEntries.isSpam,
       feedTitle: entryFeedTitleSql(),
     })

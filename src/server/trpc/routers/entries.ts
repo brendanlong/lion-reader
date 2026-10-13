@@ -129,6 +129,7 @@ const entryListItemSchema = z.object({
   starred: z.boolean(),
   readChangedAt: z.date().nullable(), // When read state last changed (Recently Read's order)
   updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
+  entryUpdatedAt: z.date(), // The entry's own updated_at - for metadata freshness
   feedTitle: z.string().nullable(),
   siteName: z.string().nullable(),
 });
@@ -158,6 +159,7 @@ const entryFullSchema = z.object({
   starred: z.boolean(),
   readChangedAt: z.date().nullable(), // When read state last changed (Recently Read's order)
   updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
+  entryUpdatedAt: z.date(), // The entry's own updated_at - for metadata freshness
   feedTitle: z.string().nullable(),
   feedUrl: z.string().nullable(),
   siteName: z.string().nullable(),

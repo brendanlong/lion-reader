@@ -15,6 +15,8 @@ const counts = {
 };
 
 const updatedAt = "2026-10-01T12:00:00.123456Z";
+// Older than `updatedAt`, which a later state change moved past it.
+const entryUpdatedAt = "2026-10-01T11:45:00.000Z";
 
 function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
   return {
@@ -26,6 +28,7 @@ function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
     publishedAt: new Date("2026-10-01T11:00:00Z"),
     fetchedAt: new Date("2026-10-01T11:30:00Z"),
     siteName: "Example",
+    entryUpdatedAt: new Date(entryUpdatedAt),
     isSpam: false,
     isBackfill: false,
     read: false,
@@ -67,6 +70,7 @@ describe("entryRowToSyncEvents", () => {
         fetchedAt: "2026-10-01T11:30:00.000Z",
         siteName: "Example",
         feedTitle: "Example feed",
+        entryUpdatedAt,
         read: false,
         starred: true,
         readChangedAt: null,
@@ -116,6 +120,7 @@ describe("entryRowToSyncEvents", () => {
       entryId: "entry-1",
       timestamp: updatedAt,
       updatedAt,
+      entryUpdatedAt,
       metadata: toEntryMetadata(row()),
     });
   });

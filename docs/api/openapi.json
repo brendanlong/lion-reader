@@ -5994,6 +5994,9 @@
                           "updatedAt": {
                             "type": "string"
                           },
+                          "entryUpdatedAt": {
+                            "type": "string"
+                          },
                           "feedTitle": {
                             "type": [
                               "string",
@@ -6023,6 +6026,7 @@
                           "starred",
                           "readChangedAt",
                           "updatedAt",
+                          "entryUpdatedAt",
                           "feedTitle",
                           "siteName"
                         ],
@@ -6368,6 +6372,9 @@
                         "updatedAt": {
                           "type": "string"
                         },
+                        "entryUpdatedAt": {
+                          "type": "string"
+                        },
                         "feedTitle": {
                           "type": [
                             "string",
@@ -6438,6 +6445,7 @@
                         "starred",
                         "readChangedAt",
                         "updatedAt",
+                        "entryUpdatedAt",
                         "feedTitle",
                         "feedUrl",
                         "siteName",
@@ -6651,6 +6659,9 @@
                           "updatedAt": {
                             "type": "string"
                           },
+                          "entryUpdatedAt": {
+                            "type": "string"
+                          },
                           "feedTitle": {
                             "type": [
                               "string",
@@ -6721,6 +6732,7 @@
                           "starred",
                           "readChangedAt",
                           "updatedAt",
+                          "entryUpdatedAt",
                           "feedTitle",
                           "feedUrl",
                           "siteName",
@@ -7951,6 +7963,9 @@
                         "updatedAt": {
                           "type": "string"
                         },
+                        "entryUpdatedAt": {
+                          "type": "string"
+                        },
                         "feedTitle": {
                           "type": [
                             "string",
@@ -8021,6 +8036,7 @@
                         "starred",
                         "readChangedAt",
                         "updatedAt",
+                        "entryUpdatedAt",
                         "feedTitle",
                         "feedUrl",
                         "siteName",
@@ -12910,6 +12926,9 @@
                                       "string",
                                       "null"
                                     ]
+                                  },
+                                  "entryUpdatedAt": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -12956,6 +12975,9 @@
                                 "type": "string"
                               },
                               "updatedAt": {
+                                "type": "string"
+                              },
+                              "entryUpdatedAt": {
                                 "type": "string"
                               },
                               "metadata": {
@@ -13226,6 +13248,9 @@
                                       "string",
                                       "null"
                                     ]
+                                  },
+                                  "entryUpdatedAt": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [

@@ -1009,6 +1009,13 @@
       "when": 1782956580000,
       "tag": "0144_feeds_web_only_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1782956640000,
+      "tag": "0145_visible_entries_entry_updated_at",
+      "breakpoints": true
     }
   ]
 }

@@ -855,7 +855,8 @@ CREATE VIEW public.visible_entries AS
     ue.read_changed_at,
     ue.published_or_fetched_at,
     e.greader_item_id,
-    e.search_vector
+    e.search_vector,
+    e.updated_at AS entry_updated_at
    FROM (public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
   WHERE (ue.starred OR (ue.active_memberships > 0));
