@@ -7,7 +7,8 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, sql } from "drizzle-orm";
-import { db } from "../../src/server/db";
+import { db, pool } from "../../src/server/db";
+import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import {
   users,
   feeds,
@@ -1372,6 +1373,48 @@ describe("sync.events", () => {
         cursors: { entries: CURSOR.toISOString() },
       });
       expect(result.events.filter((e) => e.type === "entry_updated")).toHaveLength(1);
+    });
+
+    it("gives a row inserted during a content change that change", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed({ url: "https://example.com/refetch-race.xml" });
+      await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { createdAt: OLD, updatedAt: OLD });
+      // Later than the row's own updated_at, so only the entry's can produce it.
+      const refetchedAt = "2099-01-01T00:00:00Z";
+
+      const held = await pool.connect();
+      try {
+        // A content change holds the entry, uncommitted, while the fan-out
+        // inserts the user's row: the change's trigger can't see that row.
+        await held.query("BEGIN");
+        await held.query("UPDATE entries SET updated_at = $1 WHERE id = $2", [
+          refetchedAt,
+          entryId,
+        ]);
+        const fanOut = createUserEntriesForFeed(feedId, [entryId]);
+        await expect
+          .poll(
+            async () =>
+              (
+                await db.execute<{ n: number }>(sql`
+                  SELECT count(*)::int AS n FROM pg_stat_activity
+                  WHERE datname = current_database() AND wait_event_type = 'Lock'
+                `)
+              ).rows[0].n
+          )
+          .toBe(1);
+        await held.query("COMMIT");
+        await fanOut;
+      } finally {
+        await held.query("ROLLBACK");
+        held.release();
+      }
+
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
+      expect(cursor.entries && parseTimestamptz(cursor.entries).toString()).toBe(
+        parseTimestamptz(refetchedAt).toString()
+      );
     });
 
     it("does NOT deliver a content refetch for a non-starred entry on an unsubscribed feed", async () => {
