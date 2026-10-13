@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, userEntries, entrySummaries } from "../../src/server/db/schema";
+import { users, entrySummaries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { getAppErrorCode } from "../../src/server/trpc/errors";
@@ -28,6 +28,7 @@ import {
   createTestFeed,
   createTestSubscription,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 
 /**
@@ -75,7 +76,7 @@ async function createVisibleEntry(
   // Not createTestEntry's `userIds`, which can't express the explicit change
   // stamps. subscription_id is filled by the user_entries_fill_denormalized
   // trigger.
-  await db.insert(userEntries).values({
+  await createTestUserEntries({
     userId,
     entryId,
     read: false,

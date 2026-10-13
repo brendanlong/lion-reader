@@ -2,13 +2,10 @@
  * Handler for `reconcile_membership_counters` jobs (singleton).
  *
  * See src/server/services/reconcile-counters.ts for the reconciliation itself.
- * Until #1846 phase 7B drops the previous release's membership forms, it also
- * checks memberships against them (src/server/services/subscription-entries.ts).
  */
 
 import { db } from "../../db";
-import { reconcileCounters } from "../../services/reconcile-counters";
-import { checkSubscriptionEntries } from "../../services/subscription-entries";
+import { countUnheldUserEntries, reconcileCounters } from "../../services/reconcile-counters";
 import type { JobHandlerResult } from "./types";
 
 /**
@@ -25,11 +22,11 @@ const RECONCILE_COUNTERS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export async function handleReconcileCounters(): Promise<JobHandlerResult> {
   const now = new Date();
   const result = await reconcileCounters(db);
-  const memberships = await checkSubscriptionEntries(db);
+  const unheldUserEntries = await countUnheldUserEntries(db);
 
   return {
     success: true,
     nextRunAt: new Date(now.getTime() + RECONCILE_COUNTERS_INTERVAL_MS),
-    metadata: { ...result, memberships },
+    metadata: { ...result, unheldUserEntries },
   };
 }

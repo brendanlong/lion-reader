@@ -22,7 +22,13 @@ import {
   userEntries,
   users,
 } from "../../src/server/db/schema";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+  createTestUserEntries,
+} from "./helpers";
 
 // Migration 0137 renamed entries.feed_id to owner_feed_id (and this index with
 // it), so the file's statements are replayed against the current names.
@@ -186,7 +192,7 @@ describe("migration 0109: merge scheme-twin entries", () => {
       const subUnreadSurvivor = await createTestSubscription(userUnreadSurvivor, feedId);
 
       const stale = new Date("2026-08-01T00:00:00Z");
-      await db.insert(userEntries).values([
+      await createTestUserEntries([
         {
           userId: userBoth,
           entryId: survivor,

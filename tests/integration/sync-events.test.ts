@@ -30,6 +30,7 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 
 // ============================================================================
@@ -53,7 +54,7 @@ async function createUserEntry(
   options: { read?: boolean; starred?: boolean; updatedAt?: Date } = {}
 ): Promise<void> {
   const now = new Date();
-  await db.insert(userEntries).values({
+  await createTestUserEntries({
     userId,
     entryId,
     read: options.read ?? false,
@@ -853,7 +854,7 @@ describe("sync.events", () => {
       const batchSize = 100;
       for (let i = 0; i < entryValues.length; i += batchSize) {
         await db.insert(entries).values(entryValues.slice(i, i + batchSize));
-        await db.insert(userEntries).values(userEntryValues.slice(i, i + batchSize));
+        await createTestUserEntries(userEntryValues.slice(i, i + batchSize));
       }
 
       // Start just before the tied timestamp and drain to completion, exactly
@@ -1155,7 +1156,7 @@ describe("sync.events", () => {
       const batchSize = 100;
       for (let i = 0; i < entryValues.length; i += batchSize) {
         await db.insert(entries).values(entryValues.slice(i, i + batchSize));
-        await db.insert(userEntries).values(userEntryValues.slice(i, i + batchSize));
+        await createTestUserEntries(userEntryValues.slice(i, i + batchSize));
       }
 
       const events = await drainEntrySync(userId, {
@@ -1286,7 +1287,7 @@ describe("sync.events", () => {
       }
       for (let i = 0; i < entryValues.length; i += 100) {
         await db.insert(entries).values(entryValues.slice(i, i + 100));
-        await db.insert(userEntries).values(userEntryValues.slice(i, i + 100));
+        await createTestUserEntries(userEntryValues.slice(i, i + 100));
       }
 
       const caller = createCaller(await createAuthContext(userId));

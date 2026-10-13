@@ -26,7 +26,12 @@ import {
   savedArticleExistsByUrl,
 } from "../../src/server/services/saved";
 import { markEntriesRead } from "../../src/server/services/entries";
-import { createAuthContext, createTestUser, createUnauthContext } from "./helpers";
+import {
+  createAuthContext,
+  createTestUser,
+  createUnauthContext,
+  createTestUserEntries,
+} from "./helpers";
 
 // ============================================================================
 // Test Helpers
@@ -74,7 +79,7 @@ async function createTestSavedArticle(
   // Create the user_entries row
   // Set timestamps slightly in the past to ensure API calls (with current time) can always update them
   const pastTime = new Date(Date.now() - 1000);
-  await db.insert(userEntries).values({
+  await createTestUserEntries({
     userId,
     entryId: articleId,
     read: options.read ?? false,

@@ -23,6 +23,7 @@ import {
   createTestEmailSubscription,
   createTestEntry as createSharedTestEntry,
   createTestFeed as createSharedTestFeed,
+  createTestUserEntries,
 } from "./helpers";
 
 // ============================================================================
@@ -97,7 +98,7 @@ async function createUserEntry(
   } = {}
 ): Promise<void> {
   const now = new Date();
-  await db.insert(userEntries).values({
+  await createTestUserEntries({
     userId,
     entryId,
     read: options.read ?? false,

@@ -32,6 +32,7 @@ import {
   createTestFeed,
   createTestSubscription,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 
 // ============================================================================
@@ -125,7 +126,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     const feedId = await createTestFeed();
     const subId = await createTestSubscription(userId, feedId);
     const entryId = await createTestEntry(feedId);
-    await db.insert(userEntries).values({ userId, entryId });
+    await createTestUserEntries({ userId, entryId });
 
     expect((await subscriptionCounters(subId)).unread).toBe(1);
 
@@ -151,9 +152,11 @@ describe("unread counters (triggers + reconciliation)", () => {
     const subId = await createTestSubscription(userId, feedId);
     const entryId = await createTestEntry(feedId);
     // starredChangedAt in the past — see the note in the merge test below.
-    await db
-      .insert(userEntries)
-      .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
+    await createTestUserEntries({
+      userId,
+      entryId,
+      starredChangedAt: new Date(Date.now() - 60_000),
+    });
 
     await updateEntryStarred(db, userId, entryId, true);
     expect(await subscriptionCounters(subId)).toEqual({ unread: 1 });
@@ -173,7 +176,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     const subId = await createTestSubscription(userId, feedId);
     for (let i = 0; i < 5; i++) {
       const entryId = await createTestEntry(feedId);
-      await db.insert(userEntries).values({ userId, entryId });
+      await createTestUserEntries({ userId, entryId });
     }
     expect((await subscriptionCounters(subId)).unread).toBe(5);
 
@@ -193,9 +196,11 @@ describe("unread counters (triggers + reconciliation)", () => {
     // starredChangedAt in the past: the insert default is now() at microsecond
     // precision, which can tie with the JS millisecond changedAt and make the
     // star a stale no-op under the idempotency guard.
-    await db
-      .insert(userEntries)
-      .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
+    await createTestUserEntries({
+      userId,
+      entryId,
+      starredChangedAt: new Date(Date.now() - 60_000),
+    });
     await updateEntryStarred(db, userId, entryId, true);
 
     expect(await subscriptionCounters(oldSubId)).toEqual({ unread: 1 });
@@ -234,9 +239,11 @@ describe("unread counters (triggers + reconciliation)", () => {
     // starredChangedAt in the past: the insert default is now() at microsecond
     // precision, which can tie with the JS millisecond changedAt and make the
     // star a stale no-op under the idempotency guard.
-    await db
-      .insert(userEntries)
-      .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
+    await createTestUserEntries({
+      userId,
+      entryId,
+      starredChangedAt: new Date(Date.now() - 60_000),
+    });
     await updateEntryStarred(db, userId, entryId, true);
 
     // An unsubscribed subscription keeps counting its memberships.
@@ -261,7 +268,7 @@ describe("unread counters (triggers + reconciliation)", () => {
     await createTestSubscription(userId, activeFeedId);
     for (let i = 0; i < 2; i++) {
       const entryId = await createTestEntry(activeFeedId);
-      await db.insert(userEntries).values({ userId, entryId });
+      await createTestUserEntries({ userId, entryId });
     }
 
     // Unsubscribed subscription with 1 starred unread orphan (still visible).
@@ -269,9 +276,11 @@ describe("unread counters (triggers + reconciliation)", () => {
     const goneSubId = await createTestSubscription(userId, goneFeedId);
     const orphanId = await createTestEntry(goneFeedId);
     // starredChangedAt in the past — see the note in the merge test above.
-    await db
-      .insert(userEntries)
-      .values({ userId, entryId: orphanId, starredChangedAt: new Date(Date.now() - 60_000) });
+    await createTestUserEntries({
+      userId,
+      entryId: orphanId,
+      starredChangedAt: new Date(Date.now() - 60_000),
+    });
     await updateEntryStarred(db, userId, orphanId, true);
     await db
       .update(subscriptions)
@@ -325,9 +334,11 @@ describe("unread counters (triggers + reconciliation)", () => {
     // starredChangedAt in the past: the insert default is now() at microsecond
     // precision, which can tie with the JS millisecond changedAt and make the
     // star a stale no-op under the idempotency guard.
-    await db
-      .insert(userEntries)
-      .values({ userId, entryId, starredChangedAt: new Date(Date.now() - 60_000) });
+    await createTestUserEntries({
+      userId,
+      entryId,
+      starredChangedAt: new Date(Date.now() - 60_000),
+    });
     await updateEntryStarred(db, userId, entryId, true);
 
     // Corrupt the counters, and the article's active_memberships, directly.

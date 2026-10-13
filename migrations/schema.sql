@@ -149,30 +149,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.collection_entries_copy_memberships_delete() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  DELETE FROM subscription_entries se
-  USING old_rows o
-  WHERE se.subscription_id = o.subscription_id AND se.entry_id = o.entry_id;
-  RETURN NULL;
-END;
-$$;
-
-CREATE FUNCTION public.collection_entries_copy_memberships_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-  SELECT n.subscription_id, n.user_id, n.entry_id, ue.published_or_fetched_at
-  FROM new_rows n
-  JOIN user_entries ue ON ue.user_id = n.user_id AND ue.entry_id = n.entry_id
-  ON CONFLICT DO NOTHING;
-  RETURN NULL;
-END;
-$$;
-
 CREATE FUNCTION public.ensure_saved_subscriptions(p_users uuid[]) RETURNS integer
     LANGUAGE sql
     AS $$
@@ -245,7 +221,6 @@ CREATE FUNCTION public.subscription_entries_counters() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-  v_mode text := current_setting('lion.memberships', true);
   v_sign integer := CASE WHEN TG_OP = 'INSERT' THEN 1 ELSE -1 END;
   v_user uuid[]; v_entry uuid[]; v_sub uuid[];
 BEGIN
@@ -256,20 +231,6 @@ BEGIN
     PERFORM 1 FROM subscriptions
     WHERE id IN (SELECT DISTINCT subscription_id FROM changed_rows)
     ORDER BY id FOR NO KEY UPDATE;
-  END IF;
-  IF v_mode = 'new_rows' THEN
-    UPDATE user_entries ue
-    SET active_memberships = (s.unsubscribed_at IS NULL)::int
-    FROM changed_rows c
-    JOIN subscriptions s ON s.id = c.subscription_id
-    WHERE ue.user_id = c.user_id AND ue.entry_id = c.entry_id
-      AND ue.active_memberships <> (s.unsubscribed_at IS NULL)::int;
-    PERFORM apply_unread_memberships(array_agg(1), array_agg(c.user_id), array_agg(c.entry_id),
-                                     array_agg(c.subscription_id), true)
-    FROM changed_rows c
-    JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
-    WHERE NOT ue.read AND NOT ue.is_spam;
-    RETURN NULL;
   END IF;
   SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id)
   INTO v_user, v_entry, v_sub
@@ -338,76 +299,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.user_entries_copy_membership_restamp() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-  r_user uuid[]; r_entry uuid[]; r_sub uuid[]; r_at timestamptz[];
-BEGIN
-  SELECT array_agg(user_id), array_agg(entry_id), array_agg(subscription_id), array_agg(at)
-  INTO r_user, r_entry, r_sub, r_at
-  FROM (
-    SELECT user_id, entry_id, subscription_id, max(published_or_fetched_at) AS at
-    FROM (
-      SELECT 1 AS sign, user_id, entry_id, subscription_id, published_or_fetched_at FROM new_rows
-      UNION ALL
-      SELECT -1, user_id, entry_id, subscription_id, published_or_fetched_at FROM old_rows
-    ) x
-    WHERE subscription_id IS NOT NULL
-    GROUP BY user_id, entry_id, subscription_id
-    HAVING sum(sign) > 0
-  ) r;
-  IF r_user IS NULL THEN
-    RETURN NULL;
-  END IF;
-  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-  SELECT * FROM unnest(r_sub, r_user, r_entry, r_at)
-  ON CONFLICT DO NOTHING;
-  RETURN NULL;
-END;
-$$;
-
-CREATE FUNCTION public.user_entries_copy_memberships_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-  v_users uuid[];
-BEGIN
-  PERFORM set_config('lion.memberships', 'new_rows', true);
-  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-  SELECT subscription_id, user_id, entry_id, published_or_fetched_at
-  FROM new_rows
-  WHERE subscription_id IS NOT NULL
-  ON CONFLICT DO NOTHING;
-  PERFORM set_config('lion.memberships', '', true);
-
-  IF NOT EXISTS (SELECT 1 FROM new_rows WHERE subscription_id IS NULL) THEN
-    RETURN NULL;
-  END IF;
-
-  SELECT array_agg(DISTINCT n.user_id) INTO v_users
-  FROM new_rows n
-  JOIN entries e ON e.id = n.entry_id
-  WHERE n.subscription_id IS NULL AND e.type = 'saved';
-  IF v_users IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  PERFORM ensure_saved_subscriptions(v_users);
-
-  PERFORM set_config('lion.memberships', 'new_rows', true);
-  INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-  SELECT s.id, n.user_id, n.entry_id, n.published_or_fetched_at
-  FROM new_rows n
-  JOIN entries e ON e.id = n.entry_id
-  JOIN subscriptions s ON s.user_id = n.user_id AND s.type = 'saved'
-  WHERE n.subscription_id IS NULL AND e.type = 'saved'
-  ON CONFLICT DO NOTHING;
-  PERFORM set_config('lion.memberships', '', true);
-  RETURN NULL;
-END;
-$$;
-
 CREATE FUNCTION public.user_entries_counters_delete() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -434,9 +325,6 @@ BEGIN
 
   PERFORM apply_unread_memberships(m_sign, m_user, m_entry, m_sub, true, c_user, c_all, c_starred);
 
-  DELETE FROM collection_entries ce
-  USING old_rows o
-  WHERE ce.user_id = o.user_id AND ce.entry_id = o.entry_id;
   DELETE FROM subscription_entries se
   USING old_rows o
   WHERE se.user_id = o.user_id AND se.entry_id = o.entry_id;
@@ -514,43 +402,13 @@ $$;
 CREATE FUNCTION public.user_entries_fill_denormalized() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-DECLARE
-  v_feed_id uuid;
-  v_owner_subscription_id uuid;
-  v_type feed_type;
 BEGIN
-  IF NEW.published_or_fetched_at IS NULL
-     OR NEW.is_spam IS NULL
-     OR NEW.subscription_id IS NULL THEN
+  IF NEW.published_or_fetched_at IS NULL OR NEW.is_spam IS NULL THEN
     SELECT COALESCE(NEW.published_or_fetched_at, e.published_at, e.fetched_at),
-           COALESCE(NEW.is_spam, e.is_spam),
-           e.owner_feed_id, e.owner_subscription_id, e.type
-      INTO NEW.published_or_fetched_at, NEW.is_spam, v_feed_id, v_owner_subscription_id, v_type
+           COALESCE(NEW.is_spam, e.is_spam)
+      INTO NEW.published_or_fetched_at, NEW.is_spam
       FROM entries e
       WHERE e.id = NEW.entry_id;
-    IF NEW.subscription_id IS NULL THEN
-      IF v_owner_subscription_id IS NOT NULL THEN
-        SELECT s.id
-          INTO NEW.subscription_id
-          FROM subscriptions s
-          WHERE s.id = v_owner_subscription_id
-            AND s.user_id = NEW.user_id;
-      ELSIF v_feed_id IS NOT NULL THEN
-        SELECT s.id
-          INTO NEW.subscription_id
-          FROM subscriptions s
-          WHERE s.user_id = NEW.user_id
-            AND s.feed_id = v_feed_id;
-      END IF;
-    END IF;
-  END IF;
-  IF NEW.subscription_id IS NOT NULL THEN
-    NEW.active_memberships := (
-      SELECT count(*) FROM subscriptions s
-      WHERE s.id = NEW.subscription_id AND s.unsubscribed_at IS NULL
-    );
-  ELSIF v_type = 'saved' THEN
-    NEW.active_memberships := 1;
   END IF;
   RETURN NEW;
 END;
@@ -575,13 +433,6 @@ CREATE TABLE public.blocked_senders (
     blocked_at timestamp with time zone DEFAULT now() NOT NULL,
     list_unsubscribe_mailto text,
     unsubscribe_sent_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-CREATE TABLE public.collection_entries (
-    subscription_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    entry_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -680,7 +531,6 @@ CREATE SEQUENCE public.greader_id_seq
 
 CREATE TABLE public.feeds (
     id uuid NOT NULL,
-    type public.feed_type DEFAULT 'web'::public.feed_type NOT NULL,
     url text,
     title text,
     description text,
@@ -696,8 +546,6 @@ CREATE TABLE public.feeds (
     hub_url text,
     self_url text,
     websub_active boolean DEFAULT false NOT NULL,
-    user_id uuid,
-    email_sender_pattern text,
     body_hash text,
     last_entries_updated_at timestamp with time zone,
     redirect_url text,
@@ -707,8 +555,7 @@ CREATE TABLE public.feeds (
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     ttl_minutes integer,
     syndication_update_period text,
-    syndication_update_frequency integer,
-    CONSTRAINT feeds_web_only CHECK (((type = 'web'::public.feed_type) AND (user_id IS NULL) AND (email_sender_pattern IS NULL)))
+    syndication_update_frequency integer
 );
 
 CREATE TABLE public.ingest_addresses (
@@ -923,7 +770,6 @@ CREATE TABLE public.user_entries (
     starred_changed_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     published_or_fetched_at timestamp with time zone NOT NULL,
-    subscription_id uuid,
     is_spam boolean NOT NULL,
     active_memberships integer DEFAULT 0 NOT NULL,
     CONSTRAINT user_entries_active_memberships_nonnegative CHECK ((active_memberships >= 0))
@@ -1005,16 +851,13 @@ CREATE VIEW public.visible_entries AS
     e.full_content_error,
     ue.read,
     ue.starred,
-    s.id AS subscription_id,
     e.unsubscribe_url,
     ue.read_changed_at,
     ue.published_or_fetched_at,
     e.greader_item_id,
-    s.greader_stream_id AS subscription_greader_stream_id,
     e.search_vector
-   FROM ((public.user_entries ue
+   FROM (public.user_entries ue
      JOIN public.entries e ON ((e.id = ue.entry_id)))
-     LEFT JOIN public.subscriptions s ON ((s.id = ue.subscription_id)))
   WHERE (ue.starred OR (ue.active_memberships > 0));
 
 CREATE TABLE public.websub_hub_stats (
@@ -1052,9 +895,6 @@ ALTER TABLE ONLY public.api_tokens
 
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.collection_entries
-    ADD CONSTRAINT collection_entries_pkey PRIMARY KEY (subscription_id, entry_id);
 
 ALTER TABLE ONLY public.discord_api_token_links
     ADD CONSTRAINT discord_api_token_links_pkey PRIMARY KEY (discord_id);
@@ -1158,9 +998,6 @@ ALTER TABLE ONLY public.blocked_senders
 ALTER TABLE ONLY public.entries
     ADD CONSTRAINT uq_entries_owner_feed_guid UNIQUE (owner_feed_id, guid);
 
-ALTER TABLE ONLY public.feeds
-    ADD CONSTRAINT uq_feeds_email_user_sender UNIQUE (user_id, email_sender_pattern);
-
 ALTER TABLE ONLY public.oauth_accounts
     ADD CONSTRAINT uq_oauth_accounts_provider_account UNIQUE (provider, provider_account_id);
 
@@ -1191,8 +1028,6 @@ ALTER TABLE ONLY public.websub_subscriptions
 CREATE INDEX idx_api_tokens_user ON public.api_tokens USING btree (user_id);
 
 CREATE INDEX idx_blocked_senders_user ON public.blocked_senders USING btree (user_id);
-
-CREATE INDEX idx_collection_entries_user_entry ON public.collection_entries USING btree (user_id, entry_id);
 
 CREATE INDEX idx_discord_api_token_links_token ON public.discord_api_token_links USING btree (token_id);
 
@@ -1231,10 +1066,6 @@ CREATE INDEX idx_entry_tombstones_user_deleted_at ON public.entry_tombstones USI
 CREATE UNIQUE INDEX idx_feeds_greader_stream_id ON public.feeds USING btree (greader_stream_id);
 
 CREATE INDEX idx_feeds_next_fetch ON public.feeds USING btree (next_fetch_at);
-
-CREATE INDEX idx_feeds_type ON public.feeds USING btree (type);
-
-CREATE INDEX idx_feeds_user_id ON public.feeds USING btree (user_id);
 
 CREATE INDEX idx_ingest_addresses_user ON public.ingest_addresses USING btree (user_id);
 
@@ -1304,8 +1135,6 @@ CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree
 
 CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_id) WHERE (starred = true);
 
-CREATE INDEX idx_user_entries_subscription_timeline ON public.user_entries USING btree (subscription_id, published_or_fetched_at DESC, entry_id DESC) WHERE (subscription_id IS NOT NULL);
-
 CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
@@ -1324,8 +1153,6 @@ CREATE UNIQUE INDEX uq_entries_owner_subscription_guid ON public.entries USING b
 
 CREATE UNIQUE INDEX uq_entries_owner_user_guid ON public.entries USING btree (owner_user_id, guid) WHERE (owner_user_id IS NOT NULL);
 
-CREATE UNIQUE INDEX uq_feeds_saved_user ON public.feeds USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
-
 CREATE UNIQUE INDEX uq_subscriptions_id_user ON public.subscriptions USING btree (id, user_id);
 
 CREATE UNIQUE INDEX uq_subscriptions_saved_user ON public.subscriptions USING btree (user_id) WHERE (type = 'saved'::public.feed_type);
@@ -1338,10 +1165,6 @@ CREATE UNIQUE INDEX uq_tags_user_lower_name ON public.tags USING btree (user_id,
 
 CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^https?://'::text, 'https://'::text) FROM public.entries;
 
-CREATE TRIGGER collection_entries_copy_memberships_delete_trigger AFTER DELETE ON public.collection_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_copy_memberships_delete();
-
-CREATE TRIGGER collection_entries_copy_memberships_insert_trigger AFTER INSERT ON public.collection_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.collection_entries_copy_memberships_insert();
-
 CREATE TRIGGER subscription_entries_counters_delete_trigger AFTER DELETE ON public.subscription_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
 
 CREATE TRIGGER subscription_entries_counters_insert_trigger AFTER INSERT ON public.subscription_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
@@ -1353,10 +1176,6 @@ CREATE TRIGGER subscription_tags_recompute_lists_insert_trigger AFTER INSERT ON 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 
 CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON public.subscriptions REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_recompute_lists();
-
-CREATE TRIGGER user_entries_copy_membership_restamp_trigger AFTER UPDATE ON public.user_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_copy_membership_restamp();
-
-CREATE TRIGGER user_entries_copy_memberships_insert_trigger AFTER INSERT ON public.user_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_copy_memberships_insert();
 
 CREATE TRIGGER user_entries_counters_delete_trigger AFTER DELETE ON public.user_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_delete();
 
@@ -1371,15 +1190,6 @@ ALTER TABLE ONLY public.api_tokens
 
 ALTER TABLE ONLY public.blocked_senders
     ADD CONSTRAINT blocked_senders_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.collection_entries
-    ADD CONSTRAINT collection_entries_subscription_id_user_id_fkey FOREIGN KEY (subscription_id, user_id) REFERENCES public.subscriptions(id, user_id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.collection_entries
-    ADD CONSTRAINT collection_entries_user_id_entry_id_fkey FOREIGN KEY (user_id, entry_id) REFERENCES public.user_entries(user_id, entry_id) DEFERRABLE INITIALLY DEFERRED;
-
-ALTER TABLE ONLY public.collection_entries
-    ADD CONSTRAINT collection_entries_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.discord_api_token_links
     ADD CONSTRAINT discord_api_token_links_token_id_fkey FOREIGN KEY (token_id) REFERENCES public.api_tokens(id) ON DELETE CASCADE;
@@ -1398,9 +1208,6 @@ ALTER TABLE ONLY public.entry_summaries
 
 ALTER TABLE ONLY public.entry_tombstones
     ADD CONSTRAINT entry_tombstones_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.feeds
-    ADD CONSTRAINT feeds_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.ingest_addresses
     ADD CONSTRAINT ingest_addresses_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
@@ -1458,9 +1265,6 @@ ALTER TABLE ONLY public.tags
 
 ALTER TABLE ONLY public.user_api_keys
     ADD CONSTRAINT user_api_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.user_entries
-    ADD CONSTRAINT user_entries_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_entry_id_entries_id_fk FOREIGN KEY (entry_id) REFERENCES public.entries(id) ON DELETE CASCADE;

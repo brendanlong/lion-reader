@@ -121,8 +121,8 @@ const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url));
  */
 async function vacuum(client: Client): Promise<void> {
   await client.query(
-    `VACUUM (DISABLE_PAGE_SKIPPING) entries, user_entries, subscriptions, subscription_tags,
-       collection_entries, feeds, jobs, tags, users`
+    `VACUUM (DISABLE_PAGE_SKIPPING) entries, user_entries, subscription_entries, subscriptions,
+       subscription_tags, feeds, jobs, tags, users`
   );
 }
 
@@ -320,12 +320,10 @@ async function iterate(
     await vacuum(client);
     await client.query("BEGIN");
     await client.query("SET CONSTRAINTS ALL IMMEDIATE");
-    // Except the memberships' foreign keys to user_entries: the user_entries
+    // Except the memberships' foreign key to user_entries: the user_entries
     // delete trigger removes the rows they check only after the delete that
     // runs an immediate check, so they hold only at commit (migration 0133).
-    await client.query(
-      "SET CONSTRAINTS subscription_entries_user_id_entry_id_fkey, collection_entries_user_id_entry_id_fkey DEFERRED"
-    );
+    await client.query("SET CONSTRAINTS subscription_entries_user_id_entry_id_fkey DEFERRED");
     for (const sql of prepared.setup ?? []) await client.query(sql);
   }
   try {
@@ -452,7 +450,8 @@ async function collectMeta(
      UNION ALL SELECT 'subscriptions', count(*)::text FROM subscriptions
      UNION ALL SELECT 'entries', count(*)::text FROM entries
      UNION ALL SELECT 'user_entries', count(*)::text FROM user_entries
-     UNION ALL SELECT 'collection_entries', count(*)::text FROM collection_entries
+     UNION ALL SELECT 'collection_entries', count(*)::text FROM subscription_entries se
+       JOIN subscriptions s ON s.id = se.subscription_id AND s.type = 'collection'
      UNION ALL SELECT 'u0_user_entries', count(*)::text FROM user_entries WHERE user_id = $1
      UNION ALL SELECT 'u0_unread', count(*)::text FROM user_entries WHERE user_id = $1 AND NOT read`,
     [U0]

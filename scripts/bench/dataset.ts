@@ -67,7 +67,7 @@ export const webSubscriptionId = (userIdx: number, feedIdx: number): string =>
 /**
  * The seeded collections. `empty` has no members (the add-1,000 target).
  * `archive` holds 1,000 (the large-delete target), so the seed has 1,071
- * collection_entries to production's 71; it belongs to U1 because every
+ * collection memberships to production's 71; it belongs to U1 because every
  * counter recompute scans its owner's members, and U0's should stay
  * production-sized.
  */

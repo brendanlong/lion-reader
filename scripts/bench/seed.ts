@@ -1,14 +1,15 @@
 /**
  * Seeds the database benchmark dataset (`pnpm bench:db:seed`): production's
  * shape as of 2026-10-05, with exact row counts for the main tables except
- * collection_entries (see `COLLECTIONS`).
+ * collection memberships (see `COLLECTIONS`).
  *
  * The plan (who subscribes to what, how many entries each feed and library
  * has) is computed here from a seeded PRNG; the bulk rows are generated in SQL
- * from it. Every counter, and every subscription_entries membership, is
- * maintained by the production triggers, which fire on the bulk inserts. Each
- * user with saved articles gets the saved subscription a first save creates,
- * inserted up front so its id is fixed. Destroys all data in the target database, so it refuses
+ * from it. Each `user_entries` row is inserted with its membership in its
+ * source subscription, as the app does (`insertUserEntriesWithMemberships`),
+ * and every counter is maintained by the production triggers, which fire on
+ * the bulk inserts. Each user with saved articles gets the saved subscription
+ * a first save creates, inserted up front so its id is fixed. Destroys all data in the target database, so it refuses
  * to run on one that isn't empty or already a benchmark database.
  *
  * Text: entries draw paragraphs from a pool of 4,000 made-up-word paragraphs
@@ -422,7 +423,7 @@ CREATE FUNCTION pg_temp.uuid7(ts timestamptz, k text) RETURNS uuid LANGUAGE sql 
 
 const RESET = `
 TRUNCATE users, feeds, entries, subscriptions, user_entries, tags, subscription_tags,
-  collection_entries, subscription_entries, entry_tombstones, jobs RESTART IDENTITY CASCADE;
+  subscription_entries, entry_tombstones, jobs RESTART IDENTITY CASCADE;
 ALTER SEQUENCE greader_id_seq RESTART;
 `;
 
@@ -526,14 +527,12 @@ END $$;
 COMMIT;
 `;
 
+// Each row with its one membership, in its source subscription (all active
+// at this point; the unsubscribes come later), so active_memberships starts at
+// 1, which the membership trigger confirms.
 const USER_ENTRIES = `
-INSERT INTO user_entries (
-  user_id, entry_id, read, starred, subscription_id, is_spam, published_or_fetched_at,
-  read_changed_at, starred_changed_at, created_at, updated_at
-)
-SELECT x.user_id, x.entry_id, x.read, x.starred, x.subscription_id, x.is_spam, x.pof,
-       CASE WHEN x.read THEN x.read_at END, x.created_at, x.created_at,
-       CASE WHEN x.read THEN GREATEST(x.created_at, x.read_at) ELSE x.created_at END
+CREATE TEMP TABLE bench_ue AS
+SELECT x.*
 FROM (
   SELECT s.user_id, e.id AS entry_id, s.id AS subscription_id, e.is_spam,
          COALESCE(e.published_at, e.fetched_at) AS pof,
@@ -545,7 +544,8 @@ FROM (
   FROM bench_sub s
   JOIN bench_entry e ON e.feed_id = s.feed_id AND e.ord <= s.n
   UNION ALL
-  SELECT f.user_id, e.id, NULL, false, e.fetched_at,
+  SELECT f.user_id, e.id, (SELECT s.id FROM subscriptions s WHERE s.user_id = f.user_id AND s.type = 'saved'),
+         false, e.fetched_at,
          pg_temp.h(e.id::text || f.user_id::text) >= u.unread_frac,
          pg_temp.h(f.user_id::text || e.id::text) < u.starred_frac,
          e.fetched_at, LEAST(e.fetched_at + 72 * pg_temp.h(e.id::text || ':r') * interval '1 hour', ${A})
@@ -553,8 +553,20 @@ FROM (
   JOIN bench_user u ON u.id = f.user_id
   JOIN bench_entry e ON e.feed_id = f.id
   WHERE f.kind = 'saved'
-) x
+) x;
+INSERT INTO user_entries (
+  user_id, entry_id, read, starred, is_spam, published_or_fetched_at,
+  read_changed_at, starred_changed_at, created_at, updated_at, active_memberships
+)
+SELECT x.user_id, x.entry_id, x.read, x.starred, x.is_spam, x.pof,
+       CASE WHEN x.read THEN x.read_at END, x.created_at, x.created_at,
+       CASE WHEN x.read THEN GREATEST(x.created_at, x.read_at) ELSE x.created_at END, 1
+FROM bench_ue x
 ORDER BY x.user_id, x.pof;
+INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+SELECT x.subscription_id, x.user_id, x.entry_id, x.pof
+FROM bench_ue x
+ORDER BY x.subscription_id, x.pof;
 `;
 
 /** Members are picked by hash among the owner's rows of the given kinds. */
@@ -568,13 +580,17 @@ function collectionMembers(
   return picks
     .map(
       ({ n, where }) => `
-INSERT INTO collection_entries (subscription_id, user_id, entry_id, created_at)
-SELECT '${sub}', ue.user_id, ue.entry_id, ${A} - interval '3 days'
+INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+SELECT '${sub}', ue.user_id, ue.entry_id, ue.published_or_fetched_at
 FROM user_entries ue
 JOIN entries e ON e.id = ue.entry_id
-LEFT JOIN subscriptions s ON s.id = ue.subscription_id
+JOIN subscription_entries src ON src.user_id = ue.user_id AND src.entry_id = ue.entry_id
+JOIN subscriptions s ON s.id = src.subscription_id AND s.type <> 'collection'
 WHERE ue.user_id = '${owner}' AND ${where}
-  AND NOT EXISTS (SELECT 1 FROM collection_entries ce WHERE ce.user_id = ue.user_id AND ce.entry_id = ue.entry_id)
+  AND NOT EXISTS (
+    SELECT 1 FROM subscription_entries ce JOIN subscriptions cs ON cs.id = ce.subscription_id
+    WHERE cs.type = 'collection' AND ce.user_id = ue.user_id AND ce.entry_id = ue.entry_id
+  )
 ORDER BY md5(ue.entry_id::text || '${key}')
 LIMIT ${n};`
     )
@@ -603,7 +619,8 @@ UNION ALL SELECT 'feeds', count(*) FROM feeds
 UNION ALL SELECT 'subscriptions', count(*) FROM subscriptions
 UNION ALL SELECT 'entries', count(*) FROM entries
 UNION ALL SELECT 'user_entries', count(*) FROM user_entries
-UNION ALL SELECT 'collection_entries', count(*) FROM collection_entries
+UNION ALL SELECT 'collection_entries', count(*) FROM subscription_entries se
+  JOIN subscriptions s ON s.id = se.subscription_id AND s.type = 'collection'
 UNION ALL SELECT 'subscription_entries', count(*) FROM subscription_entries
 UNION ALL SELECT 'U0 user_entries', count(*) FROM user_entries WHERE user_id = '${userId(0)}'
 UNION ALL SELECT 'U0 unread', count(*) FROM user_entries WHERE user_id = '${userId(0)}' AND NOT read
@@ -731,9 +748,9 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
   );
   await step(
     "feeds",
-    `INSERT INTO feeds (id, type, url, title, site_url, user_id, email_sender_pattern,
+    `INSERT INTO feeds (id, url, title, site_url,
                         last_fetched_at, last_entries_updated_at, next_fetch_at, created_at, updated_at)
-     SELECT id, kind, url, title, replace(url, '/rss', ''), user_id, sender,
+     SELECT id, url, title, replace(url, '/rss', ''),
             CASE WHEN kind = 'web' THEN last_upd END, CASE WHEN kind = 'web' THEN last_upd END,
             CASE WHEN kind = 'web' THEN last_upd + interval '1 hour' END,
             ${A} - interval '1000 days', ${A}

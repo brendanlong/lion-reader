@@ -34,6 +34,7 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
 import { runRetentionCleanup } from "../../src/server/services/retention";
@@ -54,7 +55,7 @@ async function createUserEntries(
 ): Promise<void> {
   const now = new Date();
   for (const entryId of entryIds) {
-    await db.insert(userEntries).values({
+    await createTestUserEntries({
       userId,
       entryId,
       read: options?.read ?? false,

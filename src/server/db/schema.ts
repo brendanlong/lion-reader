@@ -438,11 +438,6 @@ export const feeds = pgTable(
   "feeds",
   {
     id: uuid("id").primaryKey(),
-    // Every feed is a web feed (#1846). The columns left from the per-user email
-    // and saved feeds (`type`, always 'web' by default, `user_id` and
-    // `email_sender_pattern`, always NULL) aren't mapped, so #1846 phase 7B can
-    // drop them.
-
     url: text("url").unique(),
 
     // Metadata from feed
@@ -807,10 +802,6 @@ export const subscriptions = pgTable(
   ]
 );
 
-// `collection_entries`, the previous release's form of collection membership,
-// isn't mapped: only `legacyMembershipForms` callers write it, in raw SQL, so
-// #1846 phase 7B can drop it.
-
 // ============================================================================
 // USER ENTRIES (visibility + state)
 // ============================================================================
@@ -862,10 +853,6 @@ export const userEntries = pgTable(
     // cursor sort key, where a Date's millisecond truncation corrupts pagination.
     publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at"),
 
-    // `subscription_id`, the previous release's source subscription, isn't
-    // mapped, so no insert names it and #1846 phase 7B can drop it: a trigger
-    // fills it until then (`legacyMembershipForms`).
-
     // Denormalized entries.is_spam (immutable after insert — set only by email
     // ingest from the provider's verdict). The DB enforces NOT NULL; left optional
     // here so callers may rely on the trigger to fill it.
@@ -873,7 +860,8 @@ export const userEntries = pgTable(
 
     // How many active subscriptions hold the article (#1846): it's visible
     // iff this is positive or it's starred. Trigger-maintained, from
-    // subscription_entries and subscriptions.unsubscribed_at; never write it.
+    // subscription_entries and subscriptions.unsubscribed_at; only
+    // insertUserEntriesWithMemberships seeds a new row's, which they confirm.
     activeMemberships: integer("active_memberships").notNull().default(0),
   },
   (table) => [
@@ -886,9 +874,6 @@ export const userEntries = pgTable(
       table.publishedOrFetchedAt.desc(),
       table.entryId.desc()
     ),
-    // idx_user_entries_subscription_timeline (subscription_id,
-    // published_or_fetched_at DESC, entry_id DESC; partial: WHERE
-    // subscription_id IS NOT NULL) is defined in migration 0088.
     // Partial indexes defined in migration (can't express WHERE clause in drizzle)
   ]
 );
@@ -991,13 +976,11 @@ export const userFeeds = pgView("user_feeds", {
 
 /**
  * visible_entries view - Entries the user can see: starred, or in at least one
- * active subscription (`user_entries.active_memberships > 0`, #1846). Its
- * `subscription_id` and `subscription_greader_stream_id` columns, from the
- * previous release's `user_entries.subscription_id`, aren't mapped: an entry's
- * subscriptions come from its memberships (`entryOriginJoin`).
+ * active subscription (`user_entries.active_memberships > 0`, #1846). An
+ * entry's subscriptions come from its memberships (`entryOriginJoin`).
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
- * (most recently redefined in 0133_counters_on_memberships.sql).
+ * (most recently redefined in 0143_drop_old_membership_forms.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const visibleEntries = pgView("visible_entries", {

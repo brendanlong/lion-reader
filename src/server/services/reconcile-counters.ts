@@ -152,3 +152,27 @@ export async function reconcileCounters(db: typeof dbType): Promise<ReconcileCou
 
   return result;
 }
+
+/**
+ * Counts `user_entries` rows in no subscription and not starred: invisible
+ * rows no write path should leave, since every one adds the row's membership
+ * with it (#1846). Not repaired (there's no membership to give them back) but
+ * logged at warn, so a write path that forgets its membership shows up. Rows
+ * whose subscription was hard-deleted before #1846 can be among them.
+ */
+export async function countUnheldUserEntries(db: typeof dbType): Promise<number> {
+  const result = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n
+    FROM user_entries ue
+    WHERE NOT ue.starred
+      AND NOT EXISTS (
+        SELECT 1 FROM subscription_entries se
+        WHERE se.user_id = ue.user_id AND se.entry_id = ue.entry_id
+      )
+  `);
+  const n = result.rows[0].n;
+  if (n > 0) {
+    logger.warn("user_entries rows in no subscription and not starred", { count: n });
+  }
+  return n;
+}
