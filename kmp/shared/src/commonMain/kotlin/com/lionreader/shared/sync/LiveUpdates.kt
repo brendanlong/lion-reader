@@ -60,7 +60,7 @@ suspend fun followLiveUpdates(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // The periodic sync and the next event try again.
+                // The next event (or the periodic sync) tries again.
             }
         }
     }
