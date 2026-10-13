@@ -24,6 +24,7 @@ import {
   subscriptionTags,
   subscriptions,
   tags,
+  userEntries,
   visibleEntries,
 } from "@/server/db/schema";
 import { isListedSubscription, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
@@ -225,6 +226,16 @@ export function buildEntriesInSubscriptionsCondition(
         AND ${subscriptionEntries.entryId} = ${columns.entryId}
         AND ${inArray(subscriptionEntries.subscriptionId, subscriptionIds)}${paged ? sql` OFFSET 0` : sql``})`
   );
+}
+
+/**
+ * The `visible_entries` predicate over a `user_entries` row: starred, or in an
+ * active subscription (#1846). The view's join to `entries` adds nothing (the
+ * foreign key guarantees the row), so callers that only need visibility, not
+ * entry columns, filter `user_entries` with this instead of joining the view.
+ */
+export function visibleUserEntrySql(): SQL {
+  return sql`(${userEntries.starred} = true OR ${userEntries.activeMemberships} > 0)`;
 }
 
 /**

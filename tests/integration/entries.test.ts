@@ -826,33 +826,97 @@ describe("Entries", () => {
       expect(ownMarked).toEqual([entryId]);
     });
 
-    it("excludes hidden spam entries unless showSpam is set", async () => {
-      // "Mark all read" must only touch entries the user can actually see, like
-      // listEntries/countEntries — otherwise hidden spam would be marked read and
-      // surface as already-read if the user later enables showSpam (issue #1089).
+    it.each([false, true])(
+      "marks exactly the unread entries listEntries shows (showSpam: %s)",
+      async (showSpam) => {
+        // "Mark all read" must only touch entries the user can see, like
+        // listEntries, or hidden spam would surface as already read when the
+        // user enables showSpam (issue #1089). It tests visibility on the
+        // user_entries row rather than joining visible_entries, so check the
+        // two agree on every arm of it.
+        const userId = await createTestUser();
+        const activeFeed = await createTestFeed("https://active.example.com/rss");
+        const goneFeed = await createTestFeed("https://gone.example.com/rss");
+        const otherFeed = await createTestFeed("https://other.example.com/rss");
+        await createTestSubscription(userId, activeFeed);
+        await createTestSubscription(userId, goneFeed, { unsubscribedAt: new Date() });
+        const sender = await createTestEmailSubscription(userId);
+
+        const active = await createSharedTestEntry(activeFeed, { userIds: [userId] });
+        const unsubscribedStarred = await createSharedTestEntry(goneFeed, {
+          userIds: [userId],
+          starredBy: [userId],
+        });
+        await createSharedTestEntry(goneFeed, { userIds: [userId] }); // unsubscribed orphan
+        // A row in none of the user's subscriptions and not starred.
+        await createSharedTestEntry(otherFeed, { userIds: [userId] });
+        const email = await createSharedTestEntry(sender, { type: "email", userIds: [userId] });
+        const spam = await createSharedTestEntry(sender, {
+          type: "email",
+          isSpam: true,
+          userIds: [userId],
+        });
+
+        const expected = [active, unsubscribedStarred, email, ...(showSpam ? [spam] : [])].sort();
+        const listed = await listEntries(db, { userId, unreadOnly: true, showSpam, limit: 100 });
+        expect(listed.items.map((item) => item.id).sort()).toEqual(expected);
+
+        const { entryIds } = await markAllEntriesRead(db, { userId, showSpam });
+        expect([...entryIds].sort()).toEqual(expected);
+      }
+    );
+
+    it("marks entries fetched at or before `before`, regardless of publish date", async () => {
+      // Google Reader's `ts` is compared with fetchedAt, inclusively.
       const userId = await createTestUser();
-      const feedId = await createTestFeed("https://spam-feed.com/rss");
+      const feedId = await createTestFeed("https://before.example.com/rss");
       await createTestSubscription(userId, feedId);
+      const before = new Date("2026-01-02T00:00:00Z");
+      const at = await createSharedTestEntry(feedId, { userIds: [userId], fetchedAt: before });
+      const earlier = await createSharedTestEntry(feedId, {
+        userIds: [userId],
+        fetchedAt: new Date(before.getTime() - 1),
+      });
+      // Published long before `before` but fetched after it: not marked.
+      await createSharedTestEntry(feedId, {
+        userIds: [userId],
+        fetchedAt: new Date(before.getTime() + 1),
+        publishedAt: new Date("2025-01-01T00:00:00Z"),
+      });
 
-      const normalId = await createTestEntry(feedId, { title: "Normal" });
-      const spamFrom = await createTestEmailSubscription(userId);
-      const spamId = await createTestEntry(spamFrom, { title: "Spam", isSpam: true });
-      await createUserEntry(userId, normalId, { read: false });
-      await createUserEntry(userId, spamId, { read: false });
+      const { entryIds } = await markAllEntriesRead(db, { userId, before, showSpam: false });
+      expect([...entryIds].sort()).toEqual([at, earlier].sort());
+    });
 
-      // With spam hidden, only the non-spam entry is marked.
-      const { entryIds: marked } = await markAllEntriesRead(db, { userId, showSpam: false });
-      expect(marked).toEqual([normalId]);
+    it("filters by entry type, combined with `before`", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://typed.example.com/rss");
+      await createTestSubscription(userId, feedId);
+      const sender = await createTestEmailSubscription(userId);
+      const before = new Date("2026-01-02T00:00:00Z");
+      const old = new Date(before.getTime() - 1000);
+      const oldWeb = await createSharedTestEntry(feedId, { userIds: [userId], fetchedAt: old });
+      const oldEmail = await createSharedTestEntry(sender, {
+        type: "email",
+        userIds: [userId],
+        fetchedAt: old,
+      });
+      await createSharedTestEntry(sender, { type: "email", userIds: [userId] }); // fetched now
 
-      const spamState = await db
-        .select({ read: userEntries.read })
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, spamId)));
-      expect(spamState).toEqual([{ read: false }]);
+      const { entryIds } = await markAllEntriesRead(db, {
+        userId,
+        type: "email",
+        before,
+        showSpam: false,
+      });
+      expect(entryIds).toEqual([oldEmail]);
 
-      // With showSpam, the spam entry is marked too.
-      const { entryIds: markedWithSpam } = await markAllEntriesRead(db, { userId, showSpam: true });
-      expect(markedWithSpam).toEqual([spamId]);
+      const { entryIds: web } = await markAllEntriesRead(db, {
+        userId,
+        type: "web",
+        showSpam: false,
+      });
+      expect(web).toEqual([oldWeb]);
     });
   });
 

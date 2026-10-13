@@ -31,6 +31,7 @@ import {
   entryFeedTitleSql,
   entryOriginJoin,
   entrySubscriptionIdsSql,
+  visibleUserEntrySql,
 } from "@/server/services/entry-filters";
 import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
 import type { Database } from "@/server/db";
@@ -298,14 +299,6 @@ const DELETIONS_CURSOR_MARGIN_MS = 60 * 1000;
 async function databaseNow(db: Database): Promise<Temporal.Instant> {
   const result = await db.execute<{ now: string }>(sql`SELECT now() AS now`);
   return parseTimestamptz(result.rows[0].now);
-}
-
-/**
- * The `visible_entries` predicate over `user_entries`: starred, or in an
- * active subscription (#1846).
- */
-function visibleEntrySql(): SQL {
-  return sql`(${userEntries.starred} = true OR ${userEntries.activeMemberships} > 0)`;
 }
 
 /**
@@ -612,7 +605,7 @@ async function collectSyncEvents(
         subscriptionIds: entrySubscriptionIdsSql(USER_ROW),
         feedType: entries.type,
         feedTitle: entryFeedTitleSql(),
-        visible: sql<boolean>`${visibleEntrySql()}`,
+        visible: sql<boolean>`${visibleUserEntrySql()}`,
         // Categorization booleans, computed in SQL at µs precision so a row
         // selected past the cursor always gets at least one event.
         metadataChanged: sql<boolean>`${afterSince(entries.updatedAt)}`,
@@ -637,8 +630,8 @@ async function collectSyncEvents(
           // A row a state change took out of view is a deletion, paged with
           // the rest so none is lost past a page's end.
           options.reportHidden
-            ? sql`(${visibleEntrySql()} OR ${afterSince(userEntries.updatedAt)})`
-            : visibleEntrySql()
+            ? sql`(${visibleUserEntrySql()} OR ${afterSince(userEntries.updatedAt)})`
+            : visibleUserEntrySql()
         )
       )
       // The origin join yields at most one subscription per row.

@@ -13,6 +13,7 @@
 import type { ClientBase } from "pg";
 
 import {
+  ANCHOR,
   COLLECTIONS,
   U0,
   WEB,
@@ -268,6 +269,40 @@ WHERE subscription_tags.subscription_id IN (${list(subscriptionIds)})`;
   ];
   if (tagIds.length > 0) out.push(tagCountsSql(userId, tagIds));
   return out;
+}
+
+/**
+ * `markAllEntriesRead` (services/entries.ts) for showSpam off: its update,
+ * limited to `scope`, then the counts of what it marked.
+ */
+async function markAllReadStatements(
+  db: ClientBase,
+  userId: string,
+  scope: string
+): Promise<Statement[]> {
+  const changedAt = ts(nowIso());
+  const where = `user_entries.user_id = ${q(userId)} AND user_entries.read = false
+  AND (user_entries.read_changed_at IS NULL OR user_entries.read_changed_at <= ${changedAt})
+  AND (user_entries.starred = true OR user_entries.active_memberships > 0)
+  AND user_entries.is_spam = false
+  AND ${scope}`;
+  const marked = await rows<{ entry_id: string }>(
+    db,
+    `SELECT user_entries.entry_id FROM user_entries WHERE ${where}`
+  );
+  return [
+    {
+      label: "update",
+      sql: `UPDATE user_entries SET read = true, read_changed_at = ${changedAt}, updated_at = ${changedAt}
+WHERE ${where}
+RETURNING user_entries.entry_id`,
+    },
+    ...(await bulkCounts(
+      db,
+      userId,
+      marked.map((m) => ({ id: m.entry_id, subscriptionId: null }))
+    )),
+  ];
 }
 
 /** `getTagUnreadCounts` (services/counts.ts). */
@@ -1185,36 +1220,26 @@ WHERE ve.user_id = ${q(U0)} AND ve.id IN (${q(entry.id)})`,
     name: "write.mark_all_read_feed",
     kind: "write",
     source: "services/entries.ts markAllEntriesRead (subscription with 4,000 unread)",
-    prepare: async (db) => {
-      const filter = entriesInSubscriptions([subA], UE_COLUMNS);
-      const changedAt = ts(nowIso());
-      const marked = await rows<{ id: string; subscription_id: string }>(
+    prepare: async (db) => ({
+      statements: [
+        verifyOwnershipSql(U0, subA),
+        ...(await markAllReadStatements(db, U0, entriesInSubscriptions([subA], UE_COLUMNS))),
+      ],
+    }),
+  },
+  {
+    name: "write.mark_all_read_reading_list_before",
+    kind: "write",
+    source:
+      "services/entries.ts markAllEntriesRead (U1's reading list with `before`: Google Reader mark-all-as-read with `ts`, ~50,000 unread)",
+    prepare: async (db) => ({
+      statements: await markAllReadStatements(
         db,
-        `SELECT ue.entry_id AS id, se.subscription_id FROM subscription_entries se
-JOIN user_entries ue ON ue.user_id = se.user_id AND ue.entry_id = se.entry_id
-WHERE se.subscription_id = ${q(subA)} AND NOT ue.read AND NOT ue.is_spam`
-      );
-      return {
-        statements: [
-          verifyOwnershipSql(U0, subA),
-          {
-            label: "update",
-            sql: `UPDATE user_entries SET read = true, read_changed_at = ${changedAt}, updated_at = ${changedAt}
-WHERE user_entries.user_id = ${q(U0)} AND user_entries.read = false
-  AND (user_entries.read_changed_at IS NULL OR user_entries.read_changed_at <= ${changedAt})
-  AND user_entries.entry_id IN (
-    SELECT ve.id FROM visible_entries ve WHERE ve.user_id = ${q(U0)} AND ve.is_spam = false)
-  AND ${filter}
-RETURNING user_entries.entry_id`,
-          },
-          ...(await bulkCounts(
-            db,
-            U0,
-            marked.map((m) => ({ id: m.id, subscriptionId: null }))
-          )),
-        ],
-      };
-    },
+        userId(1),
+        `EXISTS (SELECT 1 FROM entries
+    WHERE entries.id = user_entries.entry_id AND entries.fetched_at <= ${ts(ANCHOR)})`
+      ),
+    }),
   },
   {
     name: "write.star_one",

@@ -51,6 +51,7 @@ import {
   entrySubscriptionIdsSql,
   filterableSubscriptionWhere,
   inSavedSubscriptionSql,
+  visibleUserEntrySql,
 } from "./entry-filters";
 
 // ============================================================================
@@ -1277,21 +1278,16 @@ export async function markAllEntriesRead(
   ];
 
   // Only mark entries the user can actually see, matching listEntries
-  // (which go through visible_entries). This excludes hidden spam (unless
-  // showSpam) and unsubscribed-feed orphans that aren't starred/saved.
-  const visibleConditions = [eq(visibleEntries.userId, params.userId)];
+  // (visible_entries). This excludes hidden spam (unless showSpam) and
+  // unsubscribed-feed orphans that aren't starred. Both are tested on the
+  // user_entries row itself, never by joining visible_entries: that joins
+  // `entries`, which for a broad scope planned as a sequential scan of every
+  // entry. `is_spam` is the row's copy of entries.is_spam, which never
+  // changes after insert (the unread counters rely on the same copy).
+  conditions.push(visibleUserEntrySql());
   if (!params.showSpam) {
-    visibleConditions.push(eq(visibleEntries.isSpam, false));
+    conditions.push(eq(userEntries.isSpam, false));
   }
-  conditions.push(
-    inArray(
-      userEntries.entryId,
-      db
-        .select({ id: visibleEntries.id })
-        .from(visibleEntries)
-        .where(and(...visibleConditions))
-    )
-  );
 
   // Filter by subscriptionId: a foreign or unsubscribed subscription matches
   // nothing. (Scoping checks query the subscriptions table, never the
@@ -1335,23 +1331,26 @@ export async function markAllEntriesRead(
     conditions.push(
       inSavedSubscriptionSql({ userId: userEntries.userId, entryId: userEntries.entryId })
     );
-  } else if (params.type) {
-    const typeEntryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(eq(entries.type, params.type));
-
-    conditions.push(inArray(userEntries.entryId, typeEntryIdsSubquery));
   }
 
-  // Filter by before date
+  // Filters on the entry itself: web/email type, and `before` (Google Reader's
+  // `ts`), which compares fetchedAt. Only these need `entries`, so only these
+  // join it. Leave the join to the planner: forcing a per-row primary-key
+  // lookup (`OFFSET 0`) measured slower than its one sequential scan of
+  // `entries` for a reading list of 50k unread, and far slower for a narrow
+  // type (899 emails among 50k unread), which it serves from the type index.
+  const entryConditions: SQL[] = [];
+  if (params.type && params.type !== "saved") {
+    entryConditions.push(eq(entries.type, params.type));
+  }
   if (params.before) {
-    const beforeEntryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(lte(entries.fetchedAt, params.before));
-
-    conditions.push(inArray(userEntries.entryId, beforeEntryIdsSubquery));
+    entryConditions.push(lte(entries.fetchedAt, params.before));
+  }
+  if (entryConditions.length > 0) {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${entries}
+        WHERE ${entries.id} = ${userEntries.entryId} AND ${and(...entryConditions)})`
+    );
   }
 
   const updatedAt = new Date();
