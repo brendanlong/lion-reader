@@ -22,7 +22,7 @@ import {
   scopedUnconfirmedProcedure,
 } from "../trpc";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";

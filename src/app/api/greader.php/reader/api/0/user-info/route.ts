@@ -8,14 +8,14 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { formatUserInfo } from "@/server/google-reader/format";
-import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
+import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
 import { db } from "@/server/db";
 import { eq } from "drizzle-orm";
 import { users } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -29,4 +29,4 @@ export async function GET(request: Request): Promise<Response> {
   if (!row) return errorResponse("User not found", 404);
 
   return jsonResponse(formatUserInfo(row.greaderUserId, session.user.email));
-}
+});

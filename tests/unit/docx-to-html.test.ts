@@ -11,7 +11,7 @@ import { TRPCError } from "@trpc/server";
 import { convertUploadedFile } from "@/server/file/process-upload";
 import { createDocxConverter } from "@/server/file/docx-to-html";
 import { usageLimitsConfig } from "@/server/config/env";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 import { buildMinimalDocx, buildZip, buildDocxWithRepeatedImage } from "../utils/docx";
 
 const MB = 1024 * 1024;

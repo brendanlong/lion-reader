@@ -9,8 +9,9 @@ import { z } from "zod";
 import { eq, and, gt, isNull, sql } from "drizzle-orm";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
-import { errors } from "../errors";
-import { feeds, subscriptions, jobs } from "@/server/db/schema";
+import { errors } from "@/server/errors";
+import { retryFeed } from "@/server/services/feeds";
+import { feeds, subscriptions } from "@/server/db/schema";
 
 // ============================================================================
 // Output Schemas
@@ -144,29 +145,7 @@ export const brokenFeedsRouter = createTRPCRouter({
         throw errors.subscriptionNotFound();
       }
 
-      const now = new Date();
-
-      // Reset the feed's failure counter and schedule immediate fetch
-      await ctx.db
-        .update(feeds)
-        .set({
-          consecutiveFailures: 0,
-          lastError: null,
-          nextFetchAt: now,
-          updatedAt: now,
-        })
-        .where(eq(feeds.id, feedId));
-
-      // Also update the job to run immediately
-      await ctx.db
-        .update(jobs)
-        .set({
-          consecutiveFailures: 0,
-          lastError: null,
-          nextRunAt: now,
-          updatedAt: now,
-        })
-        .where(sql`${jobs.payload}->>'feedId' = ${feedId} AND ${jobs.type} = 'fetch_feed'`);
+      await retryFeed(ctx.db, feedId);
 
       return { success: true };
     }),

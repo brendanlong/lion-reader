@@ -38,7 +38,7 @@ import {
   parseBody,
   parseTagLabels,
 } from "@/server/wallabag/parse";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 import {
   formatEntryFull,
   formatEntryListItem,

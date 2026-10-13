@@ -9,7 +9,7 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { opmlImports } from "@/server/db/schema";
 import { parseOpmlAsync, OpmlParseError } from "@/server/feed/opml";

@@ -5,9 +5,7 @@
  * formats expected by Google Reader clients.
  */
 
-import { TRPCError } from "@trpc/server";
-import { getHTTPStatusCodeFromError } from "@trpc/server/http";
-import { isClientError } from "@/server/trpc/errors";
+import { clientErrorStatus } from "@/server/errors";
 import { parseItemId } from "./id";
 
 /**
@@ -116,17 +114,25 @@ export function errorResponse(message: string, status = 400): Response {
 }
 
 /**
- * Converts a client error (`isClientError`) thrown by a service, such as an
- * invalid tag name or the subscription cap, into an error response, or returns
- * null for anything else so it still propagates (and reaches Sentry). Without
- * this, the route would turn the client's mistake into an unhandled 500.
+ * Wraps a route handler so a service's client error (`clientErrorStatus`),
+ * such as an invalid tag name or the subscription cap, is answered as an
+ * error response instead of an unhandled 500.
  */
-export function clientErrorResponse(error: unknown): Response | null {
-  if (!(error instanceof TRPCError) || !isClientError(error)) return null;
-  const status = getHTTPStatusCodeFromError(error);
-  // An upstream failure's message carries the fetch error's detail (such as
-  // what an internal host resolved to), which mustn't reach the client (#1266).
-  return status >= 500
-    ? errorResponse("Failed to fetch the URL", 502)
-    : errorResponse(error.message, status);
+export function withClientErrors<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      const status = clientErrorStatus(error);
+      if (status === null) throw error;
+      // An upstream failure's message carries the fetch error's detail (such
+      // as what an internal host resolved to), which mustn't reach the client
+      // (#1266).
+      return status >= 500
+        ? errorResponse("Failed to fetch the URL", 502)
+        : errorResponse((error as Error).message, status);
+    }
+  };
 }

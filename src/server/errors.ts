@@ -1,8 +1,7 @@
 /**
- * tRPC Error Helpers
- *
- * Provides consistent error creation and handling across the API.
- * All errors follow the format: { error: { code, message, details? } }
+ * App errors, thrown by services and every API surface. They're TRPCErrors
+ * because tRPC's envelope is our error format (docs/DESIGN.md, "API Design");
+ * the compat APIs convert client errors to their own (`clientErrorResponse`).
  */
 
 import { TRPCError } from "@trpc/server";
@@ -302,6 +301,17 @@ export function isClientError(error: TRPCError): boolean {
   if (getHTTPStatusCodeFromError(error) < 500) return true;
   const code = getAppErrorCode(error);
   return code !== undefined && EXPECTED_CLIENT_ERROR_CODES.has(code);
+}
+
+/**
+ * The HTTP status for a client error (`isClientError`) a service threw, or
+ * null for anything else. The compat APIs answer these in their own envelope;
+ * everything else propagates, so a real bug still reaches Sentry instead of
+ * the client's mistake becoming an unhandled 500.
+ */
+export function clientErrorStatus(error: unknown): number | null {
+  if (!(error instanceof TRPCError) || !isClientError(error)) return null;
+  return getHTTPStatusCodeFromError(error);
 }
 
 const reportedErrors = new WeakSet<TRPCError>();

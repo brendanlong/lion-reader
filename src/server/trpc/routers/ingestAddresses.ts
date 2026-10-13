@@ -15,7 +15,7 @@ import {
   confirmedProtectedProcedure as protectedProcedure,
   expensiveConfirmedProtectedProcedure as expensiveProtectedProcedure,
 } from "../trpc";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { ingestAddresses } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";

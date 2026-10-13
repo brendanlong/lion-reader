@@ -14,7 +14,7 @@ import {
   scopedProtectedProcedure,
 } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
 import { OpmlParseError } from "@/server/feed/opml";
 import { logger } from "@/lib/logger";

@@ -12,7 +12,7 @@
 
 import { z } from "zod";
 import { isValidUuid } from "@/lib/uuidv7";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 
 /**
  * A row id inside a cursor. Callers interpolate it into a uuid comparison, so a

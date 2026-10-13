@@ -10,9 +10,11 @@
 
 import { requireAuth, extractAuthToken } from "@/server/google-reader/auth";
 
+import { withClientErrors } from "@/server/google-reader/parse";
+
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -24,4 +26,4 @@ export async function GET(request: Request): Promise<Response> {
     status: 200,
     headers: { "Content-Type": "text/plain" },
   });
-}
+});

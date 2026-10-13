@@ -19,7 +19,7 @@ import { db } from "../../src/server/db";
 import { users, entrySummaries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import { getAppErrorCode } from "../../src/server/trpc/errors";
+import { getAppErrorCode } from "../../src/server/errors";
 import { CURRENT_PROMPT_VERSION } from "../../src/server/services/summarization";
 import { DEFAULT_SUMMARIZATION_MODELS } from "../../src/lib/summarization/constants";
 import {

@@ -20,7 +20,7 @@ import {
   readResponseBufferWithSizeLimit,
   readResponseWithSizeLimit,
 } from "@/server/http/fetch";
-import { errors, getAppErrorCode } from "@/server/trpc/errors";
+import { errors, getAppErrorCode } from "@/server/errors";
 import { convertDocxToHtml } from "@/server/file/docx-to-html";
 
 // ============================================================================

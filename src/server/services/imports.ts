@@ -27,7 +27,7 @@ import { createJob } from "@/server/jobs/queue";
 import { publishImportProgress, publishImportCompleted } from "@/server/redis/pubsub";
 import { createSubscription, setSubscriptionTags } from "@/server/services/subscriptions";
 import { fitTagName } from "@/server/services/tags";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 

@@ -28,7 +28,7 @@ import {
   lockAndCountActiveSubscriptions,
   type Subscription,
 } from "@/server/services/subscriptions";
-import { errors, getAppErrorCode } from "@/server/trpc/errors";
+import { errors, getAppErrorCode } from "@/server/errors";
 import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 import { isUniqueViolation } from "@/server/db/errors";
 

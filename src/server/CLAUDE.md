@@ -4,7 +4,7 @@ Diagram: `docs/diagrams/backend-api.d2`. The decisions behind the data model are
 
 ## Services Layer
 
-Business logic shared by tRPC routers, the MCP server, the compat APIs and background jobs lives in `src/server/services/` as plain functions that take `db` plus parameters and return plain data, named `verbNoun` (`listEntries`, `markEntriesRead`). Routers, tools and job handlers stay thin.
+Business logic shared by tRPC routers, the MCP server, the compat APIs and background jobs lives in `src/server/services/` as plain functions that take `db` plus parameters and return plain data, named `verbNoun` (`listEntries`, `markEntriesRead`). Routers, tools and job handlers stay thin; lint rejects a write to a core table from an API surface. Services throw the app errors in `src/server/errors.ts`; the compat APIs answer their client errors in their own format (`withClientErrors`, Wallabag's `clientErrorResponse`).
 
 ## New-Account Onboarding
 

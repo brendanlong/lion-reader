@@ -16,7 +16,7 @@ import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 import * as entriesService from "@/server/services/entries";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";

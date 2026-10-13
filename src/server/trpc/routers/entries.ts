@@ -19,7 +19,7 @@ import {
 } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";

@@ -14,7 +14,7 @@ import {
   expensiveProtectedProcedure,
   expensiveConfirmedProtectedProcedure,
 } from "../trpc";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { sessions, users, oauthAccounts, userApiKeys } from "@/server/db/schema";
 import {
   getApiKeyProviders,

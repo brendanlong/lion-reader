@@ -15,7 +15,7 @@ import {
   parseFormData,
   jsonResponse,
   errorResponse,
-  clientErrorResponse,
+  withClientErrors,
 } from "@/server/google-reader/parse";
 import { feedStreamId } from "@/server/google-reader/id";
 import { subscribeToUrl } from "@/server/services/subscriptions";
@@ -26,7 +26,7 @@ import { subscriptions } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -49,22 +49,16 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse("Invalid URL", 400);
   }
 
-  try {
-    const result = await subscribeToUrl(db, session.user.id, parsedUrl.data);
-    const [{ greaderStreamId }] = await db
-      .select({ greaderStreamId: subscriptions.greaderStreamId })
-      .from(subscriptions)
-      .where(eq(subscriptions.id, result.subscriptionId));
+  const result = await subscribeToUrl(db, session.user.id, parsedUrl.data);
+  const [{ greaderStreamId }] = await db
+    .select({ greaderStreamId: subscriptions.greaderStreamId })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, result.subscriptionId));
 
-    return jsonResponse({
-      query: rawUrl,
-      numResults: 1,
-      streamId: feedStreamId(greaderStreamId),
-      streamName: result.customTitle ?? result.feed.title ?? result.feed.url ?? rawUrl,
-    });
-  } catch (err) {
-    const clientError = clientErrorResponse(err);
-    if (clientError) return clientError;
-    throw err;
-  }
-}
+  return jsonResponse({
+    query: rawUrl,
+    numResults: 1,
+    streamId: feedStreamId(greaderStreamId),
+    streamName: result.customTitle ?? result.feed.title ?? result.feed.url ?? rawUrl,
+  });
+});

@@ -28,7 +28,7 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
+import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
 import { parseStreamId, type StreamId } from "@/server/google-reader/streams";
 import { formatEntryAsItem } from "@/server/google-reader/format";
 import { resolveGreaderIdsForEntries } from "@/server/google-reader/id";
@@ -43,7 +43,7 @@ export const dynamic = "force-dynamic";
 // Google Reader treats `stream/contents` with no stream id as the reading list.
 const DEFAULT_STREAM_ID = "user/-/state/com.google/reading-list";
 
-async function handleStreamContents(
+const handleStreamContents = withClientErrors(async function (
   request: Request,
   params: Promise<{ streamId?: string[] }>
 ): Promise<Response> {
@@ -188,7 +188,7 @@ async function handleStreamContents(
   }
 
   return jsonResponse(response);
-}
+});
 
 export async function GET(
   request: Request,

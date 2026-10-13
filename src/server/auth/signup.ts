@@ -16,7 +16,7 @@ import { users, invites } from "@/server/db/schema";
 import { signupConfig, announcementFeedConfig, type SignupProvider } from "@/server/config/env";
 import { resolveSignupProviderAccess } from "@/server/auth/signup-providers";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { logger } from "@/lib/logger";
 import type { Database, Transaction } from "@/server/db";
 

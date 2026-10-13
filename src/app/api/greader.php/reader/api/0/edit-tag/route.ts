@@ -25,6 +25,7 @@ import {
   parseItemIds,
   textResponse,
   errorResponse,
+  withClientErrors,
 } from "@/server/google-reader/parse";
 import { greaderItemIdsToUuids } from "@/server/google-reader/id";
 import { isState } from "@/server/google-reader/streams";
@@ -38,7 +39,7 @@ export const dynamic = "force-dynamic";
 // `stream/items/contents` and the services-layer bulk mutations (issue #1266).
 const MAX_ITEM_IDS = 1000;
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -98,4 +99,4 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   return textResponse("OK");
-}
+});

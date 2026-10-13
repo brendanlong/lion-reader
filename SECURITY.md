@@ -184,7 +184,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
 `src/server/google-reader/`, `src/server/mcp/`
 
 - These require `reader:full-access` (or MCP scope) plus signup confirmation, and
-  authenticate by hashed-token lookup.
+  authenticate by hashed-token lookup. Each Wallabag and Google Reader handler
+  authenticates itself, so `compat-route-auth.test.ts` sends every one a request
+  without credentials; a handler that is public by design is listed there.
 - **The secretless Wallabag token endpoint is pinned to the `wallabag` client_id**
   (`WALLABAG_CLIENT_ID`): it shares token tables with the OAuth server, so honoring a
   caller-supplied client_id would let it rotate or mint another client's tokens.

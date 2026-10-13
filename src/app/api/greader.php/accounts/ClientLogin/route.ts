@@ -16,13 +16,13 @@
  */
 
 import { clientLogin } from "@/server/google-reader/auth";
-import { parseFormData, errorResponse } from "@/server/google-reader/parse";
+import { parseFormData, errorResponse, withClientErrors } from "@/server/google-reader/parse";
 import { checkRouteRateLimit, checkAccountRouteRateLimit } from "@/server/rate-limit";
 import { extractClientInfo } from "@/server/http/client-ip";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   // Per-IP limit first (cheap, rejects floods before parsing).
   const rateLimitResponse = await checkRouteRateLimit(request, "expensive");
   if (rateLimitResponse) return rateLimitResponse;
@@ -54,4 +54,4 @@ export async function POST(request: Request): Promise<Response> {
     status: 200,
     headers: { "Content-Type": "text/plain" },
   });
-}
+});

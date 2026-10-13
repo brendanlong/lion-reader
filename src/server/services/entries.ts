@@ -34,7 +34,7 @@ import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { showsFullContent } from "@/lib/narration/select-content";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";
 import { getBulkEntryRelatedCounts, getUserUnreadCounts, type BulkUnreadCounts } from "./counts";

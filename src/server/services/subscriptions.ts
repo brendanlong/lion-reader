@@ -43,7 +43,7 @@ import {
   holdsRedirectTwin,
   insertUserEntriesWithMemberships,
 } from "@/server/services/subscription-entries";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";

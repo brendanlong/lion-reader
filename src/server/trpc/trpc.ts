@@ -19,7 +19,7 @@ import {
   type RateLimitType,
 } from "@/server/rate-limit";
 import { signupConfig } from "@/server/config/env";
-import { errors, getAppErrorCode, isClientError, wasReported } from "./errors";
+import { errors, getAppErrorCode, isClientError, wasReported } from "@/server/errors";
 import {
   ADMIN_COOKIE_NAME,
   validateAdminSessionToken,

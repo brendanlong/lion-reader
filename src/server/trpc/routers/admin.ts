@@ -10,14 +10,14 @@ import { eq, and, isNull, isNotNull, sql, desc, asc, lt, gt, ilike, count, max }
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
+import { retryFeed } from "@/server/services/feeds";
 import {
   feeds,
   entries,
   subscriptions,
   users,
   invites,
-  jobs,
   oauthAccounts,
   oauthAccessTokens,
   apiTokens,
@@ -511,29 +511,7 @@ const feedHealthEndpoints = {
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const now = new Date();
-
-      // Reset the feed's failure counter and schedule immediate fetch
-      await ctx.db
-        .update(feeds)
-        .set({
-          consecutiveFailures: 0,
-          lastError: null,
-          nextFetchAt: now,
-          updatedAt: now,
-        })
-        .where(eq(feeds.id, input.feedId));
-
-      // Also update the job to run immediately
-      await ctx.db
-        .update(jobs)
-        .set({
-          consecutiveFailures: 0,
-          lastError: null,
-          nextRunAt: now,
-          updatedAt: now,
-        })
-        .where(sql`${jobs.payload}->>'feedId' = ${input.feedId} AND ${jobs.type} = 'fetch_feed'`);
+      await retryFeed(ctx.db, input.feedId);
 
       return { success: true };
     }),

@@ -20,7 +20,7 @@ import * as Sentry from "@sentry/nextjs";
 import { assertEncryptionConfigured, decryptApiKey } from "@/lib/encryption";
 import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { SESSION_MAX_AGE_SECONDS } from "@/server/auth/session-cookie";
 
 /**

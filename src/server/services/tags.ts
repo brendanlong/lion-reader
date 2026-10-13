@@ -7,7 +7,7 @@
 import { eq, and, ne, sql, isNull, inArray, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isListedSubscription } from "@/server/services/subscriptions";

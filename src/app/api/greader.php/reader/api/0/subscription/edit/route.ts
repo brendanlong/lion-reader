@@ -18,7 +18,7 @@ import {
   parseFormData,
   textResponse,
   errorResponse,
-  clientErrorResponse,
+  withClientErrors,
 } from "@/server/google-reader/parse";
 import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { parseStreamId } from "@/server/google-reader/streams";
@@ -31,11 +31,10 @@ import {
   unsubscribe,
   updateSubscription,
 } from "@/server/services/subscriptions";
-import { getAppErrorCode } from "@/server/trpc/errors";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
   const userId = session.user.id;
@@ -99,7 +98,7 @@ export async function POST(request: Request): Promise<Response> {
     default:
       return errorResponse(`Unknown action: ${action}`, 400);
   }
-}
+});
 
 /**
  * Applies an edit's title and tag changes. An empty `t` is no title; a blank
@@ -112,39 +111,30 @@ async function editSubscription(
   addTags: string[],
   removeTags: string[]
 ): Promise<Response> {
-  try {
-    const title = rawTitle ? rawTitle.trim() : undefined;
-    if (title) {
-      await updateSubscription(db, userId, subscriptionId, { customTitle: title });
-    } else if (title === "" && (await clearedCustomTitle(db, userId, subscriptionId)) === null) {
-      return errorResponse("Collection name is required", 400);
-    }
+  const title = rawTitle ? rawTitle.trim() : undefined;
+  if (title) {
+    await updateSubscription(db, userId, subscriptionId, { customTitle: title });
+  } else if (title === "" && (await clearedCustomTitle(db, userId, subscriptionId)) === null) {
+    return errorResponse("Collection name is required", 400);
+  }
 
-    const removeTagIds: string[] = [];
-    for (const tagName of labelNames(removeTags)) {
-      const tag = await resolveTagByName(db, userId, tagName);
-      if (tag) removeTagIds.push(tag.id);
-    }
-    const addTagIds: string[] = [];
-    for (const tagName of labelNames(addTags)) {
-      const tag =
-        (await resolveTagByName(db, userId, tagName)) ??
-        (await tagsService.createTag(db, userId, { name: tagName })).tag;
-      addTagIds.push(tag.id);
-    }
-    if (addTagIds.length > 0 || removeTagIds.length > 0) {
-      await editSubscriptionTags(db, userId, subscriptionId, {
-        add: addTagIds,
-        remove: removeTagIds,
-      });
-    }
-  } catch (error) {
-    if (getAppErrorCode(error) === "COLLECTION_NAME_TAKEN") {
-      return errorResponse(`Collection already exists: ${rawTitle?.trim()}`, 409);
-    }
-    const clientError = clientErrorResponse(error);
-    if (clientError) return clientError;
-    throw error;
+  const removeTagIds: string[] = [];
+  for (const tagName of labelNames(removeTags)) {
+    const tag = await resolveTagByName(db, userId, tagName);
+    if (tag) removeTagIds.push(tag.id);
+  }
+  const addTagIds: string[] = [];
+  for (const tagName of labelNames(addTags)) {
+    const tag =
+      (await resolveTagByName(db, userId, tagName)) ??
+      (await tagsService.createTag(db, userId, { name: tagName })).tag;
+    addTagIds.push(tag.id);
+  }
+  if (addTagIds.length > 0 || removeTagIds.length > 0) {
+    await editSubscriptionTags(db, userId, subscriptionId, {
+      add: addTagIds,
+      remove: removeTagIds,
+    });
   }
   return textResponse("OK");
 }
