@@ -26,7 +26,7 @@ import {
   tags,
   visibleEntries,
 } from "@/server/db/schema";
-import { isListedSubscription, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
+import { isUserManagedSubscription, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
 
 // ============================================================================
 // Types
@@ -116,8 +116,8 @@ export function entrySubscriptionIdsSql(row: {
 // ============================================================================
 
 /**
- * Verifies a subscription exists, is active, belongs to the user and is listed
- * (the saved subscription isn't a filter: Saved is `type: "saved"`).
+ * Verifies a subscription exists, is active and belongs to the user. The saved
+ * subscription is one too: filtering by it lists Saved, like `type: "saved"`.
  * Queries the subscriptions table directly — the user_feeds view is
  * display-only (subscription list surfaces), not for ownership checks.
  */
@@ -133,8 +133,7 @@ export async function verifySubscriptionOwnership(
       and(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
-        isNull(subscriptions.unsubscribedAt),
-        isListedSubscription()
+        isNull(subscriptions.unsubscribedAt)
       )
     )
     .limit(1);
@@ -190,7 +189,8 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        isListedSubscription(),
+        // Saved is never uncategorized, though it has no tags.
+        isUserManagedSubscription(),
         isNull(subscriptionTags.subscriptionId)
       )
     );

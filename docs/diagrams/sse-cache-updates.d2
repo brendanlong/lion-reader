@@ -69,7 +69,7 @@ redis: Redis Pub/Sub {
 
       Events:
       - new_entry (feedId, entryId, feedType,
-        entry list payload: title/author/summary/url/
+        entry list payload: type/title/author/summary/url/
         publishedAt/fetchedAt/siteName/feedTitle)
       - entry_updated (feedId, entryId, metadata)
     |
@@ -133,6 +133,7 @@ sse-endpoint: SSE Endpoint {
       - new_entry: subscriptionIds = [subscriptionId]
         (a new entry's one membership); the entry payload
         carries its type (display only)
+      - feedId and feedType stay server-side: neither is sent
 
       Other User Events:
       - Forward directly

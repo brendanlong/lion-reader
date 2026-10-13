@@ -152,7 +152,8 @@ export async function getBulkEntryRelatedCounts(
               and(
                 eq(subscriptionEntries.userId, userId),
                 isNull(subscriptions.unsubscribedAt),
-                // isListedSubscription(): the saved subscription is no list.
+                // isUserManagedSubscription(): Saved's count is `saved`, and
+                // it's in no tag or Uncategorized.
                 ne(subscriptions.type, "saved"),
                 // One array parameter: a mark-all-read can pass more ids than a
                 // statement takes parameters.

@@ -96,7 +96,7 @@ describe("entry memberships (#1846)", () => {
     });
   });
 
-  it("gives a saved article the saved subscription, which the subscription list names", async () => {
+  it("gives a saved article the saved subscription, which the subscription list shows", async () => {
     const userId = await createTestUser();
     const { id } = await uploadArticle(db, userId, { content: "Body", title: "Kept" });
     const savedId = await getSavedSubscriptionId(db, userId);
@@ -107,8 +107,7 @@ describe("entry memberships (#1846)", () => {
       entry: { subscriptionId: savedId, subscriptionIds: [savedId], feedTitle: "Saved Articles" },
     });
     const list = await caller.subscriptions.list();
-    expect(list.savedSubscriptionId).toBe(savedId);
-    expect(list.items).toEqual([]);
+    expect(list.items).toMatchObject([{ id: savedId, type: "saved", title: "Saved", tags: [] }]);
   });
 
   it("pages one subscription's list, and Saved, through its own timeline", async () => {

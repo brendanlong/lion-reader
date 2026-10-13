@@ -143,7 +143,7 @@ describe("entry feedTitle is the user's subscription title", () => {
     const { feedId, renamer, other, subscriptionId, entryId } = await seed();
     // Feed channels are shared by every subscriber, so the publisher stamps
     // the feed's own title; each stream must swap in its user's.
-    const payload = toNewEntryListData({ fetchedAt: new Date() }, FEED_TITLE);
+    const payload = toNewEntryListData({ type: "web", fetchedAt: new Date() }, FEED_TITLE);
     const renamerStream = await openSseStream(renamer);
     const otherStream = await openSseStream(other);
     const titlesFor = (stream: SseStream, id: string) =>

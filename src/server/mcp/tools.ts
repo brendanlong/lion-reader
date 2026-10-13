@@ -542,7 +542,7 @@ function buildTools(): Tool[] {
     {
       name: "list_subscriptions",
       description:
-        "List active subscriptions — feeds, newsletters and collections (type 'collection') — with optional filtering and pagination. Supports case-insensitive title search, tag, type and unread-only filtering, and cursor-based pagination.",
+        "List active subscriptions — feeds, newsletters, collections (type 'collection') and, once the user has saved an article, their Saved subscription (type 'saved', which can't be tagged, renamed or removed) — with optional filtering and pagination. Supports case-insensitive title search, tag, type and unread-only filtering, and cursor-based pagination.",
       inputSchema: toInputSchema(listSubscriptionsArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listSubscriptionsArgs, args);

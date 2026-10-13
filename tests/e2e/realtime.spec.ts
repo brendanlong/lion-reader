@@ -165,6 +165,7 @@ function sidebarLinks(page: Page, taggedFeed: TestFeed) {
  */
 function newEntryListData(entry: TestEntry, feed: TestFeed) {
   return {
+    type: "web" as const,
     url: entry.url,
     title: entry.title,
     author: null,
@@ -333,7 +334,7 @@ test("a first save's new_entry inserts it, updates counts and learns the saved s
     },
     entry.id,
     entry.updatedAt,
-    { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }
+    { ...newEntryListData(entry, taggedFeed), type: "saved", feedTitle: "Saved Articles" }
   );
 
   await expect(page.locator('[aria-label*="article: Saved realtime post"]')).toBeVisible();
@@ -384,7 +385,7 @@ test("a saved article's new_entry joins the open Saved list by its membership wi
     },
     entry.id,
     entry.updatedAt,
-    { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }
+    { ...newEntryListData(entry, taggedFeed), type: "saved", feedTitle: "Saved Articles" }
   );
 
   await expect(page.locator('[aria-label*="article: Saved just now"]')).toBeVisible();

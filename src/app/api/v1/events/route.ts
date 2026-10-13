@@ -27,7 +27,7 @@
 
 import { db } from "@/server/db";
 import { subscriptions, type EntryType } from "@/server/db/schema";
-import { isListedSubscription, isWebSubscription } from "@/server/services/subscriptions";
+import { isUserManagedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
@@ -103,7 +103,7 @@ async function getUserCustomTitles(userId: string): Promise<Map<string, string |
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
         // Saved articles show "Saved Articles", not the saved subscription's name.
-        isListedSubscription()
+        isUserManagedSubscription()
       )
     );
   return new Map(rows.map((row) => [row.id, row.customTitle]));
@@ -132,7 +132,6 @@ interface ClientEntryEvent {
   entryId: string;
   timestamp: string;
   updatedAt: string;
-  feedType: EntryType;
 }
 
 /** A user event's `feedId` only routes feed channels here: clients only ever see subscription IDs. */
@@ -395,7 +394,10 @@ export async function GET(req: Request): Promise<Response> {
        * Sends a new_entry event, whether it came from a web feed's channel or
        * (email, saved) the user's channel.
        */
-      function sendNewEntry(event: ClientEntryEvent & { entry?: NewEntryListData }): void {
+      function sendNewEntry(
+        // `feedType` only decides the counts; clients get the payload's `type`.
+        event: ClientEntryEvent & { feedType: EntryType; entry?: NewEntryListData }
+      ): void {
         // Compute this user's absolute unread counts and send them with the
         // event so the client sets counts directly instead of applying a +1
         // delta. That makes new_entry idempotent: a reconnect catch-up sync
@@ -410,7 +412,7 @@ export async function GET(req: Request): Promise<Response> {
           await customTitlesLoaded;
           let counts: BulkUnreadCounts | undefined;
           try {
-            // The saved subscription has no list of its own; Saved is a global count.
+            // Saved's count is the global `saved` one (it's in no tag or Uncategorized).
             counts = await getBulkEntryRelatedCounts(
               db,
               userId,
@@ -431,11 +433,11 @@ export async function GET(req: Request): Promise<Response> {
               entryId: event.entryId,
               timestamp: event.timestamp,
               updatedAt: event.updatedAt,
-              feedType: event.feedType,
               ...(counts ? { counts } : {}),
               // List-item data (absent from events published by a previous
               // release) lets the client insert the entry into cached lists.
-              // Saved articles have no subscription, so keep their own title.
+              // Saved articles keep their own title ("Saved Articles"): the
+              // saved subscription isn't in customTitles.
               ...(event.entry
                 ? {
                     entry: withCustomFeedTitle(
@@ -463,7 +465,6 @@ export async function GET(req: Request): Promise<Response> {
               entryId: event.entryId,
               timestamp: event.timestamp,
               updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-              feedType: event.feedType,
               metadata: event.metadata,
             })}\n\n`
           );
@@ -536,7 +537,7 @@ export async function GET(req: Request): Promise<Response> {
           if (event.type === "new_entry") {
             sendNewEntry({ ...event, subscriptionId });
           } else {
-            sendEntryUpdated({ ...event, subscriptionId, feedType: "web" });
+            sendEntryUpdated({ ...event, subscriptionId });
           }
         }
       }

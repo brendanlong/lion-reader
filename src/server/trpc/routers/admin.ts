@@ -27,7 +27,7 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
-import { isListedSubscription, isWebSubscription } from "@/server/services/subscriptions";
+import { isUserManagedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 import {
   getMaintenanceRaw,
   getAnnouncementRaw,
@@ -616,7 +616,7 @@ const userEndpoints = {
           and(
             eq(subscriptions.userId, users.id),
             isNull(subscriptions.unsubscribedAt),
-            isListedSubscription()
+            isUserManagedSubscription()
           )
         );
 
@@ -859,7 +859,7 @@ const overviewEndpoints = {
         ctx.db
           .select({ count: count() })
           .from(subscriptions)
-          .where(and(isNull(subscriptions.unsubscribedAt), isListedSubscription())),
+          .where(and(isNull(subscriptions.unsubscribedAt), isUserManagedSubscription())),
 
         // Pending invites
         ctx.db

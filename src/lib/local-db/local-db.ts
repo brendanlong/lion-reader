@@ -48,9 +48,11 @@ export interface LocalDb {
 
 /**
  * The user's saved subscription (#1846), whose members are the Saved list.
- * Its id comes from `subscriptions.list` results (every one names it): null
- * before the first save creates it, undefined until a result has landed.
- * Components read it through `useStoredSavedSubscriptionId`.
+ * Its id comes from its row in a `subscriptions.list`/`get` result, which the
+ * subscription store never holds (so it's in no sidebar section): null once
+ * a `{ type: "saved" }` list comes back empty (before the first save creates
+ * it), undefined until one has landed. Components read it through
+ * `useStoredSavedSubscriptionId`.
  */
 export interface SavedSubscription {
   id: string | null | undefined;
@@ -140,7 +142,7 @@ function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append"): voi
       break;
     }
     case "subscriptions.get":
-      ingestFetchedSubscriptions(db.subscriptions, query.queryHash, [data as SubscriptionRow]);
+      ingestSubscriptionRows(db, query, [data as SubscriptionRow]);
       break;
   }
 }
@@ -153,12 +155,20 @@ function ingestSubscriptionPages(
 ): void {
   // The earlier pages are older than this fetch: don't write them again.
   const pages = mode === "append" ? data.pages.slice(-1) : data.pages;
-  const saved = pages.at(-1)?.savedSubscriptionId;
-  if (saved !== undefined) setSavedSubscriptionId(db, saved);
+  const rows = pages.flatMap((page) => page.items);
+  // An empty list of saved subscriptions: there's none until the first save.
+  if (inputOf(query).type === "saved" && rows.length === 0) setSavedSubscriptionId(db, null);
+  ingestSubscriptionRows(db, query, rows);
+}
+
+/** Stores fetched subscription rows, but Saved's only as `LocalDb.saved`. */
+function ingestSubscriptionRows(db: LocalDb, query: Query, rows: SubscriptionRow[]): void {
+  const saved = rows.find((row) => row.type === "saved");
+  if (saved) setSavedSubscriptionId(db, saved.id);
   ingestFetchedSubscriptions(
     db.subscriptions,
     query.queryHash,
-    pages.flatMap((page) => page.items)
+    rows.filter((row) => row !== saved)
   );
 }
 

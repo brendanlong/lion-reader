@@ -44,11 +44,7 @@ export interface SubscriptionListInput {
 }
 
 export interface SubscriptionPages {
-  pages: Array<{
-    items: SubscriptionRow[];
-    nextCursor?: string;
-    savedSubscriptionId?: string | null;
-  }>;
+  pages: Array<{ items: SubscriptionRow[]; nextCursor?: string }>;
 }
 
 function tick(store: SubscriptionStore): number {

@@ -14,6 +14,7 @@ import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MarkReadRequest
+import com.lionreader.shared.api.SAVED_TYPE
 import com.lionreader.shared.api.SaveArticleRequest
 import com.lionreader.shared.api.SaveArticleResponse
 import com.lionreader.shared.api.SavedArticle
@@ -61,7 +62,10 @@ class FakeServer {
     /** Each collection's article ids, by its subscription id. */
     val collections = mutableMapOf<String, MutableSet<String>>()
 
-    /** The user's Saved subscription, which [subscriptions] doesn't list; null before a save. */
+    /**
+     * The user's Saved subscription, which `/subscriptions` lists after [subscriptions] (as the
+     * server does, #1846 phase 9); null before a save.
+     */
     var savedSubscriptionId: String? = SAVED_SUBSCRIPTION
 
     /** Answer as a server from before #1846 phase 5: no `subscriptionIds`, no Saved id. */
@@ -323,8 +327,19 @@ class FakeServer {
                 json(
                     SubscriptionPage.serializer(),
                     SubscriptionPage(
-                        subscriptions.toList(),
-                        savedSubscriptionId = savedSubscriptionId.takeUnless { legacy },
+                        subscriptions +
+                            listOfNotNull(
+                                savedSubscriptionId
+                                    ?.takeUnless { legacy }
+                                    ?.let {
+                                        Subscription(
+                                            it,
+                                            type = SAVED_TYPE,
+                                            title = "Saved",
+                                            tags = emptyList(),
+                                        )
+                                    }
+                            )
                     ),
                 )
             path == "/tags" -> json(TagList.serializer(), TagList(emptyList()))

@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
 import { getLocalDb } from "@/lib/local-db/local-db";
+import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
 import {
   patchLiveSubscription,
   removeLiveSubscriptions,
@@ -178,6 +179,25 @@ describe("ingesting subscription queries", () => {
     await settled(older);
 
     expect(stored("a")?.unreadCount).toBe(0);
+  });
+
+  it("keeps a listed Saved out of the store, so out of Uncategorized, learning its id (#1846)", () => {
+    const saved = sub("saved", "Saved", { type: "saved", tags: [] });
+    const untagged = sub("a", "A", { tags: [] });
+    queryClient.setQueryData(
+      [["subscriptions", "list"], { input: { uncategorized: true, limit: 50 }, type: "infinite" }],
+      { pages: [{ items: [saved, untagged] }], pageParams: [undefined] }
+    );
+
+    expect(stored("saved")).toBeUndefined();
+    expect(getLocalDb(queryClient).saved.id).toBe("saved");
+    const rows = sidebarSectionRows(store().rows.allSynced(), {
+      section: UNCATEGORIZED_SECTION,
+      unreadOnly: false,
+      data: pages([saved, untagged]),
+      openSubscriptionId: undefined,
+    });
+    expect(rows.map((row) => row.id)).toEqual(["a"]);
   });
 
   it("restores an optimistic removal only if nothing wrote the row since", () => {
