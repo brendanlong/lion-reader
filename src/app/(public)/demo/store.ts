@@ -310,6 +310,8 @@ export function createDemoStore(): DemoStore {
       starred: state.starred,
       readChangedAt: state.readChangedAt,
       updatedAt: state.updatedAt,
+      // Demo entries never change, only their state does.
+      entryUpdatedAt: entry.publishedAt ?? entry.fetchedAt,
       feedTitle: sub?.title ?? entry.feedTitle,
       siteName: entry.siteName,
     };

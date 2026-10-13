@@ -365,6 +365,12 @@ describe("Entries", () => {
       );
       // The untouched entry stays out of the delta.
       expect(after.items.map((e) => e.id)).not.toContain(untouchedId);
+
+      // A state change moves updatedAt but not the entry's own timestamp, which
+      // clients judge metadata freshness by (#1759).
+      const stateChanged = after.items.find((e) => e.id === stateChangedId);
+      expect(stateChanged?.entryUpdatedAt).toEqual(past);
+      expect(stateChanged?.updatedAt.getTime()).toBeGreaterThan(past.getTime());
     });
   });
 

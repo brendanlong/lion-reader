@@ -158,6 +158,24 @@ describe("mergeServerEntry", () => {
       title: "Edited",
     },
     {
+      // A feed update stamped t2 commits after a mark-read at t3 and a page
+      // fetched after the mark-read (#1759).
+      name: "a feed update older than a page's state but newer than its metadata applies",
+      writes: [row({ read: true, updatedAt: t3, entryUpdatedAt: t1 }), meta("Renamed", t2)],
+      read: true,
+      title: "Renamed",
+    },
+    {
+      name: "a page whose metadata predates a feed update keeps the update, takes its state",
+      writes: [
+        row({ updatedAt: t1 }),
+        meta("Renamed", t2),
+        row({ read: true, updatedAt: t3, entryUpdatedAt: t1 }),
+      ],
+      read: true,
+      title: "Renamed",
+    },
+    {
       name: "out-of-order state writes resolve to the newest",
       writes: [row({ updatedAt: t1 }), state(true, t3), state(false, t2)],
       read: true,

@@ -980,7 +980,7 @@ export const userFeeds = pgView("user_feeds", {
  * entry's subscriptions come from its memberships (`entryOriginJoin`).
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
- * (most recently redefined in 0143_drop_old_membership_forms.sql).
+ * (most recently redefined in 0145_visible_entries_entry_updated_at.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const visibleEntries = pgView("visible_entries", {
@@ -1008,7 +1008,8 @@ export const visibleEntries = pgView("visible_entries", {
   listUnsubscribeHttps: text("list_unsubscribe_https"),
   listUnsubscribePost: boolean("list_unsubscribe_post"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(), // GREATEST(entries, user_entries)
+  entryUpdatedAt: timestamp("entry_updated_at", { withTimezone: true }).notNull(), // entries.updated_at alone
   fullContentOriginal: text("full_content_original"),
   fullContentCleaned: text("full_content_cleaned"),
   fullContentFetchedAt: timestamp("full_content_fetched_at", { withTimezone: true }),
