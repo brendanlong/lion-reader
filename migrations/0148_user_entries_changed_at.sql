@@ -11,8 +11,9 @@
 --
 -- Locks: adding the column takes ACCESS EXCLUSIVE on user_entries, so every
 -- read and write of it waits for the backfill and rewrite (about 12 s at
--- production's size on a dedicated core): deploy at a quiet time or with
--- maintenance mode on.
+-- production's size on a dedicated core). Deploy with maintenance mode on, or
+-- pre-apply it by hand (docs/fly-postgres-ops.md): every step is guarded, and
+-- the backfill runs only when it adds the column.
 SET LOCAL lock_timeout = '5s';
 
 -- Every lock up front, in the order readers take them (the view, then its
@@ -20,27 +21,45 @@ SET LOCAL lock_timeout = '5s';
 LOCK TABLE visible_entries IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE user_entries, entries IN ACCESS EXCLUSIVE MODE;
 
--- A constant default adds the column without a rewrite; the backfill sets it.
-ALTER TABLE user_entries ADD COLUMN changed_at timestamptz DEFAULT now() NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'user_entries' AND column_name = 'changed_at'
+  ) THEN
+    RETURN;
+  END IF;
 
-UPDATE user_entries ue
-SET changed_at = GREATEST(ue.updated_at, e.updated_at)
-FROM entries e
-WHERE e.id = ue.entry_id;
--- That wrote every row anew, scattering each user's rows over twice the
--- pages and into every index, which vacuum doesn't shrink: rewrite both.
-CLUSTER user_entries USING user_entry_states_user_id_entry_id_pk;
+  -- A constant default adds the column without a rewrite; the backfill sets it.
+  ALTER TABLE user_entries ADD COLUMN changed_at timestamptz DEFAULT now() NOT NULL;
+
+  UPDATE user_entries ue
+  SET changed_at = GREATEST(ue.updated_at, e.updated_at)
+  FROM entries e
+  WHERE e.id = ue.entry_id;
+
+  -- That wrote every row anew, scattering each user's rows over twice the
+  -- pages and into every index, which vacuum doesn't shrink: rewrite both.
+  CLUSTER user_entries USING user_entry_states_user_id_entry_id_pk;
+END;
+$$;
 
 -- A row's own changes. An insert takes its entry's updated_at too, for a
--- row created after the entry last changed.
-CREATE FUNCTION user_entries_changed_at() RETURNS trigger
+-- row created after the entry last changed. FOR SHARE makes it wait out an
+-- uncommitted content change, whose trigger can't see this new row, and read
+-- the changed entry. No transaction locks an entry after holding one of its
+-- holders' rows and then inserts another holder's: only the fetch fan-out
+-- inserts rows for several users, and it inserts before its triggers touch
+-- existing rows.
+CREATE OR REPLACE FUNCTION user_entries_changed_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     SELECT GREATEST(NEW.updated_at, e.updated_at) INTO NEW.changed_at
       FROM entries e
-      WHERE e.id = NEW.entry_id;
+      WHERE e.id = NEW.entry_id
+      FOR SHARE;
   ELSE
     NEW.changed_at := GREATEST(NEW.changed_at, NEW.updated_at);
   END IF;
@@ -48,13 +67,13 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER user_entries_changed_at_trigger
+CREATE OR REPLACE TRIGGER user_entries_changed_at_trigger
   BEFORE INSERT OR UPDATE OF updated_at ON user_entries
   FOR EACH ROW EXECUTE FUNCTION user_entries_changed_at();
 
 -- An entry's content changes, onto every holder's row. A refetch touches one
 -- entry, held by at most a few dozen users.
-CREATE FUNCTION entries_changed_at() RETURNS trigger
+CREATE OR REPLACE FUNCTION entries_changed_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -65,13 +84,13 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER entries_changed_at_trigger
+CREATE OR REPLACE TRIGGER entries_changed_at_trigger
   AFTER UPDATE OF updated_at ON entries
   FOR EACH ROW WHEN (NEW.updated_at > OLD.updated_at)
   EXECUTE FUNCTION entries_changed_at();
 
 -- Sync's keyset, (changed_at, entry_id).
-CREATE INDEX idx_user_entries_changed_at ON user_entries (user_id, changed_at, entry_id);
+CREATE INDEX IF NOT EXISTS idx_user_entries_changed_at ON user_entries (user_id, changed_at, entry_id);
 
 CREATE OR REPLACE VIEW visible_entries AS
  SELECT ue.user_id,
