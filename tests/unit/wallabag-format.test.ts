@@ -77,4 +77,16 @@ describe("formatEntryFull", () => {
       "<p>full</p>"
     );
   });
+
+  it("counts a bare < in text as text, not the start of a tag, in linear time", () => {
+    // `<[^>]*>` took ~1.5s on the tagless input (quadratic), and on the other
+    // swallowed the whole run up to `<i>` as one tag.
+    const readingTime = (fullContent: string) =>
+      formatEntryFull(makeFullEntry({ fullContent }), 1, []).reading_time;
+    const text = "a < b ".repeat(20000);
+    const started = performance.now();
+    const withoutTags = readingTime(`${text}c`);
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(readingTime(`${text}<i>c</i>`)).toBe(withoutTags);
+  });
 });

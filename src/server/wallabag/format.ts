@@ -47,8 +47,10 @@ export interface WallabagEntry {
  */
 function estimateReadingTime(content: string | null): number {
   if (!content) return 0;
-  // Strip HTML tags and count words
-  const text = content.replace(/<[^>]*>/g, " ").trim();
+  // Strip HTML tags and count words. `[^<>]*`, not `[^>]*`: the sanitizer
+  // passes a bare `<` in text through, and with `[^>]*` every one of them
+  // scans to the end of the content — quadratic on `"a < b ".repeat(n)`.
+  const text = content.replace(/<[^<>]*>/g, " ").trim();
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   return Math.max(1, Math.round(wordCount / 200));
 }

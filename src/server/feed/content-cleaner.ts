@@ -160,6 +160,13 @@ export function absolutizeUrls(
 }
 
 /**
+ * The first `<base href>`. The attribute run is `[^<>]*`, not `[^>]*`: with
+ * `[^>]*`, a page of `<base ` repeated without a `>` makes every attempt scan
+ * to the end of the input — quadratic, seconds per 100 KB of attacker HTML.
+ */
+const BASE_HREF_PATTERN = /<base\s[^<>]*href\s*=\s*["']([^"']+)["']/i;
+
+/**
  * Extracts the effective base URL from HTML content by looking for a <base href="..."> tag.
  *
  * Per the HTML spec, only the first <base> element with an href attribute is used.
@@ -174,10 +181,7 @@ export function absolutizeUrls(
  * @returns The effective base URL (from <base> tag or fallback)
  */
 export function extractBaseHref(html: string, fallbackUrl: string): string {
-  // Use a simple regex to extract the first <base href="..."> value.
-  // This is intentionally simple - we only need the first one per the HTML spec,
-  // and we want this to be fast since it runs before Readability.
-  const match = html.match(/<base\s[^>]*href\s*=\s*["']([^"']+)["']/i);
+  const match = BASE_HREF_PATTERN.exec(html);
   if (!match) {
     return fallbackUrl;
   }
@@ -264,7 +268,9 @@ function asDirectoryUrl(url: string): string {
  * Checks if a srcset entry ends with a descriptor (e.g., "1x", "2x", "480w").
  */
 function hasDescriptor(entry: string): boolean {
-  return /\s+\d+(\.\d+)?[wx]\s*$/.test(entry);
+  // `\s`, not `\s+`: an unanchored leading `\s+` rescans a whitespace run from
+  // each of its positions, quadratic on a long one.
+  return /\s\d+(\.\d+)?[wx]\s*$/.test(entry);
 }
 
 /**
@@ -306,29 +312,25 @@ function absolutizeSrcset(srcset: string, base: ResolveBase): string {
   // 1. The previous part ending with a descriptor (1x, 2x, 480w, etc.)
   // 2. The current part starting with a URL scheme or absolute path
   const entries: string[] = [];
+  // Whether the previous entry ends with a descriptor. Its last part decides
+  // that (a descriptor can't span a comma), so test each part once rather than
+  // re-testing an entry that grows with every rejoined part — quadratic.
+  let previousHasDescriptor = false;
 
   for (const raw of rawParts) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
 
-    // First entry is always accepted
-    if (entries.length === 0) {
-      entries.push(trimmed);
-      continue;
-    }
-
-    // Check if this should be a new entry or rejoined with previous
-    const previousEntry = entries[entries.length - 1];
-    const previousHasDescriptor = hasDescriptor(previousEntry);
-    const currentLooksLikeNewEntry = looksLikeNewSrcsetEntry(trimmed);
-
-    if (previousHasDescriptor || currentLooksLikeNewEntry) {
+    // First entry is always accepted; otherwise check if this should be a new
+    // entry or rejoined with previous
+    if (entries.length === 0 || previousHasDescriptor || looksLikeNewSrcsetEntry(trimmed)) {
       // This is a new srcset entry
       entries.push(trimmed);
     } else {
       // This is a continuation of the previous entry (comma was inside URL)
       entries[entries.length - 1] += "," + trimmed;
     }
+    previousHasDescriptor = hasDescriptor(trimmed);
   }
 
   return entries

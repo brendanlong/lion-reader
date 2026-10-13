@@ -167,9 +167,13 @@ function collectRuns(root: Element, ctx: WalkContext, depth: number): NarrationR
   const push = (highlight: Element, value: string) => {
     // Two `<br>`s end a paragraph — with any amount of whitespace between them,
     // since `<br />\n<br />` is how feeds write it. Every other run of
-    // whitespace, a single `<br>` included, is one space.
-    for (const segment of value.replace(/\s*\u0000\s*/g, BREAK).split(/\u0000{2,}/)) {
-      const paragraph = segment.replace(/[\s\u0000]+/g, " ").trim();
+    // whitespace, a single `<br>` included, is one space. One pass over each
+    // gap: `/\s*\u0000\s*/` rescans a whitespace run from each of its positions.
+    const paragraphs = value.replace(/[\s\u0000]+/g, (gap) =>
+      gap.indexOf(BREAK) === gap.lastIndexOf(BREAK) ? " " : BREAK
+    );
+    for (const segment of paragraphs.split(BREAK)) {
+      const paragraph = segment.trim();
       if (paragraph) runs.push({ highlight, text: paragraph });
     }
   };

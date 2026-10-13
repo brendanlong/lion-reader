@@ -1,9 +1,13 @@
 /**
- * Unit tests for email From address parsing utilities.
+ * Unit tests for email header parsing utilities.
  */
 
 import { describe, it, expect } from "vitest";
-import { parseFromAddress, stripEmailNameQuotes } from "@/server/email/parse-utils";
+import {
+  parseFromAddress,
+  parseListUnsubscribeUrl,
+  stripEmailNameQuotes,
+} from "@/server/email/parse-utils";
 
 describe("stripEmailNameQuotes", () => {
   it("strips surrounding double quotes", () => {
@@ -105,6 +109,31 @@ describe("parseFromAddress", () => {
       });
     });
 
+    it("takes the address from the last bracketed part when the name has brackets", () => {
+      expect(parseFromAddress("Team <ops> <ops@example.com>")).toEqual({
+        name: "Team <ops>",
+        address: "ops@example.com",
+      });
+    });
+
+    it("parses a name containing a line break", () => {
+      expect(parseFromAddress("John\nDoe <john@example.com>")).toEqual({
+        name: "John\nDoe",
+        address: "john@example.com",
+      });
+    });
+
+    it.each([
+      ["repeated <", "a" + "<".repeat(30000) + ">>"],
+      ["repeated ' <'", "a <".repeat(10000) + ">>"],
+      ["a long whitespace run", "a" + " ".repeat(30000) + "<x@example.com>x"],
+    ])("stays linear on %s", (_case, hostile) => {
+      // `^(.+?)\s*<([^>]+)>$` took ~0.3-0.7s on each of these (quadratic).
+      const started = performance.now();
+      parseFromAddress(hostile);
+      expect(performance.now() - started).toBeLessThan(100);
+    });
+
     it("returns undefined name when name is just quotes", () => {
       expect(parseFromAddress('"" <john@example.com>')).toEqual({
         name: undefined,
@@ -139,5 +168,23 @@ describe("parseFromAddress", () => {
         address: "john@example.com",
       });
     });
+  });
+});
+
+describe("parseListUnsubscribeUrl", () => {
+  const header = "<mailto:unsub@example.com?subject=x>, <https://example.com/unsub>";
+
+  it.each([
+    ["mailto", "mailto:unsub@example.com?subject=x"],
+    ["https", "https://example.com/unsub"],
+  ] as const)("picks the %s URL", (scheme, expected) => {
+    expect(parseListUnsubscribeUrl(header, scheme)).toBe(expected);
+  });
+
+  it("stays linear on repeated unclosed <mailto: fragments", () => {
+    // `<(mailto:[^>]+)>` took ~0.3s here (quadratic).
+    const started = performance.now();
+    expect(parseListUnsubscribeUrl("<mailto:".repeat(8000), "mailto")).toBeNull();
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });
