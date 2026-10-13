@@ -317,22 +317,23 @@ describe("Entries", () => {
       otherSubscriptionIds: string[],
       extra: number
     ): Promise<ListFilter> {
+      const listed = [...subscriptionIds];
       for (let i = 0; i < extra; i++) {
         const feedId = await createTestFeed(`https://extra-${i}.example.com/rss`);
-        subscriptionIds.push(await createTestSubscription(userId, feedId));
+        listed.push(await createTestSubscription(userId, feedId));
       }
       await createTestTag(userId, { subscriptionIds: otherSubscriptionIds });
       if (kind === "uncategorized") return { uncategorized: true };
-      return { tagId: await createTestTag(userId, { subscriptionIds }) };
+      return { tagId: await createTestTag(userId, { subscriptionIds: listed }) };
     }
 
     // Merging the subscriptions' timelines and, above MAX_MERGED_TIMELINES
-    // subscriptions, walking the user's must list the same.
+    // subscriptions, walking the user's (the same for either list) must list
+    // the same.
     const cases: Array<[ListKind, string, number]> = [
       ["tag", "merged", 0],
-      ["tag", "walked", MAX_MERGED_TIMELINES + 1],
       ["uncategorized", "merged", 0],
-      ["uncategorized", "walked", MAX_MERGED_TIMELINES + 1],
+      ["tag", "walked", MAX_MERGED_TIMELINES + 1],
     ];
 
     it.each(cases)(
@@ -345,20 +346,21 @@ describe("Entries", () => {
         const subA = await createTestSubscription(userId, feedA);
         const subB = await createTestSubscription(userId, feedB);
         const subOut = await createTestSubscription(userId, feedOut);
-        const at = (minutes: number): Date => new Date(Date.UTC(2026, 0, 1, 0, minutes));
+        const at = (minutes: number): Date => new Date(Date.UTC(2026, 0, 1) + minutes * 60_000);
         const entry = (feedId: string, minutes: number): Promise<string> =>
           createSharedTestEntry(feedId, { publishedAt: at(minutes), userIds: [userId] });
         const a1 = await entry(feedA, 0);
         const b1 = await entry(feedB, 1);
-        await entry(feedOut, 2);
+        const c = await entry(feedOut, 2);
+        await entry(feedOut, 2.5);
         const a2 = await entry(feedA, 3);
         const b2 = await entry(feedB, 4);
         // A collection in the list holding an article of each feed, so each
-        // is in the list twice.
+        // is in the list twice, and one from outside it, which it brings in.
         const collection = (await createCollection(db, userId, "Reading list")).subscription.id;
-        await addEntriesToCollection(db, userId, collection, [b1, a2]);
+        await addEntriesToCollection(db, userId, collection, [b1, c, a2]);
         const filter = await createList(userId, kind, [subA, subB, collection], [subOut], extra);
-        const newestFirst = [b2, a2, b1, a1];
+        const newestFirst = [b2, a2, c, b1, a1];
 
         const base = { userId, ...filter, showSpam: false };
         for (const limit of [1, 2, 10]) {
@@ -369,11 +371,11 @@ describe("Entries", () => {
           // Google Reader's ot/nt
           expect(
             await pageThrough({ ...base, publishedAfter: at(1), publishedBefore: at(3) }, limit)
-          ).toEqual([a2, b1]);
+          ).toEqual([a2, c, b1]);
         }
 
         await markEntriesRead(db, userId, [{ id: a2 }], true);
-        expect(await pageThrough({ ...base, unreadOnly: true }, 1)).toEqual([b2, b1, a1]);
+        expect(await pageThrough({ ...base, unreadOnly: true }, 1)).toEqual([b2, c, b1, a1]);
       }
     );
 
@@ -401,12 +403,13 @@ describe("Entries", () => {
           [feedB, "2026-01-01T00:00:00.000000Z"],
         ]) {
           const id = await createSharedTestEntry(feedId);
-          // A Date can't carry microseconds: stamp them before the user's row
-          // copies the sort key.
-          await db.execute(
-            sql`UPDATE entries SET published_at = ${at}::timestamptz WHERE id = ${id}::uuid`
-          );
-          await createTestUserEntries({ userId, entryId: id, read: false });
+          // A Date can't carry microseconds. The memberships copy the row's key.
+          await createTestUserEntries({
+            userId,
+            entryId: id,
+            read: false,
+            publishedOrFetchedAt: sql`${at}::timestamptz`,
+          });
           if (feedId !== feedOut) listed.push({ id, at });
         }
         const filter = await createList(userId, kind, [subA, subB], [subOut], extra);
@@ -424,6 +427,22 @@ describe("Entries", () => {
         }
       }
     );
+
+    // Nothing ties a tag's subscriptions to its owner, and merging joins
+    // memberships on the entry alone (SECURITY.md §7).
+    it("doesn't list what another user's subscription under the tag holds", async () => {
+      const userId = await createTestUser();
+      const otherId = await createTestUser({ emailPrefix: "other" });
+      const feedId = await createTestFeed("https://shared.example.com/rss");
+      await createTestSubscription(userId, feedId);
+      await createTestSubscription(otherId, feedId);
+      const shared = await createSharedTestEntry(feedId, { userIds: [userId, otherId] });
+      const theirs = (await createCollection(db, otherId, "Private")).subscription.id;
+      await addEntriesToCollection(db, otherId, theirs, [shared]);
+      const tagId = await createTestTag(userId, { subscriptionIds: [theirs] });
+
+      expect(await pageThrough({ userId, tagId, showSpam: false }, 10)).toEqual([]);
+    });
   });
 
   describe("list with offset", () => {

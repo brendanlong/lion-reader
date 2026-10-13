@@ -207,19 +207,23 @@ LEFT JOIN subscription_tags ON subscription_tags.subscription_id = subscriptions
 WHERE subscriptions.user_id = ${q(userId)} AND subscriptions.unsubscribed_at IS NULL
   AND subscriptions.type <> 'saved' AND subscription_tags.subscription_id IS NULL`;
 
+/** `MAX_MERGED_TIMELINES` (services/entries.ts). */
+const MAX_MERGED_TIMELINES = 50;
+
 /**
  * A tag's or Uncategorized's `listEntries` (services/entries.ts
  * `timelineSubscriptionsOf`): its subscription ids, then the list, merging
- * their timelines unless there are more than `MAX_MERGED_TIMELINES` (50), when
- * it walks the user's timeline with the subscriptions as a filter.
+ * their timelines unless there are more than `MAX_MERGED_TIMELINES`, when it
+ * walks the user's timeline with the subscriptions as a filter.
  */
 async function listOfSubscriptionsStatements(db: ClientBase, idsSql: string): Promise<Statement[]> {
-  const resolve = { label: "list_subscriptions", sql: `${idsSql}\nLIMIT 51` };
-  const ids = (await rows<{ id: string }>(db, `SELECT id FROM (${idsSql}) s(id) LIMIT 51`)).map(
+  const limit = `LIMIT ${MAX_MERGED_TIMELINES + 1}`;
+  const resolve = { label: "list_subscriptions", sql: `${idsSql}\n${limit}` };
+  const ids = (await rows<{ id: string }>(db, `SELECT id FROM (${idsSql}) s(id) ${limit}`)).map(
     (r) => r.id
   );
   const list =
-    ids.length > 50
+    ids.length > MAX_MERGED_TIMELINES
       ? listEntriesSql({
           userId: U0,
           where: [entriesInSubscriptions({ subquery: idsSql }, VE_COLUMNS, true)],

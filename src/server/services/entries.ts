@@ -881,6 +881,8 @@ export async function listEntries(
       );
     }
   }
+  // `ot`/`nt` also filter the rows (`buildEntryFilterConditions`); the branch
+  // copies only let the merged scans start and stop at them.
   if (merged && params.publishedAfter) {
     memberBounds.push(sql`${subscriptionEntries.publishedOrFetchedAt} >= ${params.publishedAfter}`);
   }

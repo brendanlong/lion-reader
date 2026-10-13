@@ -171,6 +171,10 @@ fetches user-influenced URLs and must never be usable to reach internal services
   `subscription_entries`' (#1846) foreign keys, to the owner's subscription and to
   the owner's own `user_entries` row, stop any membership from crossing users
   (`services/collections.ts`).
+- **A list that merges subscriptions' timelines joins their memberships on the entry
+  alone**, so every subscription id it merges must be checked to be the user's
+  (`timelineSubscriptionsOf` in `services/entries.ts`): `subscription_tags` doesn't
+  tie a tag and its subscriptions to one user.
 - AI summaries are keyed `(user_id, content_hash)`. Narration is a shared cache of a
   deterministic transform of public content, so **only a failure the content causes
   may be recorded on a `narration_content` row** — never one from a user's own key
