@@ -183,7 +183,7 @@ export const subscriptionsRouter = createTRPCRouter({
           unreadOnly: z.boolean().optional(),
           type: subscriptionOutputSchema.shape.type.optional(),
           cursor: z.string().optional(),
-          limit: z.number().min(1).max(100).optional(),
+          limit: z.number().min(1).max(subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE).optional(),
         })
         .optional()
     )

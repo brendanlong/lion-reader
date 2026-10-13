@@ -364,6 +364,9 @@ async function populateInitialUserEntries(
 // Service Functions
 // ============================================================================
 
+/** The most subscriptions one page of the list returns, on every surface. */
+export const MAX_SUBSCRIPTIONS_PAGE_SIZE = 100;
+
 export interface ListSubscriptionsParams {
   userId: string;
   query?: string; // Case-insensitive title search
@@ -396,8 +399,7 @@ export async function listSubscriptions(
 ): Promise<ListSubscriptionsResult> {
   const { userId, query, tagId, uncategorized, unreadOnly, type, cursor, limit = 50 } = params;
 
-  // Cap limit at 100
-  const effectiveLimit = Math.min(limit, 100);
+  const effectiveLimit = Math.min(limit, MAX_SUBSCRIPTIONS_PAGE_SIZE);
 
   // Apply filters
   const conditions = [eq(userFeeds.userId, userId)];

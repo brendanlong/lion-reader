@@ -519,9 +519,11 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
     expect((await getUserEntryRow(userId, entryB)).starred).toBe(true);
   });
 
-  it("rejects more than 1000 entries", async () => {
+  it("rejects more than MAX_ENTRY_STATE_BATCH entries", async () => {
     const userId = await seedUser();
-    const ids = Array.from({ length: 1001 }, () => generateUuidv7());
+    const ids = Array.from({ length: entriesService.MAX_ENTRY_STATE_BATCH + 1 }, () =>
+      generateUuidv7()
+    );
     await expect(
       entriesService.updateEntriesStarred(
         db,
@@ -529,7 +531,7 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
         ids.map((id) => ({ id })),
         true
       )
-    ).rejects.toThrow(/Maximum 1000 entries/);
+    ).rejects.toThrow(`Maximum ${entriesService.MAX_ENTRY_STATE_BATCH} entries`);
   });
 
   it("does not publish or compute counts when re-asserting already-starred entries (issue #1118)", async () => {

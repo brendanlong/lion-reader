@@ -35,9 +35,8 @@ import { db } from "@/server/db";
 export const dynamic = "force-dynamic";
 
 // Bound the item-id list so a single call can't ask the server to issue an
-// unbounded number of per-entry updates. Matches the cap on
-// `stream/items/contents` and the services-layer bulk mutations (issue #1266).
-const MAX_ITEM_IDS = 1000;
+// unbounded number of per-entry updates (issue #1266).
+const MAX_ITEM_IDS = entriesService.MAX_ENTRY_STATE_BATCH;
 
 export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
