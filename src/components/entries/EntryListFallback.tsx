@@ -13,8 +13,8 @@ import { useLocalEntriesMatching } from "@/lib/hooks/useLocalEntries";
 import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
 import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/sidebar-sections";
 import type { EntryListFilters } from "@/lib/local-db/entry-lists";
-import { useAppearance } from "@/lib/appearance/AppearanceProvider";
 import { EntryListItem } from "./EntryListItem";
+import { ENTRY_LIST_CLASSES } from "./entryItemClasses";
 import { EntryListSkeleton } from "./EntryListSkeleton";
 import { EntryListLoadingMore } from "./EntryListStates";
 
@@ -39,21 +39,16 @@ function useSubscriptionScope(filters: EntryListFilters): string[] | undefined |
 }
 
 export function EntryListFallback({ filters, onEntryClick }: EntryListFallbackProps) {
-  const {
-    settings: { listDensity },
-  } = useAppearance();
   const entries = useLocalEntriesMatching(filters, useSubscriptionScope(filters));
 
   if (!entries || entries.length === 0) {
-    return <EntryListSkeleton density={listDensity} />;
+    return <EntryListSkeleton />;
   }
 
   // Show stored entries with a subtle loading indicator
-  const listClassName = listDensity === "compact" ? "divide-edge divide-y" : "space-y-3";
-
   return (
     <div>
-      <div className={listClassName}>
+      <div className={ENTRY_LIST_CLASSES}>
         {entries.map((entry) => (
           <EntryListItem
             key={entry.id}
@@ -67,7 +62,6 @@ export function EntryListFallback({ filters, onEntryClick }: EntryListFallbackPr
             // Disable mutations during fallback - they'd update stale data
             onToggleRead={undefined}
             onToggleStar={undefined}
-            density={listDensity}
           />
         ))}
       </div>

@@ -19,6 +19,7 @@
 
 import { useHotkeys } from "react-hotkeys-hook";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 import type { NarrationPhase } from "@/components/narration/useNarrationTypes";
 
 // [ and ] need AltGr (or Option) on many non-US layouts, so modifiers are
@@ -84,7 +85,8 @@ export interface UseNarrationKeyboardShortcutsOptions {
  */
 export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShortcutsOptions): void {
   const { phase, controls, isSupported } = options;
-  const { enabled: keyboardShortcutsEnabled, isModalOpen } = useKeyboardShortcutsContext();
+  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsEnabled();
+  const { isModalOpen } = useKeyboardShortcutsContext();
 
   const { isGenerating, shouldPause, canSkipForward, canSkipBackward } = phase;
   const { play, pause, skipForward, skipBackward } = controls;

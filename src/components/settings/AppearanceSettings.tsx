@@ -13,7 +13,8 @@
 import { useTheme } from "next-themes";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useIsEInkDisplay } from "@/lib/theme/eink";
-import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
+import { ENTRY_TEXT_STYLE } from "@/lib/appearance/entry-text-styles";
+import { useAppearanceSettings } from "@/lib/appearance/settings";
 import type {
   TextSize,
   TextJustification,
@@ -115,12 +116,10 @@ const LIST_DENSITY_OPTIONS: { value: ListDensity; label: string }[] = [
  * Uses the same styling as actual article content.
  */
 function TextPreview() {
-  const { style } = useEntryTextStyles();
-
   return (
     <div className="border-edge-strong rounded-lg border bg-white p-4 dark:bg-zinc-800">
       <p className="ui-text-xs text-muted mb-2 font-medium tracking-wide uppercase">Preview</p>
-      <p className="text-body" style={style}>
+      <p className="text-body" style={ENTRY_TEXT_STYLE}>
         The quick brown fox jumps over the lazy dog. This sample text demonstrates how your articles
         will appear with the current settings. Adjusting the text size, font, and justification can
         help improve readability based on your preferences.
@@ -130,7 +129,7 @@ function TextPreview() {
 }
 
 export function AppearanceSettings() {
-  const { settings, updateSettings } = useAppearance();
+  const [settings, updateSettings] = useAppearanceSettings();
   const { theme, setTheme, resolvedTheme } = useTheme();
   // On e-ink displays, "Auto" resolves to the e-paper theme (see ThemeProvider)
   const isEInk = useIsEInkDisplay();

@@ -13,13 +13,15 @@ import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 
 /**
- * Context value for keyboard shortcuts
+ * Context value for keyboard shortcuts.
+ *
+ * Whether shortcuts are enabled is deliberately not in here (read it with
+ * `useKeyboardShortcutsEnabled`): it's stored in localStorage, so it changes
+ * right after hydration, and a context change before the server-rendered entry
+ * list's Suspense boundary hydrates makes React discard its server HTML (see
+ * `useCanRenderStreamedQuery`).
  */
 interface KeyboardShortcutsContextValue {
-  /** Whether keyboard shortcuts are enabled */
-  enabled: boolean;
-  /** Function to enable/disable keyboard shortcuts */
-  setEnabled: (value: boolean) => void;
   /** Open the keyboard shortcuts modal */
   openShortcutsModal: () => void;
   /** Close the keyboard shortcuts modal */
@@ -46,7 +48,7 @@ interface KeyboardShortcutsProviderProps {
 }
 
 export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProviderProps) {
-  const { enabled, setEnabled } = useKeyboardShortcutsEnabled();
+  const { enabled } = useKeyboardShortcutsEnabled();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const openShortcutsModal = useCallback(() => {
@@ -75,13 +77,11 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
 
   const contextValue = useMemo<KeyboardShortcutsContextValue>(
     () => ({
-      enabled,
-      setEnabled,
       openShortcutsModal,
       closeShortcutsModal,
       isModalOpen,
     }),
-    [enabled, setEnabled, openShortcutsModal, closeShortcutsModal, isModalOpen]
+    [openShortcutsModal, closeShortcutsModal, isModalOpen]
   );
 
   return (

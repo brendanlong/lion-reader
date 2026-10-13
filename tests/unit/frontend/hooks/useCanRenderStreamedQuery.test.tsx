@@ -1,8 +1,9 @@
 /**
  * useCanRenderStreamedQuery on the server: a query the page streamed while
  * pending holds its Suspense boundary until the result lands, so the content
- * (not the skeleton) is in the HTML; a query nobody streamed renders the
- * skeleton without suspending or fetching. Server-rendered with React's
+ * (not the skeleton) is in the HTML; a failed one renders the skeleton without
+ * waiting for a retry; a query nobody streamed renders the skeleton without
+ * suspending or fetching. Server-rendered with React's
  * streaming renderer through the same dehydrate/hydrate path the app uses.
  */
 
@@ -57,6 +58,25 @@ describe("useCanRenderStreamedQuery (server render)", () => {
 
     expect(await html).toContain("first,second");
     expect(await html).not.toContain("skeleton");
+  });
+
+  it("renders the skeleton as soon as a streamed prefetch fails, without waiting out a retry", async () => {
+    let rejectFetch!: (error: Error) => void;
+    const pageClient = new QueryClient();
+    void pageClient.prefetchQuery({
+      queryKey: QUERY_KEY,
+      queryFn: () => new Promise<string[]>((_, reject) => (rejectFetch = reject)),
+    });
+    // The browser's client retries a failed query after a delay.
+    const renderClient = new QueryClient({
+      defaultOptions: { queries: { retry: 1, retryDelay: 60_000 } },
+    });
+    hydrate(renderClient, dehydrate(pageClient, { shouldDehydrateQuery: () => true }));
+
+    const html = renderToHtml(renderClient);
+    rejectFetch(new Error("boom"));
+
+    expect(await html).toContain("skeleton");
   });
 
   it("renders the skeleton without suspending or fetching when nothing was streamed", async () => {

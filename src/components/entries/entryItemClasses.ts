@@ -1,37 +1,41 @@
 /**
- * Entry list item CSS classes.
+ * Entry list CSS classes, shared by the list, its loading fallback, and its
+ * skeleton.
  *
- * Extracted from EntryListItem (a "use client" module) into this plain module so
- * it can be shared with server components — specifically the demo's crawlable SSR
- * list (DemoEntryListSSR), which must render byte-for-byte the same card styling
- * as the interactive EntryListItem so the hydration swap shows no flash. Next.js
- * forbids calling a function exported from a "use client" module during server
- * rendering, hence the split.
- */
-
-import type { ListDensity } from "@/lib/appearance/settings";
-
-/**
- * Get the appropriate CSS classes for the entry item based on read and density
- * state.
+ * Density is styled with the `comfortable:`/`compact:` variants (the stored
+ * setting on `<html>`; see src/app/globals.css), never a React prop: the list
+ * is server-rendered without access to the stored setting, and switching it
+ * after hydration would reflow the list.
  *
  * Selection is *not* styled here: the keyboard/`j`-`k` cursor and Tab focus are
  * unified onto the browser's single `:focus-visible` outline (the selected row is
- * the focused row), so there's no separate ring/border to keep in sync — see
- * `getItemClasses`'s former selected branch, removed in favor of the focus
- * outline. This avoids the double outline (border + ring) and the ring lingering
- * after focus moved elsewhere.
+ * the focused row), so there's no separate ring/border to keep in sync. This
+ * avoids the double outline (border + ring) and the ring lingering after focus
+ * moved elsewhere.
+ */
+
+/**
+ * The list of entries: gapped bordered cards (comfortable), or a single divided
+ * list (compact; the dividers survive e-paper via the darker `--edge`).
+ */
+export const ENTRY_LIST_CLASSES = "comfortable:space-y-3 compact:divide-edge compact:divide-y";
+
+/**
+ * Padding and card treatment of a row. Compact rows are borderless (the list
+ * supplies `divide-edge` separators), so every border class is comfortable-only:
+ * a border color would also recolor the divider.
+ */
+const ROW_LAYOUT_CLASSES =
+  "comfortable:rounded-lg comfortable:border comfortable:p-3 comfortable:sm:p-4 compact:px-3 compact:py-2.5 compact:sm:px-4";
+
+/**
+ * The CSS classes for an entry row based on its read state.
  *
  * The unread/read *color* language is identical across densities — only the
- * padding and border treatment change. In "compact" mode items are borderless
- * rows in a single `divide-edge` list (see EntryList), so the per-card borders
- * are dropped; the divider handles row separation instead.
+ * padding and border treatment change.
  */
-export function getItemClasses(read: boolean, density: ListDensity = "comfortable"): string {
-  const compact = density === "compact";
-  const baseClasses = compact
-    ? "group relative cursor-pointer px-3 py-2.5 transition-colors sm:px-4"
-    : "group relative cursor-pointer rounded-lg border p-3 transition-colors sm:p-4";
+export function getItemClasses(read: boolean): string {
+  const baseClasses = `group relative cursor-pointer transition-colors ${ROW_LAYOUT_CLASSES}`;
 
   if (read) {
     // Read entries recede into the page canvas: no fill of their own and a
@@ -41,13 +45,11 @@ export function getItemClasses(read: boolean, density: ListDensity = "comfortabl
     // On e-paper every border is black, so "faint hairline" has to be said with
     // gray instead: the read card steps down to the theme's non-text gray level
     // while unread keeps the black edge.
-    const readClasses = `${baseClasses} bg-canvas hover:bg-surface active:bg-surface-muted`;
-    return compact ? readClasses : `${readClasses} border-edge epaper:border-fill-muted`;
+    return `${baseClasses} bg-canvas hover:bg-surface active:bg-surface-muted comfortable:border-edge comfortable:epaper:border-fill-muted`;
   }
 
   // Unread entries stand out as raised surface cards with a distinctly stronger
   // border (the only card/canvas separation available on e-paper, where every
   // fill is white).
-  const unreadClasses = `${baseClasses} bg-surface hover:bg-surface-muted active:bg-zinc-100 dark:active:bg-zinc-700`;
-  return compact ? unreadClasses : `${unreadClasses} border-edge-input`;
+  return `${baseClasses} bg-surface hover:bg-surface-muted active:bg-zinc-100 dark:active:bg-zinc-700 comfortable:border-edge-input`;
 }

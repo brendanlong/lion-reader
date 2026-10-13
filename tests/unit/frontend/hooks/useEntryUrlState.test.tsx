@@ -17,7 +17,6 @@ import { renderHook, act, fireEvent, screen } from "@testing-library/react";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
 import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
-import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
 import { createDemoStore } from "@/app/(public)/demo/store";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
@@ -169,9 +168,7 @@ describe("Escape closes the entry through closeEntry", () => {
       wrapper: (children) => (
         <AppLocationProvider basePath="/demo">
           <EntryContentOptionsProvider value={{}}>
-            <AppearanceProvider>
-              <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
-            </AppearanceProvider>
+            <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
           </EntryContentOptionsProvider>
         </AppLocationProvider>
       ),

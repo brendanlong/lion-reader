@@ -17,7 +17,7 @@ import { type MarkAllReadOptions, useEntryMutations } from "@/lib/hooks/useEntry
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
-import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 import { SearchIcon } from "@/components/ui/icons";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { UnreadToggle } from "./UnreadToggle";
@@ -77,7 +77,7 @@ export function EntryPageLayout({
   } = useUrlViewPreferences();
   const { markAllRead, isMarkAllReadPending } = useEntryMutations();
   const { openEntryId } = useEntryUrlState();
-  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
+  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsEnabled();
   const pathname = useAppPathname();
 
   // The search bar stays out of the way until asked for: it renders only while

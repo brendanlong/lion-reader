@@ -18,7 +18,6 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { patchServerEntryMetadata } from "@/lib/local-db/entries";
 import { EntryContent } from "@/components/entries/EntryContent";
-import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import {
   renderWithTrpc,
@@ -30,16 +29,12 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-// EntryContentBody reads text styles from AppearanceProvider and narration
-// controls from KeyboardShortcutsProvider; wrap every render in both.
+// EntryContentBody reads narration controls from KeyboardShortcutsProvider;
+// wrap every render in it.
 function renderEntryContent(ui: React.ReactElement, handlers: ProcedureHandlers) {
   return renderWithTrpc(ui, {
     handlers,
-    wrapper: (children) => (
-      <AppearanceProvider>
-        <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
-      </AppearanceProvider>
-    ),
+    wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
   });
 }
 

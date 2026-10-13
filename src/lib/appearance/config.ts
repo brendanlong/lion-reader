@@ -2,14 +2,21 @@
  * Single source of truth for the text-appearance config (fonts, sizes,
  * justification). Framework-agnostic and dependency-free so it can be shared by:
  *
- * - the React runtime — the settings store (`settings.ts`) and the CSS-var
- *   applier (`useEntryTextStyles` in `AppearanceProvider.tsx`); and
- * - the blocking `<head>` script in `src/app/root-document.tsx` that sets the entry
- *   text CSS vars before first paint. That script can't import at runtime (it
+ * - the settings store (`settings.ts`), which applies a change to the document
+ *   with `applyAppearanceSettings`; and
+ * - the blocking `<head>` script in `src/app/root-document.tsx` that applies the
+ *   stored settings before first paint. That script can't import at runtime (it
  *   runs before the bundle loads), so `buildTextAppearanceScript()` here bakes
  *   this same data into the inline source. Because both sides read these
  *   constants, the numbers can't drift and reintroduce a flash of wrong
  *   size/font on navigation.
+ *
+ * The settings take effect only through the document (CSS vars and the
+ * list-density attribute), never through React state: a value that differs
+ * between the server render (which can't see localStorage) and the client
+ * would make React re-render the server-rendered entry list after hydration,
+ * and a context change before that list's Suspense boundary hydrates makes
+ * React discard its server HTML (see `useCanRenderStreamedQuery`).
  *
  * Theme (dark/light) config lives in `../theme/config.ts`.
  */
@@ -37,6 +44,12 @@ export const FONT_FAMILIES = [
  *   scanning/triaging many items at once.
  */
 const LIST_DENSITIES = ["comfortable", "compact"] as const;
+
+/**
+ * Attribute on `<html>` holding the list density. The `compact:`/`comfortable:`
+ * Tailwind variants in `src/app/globals.css` select on it.
+ */
+const LIST_DENSITY_ATTRIBUTE = "data-list-density";
 
 export type TextSize = (typeof TEXT_SIZES)[number];
 export type TextJustification = (typeof TEXT_JUSTIFICATIONS)[number];
@@ -126,12 +139,12 @@ export const BASE_SIZES: Record<TextSize, number> = {
 /**
  * The `--entry-*` CSS custom properties for a given set of settings.
  *
- * The single definition of how settings map to CSS vars — used by
- * `useEntryTextStyles` at runtime and mirrored by the head script (see
+ * The single definition of how settings map to CSS vars — applied by
+ * `applyAppearanceSettings` and mirrored by the head script (see
  * `buildTextAppearanceScript`), which the appearance-head-script unit test pins
  * to this output so the two can't diverge.
  */
-export function entryTextStyleVars(settings: AppearanceSettings): Record<string, string> {
+function entryTextStyleVars(settings: AppearanceSettings): Record<string, string> {
   const fontConfig = FONT_CONFIGS[settings.fontFamily] || FONT_CONFIGS.system;
   const baseSize = BASE_SIZES[settings.textSize] || BASE_SIZES.medium;
   const adjustedSize = baseSize * fontConfig.sizeAdjust;
@@ -141,6 +154,23 @@ export function entryTextStyleVars(settings: AppearanceSettings): Record<string,
     "--entry-line-height": String(fontConfig.lineHeight),
     "--entry-text-align": settings.textJustification === "justify" ? "justify" : "left",
   };
+}
+
+/** The part of `document.documentElement` the appearance settings write to. */
+export interface AppearanceRoot {
+  style: { setProperty(property: string, value: string): void };
+  setAttribute(name: string, value: string): void;
+}
+
+/**
+ * Apply settings to the document: the entry text CSS vars and the list-density
+ * attribute. The head script does the same before first paint.
+ */
+export function applyAppearanceSettings(settings: AppearanceSettings, root: AppearanceRoot): void {
+  for (const [property, value] of Object.entries(entryTextStyleVars(settings))) {
+    root.style.setProperty(property, value);
+  }
+  root.setAttribute(LIST_DENSITY_ATTRIBUTE, settings.listDensity);
 }
 
 /**
@@ -165,13 +195,12 @@ export function coerceAppearanceSettings(parsed: Partial<AppearanceSettings>): A
 
 /**
  * Build the blocking `<head>` script (plain ES5 string, injected via
- * dangerouslySetInnerHTML with a CSP nonce) that applies the entry text CSS vars
- * before first paint, preventing a flash of wrong size/font on full-page loads.
+ * dangerouslySetInnerHTML with a CSP nonce) that applies the stored settings
+ * before first paint, preventing a flash of wrong size/font/density on
+ * full-page loads.
  *
  * All data is baked from the constants above; the inline logic mirrors
- * `coerceAppearanceSettings` (validate/merge) and `entryTextStyleVars` (the
- * size/family/line-height formula). Only the `textSize`/`textJustification`/
- * `fontFamily` fields affect CSS vars, so `listDensity` is intentionally omitted.
+ * `coerceAppearanceSettings` (validate/merge) and `applyAppearanceSettings`.
  */
 export function buildTextAppearanceScript(): string {
   const data = {
@@ -181,7 +210,9 @@ export function buildTextAppearanceScript(): string {
       textSize: TEXT_SIZES,
       textJustification: TEXT_JUSTIFICATIONS,
       fontFamily: FONT_FAMILIES,
+      listDensity: LIST_DENSITIES,
     },
+    densityAttribute: LIST_DENSITY_ATTRIBUTE,
     fontConfigs: FONT_CONFIGS,
     baseSizes: BASE_SIZES,
   };
@@ -192,7 +223,8 @@ export function buildTextAppearanceScript(): string {
     var settings = {
       textSize: d.defaults.textSize,
       textJustification: d.defaults.textJustification,
-      fontFamily: d.defaults.fontFamily
+      fontFamily: d.defaults.fontFamily,
+      listDensity: d.defaults.listDensity
     };
     // Guard only the read/parse so unreadable or malformed storage leaves the
     // defaults in place (and still gets applied below), rather than skipping
@@ -209,11 +241,12 @@ export function buildTextAppearanceScript(): string {
     var fontConfig = d.fontConfigs[settings.fontFamily] || d.fontConfigs.system;
     var baseSize = d.baseSizes[settings.textSize] || d.baseSizes.medium;
     var adjustedSize = baseSize * fontConfig.sizeAdjust;
-    var style = document.documentElement.style;
-    style.setProperty('--entry-font-family', fontConfig.family);
-    style.setProperty('--entry-font-size', adjustedSize + 'rem');
-    style.setProperty('--entry-line-height', String(fontConfig.lineHeight));
-    style.setProperty('--entry-text-align', settings.textJustification === 'justify' ? 'justify' : 'left');
+    var root = document.documentElement;
+    root.style.setProperty('--entry-font-family', fontConfig.family);
+    root.style.setProperty('--entry-font-size', adjustedSize + 'rem');
+    root.style.setProperty('--entry-line-height', String(fontConfig.lineHeight));
+    root.style.setProperty('--entry-text-align', settings.textJustification === 'justify' ? 'justify' : 'left');
+    root.setAttribute(d.densityAttribute, settings.listDensity);
   } catch (e) {}
 })();
 `;

@@ -17,6 +17,15 @@
    taps. Use this variant to give such controls an always-visible fallback. */
 @custom-variant hover-none (@media (hover: none));
 
+/* Entry list density, from data-list-density on <html> (set by the appearance
+   head script and the settings store; see src/lib/appearance/config.ts). The
+   list is styled through these variants rather than React state so the
+   server-rendered list already has the stored density. The two are mutually
+   exclusive, so give each density its own classes rather than overriding one
+   with the other. */
+@custom-variant compact (&:where([data-list-density="compact"] *));
+@custom-variant comfortable (&:where(:root:not([data-list-density="compact"]) *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -595,7 +604,7 @@ body {
   color: var(--foreground);
   /* Use the loaded UI typeface (Geist, wired to --font-sans in @theme above)
      rather than falling back to Arial. Article reading fonts are applied as an
-     inline style on the prose element (see AppearanceProvider), so they still
+     inline style on the prose element (see entry-text-styles.ts), so they still
      win here; only UI chrome is affected. */
   font-family: var(--font-sans), system-ui, sans-serif;
   /* Theme native form controls (checkbox/radio/range/progress) to the brand

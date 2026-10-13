@@ -23,7 +23,7 @@ import { useNarrationHighlight } from "@/components/narration/useNarrationHighli
 import { processHtmlForHighlighting } from "@/lib/narration/client-paragraph-ids";
 import { selectDisplayedContent, showsFullContent } from "@/lib/narration/select-content";
 import { useNarrationSettings } from "@/lib/narration/settings";
-import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
+import { ENTRY_TEXT_CLASS_NAME, ENTRY_TEXT_STYLE } from "@/lib/appearance/entry-text-styles";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
@@ -256,9 +256,6 @@ export function EntryContentBody({
     [showNarration, isNarrationActive, playFromElement]
   );
 
-  // Get text appearance settings
-  const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
-
   // Determine if we should process HTML for highlighting
   // We process it whenever narration has been activated (processedHtml exists or state is not idle)
   const shouldProcessForHighlighting =
@@ -371,8 +368,8 @@ export function EntryContentBody({
       datePrefix={datePrefix}
       contentHtml={sanitizedContent}
       fallbackContent={fallbackContent}
-      textSizeClass={textSizeClass}
-      textStyle={textStyle}
+      textSizeClass={ENTRY_TEXT_CLASS_NAME}
+      textStyle={ENTRY_TEXT_STYLE}
       footerLinkDomain={footerLinkDomain}
       unsubscribeUrl={unsubscribeUrl}
       isContentLoading={isContentLoading}

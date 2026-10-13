@@ -9,10 +9,11 @@
 
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_APPEARANCE_SETTINGS,
+  applyAppearanceSettings,
   coerceAppearanceSettings,
   type AppearanceSettings,
 } from "./config";
@@ -103,25 +104,27 @@ function getServerSnapshot(): AppearanceSettings {
   return DEFAULT_APPEARANCE_SETTINGS;
 }
 
+/** Save a settings change, apply it to the document, and notify subscribers. */
+function updateAppearanceSettings(partial: Partial<AppearanceSettings>): void {
+  const settings = { ...getSnapshot(), ...partial };
+  saveAppearanceSettings(settings);
+  applyAppearanceSettings(settings, document.documentElement);
+  notifySubscribers();
+}
+
 /**
- * React hook for managing appearance settings.
+ * React hook for the settings UI: the current settings and an updater.
  *
  * Uses useSyncExternalStore to properly handle SSR/hydration.
  * Returns defaults on server, loads from localStorage on client.
  *
- * @returns A tuple of [settings, setSettings].
+ * Everything else sees the settings only through the document (see
+ * `./config.ts`), so don't read this in the reader UI.
  */
 export function useAppearanceSettings(): [
   AppearanceSettings,
-  (settings: AppearanceSettings) => void,
+  (settings: Partial<AppearanceSettings>) => void,
 ] {
   const settings = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-
-  // Save and update settings, then notify subscribers
-  const setSettings = useCallback((newSettings: AppearanceSettings) => {
-    saveAppearanceSettings(newSettings);
-    notifySubscribers();
-  }, []);
-
-  return [settings, setSettings];
+  return [settings, updateAppearanceSettings];
 }

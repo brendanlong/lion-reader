@@ -11,7 +11,6 @@ import { memo, type MouseEvent } from "react";
 import { formatRelativeTime } from "@/lib/format";
 import { LocalTime } from "@/components/ui/local-time";
 import type { EntryType } from "@/lib/hooks/useEntryMutations";
-import type { ListDensity } from "@/lib/appearance/settings";
 import { StarIcon, StarFilledIcon } from "@/components/ui/icons";
 import { getItemClasses } from "./entryItemClasses";
 
@@ -69,13 +68,6 @@ interface EntryListItemProps {
    * Callback when the star indicator is clicked.
    */
   onToggleStar?: (entryId: string, currentlyStarred: boolean) => void;
-
-  /**
-   * List density. In "compact" mode the item drops its per-card border/rounding
-   * and roomy padding in favor of a tighter row (the surrounding list supplies
-   * `divide-edge` separators). Defaults to "comfortable".
-   */
-  density?: ListDensity;
 }
 
 /**
@@ -91,7 +83,6 @@ export const EntryListItem = memo(function EntryListItem({
   onFocus,
   onToggleRead,
   onToggleStar,
-  density = "comfortable",
 }: EntryListItemProps) {
   const { id, title, summary, read, starred, type, feedTitle, siteName, publishedAt, fetchedAt } =
     entry;
@@ -154,7 +145,7 @@ export const EntryListItem = memo(function EntryListItem({
       onKeyDown={handleKeyDown}
       onFocus={handleFocus}
       data-entry-id={id}
-      className={getItemClasses(read, density)}
+      className={getItemClasses(read)}
       aria-label={`${read ? "Read" : "Unread"}${selected ? ", selected" : ""} article: ${displayTitle} from ${source}`}
     >
       <div className="flex items-start gap-3">
@@ -255,8 +246,8 @@ export const EntryListItem = memo(function EntryListItem({
           </div>
 
           {/* Preview (hidden in compact density to pack more items per screen) */}
-          {summary && density !== "compact" && (
-            <p className="ui-text-sm text-muted mt-2 line-clamp-2">{summary}</p>
+          {summary && (
+            <p className="ui-text-sm text-muted compact:hidden mt-2 line-clamp-2">{summary}</p>
           )}
         </div>
       </div>

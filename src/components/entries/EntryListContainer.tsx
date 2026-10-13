@@ -29,7 +29,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
-import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
@@ -99,7 +99,7 @@ export const EntryListContainer = memo(function EntryListContainer({
 function EntryListContainerContent({ emptyMessage }: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
-  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
+  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsEnabled();
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
   const scrollContainerRef = useScrollContainer();

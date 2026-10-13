@@ -13,8 +13,8 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { EntryListData } from "@/lib/hooks/types";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
-import { useAppearance } from "@/lib/appearance/AppearanceProvider";
 import { EntryListItem } from "./EntryListItem";
+import { ENTRY_LIST_CLASSES } from "./entryItemClasses";
 import { EntryListEmpty, EntryListLoadingMore, EntryListEnd } from "./EntryListStates";
 
 /**
@@ -109,9 +109,6 @@ export function EntryList({
 }: EntryListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useScrollContainer();
-  const {
-    settings: { listDensity },
-  } = useAppearance();
 
   const { isFetchingNextPage, hasNextPage, fetchNextPage } = externalQueryState;
 
@@ -152,13 +149,9 @@ export function EntryList({
     return <EntryListEmpty message={emptyMessage} />;
   }
 
-  // Compact density: a single divided list (dividers survive e-paper via the
-  // darker `--edge`). Comfortable: gapped bordered cards.
-  const listClassName = listDensity === "compact" ? "divide-edge divide-y" : "space-y-3";
-
   return (
     <div>
-      <div className={listClassName}>
+      <div className={ENTRY_LIST_CLASSES}>
         {allEntries.map((entry) => (
           <EntryListItem
             key={entry.id}
@@ -170,7 +163,6 @@ export function EntryList({
             selected={selectedEntryId === entry.id}
             onToggleRead={onToggleRead}
             onToggleStar={onToggleStar}
-            density={listDensity}
           />
         ))}
       </div>

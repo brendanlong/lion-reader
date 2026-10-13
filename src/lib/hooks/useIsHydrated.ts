@@ -5,11 +5,11 @@
  * pass), then `true` after hydration commits.
  *
  * Use it to gate **cache-dependent** rendering that would otherwise mismatch
- * between the server and client. Our route-specific queries (entries.list,
- * entries.get) are prefetched with `void prefetch(...)` and dehydrated while
- * still pending, so at SSR time the server cache is empty (renders a loading
- * skeleton) but the streamed result lands before client hydration (renders
- * content) — a hydration mismatch for non-suspending `useQuery` consumers.
+ * between the server and client. Route-specific queries such as entries.get
+ * are prefetched with `void prefetch(...)` and dehydrated while still pending,
+ * so at SSR time the server cache is empty (renders a loading skeleton) but
+ * the streamed result lands before client hydration (renders content) — a
+ * hydration mismatch for non-suspending `useQuery` consumers.
  * Rendering a deterministic skeleton until `isHydrated` makes the server and
  * the first client render agree; the cache-reading "smart" fallback and the
  * resolved content only render afterward (client-only), so they can't mismatch.
@@ -68,16 +68,26 @@ export function useCanRenderFromCache(): boolean {
 const settledFetches = new WeakMap<Query, Promise<void>>();
 
 /**
- * Resolves once `query` stops fetching, after its result is in the cache.
- * Not `query.promise`: that settles before the query writes its result. One
- * promise per query, so `use()` sees the same one on every retry.
+ * Whether `query` is still waiting on its fetch's first attempt. A failed
+ * attempt counts as settled: the server doesn't retry, so it rendered the
+ * skeleton, and the browser's retry (after its delay) is the inline path's
+ * business once hydrated.
  */
-function whenFetchSettles(queryClient: QueryClient, query: Query): Promise<void> {
+function isAwaitingFirstAttempt(query: Query): boolean {
+  return query.state.fetchStatus === "fetching" && query.state.fetchFailureCount === 0;
+}
+
+/**
+ * Resolves once `query`'s first attempt settles, after its result is in the
+ * cache. Not `query.promise`: that settles before the query writes its result.
+ * One promise per query, so `use()` sees the same one on every retry.
+ */
+function whenFirstAttemptSettles(queryClient: QueryClient, query: Query): Promise<void> {
   let settled = settledFetches.get(query);
   if (!settled) {
     settled = new Promise((resolve) => {
       const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-        if (event.query === query && query.state.fetchStatus !== "fetching") {
+        if (event.query === query && !isAwaitingFirstAttempt(query)) {
           unsubscribe();
           resolve();
         }
@@ -99,13 +109,24 @@ function whenFetchSettles(queryClient: QueryClient, query: Query): Promise<void>
  * hydration, so it doesn't suspend and stays gated like `useCanRenderFromCache`.
  *
  * Needs a `<Suspense>` boundary of its own, with the deterministic skeleton as
- * its fallback, rendered by a memoized component whose props don't change on
- * a page load: if anything re-renders the boundary before it has hydrated
- * (say, a parent observing the same query, as the result lands), React throws
- * the server HTML away and client-renders it. It never suspends once
- * hydrated, so later client navigations keep their inline cache-reading
- * fallbacks and never meet the Suspense fallback throttle (see "Suspense vs.
- * inline loading" in src/CLAUDE.md).
+ * its fallback. Until that boundary hydrates, nothing may re-render it:
+ * otherwise React throws the server HTML away and client-renders it. That
+ * rules out two things:
+ * - Its props changing: render it from a memoized component whose props are
+ *   fixed on a page load, so a parent re-rendering (say, observing the same
+ *   query as the result lands) stops there.
+ * - Any context above it changing value, whether or not the subtree reads
+ *   it: React can't see which contexts an unhydrated boundary would read, so
+ *   it treats every change as reaching it. So a provider above it must not
+ *   change its value after hydration, which is what anything read from
+ *   localStorage does (the server renders the default). Read such values
+ *   with `useSyncExternalStore` in the components that need them, not through
+ *   context, and style appearance from the document (see
+ *   src/lib/appearance/config.ts).
+ *
+ * It never suspends once hydrated, so later client navigations keep their
+ * inline cache-reading fallbacks and never meet the Suspense fallback throttle
+ * (see "Suspense vs. inline loading" in src/CLAUDE.md).
  */
 export function useCanRenderStreamedQuery(queryKey: QueryKey): boolean {
   const canRenderFromCache = useCanRenderFromCache();
@@ -113,6 +134,6 @@ export function useCanRenderStreamedQuery(queryKey: QueryKey): boolean {
   if (canRenderFromCache) return true;
   const query = queryClient.getQueryCache().find({ queryKey, exact: true });
   if (!query) return false;
-  if (query.state.fetchStatus === "fetching") use(whenFetchSettles(queryClient, query));
+  if (isAwaitingFirstAttempt(query)) use(whenFirstAttemptSettles(queryClient, query));
   return query.state.status === "success";
 }

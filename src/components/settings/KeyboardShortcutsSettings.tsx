@@ -8,6 +8,7 @@
 "use client";
 
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { CardSection } from "@/components/ui/card";
 import { InfoCircleIcon } from "@/components/ui/icons";
@@ -15,7 +16,8 @@ import { Kbd } from "@/components/ui/kbd";
 import { Switch } from "@/components/ui/switch";
 
 export function KeyboardShortcutsSettings() {
-  const { enabled, setEnabled, openShortcutsModal } = useKeyboardShortcutsContext();
+  const { enabled, setEnabled } = useKeyboardShortcutsEnabled();
+  const { openShortcutsModal } = useKeyboardShortcutsContext();
 
   return (
     <SettingsSection title="Keyboard Shortcuts">

@@ -143,12 +143,13 @@ const themeScript = `
 `;
 
 /**
- * Blocking script to apply text appearance settings before first paint.
+ * Blocking script to apply appearance settings before first paint.
  *
- * Runs synchronously in the <head> to prevent a flash of wrong text size/font.
- * Built from the shared appearance config (storage key, defaults, font metrics,
- * size formula) so it can't drift from the runtime store / useEntryTextStyles;
- * the appearance-head-script unit test pins its output to entryTextStyleVars.
+ * Runs synchronously in the <head> to prevent a flash of wrong text size/font
+ * or list density. Built from the shared appearance config (storage key,
+ * defaults, font metrics, size formula) so it can't drift from the runtime
+ * store; the appearance-head-script unit test pins its output to
+ * applyAppearanceSettings.
  *
  * Note: Theme (dark/light mode) is handled by next-themes plus themeScript above.
  */
@@ -184,7 +185,7 @@ export function RootDocument({ children, nonce }: RootDocumentProps) {
   return (
     // Font variables live on <html> (not <body>) so the entry text-appearance
     // custom properties, which are set on documentElement by the head script
-    // and useEntryTextStyles, can resolve nested var(--font-*) references.
+    // and the appearance settings store, can resolve nested var(--font-*) references.
     // Setting them on <body> left --entry-font-family invalid at the html level,
     // which broke font selection for entry content everywhere. next-themes only
     // toggles the theme class on <html>, so these classes are preserved.

@@ -8,7 +8,7 @@
 "use client";
 
 import { memo } from "react";
-import type { ListDensity } from "@/lib/appearance/settings";
+import { ENTRY_LIST_CLASSES } from "./entryItemClasses";
 
 interface EntryListItemSkeletonProps {
   /**
@@ -16,12 +16,6 @@ interface EntryListItemSkeletonProps {
    * Varies to create more natural looking skeletons.
    */
   hasLongSummary: boolean;
-
-  /**
-   * List density (matches EntryListItem so the skeleton doesn't reflow when the
-   * real list renders).
-   */
-  density: ListDensity;
 }
 
 /**
@@ -29,17 +23,12 @@ interface EntryListItemSkeletonProps {
  */
 const EntryListItemSkeleton = memo(function EntryListItemSkeleton({
   hasLongSummary,
-  density,
 }: EntryListItemSkeletonProps) {
-  const compact = density === "compact";
   // Compact rows are borderless (the list supplies `divide-edge` separators);
-  // comfortable items are bordered cards.
-  const containerClasses = compact
-    ? "px-3 py-2.5 sm:px-4"
-    : "border-edge bg-surface rounded-lg border p-4";
-
+  // comfortable items are bordered cards. Matches EntryListItem, so the
+  // skeleton doesn't reflow when the real list renders.
   return (
-    <div className={containerClasses}>
+    <div className="comfortable:border-edge comfortable:bg-surface comfortable:rounded-lg comfortable:border comfortable:p-4 compact:px-3 compact:py-2.5 compact:sm:px-4">
       <div className="flex items-start gap-3">
         {/* Read indicator skeleton */}
         <div className="mt-1.5 shrink-0">
@@ -59,44 +48,29 @@ const EntryListItemSkeleton = memo(function EntryListItemSkeleton({
           </div>
 
           {/* Summary skeleton (hidden in compact density, matching EntryListItem) */}
-          {!compact && (
-            <div className="mt-2 space-y-1.5">
-              <div className="bg-fill-muted h-4 w-full animate-pulse rounded" />
-              <div
-                className={`bg-fill-muted h-4 animate-pulse rounded ${
-                  hasLongSummary ? "w-4/5" : "w-1/2"
-                }`}
-              />
-            </div>
-          )}
+          <div className="compact:hidden mt-2 space-y-1.5">
+            <div className="bg-fill-muted h-4 w-full animate-pulse rounded" />
+            <div
+              className={`bg-fill-muted h-4 animate-pulse rounded ${
+                hasLongSummary ? "w-4/5" : "w-1/2"
+              }`}
+            />
+          </div>
         </div>
       </div>
     </div>
   );
 });
 
-interface EntryListSkeletonProps {
-  /**
-   * List density (matches the entry list so the skeleton doesn't reflow when the
-   * real list renders).
-   * @default "comfortable"
-   */
-  density?: ListDensity;
-}
-
 /**
  * EntryListSkeleton component.
  * Renders multiple skeleton items for loading state.
  */
-export const EntryListSkeleton = memo(function EntryListSkeleton({
-  density = "comfortable",
-}: EntryListSkeletonProps) {
-  const listClassName = density === "compact" ? "divide-edge divide-y" : "space-y-3";
-
+export const EntryListSkeleton = memo(function EntryListSkeleton() {
   return (
-    <div className={listClassName} role="status" aria-label="Loading entries">
+    <div className={ENTRY_LIST_CLASSES} role="status" aria-label="Loading entries">
       {Array.from({ length: 5 }, (_, i) => (
-        <EntryListItemSkeleton key={i} hasLongSummary={i % 2 === 0} density={density} />
+        <EntryListItemSkeleton key={i} hasLongSummary={i % 2 === 0} />
       ))}
       <span className="sr-only">Loading entries...</span>
     </div>

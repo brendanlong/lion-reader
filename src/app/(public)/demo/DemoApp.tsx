@@ -45,7 +45,6 @@ import {
 } from "@/components/entries/EntryContentOptions";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { createHandlerLink } from "@/lib/trpc/handler-link";
-import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { AppLocationProvider, type AppLocation } from "@/lib/hooks/useAppLocation";
 import { PrerenderedCacheProvider } from "@/lib/hooks/useIsHydrated";
 import { useEntryListRefreshOnNavigate } from "@/lib/hooks/useEntryListRefreshOnNavigate";
@@ -143,14 +142,12 @@ export function DemoApp({ location }: DemoAppProps) {
         <AppLocationProvider basePath={DEMO_BASE_PATH} ssrLocation={ssrLocation}>
           <PrerenderedCacheProvider>
             <EntryContentOptionsProvider value={ENTRY_CONTENT_OPTIONS}>
-              <AppearanceProvider>
-                <KeyboardShortcutsProvider>
-                  <ScrollContainerProvider>
-                    <Toaster position="bottom-right" richColors closeButton />
-                    <DemoShell />
-                  </ScrollContainerProvider>
-                </KeyboardShortcutsProvider>
-              </AppearanceProvider>
+              <KeyboardShortcutsProvider>
+                <ScrollContainerProvider>
+                  <Toaster position="bottom-right" richColors closeButton />
+                  <DemoShell />
+                </ScrollContainerProvider>
+              </KeyboardShortcutsProvider>
             </EntryContentOptionsProvider>
           </PrerenderedCacheProvider>
         </AppLocationProvider>

@@ -18,7 +18,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, within } from "@testing-library/react";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
@@ -52,9 +51,7 @@ function renderDemo() {
     wrapper: (children) => (
       <AppLocationProvider basePath="/demo">
         <EntryContentOptionsProvider value={{ renderSlots: demoEntrySlots }}>
-          <AppearanceProvider>
-            <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
-          </AppearanceProvider>
+          <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
         </EntryContentOptionsProvider>
       </AppLocationProvider>
     ),

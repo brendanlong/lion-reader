@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
+import { ENTRY_TEXT_STYLE } from "@/lib/appearance/entry-text-styles";
 import { formatModelName } from "@/lib/summarization/format-model-name";
 import { CloseIcon, SparklesIcon, SpinnerIcon } from "@/components/ui/icons";
 
@@ -54,8 +54,6 @@ export function SummaryCard({
   onRegenerate,
   onClose,
 }: SummaryCardProps) {
-  const { style } = useEntryTextStyles();
-
   // Show loading state
   if (isLoading) {
     return (
@@ -130,7 +128,7 @@ export function SummaryCard({
       {/* Content */}
       <div
         className="prose reader-prose dark:prose-invert text-info-subtle-foreground epaper:text-body [&_a]:text-info-foreground mt-3 max-w-none [&_li]:my-0 [&_ol]:my-1 [&_ul]:my-1"
-        style={style}
+        style={ENTRY_TEXT_STYLE}
         dangerouslySetInnerHTML={{ __html: summary }}
       />
 

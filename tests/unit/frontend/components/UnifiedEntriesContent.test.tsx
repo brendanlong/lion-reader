@@ -23,7 +23,6 @@ import { getLocalDb } from "@/lib/local-db/local-db";
 import { upsertServerEntries } from "@/lib/local-db/entries";
 import { TRPCClientError } from "@trpc/client";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
-import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import {
   renderWithTrpc,
@@ -39,11 +38,7 @@ import {
 function renderUnified(handlers: ProcedureHandlers) {
   return renderWithTrpc(<UnifiedEntriesContent />, {
     handlers,
-    wrapper: (children) => (
-      <AppearanceProvider>
-        <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>
-      </AppearanceProvider>
-    ),
+    wrapper: (children) => <KeyboardShortcutsProvider>{children}</KeyboardShortcutsProvider>,
   });
 }
 
