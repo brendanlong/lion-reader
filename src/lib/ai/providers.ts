@@ -4,7 +4,8 @@
  * `src/server/services/ai-providers.ts` (and `NARRATION_PROVIDERS` if it can
  * do narration's JSON preprocessing), cloud voices in
  * `src/server/services/speech.ts`. Key storage, the settings page and
- * availability follow from the entry; the privacy policy needs updating too.
+ * availability follow from the entry; the privacy policy needs updating too
+ * (`tests/unit/privacy-policy.test.tsx` checks it links the provider).
  *
  * Shared between server services and the settings UI.
  */
@@ -14,6 +15,8 @@ export interface AiProviderInfo {
   /** Where a user gets an API key, and what one looks like. */
   keyUrl: string;
   keyPlaceholder: string;
+  /** Linked from our privacy policy wherever we say we send this provider data. */
+  privacyPolicyUrl: string;
   /** Used for text: summaries and narration text processing. */
   text: boolean;
   /** Used for cloud voices. */
@@ -25,6 +28,7 @@ export const AI_PROVIDER_INFO = {
     displayName: "Anthropic",
     keyUrl: "https://console.anthropic.com/settings/keys",
     keyPlaceholder: "sk-ant-...",
+    privacyPolicyUrl: "https://www.anthropic.com/legal/privacy",
     text: true,
     speech: false,
   },
@@ -32,6 +36,7 @@ export const AI_PROVIDER_INFO = {
     displayName: "Groq",
     keyUrl: "https://console.groq.com/keys",
     keyPlaceholder: "gsk_...",
+    privacyPolicyUrl: "https://groq.com/privacy-policy/",
     text: true,
     speech: false,
   },
@@ -39,6 +44,7 @@ export const AI_PROVIDER_INFO = {
     displayName: "Cerebras",
     keyUrl: "https://cloud.cerebras.ai/",
     keyPlaceholder: "csk-...",
+    privacyPolicyUrl: "https://www.cerebras.ai/privacy-policy",
     text: true,
     speech: false,
   },
@@ -46,6 +52,7 @@ export const AI_PROVIDER_INFO = {
     displayName: "DeepInfra",
     keyUrl: "https://deepinfra.com/dash/api_keys",
     keyPlaceholder: "Your DeepInfra API key",
+    privacyPolicyUrl: "https://deepinfra.com/privacy",
     text: false,
     speech: true,
   },
@@ -53,6 +60,7 @@ export const AI_PROVIDER_INFO = {
     displayName: "OpenRouter",
     keyUrl: "https://openrouter.ai/settings/keys",
     keyPlaceholder: "sk-or-...",
+    privacyPolicyUrl: "https://openrouter.ai/privacy",
     text: true,
     speech: true,
   },
@@ -60,6 +68,7 @@ export const AI_PROVIDER_INFO = {
     displayName: "BreezeBlue",
     keyUrl: "https://breezeblue.ai/app/developer/api-keys",
     keyPlaceholder: "Your BreezeBlue API key",
+    privacyPolicyUrl: "https://breezeblue.ai/legal/privacy",
     text: false,
     speech: true,
   },
