@@ -18,7 +18,11 @@ import { extractBearerToken } from "@/server/auth/bearer";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { validateAccessToken } from "@/server/oauth/service";
-import { OAUTH_SCOPES, isResourceForThisServer } from "@/server/oauth/utils";
+import {
+  OAUTH_SCOPES,
+  isOAuthAccessTokenFormat,
+  isResourceForThisServer,
+} from "@/server/oauth/utils";
 import { getProtectedResourceMetadataUrl, getResourceIdentifier } from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
@@ -46,7 +50,29 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
     return { success: false, reason: "invalid_authorization_scheme" };
   }
 
-  // Try OAuth access token first (new system)
+  if (!isOAuthAccessTokenFormat(token)) {
+    const apiTokenData = await validateApiToken(token);
+    if (apiTokenData) {
+      // Check if token has MCP scope
+      if (!apiTokenData.token.scopes.includes(API_TOKEN_SCOPES.MCP)) {
+        logger.warn("MCP auth: API token missing MCP scope", {
+          userId: apiTokenData.user.id,
+          scopes: apiTokenData.token.scopes,
+        });
+        return { success: false, reason: "api_token_missing_mcp_scope" };
+      }
+      if (!isSignupConfirmed(apiTokenData.user)) {
+        logger.warn("MCP auth: user has not completed signup confirmation", {
+          userId: apiTokenData.user.id,
+        });
+        return { success: false, reason: "signup_confirmation_required", status: 403 };
+      }
+      return { success: true, userId: apiTokenData.user.id };
+    }
+  }
+
+  // Unprefixed OAuth access tokens are still accepted until #1955, so an
+  // unprefixed token falls through to this check.
   const oauthToken = await validateAccessToken(token);
   if (oauthToken) {
     // Check if OAuth token has MCP scope
@@ -77,26 +103,6 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
       return { success: false, reason: "signup_confirmation_required", status: 403 };
     }
     return { success: true, userId: oauthToken.userId };
-  }
-
-  // Fall back to API token (legacy system)
-  const apiTokenData = await validateApiToken(token);
-  if (apiTokenData) {
-    // Check if token has MCP scope
-    if (!apiTokenData.token.scopes.includes(API_TOKEN_SCOPES.MCP)) {
-      logger.warn("MCP auth: API token missing MCP scope", {
-        userId: apiTokenData.user.id,
-        scopes: apiTokenData.token.scopes,
-      });
-      return { success: false, reason: "api_token_missing_mcp_scope" };
-    }
-    if (!isSignupConfirmed(apiTokenData.user)) {
-      logger.warn("MCP auth: user has not completed signup confirmation", {
-        userId: apiTokenData.user.id,
-      });
-      return { success: false, reason: "signup_confirmation_required", status: 403 };
-    }
-    return { success: true, userId: apiTokenData.user.id };
   }
 
   return { success: false, reason: "token_invalid_expired_or_revoked" };

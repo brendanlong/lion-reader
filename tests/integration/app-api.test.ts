@@ -54,6 +54,7 @@ import {
   createTestFeed,
   createTestOAuthClient,
   createTestSubscription,
+  createTestUnprefixedAccessToken,
   createTestUser,
 } from "./helpers";
 
@@ -187,6 +188,22 @@ describe("app token authentication", () => {
     } finally {
       await stream.close();
     }
+  });
+
+  it("still accepts an app token minted without the access-token prefix", async () => {
+    const userId = await createUser();
+    const token = await createTestUnprefixedAccessToken({
+      clientId: APP_CLIENT_ID,
+      userId,
+      scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+      resource: getAppResourceIdentifier(),
+    });
+    expect((await rest(token, "GET", "/entries")).status).toBe(200);
+    const events = await eventsGet(
+      new Request(`${API}/events`, { headers: { authorization: `Bearer ${token}` } })
+    );
+    expect(events.status).toBe(200);
+    await events.body?.cancel();
   });
 
   it("rejects the app's token without reader:full-access", async () => {

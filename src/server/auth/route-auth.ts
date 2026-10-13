@@ -9,6 +9,7 @@ import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { validateAppAccessToken } from "@/server/auth/app-token";
 import { isSessionActive, validateSession } from "@/server/auth/session";
 import { isAccessTokenActive } from "@/server/oauth/service";
+import { isOAuthAccessTokenFormat } from "@/server/oauth/utils";
 import { trackAndroidAppRequest } from "@/server/metrics/metrics";
 
 export interface RouteAuth {
@@ -40,15 +41,19 @@ export async function authenticateRouteRequest(headers: Headers): Promise<RouteA
   const credential = getCredential(headers);
   if (!credential) return null;
 
-  const sessionData = await validateSession(credential);
-  if (sessionData) {
-    const sessionId = sessionData.session.id;
-    return {
-      userId: sessionData.user.id,
-      credential: "session",
-      confirmed: isSignupConfirmed(sessionData.user),
-      isCredentialActive: () => isSessionActive(sessionId),
-    };
+  // Same dispatch as the tRPC context: an unprefixed credential still falls
+  // through to the app token until #1955.
+  if (!isOAuthAccessTokenFormat(credential)) {
+    const sessionData = await validateSession(credential);
+    if (sessionData) {
+      const sessionId = sessionData.session.id;
+      return {
+        userId: sessionData.user.id,
+        credential: "session",
+        confirmed: isSignupConfirmed(sessionData.user),
+        isCredentialActive: () => isSessionActive(sessionId),
+      };
+    }
   }
 
   const appToken = await validateAppAccessToken(credential);

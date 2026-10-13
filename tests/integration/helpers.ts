@@ -29,9 +29,12 @@ import {
   tags,
   userEntries,
   ingestAddresses,
+  oauthAccessTokens,
   oauthAccounts,
   oauthClients,
 } from "../../src/server/db/schema";
+import { createTokens } from "../../src/server/oauth/service";
+import { generateToken, hashToken } from "../../src/server/oauth/utils";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { insertUserEntriesWithMemberships } from "../../src/server/services/subscription-entries";
 import type { OAuthProviderName } from "../../src/server/auth/oauth/config";
@@ -377,6 +380,22 @@ export async function createTestOAuthLink(
     providerAccountId: `${provider}-${userId}`,
     ...overrides,
   });
+}
+
+/**
+ * An OAuth access token without the access-token prefix, as releases before the
+ * prefix minted them: `createTokens`, then the row re-keyed to a bare token.
+ */
+export async function createTestUnprefixedAccessToken(
+  params: Parameters<typeof createTokens>[0]
+): Promise<string> {
+  const { accessToken } = await createTokens(params);
+  const unprefixed = generateToken();
+  await db
+    .update(oauthAccessTokens)
+    .set({ tokenHash: hashToken(unprefixed) })
+    .where(eq(oauthAccessTokens.tokenHash, hashToken(accessToken)));
+  return unprefixed;
 }
 
 // ============================================================================

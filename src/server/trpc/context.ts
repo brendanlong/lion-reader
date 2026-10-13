@@ -12,7 +12,7 @@ import { validateApiToken, type ApiTokenData } from "@/server/auth/api-token";
 import { validateAppAccessToken } from "@/server/auth/app-token";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { trackAndroidAppRequest } from "@/server/metrics/metrics";
-import type { OAuthScope } from "@/server/oauth/utils";
+import { isOAuthAccessTokenFormat, type OAuthScope } from "@/server/oauth/utils";
 import type { User } from "@/server/db/schema";
 
 // Re-export types for use in other modules
@@ -132,13 +132,10 @@ function syntheticSession(
  * This is called for every request and provides access to the database
  * and current user session or API token.
  *
- * Authentication order:
- * 1. Try session validation first (most common)
- * 2. If session fails, try API token validation
- * 3. Then the first-party app's OAuth access token
- *
- * Session validation uses Redis cache for fast lookups (5 min TTL),
- * falling back to database on cache miss.
+ * An OAuth access token is recognized by its prefix and checked only as the
+ * first-party app's token. Any other token is tried as a session (Redis cache,
+ * then Postgres), then an API token, then an app token, since unprefixed
+ * access tokens are still accepted until #1955.
  */
 export async function createContext(opts: FetchCreateContextFnOptions): Promise<Context> {
   const { req } = opts;
@@ -162,39 +159,40 @@ export async function createContext(opts: FetchCreateContextFnOptions): Promise<
     };
   }
 
-  // Try session validation first (most common case)
-  const session = await validateSession(token);
-  if (session) {
-    return {
-      db,
-      session,
-      apiToken: null,
-      authType: "session",
-      scopes: [], // Session auth has full access, scopes not used
-      sessionToken: token,
-      headers: req.headers,
-      resHeaders,
-    };
-  }
+  if (!isOAuthAccessTokenFormat(token)) {
+    const session = await validateSession(token);
+    if (session) {
+      return {
+        db,
+        session,
+        apiToken: null,
+        authType: "session",
+        scopes: [], // Session auth has full access, scopes not used
+        sessionToken: token,
+        headers: req.headers,
+        resHeaders,
+      };
+    }
 
-  // Try API token validation.
-  const apiTokenData = await validateApiToken(token);
-  if (apiTokenData) {
-    return {
-      db,
-      session: syntheticSession(apiTokenData.user, {
-        id: apiTokenData.token.id,
-        createdAt: apiTokenData.token.createdAt,
-        expiresAt: apiTokenData.token.expiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-        lastActiveAt: apiTokenData.token.lastUsedAt ?? apiTokenData.token.createdAt,
-      }),
-      apiToken: apiTokenData,
-      authType: "api_token",
-      scopes: (apiTokenData.token.scopes ?? []) as OAuthScope[],
-      sessionToken: token,
-      headers: req.headers,
-      resHeaders,
-    };
+    const apiTokenData = await validateApiToken(token);
+    if (apiTokenData) {
+      return {
+        db,
+        session: syntheticSession(apiTokenData.user, {
+          id: apiTokenData.token.id,
+          createdAt: apiTokenData.token.createdAt,
+          expiresAt:
+            apiTokenData.token.expiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          lastActiveAt: apiTokenData.token.lastUsedAt ?? apiTokenData.token.createdAt,
+        }),
+        apiToken: apiTokenData,
+        authType: "api_token",
+        scopes: (apiTokenData.token.scopes ?? []) as OAuthScope[],
+        sessionToken: token,
+        headers: req.headers,
+        resHeaders,
+      };
+    }
   }
 
   // Try the first-party app's OAuth access token. Other OAuth tokens (MCP
