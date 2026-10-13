@@ -190,20 +190,19 @@ async function currentSyncCursors(
     // the common case (user activity is newest) while still catching — and
     // correctly id-tiebreaking, `>=` includes the tied boundary — the rare case
     // where a content update is the most recent change. A user with no
-    // user_entries row has nothing in any arm (memberships reference
-    // user_entries): arm_ue is empty, so the bound is NULL and every arm's seek
-    // ends at once.
-    // Joining user_entries in each arm preserves the old query's set (entries
-    // the user actually has a row for). Driving arm_sub from ALL subscriptions
-    // (active and unsubscribed) covers starred orphans, whose subscription row
-    // survives unsubscribe.
+    // user_entries row has nothing in any arm (subscription_entries has a
+    // foreign key to user_entries): arm_ue is empty, so the bound is NULL and
+    // every arm's seek ends at once.
+    // Only entries the user has a user_entries row for count: the owner arms
+    // join it, and collection memberships imply it. Driving arm_sub from ALL
+    // subscriptions (active and unsubscribed) covers starred orphans, whose
+    // subscription row survives unsubscribe.
     //
     // arm_sub and arm_email take each subscription's newest entry in a LATERAL
-    // `LIMIT 1`, which can only run as one index seek per subscription. As a
-    // plain join, the planner can't see the bound (it's computed by the query
-    // itself), so it guesses a third of entries pass it and, for a user with
-    // hundreds of feeds, picked a parallel seq scan of all entries: ~55 ms /
-    // ~70k buffers instead of ~1.3 ms / ~1.4k (#1863).
+    // `LIMIT 1`, which Postgres can't flatten, so it runs per subscription as an
+    // index seek. Don't make it a plain join: the planner can't see the bound
+    // (the query computes it), guesses a third of entries pass it, and for a
+    // user with hundreds of feeds can pick a seq scan of all entries (#1863).
     db.execute<{ ts: string | null; id: string | null }>(sql`
       WITH arm_ue AS (
         SELECT ue.updated_at AS ts, ue.entry_id AS id

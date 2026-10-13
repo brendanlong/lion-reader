@@ -205,6 +205,9 @@ describe("email and saved lookups by owner (#1846)", () => {
       .update(entries)
       .set({ createdAt: old, updatedAt: updated })
       .where(inArray(entries.id, ids));
+    // The email's update is the newest, so only arm_email can produce the cursor.
+    const emailUpdated = new Date("2024-01-04T00:00:00Z");
+    await db.update(entries).set({ updatedAt: emailUpdated }).where(eq(entries.id, email.entryId!));
 
     const caller = createCaller(await createAuthContext(userId));
     const { events } = await caller.sync.events({ cursors: { entries: cursor.toISOString() } });
@@ -216,7 +219,7 @@ describe("email and saved lookups by owner (#1846)", () => {
     ).toEqual([...ids].sort());
 
     const cursors = await caller.sync.cursors();
-    expect(new Date(cursors.entries!).getTime()).toBe(updated.getTime());
-    expect(cursors.entriesAfterId).toBe([...ids].sort().at(-1));
+    expect(new Date(cursors.entries!).getTime()).toBe(emailUpdated.getTime());
+    expect(cursors.entriesAfterId).toBe(email.entryId);
   });
 });
