@@ -42,7 +42,7 @@ import kotlinx.serialization.json.jsonObject
 
 /**
  * An in-memory model of the server's sync-relevant behavior, faithful where the app depends on it
- * (see src/server/services/entries.ts and src/server/trpc/routers/sync.ts):
+ * (see src/server/services/entries.ts and src/server/services/sync.ts):
  * - read/star writes are last-write-wins on a per-field change time, rebased by the client's clock
  *   offset and capped at now, and respond with the final state of every entry still visible;
  * - `sync.changes` pages entries changed after a cursor in change order (new/updated/state events),

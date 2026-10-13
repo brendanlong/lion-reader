@@ -21,7 +21,7 @@ The announcement banner and maintenance mode live in **Redis, not Postgres**, be
 
 ## Entry Visibility
 
-An entry is visible iff a `user_entries` row exists for `(user, entry)` and it's starred or in at least one active subscription (#1846): `user_entries.active_memberships`, which the triggers keep from `subscription_entries` and `subscriptions.unsubscribed_at`, is positive. Unsubscribing a feed and deleting a collection are the same soft delete: memberships stay and stop counting. `sync.ts` (`visibleEntrySql`) repeats the predicate; change both together.
+An entry is visible iff a `user_entries` row exists for `(user, entry)` and it's starred or in at least one active subscription (#1846): `user_entries.active_memberships`, which the triggers keep from `subscription_entries` and `subscriptions.unsubscribed_at`, is positive. Unsubscribing a feed and deleting a collection are the same soft delete: memberships stay and stop counting. Queries that start from `user_entries` (sync) apply it as `visibleUserEntrySql` (`services/entry-filters.ts`), which `visible-user-entry-sql.test.ts` holds to the view.
 
 **The insert paths, not the view, keep pre-subscription content private**, so any new path that creates `user_entries` rows must only cover entries currently in the feed:
 

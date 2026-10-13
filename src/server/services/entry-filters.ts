@@ -24,6 +24,7 @@ import {
   subscriptionTags,
   subscriptions,
   tags,
+  userEntries,
   visibleEntries,
 } from "@/server/db/schema";
 import { isListedSubscription, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
@@ -371,4 +372,13 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
   }
 
   return conditions;
+}
+
+/**
+ * The `visible_entries` view's predicate over `user_entries` (#1846): starred,
+ * or in an active subscription. For queries that start from `user_entries`
+ * rather than the view; a test holds the two to the same rows.
+ */
+export function visibleUserEntrySql(): SQL {
+  return sql`(${userEntries.starred} = true OR ${userEntries.activeMemberships} > 0)`;
 }
