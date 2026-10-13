@@ -12,7 +12,13 @@ import { eq, and, isNull, or, gt } from "drizzle-orm";
 import { db } from "@/server/db";
 import { apiTokens, users, type User, type ApiToken } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { generateToken, hashToken, OAUTH_SCOPES, type OAuthScope } from "@/server/oauth/utils";
+import {
+  generateToken,
+  hashToken,
+  isLastUsedStale,
+  OAUTH_SCOPES,
+  type OAuthScope,
+} from "@/server/oauth/utils";
 
 // ============================================================================
 // Constants
@@ -130,15 +136,16 @@ export async function validateApiToken(token: string): Promise<ApiTokenData | nu
 
   const tokenData = result[0];
 
-  // Update last_used_at asynchronously (fire and forget)
-  void updateLastUsedAt(tokenData.token.id);
+  if (isLastUsedStale(tokenData.token.lastUsedAt)) {
+    void updateLastUsedAt(tokenData.token.id);
+  }
 
   return tokenData;
 }
 
 /**
- * Updates the last_used_at timestamp for a token.
- * This is done asynchronously to not block the request.
+ * Updates the last_used_at timestamp for a token. Fire-and-forget, so it never
+ * blocks the request.
  */
 async function updateLastUsedAt(tokenId: string): Promise<void> {
   try {

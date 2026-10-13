@@ -30,7 +30,7 @@ import {
   validateAccessToken,
   validateAndConsumeAuthCode,
 } from "../../src/server/oauth/service";
-import { hashToken } from "../../src/server/oauth/utils";
+import { hashToken, LAST_USED_REFRESH_MS } from "../../src/server/oauth/utils";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -116,7 +116,7 @@ describe("oauthGrants.list", () => {
     expect((await caller.oauthGrants.list())[0].lastUsedAt).toBeInstanceOf(Date);
   });
 
-  it("rewrites last_used_at only once it's a minute stale", async () => {
+  it("rewrites last_used_at only once it's stale", async () => {
     // The app presents its token on every request, so a write per use would be
     // a write per speech chunk.
     const userId = await createUser();
@@ -131,13 +131,13 @@ describe("oauthGrants.list", () => {
           .where(tokenRow)
       )[0].at;
 
-    const fresh = new Date(Date.now() - 10_000);
+    const fresh = new Date(Date.now() - (LAST_USED_REFRESH_MS - 5_000));
     await db.update(oauthAccessTokens).set({ lastUsedAt: fresh }).where(tokenRow);
     await validateAccessToken(accessToken);
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(await lastUsedAt()).toEqual(fresh);
 
-    const stale = new Date(Date.now() - 120_000);
+    const stale = new Date(Date.now() - (LAST_USED_REFRESH_MS + 5_000));
     await db.update(oauthAccessTokens).set({ lastUsedAt: stale }).where(tokenRow);
     await validateAccessToken(accessToken);
     await expect.poll(lastUsedAt).not.toEqual(stale);

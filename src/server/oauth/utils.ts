@@ -80,6 +80,20 @@ export function generateToken(): string {
 }
 
 /**
+ * How stale a token's `last_used_at` may get before a use rewrites it. Clients
+ * present their token on every request (the app on each speech chunk), and the
+ * timestamp is only shown as "last used", so a write per request is churn.
+ *
+ * @testonly
+ */
+export const LAST_USED_REFRESH_MS = 60 * 1000;
+
+/** Whether a token last used at `lastUsedAt` should have the time rewritten. */
+export function isLastUsedStale(lastUsedAt: Date | null): boolean {
+  return !lastUsedAt || Date.now() - lastUsedAt.getTime() >= LAST_USED_REFRESH_MS;
+}
+
+/**
  * Hashes a token using SHA-256.
  * Used for storage - we never store raw tokens.
  */

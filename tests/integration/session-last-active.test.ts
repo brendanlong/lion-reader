@@ -1,12 +1,12 @@
 /**
- * Integration tests for session activity tracking: authenticated requests
+ * Integration tests for credential activity tracking: authenticated requests
  * report activity, so a row is only written once its timestamp is stale.
  */
 
 import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { sessions, users } from "../../src/server/db/schema";
+import { apiTokens, sessions, users } from "../../src/server/db/schema";
 import {
   createSession,
   invalidateUserSessionCaches,
@@ -14,6 +14,8 @@ import {
   updateLastActiveAt,
   validateSession,
 } from "../../src/server/auth/session";
+import { createApiToken, validateApiToken } from "../../src/server/auth/api-token";
+import { LAST_USED_REFRESH_MS } from "../../src/server/oauth/utils";
 import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
@@ -100,5 +102,27 @@ describe("validateSession", () => {
     await invalidateUserSessionCaches(userId);
     expect(await validateSession(token)).not.toBeNull();
     await expect.poll(sessionLastActive).not.toEqual(restaled);
+  });
+});
+
+describe("validateApiToken", () => {
+  it("rewrites last_used_at only once it's stale", async () => {
+    const userId = await createTestUser({ emailPrefix: "last-used" });
+    createdUserIds.push(userId);
+    const { token, id } = await createApiToken(userId, ["mcp"]);
+    const lastUsedAt = async () =>
+      (await db.select({ at: apiTokens.lastUsedAt }).from(apiTokens).where(eq(apiTokens.id, id)))[0]
+        .at;
+
+    const fresh = new Date(Date.now() - (LAST_USED_REFRESH_MS - 5_000));
+    await db.update(apiTokens).set({ lastUsedAt: fresh }).where(eq(apiTokens.id, id));
+    expect(await validateApiToken(token)).not.toBeNull();
+    await settle();
+    expect(await lastUsedAt()).toEqual(fresh);
+
+    const stale = new Date(Date.now() - (LAST_USED_REFRESH_MS + 5_000));
+    await db.update(apiTokens).set({ lastUsedAt: stale }).where(eq(apiTokens.id, id));
+    expect(await validateApiToken(token)).not.toBeNull();
+    await expect.poll(lastUsedAt).not.toEqual(stale);
   });
 });
