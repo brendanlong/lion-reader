@@ -6,6 +6,7 @@
  */
 
 import { TRPCError } from "@trpc/server";
+import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 
 /**
  * Maps our application error codes to tRPC error codes (and thus HTTP statuses).
@@ -59,6 +60,7 @@ const errorCodeToTRPCCode = {
   // choice is the problem, not our server.
   AI_PROVIDER_REJECTED: "BAD_REQUEST",
   AI_PROVIDER_KEY_UNREADABLE: "BAD_REQUEST",
+  AI_NOT_CONFIGURED: "PRECONDITION_FAILED",
 } as const satisfies Record<string, TRPCError["code"]>;
 
 type ErrorCode = keyof typeof errorCodeToTRPCCode;
@@ -174,6 +176,12 @@ export const errors = {
   serverBusy: (work: string) =>
     createError("SERVER_BUSY", `Too many ${work} in progress. Please try again shortly.`),
 
+  aiNotConfigured: () =>
+    createError(
+      "AI_NOT_CONFIGURED",
+      "AI summarization is not configured. Add an AI provider API key in Settings to enable it."
+    ),
+
   aiProviderBusy: (provider: string) =>
     createError("AI_PROVIDER_BUSY", `${provider} is busy right now. Please try again shortly.`),
 
@@ -270,24 +278,39 @@ export function getAppErrorCode(error: unknown): string | undefined {
 
 /**
  * App error codes that represent an **expected** condition — the user's input or
- * an upstream site, not a bug in our server — but which map to a 5xx HTTP status.
- * These should be treated like client errors for **reporting** purposes: e.g. a
- * target site blocking our fetch bot is a normal outcome of saving an arbitrary
- * URL, so it must not be reported to Sentry even though `SITE_BLOCKED` maps to
- * HTTP 502 (an honest status to return to the client).
- *
- * App codes that map to a tRPC code the middleware already exempts (`BAD_REQUEST`,
- * `TOO_MANY_REQUESTS`, ... — see the list in `src/server/trpc/trpc.ts`) don't need
- * to be listed here.
+ * an upstream site, not a bug in our server — but which map to a 5xx HTTP status
+ * (an honest status to return to the client). E.g. a target site blocking our
+ * fetch bot is a normal outcome of saving an arbitrary URL, as is a feed URL the
+ * user entered that doesn't answer or isn't a feed.
  */
-const EXPECTED_CLIENT_ERROR_CODES: ReadonlySet<string> = new Set(["SITE_BLOCKED"]);
+const EXPECTED_CLIENT_ERROR_CODES: ReadonlySet<string> = new Set([
+  "SITE_BLOCKED",
+  "FEED_FETCH_ERROR",
+  "PARSE_ERROR",
+]);
 
 /**
- * Whether a thrown error is an expected client/upstream condition that maps to a
- * 5xx status but should not be reported as a server bug. See
- * {@link EXPECTED_CLIENT_ERROR_CODES}.
+ * Whether an error is the client's or an upstream site's doing rather than a bug
+ * in our server: a 4xx, or one of {@link EXPECTED_CLIENT_ERROR_CODES}. These
+ * aren't reported to Sentry.
  */
-export function isExpectedClientError(error: unknown): boolean {
+export function isClientError(error: TRPCError): boolean {
+  if (getHTTPStatusCodeFromError(error) < 500) return true;
   const code = getAppErrorCode(error);
   return code !== undefined && EXPECTED_CLIENT_ERROR_CODES.has(code);
+}
+
+const reportedErrors = new WeakSet<TRPCError>();
+
+/**
+ * Marks an error its thrower already reported to Sentry (typically with the
+ * underlying error, which the TRPCError doesn't carry), so the timing
+ * middleware doesn't report it a second time.
+ */
+export function markReported(error: TRPCError): void {
+  reportedErrors.add(error);
+}
+
+export function wasReported(error: TRPCError): boolean {
+  return reportedErrors.has(error);
 }

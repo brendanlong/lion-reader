@@ -14,7 +14,7 @@ import {
   expensiveScopedProtectedProcedure,
   scopedProtectedProcedure,
 } from "../trpc";
-import { errors } from "../errors";
+import { errors, markReported } from "../errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
@@ -221,9 +221,7 @@ export const summarizationRouter = createTRPCRouter({
 
       // Check if summarization is available (user key or server key, any provider)
       if (!(await isSummarizationAvailable(keys, userSummarizationModel))) {
-        throw errors.internal(
-          "AI summarization is not configured. Add an AI provider API key in Settings to enable it."
-        );
+        throw errors.aiNotConfigured();
       }
 
       // Fetch the entry with the same visibility rule the entry list applies
@@ -353,6 +351,7 @@ export const summarizationRouter = createTRPCRouter({
             tags: { source: "summarization" },
             extra: { userId, modelId: currentModelId },
           });
+          markReported(failure.error);
         }
         throw failure.error;
       }

@@ -19,7 +19,7 @@ import {
   type RateLimitType,
 } from "@/server/rate-limit";
 import { signupConfig } from "@/server/config/env";
-import { errors, getAppErrorCode, isExpectedClientError } from "./errors";
+import { errors, getAppErrorCode, isClientError, wasReported } from "./errors";
 import {
   ADMIN_COOKIE_NAME,
   validateAdminSessionToken,
@@ -68,70 +68,49 @@ export const createCallerFactory = t.createCallerFactory;
  */
 const timingMiddleware = t.middleware(async ({ path, type, next, ctx }) => {
   const start = Date.now();
+  // tRPC catches anything the procedure or a later middleware throws and
+  // returns it as a failed result, so failures must be read from `result`.
+  const result = await next();
+  const duration = Date.now() - start;
 
-  try {
-    const result = await next();
-    const duration = Date.now() - start;
+  // Per-procedure latency metric. Accurate even for batched requests, unlike
+  // http_request_duration_seconds which only sees the first procedure in a
+  // batch.
+  trackTrpcProcedure(path, type, result.ok, duration);
 
-    // Per-procedure latency metric. Accurate even for batched requests, unlike
-    // http_request_duration_seconds which only sees the first procedure in a
-    // batch. `result.ok` is authoritative here: tRPC returns a failed result
-    // object rather than always throwing, so read it directly (the catch below
-    // still covers errors thrown out of next()).
-    trackTrpcProcedure(path, type, result.ok, duration);
-
-    // Log slow requests
-    if (duration > 1000) {
-      logger.warn("Slow tRPC request", {
-        path,
-        type,
-        durationMs: duration,
-        userId: ctx.session?.user?.id,
-      });
-    }
-
-    return result;
-  } catch (error) {
-    const duration = Date.now() - start;
-
-    trackTrpcProcedure(path, type, false, duration);
-
-    // Log the error
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const isTRPCError = error instanceof TRPCError;
-
-    // Only log unexpected errors (not client errors like UNAUTHORIZED, NOT_FOUND,
-    // nor rate limiting — ours or an upstream site's — nor expected upstream
-    // conditions like SITE_BLOCKED that map to a 5xx status but aren't server
-    // bugs — see isExpectedClientError)
-    if (
-      !isTRPCError ||
-      (!["UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST", "FORBIDDEN", "TOO_MANY_REQUESTS"].includes(
-        error.code
-      ) &&
-        !isExpectedClientError(error))
-    ) {
-      logger.error("tRPC request failed", {
-        path,
-        type,
-        durationMs: duration,
-        error: errorMessage,
-        userId: ctx.session?.user?.id,
-      });
-
-      // Report non-client errors to Sentry
-      Sentry.captureException(error, {
-        tags: { trpcPath: path, trpcType: type },
-        extra: {
-          durationMs: duration,
-          userId: ctx.session?.user?.id,
-        },
-      });
-    }
-
-    throw error;
+  if (!result.ok) {
+    reportUnexpectedError(result.error, {
+      path,
+      type,
+      durationMs: duration,
+      userId: ctx.session?.user?.id,
+    });
+  } else if (duration > 1000) {
+    logger.warn("Slow tRPC request", {
+      path,
+      type,
+      durationMs: duration,
+      userId: ctx.session?.user?.id,
+    });
   }
+
+  return result;
 });
+
+/**
+ * Logs and reports a failed procedure to Sentry, unless it's a client error
+ * (see isClientError) or one its thrower already reported (see markReported).
+ */
+function reportUnexpectedError(
+  error: TRPCError,
+  details: { path: string; type: string; durationMs: number; userId: string | undefined }
+): void {
+  if (isClientError(error) || wasReported(error)) return;
+
+  const { path, type, ...extra } = details;
+  logger.error("tRPC request failed", { ...details, error: error.message });
+  Sentry.captureException(error, { tags: { trpcPath: path, trpcType: type }, extra });
+}
 
 /**
  * Public procedure - no authentication required.

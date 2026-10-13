@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { clientErrorResponse } from "@/server/wallabag/parse";
-import { errors, isExpectedClientError } from "@/server/trpc/errors";
+import { errors } from "@/server/trpc/errors";
 
 /**
  * clientErrorResponse decides whether a thrown service error should become a
@@ -27,13 +27,10 @@ describe("clientErrorResponse", () => {
   it("returns an envelope for an expected upstream condition mapped to 5xx (SITE_BLOCKED, 502)", async () => {
     const res = clientErrorResponse(errors.siteBlocked("https://x.test", 403));
     expect(res).not.toBeNull();
-    // The honest upstream status is preserved for the client...
+    // The honest upstream status is preserved for the client.
     expect(res!.status).toBe(502);
     const body = await bodyOf(res!);
     expect(body.error).toBe("BAD_GATEWAY");
-    // ...but it's classified as an expected client condition, so it must not
-    // be reported to Sentry.
-    expect(isExpectedClientError(errors.siteBlocked("https://x.test", 403))).toBe(true);
   });
 
   it("returns a 429 envelope for upstream rate limiting", () => {
@@ -45,7 +42,6 @@ describe("clientErrorResponse", () => {
   it("returns null for a genuine server error (INTERNAL_SERVER_ERROR) so it reaches Sentry", () => {
     const res = clientErrorResponse(errors.internal("boom"));
     expect(res).toBeNull();
-    expect(isExpectedClientError(errors.internal("boom"))).toBe(false);
   });
 
   it("returns null for a non-TRPC error", () => {

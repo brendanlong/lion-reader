@@ -30,9 +30,8 @@ describe("trpc procedure duration metric", () => {
 
 describe("timingMiddleware records the procedure metric", () => {
   it("observes ok=true on success and ok=false on error, exactly once each", async () => {
-    // A real router + real caller exercises the actual middleware wiring — the
-    // try/return-vs-catch path that decides the `ok` label (see the comment in
-    // trpc.ts). The procedures touch no DB, so a minimal cast context suffices
+    // A real router + real caller exercises the actual middleware wiring, where
+    // a thrown procedure arrives as a failed result. The procedures touch no DB, so a minimal cast context suffices
     // (nothing internal is stubbed).
     const router = trpc.createTRPCRouter({
       metricsWiringOk: trpc.publicProcedure.query(() => "ok"),
@@ -53,8 +52,8 @@ describe("timingMiddleware records the procedure metric", () => {
     await expect(caller.metricsWiringErr()).rejects.toThrow();
 
     const output = await metrics.registry.metrics();
-    // Exactly one observation each — proves no double-count between the try and
-    // catch paths, and that a thrown procedure is recorded as ok="false".
+    // Exactly one observation each, and a thrown procedure is recorded as
+    // ok="false".
     expect(output).toMatch(/procedure="metricsWiringOk"[^}]*ok="true"[^}]*\} 1\b/);
     expect(output).toMatch(/procedure="metricsWiringErr"[^}]*ok="false"[^}]*\} 1\b/);
   });
