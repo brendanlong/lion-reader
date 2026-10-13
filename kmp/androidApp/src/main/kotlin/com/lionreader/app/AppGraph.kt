@@ -22,6 +22,7 @@ import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.settings.AppSettings
 import com.lionreader.shared.settings.NarrationEngine
 import com.lionreader.shared.settings.SettingsRepository
+import com.lionreader.shared.settings.SyncInterval
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -32,6 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,7 +78,7 @@ class AppGraph(
         Accounts(
             PrefsStore(context.getSharedPreferences("auth", Context.MODE_PRIVATE)),
             AndroidAccountStorage(context),
-            WorkManagerSync(context),
+            WorkManagerSync(context) { currentSettings.value.syncInterval },
             http,
             BuildConfig.SIGN_IN_CALLBACK_PATH,
             allowHttp = BuildConfig.DEBUG,
@@ -119,6 +122,16 @@ class AppGraph(
     /** Only the setting: the narrator follows it. */
     fun setNarrationSpeed(speed: Float) {
         scope.launch { settings.update { it.copy(narrationSpeed = speed) } }
+    }
+
+    /** Keeps the periodic sync on the interval the settings say, as they change. */
+    fun followSyncInterval() {
+        scope.launch {
+            settings.settings
+                .map { it.syncInterval }
+                .distinctUntilChanged()
+                .collect { SyncScheduler.schedulePeriodic(context, it) }
+        }
     }
 
     /** A full sync (article bodies included) in a background job. */
@@ -209,12 +222,15 @@ private class PrefsStore(private val prefs: SharedPreferences) : KeyValueStore {
         }
 }
 
-private class WorkManagerSync(private val context: Context) : BackgroundSync {
+private class WorkManagerSync(
+    private val context: Context,
+    private val interval: () -> SyncInterval,
+) : BackgroundSync {
     override fun flushSoon() = SyncScheduler.flushSoon(context)
 
     override fun syncNow() = SyncScheduler.syncNow(context)
 
-    override fun schedulePeriodic() = SyncScheduler.schedulePeriodic(context)
+    override fun schedulePeriodic() = SyncScheduler.schedulePeriodic(context, interval())
 
     override fun cancelAll() {
         SyncScheduler.cancelAll(context)

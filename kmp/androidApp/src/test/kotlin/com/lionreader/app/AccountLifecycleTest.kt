@@ -14,6 +14,7 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import com.lionreader.app.narration.NarrationService
 import com.lionreader.shared.account.AccountSession
 import com.lionreader.shared.narration.NarratedArticle
+import com.lionreader.shared.settings.SyncInterval
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -26,6 +27,7 @@ import io.ktor.http.headersOf
 import io.ktor.http.parseUrlEncodedParameters
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -193,6 +195,25 @@ class AccountLifecycleTest {
 
     private fun syncNow() =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork("sync-now").get()
+
+    @Test
+    fun thePeriodicSyncFollowsTheSetting() {
+        val graph = AppGraph(context, http)
+        graph.followSyncInterval()
+        fun scheduledEvery() =
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWork(SyncScheduler.PERIODIC)
+                .get()
+                .singleOrNull { !it.state.isFinished }
+                ?.periodicityInfo
+                ?.repeatIntervalMillis
+
+        runBlocking { graph.settings.update { it.copy(syncInterval = SyncInterval.HOUR) } }
+        until { scheduledEvery() == TimeUnit.MINUTES.toMillis(SyncInterval.HOUR.minutes!!) }
+
+        runBlocking { graph.settings.update { it.copy(syncInterval = SyncInterval.NEVER) } }
+        until { scheduledEvery() == null }
+    }
 
     @Test
     fun startingUpDeletesFilesOfAccountsThatArentTheCurrentOne() {

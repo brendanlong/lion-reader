@@ -60,6 +60,7 @@ import com.lionreader.shared.api.VoiceModels
 import com.lionreader.shared.settings.AppSettings
 import com.lionreader.shared.settings.NarrationEngine
 import com.lionreader.shared.settings.ReaderFont
+import com.lionreader.shared.settings.SyncInterval
 import com.lionreader.shared.settings.TextSize
 import com.lionreader.shared.settings.ThemeChoice
 import kotlin.math.roundToInt
@@ -144,6 +145,17 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
                     note = "Except while narration is playing.",
                 ) { value ->
                     update { it.copy(volumeKeyPaging = value) }
+                }
+            }
+            HorizontalDivider()
+            Section("Sync in the background") {
+                Text(
+                    "How often to fetch new articles while the app isn't open. While it's open, they arrive as they're published.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Choices(SyncInterval.entries, settings.syncInterval, { it.label }) { choice ->
+                    update { it.copy(syncInterval = choice) }
                 }
             }
             HorizontalDivider()
