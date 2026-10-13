@@ -11167,6 +11167,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
                     "items": {
                       "type": "array",
                       "items": {
@@ -11203,6 +11206,7 @@
                     }
                   },
                   "required": [
+                    "enabled",
                     "items"
                   ],
                   "additionalProperties": false

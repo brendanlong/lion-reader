@@ -1227,7 +1227,7 @@ export const entrySummaries = pgTable(
 /**
  * Ingest addresses table - unique email addresses for receiving newsletters.
  * Each user can have multiple ingest addresses (up to 5, enforced in application).
- * Email format: {token}@ingest.lionreader.com
+ * Email format: {token}@{INGEST_EMAIL_DOMAIN}
  */
 export const ingestAddresses = pgTable(
   "ingest_addresses",

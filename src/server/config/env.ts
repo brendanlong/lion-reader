@@ -149,20 +149,28 @@ export const buildConfig = {
 };
 
 /**
- * Email ingest configuration.
- * INGEST_EMAIL_DOMAIN is the domain for ingest email addresses.
- * MAILGUN_WEBHOOK_SIGNING_KEY is the signing key for authenticating Mailgun webhook requests.
+ * Email ingest (newsletter) configuration. Newsletters are off unless both
+ * INGEST_EMAIL_DOMAIN and MAILGUN_WEBHOOK_SIGNING_KEY are set: there is no
+ * default domain, since addresses on someone else's domain never reach us.
  */
 export const ingestConfig = {
   /** Domain for ingest email addresses. Email format: {token}@{domain} */
-  emailDomain: process.env.INGEST_EMAIL_DOMAIN || "ingest.lionreader.com",
+  get emailDomain(): string | undefined {
+    return process.env.INGEST_EMAIL_DOMAIN || undefined;
+  },
 
   /**
    * Mailgun webhook signing key for HMAC signature verification.
    * Find this in Mailgun dashboard: Sending -> Webhooks -> Webhook signing key.
-   * Must be set for email webhooks to work.
    */
-  mailgunWebhookSigningKey: process.env.MAILGUN_WEBHOOK_SIGNING_KEY,
+  get mailgunWebhookSigningKey(): string | undefined {
+    return process.env.MAILGUN_WEBHOOK_SIGNING_KEY || undefined;
+  },
+
+  /** The ingest domain when newsletters are enabled, undefined when they're off. */
+  get enabledDomain(): string | undefined {
+    return this.mailgunWebhookSigningKey ? this.emailDomain : undefined;
+  },
 };
 
 /**

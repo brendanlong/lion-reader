@@ -67,7 +67,7 @@ describe("KeyboardShortcutsSettings toggle", () => {
 
 describe("EmailSettingsContent spam preference toggle", () => {
   const handlers: ProcedureHandlers = {
-    "ingestAddresses.list": () => [],
+    "ingestAddresses.list": () => ({ enabled: true, items: [] }),
     "users.me.preferences": () => ({ showSpam: false }),
     "users.me.updatePreferences": () => ({ showSpam: true }),
   };

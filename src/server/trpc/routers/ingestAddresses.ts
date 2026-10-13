@@ -75,14 +75,10 @@ function generateToken(): string {
   return randomBytes(TOKEN_BYTES).toString("base64url").toLowerCase();
 }
 
-/**
- * Computes the full email address from a token.
- *
- * @param token - The ingest address token
- * @returns The full email address
- */
-function computeEmail(token: string): string {
-  return `${token}@${ingestConfig.emailDomain}`;
+function requireIngestDomain(): string {
+  const domain = ingestConfig.enabledDomain;
+  if (!domain) throw errors.newslettersNotConfigured();
+  return domain;
 }
 
 // ============================================================================
@@ -94,7 +90,8 @@ export const ingestAddressesRouter = createTRPCRouter({
    * List all ingest addresses for the current user.
    *
    * Returns all non-deleted ingest addresses with computed email field.
-   * Addresses are ordered by creation time (newest first).
+   * Addresses are ordered by creation time (newest first). `enabled` is false,
+   * with no items, when newsletters aren't set up on this server.
    */
   list: protectedProcedure
     .meta({
@@ -108,10 +105,14 @@ export const ingestAddressesRouter = createTRPCRouter({
     .input(z.object({}).optional())
     .output(
       z.object({
+        enabled: z.boolean(),
         items: z.array(ingestAddressOutputSchema),
       })
     )
     .query(async ({ ctx }) => {
+      const domain = ingestConfig.enabledDomain;
+      if (!domain) return { enabled: false, items: [] };
+
       const userId = ctx.session.user.id;
 
       // Get all non-deleted ingest addresses for the user
@@ -122,10 +123,11 @@ export const ingestAddressesRouter = createTRPCRouter({
         .orderBy(sql`${ingestAddresses.createdAt} DESC`);
 
       return {
+        enabled: true,
         items: addresses.map((address) => ({
           id: address.id,
           token: address.token,
-          email: computeEmail(address.token),
+          email: `${address.token}@${domain}`,
           label: address.label,
           createdAt: address.createdAt,
         })),
@@ -164,6 +166,7 @@ export const ingestAddressesRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const domain = requireIngestDomain();
       const userId = ctx.session.user.id;
 
       // Check current address count
@@ -196,7 +199,7 @@ export const ingestAddressesRouter = createTRPCRouter({
         address: {
           id: addressId,
           token,
-          email: computeEmail(token),
+          email: `${token}@${domain}`,
           label: input.label ?? null,
           createdAt: now,
         },
@@ -234,6 +237,7 @@ export const ingestAddressesRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const domain = requireIngestDomain();
       const userId = ctx.session.user.id;
 
       // Verify the address exists and belongs to the user
@@ -274,7 +278,7 @@ export const ingestAddressesRouter = createTRPCRouter({
         address: {
           id: address.id,
           token: address.token,
-          email: computeEmail(address.token),
+          email: `${address.token}@${domain}`,
           label: input.label !== undefined ? input.label : address.label,
           createdAt: address.createdAt,
         },

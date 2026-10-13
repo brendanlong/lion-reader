@@ -35,6 +35,7 @@ const errorCodeToTRPCCode = {
   INVITE_EXPIRED: "BAD_REQUEST",
   INVITE_ALREADY_USED: "BAD_REQUEST",
   MAX_INGEST_ADDRESSES_REACHED: "BAD_REQUEST",
+  NEWSLETTERS_NOT_CONFIGURED: "PRECONDITION_FAILED",
   SIGNUP_PROVIDER_NOT_ALLOWED: "FORBIDDEN",
   OAUTH_ALREADY_LINKED: "CONFLICT",
   TAG_NAME_TAKEN: "CONFLICT",
@@ -125,6 +126,9 @@ export const errors = {
       "MAX_INGEST_ADDRESSES_REACHED",
       `Maximum number of ingest addresses (${limit}) reached`
     ),
+
+  newslettersNotConfigured: () =>
+    createError("NEWSLETTERS_NOT_CONFIGURED", "Email newsletters are not set up on this server"),
 
   validation: (message: string, details?: Record<string, unknown>) =>
     createError("VALIDATION_ERROR", message, details),
