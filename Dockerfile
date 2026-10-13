@@ -156,9 +156,10 @@ ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 ARG NEXT_PUBLIC_GOATCOUNTER_URL=""
 ENV NEXT_PUBLIC_GOATCOUNTER_URL=$NEXT_PUBLIC_GOATCOUNTER_URL
 
-# Deploy timestamp, inlined into the client bundle so the demo's "Welcome"
-# article shows a stable published time that matches the server render (see
-# src/lib/demo/articles/welcome-published-at.ts). CI passes the same value as a
+# Deploy timestamp, inlined into the client bundle. It is the build id SSE uses
+# to spot a tab running an earlier deploy's JavaScript (src/lib/build-id.ts), and
+# gives the demo's "Welcome" article a stable published time that matches the
+# server render (src/lib/demo/articles/welcome-published-at.ts). CI passes the same value as a
 # runtime --env too, so the server reads an identical value; unset builds fall
 # back to a fixed date. Placed last among the NEXT_PUBLIC args so its per-deploy
 # churn only busts the build layer (which re-runs each deploy anyway).

@@ -11,7 +11,7 @@ import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
 import { entries, userEntries } from "@/server/db/schema";
-import { SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
+import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { listEntryCollectionIds, publishEntryLeftCollections } from "./collections";

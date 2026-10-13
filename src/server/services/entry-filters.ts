@@ -27,8 +27,8 @@ import {
   userEntries,
   visibleEntries,
 } from "@/server/db/schema";
-import { isListedSubscription, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
-import type { EntryType } from "@/lib/entry-types";
+import { isListedSubscription } from "@/server/services/subscriptions";
+import { SAVED_ARTICLES_TITLE, type EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Types

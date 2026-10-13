@@ -84,12 +84,6 @@ export interface Subscription {
 // Helper Functions
 // ============================================================================
 
-/**
- * What clients see as the source of a saved article, and Google Reader as the
- * saved subscription's title (#730).
- */
-export const SAVED_ARTICLES_TITLE = "Saved Articles";
-
 /** Matches `subscriptions` rows that are collections. */
 export function isCollectionSubscription(): SQL {
   return eq(subscriptions.type, "collection");

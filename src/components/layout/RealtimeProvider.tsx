@@ -12,6 +12,7 @@
 
 import { type ReactNode } from "react";
 import { useRealtimeUpdates } from "@/lib/hooks/useRealtimeUpdates";
+import { useReloadOnNextNavigation } from "@/lib/hooks/useReloadOnNextNavigation";
 import { type SyncCursors } from "@/lib/events/cursors";
 import { ConnectionStatusIndicator } from "./ConnectionStatusIndicator";
 
@@ -53,7 +54,8 @@ interface RealtimeProviderProps {
  * ```
  */
 export function RealtimeProvider({ children, initialCursors }: RealtimeProviderProps) {
-  const { status, reconnect } = useRealtimeUpdates(initialCursors);
+  const { status, reconnect, serverBuildChanged } = useRealtimeUpdates(initialCursors);
+  useReloadOnNextNavigation(serverBuildChanged);
 
   return (
     <>

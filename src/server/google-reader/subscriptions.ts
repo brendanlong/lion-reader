@@ -18,6 +18,7 @@ import {
   getGlobalUnreadCounts,
 } from "@/server/services/counts";
 import type { ListEntriesParams } from "@/server/services/entries";
+import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { resolveFeedStream } from "./id";
 
 /**
@@ -152,8 +153,8 @@ async function getSavedSubscription(
     greaderStreamId: row.greaderStreamId,
     type: "saved",
     url: null,
-    title: subscriptionsService.SAVED_ARTICLES_TITLE,
-    originalTitle: subscriptionsService.SAVED_ARTICLES_TITLE,
+    title: SAVED_ARTICLES_TITLE,
+    originalTitle: SAVED_ARTICLES_TITLE,
     description: null,
     siteUrl: null,
     subscribedAt: new Date(0),

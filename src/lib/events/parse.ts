@@ -2,7 +2,8 @@
  * SSE Event Parsing
  */
 
-import { syncEventSchema, type SyncEvent } from "./schemas";
+import type { z } from "zod";
+import { helloEventSchema, syncEventSchema, type SyncEvent } from "./schemas";
 
 /**
  * Parses SSE event data from a JSON string into a SyncEvent.
@@ -13,6 +14,15 @@ import { syncEventSchema, type SyncEvent } from "./schemas";
 export function parseSyncEvent(data: string): SyncEvent | null {
   try {
     const result = syncEventSchema.safeParse(JSON.parse(data));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parseHelloEvent(data: string): z.infer<typeof helloEventSchema> | null {
+  try {
+    const result = helloEventSchema.safeParse(JSON.parse(data));
     return result.success ? result.data : null;
   } catch {
     return null;

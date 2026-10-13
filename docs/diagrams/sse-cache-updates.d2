@@ -141,6 +141,11 @@ sse-endpoint: SSE Endpoint {
     |
   }
 
+  hello: Hello {
+    style.fill: "#bbf7d0"
+    first: First event, with the server's build id
+  }
+
   heartbeat: Heartbeat {
     style.fill: "#bbf7d0"
     interval: Every 30 seconds
@@ -160,7 +165,7 @@ frontend: Frontend (useRealtimeUpdates) {
 
     listeners: |
       Named event listeners:
-      - connected
+      - hello
       - new_entry
       - entry_updated
       - subscription_created
