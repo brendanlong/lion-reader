@@ -23,7 +23,7 @@ import { parseStreamId } from "@/server/google-reader/streams";
 import { entryFeedStreamId } from "@/server/google-reader/format";
 import { resolveGreaderIdsForEntries } from "@/server/google-reader/id";
 import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
-import { resolveTagByName } from "@/server/google-reader/tags";
+import { labelFilter, listGreaderLabels } from "@/server/google-reader/labels";
 import { isState } from "@/server/google-reader/streams";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
@@ -111,11 +111,11 @@ export async function GET(request: Request): Promise<Response> {
       break;
     }
     case "label": {
-      const tag = await resolveTagByName(db, session.user.id, parsedStream.name);
-      if (!tag) {
-        return errorResponse(`Tag not found: ${parsedStream.name}`, 404);
+      const label = (await listGreaderLabels(db, session.user.id)).find(parsedStream.name);
+      if (!label) {
+        return errorResponse(`Label not found: ${parsedStream.name}`, 404);
       }
-      listParams.tagId = tag.id;
+      Object.assign(listParams, labelFilter(label));
       break;
     }
   }

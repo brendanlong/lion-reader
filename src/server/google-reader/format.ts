@@ -7,6 +7,7 @@
 
 import { int64ToLongFormId, feedStreamId, type GreaderEntryIds } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
+import type { GreaderLabel } from "./labels";
 import type { GreaderSubscription } from "./subscriptions";
 import type { EntryFull } from "@/server/services/entries";
 
@@ -35,9 +36,15 @@ interface GoogleReaderItem {
 
 /**
  * Formats a full entry (with content) as a Google Reader item, given its
- * serials from `resolveGreaderIdsForEntries`.
+ * serials from `resolveGreaderIdsForEntries` and the user's collection label
+ * names (`GreaderLabels.collectionNames`), which label it with each collection
+ * holding it.
  */
-export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): GoogleReaderItem {
+export function formatEntryAsItem(
+  entry: EntryFull,
+  ids: GreaderEntryIds,
+  collectionNames: ReadonlyMap<string, string>
+): GoogleReaderItem {
   const publishedTs = entry.publishedAt
     ? Math.floor(entry.publishedAt.getTime() / 1000)
     : Math.floor(entry.fetchedAt.getTime() / 1000);
@@ -52,6 +59,10 @@ export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): Googl
   }
   if (entry.starred) {
     categories.push(stateStreamId("starred"));
+  }
+  for (const subscriptionId of entry.subscriptionIds) {
+    const label = collectionNames.get(subscriptionId);
+    if (label !== undefined) categories.push(labelStreamId(label));
   }
 
   const content =
@@ -138,17 +149,12 @@ interface GoogleReaderTag {
 }
 
 /**
- * Formats tags as Google Reader tag list.
- * Includes system tags (reading-list, starred) and user labels.
- *
- * Each label's opaque sortid is the tag's stored serial (`tags.greader_sortid`);
- * sortids are never reversed, so the caller passes just the name + serial rather
- * than the general `Tag` (which would drag a bigint into the main-app/MCP tag
- * responses).
+ * Formats the Google Reader tag list: the system tags (reading-list, starred),
+ * then tags as folders and collections as item labels (see `labels.ts`).
+ * Sortids are the stored serials (`tags.greader_sortid`, a collection's
+ * `greader_stream_id`), opaque and never reversed.
  */
-export function formatTagList(
-  userTags: Array<{ name: string; greaderSortid: bigint }>
-): GoogleReaderTag[] {
+export function formatTagList(labels: GreaderLabel[]): GoogleReaderTag[] {
   const result: GoogleReaderTag[] = [];
 
   // System tags
@@ -161,12 +167,11 @@ export function formatTagList(
     sortid: "00000001",
   });
 
-  // User labels (tags)
-  for (const tag of userTags) {
+  for (const label of labels) {
     result.push({
-      id: labelStreamId(tag.name),
-      sortid: tag.greaderSortid.toString(16).padStart(16, "0"),
-      type: "folder",
+      id: labelStreamId(label.name),
+      sortid: label.sortid.toString(16).padStart(16, "0"),
+      type: label.kind === "tag" ? "folder" : "tag",
     });
   }
 
@@ -197,6 +202,10 @@ interface GoogleReaderUnreadCount {
  * so it must reflect the actual newest item and stay stable when nothing changes.
  * The reading-list total carries the newest across all feeds.
  *
+ * `labels` are per-label lines (`user/-/label/{name}`) for tags and
+ * collections, so a collection, which has no feed line, gets a count, and a
+ * tag's counts the articles of the collections it holds.
+ *
  * `getGreaderUnreadCounts` derives the counts and the newest map from a single
  * query (issue #1092), so they share one snapshot: no read-time race can count a
  * feed (unread > 0) while its newest is missing. The count and the newest still
@@ -214,7 +223,8 @@ interface GoogleReaderUnreadCount {
 export function formatUnreadCounts(
   subscriptions: Array<{ streamId: string; unreadCount: number }>,
   newestItemAtByStreamId: Map<string, Date>,
-  readingListUnread: number
+  readingListUnread: number,
+  labels: Array<{ name: string; unreadCount: number; newestItemAt: Date | undefined }>
 ): {
   max: number;
   unreadcounts: GoogleReaderUnreadCount[];
@@ -233,6 +243,16 @@ export function formatUnreadCounts(
         newestItemTimestampUsec: toUsec(newestMs),
       });
       newestOverallMs = Math.max(newestOverallMs, newestMs);
+    }
+  }
+
+  for (const label of labels) {
+    if (label.unreadCount > 0) {
+      unreadcounts.push({
+        id: labelStreamId(label.name),
+        count: label.unreadCount,
+        newestItemTimestampUsec: toUsec(label.newestItemAt?.getTime() ?? Date.now()),
+      });
     }
   }
 

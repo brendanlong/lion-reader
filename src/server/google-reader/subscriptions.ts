@@ -9,12 +9,15 @@
  */
 
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { isUniqueViolation } from "@/server/db/errors";
 import type { db as dbType } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { getGlobalUnreadCounts } from "@/server/services/counts";
 import type { ListEntriesParams } from "@/server/services/entries";
 import { resolveFeedStream } from "./id";
+import { listGreaderLabels } from "./labels";
+import { errorResponse } from "./parse";
 
 /**
  * A subscription plus its Google Reader feed stream serial
@@ -75,9 +78,7 @@ export async function resolveFeedStreamFilter(
  * free column read per subscription — so the old `includeUnreadCounts` opt-out (issue #1074) is gone; every
  * caller gets real counts. Spam never counts (the counters exclude it).
  *
- * Collections are left out: Google Reader clients file each item under its
- * `origin` stream, which is the article's source feed, so a collection would
- * show a count with no items of its own.
+ * Collections are left out: they're labels (`labels.ts`).
  */
 export async function listGreaderSubscriptions(
   db: typeof dbType,
@@ -115,6 +116,48 @@ export async function listGreaderSubscriptions(
   );
 
   return saved ? [...withStreamIds, saved] : withStreamIds;
+}
+
+/**
+ * Sets a subscription's title, trimmed like the tRPC rename. The IS DISTINCT
+ * FROM guard makes a same-title re-save match no row, so updated_at doesn't
+ * move and the subscription delta-sync cursor doesn't churn when a client
+ * re-asserts the title it already has (#1160). Returns an error response when
+ * the subscription is a collection and the name is blank or another of the
+ * user's active collections has it, ignoring case (#1846). A blank title for a
+ * feed is ignored.
+ */
+export async function renameGreaderSubscription(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string,
+  rawTitle: string
+): Promise<Response | null> {
+  const title = rawTitle.trim();
+  if (!title) {
+    return (await subscriptionsService.clearedCustomTitle(db, userId, subscriptionId)) === null
+      ? errorResponse("Collection name is required", 400)
+      : null;
+  }
+  try {
+    await db
+      .update(subscriptions)
+      .set({ customTitle: title, updatedAt: new Date() })
+      .where(
+        and(
+          eq(subscriptions.id, subscriptionId),
+          eq(subscriptions.userId, userId),
+          isNull(subscriptions.unsubscribedAt),
+          sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
+        )
+      );
+    return null;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return errorResponse(`Collection already exists: ${title}`, 409);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -162,15 +205,17 @@ async function getSavedSubscription(
  * Per-feed unread count and newest visible item time for the Google Reader
  * unread-count endpoint, both keyed by the feed stream serial `formatUnreadCounts`
  * emits `feed/{n}` from (`subscriptions.greader_stream_id`, the saved
- * subscription's included). Returned as the `{ subscriptions,
- * newestItemAtByStreamId }` pair that endpoint feeds straight into
+ * subscription's included), plus the same per label (tags and collections,
+ * `labels.ts`). Returned in the shape that endpoint feeds straight into
  * `formatUnreadCounts`.
  *
- * Both come from a **single statement**, so one snapshot: a feed gaining its
- * first visible entry between two reads could otherwise be counted (unread > 0)
- * yet be absent from the newest map (issue #1092). The count is the
- * trigger-maintained `subscriptions.unread_count`, the same column `user_feeds`
- * exposes.
+ * Feed and collection counts and their newest times come from a **single
+ * statement**, so one snapshot: a feed gaining its first visible entry between
+ * two reads could otherwise be counted (unread > 0) yet be absent from the
+ * newest map (issue #1092). The count is the trigger-maintained
+ * `subscriptions.unread_count`, the same column `user_feeds` exposes. A tag's
+ * count is its own counter (distinct articles), read with the label names; its
+ * newest is the newest of its subscriptions'.
  *
  * "Newest visible" is the subscription's newest membership by sort key
  * (`COALESCE(published_at, fetched_at)`, matching stream ordering): read state
@@ -187,40 +232,82 @@ export async function getGreaderUnreadCounts(
   newestItemAtByStreamId: Map<string, Date>;
   /** The All badge, for the reading-list total. */
   readingListUnread: number;
+  labels: Array<{ name: string; unreadCount: number; newestItemAt: Date | undefined }>;
 }> {
   // Keyed by the Google Reader feed stream id, so the result feeds straight
   // into formatUnreadCounts, which emits `feed/{streamId}`. Postgres returns
   // bigint (int8) as a decimal string, which is exactly what the wire id needs.
-  // The saved subscription is included (as "Saved Articles"); collections
-  // aren't (see listGreaderSubscriptions).
-  const result = await db.execute(sql`
-    SELECT subscriptions.greader_stream_id AS stream_id,
-      subscriptions.unread_count AS unread,
-      latest.newest AS newest
-    FROM subscriptions
-    LEFT JOIN LATERAL (
-      SELECT se.published_or_fetched_at AS newest
-      FROM subscription_entries se
-      WHERE se.subscription_id = subscriptions.id
-      ORDER BY se.published_or_fetched_at DESC, se.entry_id DESC
-      LIMIT 1
-    ) latest ON true
-    WHERE subscriptions.user_id = ${userId}::uuid
-      AND subscriptions.unsubscribed_at IS NULL
-      AND NOT ${subscriptionsService.isCollectionSubscription()}
-  `);
+  const [result, labels, { allUnread }] = await Promise.all([
+    db.execute(sql`
+      SELECT subscriptions.id,
+        ${subscriptionsService.isCollectionSubscription()} AS is_collection,
+        subscriptions.greader_stream_id AS stream_id,
+        subscriptions.unread_count AS unread,
+        latest.newest AS newest,
+        ARRAY(
+          SELECT st.tag_id::text FROM subscription_tags st
+          WHERE st.subscription_id = subscriptions.id
+        ) AS tag_ids
+      FROM subscriptions
+      LEFT JOIN LATERAL (
+        SELECT se.published_or_fetched_at AS newest
+        FROM subscription_entries se
+        WHERE se.subscription_id = subscriptions.id
+        ORDER BY se.published_or_fetched_at DESC, se.entry_id DESC
+        LIMIT 1
+      ) latest ON true
+      WHERE subscriptions.user_id = ${userId}::uuid
+        AND subscriptions.unsubscribed_at IS NULL
+    `),
+    listGreaderLabels(db, userId),
+    getGlobalUnreadCounts(db, userId),
+  ]);
 
   const subscriptions: Array<{ streamId: string; unreadCount: number }> = [];
   const newestItemAtByStreamId = new Map<string, Date>();
+  const collectionCounts = new Map<string, { unreadCount: number; newest: Date | undefined }>();
+  const newestByTagId = new Map<string, Date>();
   for (const row of result.rows as Array<{
+    id: string;
+    is_collection: boolean;
     stream_id: string;
     unread: number;
     newest: Date | null;
+    tag_ids: string[];
   }>) {
-    subscriptions.push({ streamId: row.stream_id, unreadCount: row.unread });
-    if (row.newest) newestItemAtByStreamId.set(row.stream_id, new Date(row.newest));
+    const newest = row.newest ? new Date(row.newest) : undefined;
+    // Collections are labels, not feeds (see listGreaderSubscriptions).
+    if (row.is_collection) {
+      collectionCounts.set(row.id, { unreadCount: row.unread, newest });
+    } else {
+      subscriptions.push({ streamId: row.stream_id, unreadCount: row.unread });
+      if (newest) newestItemAtByStreamId.set(row.stream_id, newest);
+    }
+    if (!newest) continue;
+    for (const tagId of row.tag_ids) {
+      const prev = newestByTagId.get(tagId);
+      if (!prev || newest > prev) newestByTagId.set(tagId, newest);
+    }
   }
 
-  const { allUnread } = await getGlobalUnreadCounts(db, userId);
-  return { subscriptions, newestItemAtByStreamId, readingListUnread: allUnread };
+  return {
+    subscriptions,
+    newestItemAtByStreamId,
+    readingListUnread: allUnread,
+    labels: labels.all.map((label) => {
+      if (label.kind === "tag") {
+        return {
+          name: label.name,
+          unreadCount: label.unreadCount,
+          newestItemAt: newestByTagId.get(label.tagId),
+        };
+      }
+      const counts = collectionCounts.get(label.subscriptionId);
+      return {
+        name: label.name,
+        unreadCount: counts?.unreadCount ?? 0,
+        newestItemAt: counts?.newest,
+      };
+    }),
+  };
 }

@@ -3,7 +3,9 @@
  *
  * POST /api/greader.php/reader/api/0/disable-tag
  *
- * Deletes a tag/folder.
+ * Deletes a tag/folder, or the collection behind an item label (#1821). Like
+ * deleting it in the app, that removes only its memberships: every article
+ * stays in its feed or in Saved.
  *
  * Request body (form-encoded):
  *   s={tagStreamId}  — tag stream ID (e.g., "user/-/label/MyFolder")
@@ -13,8 +15,9 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
-import { resolveTagByName } from "@/server/google-reader/tags";
+import { listGreaderLabels } from "@/server/google-reader/labels";
 import * as tagsService from "@/server/services/tags";
+import { unsubscribe } from "@/server/services/subscriptions";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -45,12 +48,16 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse("Missing required parameter: s or t (tag identifier)", 400);
   }
 
-  const tag = await resolveTagByName(db, userId, tagName);
-  if (!tag) {
-    return textResponse("OK"); // Tag doesn't exist, nothing to do
+  const label = (await listGreaderLabels(db, userId)).find(tagName);
+  if (!label) {
+    return textResponse("OK"); // Label doesn't exist, nothing to do
   }
 
-  await tagsService.deleteTag(db, userId, tag.id);
+  if (label.kind === "tag") {
+    await tagsService.deleteTag(db, userId, label.tagId);
+  } else {
+    await unsubscribe(db, userId, label.subscriptionId);
+  }
 
   return textResponse("OK");
 }

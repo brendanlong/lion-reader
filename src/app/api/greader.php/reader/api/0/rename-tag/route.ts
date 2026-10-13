@@ -3,7 +3,7 @@
  *
  * POST /api/greader.php/reader/api/0/rename-tag
  *
- * Renames a tag/folder.
+ * Renames a tag/folder, or a collection's item label (#1821).
  *
  * Request body (form-encoded):
  *   s={oldTagStreamId}   — old tag stream ID (e.g., "user/-/label/OldName")
@@ -12,7 +12,8 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
-import { resolveTagByName } from "@/server/google-reader/tags";
+import { listGreaderLabels } from "@/server/google-reader/labels";
+import { renameGreaderSubscription } from "@/server/google-reader/subscriptions";
 import * as tagsService from "@/server/services/tags";
 import { getAppErrorCode } from "@/server/trpc/errors";
 import { db } from "@/server/db";
@@ -43,13 +44,19 @@ export async function POST(request: Request): Promise<Response> {
   const oldName = oldLabelMatch[1];
   const newName = newLabelMatch[1];
 
-  const tag = await resolveTagByName(db, userId, oldName);
-  if (!tag) {
-    return errorResponse(`Tag not found: ${oldName}`, 404);
+  const label = (await listGreaderLabels(db, userId)).find(oldName);
+  if (!label) {
+    return errorResponse(`Label not found: ${oldName}`, 404);
+  }
+  if (label.kind === "collection") {
+    return (
+      (await renameGreaderSubscription(db, userId, label.subscriptionId, newName)) ??
+      textResponse("OK")
+    );
   }
 
   try {
-    await tagsService.updateTag(db, userId, tag.id, { name: newName });
+    await tagsService.updateTag(db, userId, label.tagId, { name: newName });
   } catch (error) {
     if (getAppErrorCode(error) === "TAG_NAME_TAKEN") {
       return errorResponse(`Tag already exists: ${newName}`, 409);

@@ -19,11 +19,11 @@ import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
-import { eq, and, isNull, sql } from "drizzle-orm";
-import { subscriptions, subscriptionTags } from "@/server/db/schema";
+import { eq, and } from "drizzle-orm";
+import { subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
-import { clearedCustomTitle, unsubscribe } from "@/server/services/subscriptions";
-import { isUniqueViolation } from "@/server/db/errors";
+import { unsubscribe } from "@/server/services/subscriptions";
+import { renameGreaderSubscription } from "@/server/google-reader/subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +63,9 @@ export async function POST(request: Request): Promise<Response> {
       const existingSubId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
       if (existingSubId) {
         // Already subscribed — apply any tag/title changes.
-        const renameError = title ? await renameSubscription(userId, existingSubId, title) : null;
+        const renameError = title
+          ? await renameGreaderSubscription(db, userId, existingSubId, title)
+          : null;
         if (renameError) return renameError;
 
         // Handle tag additions
@@ -81,7 +83,9 @@ export async function POST(request: Request): Promise<Response> {
         return errorResponse("Subscription not found", 404);
       }
 
-      const renameError = title ? await renameSubscription(userId, subscriptionId, title) : null;
+      const renameError = title
+        ? await renameGreaderSubscription(db, userId, subscriptionId, title)
+        : null;
       if (renameError) return renameError;
 
       // Handle tag changes
@@ -102,47 +106,6 @@ export async function POST(request: Request): Promise<Response> {
 
     default:
       return errorResponse(`Unknown action: ${action}`, 400);
-  }
-}
-
-/**
- * Sets a subscription's title, trimmed like the tRPC rename. The IS DISTINCT
- * FROM guard makes a same-title re-save match no row, so updated_at doesn't
- * move and the subscription delta-sync cursor doesn't churn when a client
- * re-asserts the title it already has (#1160). Returns an error response when
- * the subscription is a collection and the name is blank or another of the
- * user's active collections has it, ignoring case (#1846). A blank title for a
- * feed is ignored.
- */
-async function renameSubscription(
-  userId: string,
-  subscriptionId: string,
-  rawTitle: string
-): Promise<Response | null> {
-  const title = rawTitle.trim();
-  if (!title) {
-    return (await clearedCustomTitle(db, userId, subscriptionId)) === null
-      ? errorResponse("Collection name is required", 400)
-      : null;
-  }
-  try {
-    await db
-      .update(subscriptions)
-      .set({ customTitle: title, updatedAt: new Date() })
-      .where(
-        and(
-          eq(subscriptions.id, subscriptionId),
-          eq(subscriptions.userId, userId),
-          isNull(subscriptions.unsubscribedAt),
-          sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
-        )
-      );
-    return null;
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      return errorResponse(`Collection already exists: ${title}`, 409);
-    }
-    throw error;
   }
 }
 

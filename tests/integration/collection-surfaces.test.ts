@@ -1,8 +1,8 @@
 /**
  * Collections (#1806) through the surfaces besides tRPC: the MCP tools an
  * assistant uses to curate, the SSE event other tabs apply, and the Google
- * Reader API, which leaves collections out (its clients file each item under
- * its source feed, so a collection would show a count with no items).
+ * Reader API, which shows them as labels rather than feeds
+ * (google-reader-collection-labels.test.ts).
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
@@ -21,10 +21,7 @@ import {
 import { registerTools } from "../../src/server/mcp/tools";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
 import { listEntries } from "../../src/server/services/entries";
-import {
-  getGreaderUnreadCounts,
-  listGreaderSubscriptions,
-} from "../../src/server/google-reader/subscriptions";
+import { listGreaderSubscriptions } from "../../src/server/google-reader/subscriptions";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
 import { createSession } from "../../src/server/auth/session";
@@ -180,14 +177,11 @@ describe("Google Reader", () => {
     expect(res.status).toBe(status);
   });
 
-  it("leaves collections out of the subscription list and unread counts", async () => {
+  it("leaves collections out of the subscription list", async () => {
     const { userId, sourceId, entryId } = await userWithEntry();
     const { subscription } = await createCollection(db, userId, "C");
     await addEntriesToCollection(db, userId, subscription.id, [entryId]);
 
     expect((await listGreaderSubscriptions(db, userId)).map((s) => s.id)).toEqual([sourceId]);
-    const counts = await getGreaderUnreadCounts(db, userId);
-    expect(counts.subscriptions).toHaveLength(1);
-    expect(counts.readingListUnread).toBe(1);
   });
 });

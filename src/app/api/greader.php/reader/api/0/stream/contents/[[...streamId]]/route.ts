@@ -8,7 +8,7 @@
  * - feed/{int64} — entries from a specific subscription
  * - user/-/state/com.google/reading-list — all entries
  * - user/-/state/com.google/starred — starred entries
- * - user/-/label/{name} — entries in a tag/folder
+ * - user/-/label/{name} — entries in a tag or collection
  *
  * When the streamId is omitted entirely (this is an optional catch-all route),
  * it defaults to the reading-list, matching Google Reader semantics where
@@ -33,7 +33,7 @@ import { parseStreamId, type StreamId } from "@/server/google-reader/streams";
 import { formatEntryAsItem } from "@/server/google-reader/format";
 import { resolveGreaderIdsForEntries } from "@/server/google-reader/id";
 import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
-import { resolveTagByName } from "@/server/google-reader/tags";
+import { labelFilter, listGreaderLabels } from "@/server/google-reader/labels";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
 import { isState } from "@/server/google-reader/streams";
@@ -132,11 +132,11 @@ async function handleStreamContents(
       break;
     }
     case "label": {
-      const tag = await resolveTagByName(db, session.user.id, parsedStream.name);
-      if (!tag) {
-        return errorResponse(`Tag not found: ${parsedStream.name}`, 404);
+      const label = (await listGreaderLabels(db, session.user.id)).find(parsedStream.name);
+      if (!label) {
+        return errorResponse(`Label not found: ${parsedStream.name}`, 404);
       }
-      listParams.tagId = tag.id;
+      Object.assign(listParams, labelFilter(label));
       break;
     }
   }
@@ -151,9 +151,10 @@ async function handleStreamContents(
 
   // Get full content in a single bulk query rather than one getEntry per entry.
   const entryIds = result.items.map((e) => e.id);
-  const [fullEntries, idsByEntry] = await Promise.all([
+  const [fullEntries, idsByEntry, labels] = await Promise.all([
     entriesService.getEntries(db, session.user.id, entryIds),
     resolveGreaderIdsForEntries(db, session.user.id, entryIds),
+    listGreaderLabels(db, session.user.id),
   ]);
   const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
   const items = result.items.flatMap((entry) => {
@@ -171,7 +172,8 @@ async function handleStreamContents(
         feedUrl: null,
         unsubscribeUrl: null,
       },
-      ids
+      ids,
+      labels.collectionNames
     );
   });
 

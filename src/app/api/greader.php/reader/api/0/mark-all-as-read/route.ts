@@ -14,7 +14,7 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
-import { resolveTagByName } from "@/server/google-reader/tags";
+import { labelFilter, listGreaderLabels } from "@/server/google-reader/labels";
 import { db } from "@/server/db";
 import { markAllEntriesRead } from "@/server/services/entries";
 
@@ -83,14 +83,14 @@ export async function POST(request: Request): Promise<Response> {
       break;
     }
     case "label": {
-      const tag = await resolveTagByName(db, userId, parsedStream.name);
-      if (!tag) {
+      const label = (await listGreaderLabels(db, userId)).find(parsedStream.name);
+      if (!label) {
         return textResponse("OK");
       }
 
       await markAllEntriesRead(db, {
         userId,
-        tagId: tag.id,
+        ...labelFilter(label),
         before: beforeDate,
         showSpam,
       });
