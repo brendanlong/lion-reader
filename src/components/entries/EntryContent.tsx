@@ -26,7 +26,7 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";
 import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
-import { EntryContentSkeleton } from "./EntryContentStates";
+import { EntryArticleSkeleton } from "./EntryArticle";
 import { useEntryContentOptions } from "./EntryContentOptions";
 
 /**
@@ -258,7 +258,7 @@ function EntryContentInner({
   if (!canRenderFromCache) {
     return (
       <ScrollContainer className="h-full overflow-y-auto">
-        <EntryContentSkeleton />
+        <EntryArticleSkeleton onBack={onBack} />
       </ScrollContainer>
     );
   }
@@ -268,7 +268,13 @@ function EntryContentInner({
   // undefined only while the query is loading; once it resolves (or hits the
   // warm cache) we render content immediately, with no Suspense throttle.
   if (!entry) {
-    return <EntryContentFallback entryId={entryId} onBack={onBack} />;
+    return (
+      <EntryContentFallback
+        entryId={entryId}
+        onBack={onBack}
+        isSummarizationAvailable={isSummarizationAvailable}
+      />
+    );
   }
 
   const slots = renderSlots?.(entryId);

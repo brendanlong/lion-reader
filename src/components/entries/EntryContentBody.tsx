@@ -27,7 +27,7 @@ import { selectDisplayedContent, showsFullContent } from "@/lib/narration/select
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
-import { EntryArticle } from "./EntryArticle";
+import { ENTRY_ACTION_BAR_CLASSES, EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
 import { seekTargetElement } from "@/lib/narration/seek-target";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
@@ -117,8 +117,6 @@ export interface EntryContentBodyProps {
   onSummaryClose?: () => void;
   /** Callback when regenerate summary is clicked */
   onSummaryRegenerate?: () => void;
-  /** Whether the main content is still loading (for progressive rendering) */
-  isContentLoading?: boolean;
   /** See EntryContentOptions */
   prerecordedNarration?: PrerecordedVoice;
   /** Host-supplied content rendered after the summary card, before the body */
@@ -171,8 +169,6 @@ export function EntryContentBody({
   onSummarize,
   onSummaryClose,
   onSummaryRegenerate,
-  // Progressive loading
-  isContentLoading,
   prerecordedNarration,
   beforeContent,
   afterContent,
@@ -354,7 +350,6 @@ export function EntryContentBody({
         textStyle={textStyle}
         footerLinkDomain={footerLinkDomain}
         unsubscribeUrl={unsubscribeUrl}
-        isContentLoading={isContentLoading}
         contentRef={contentRef}
         onContentClick={handleContentClick}
         onTouchStart={handleTouchStart}
@@ -362,7 +357,7 @@ export function EntryContentBody({
         onTouchCancel={handleTouchCancel}
         onBack={onBack}
         actionButtons={
-          <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div ref={actionButtonsRef} className={ENTRY_ACTION_BAR_CLASSES}>
             {/* Star + Read/Unread toggles (shared with the fallback and demo readers) */}
             <StarButton starred={starred} onToggle={onToggleStar} />
             <ReadToggleButton read={read} onToggle={onToggleRead} />

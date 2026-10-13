@@ -30,7 +30,7 @@ export function EntryListFallback({ filters, onEntryClick }: EntryListFallbackPr
   const entries = useLocalEntriesMatching(filters);
 
   if (entries.length === 0) {
-    return <EntryListSkeleton density={listDensity} />;
+    return <EntryListSkeleton />;
   }
 
   // Show stored entries with a subtle loading indicator

@@ -4,7 +4,7 @@
  * Both depend on browser-only APIs (speechSynthesis, localStorage, Media
  * Source), so they load with ssr: false: no hydration mismatch, and the engine
  * stays out of the initial bundle until an article with narration enabled is
- * open. The skeleton placeholder prevents layout shift while they load.
+ * open. Until then a disabled copy of the idle button holds their place.
  *
  * NOTE: EnhancedVoiceList and useEnhancedVoices depend on piper-tts-web which has
  * Node.js-only code (require('fs')) that breaks client bundling. Import them directly
@@ -12,11 +12,20 @@
  */
 
 import dynamic from "next/dynamic";
+import { Button } from "@/components/ui/button";
+import { NarrationIcon } from "@/components/ui/icons";
 import type { UseNarrationReturn } from "./useNarrationTypes";
 
-function NarrationControlsSkeleton() {
+/**
+ * The idle "Listen" button, disabled, as the controls render before playback
+ * starts; enabling it is the only change once they load.
+ */
+export function NarrationControlsSkeleton() {
   return (
-    <div className="bg-fill-muted min-h-[36px] w-[88px] animate-pulse rounded-lg sm:min-h-[32px]" />
+    <Button variant="secondary" size="sm" disabled aria-label="Listen (loading)">
+      <NarrationIcon />
+      <span className="ml-2">Listen</span>
+    </Button>
   );
 }
 

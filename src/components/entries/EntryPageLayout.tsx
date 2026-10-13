@@ -19,24 +19,24 @@ import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { SearchIcon } from "@/components/ui/icons";
+import { SkeletonText } from "@/components/ui/skeleton";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
 import { UnreadToggle } from "./UnreadToggle";
 import { SortToggle } from "./SortToggle";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 import { EntrySearchBar } from "./EntrySearchBar";
 
-/**
- * Loading skeleton for the page title.
- */
+const TITLE_CLASSES = "ui-text-xl sm:ui-text-2xl text-body font-bold";
+
 export function TitleSkeleton() {
-  return <div className="bg-fill-muted h-8 w-48 animate-pulse rounded" />;
+  return <SkeletonText width="w-48" className={TITLE_CLASSES} />;
 }
 
 /**
  * Title text component - renders the h1 with proper styling.
  */
 export function TitleText({ children }: { children: ReactNode }) {
-  return <h1 className="ui-text-xl sm:ui-text-2xl text-body font-bold">{children}</h1>;
+  return <h1 className={TITLE_CLASSES}>{children}</h1>;
 }
 
 interface EntryPageLayoutProps {

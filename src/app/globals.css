@@ -124,9 +124,9 @@
   /* Surfaces */
   --canvas: #fafafa; /* zinc-50 - page background behind cards/app shell */
   --surface: #ffffff; /* white - cards, inputs, controls */
-  --surface-muted: #f4f4f5; /* zinc-100 - chips, skeletons, hover fill (hover:bg-surface-muted) */
+  --surface-muted: #f4f4f5; /* zinc-100 - chips, hover fill (hover:bg-surface-muted) */
   --surface-subtle: #fafafa; /* zinc-50 - note boxes, subtle fills */
-  --fill-muted: #e4e4e7; /* zinc-200 - skeleton pulses, toggle-off/progress/range tracks, thin dividers */
+  --fill-muted: #e4e4e7; /* zinc-200 - settings skeleton pulses, e-paper skeleton bars, toggle-off/progress/range tracks, thin dividers */
 
   /* Borders: `edge` for card outlines, `edge-strong` for dividers/note boxes
      (more visible in dark mode), `edge-input` for input/control outlines */
@@ -149,6 +149,26 @@
   --ui-text-lg: 1.25rem; /* 20px - emphasis */
   --ui-text-xl: 1.5rem; /* 24px - section headers */
   --ui-text-2xl: 1.875rem; /* 30px */
+}
+
+/* Loading placeholders (ui/skeleton.tsx): the reveal holds the placeholder
+   invisible briefly so fast loads never flash it; the pulse is gentle so a
+   screen full of placeholders doesn't strobe. */
+@theme {
+  --animate-skeleton-in: skeleton-in 300ms ease-out 250ms backwards;
+  --animate-skeleton: skeleton 1.8s ease-in-out infinite;
+
+  @keyframes skeleton-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes skeleton {
+    50% {
+      opacity: 0.45;
+    }
+  }
 }
 
 @theme inline {
@@ -430,7 +450,7 @@
   --surface-muted: var(--epaper-paper);
   --surface-subtle: var(--epaper-paper);
 
-  /* The one non-text gray: tracks, skeleton pulses and the read-entry hairline,
+  /* The one non-text gray: tracks, skeleton bars and the read-entry hairline,
      which must read as "present but not structural" next to the black edges. */
   --fill-muted: var(--epaper-gray-light);
 
