@@ -40,8 +40,8 @@ import {
   createCollection,
   removeEntriesFromCollection,
 } from "@/server/services/collections";
-import { errors, getAppErrorCode } from "@/server/trpc/errors";
-import { COLLECTION_NAME_MAX_LENGTH } from "@/lib/collections";
+import { getAppErrorCode } from "@/server/trpc/errors";
+import { COLLECTION_NAME_MAX_LENGTH, MAX_SAVE_COLLECTIONS } from "@/lib/collections";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +86,12 @@ export async function POST(request: Request): Promise<Response> {
     return textResponse("OK");
   }
 
+  // Checked before any change, so a rejected request changes nothing.
+  const collectionChanges = await planCollectionChanges(session.user.id, addTags, removeTags);
+  if ("error" in collectionChanges) {
+    return errorResponse(collectionChanges.error, 400);
+  }
+
   // Process read state changes
   const addRead = addTags.some((t) => isState(t, "read"));
   const removeRead = removeTags.some((t) => isState(t, "read"));
@@ -111,11 +117,15 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    await applyCollectionLabels(session.user.id, entryUuids, addTags, removeTags);
+    await applyCollectionChanges(session.user.id, entryUuids, collectionChanges);
   } catch (error) {
     const code = getAppErrorCode(error);
+    // A full collection, or the subscription cap reached by a new one.
     if (code === "VALIDATION_ERROR" || code === "MAX_SUBSCRIPTIONS_REACHED") {
       return errorResponse((error as Error).message, 400);
+    }
+    if (code === "COLLECTION_NAME_TAKEN") {
+      return errorResponse((error as Error).message, 409);
     }
     throw error;
   }
@@ -135,31 +145,74 @@ function labelNames(streamIds: string[]): string[] {
   });
 }
 
-async function applyCollectionLabels(
+interface CollectionChanges {
+  removeFrom: string[];
+  addTo: string[];
+  create: string[];
+}
+
+/**
+ * Resolves the request's labels to collections: removals of anything but a
+ * collection and additions of a tag are ignored, and an unknown added label
+ * is a collection to create.
+ */
+async function planCollectionChanges(
   userId: string,
-  entryIds: string[],
   addTags: string[],
   removeTags: string[]
-): Promise<void> {
+): Promise<CollectionChanges | { error: string }> {
+  const changes: CollectionChanges = { removeFrom: [], addTo: [], create: [] };
   const toAdd = labelNames(addTags);
   const toRemove = labelNames(removeTags);
-  if (toAdd.length === 0 && toRemove.length === 0) return;
-  if (toAdd.some((name) => name.length > COLLECTION_NAME_MAX_LENGTH)) {
-    throw errors.validation(`Labels must be at most ${COLLECTION_NAME_MAX_LENGTH} characters`);
-  }
+  if (toAdd.length === 0 && toRemove.length === 0) return changes;
 
   const labels = await listGreaderLabels(db, userId);
   for (const name of toRemove) {
     const label = labels.find(name);
-    if (label?.kind === "collection") {
-      await removeEntriesFromCollection(db, userId, label.subscriptionId, entryIds);
-    }
+    if (label?.kind === "collection") changes.removeFrom.push(label.subscriptionId);
   }
+  const createKeys = new Set<string>();
   for (const name of toAdd) {
     const label = labels.find(name);
-    if (label?.kind === "tag") continue;
-    const subscriptionId =
-      label?.subscriptionId ?? (await createCollection(db, userId, name)).subscription.id;
-    await addEntriesToCollection(db, userId, subscriptionId, entryIds);
+    if (label?.kind === "collection") {
+      if (!changes.addTo.includes(label.subscriptionId)) changes.addTo.push(label.subscriptionId);
+    } else if (!label && !createKeys.has(name.toLowerCase())) {
+      createKeys.add(name.toLowerCase());
+      changes.create.push(name);
+    }
+  }
+
+  if (changes.addTo.length + changes.create.length > MAX_SAVE_COLLECTIONS) {
+    return { error: `At most ${MAX_SAVE_COLLECTIONS} labels can be added at once` };
+  }
+  if (changes.create.some((name) => name.length > COLLECTION_NAME_MAX_LENGTH)) {
+    return { error: `Labels must be at most ${COLLECTION_NAME_MAX_LENGTH} characters` };
+  }
+  return changes;
+}
+
+async function applyCollectionChanges(
+  userId: string,
+  entryIds: string[],
+  { removeFrom, addTo, create }: CollectionChanges
+): Promise<void> {
+  for (const subscriptionId of removeFrom) {
+    await skipIfDeleted(removeEntriesFromCollection(db, userId, subscriptionId, entryIds));
+  }
+  for (const subscriptionId of addTo) {
+    await skipIfDeleted(addEntriesToCollection(db, userId, subscriptionId, entryIds));
+  }
+  for (const name of create) {
+    const { subscription } = await createCollection(db, userId, name);
+    await skipIfDeleted(addEntriesToCollection(db, userId, subscription.id, entryIds));
+  }
+}
+
+/** A collection deleted since the labels were read is skipped, like an unknown label. */
+async function skipIfDeleted(change: Promise<unknown>): Promise<void> {
+  try {
+    await change;
+  } catch (error) {
+    if (getAppErrorCode(error) !== "SUBSCRIPTION_NOT_FOUND") throw error;
   }
 }

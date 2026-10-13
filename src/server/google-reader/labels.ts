@@ -11,9 +11,10 @@
  * Names match ignoring case, as tag and collection names are each unique that
  * way. When a tag and a collection share a name, the tag keeps it and the
  * collection is labeled "{name} (collection)" (numbered if that's taken too,
- * in creation order). Labels are names, so renaming a tag or collection, or a
- * new tag taking a collection's name, shows clients a new label in place of the
- * old one at their next tag/list and item sync.
+ * in creation order; a collection's own name always beats a generated one).
+ * Labels are names, so renaming a tag or collection, or a new tag or
+ * collection taking a name, shows clients a new label in place of the old one
+ * at their next tag/list and item sync.
  */
 
 import { and, asc, eq, isNull } from "drizzle-orm";

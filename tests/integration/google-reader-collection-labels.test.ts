@@ -7,15 +7,22 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { entries, subscriptionEntries, subscriptions, users } from "../../src/server/db/schema";
+import {
+  entries,
+  subscriptionEntries,
+  subscriptions,
+  userEntries,
+  users,
+} from "../../src/server/db/schema";
+import { COLLECTION_NAME_MAX_LENGTH } from "../../src/lib/collections";
 import { createSession } from "../../src/server/auth/session";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { GET as tagList } from "../../src/app/api/greader.php/reader/api/0/tag/list/route";
 import { GET as unreadCount } from "../../src/app/api/greader.php/reader/api/0/unread-count/route";
 import { GET as streamContents } from "../../src/app/api/greader.php/reader/api/0/stream/contents/[[...streamId]]/route";
 import { POST as editTag } from "../../src/app/api/greader.php/reader/api/0/edit-tag/route";
 import { POST as renameTag } from "../../src/app/api/greader.php/reader/api/0/rename-tag/route";
+import { POST as markAllAsRead } from "../../src/app/api/greader.php/reader/api/0/mark-all-as-read/route";
 import { POST as disableTag } from "../../src/app/api/greader.php/reader/api/0/disable-tag/route";
 import {
   createTestEntry,
@@ -42,13 +49,13 @@ async function readerWithEntry() {
     scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
   });
   const feedId = await createTestFeed();
-  const sourceId = await createTestSubscription(userId, feedId);
+  await createTestSubscription(userId, feedId);
   const entryId = await createTestEntry(feedId, { userIds: [userId] });
   const [{ itemId }] = await db
     .select({ itemId: entries.greaderItemId })
     .from(entries)
     .where(eq(entries.id, entryId));
-  return { userId, token, sourceId, entryId, itemId: itemId.toString() };
+  return { userId, token, feedId, entryId, itemId: itemId.toString() };
 }
 
 function get(path: string, token: string): Request {
@@ -111,21 +118,44 @@ describe("Google Reader collection labels", () => {
     expect(body.items[0].categories).toContain("user/-/label/Papers");
   });
 
-  it("keeps a shared name for the tag and labels the collection apart", async () => {
-    const { userId, token, sourceId, entryId } = await readerWithEntry();
-    await createTestTag(userId, { name: "News", subscriptionIds: [sourceId] });
-    const { subscription } = await createCollection(db, userId, "News");
+  it("marks a collection label's articles read, and only those", async () => {
+    const { userId, token, entryId, feedId } = await readerWithEntry();
+    const otherId = await createTestEntry(feedId, { userIds: [userId] });
+    const { subscription } = await createCollection(db, userId, "Papers");
     await addEntriesToCollection(db, userId, subscription.id, [entryId]);
 
-    const tags = (await (await tagList(get("tag/list", token))).json()).tags;
-    expect(tags).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "user/-/label/News", type: "folder" }),
-        expect.objectContaining({ id: "user/-/label/News (collection)", type: "tag" }),
+    await markAllAsRead(post("mark-all-as-read", token, [["s", "user/-/label/Papers"]]));
+
+    const states = await db
+      .select({ entryId: userEntries.entryId, read: userEntries.read })
+      .from(userEntries)
+      .where(eq(userEntries.userId, userId));
+    expect(new Map(states.map((row) => [row.entryId, row.read]))).toEqual(
+      new Map([
+        [entryId, true],
+        [otherId, false],
       ])
     );
-    const { body } = await labelStream(token, "News (collection)");
-    expect(body.items[0].categories).toContain("user/-/label/News (collection)");
+  });
+
+  it("rejects an over-long new label before changing anything", async () => {
+    const { userId, token, itemId, entryId } = await readerWithEntry();
+
+    const res = await editTag(
+      post("edit-tag", token, [
+        ["i", itemId],
+        ["a", "user/-/state/com.google/read"],
+        ["a", `user/-/label/${"x".repeat(COLLECTION_NAME_MAX_LENGTH + 1)}`],
+      ])
+    );
+
+    expect(res.status).toBe(400);
+    const [{ read }] = await db
+      .select({ read: userEntries.read })
+      .from(userEntries)
+      .where(and(eq(userEntries.userId, userId), eq(userEntries.entryId, entryId)));
+    expect(read).toBe(false);
+    expect(await activeCollectionNames(userId)).toEqual([]);
   });
 
   it("reports a collection's unread count under its label, and its tag's including it", async () => {
@@ -141,6 +171,14 @@ describe("Google Reader collection labels", () => {
 
     expect(countById.get("user/-/label/Papers")).toBe(1);
     expect(countById.get("user/-/label/Research")).toBe(1);
+    // One article, reached through its feed and the collection.
+    expect(countById.get("user/-/state/com.google/reading-list")).toBe(1);
+    const [{ publishedAt }] = await db
+      .select({ publishedAt: entries.publishedAt })
+      .from(entries)
+      .where(eq(entries.id, entryId));
+    const research = unreadcounts.find((c: { id: string }) => c.id === "user/-/label/Research");
+    expect(research.newestItemTimestampUsec).toBe((publishedAt!.getTime() * 1000).toString());
     // Collections have no feed line; the source feed keeps its own.
     expect(
       unreadcounts

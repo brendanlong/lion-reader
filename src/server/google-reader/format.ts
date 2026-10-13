@@ -204,7 +204,7 @@ interface GoogleReaderUnreadCount {
  *
  * `labels` are per-label lines (`user/-/label/{name}`) for tags and
  * collections, so a collection, which has no feed line, gets a count, and a
- * tag's counts the articles of the collections it holds.
+ * tag's count includes the articles of the collections it holds.
  *
  * `getGreaderUnreadCounts` derives the counts and the newest map from a single
  * query (issue #1092), so they share one snapshot: no read-time race can count a

@@ -10,6 +10,7 @@
 
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { isUniqueViolation } from "@/server/db/errors";
+import { COLLECTION_NAME_MAX_LENGTH } from "@/lib/collections";
 import type { db as dbType } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
@@ -138,6 +139,9 @@ export async function renameGreaderSubscription(
     return (await subscriptionsService.clearedCustomTitle(db, userId, subscriptionId)) === null
       ? errorResponse("Collection name is required", 400)
       : null;
+  }
+  if (title.length > COLLECTION_NAME_MAX_LENGTH) {
+    return errorResponse(`Titles must be at most ${COLLECTION_NAME_MAX_LENGTH} characters`, 400);
   }
   try {
     await db

@@ -101,6 +101,9 @@ async function handleStreamContents(
     }
   }
 
+  // Read once: for a label stream, and for the items' collection labels.
+  const labelsPromise = listGreaderLabels(db, session.user.id);
+
   // Resolve stream ID to filter params
   switch (parsedStream.type) {
     case "feed": {
@@ -132,7 +135,7 @@ async function handleStreamContents(
       break;
     }
     case "label": {
-      const label = (await listGreaderLabels(db, session.user.id)).find(parsedStream.name);
+      const label = (await labelsPromise).find(parsedStream.name);
       if (!label) {
         return errorResponse(`Label not found: ${parsedStream.name}`, 404);
       }
@@ -154,7 +157,7 @@ async function handleStreamContents(
   const [fullEntries, idsByEntry, labels] = await Promise.all([
     entriesService.getEntries(db, session.user.id, entryIds),
     resolveGreaderIdsForEntries(db, session.user.id, entryIds),
-    listGreaderLabels(db, session.user.id),
+    labelsPromise,
   ]);
   const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
   const items = result.items.flatMap((entry) => {
