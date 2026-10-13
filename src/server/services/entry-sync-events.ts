@@ -122,7 +122,7 @@ export function entryRowToSyncEvents(
         entryId: row.id,
         ...stamps,
         feedType: row.feedType,
-        ...announcement,
+        ...(announcement.entry && { entry: { ...announcement.entry, type: row.feedType } }),
         ...(counts.newEntry && { counts: counts.newEntry }),
       });
     }
@@ -151,7 +151,7 @@ export function entryRowToSyncEvents(
         ? {
             subscriptionId: row.subscriptionId,
             feedType: row.feedType,
-            entry: payload,
+            entry: { ...payload, type: row.feedType },
           }
         : {}),
     });

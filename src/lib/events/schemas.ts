@@ -41,6 +41,11 @@ export const entryMetadataSchema = z.object({
  * offline. Consumers must treat absence as false.
  */
 export const newEntryListDataSchema = entryMetadataSchema.extend({
+  // The entry's own type, for display only (a saved article shows its site
+  // name); list membership comes from `subscriptionIds` (#1846). Replaces the
+  // event's `feedType`, which #1846 phase 9 drops; absent from a previous
+  // release's events.
+  type: z.enum(["web", "email", "saved"]).optional(),
   fetchedAt: z.string(),
   siteName: z.string().nullable(),
   feedTitle: z.string().nullable(),

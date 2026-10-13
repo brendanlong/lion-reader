@@ -22,7 +22,13 @@ import {
   setSubscriptionEntriesFeedTitle,
   type EntryRow,
 } from "@/lib/local-db/entries";
-import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
+import {
+  addServerEntryToLists,
+  getLocalDb,
+  insertEntryIntoLists,
+  type LocalDb,
+} from "@/lib/local-db/local-db";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { applySyncTagChanges, removeSyncTags } from "./tag-cache";
 import { patchLiveSubscription } from "@/lib/local-db/subscriptions";
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
@@ -31,17 +37,28 @@ import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 import type { NewEntryListData, SyncEvent } from "@/lib/events/schemas";
 export type { SyncEvent } from "@/lib/events/schemas";
 
-/** Builds the entry row for an event's list-item payload. */
+/**
+ * Builds the entry row for an event's list-item payload. A previous release's
+ * events carry no `subscriptionIds` (a new entry's one membership is then its
+ * origin) and no payload `type` (the event's `feedType` stands in).
+ */
 function toEntryRow(
-  event: { entryId: string; subscriptionId?: string | null; updatedAt: string },
-  type: EntryRow["type"],
+  event: {
+    entryId: string;
+    subscriptionId?: string | null;
+    subscriptionIds?: string[];
+    feedType: EntryRow["type"];
+    updatedAt: string;
+  },
   entry: NewEntryListData,
   state: { read: boolean; starred: boolean }
 ): EntryRow {
+  const subscriptionId = event.subscriptionId ?? null;
   return {
     id: event.entryId,
-    subscriptionId: event.subscriptionId ?? null,
-    type,
+    subscriptionId,
+    subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
+    type: entry.type ?? event.feedType,
     url: entry.url,
     title: entry.title,
     author: entry.author,
@@ -54,6 +71,29 @@ function toEntryRow(
     feedTitle: entry.feedTitle,
     siteName: entry.siteName,
   };
+}
+
+/**
+ * A saved article arrived while the client knows of no saved subscription:
+ * this save created it (the user's first), so look its id up, then place the
+ * entry. Keyed on the entry's type, the one thing a first save's event surely
+ * says (it may be read already, so its counts needn't show it), and done at
+ * most once per page load, so a server answering null can't make every save
+ * refetch.
+ */
+function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: EntryRow): void {
+  if (entry.type !== "saved" || db.saved.id !== null || db.saved.lookedUp) return;
+  db.saved.lookedUp = true;
+  // The cached null is still fresh by the staleTime, but out of date now.
+  void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT, { staleTime: 0 }).then(
+    () => {
+      const stored = db.entries.getSynced(entry.id);
+      if (stored) insertEntryIntoLists(db, stored);
+    },
+    () => {
+      // Lists pick the entry up on their next refresh.
+    }
+  );
 }
 
 // ============================================================================
@@ -95,14 +135,12 @@ export function handleSyncEvent(
       // another device while this client was offline); the live path omits
       // them because a brand-new entry is always unread/unstarred.
       if (event.entry) {
-        addServerEntryToLists(
-          db,
-          queryClient,
-          toEntryRow(event, event.feedType, event.entry, {
-            read: event.entry.read ?? false,
-            starred: event.entry.starred ?? false,
-          })
-        );
+        const row = toEntryRow(event, event.entry, {
+          read: event.entry.read ?? false,
+          starred: event.entry.starred ?? false,
+        });
+        addServerEntryToLists(db, row);
+        learnNewSavedSubscription(utils, db, row);
       }
       break;
 
@@ -122,6 +160,7 @@ export function handleSyncEvent(
       const state = { read: event.read, starred: event.starred };
       setServerEntryState(db.entries, event.entryId, {
         ...state,
+        subscriptionIds: event.subscriptionIds,
         updatedAt: new Date(event.updatedAt),
       });
 
@@ -133,15 +172,13 @@ export function handleSyncEvent(
       // live (issue #1237). Events without a payload (older servers,
       // star/unstar of an unread entry) fall back to the stored row.
       if (!event.read) {
-        if (event.entry && event.feedType) {
-          addServerEntryToLists(
-            db,
-            queryClient,
-            toEntryRow(event, event.feedType, event.entry, state)
-          );
+        const { entry } = event;
+        const feedType = entry?.type ?? event.feedType;
+        if (entry && feedType) {
+          addServerEntryToLists(db, toEntryRow({ ...event, feedType }, entry, state));
         } else {
           const stored = db.entries.getSynced(event.entryId);
-          if (stored) insertEntryIntoLists(db, queryClient, stored);
+          if (stored) insertEntryIntoLists(db, stored);
         }
       }
 

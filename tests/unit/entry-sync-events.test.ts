@@ -58,6 +58,7 @@ describe("entryRowToSyncEvents", () => {
       updatedAt,
       feedType: "web",
       entry: {
+        type: "web",
         title: "A post",
         author: "Someone",
         summary: "What it says",
@@ -97,7 +98,7 @@ describe("entryRowToSyncEvents", () => {
       subscriptionId: "sub-1",
       subscriptionIds: ["sub-1"],
       feedType: "web",
-      entry: { title: "A post" },
+      entry: { title: "A post", type: "web" },
     });
     const read = entryRowToSyncEvents(
       row({ isNew: false, metadataChanged: false, read: true }),
@@ -125,7 +126,14 @@ describe("entryRowToSyncEvents", () => {
     const [catchUp] = entryRowToSyncEvents(changed, allCounts);
     expect(catchUp.type).toBe("new_entry");
     const entry = catchUp.type === "new_entry" ? catchUp.entry : undefined;
-    expect(entry).toEqual({ ...live?.entry, read: false, starred: false, readChangedAt: null });
+    expect(entry).toEqual({
+      ...live?.entry,
+      // The publishers add the type, which they know from the source.
+      type: "web",
+      read: false,
+      starred: false,
+      readChangedAt: null,
+    });
   });
 });
 

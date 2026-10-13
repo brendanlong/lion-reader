@@ -197,27 +197,33 @@ const INSERT_SUPPORTED_FILTER_KEYS = new Set([
 ]);
 
 /**
- * Which tags the entry's subscription has. `undefined` when the subscription
- * isn't known, in which case tag and uncategorized lists are conservatively
- * skipped. Saved articles belong to no tag list, so an empty scope is exact
- * for them.
+ * The lists an entry's memberships (`subscriptionIds`) put it in, as far as
+ * the client knows them: the tags of its stored subscriptions, whether one of
+ * them is untagged (Uncategorized; never the saved subscription), and whether
+ * it's in the saved subscription (Saved). Built only from what the client
+ * knows, so it can miss a list (the entry then appears on that list's next
+ * refresh) but never claims a wrong one.
  */
-export interface EntryTagScope {
+export interface EntryMembershipScope {
   tagIds: Set<string>;
   uncategorized: boolean;
+  saved: boolean;
 }
 
 function belongsInList(
   input: EntryListFilters,
   entry: EntryRow,
-  scope: EntryTagScope | undefined
+  scope: EntryMembershipScope
 ): boolean {
-  if (input.subscriptionId && input.subscriptionId !== entry.subscriptionId) return false;
-  if (input.tagId && !scope?.tagIds.has(input.tagId)) return false;
-  if (input.uncategorized && !scope?.uncategorized) return false;
+  if (input.subscriptionId && !entry.subscriptionIds.includes(input.subscriptionId)) return false;
+  if (input.tagId && !scope.tagIds.has(input.tagId)) return false;
+  if (input.uncategorized && !scope.uncategorized) return false;
   if (input.starredOnly && !entry.starred) return false;
   if (input.unreadOnly && entry.read) return false;
-  if (input.type && input.type !== entry.type) return false;
+  // Saved is a membership, like a collection; other types filter on the entry's.
+  if (input.type === "saved" ? !scope.saved : input.type && input.type !== entry.type) {
+    return false;
+  }
   return true;
 }
 
@@ -234,29 +240,9 @@ function belongsInList(
 export function insertIntoMatchingLists(
   lists: EntryLists,
   entry: EntryRow,
-  scope: EntryTagScope | undefined
+  scope: EntryMembershipScope
 ): void {
   insertIntoListsWhere(lists, entry, (input) => belongsInList(input, entry, scope));
-}
-
-/**
- * Inserts an entry into the loaded lists of a collection it was just added
- * to. A collection's membership isn't one of the entry's fields, so
- * `insertIntoMatchingLists` can't place it; tag lists the collection is in
- * pick it up on their next refresh.
- */
-export function insertIntoCollectionLists(
-  lists: EntryLists,
-  entry: EntryRow,
-  collectionId: string
-): void {
-  insertIntoListsWhere(
-    lists,
-    entry,
-    (input) =>
-      input.subscriptionId === collectionId &&
-      belongsInList({ ...input, subscriptionId: undefined }, entry, undefined)
-  );
 }
 
 /**

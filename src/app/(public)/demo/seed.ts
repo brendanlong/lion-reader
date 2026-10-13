@@ -20,6 +20,7 @@ import superjson from "superjson";
 import { trpc } from "@/lib/trpc/client";
 import type { AppLocation } from "@/lib/hooks/useAppLocation";
 import { parseViewPreferencesFromParams } from "@/lib/hooks/viewPreferences";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import {
   buildEntriesListInput,
   getDefaultViewPreferences,
@@ -94,6 +95,10 @@ export function buildDemoDehydratedState(store: DemoStore, location: AppLocation
       procedures["entries.count"](input)
     );
   }
+  queryClient.setQueryData(
+    getQueryKey(trpc.subscriptions.list, SAVED_SUBSCRIPTION_LIST_INPUT, "query"),
+    procedures["subscriptions.list"](SAVED_SUBSCRIPTION_LIST_INPUT)
+  );
   queryClient.setQueryData(
     getQueryKey(trpc.summarization.isAvailable, undefined, "query"),
     procedures["summarization.isAvailable"]()

@@ -21,7 +21,15 @@ import type { SyncedCollection } from "./synced-collection";
 /** An entry's list-item fields as the server sends them. */
 export type EntryRow = {
   id: string;
+  /** The entry's origin: its web, email or saved subscription (#1846). */
   subscriptionId: string | null;
+  /**
+   * Every active subscription holding the entry (its origin, its collections,
+   * and for a saved article the saved subscription): list membership is
+   * judged by these, never by `type`. Per-user, so it moves with the state
+   * group (a membership change moves the server's `user_entries.updated_at`).
+   */
+  subscriptionIds: string[];
   type: "web" | "email" | "saved";
   url: string | null;
   title: string | null;
@@ -46,19 +54,23 @@ export type EntryStore = SyncedCollection<StoredEntryRow>;
 
 export type EntryState = Pick<EntryRow, "read" | "starred">;
 
+/** A state write; `subscriptionIds` when the write carries them. */
+type EntryStateWrite = EntryState & { subscriptionIds?: string[] };
+
 /** The fields an `entry_updated` event carries. */
 export type EntryMetadata = Pick<EntryRow, "title" | "author" | "summary" | "url" | "publishedAt">;
 
 export type EntryWrite =
   /** A full row: both groups as of `row.updatedAt`. */
   | { kind: "row"; row: EntryRow }
-  | { kind: "state"; state: EntryState; updatedAt: Date }
+  | { kind: "state"; state: EntryStateWrite; updatedAt: Date }
   | { kind: "metadata"; metadata: EntryMetadata; updatedAt: Date };
 
 export function toEntryRow(entry: EntryRow): EntryRow {
   return {
     id: entry.id,
     subscriptionId: entry.subscriptionId,
+    subscriptionIds: entry.subscriptionIds,
     type: entry.type,
     url: entry.url,
     title: entry.title,
@@ -116,7 +128,12 @@ export function mergeServerEntry(
       const base = metadataFresh ? row : stored;
       const state = stateFresh ? row : stored;
       return withWatermarks(
-        { ...toEntryRow(base), read: state.read, starred: state.starred },
+        {
+          ...toEntryRow(base),
+          read: state.read,
+          starred: state.starred,
+          subscriptionIds: state.subscriptionIds,
+        },
         stateFresh ? row.updatedAt : stored.stateUpdatedAt,
         metadataFresh ? row.updatedAt : stored.metadataUpdatedAt
       );
@@ -153,18 +170,47 @@ export function upsertServerEntries(store: EntryStore, rows: EntryRow[]): void {
   store.upsert([...merged.values()]);
 }
 
-/** Writes read/starred state from the server (a mutation response or `entry_state_changed`). */
+/**
+ * Writes read/starred state from the server (a mutation response or
+ * `entry_state_changed`), and the entry's `subscriptionIds` when it carries
+ * them (read with the same row, so as fresh as the state).
+ */
 export function setServerEntryState(
   store: EntryStore,
   id: string,
-  state: EntryState & { updatedAt: Date }
+  state: EntryStateWrite & { updatedAt: Date }
 ): void {
   const next = mergeServerEntry(store.getSynced(id), {
     kind: "state",
-    state: { read: state.read, starred: state.starred },
+    state: {
+      read: state.read,
+      starred: state.starred,
+      ...(state.subscriptionIds && { subscriptionIds: state.subscriptionIds }),
+    },
     updatedAt: state.updatedAt,
   });
   if (next) store.upsert([next]);
+}
+
+/**
+ * Adds a collection to (or removes it from) a stored entry's
+ * `subscriptionIds`, after a membership change. The change's response carries
+ * no `updatedAt`, so this moves no watermark: a page fetched before the change
+ * that lands after it can revert the ids, which only matters until the next
+ * write that carries them (any unread flip does).
+ */
+export function setStoredEntryCollection(
+  store: EntryStore,
+  id: string,
+  collectionId: string,
+  added: boolean
+): void {
+  const stored = store.getSynced(id);
+  if (!stored || stored.subscriptionIds.includes(collectionId) === added) return;
+  const subscriptionIds = added
+    ? [...stored.subscriptionIds, collectionId]
+    : stored.subscriptionIds.filter((subscriptionId) => subscriptionId !== collectionId);
+  store.upsert([{ ...stored, subscriptionIds }]);
 }
 
 /** Writes metadata from an `entry_updated` event. */

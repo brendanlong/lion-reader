@@ -12900,6 +12900,14 @@
                                       "null"
                                     ]
                                   },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "web",
+                                      "email",
+                                      "saved"
+                                    ]
+                                  },
                                   "fetchedAt": {
                                     "type": "string"
                                   },
@@ -13206,6 +13214,14 @@
                                     "type": [
                                       "string",
                                       "null"
+                                    ]
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "web",
+                                      "email",
+                                      "saved"
                                     ]
                                   },
                                   "fetchedAt": {

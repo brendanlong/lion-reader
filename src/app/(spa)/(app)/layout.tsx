@@ -24,6 +24,7 @@ import { createHydrationHelpersForRequest, isAuthenticated, isConfirmed } from "
 import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { ANNOUNCEMENT_DISMISSED_COOKIE } from "@/lib/site-status/announcement-cookie";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { getAnnouncement } from "@/server/services/site-status";
 import { AppLayoutContent } from "./AppLayoutContent";
 
@@ -71,6 +72,8 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.tags.list.prefetch(),
     trpc.entries.count.prefetch({}),
     trpc.entries.count.prefetch({ type: "saved" }),
+    // Names the saved subscription, whose members are the Saved list.
+    trpc.subscriptions.list.prefetch(SAVED_SUBSCRIPTION_LIST_INPUT),
     trpc.entries.count.prefetch({ starredOnly: true }),
     trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
     trpc.users["me.preferences"].prefetch(), // For entry content settings

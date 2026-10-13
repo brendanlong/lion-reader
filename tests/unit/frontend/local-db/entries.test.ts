@@ -26,6 +26,7 @@ function makeEntry(overrides: Partial<EntryRow> = {}): EntryRow {
   return {
     id: "e1",
     subscriptionId: "sub-1",
+    subscriptionIds: ["sub-1"],
     type: "web",
     url: "https://example.com/e1",
     title: "Entry",
@@ -57,6 +58,12 @@ const row = (overrides: Partial<EntryRow>): EntryWrite => ({
 const state = (read: boolean, updatedAt: Date): EntryWrite => ({
   kind: "state",
   state: { read, starred: false },
+  updatedAt,
+});
+/** A state write carrying memberships, as `entry_state_changed` does. */
+const memberships = (subscriptionIds: string[], updatedAt: Date): EntryWrite => ({
+  kind: "state",
+  state: { read: false, starred: false, subscriptionIds },
   updatedAt,
 });
 const meta = (title: string, updatedAt: Date): EntryWrite => ({
@@ -175,6 +182,34 @@ describe("mergeServerEntry", () => {
   it("moves only the written group's watermark", () => {
     const stored = applyAll([row({ updatedAt: t1 }), state(true, t2), meta("Renamed", t3)]);
     expect(stored).toMatchObject({ stateUpdatedAt: t2, metadataUpdatedAt: t3, updatedAt: t3 });
+  });
+
+  it.each<{ name: string; writes: EntryWrite[]; subscriptionIds: string[] }>([
+    {
+      name: "a page fetched before a membership change keeps the new memberships",
+      writes: [
+        row({ updatedAt: t1 }),
+        memberships(["sub-1", "col-1"], t3),
+        row({ title: "Edited", updatedAt: t2 }),
+      ],
+      subscriptionIds: ["sub-1", "col-1"],
+    },
+    {
+      name: "a page fetched before a metadata change takes its memberships",
+      writes: [
+        row({ updatedAt: t1 }),
+        meta("Renamed", t3),
+        row({ subscriptionIds: [], updatedAt: t2 }),
+      ],
+      subscriptionIds: [],
+    },
+    {
+      name: "a state write without memberships keeps them",
+      writes: [row({ subscriptionIds: ["sub-1", "col-1"], updatedAt: t1 }), state(true, t2)],
+      subscriptionIds: ["sub-1", "col-1"],
+    },
+  ])("$name", ({ writes, subscriptionIds }) => {
+    expect(applyAll(writes)?.subscriptionIds).toEqual(subscriptionIds);
   });
 
   it("keeps the summary with the rest of the metadata", () => {

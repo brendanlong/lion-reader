@@ -91,6 +91,8 @@ function entryEvents(stream: SseStream) {
       subscriptionId: data.subscriptionId,
       feedType: data.feedType,
       feedTitle: (data.entry as { feedTitle?: string } | undefined)?.feedTitle,
+      // The entry's own type, which replaces feedType in #1846 phase 9.
+      type: (data.entry as { type?: string } | undefined)?.type,
     }))
   );
 }
@@ -165,6 +167,7 @@ describe("SSE entry events", () => {
             subscriptionId: emailSubscriptionId,
             feedType: "email",
             feedTitle: "My Newsletter",
+            type: "email",
           },
           {
             // A saved article's origin is the saved subscription (#1846).
@@ -173,6 +176,7 @@ describe("SSE entry events", () => {
             subscriptionId: await getSavedSubscriptionId(db, userId),
             feedType: "saved",
             feedTitle: "Saved Articles",
+            type: "saved",
           },
           {
             event: "entry_updated",
@@ -180,6 +184,7 @@ describe("SSE entry events", () => {
             subscriptionId: null,
             feedType: "saved",
             feedTitle: undefined,
+            type: undefined,
           },
           {
             event: "new_entry",
@@ -187,6 +192,7 @@ describe("SSE entry events", () => {
             subscriptionId: webSubscriptionId,
             feedType: "web",
             feedTitle: undefined,
+            type: undefined,
           },
         ])
       );

@@ -7,16 +7,26 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
-import { coalesce, eq, inArray } from "@tanstack/db";
-import { getLocalDb, type LocalDb } from "@/lib/local-db/local-db";
+import { coalesce, eq } from "@tanstack/db";
+import { getLocalDb, subscribeSavedSubscriptionId, type LocalDb } from "@/lib/local-db/local-db";
 import { entryListKey, isNewestFirst, type EntryListFilters } from "@/lib/local-db/entry-lists";
 import type { EntryRow } from "@/lib/local-db/entries";
 
 function useLocalDb(): LocalDb {
   return getLocalDb(useQueryClient());
+}
+
+/** The saved subscription's id as the store knows it (`LocalDb.saved`), re-rendering when learned. */
+function useStoredSavedSubscriptionId(db: LocalDb): string | null | undefined {
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeSavedSubscriptionId(db, listener),
+    [db]
+  );
+  const read = () => db.saved.id;
+  return useSyncExternalStore(subscribe, read, read);
 }
 
 /**
@@ -67,9 +77,11 @@ export function useLocalEntry(entryId: string): EntryRow | undefined {
 
 /**
  * Entries already in the store that match a list view's filters, newest
- * first — shown while the view's own first page loads. `subscriptionIds`
- * narrows tag/uncategorized views (their membership depends on subscription
- * tags); pass `null` to disable the query when those aren't known.
+ * first — shown while the view's own first page loads. Membership filters go
+ * by the entries' `subscriptionIds`: `subscriptionIds` narrows tag and
+ * uncategorized views to the stored subscriptions that qualify (pass `null` to
+ * disable the query when those aren't known), and Saved needs the saved
+ * subscription's id (nothing matches until it's known).
  */
 export function useLocalEntriesMatching(
   filters: EntryListFilters,
@@ -77,23 +89,39 @@ export function useLocalEntriesMatching(
 ): EntryRow[] | undefined {
   const db = useLocalDb();
   const newestFirst = isNewestFirst(filters);
+  const savedSubscriptionId = useStoredSavedSubscriptionId(db);
+  const { subscriptionId, type, starredOnly, unreadOnly } = filters;
   const { data } = useLiveQuery({
+    // The membership filters are functions, which the query's own identity
+    // can't see: this key is what rebuilds it.
+    queryKey: [
+      "entries-matching",
+      subscriptionId,
+      type,
+      starredOnly,
+      unreadOnly,
+      newestFirst,
+      subscriptionIds,
+      savedSubscriptionId,
+    ],
     query: (q) => {
       if (subscriptionIds === null) return undefined;
       let query = q.from({ entry: db.entries.collection });
-      if (filters.subscriptionId) {
-        const { subscriptionId } = filters;
-        query = query.where(({ entry }) => eq(entry.subscriptionId, subscriptionId));
+      // Nothing is in Saved until its subscription is known.
+      const memberOf =
+        subscriptionId ?? (type === "saved" ? (savedSubscriptionId ?? null) : undefined);
+      if (memberOf !== undefined) {
+        query = query.fn.where(
+          ({ entry }) => !!memberOf && entry.subscriptionIds.includes(memberOf)
+        );
       }
       if (subscriptionIds) {
-        query = query.where(({ entry }) => inArray(entry.subscriptionId, subscriptionIds));
+        const scope = new Set(subscriptionIds);
+        query = query.fn.where(({ entry }) => entry.subscriptionIds.some((id) => scope.has(id)));
       }
-      if (filters.starredOnly) query = query.where(({ entry }) => eq(entry.starred, true));
-      if (filters.unreadOnly) query = query.where(({ entry }) => eq(entry.read, false));
-      if (filters.type) {
-        const { type } = filters;
-        query = query.where(({ entry }) => eq(entry.type, type));
-      }
+      if (starredOnly) query = query.where(({ entry }) => eq(entry.starred, true));
+      if (unreadOnly) query = query.where(({ entry }) => eq(entry.read, false));
+      if (type && type !== "saved") query = query.where(({ entry }) => eq(entry.type, type));
       const direction = newestFirst ? "desc" : "asc";
       return query
         .orderBy(({ entry }) => coalesce(entry.publishedAt, entry.fetchedAt), direction)

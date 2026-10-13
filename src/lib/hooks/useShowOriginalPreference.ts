@@ -42,9 +42,14 @@ export function useShowOriginalPreference(
 }
 
 /**
- * Per feed subscription; saved articles (whose subscription is the saved one)
- * and any entry without a subscription share one per type.
+ * Per origin subscription. Saved articles (whose origin is the saved
+ * subscription) share the key "saved", which their preference was always
+ * stored under; an entry without an origin uses its type.
  */
-export function showOriginalKey(entry: { subscriptionId: string | null; type: string }): string {
-  return entry.type === "saved" ? entry.type : (entry.subscriptionId ?? entry.type);
+export function showOriginalKey(
+  entry: { subscriptionId: string | null; type: string },
+  savedSubscriptionId: string | null
+): string {
+  if (entry.subscriptionId === null) return entry.type;
+  return entry.subscriptionId === savedSubscriptionId ? "saved" : entry.subscriptionId;
 }
