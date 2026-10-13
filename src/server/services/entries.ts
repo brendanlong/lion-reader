@@ -325,29 +325,33 @@ const entryListSelectFields = {
 };
 
 /**
- * Base select fields shared by every full-entry read (getEntry/getEntries and
- * selectFullEntry). Selects the **raw** content columns; the read path
- * sanitizes them per read (see `toEntryFull`/`toFullEntry`) so raw untrusted
- * HTML never leaves the service layer.
+ * Every full-entry read selects these and maps them to its output shape
+ * (`toFullEntry` for the app's entry view, `toEntryFull` for the external
+ * APIs). The content columns are **raw** (untrusted): both mappers sanitize
+ * them, so raw feed HTML never leaves this service.
  */
-const entryFullSelectFields = {
+const entryReadSelectFields = {
   id: visibleEntries.id,
   type: visibleEntries.type,
   url: visibleEntries.url,
   title: visibleEntries.title,
   author: visibleEntries.author,
-  // Raw (untrusted) content, sanitized on read before it leaves the service.
   contentOriginal: visibleEntries.contentOriginal,
   contentCleaned: visibleEntries.contentCleaned,
+  fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+  fullContentError: visibleEntries.fullContentError,
   summary: visibleEntries.summary,
   publishedAt: visibleEntries.publishedAt,
   fetchedAt: visibleEntries.fetchedAt,
   read: visibleEntries.read,
   starred: visibleEntries.starred,
+  readChangedAt: visibleEntries.readChangedAt,
   updatedAt: visibleEntries.updatedAt,
   entryUpdatedAt: visibleEntries.entryUpdatedAt,
+  contentHash: visibleEntries.contentHash,
   subscriptionId: subscriptions.id,
   subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
+  fetchFullContent: subscriptions.fetchFullContent,
   siteName: visibleEntries.siteName,
   feedTitle: entryFeedTitleSql(),
   feedUrl: feeds.url,
@@ -355,47 +359,82 @@ const entryFullSelectFields = {
 };
 
 /**
- * Superset selected by `selectFullEntry` for the tRPC full-entry view: adds
- * both full-content variants (the view can toggle back to feed content) and the
- * subscription's fetchFullContent setting.
+ * Which fetched full articles a read loads: all of them (the app's entry view
+ * can toggle between full and feed content), or only those the entry view
+ * shows by default, for reads that serve just that variant. The bodies sit on
+ * the shared entry row, so another subscriber's fetch fills them in either
+ * way.
  */
-const fullEntrySelectFields = {
-  ...entryFullSelectFields,
-  // Raw (untrusted) full-content columns, sanitized on read (see toFullEntry).
-  // The original is the whole fetched page and is served only when there's no
-  // cleaned version, so don't load it otherwise.
-  fullContentOriginal: sql<
-    string | null
-  >`CASE WHEN ${visibleEntries.fullContentCleaned} IS NULL THEN ${visibleEntries.fullContentOriginal} END`,
-  fullContentCleaned: visibleEntries.fullContentCleaned,
-  fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
-  fullContentError: visibleEntries.fullContentError,
-  contentHash: visibleEntries.contentHash,
-  fetchFullContent: subscriptions.fetchFullContent,
-  readChangedAt: visibleEntries.readChangedAt,
-};
+type FullContentScope = "all" | "shown";
 
 /**
- * Fetch a single full entry by ID for a user.
- * Queries visibleEntries joined with feeds and subscriptions.
- * Returns null if the entry is not found or not visible to the user.
+ * The full-content bodies, raw. The original is the whole fetched page and is
+ * served only when there's no cleaned version, so it isn't loaded otherwise.
  */
-function selectFullEntryRows(db: typeof dbType, where: SQL | undefined) {
+function fullContentBodyFields(scope: FullContentScope) {
+  const loaded = scope === "all" ? sql`true` : sql`${subscriptions.fetchFullContent}`;
+  return {
+    fullContentOriginal: sql<
+      string | null
+    >`CASE WHEN ${loaded} AND ${visibleEntries.fullContentCleaned} IS NULL THEN ${visibleEntries.fullContentOriginal} END`,
+    fullContentCleaned: sql<
+      string | null
+    >`CASE WHEN ${loaded} THEN ${visibleEntries.fullContentCleaned} END`,
+  };
+}
+
+function selectEntryRows(db: typeof dbType, where: SQL | undefined, scope: FullContentScope) {
   return db
-    .select(fullEntrySelectFields)
+    .select({ ...entryReadSelectFields, ...fullContentBodyFields(scope) })
     .from(visibleEntries)
     .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(where);
 }
 
-export async function selectFullEntry(db: typeof dbType, userId: string, entryId: string) {
-  const result = await selectFullEntryRows(
-    db,
-    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId))
-  ).limit(1);
+type EntryRow = Awaited<ReturnType<typeof selectEntryRows>>[number];
 
-  return result.length > 0 ? result[0] : null;
+/**
+ * Reads the user's visible entries among `entryIds` and maps each to an output
+ * shape, in input order, skipping ids the user can't see. Mapping sanitizes,
+ * so it runs with a small concurrency bound: a batch of large bodies mustn't
+ * flood the thread pool.
+ */
+async function readEntries<T extends { id: string }>(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[],
+  scope: FullContentScope,
+  toOutput: (row: EntryRow) => Promise<T>
+): Promise<T[]> {
+  if (entryIds.length === 0) return [];
+  const rows = await selectEntryRows(
+    db,
+    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)),
+    scope
+  );
+  const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, toOutput);
+  const byId = new Map(mapped.map((entry) => [entry.id, entry]));
+  return entryIds.flatMap((id) => byId.get(id) ?? []);
+}
+
+/** Like {@link readEntries} for one entry. @throws entryNotFound */
+async function readEntry<T>(
+  db: typeof dbType,
+  userId: string,
+  entryId: string,
+  scope: FullContentScope,
+  toOutput: (row: EntryRow) => Promise<T>
+): Promise<T> {
+  const [row] = await selectEntryRows(
+    db,
+    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)),
+    scope
+  ).limit(1);
+  if (!row) {
+    throw errors.entryNotFound();
+  }
+  return toOutput(row);
 }
 
 /**
@@ -495,10 +534,11 @@ async function sanitizeFullEntryContent(row: {
 }
 
 /**
- * Transform a raw full entry row into the full-entry output shape.
- * Strips internal fields, sanitizes content, and defaults fetchFullContent.
+ * The app's full-entry view of a row: both content families sanitized (the
+ * view can toggle back to feed content) and the subscription's
+ * fetchFullContent setting.
  */
-export async function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof selectFullEntry>>>) {
+async function toFullEntry(row: EntryRow) {
   const {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     contentHash,
@@ -526,21 +566,35 @@ export async function toFullEntry(row: NonNullable<Awaited<ReturnType<typeof sel
   };
 }
 
+export type FullEntry = Awaited<ReturnType<typeof toFullEntry>>;
+
 /**
- * {@link toFullEntry} for many ids at once (the native app's offline download).
- * Ids the user can't see are skipped; order follows the input.
+ * One entry in the app's full-entry view (`entries.get`), plus its content
+ * hash, which keys caches built from the content (narration) but isn't shown.
+ *
+ * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
  */
-export async function getFullEntries(db: typeof dbType, userId: string, entryIds: string[]) {
-  if (entryIds.length === 0) return [];
-  const rows = await selectFullEntryRows(
-    db,
-    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId))
-  );
-  const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, (row) =>
-    toFullEntry(row)
-  );
-  const byId = new Map(mapped.map((entry) => [entry.id, entry]));
-  return entryIds.flatMap((id) => byId.get(id) ?? []);
+export async function getFullEntry(
+  db: typeof dbType,
+  userId: string,
+  entryId: string
+): Promise<{ entry: FullEntry; contentHash: string }> {
+  return readEntry(db, userId, entryId, "all", async (row) => ({
+    entry: await toFullEntry(row),
+    contentHash: row.contentHash,
+  }));
+}
+
+/**
+ * {@link getFullEntry}'s entries for many ids at once (the native app's offline
+ * download). Ids the user can't see are skipped; order follows the input.
+ */
+export async function getFullEntries(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[]
+): Promise<FullEntry[]> {
+  return readEntries(db, userId, entryIds, "all", toFullEntry);
 }
 
 export interface ExportableEntry {
@@ -964,40 +1018,45 @@ async function searchEntries(
 }
 
 /**
- * Maps a raw row to EntryFull, sanitizing the content family per read. Full
- * content is sanitized only when it's the variant shown.
+ * The external APIs' view of a row (EntryFull): the feed content family
+ * sanitized, and the fetched full article only when it's the variant the
+ * entry view shows (`showsFullContent`).
  */
-async function toEntryFull(
-  row: Awaited<ReturnType<typeof selectEntryFullRows>>[number]
-): Promise<EntryFull> {
-  const [fullContent, { contentOriginal, contentCleaned, ...rest }] = takeShownFullContent(row);
-
-  const [content, sanitizedFullContent] = await Promise.all([
+async function toEntryFull(row: EntryRow): Promise<EntryFull> {
+  const shownFullContent = showsFullContent(row)
+    ? (row.fullContentCleaned ?? row.fullContentOriginal)
+    : null;
+  const [content, fullContent] = await Promise.all([
     sanitizeEntryContentFamily("content", {
-      original: contentOriginal,
-      cleaned: contentCleaned,
+      original: row.contentOriginal,
+      cleaned: row.contentCleaned,
     }),
-    sanitizeEntryHtmlAsync(fullContent),
+    sanitizeEntryHtmlAsync(shownFullContent),
   ]);
 
   return {
-    ...rest,
+    id: row.id,
+    subscriptionId: row.subscriptionId,
+    subscriptionIds: row.subscriptionIds,
+    type: row.type,
+    url: row.url,
+    title: row.title,
+    author: row.author,
     contentOriginal: content.original,
     contentCleaned: content.cleaned,
-    fullContent: sanitizedFullContent,
+    fullContent,
+    summary: row.summary,
+    publishedAt: row.publishedAt,
+    fetchedAt: row.fetchedAt,
+    updatedAt: row.updatedAt,
+    entryUpdatedAt: row.entryUpdatedAt,
+    read: row.read,
+    starred: row.starred,
+    feedTitle: row.feedTitle,
+    feedUrl: row.feedUrl,
+    siteName: row.siteName,
+    unsubscribeUrl: row.unsubscribeUrl,
   };
-}
-
-function selectEntryFullRows(db: typeof dbType, condition: SQL | undefined) {
-  return db
-    .select({
-      ...entryFullSelectFields,
-      ...shownFullContentSelectFields,
-    })
-    .from(visibleEntries)
-    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
-    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
-    .where(condition);
 }
 
 /**
@@ -1031,58 +1090,29 @@ async function mapWithConcurrency<T, R>(
 const GET_ENTRIES_SANITIZE_CONCURRENCY = 8;
 
 /**
- * Gets a single entry by ID with full content.
+ * Gets a single entry by ID with full content, for the external APIs (MCP,
+ * Google Reader, Wallabag).
  *
- * Content fields are sanitized — this is the chokepoint that keeps raw feed
- * HTML from reaching any consumer (tRPC via toFullEntry, MCP, Google Reader,
- * Wallabag).
+ * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
  */
 export async function getEntry(
   db: typeof dbType,
   userId: string,
   entryId: string
 ): Promise<EntryFull> {
-  const result = await selectEntryFullRows(
-    db,
-    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId))
-  ).limit(1);
-
-  if (result.length === 0) {
-    throw errors.entryNotFound();
-  }
-
-  return toEntryFull(result[0]);
+  return readEntry(db, userId, entryId, "shown", toEntryFull);
 }
 
 /**
- * Gets multiple entries by ID in a single query.
- * Returns entries in the same order as the input IDs.
- * Missing entries are silently skipped.
- * Content fields are sanitized per read (see getEntry).
+ * {@link getEntry} for many ids in one query. Ids the user can't see are
+ * skipped; order follows the input.
  */
 export async function getEntries(
   db: typeof dbType,
   userId: string,
   entryIds: string[]
 ): Promise<EntryFull[]> {
-  if (entryIds.length === 0) return [];
-
-  const results = await selectEntryFullRows(
-    db,
-    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId))
-  );
-
-  // Build a map for O(1) lookup, then return in original order. Sanitize with a
-  // small concurrency bound so a large-body batch doesn't flood the thread pool.
-  const mapped = await mapWithConcurrency(results, GET_ENTRIES_SANITIZE_CONCURRENCY, (row) =>
-    toEntryFull(row)
-  );
-  const resultMap = new Map<string, EntryFull>();
-  for (const entry of mapped) {
-    resultMap.set(entry.id, entry);
-  }
-
-  return entryIds.map((id) => resultMap.get(id)).filter((e): e is EntryFull => e != null);
+  return readEntries(db, userId, entryIds, "shown", toEntryFull);
 }
 
 /**

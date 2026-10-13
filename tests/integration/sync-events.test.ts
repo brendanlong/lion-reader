@@ -1558,7 +1558,7 @@ describe("sync.events", () => {
 
     // The whole point of #1105: each candidate arm must SEEK an index, not scan
     // the user's whole history. These EXPLAINs mirror the arms built in
-    // src/server/trpc/routers/sync.ts — keep them in sync. enable_seqscan=off
+    // src/server/services/sync.ts — keep them in sync. enable_seqscan=off
     // makes the planner reveal whether the predicate is index-serviceable at all
     // (on tiny test data it would otherwise seq-scan regardless of the index).
     it("candidate arms seek their indexes, not a full scan (EXPLAIN)", async () => {
