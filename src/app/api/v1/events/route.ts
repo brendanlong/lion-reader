@@ -44,7 +44,12 @@ import {
   type UserEvent,
 } from "@/server/redis/pubsub";
 import { eq, and, isNull } from "drizzle-orm";
-import type { NewEntryListData } from "@/lib/events/schemas";
+import type {
+  NewEntryListData,
+  entryUpdatedEventSchema,
+  newEntryEventSchema,
+} from "@/lib/events/schemas";
+import type { z } from "zod";
 import {
   incrementSSEConnections,
   decrementSSEConnections,
@@ -445,7 +450,7 @@ export async function GET(req: Request): Promise<Response> {
                     ),
                   }
                 : {}),
-            })}\n\n`
+            } satisfies z.input<typeof newEntryEventSchema>)}\n\n`
           );
           trackSSEEventSent("new_entry");
         });
@@ -453,7 +458,7 @@ export async function GET(req: Request): Promise<Response> {
 
       /** Sends an entry_updated event, with metadata so the client can update caches directly. */
       function sendEntryUpdated(
-        event: ClientEntryEvent & { metadata: EntryUpdatedMetadata }
+        event: Omit<ClientEntryEvent, "feedType"> & { metadata: EntryUpdatedMetadata }
       ): void {
         enqueueSend(() => {
           const cursor = new Date().toISOString();
@@ -464,9 +469,8 @@ export async function GET(req: Request): Promise<Response> {
               entryId: event.entryId,
               timestamp: event.timestamp,
               updatedAt: event.updatedAt, // Database updated_at for cursor tracking
-              feedType: event.feedType,
               metadata: event.metadata,
-            })}\n\n`
+            } satisfies z.input<typeof entryUpdatedEventSchema>)}\n\n`
           );
           trackSSEEventSent("entry_updated");
         });
@@ -537,7 +541,7 @@ export async function GET(req: Request): Promise<Response> {
           if (event.type === "new_entry") {
             sendNewEntry({ ...event, subscriptionId });
           } else {
-            sendEntryUpdated({ ...event, subscriptionId, feedType: "web" });
+            sendEntryUpdated({ ...event, subscriptionId });
           }
         }
       }

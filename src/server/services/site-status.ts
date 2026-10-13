@@ -21,11 +21,11 @@ import { createHash } from "node:crypto";
 import { getRedisClient } from "@/server/redis";
 import { logger } from "@/lib/logger";
 import { MAINTENANCE_KEY, ANNOUNCEMENT_KEY } from "@/server/services/site-status-keys";
+import { ANNOUNCEMENT_LEVELS } from "@/lib/events/schemas";
 
 /** How long a read is cached in-process before it's refreshed from Redis. */
 const CACHE_TTL_MS = 5_000;
 
-export const ANNOUNCEMENT_LEVELS = ["info", "warning"] as const;
 export type AnnouncementLevel = (typeof ANNOUNCEMENT_LEVELS)[number];
 
 /** Stored maintenance flag. */

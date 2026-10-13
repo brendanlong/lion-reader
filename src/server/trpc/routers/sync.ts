@@ -797,6 +797,7 @@ async function collectSyncEvents(
             subscriptionId: subscription.id,
             tags: tagsBySubscription.get(subscription.id) ?? [],
             customTitle: subscription.customTitle,
+            fetchFullContent: subscription.fetchFullContent,
             timestamp: updatedAtIso,
             updatedAt: updatedAtIso,
             _sortTime: updatedAtInstant,

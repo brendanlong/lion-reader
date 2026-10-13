@@ -937,7 +937,8 @@ export async function setSubscriptionTags(
       subscriptionId,
       now,
       userTags,
-      existingSubscription[0].customTitle
+      existingSubscription[0].customTitle,
+      existingSubscription[0].fetchFullContent
     ).catch((err) => {
       logger.error("Failed to publish subscription_updated event", {
         err,

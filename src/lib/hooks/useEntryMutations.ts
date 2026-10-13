@@ -17,8 +17,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createTransaction } from "@tanstack/db";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { handleMarkAllRead, setBulkCounts } from "@/lib/cache/operations";
-import { setServerEntryState, type EntryRow } from "@/lib/local-db/entries";
+import { applyEntryStateChanges, handleMarkAllRead } from "@/lib/cache/operations";
+import type { EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb, insertEntryIntoLists, type LocalDb } from "@/lib/local-db/local-db";
 import type { EntryType } from "@/lib/entry-types";
 
@@ -156,8 +156,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
             entries: ids.map((id) => ({ id, changedAt })),
             read,
           });
-          for (const entry of data.entries) setServerEntryState(db.entries, entry.id, entry);
-          if (data.counts) setBulkCounts(utils, data.counts, queryClient);
+          applyEntryStateChanges(utils, queryClient, data);
         }
       ).catch((error: unknown) => {
         console.error("markRead mutation error:", error);
@@ -182,14 +181,14 @@ export function useEntryMutations(): UseEntryMutationsResult {
             starred,
             changedAt,
           });
-          setServerEntryState(db.entries, data.entry.id, data.entry);
-          // Array check: a server from the previous release (canary/rollback
-          // window) returns the single-subscription counts shape, which lacks
-          // `subscriptions`; skip it and let the entry_state_changed event,
-          // which always carries the bulk shape, set the counts.
-          if (data.counts && Array.isArray(data.counts.subscriptions)) {
-            setBulkCounts(utils, data.counts, queryClient);
-          }
+          applyEntryStateChanges(utils, queryClient, {
+            entries: [data.entry],
+            // A server from the previous release (canary/rollback window)
+            // returns the single-subscription counts shape, which lacks
+            // `subscriptions`; skip it and let the entry_state_changed event,
+            // which always carries the bulk shape, set the counts.
+            counts: Array.isArray(data.counts?.subscriptions) ? data.counts : undefined,
+          });
         }
       ).catch((error: unknown) => {
         console.error("setStarred mutation error:", error);

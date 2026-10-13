@@ -14,9 +14,11 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useLocalEntriesMatching } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import type { EntryListFilters } from "@/lib/local-db/entry-lists";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
+import { createSubscriptionRow } from "../../../utils/cache-test-helpers";
 
 afterEach(() => {
   cleanup();
@@ -69,11 +71,25 @@ function learnSavedSubscription(queryClient: QueryClient): void {
 
 function renderMatching(
   filters: EntryListFilters,
-  subscriptionIds?: string[] | null,
-  { savedKnown = true }: { savedKnown?: boolean } = {}
+  {
+    savedKnown = true,
+    subscriptions = {},
+  }: { savedKnown?: boolean; subscriptions?: Record<string, string[]> } = {}
 ) {
-  const rendered = renderHookWithTrpc(() => useLocalEntriesMatching(filters, subscriptionIds));
-  act(() => upsertServerEntries(getLocalDb(rendered.queryClient).entries, STORED));
+  const rendered = renderHookWithTrpc(() => useLocalEntriesMatching(filters));
+  const db = getLocalDb(rendered.queryClient);
+  act(() => {
+    upsertServerEntries(db.entries, STORED);
+    writeLiveSubscriptions(
+      db.subscriptions,
+      Object.entries(subscriptions).map(([id, tagIds]) =>
+        createSubscriptionRow({
+          id,
+          tags: tagIds.map((tagId) => ({ id: tagId, name: tagId, color: null })),
+        })
+      )
+    );
+  });
   if (savedKnown) learnSavedSubscription(rendered.queryClient);
   const ids = () => rendered.result.current?.map((entry) => entry.id);
   return Object.assign(ids, { learnSaved: () => learnSavedSubscription(rendered.queryClient) });
@@ -100,15 +116,26 @@ describe("useLocalEntriesMatching", () => {
     await waitFor(() => expect(ids()).toEqual(["f"]));
   });
 
-  it("narrows tag views to entries in the given subscriptions", async () => {
-    const ids = renderMatching({ tagId: "tag-1" }, ["sub-2", "col-1"]);
+  it("narrows tag views to entries in a stored subscription with the tag", async () => {
+    const ids = renderMatching(
+      { tagId: "tag-1" },
+      { subscriptions: { "sub-1": ["tag-2"], "sub-2": ["tag-1"], "col-1": ["tag-1"] } }
+    );
     await waitFor(() => expect(ids()).toEqual(["f", "b"]));
   });
 
-  it("is disabled when a tag view's subscriptions aren't known", async () => {
-    const ids = renderMatching({ tagId: "tag-1" }, null);
+  it("narrows Uncategorized to entries in an untagged subscription other than Saved", async () => {
+    const ids = renderMatching(
+      { uncategorized: true },
+      { subscriptions: { "sub-1": [], "sub-2": ["tag-1"], "sub-saved": [] } }
+    );
+    await waitFor(() => expect(ids()).toEqual(["f", "d", "c", "a"]));
+  });
+
+  it("shows nothing in a tag view while its subscriptions aren't stored", async () => {
+    const ids = renderMatching({ tagId: "tag-1" });
     await act(async () => {});
-    expect(ids()).toBeUndefined();
+    expect(ids()).toEqual([]);
   });
 
   it("honors the starred filter", async () => {
@@ -122,7 +149,7 @@ describe("useLocalEntriesMatching", () => {
   });
 
   it("shows nothing in Saved until the saved subscription is known, then its members", async () => {
-    const saved = renderMatching({ type: "saved" }, undefined, { savedKnown: false });
+    const saved = renderMatching({ type: "saved" }, { savedKnown: false });
     await act(async () => {});
     expect(saved()).toEqual([]);
 

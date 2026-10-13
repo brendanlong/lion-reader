@@ -181,8 +181,12 @@ describe("createDemoStore", () => {
     it("marks all entries in a scope read", () => {
       const { procedures } = createDemoStore();
       const sub = DEMO_SUBSCRIPTIONS[0];
-      expect(procedures["entries.markAllRead"]({ subscriptionId: sub.id })).toEqual({
-        count: sub.entryCount,
+      const result = procedures["entries.markAllRead"]({ subscriptionId: sub.id });
+      expect(result.count).toBe(sub.entryCount);
+      // Counts, so the client takes the live path rather than refetching them.
+      expect(result.counts).toMatchObject({
+        all: { unread: TOTAL - sub.entryCount },
+        subscriptions: [{ id: sub.id, unread: 0 }],
       });
       expect(procedures["entries.count"]({ subscriptionId: sub.id })).toEqual({ unread: 0 });
       expect(procedures["entries.count"]({})).toEqual({ unread: TOTAL - sub.entryCount });

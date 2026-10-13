@@ -14,6 +14,7 @@ import type { SyncEvent } from "@/lib/events/schemas";
 import type { AppRouter } from "@/server/trpc/root";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import type { EntryType } from "@/lib/entry-types";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 // ============================================================================
 // Types
@@ -501,6 +502,25 @@ export function createSubscriptionCreatedEvent(
       description: "A new feed",
       siteUrl: "https://example.com",
     },
+    ...overrides,
+  };
+}
+
+/** A subscription as `subscriptions.get`/`update`/`setTags` return it. */
+export function createSubscriptionRow(overrides: Partial<SubscriptionRow> = {}): SubscriptionRow {
+  const id = overrides.id ?? "sub-1";
+  return {
+    id,
+    type: "web",
+    url: `https://example.com/${id}.xml`,
+    title: id,
+    originalTitle: id,
+    description: null,
+    siteUrl: null,
+    subscribedAt: new Date("2024-01-01T00:00:00Z"),
+    unreadCount: 0,
+    tags: [],
+    fetchFullContent: false,
     ...overrides,
   };
 }

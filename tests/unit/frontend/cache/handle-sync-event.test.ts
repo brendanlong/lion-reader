@@ -973,6 +973,31 @@ describe("handleSyncEvent - subscription_created", () => {
 // ============================================================================
 
 describe("handleSyncEvent - subscription_updated", () => {
+  it("carries a changed full-content setting to every open entry of the subscription", () => {
+    const entryOf = (id: string, subscriptionId: string) => ({
+      entry: { ...DEFAULT_ENTRIES[0], id, subscriptionId, fetchFullContent: false },
+    });
+    setUtilsData(utils.entries.get, { id: "entry-1" }, entryOf("entry-1", "sub-1"));
+    setUtilsData(utils.entries.get, { id: "entry-2" }, entryOf("entry-2", "sub-1"));
+    setUtilsData(utils.entries.get, { id: "entry-3" }, entryOf("entry-3", "sub-2"));
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createSubscriptionUpdatedEvent({ subscriptionId: "sub-1", fetchFullContent: true })
+    );
+
+    const setting = (id: string) =>
+      getUtilsData<{ entry: { fetchFullContent: boolean } }>(utils.entries.get, { id })?.entry
+        .fetchFullContent;
+    expect([setting("entry-1"), setting("entry-2"), setting("entry-3")]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(findSubscription("sub-1")?.fetchFullContent).toBe(true);
+  });
+
   it("updates tags on subscription", () => {
     handleSyncEvent(
       utils,
@@ -1044,12 +1069,23 @@ describe("handleSyncEvent - subscription_updated", () => {
 
   it("refetches tag feed counts and the collection picker, not the sidebar sections", () => {
     invalidateSpy.mockClear();
-    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent());
+    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent({ customTitle: "Renamed" }));
 
     expect(invalidatedQueries(invalidateSpy)).toEqual([
       { path: "tags.list", input: undefined },
       { path: "subscriptions.list", input: { type: "collection" } },
     ]);
+  });
+
+  it("refetches nothing for an update that changes neither tags nor title", () => {
+    const update = createSubscriptionUpdatedEvent({ customTitle: "Renamed" });
+    handleSyncEvent(utils, queryClient, update);
+    invalidateSpy.mockClear();
+
+    // The acting tab gets its own change back as an event.
+    handleSyncEvent(utils, queryClient, update);
+
+    expect(invalidatedQueries(invalidateSpy)).toEqual([]);
   });
 
   it("loads an unstored subscription it moves into a loaded section, not into a collapsed one", () => {

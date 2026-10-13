@@ -144,11 +144,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         currentTagIds={editTarget?.tagIds ?? []}
         isCollection={editTarget?.isCollection ?? false}
         isEmail={editTarget?.isEmail ?? false}
-        onClose={() => {
-          setEditTarget(null);
-          utils.subscriptions.list.invalidate();
-          utils.tags.list.invalidate();
-        }}
+        onClose={() => setEditTarget(null)}
       />
     </>
   );

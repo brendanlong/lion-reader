@@ -15,17 +15,30 @@ import { getRedisClient } from "@/server/redis";
 import {
   entryMetadataSchema,
   newEntryListDataSchema,
-  syncTagSchema,
   subscriptionCreatedDataSchema,
   feedCreatedDataSchema,
   legacyFeedId,
   unreadCountsSchema,
+  newEntryEventSchema,
+  entryUpdatedEventSchema,
+  entryStateChangedEventSchema,
+  markAllReadEventSchema,
+  subscriptionCreatedEventSchema,
+  subscriptionDeletedEventSchema,
+  subscriptionUpdatedEventSchema,
+  tagCreatedEventSchema,
+  tagUpdatedEventSchema,
+  tagDeletedEventSchema,
+  collectionEntriesChangedEventSchema,
+  importProgressEventBaseSchema,
+  importCompletedEventBaseSchema,
+  announcementChangedEventBaseSchema,
   type NewEntryListData,
 } from "@/lib/events/schemas";
-import { ANNOUNCEMENT_LEVELS, type Announcement } from "@/server/services/site-status";
+import type { Announcement } from "@/server/services/site-status";
 import { toEntryMetadata } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
-import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
+import type { EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Event Schemas (single source of truth for both publishing and parsing)
@@ -58,181 +71,58 @@ const feedEventSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+// Server-side events always carry a timestamp; the client schemas default it.
+const serverTimestamp = { timestamp: z.string() };
+
 /**
- * Zod schema for user events published/received via Redis pub/sub.
- * Composes from shared sub-schemas (syncTagSchema, subscriptionCreatedDataSchema, etc.)
- * to stay in sync with the client-side event definitions.
+ * Zod schema for user events published/received via Redis pub/sub: each
+ * client event (`@/lib/events/schemas`) plus the recipient's `userId` and
+ * whatever the SSE route consumes before forwarding.
  */
 const userEventSchema = z.discriminatedUnion("type", [
   // Entry events for sources with exactly one recipient (email, saved), which
   // go to that user's channel instead of a feed channel. They carry what the
   // SSE route adds to a web feed's events itself: the user's subscriptionId
   // (null for saved articles).
-  z.object({
-    type: z.literal("new_entry"),
+  newEntryEventSchema.extend({
     userId: z.string(),
-    subscriptionId: z.string().nullable(),
-    entryId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
+    ...serverTimestamp,
     feedType: z.enum(["email", "saved"]),
-    entry: newEntryListDataSchema.optional(),
   }),
-  z.object({
-    type: z.literal("entry_updated"),
+  entryUpdatedEventSchema.extend({
     userId: z.string(),
-    subscriptionId: z.string().nullable(),
-    entryId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    feedType: z.enum(["email", "saved"]),
-    metadata: entryMetadataSchema,
+    ...serverTimestamp,
+    // Unread, but the previous release's SSE servers require it: drop it the
+    // release after this one.
+    feedType: z.enum(["email", "saved"]).optional(),
   }),
-  z.object({
-    type: z.literal("subscription_created"),
+  subscriptionCreatedEventSchema.extend({
     userId: z.string(),
+    ...serverTimestamp,
     // The feed channel to follow; null for a subscription without a feed (#1846).
     feedId: z.string().nullable(),
-    subscriptionId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    subscription: subscriptionCreatedDataSchema,
-    feed: feedCreatedDataSchema,
-    counts: unreadCountsSchema.optional(),
   }),
-  z.object({
-    type: z.literal("subscription_updated"),
+  subscriptionUpdatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  subscriptionDeletedEventSchema.extend({
     userId: z.string(),
-    subscriptionId: z.string(),
-    tags: z.array(syncTagSchema),
-    customTitle: z.string().nullable(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("subscription_deleted"),
-    userId: z.string(),
+    ...serverTimestamp,
     feedId: z.string().nullable(),
-    subscriptionId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    counts: unreadCountsSchema.optional(),
   }),
-  z.object({
-    type: z.literal("import_progress"),
-    userId: z.string(),
-    importId: z.string(),
-    feedUrl: z.string(),
-    feedStatus: z.enum(["imported", "skipped", "failed"]),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: z.string(),
-  }),
-  z.object({
-    type: z.literal("import_completed"),
-    userId: z.string(),
-    importId: z.string(),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: z.string(),
-  }),
-  z.object({
-    type: z.literal("entry_state_changed"),
-    userId: z.string(),
-    entryId: z.string(),
-    read: z.boolean(),
-    starred: z.boolean(),
-    counts: unreadCountsSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    // List-item data, attached when the entry flipped to unread (and isn't
-    // spam), so clients can insert it into cached lists it's missing from —
-    // mirroring the new_entry payload (issue #1237).
-    subscriptionId: z.string().nullable().optional(),
-    feedType: z.enum(ENTRY_TYPES).optional(),
-    entry: newEntryListDataSchema.optional(),
-    // Every active subscription holding the entry (#1846).
-    subscriptionIds: z.array(z.string()).optional(),
-  }),
-  // Mark-all-read signal. Mark-all-read is unbounded, so instead of shipping
-  // every affected id (or one entry_state_changed per entry, which would storm
-  // every connection), we publish a single event with the absolute counts and
-  // let each client invalidate its entry lists. `updatedAt` is the mark-all-read
-  // timestamp, used to advance the entries sync cursor so a reconnect catch-up
-  // doesn't re-deliver every marked entry.
-  z.object({
-    type: z.literal("mark_all_read"),
-    userId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-    // The largest entry id among the marked rows. The client advances its
-    // entries keyset cursor to (updatedAt, entryId): every marked row sorts at
-    // or below it (no catch-up re-delivery), while an unrelated entry written
-    // in the same millisecond — whose UUIDv7 id sorts above every
-    // earlier-created marked entry — stays past the cursor, so a catch-up can
-    // still deliver it (#1102).
-    entryId: z.string(),
-    // Absent from a previous release's events.
-    counts: unreadCountsSchema.optional(),
-  }),
-  z.object({
-    type: z.literal("tag_created"),
-    userId: z.string(),
-    tag: syncTagSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("tag_updated"),
-    userId: z.string(),
-    tag: syncTagSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("tag_deleted"),
-    userId: z.string(),
-    tagId: z.string(),
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("collection_entries_changed"),
-    userId: z.string(),
-    subscriptionId: z.string(),
-    entryIds: z.array(z.string()),
-    added: z.boolean(),
-    counts: unreadCountsSchema,
-    timestamp: z.string(),
-    updatedAt: z.string(),
-  }),
+  importProgressEventBaseSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  importCompletedEventBaseSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  entryStateChangedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  markAllReadEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  tagCreatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  tagUpdatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  tagDeletedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  collectionEntriesChangedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
 ]);
 
 /**
- * Zod schema for the global site-status events channel. Currently just the
- * announcement banner: a single broadcast channel (not per-user) so an admin
- * change reaches every connected client. Kept a discriminated union so more
- * global signals can be added later.
+ * Zod schema for the global site-status channel: a single broadcast channel
+ * (not per-user) so an admin change reaches every connected client.
  */
-const siteStatusEventSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("announcement_changed"),
-    // The active announcement (with its message-derived id), or null when it
-    // was disabled/cleared so clients hide the banner.
-    announcement: z
-      .object({
-        id: z.string(),
-        message: z.string(),
-        level: z.enum(ANNOUNCEMENT_LEVELS),
-      })
-      .nullable(),
-    timestamp: z.string(),
-  }),
-]);
+const siteStatusEventSchema = announcementChangedEventBaseSchema.extend(serverTimestamp);
 
 /** Union type for all site-status events. */
 export type SiteStatusEvent = z.infer<typeof siteStatusEventSchema>;
@@ -573,6 +463,7 @@ export async function publishSubscriptionDeleted(
  * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @param tags - The subscription's current tags
  * @param customTitle - The subscription's custom title (null for default)
+ * @param fetchFullContent - The subscription's full-content setting, when the publisher has it
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionUpdated(
@@ -580,7 +471,8 @@ export async function publishSubscriptionUpdated(
   subscriptionId: string,
   updatedAt: Date,
   tags: Array<{ id: string; name: string; color: string | null }>,
-  customTitle: string | null
+  customTitle: string | null,
+  fetchFullContent?: boolean
 ): Promise<number> {
   return publishUserEvent({
     type: "subscription_updated",
@@ -588,6 +480,7 @@ export async function publishSubscriptionUpdated(
     subscriptionId,
     tags,
     customTitle,
+    fetchFullContent,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   });

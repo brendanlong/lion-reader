@@ -18,6 +18,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { EditSubscriptionDialog } from "@/components/feeds/EditSubscriptionDialog";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
+import { createSubscriptionRow } from "../../../utils/cache-test-helpers";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 
 // sonner's toast is a side-effecting singleton (renders a portal); stub it so
 // tests assert on component behavior, not the toast implementation.
@@ -30,6 +33,9 @@ const TAGS = [
   { id: "tag-2", name: "Science", color: "#00ff00" },
 ];
 
+/** The subscription as the server holds it. */
+let server = createSubscriptionRow();
+
 function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
     "tags.list": () => ({
@@ -41,8 +47,16 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
       })),
       uncategorized: { feedCount: 0, unreadCount: 0 },
     }),
-    "subscriptions.update": (input) => ({ id: (input as { id: string }).id }),
-    "subscriptions.setTags": (input) => ({ id: (input as { id: string }).id }),
+    "subscriptions.update": (input) => {
+      const { customTitle } = input as { customTitle: string | null };
+      server = { ...server, title: customTitle ?? server.originalTitle };
+      return server;
+    },
+    "subscriptions.setTags": (input) => {
+      const { tagIds } = input as { tagIds: string[] };
+      server = { ...server, tags: TAGS.filter((tag) => tagIds.includes(tag.id)) };
+      return server;
+    },
     ...overrides,
   };
 }
@@ -66,6 +80,7 @@ function defaultProps(
 describe("EditSubscriptionDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    server = createSubscriptionRow({ id: "sub-1", title: "Feed One", originalTitle: "Feed One" });
   });
 
   it("does not render when closed", () => {
@@ -209,6 +224,26 @@ describe("EditSubscriptionDialog", () => {
     expect(setTagsCalls[0].input).toEqual({ id: "sub-1", tagIds: ["tag-1"] });
     // Title unchanged, so no update call.
     expect(callsFor("subscriptions.update")).toHaveLength(0);
+  });
+
+  it("writes the returned subscription to the store, so the sidebar moves it", async () => {
+    const { queryClient } = renderWithTrpc(<EditSubscriptionDialog {...defaultProps()} />, {
+      handlers: baseHandlers(),
+    });
+    const store = getLocalDb(queryClient).subscriptions;
+    writeLiveSubscriptions(store, [server]);
+
+    await screen.findByText("Tech");
+    fireEvent.change(screen.getByLabelText(/Custom Title/), { target: { value: "Renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: /Tech/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() =>
+      expect(store.rows.getSynced("sub-1")).toMatchObject({
+        title: "Renamed",
+        tags: [{ id: "tag-1" }],
+      })
+    );
   });
 
   it("fires no mutations and closes when nothing changed", async () => {

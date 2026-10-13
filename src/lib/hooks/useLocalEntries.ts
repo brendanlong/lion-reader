@@ -10,9 +10,17 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
-import { coalesce, eq } from "@tanstack/db";
+import { eq } from "@tanstack/db";
 import { getLocalDb, subscribeSavedSubscriptionId, type LocalDb } from "@/lib/local-db/local-db";
-import { entryListKey, isNewestFirst, type EntryListFilters } from "@/lib/local-db/entry-lists";
+import {
+  compareListEntries,
+  entryListKey,
+  entryMatchesList,
+  entryMembershipScope,
+  isNewestFirst,
+  type EntryListFilters,
+} from "@/lib/local-db/entry-lists";
+import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
 import type { EntryRow } from "@/lib/local-db/entries";
 
 function useLocalDb(): LocalDb {
@@ -75,59 +83,64 @@ export function useLocalEntry(entryId: string): EntryRow | undefined {
   return data;
 }
 
+/** How many stored entries `useLocalEntriesMatching` shows. */
+const MATCHING_ENTRIES_LIMIT = 50;
+
 /**
- * Entries already in the store that match a list view's filters, newest
- * first — shown while the view's own first page loads. Membership filters go
- * by the entries' `subscriptionIds`: `subscriptionIds` narrows tag and
- * uncategorized views to the stored subscriptions that qualify (pass `null` to
- * disable the query when those aren't known), and Saved needs the saved
- * subscription's id (nothing matches until it's known).
+ * Entries already in the store that match a list view's filters, in list
+ * order — shown while the view's own first page loads. Tag, Uncategorized and
+ * Saved membership come from the stored subscriptions and the saved
+ * subscription's id, so nothing matches those views until they're known.
  */
-export function useLocalEntriesMatching(
-  filters: EntryListFilters,
-  subscriptionIds: string[] | undefined | null
-): EntryRow[] | undefined {
+export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
   const db = useLocalDb();
-  const newestFirst = isNewestFirst(filters);
   const savedSubscriptionId = useStoredSavedSubscriptionId(db);
-  const { subscriptionId, type, starredOnly, unreadOnly } = filters;
-  const { data } = useLiveQuery({
-    // The membership filters are functions, which the query's own identity
-    // can't see: this key is what rebuilds it.
-    queryKey: [
-      "entries-matching",
+  const subscriptions = useLocalSubscriptions();
+  const { data: entries } = useLiveQuery({
+    query: (q) => q.from({ entry: db.entries.collection }),
+  });
+  // Callers pass a fresh object each render, so the memo keys on its fields.
+  const { subscriptionId, tagId, uncategorized, starredOnly, unreadOnly, type, sortOrder } =
+    filters;
+  return useMemo(() => {
+    const input = {
       subscriptionId,
-      type,
+      tagId,
+      uncategorized,
       starredOnly,
       unreadOnly,
-      newestFirst,
-      subscriptionIds,
-      savedSubscriptionId,
-    ],
-    query: (q) => {
-      if (subscriptionIds === null) return undefined;
-      let query = q.from({ entry: db.entries.collection });
-      // Nothing is in Saved until its subscription is known.
-      const memberOf =
-        subscriptionId ?? (type === "saved" ? (savedSubscriptionId ?? null) : undefined);
-      if (memberOf !== undefined) {
-        query = query.fn.where(
-          ({ entry }) => !!memberOf && entry.subscriptionIds.includes(memberOf)
-        );
-      }
-      if (subscriptionIds) {
-        const scope = new Set(subscriptionIds);
-        query = query.fn.where(({ entry }) => entry.subscriptionIds.some((id) => scope.has(id)));
-      }
-      if (starredOnly) query = query.where(({ entry }) => eq(entry.starred, true));
-      if (unreadOnly) query = query.where(({ entry }) => eq(entry.read, false));
-      if (type && type !== "saved") query = query.where(({ entry }) => eq(entry.type, type));
-      const direction = newestFirst ? "desc" : "asc";
-      return query
-        .orderBy(({ entry }) => coalesce(entry.publishedAt, entry.fetchedAt), direction)
-        .orderBy(({ entry }) => entry.id, direction)
-        .limit(50);
-    },
-  });
-  return data;
+      type,
+      sortOrder,
+    };
+    const needsScope = !!tagId || !!uncategorized || type === "saved";
+    const tagIds = new Map(
+      needsScope ? subscriptions.map((row) => [row.id, row.tags.map((tag) => tag.id)] as const) : []
+    );
+    const noScope = { tagIds: new Set<string>(), uncategorized: false, saved: false };
+    return entries
+      .filter((entry) =>
+        entryMatchesList(
+          input,
+          entry,
+          needsScope
+            ? entryMembershipScope(entry.subscriptionIds, savedSubscriptionId, (id) =>
+                tagIds.get(id)
+              )
+            : noScope
+        )
+      )
+      .sort(compareListEntries(input))
+      .slice(0, MATCHING_ENTRIES_LIMIT);
+  }, [
+    entries,
+    subscriptions,
+    savedSubscriptionId,
+    subscriptionId,
+    tagId,
+    uncategorized,
+    starredOnly,
+    unreadOnly,
+    type,
+    sortOrder,
+  ]);
 }

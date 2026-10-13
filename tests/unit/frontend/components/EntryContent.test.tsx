@@ -25,6 +25,8 @@ import {
   stubMemoryLocalStorage,
   type ProcedureHandlers,
 } from "../../../utils/component-test-helpers";
+import { createSubscriptionRow } from "../../../utils/cache-test-helpers";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -256,7 +258,8 @@ describe("EntryContent summaries", () => {
           settingsChanged: false,
         };
       },
-      "subscriptions.update": () => ({}),
+      "subscriptions.update": (input) =>
+        createSubscriptionRow(input as Partial<SubscriptionRow> & { id: string }),
     });
     return { handlers, release };
   }

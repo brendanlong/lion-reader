@@ -91,13 +91,29 @@ function isServerOrdered(input: EntryListFilters): boolean {
  */
 function listOrder(input: EntryListFilters, entry: EntryRow, index: number): number {
   if (isServerOrdered(input)) return index;
-  const time = (entry.publishedAt ?? entry.fetchedAt).getTime();
-  return input.sortOrder === "oldest" ? time : -time;
+  const time = entrySortKey(entry);
+  return isNewestFirst(input) ? -time : time;
+}
+
+/** An entry's place in a published-order list: `COALESCE(publishedAt, fetchedAt)`, then id. */
+function entrySortKey(entry: Pick<EntryRow, "publishedAt" | "fetchedAt">): number {
+  return (entry.publishedAt ?? entry.fetchedAt).getTime();
 }
 
 export function isNewestFirst(input: EntryListFilters): boolean {
   return input.sortOrder !== "oldest";
 }
+
+/** Orders entries as a published-order list with these filters shows them. */
+export function compareListEntries(
+  input: EntryListFilters
+): (a: EntrySortFields, b: EntrySortFields) => number {
+  const direction = isNewestFirst(input) ? -1 : 1;
+  return (a, b) =>
+    direction * (entrySortKey(a) - entrySortKey(b) || (a.id > b.id ? 1 : a.id < b.id ? -1 : 0));
+}
+
+type EntrySortFields = Pick<EntryRow, "id" | "publishedAt" | "fetchedAt">;
 
 /** Call when a full (not next-page) fetch of the list starts. */
 export function markEntryListFetchStarted(lists: EntryLists, input: Record<string, unknown>): void {
@@ -199,7 +215,7 @@ const INSERT_SUPPORTED_FILTER_KEYS = new Set([
 
 /**
  * The lists an entry's memberships (`subscriptionIds`) put it in, as far as
- * the client knows them: the tags of its stored subscriptions, whether one of
+ * the client knows them: the tags of its known subscriptions, whether one of
  * them is untagged (Uncategorized; never the saved subscription), and whether
  * it's in the saved subscription (Saved). Built only from what the client
  * knows, so it can miss a list (the entry then appears on that list's next
@@ -211,9 +227,40 @@ export interface EntryMembershipScope {
   saved: boolean;
 }
 
-function belongsInList(
+/**
+ * @param tagIdsOf - A known subscription's tag ids, or undefined for one the
+ *   caller doesn't know
+ */
+export function entryMembershipScope(
+  subscriptionIds: readonly string[],
+  savedSubscriptionId: string | null | undefined,
+  tagIdsOf: (subscriptionId: string) => readonly string[] | undefined
+): EntryMembershipScope {
+  const tagIds = new Set<string>();
+  let uncategorized = false;
+  for (const id of subscriptionIds) {
+    // Uncategorized excludes the saved subscription, whatever its tags.
+    if (id === savedSubscriptionId) continue;
+    const subscriptionTagIds = tagIdsOf(id);
+    if (!subscriptionTagIds) continue;
+    for (const tagId of subscriptionTagIds) tagIds.add(tagId);
+    if (subscriptionTagIds.length === 0) uncategorized = true;
+  }
+  return {
+    tagIds,
+    uncategorized,
+    saved: !!savedSubscriptionId && subscriptionIds.includes(savedSubscriptionId),
+  };
+}
+
+/**
+ * Whether an entry passes a list's membership and state filters. Search and
+ * ordering-only keys aren't checked; callers that can't honor them skip such
+ * lists (see `insertIntoMatchingLists`).
+ */
+export function entryMatchesList(
   input: EntryListFilters,
-  entry: EntryRow,
+  entry: Pick<EntryRow, "subscriptionIds" | "read" | "starred" | "type">,
   scope: EntryMembershipScope
 ): boolean {
   if (input.subscriptionId && !entry.subscriptionIds.includes(input.subscriptionId)) return false;
@@ -243,7 +290,7 @@ export function insertIntoMatchingLists(
   entry: EntryRow,
   scope: EntryMembershipScope
 ): void {
-  insertIntoListsWhere(lists, entry, (input) => belongsInList(input, entry, scope));
+  insertIntoListsWhere(lists, entry, (input) => entryMatchesList(input, entry, scope));
 }
 
 /**

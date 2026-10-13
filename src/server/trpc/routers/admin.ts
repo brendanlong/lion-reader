@@ -34,8 +34,8 @@ import {
   getAnnouncement,
   setMaintenance,
   setAnnouncement,
-  ANNOUNCEMENT_LEVELS,
 } from "@/server/services/site-status";
+import { ANNOUNCEMENT_LEVELS } from "@/lib/events/schemas";
 import { publishAnnouncementChanged } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 
