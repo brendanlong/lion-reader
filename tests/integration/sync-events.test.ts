@@ -642,10 +642,9 @@ describe("sync.events", () => {
   //
   // The entries cursor is the argmax of GREATEST(entries.updated_at,
   // user_entries.updated_at) over the user's entries, plus the id achieving it.
-  // It's computed via index-driven arms (arm_ue = state changes/new entries;
-  // arm_sub = content refetches over the user's feeds; arm_saved = the saved
-  // feed) rather than scanning the whole timeline. These lock in the argmax
-  // semantics the rewrite must preserve.
+  // currentSyncCursors computes it from one index-driven arm per kind of
+  // change (see its comment) rather than scanning the whole timeline; these
+  // pin the argmax each arm must produce.
   // ==========================================================================
 
   describe("sync.cursors entries argmax", () => {
@@ -699,6 +698,65 @@ describe("sync.events", () => {
       expect(cursor.entriesAfterId).toBe(entryId);
       expect(
         parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
+      ).toBe(true);
+    });
+
+    it("skips a newer entry of the feed that the user has no row for", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-unowned.xml" });
+      await createTestSubscription(userId, feedId);
+
+      const stateTime = new Date("2024-06-01T00:00:00.000Z");
+      const contentTime = new Date("2024-06-02T00:00:00.000Z");
+      const entryId = await createTestEntry(feedId, {
+        createdAt: stateTime,
+        updatedAt: contentTime,
+      });
+      await createUserEntry(userId, entryId, { updatedAt: stateTime });
+      // Pre-subscription content refetched later: in the feed, but not the user's.
+      // arm_sub takes one entry per feed, so it must be the newest *of the user's*.
+      await createTestEntry(feedId, {
+        createdAt: stateTime,
+        updatedAt: new Date("2024-06-03T00:00:00.000Z"),
+      });
+
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
+
+      expect(cursor.entriesAfterId).toBe(entryId);
+      expect(
+        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
+      ).toBe(true);
+    });
+
+    it.each([
+      ["first", 0],
+      ["second", 1],
+    ])("picks the newest content update across feeds (in the %s feed)", async (_, newestIdx) => {
+      const userId = await createTestUser();
+      const stateTime = new Date("2024-06-01T00:00:00.000Z");
+      const contentTimes = [
+        new Date("2024-06-02T00:00:00.000Z"),
+        new Date("2024-06-02T00:00:00.000Z"),
+      ];
+      contentTimes[newestIdx] = new Date("2024-06-03T00:00:00.000Z");
+      const entryIds: string[] = [];
+      for (const [i, updatedAt] of contentTimes.entries()) {
+        const feedId = await createFetchedFeed({
+          url: `https://example.com/argmax-feeds-${i}.xml`,
+        });
+        await createTestSubscription(userId, feedId);
+        const entryId = await createTestEntry(feedId, { createdAt: stateTime, updatedAt });
+        await createUserEntry(userId, entryId, { updatedAt: stateTime });
+        entryIds.push(entryId);
+      }
+
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
+
+      expect(cursor.entriesAfterId).toBe(entryIds[newestIdx]);
+      expect(
+        parseTimestamptz(cursor.entries!).equals(
+          parseTimestamptz(contentTimes[newestIdx].toISOString())
+        )
       ).toBe(true);
     });
 
