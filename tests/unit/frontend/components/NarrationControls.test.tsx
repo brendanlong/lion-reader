@@ -16,6 +16,9 @@
  * These tests use the real hook, the real `ArticleNarrator`, and real HTML with
  * a deliberately non-identity paragraph map; the only stand-ins are the browser
  * primitives jsdom lacks (`speechSynthesis`, `SpeechSynthesisUtterance`).
+ *
+ * The player narrates one paragraph more than the article: the closing
+ * "End of article.", which highlights no element.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -26,6 +29,7 @@ import { NarrationControlsImpl } from "@/components/narration/NarrationControls"
 import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
 import { useNarration } from "@/components/narration/useNarration";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
+import { END_OF_ARTICLE } from "@/lib/narration/paragraph-map";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 
 /**
@@ -166,32 +170,34 @@ describe("NarrationControls paragraph position", () => {
     await startNarration();
 
     // Narration paragraph 0 ("Alpha") — nothing before it.
-    expect(screen.getByText("1 of 7")).toBeInTheDocument();
+    expect(screen.getByText("1 of 8")).toBeInTheDocument();
     expect(previousButton()).toBeDisabled();
     expect(nextButton()).toBeEnabled();
 
     // Narration paragraph 1 ("Beta") still highlights DOM element 0, so a
     // DOM-index comparison would call this the very first paragraph.
     fireEvent.click(nextButton());
-    await waitFor(() => expect(screen.getByText("2 of 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("2 of 8")).toBeInTheDocument());
     expect(previousButton()).toBeEnabled();
   });
 
-  it("keeps Next live until the last narration paragraph", async () => {
+  it("keeps Next live until the end of the article", async () => {
     renderHarness(SKEWED_HTML);
     await startNarration();
 
-    for (let i = 1; i < 6; i++) {
+    // Through narration paragraph 6 ("Eta"), the article's last, which
+    // highlights DOM element 5.
+    for (let i = 1; i < 7; i++) {
       fireEvent.click(nextButton());
-      await waitFor(() => expect(screen.getByText(`${i + 1} of 7`)).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText(`${i + 1} of 8`)).toBeInTheDocument());
       expect(nextButton()).toBeEnabled();
     }
 
-    // Narration paragraph 6 ("Eta") is the last one, even though it highlights
-    // DOM element 5.
     fireEvent.click(nextButton());
-    await waitFor(() => expect(screen.getByText("7 of 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("8 of 8")).toBeInTheDocument());
     expect(nextButton()).toBeDisabled();
+    expect(previousButton()).toBeEnabled();
+    expect((speech.speak.mock.lastCall?.[0] as { text: string }).text).toBe(END_OF_ARTICLE);
   });
 
   it("does not disable Next early when DOM indices run ahead of narration ones", async () => {
@@ -199,14 +205,14 @@ describe("NarrationControls paragraph position", () => {
     await startNarration();
 
     // Narration paragraph 1 ("Two") highlights DOM element 3, which is already
-    // past `totalParagraphs - 1` (2) — but "Three" is still to come.
+    // past the article's last narration index (2) — but "Three" is still to come.
     fireEvent.click(nextButton());
-    await waitFor(() => expect(screen.getByText("2 of 3")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("2 of 4")).toBeInTheDocument());
     expect(nextButton()).toBeEnabled();
 
     fireEvent.click(nextButton());
-    await waitFor(() => expect(screen.getByText("3 of 3")).toBeInTheDocument());
-    expect(nextButton()).toBeDisabled();
+    await waitFor(() => expect(screen.getByText("3 of 4")).toBeInTheDocument());
+    expect(nextButton()).toBeEnabled();
   });
 
   it("enables [ once a narration paragraph has been played", async () => {
@@ -214,11 +220,11 @@ describe("NarrationControls paragraph position", () => {
     await startNarration();
 
     fireEvent.keyDown(document, { key: "]", code: "BracketRight" });
-    await waitFor(() => expect(screen.getByText("2 of 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("2 of 8")).toBeInTheDocument());
 
     // The DOM index is still 0 here, which would leave [ disabled.
     fireEvent.keyDown(document, { key: "[", code: "BracketLeft" });
-    await waitFor(() => expect(screen.getByText("1 of 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("1 of 8")).toBeInTheDocument());
   });
 });
 
@@ -270,7 +276,7 @@ describe("playFromElement", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Seek" }));
 
-    await waitFor(() => expect(screen.getByText("4 of 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("4 of 8")).toBeInTheDocument());
     expect(lastSpoken()).toBe("Delta");
   });
 
@@ -280,7 +286,7 @@ describe("playFromElement", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Seek" }));
 
-    await waitFor(() => expect(screen.getByText("3 of 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("3 of 8")).toBeInTheDocument());
     expect(lastSpoken()).toBe("Gamma");
   });
 
@@ -292,7 +298,7 @@ describe("playFromElement", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Seek" }));
 
-    await waitFor(() => expect(screen.getByText("7 of 7")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("7 of 8")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
     expect(speech.speak).toHaveBeenCalledTimes(1);
 
@@ -346,11 +352,11 @@ describe("FloatingNarrationControls", () => {
     expect(floating).toBeEmptyDOMElement();
 
     fireEvent.click(screen.getByRole("button", { name: "Listen" }));
-    await waitFor(() => expect(within(floating).getByText("1/7")).toBeInTheDocument());
+    await waitFor(() => expect(within(floating).getByText("1/8")).toBeInTheDocument());
 
     fireEvent.click(within(floating).getByRole("button", { name: "Next paragraph" }));
-    await waitFor(() => expect(within(floating).getByText("2/7")).toBeInTheDocument());
-    expect(screen.getByText("2 of 7")).toBeInTheDocument();
+    await waitFor(() => expect(within(floating).getByText("2/8")).toBeInTheDocument());
+    expect(screen.getByText("2 of 8")).toBeInTheDocument();
 
     fireEvent.click(within(floating).getByRole("button", { name: "Pause" }));
     await waitFor(() =>
@@ -522,7 +528,7 @@ describe("narration that finishes generating after the user moved on", () => {
     });
     await startNarration();
     fireEvent.click(nextButton());
-    expect(screen.getByText("2 of 3")).toBeInTheDocument();
+    expect(screen.getByText("2 of 4")).toBeInTheDocument();
 
     rerender(<NarrationHarness content={SKEWED_HTML} showFullContent={true} />);
     fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
@@ -534,6 +540,6 @@ describe("narration that finishes generating after the user moved on", () => {
 
     await settle(second.release);
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
-    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
   });
 });
