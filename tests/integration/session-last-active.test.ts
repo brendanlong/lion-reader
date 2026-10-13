@@ -103,6 +103,22 @@ describe("validateSession", () => {
     expect(await validateSession(token)).not.toBeNull();
     await expect.poll(sessionLastActive).not.toEqual(restaled);
   });
+
+  it("records a scoped session's activity even after a full-access caller rejected it", async () => {
+    const { userId, sessionId, lastActiveAt } = await createActiveSession(
+      LAST_ACTIVE_REFRESH_MS + 5_000
+    );
+    await db.delete(sessions).where(eq(sessions.id, sessionId));
+    const scoped = await createSession(db, { userId, scopes: ["reader:full-access"] });
+    await db.update(sessions).set({ lastActiveAt }).where(eq(sessions.id, scoped.sessionId));
+
+    // A rejecting caller mustn't leave a cached copy whose hits record nothing.
+    expect(await validateSession(scoped.token)).toBeNull();
+    expect(await validateSession(scoped.token, { allowScoped: true })).not.toBeNull();
+    await expect
+      .poll(async () => (await lastActive(userId, scoped.sessionId)).session)
+      .not.toEqual(lastActiveAt);
+  });
 });
 
 describe("validateApiToken", () => {

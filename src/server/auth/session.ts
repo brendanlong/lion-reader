@@ -377,8 +377,13 @@ export async function validateSession(
     user: dbResult.user,
   };
 
-  // Cache the result in Redis (if available). We cache before applying the
-  // scoped-access policy so a later opt-in caller still benefits from the cache.
+  // Reject a restricted session for full-access use (fail closed), before
+  // caching it: activity is recorded only on a fill, so a fill by a caller
+  // that rejects the session would leave its cached hits recording nothing.
+  if (sessionData.session.scopes !== null && !allowScoped) {
+    return null;
+  }
+
   if (redis) {
     try {
       await redis.setex(cacheKey, SESSION_CACHE_TTL_SECONDS, serializeForCache(sessionData));
@@ -386,11 +391,6 @@ export async function validateSession(
       // Redis error - continue without caching
       console.error("Failed to cache session:", err);
     }
-  }
-
-  // Reject a restricted session for full-access use (fail closed).
-  if (sessionData.session.scopes !== null && !allowScoped) {
-    return null;
   }
 
   void updateLastActiveAt(
