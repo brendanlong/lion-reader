@@ -5,7 +5,7 @@
  * by Google Reader clients.
  */
 
-import { int64ToLongFormId, feedStreamId } from "./id";
+import { int64ToLongFormId, feedStreamId, type GreaderEntryIds } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
 import type { GreaderSubscription } from "./subscriptions";
 import type { EntryFull } from "@/server/services/entries";
@@ -34,12 +34,10 @@ interface GoogleReaderItem {
 }
 
 /**
- * Formats a full entry (with content) as a Google Reader item.
+ * Formats a full entry (with content) as a Google Reader item, given its
+ * serials from `resolveGreaderIdsForEntries`.
  */
-export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
-  // Item ids and feed stream ids are stored serials (issue #1117), read straight
-  // off the entry — no UUID projection.
-  const itemId = entry.greaderItemId;
+export function formatEntryAsItem(entry: EntryFull, ids: GreaderEntryIds): GoogleReaderItem {
   const publishedTs = entry.publishedAt
     ? Math.floor(entry.publishedAt.getTime() / 1000)
     : Math.floor(entry.fetchedAt.getTime() / 1000);
@@ -60,7 +58,7 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
     entry.fullContent ?? entry.contentCleaned ?? entry.contentOriginal ?? entry.summary ?? "";
 
   return {
-    id: int64ToLongFormId(itemId),
+    id: int64ToLongFormId(ids.itemId),
     crawlTimeMsec: crawlTimeMs,
     timestampUsec: (BigInt(crawlTimeMs) * BigInt(1000)).toString(),
     published: publishedTs,
@@ -76,7 +74,7 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
     origin: {
       // Saved articles' origin is the saved subscription, which clients see as
       // the "Saved Articles" subscription (issue #730).
-      streamId: entryFeedStreamId(entry) ?? "",
+      streamId: entryFeedStreamId(ids) ?? "",
       title: entry.feedTitle ?? "",
       htmlUrl: entry.feedUrl ?? entry.url ?? "",
     },
@@ -85,17 +83,11 @@ export function formatEntryAsItem(entry: EntryFull): GoogleReaderItem {
 }
 
 /**
- * The `feed/{int64}` stream an entry belongs to, or null if it has none: its
- * origin subscription's stored serial (for a saved article, the saved
- * subscription's, which clients see as "Saved Articles", issue #730). Shared by
- * item formatting and the stream/items/ids item refs so both agree.
+ * The `feed/{int64}` stream an entry belongs to, or null if it has none. Shared
+ * by item formatting and the stream/items/ids item refs so both agree.
  */
-export function entryFeedStreamId(entry: {
-  subscriptionGreaderStreamId: bigint | null;
-}): string | null {
-  return entry.subscriptionGreaderStreamId !== null
-    ? feedStreamId(entry.subscriptionGreaderStreamId)
-    : null;
+export function entryFeedStreamId(ids: GreaderEntryIds): string | null {
+  return ids.originStreamId !== null ? feedStreamId(ids.originStreamId) : null;
 }
 
 // ============================================================================

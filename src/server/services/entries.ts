@@ -111,14 +111,6 @@ export interface SearchEntriesParams {
 
 export interface EntryListItem {
   id: string;
-  // Google Reader item id (stored global serial). Ignored by the main app; used
-  // by the Google Reader compat layer to address entries as int64 ids.
-  greaderItemId: bigint;
-  // The origin subscription's Google Reader feed stream id (stored serial),
-  // used only by the compat layer to build each item's origin stream (a saved
-  // article's is the saved subscription, "Saved Articles" — issue #730).
-  // Stripped from main-app and MCP responses.
-  subscriptionGreaderStreamId: bigint | null;
   /** The entry's origin subscription (`entryOriginJoin`). */
   subscriptionId: string | null;
   /** Every active subscription holding the entry (`entrySubscriptionIdsSql`). */
@@ -146,10 +138,6 @@ export interface EntryListItem {
  */
 export interface EntryFull {
   id: string;
-  // Google Reader item id (stored global serial); see EntryListItem.
-  greaderItemId: bigint;
-  // The origin's Google Reader feed stream id; see EntryListItem.
-  subscriptionGreaderStreamId: bigint | null;
   /** See EntryListItem. */
   subscriptionId: string | null;
   subscriptionIds: string[];
@@ -229,8 +217,6 @@ const MAX_LIMIT = 100;
  */
 interface EntryListRow {
   id: string;
-  greaderItemId: bigint;
-  subscriptionGreaderStreamId: bigint | null;
   subscriptionId: string | null;
   subscriptionIds: string[];
   type: "web" | "email" | "saved";
@@ -254,8 +240,6 @@ interface EntryListRow {
 function toEntryListItem(row: EntryListRow): EntryListItem {
   return {
     id: row.id,
-    greaderItemId: row.greaderItemId,
-    subscriptionGreaderStreamId: row.subscriptionGreaderStreamId,
     subscriptionId: row.subscriptionId,
     subscriptionIds: row.subscriptionIds,
     type: row.type,
@@ -311,8 +295,6 @@ const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
  */
 const entryListSelectFields = {
   id: visibleEntries.id,
-  greaderItemId: visibleEntries.greaderItemId,
-  subscriptionGreaderStreamId: subscriptions.greaderStreamId,
   type: visibleEntries.type,
   url: visibleEntries.url,
   title: visibleEntries.title,
@@ -337,9 +319,6 @@ const entryListSelectFields = {
  */
 const entryFullSelectFields = {
   id: visibleEntries.id,
-  greaderItemId: visibleEntries.greaderItemId,
-  // The origin's Google Reader feed stream id (compat layer only).
-  subscriptionGreaderStreamId: subscriptions.greaderStreamId,
   type: visibleEntries.type,
   url: visibleEntries.url,
   title: visibleEntries.title,
@@ -931,9 +910,6 @@ async function searchEntries(
       // Aliases: the origin's columns share names with the view's and the
       // feed's, and raw SQL can't be read back through a subquery without one.
       subscriptionId: sql<string | null>`${subscriptions.id}`.as("origin_subscription_id"),
-      subscriptionGreaderStreamId: sql<bigint | null>`${subscriptions.greaderStreamId}`
-        .mapWith(subscriptions.greaderStreamId)
-        .as("origin_greader_stream_id"),
       subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW).as("subscription_ids"),
       // Alias to avoid colliding with visibleEntries.title (both are "title")
       // inside the subquery, which would make the outer reference ambiguous.

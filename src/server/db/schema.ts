@@ -1019,7 +1019,8 @@ export const visibleEntries = pgView("visible_entries", {
   readChangedAt: timestamp("read_changed_at", { withTimezone: true }),
   publishedOrFetchedAt: temporalTimestamp("published_or_fetched_at").notNull(), // denormalized timeline sort key (temporalTimestamp: µs-precise cursor sort key)
   // NOT NULL in reality (entries.greader_item_id is NOT NULL); typed non-null so
-  // it flows into EntryListItem/EntryFull's non-null greaderItemId without a cast.
+  // the compat id lookups (resolveGreaderIdsForEntries, entryIdsToWallabagIds)
+  // read it without a cast.
   // Doubles as the Wallabag entry id (reversed by resolveWallabagEntry).
   greaderItemId: bigint("greader_item_id", { mode: "bigint" }).notNull(),
   // Stored full-text search vector (entries.search_vector; migration 0105).

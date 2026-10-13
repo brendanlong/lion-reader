@@ -29,7 +29,7 @@ import {
   errorResponse,
 } from "@/server/google-reader/parse";
 import { formatEntryAsItem } from "@/server/google-reader/format";
-import { greaderItemIdsToUuids } from "@/server/google-reader/id";
+import { greaderItemIdsToUuids, resolveGreaderIdsForEntries } from "@/server/google-reader/id";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
 
@@ -77,8 +77,14 @@ export async function POST(request: Request): Promise<Response> {
   // the given UUIDs and silently skips ones that can't be found (deleted, not
   // visible to the user, etc.).
   const uuids = [...uuidMap.values()];
-  const entries = await entriesService.getEntries(db, session.user.id, uuids);
-  const items = entries.map(formatEntryAsItem);
+  const [entries, idsByEntry] = await Promise.all([
+    entriesService.getEntries(db, session.user.id, uuids),
+    resolveGreaderIdsForEntries(db, session.user.id, uuids),
+  ]);
+  const items = entries.flatMap((entry) => {
+    const ids = idsByEntry.get(entry.id);
+    return ids ? formatEntryAsItem(entry, ids) : [];
+  });
 
   return jsonResponse({
     direction: "ltr",

@@ -47,7 +47,7 @@ import {
 } from "@/server/wallabag/format";
 import * as entriesService from "@/server/services/entries";
 import * as savedService from "@/server/services/saved";
-import { entryIdToWallabagId } from "@/server/wallabag/id";
+import { entryIdsToWallabagIds } from "@/server/wallabag/id";
 import { addEntryTags, collectionIdGroupsForLabels, listEntryTags } from "@/server/wallabag/tags";
 import { logger } from "@/lib/logger";
 import { db } from "@/server/db";
@@ -122,15 +122,21 @@ export async function GET(request: Request): Promise<Response> {
 
   // If detail is "full", fetch full content in a single bulk query
   const entryIds = result.items.map((e) => e.id);
-  const [fullEntries, tagsByEntry] = await Promise.all([
+  const [fullEntries, tagsByEntry, wallabagIds] = await Promise.all([
     params.detail === "full" ? entriesService.getEntries(db, auth.userId, entryIds) : [],
     listEntryTags(db, auth.userId, entryIds),
+    entryIdsToWallabagIds(db, auth.userId, entryIds),
   ]);
   const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
-  const formattedItems = result.items.map((entry) => {
+  const formattedItems = result.items.flatMap((entry) => {
+    const wallabagId = wallabagIds.get(entry.id);
+    // Deleted since the page was listed.
+    if (wallabagId === undefined) return [];
     const full = fullMap.get(entry.id);
     const tags = tagsByEntry.get(entry.id) ?? [];
-    return full ? formatEntryFull(full, tags) : formatEntryListItem(entry, tags);
+    return full
+      ? formatEntryFull(full, wallabagId, tags)
+      : formatEntryListItem(entry, wallabagId, tags);
   });
 
   return jsonResponse(
@@ -216,14 +222,12 @@ async function savedArticleResponse(
     });
   }
 
-  // SavedArticle doesn't carry the entry serial (it's also returned by
-  // MCP save_article, which must stay bigint-free), so look it up — a
-  // user-scoped seek on the entry we just saved.
-  const [wallabagId, tagsByEntry] = await Promise.all([
-    entryIdToWallabagId(db, userId, article.id),
+  const [wallabagIds, tagsByEntry] = await Promise.all([
+    entryIdsToWallabagIds(db, userId, [article.id]),
     listEntryTags(db, userId, [article.id]),
   ]);
-  if (wallabagId === null) {
+  const wallabagId = wallabagIds.get(article.id);
+  if (wallabagId === undefined) {
     // Only possible if the entry was deleted between the save and this seek.
     return errorResponse("not_found", "Entry not found", 404);
   }

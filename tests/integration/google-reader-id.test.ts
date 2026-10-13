@@ -1,6 +1,7 @@
 /**
  * Integration tests for greaderItemIdsToUuids — the Google Reader item-id ->
- * UUIDv7 resolver used by stream/items/contents and edit-tag.
+ * UUIDv7 resolver used by stream/items/contents and edit-tag — and its forward
+ * counterpart resolveGreaderIdsForEntries.
  *
  * Item ids are now a stored global serial (`entries.greader_item_id`), assigned
  * by a sequence default at insert time. Resolution is a single
@@ -18,7 +19,10 @@ import { db } from "../../src/server/db";
 import { feeds, entries, users, subscriptions } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createTestEntry, createTestFeed, createTestUser } from "./helpers";
-import { greaderItemIdsToUuids } from "../../src/server/google-reader/id";
+import {
+  greaderItemIdsToUuids,
+  resolveGreaderIdsForEntries,
+} from "../../src/server/google-reader/id";
 
 const createdUserIds: string[] = [];
 const createdFeedIds: string[] = [];
@@ -170,5 +174,24 @@ describe("greaderItemIdsToUuids", () => {
     const userId = await createUser();
     const resolved = await greaderItemIdsToUuids(db, userId, [BigInt(2) ** BigInt(64)]);
     expect(resolved.size).toBe(0);
+  });
+});
+
+describe("resolveGreaderIdsForEntries", () => {
+  it("returns each entry's item id and origin subscription stream, scoped to the user", async () => {
+    const owner = await createUser();
+    const other = await createUser();
+    const feedId = await createFeed();
+    const entry = await insertEntry(feedId, owner);
+    const [{ streamId }] = await db
+      .select({ streamId: subscriptions.greaderStreamId })
+      .from(subscriptions)
+      .where(eq(subscriptions.feedId, feedId));
+
+    const resolved = await resolveGreaderIdsForEntries(db, owner, [entry.id, generateUuidv7()]);
+    expect([...resolved]).toEqual([
+      [entry.id, { itemId: entry.greaderItemId, originStreamId: streamId }],
+    ]);
+    expect((await resolveGreaderIdsForEntries(db, other, [entry.id])).size).toBe(0);
   });
 });

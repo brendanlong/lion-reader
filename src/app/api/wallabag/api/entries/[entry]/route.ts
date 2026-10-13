@@ -39,7 +39,7 @@ export async function GET(
     return errorResponse("not_found", "Entry not found", 404);
   }
 
-  return formatEntryResponse(db, auth.userId, resolved.id);
+  return formatEntryResponse(db, auth.userId, resolved);
 }
 
 export async function PATCH(
@@ -78,7 +78,7 @@ export async function PATCH(
   }
 
   // Return the updated entry
-  return formatEntryResponse(db, auth.userId, resolved.id);
+  return formatEntryResponse(db, auth.userId, resolved);
 }
 
 export async function DELETE(

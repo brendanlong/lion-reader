@@ -5,8 +5,8 @@
  *
  * Wallabag entries have numeric integer IDs. Every id a client sees is a
  * stored serial (issue #1117): entry ids are `entries.greader_item_id` (the
- * same global serial the Google Reader API uses for item ids, carried on
- * `EntryFull`/`EntryListItem` as `greaderItemId`), tag ids are the
+ * same global serial the Google Reader API uses for item ids, which callers
+ * look up with `entryIdsToWallabagIds`), tag ids are the
  * collection subscription's `greader_stream_id` (tags are collections; see
  * src/server/wallabag/tags.ts), and the user id is `users.greader_user_id`.
  */
@@ -127,10 +127,14 @@ function buildWallabagEntry(input: WallabagEntryInput): WallabagEntry {
 /**
  * Formats a full entry as a Wallabag entry.
  */
-export function formatEntryFull(entry: EntryFull, tags: WallabagTag[]): WallabagEntry {
+export function formatEntryFull(
+  entry: EntryFull,
+  wallabagId: number,
+  tags: WallabagTag[]
+): WallabagEntry {
   return buildWallabagEntry({
     id: entry.id,
-    wallabagId: Number(entry.greaderItemId),
+    wallabagId,
     url: entry.url,
     title: entry.title,
     content:
@@ -149,10 +153,14 @@ export function formatEntryFull(entry: EntryFull, tags: WallabagTag[]): Wallabag
 /**
  * Formats a list entry as a Wallabag entry (no full content).
  */
-export function formatEntryListItem(entry: EntryListItem, tags: WallabagTag[]): WallabagEntry {
+export function formatEntryListItem(
+  entry: EntryListItem,
+  wallabagId: number,
+  tags: WallabagTag[]
+): WallabagEntry {
   return buildWallabagEntry({
     id: entry.id,
-    wallabagId: Number(entry.greaderItemId),
+    wallabagId,
     url: entry.url,
     title: entry.title,
     content: entry.summary ?? null,
@@ -168,10 +176,7 @@ export function formatEntryListItem(entry: EntryListItem, tags: WallabagTag[]): 
 }
 
 /**
- * Formats a saved article as a Wallabag entry. `SavedArticle` deliberately
- * doesn't carry the entry serial (it's also returned by MCP save_article,
- * which must stay bigint-free), so the caller passes the Wallabag id looked up
- * via `entryIdToWallabagId`.
+ * Formats a saved article as a Wallabag entry.
  */
 export function formatSavedArticle(
   article: SavedArticle,

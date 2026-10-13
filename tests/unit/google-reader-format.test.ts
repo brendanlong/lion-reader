@@ -95,8 +95,6 @@ describe("formatUnreadCounts", () => {
 function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
   return {
     id: "01912345-0000-7000-8000-000000000001",
-    greaderItemId: BigInt(42),
-    subscriptionGreaderStreamId: BigInt(7),
     subscriptionId: "01912345-0000-7000-8000-000000000003",
     subscriptionIds: [],
     type: "web",
@@ -128,6 +126,9 @@ describe("formatEntryAsItem content", () => {
     ["the original feed content", { contentCleaned: null }, "<p>original teaser</p>"],
     ["the summary", { contentCleaned: null, contentOriginal: null }, "summary"],
   ])("serves %s when it is the best available", (_label, overrides, expected) => {
-    expect(formatEntryAsItem(makeFullEntry(overrides)).summary.content).toBe(expected);
+    expect(
+      formatEntryAsItem(makeFullEntry(overrides), { itemId: BigInt(42), originStreamId: BigInt(7) })
+        .summary.content
+    ).toBe(expected);
   });
 });

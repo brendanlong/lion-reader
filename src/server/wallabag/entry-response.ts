@@ -2,6 +2,7 @@ import type { db as dbType } from "@/server/db";
 import * as entriesService from "@/server/services/entries";
 import { getAppErrorCode } from "@/server/trpc/errors";
 import { formatEntryFull } from "./format";
+import type { ResolvedWallabagEntry } from "./id";
 import { errorResponse, jsonResponse } from "./parse";
 import { listEntryTags } from "./tags";
 
@@ -9,7 +10,7 @@ import { listEntryTags } from "./tags";
 export async function formatEntryResponse(
   db: typeof dbType,
   userId: string,
-  entryId: string
+  { id: entryId, wallabagId }: ResolvedWallabagEntry
 ): Promise<Response> {
   const [entry, tags] = await Promise.all([
     entriesService.getEntry(db, userId, entryId).catch((error: unknown) => {
@@ -21,5 +22,5 @@ export async function formatEntryResponse(
   if (!entry) {
     return errorResponse("not_found", "Entry not found", 404);
   }
-  return jsonResponse(formatEntryFull(entry, tags.get(entryId) ?? []));
+  return jsonResponse(formatEntryFull(entry, wallabagId, tags.get(entryId) ?? []));
 }
