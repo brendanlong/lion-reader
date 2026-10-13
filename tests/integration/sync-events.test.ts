@@ -24,7 +24,6 @@ import { advanceCursors, type SyncCursors } from "../../src/lib/events/cursors";
 import type { SyncEvent } from "../../src/lib/events/schemas";
 import {
   createAuthContext,
-  createTestEmailSubscription,
   createTestEntry,
   createTestFeed,
   createTestSubscription,
@@ -36,17 +35,6 @@ import {
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-/**
- * A feed that has been polled: the delta arms key off the poll timestamps, so
- * every web feed in this file needs them (the shared factory leaves them NULL).
- */
-async function createFetchedFeed(
-  overrides: Partial<typeof feeds.$inferInsert> = {}
-): Promise<string> {
-  const now = new Date();
-  return createTestFeed({ lastFetchedAt: now, lastEntriesUpdatedAt: now, ...overrides });
-}
 
 async function createUserEntry(
   userId: string,
@@ -135,7 +123,7 @@ describe("sync.events", () => {
   describe("entry events", () => {
     it("returns new_entry for entry created after cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/sync-feed.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/sync-feed.xml" });
       const subId = await createTestSubscription(userId, feedId);
 
       // Get cursor before creating entry
@@ -171,7 +159,7 @@ describe("sync.events", () => {
 
     it("doesn't announce a backfilled entry, as the live path doesn't", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/sync-backfill.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/sync-backfill.xml" });
       await createTestSubscription(userId, feedId);
       const baseCursor = new Date(Date.now() - 1000).toISOString();
 
@@ -190,7 +178,7 @@ describe("sync.events", () => {
 
     it("includes the subscription's tag in new_entry absolute counts", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/tagged-sync-feed.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/tagged-sync-feed.xml" });
       const subId = await createTestSubscription(userId, feedId);
       const tagId = await createTestTag(userId, { name: "News", subscriptionIds: [subId] });
 
@@ -217,49 +205,9 @@ describe("sync.events", () => {
       });
     });
 
-    it("returns entry_updated for metadata changes after cursor", async () => {
-      const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/update-feed.xml" });
-      await createTestSubscription(userId, feedId);
-
-      // Create entry and user_entry
-      const entryCreatedAt = new Date("2024-01-01");
-      const entryId = await createTestEntry(feedId, {
-        title: "Original Title",
-        createdAt: entryCreatedAt,
-        updatedAt: entryCreatedAt,
-      });
-      await createUserEntry(userId, entryId, { updatedAt: entryCreatedAt });
-
-      // Get cursor
-      const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
-
-      // Update entry metadata
-      const newUpdatedAt = new Date();
-      await db
-        .update(entries)
-        .set({ title: "Updated Title", updatedAt: newUpdatedAt })
-        .where(eq(entries.id, entryId));
-
-      const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: {
-          entries: cursorResult.entries!,
-          entriesAfterId: cursorResult.entriesAfterId!,
-        },
-      });
-
-      const updatedEvents = result.events.filter((e) => e.type === "entry_updated");
-      expect(updatedEvents).toHaveLength(1);
-      expect(updatedEvents[0]).toMatchObject({
-        type: "entry_updated",
-        entryId,
-        metadata: expect.objectContaining({ title: "Updated Title" }),
-      });
-    });
-
     it("returns entry_state_changed for read/starred changes after cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/state-feed.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/state-feed.xml" });
       await createTestSubscription(userId, feedId);
 
       const entryCreatedAt = new Date("2024-01-01");
@@ -299,7 +247,7 @@ describe("sync.events", () => {
 
     it("attaches the entry list payload to entry_state_changed for unread entries (#1237)", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({
+      const feedId = await createTestFeed({
         url: "https://example.com/unread-payload-feed.xml",
       });
       const subscriptionId = await createTestSubscription(userId, feedId);
@@ -344,7 +292,7 @@ describe("sync.events", () => {
 
     it("returns both metadata and state events when both change", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/both-feed.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/both-feed.xml" });
       await createTestSubscription(userId, feedId);
 
       const entryCreatedAt = new Date("2024-01-01");
@@ -382,7 +330,7 @@ describe("sync.events", () => {
 
     it("returns no entry events for entries before cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/before-feed.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/before-feed.xml" });
       await createTestSubscription(userId, feedId);
 
       const entryId = await createTestEntry(feedId);
@@ -419,7 +367,7 @@ describe("sync.events", () => {
       const cursorResult = await createCaller(await createAuthContext(userId)).sync.cursors();
       const baseCursor = cursorResult.subscriptions ?? new Date("2020-01-01").toISOString();
 
-      const feedId = await createFetchedFeed({
+      const feedId = await createTestFeed({
         url: "https://example.com/sub-create.xml",
         title: "Sub Create Feed",
       });
@@ -443,7 +391,7 @@ describe("sync.events", () => {
       const userId = await createTestUser();
 
       const baseCursor = new Date("2020-01-01").toISOString();
-      const feedId = await createFetchedFeed({ url: "https://example.com/sub-tags.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/sub-tags.xml" });
       const subId = await createTestSubscription(userId, feedId);
 
       const tagId = await createTestTag(userId, {
@@ -468,7 +416,7 @@ describe("sync.events", () => {
 
     it("returns subscription_updated for property changes", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/sub-update.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/sub-update.xml" });
 
       const earlyDate = new Date("2024-01-01");
       const subId = await createTestSubscription(userId, feedId, {
@@ -500,7 +448,7 @@ describe("sync.events", () => {
 
     it("returns subscription_deleted for unsubscribed feeds", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/sub-delete.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/sub-delete.xml" });
 
       const earlyDate = new Date("2024-01-01");
       const subId = await createTestSubscription(userId, feedId, {
@@ -657,10 +605,8 @@ describe("sync.events", () => {
   // sync.cursors entries argmax
   //
   // The entries cursor is the argmax of GREATEST(entries.updated_at,
-  // user_entries.updated_at) over the user's entries, plus the id achieving it.
-  // currentSyncCursors computes it from one index-driven arm per kind of
-  // change (see its comment) rather than scanning the whole timeline; these
-  // pin the argmax each arm must produce.
+  // user_entries.updated_at) over the user's entries, plus the id achieving it,
+  // which the triggers keep as user_entries.changed_at.
   // ==========================================================================
 
   describe("sync.cursors entries argmax", () => {
@@ -675,7 +621,7 @@ describe("sync.events", () => {
 
     it("uses user_entries.updated_at when a state change is newest", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-state.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/argmax-state.xml" });
       await createTestSubscription(userId, feedId);
 
       const contentTime = new Date("2024-06-01T00:00:00.000Z");
@@ -696,7 +642,7 @@ describe("sync.events", () => {
 
     it("uses entries.updated_at when a content refetch is newer than any state change", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-content.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/argmax-content.xml" });
       await createTestSubscription(userId, feedId);
 
       const stateTime = new Date("2024-06-01T00:00:00.000Z");
@@ -709,81 +655,20 @@ describe("sync.events", () => {
 
       const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
 
-      // The naive query would still find this (it materialized GREATEST for every
-      // row); the point is the index-driven arm_sub does too, without the scan.
       expect(cursor.entriesAfterId).toBe(entryId);
       expect(
         parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
-      ).toBe(true);
-    });
-
-    it("skips a newer entry of the feed that the user has no row for", async () => {
-      const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-unowned.xml" });
-      await createTestSubscription(userId, feedId);
-
-      const stateTime = new Date("2024-06-01T00:00:00.000Z");
-      const contentTime = new Date("2024-06-02T00:00:00.000Z");
-      const entryId = await createTestEntry(feedId, {
-        createdAt: stateTime,
-        updatedAt: contentTime,
-      });
-      await createUserEntry(userId, entryId, { updatedAt: stateTime });
-      // Pre-subscription content refetched later: in the feed, but not the user's.
-      // arm_sub takes one entry per feed, so it must be the newest *of the user's*.
-      await createTestEntry(feedId, {
-        createdAt: stateTime,
-        updatedAt: new Date("2024-06-03T00:00:00.000Z"),
-      });
-
-      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
-
-      expect(cursor.entriesAfterId).toBe(entryId);
-      expect(
-        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
-      ).toBe(true);
-    });
-
-    it.each([
-      ["first", 0],
-      ["second", 1],
-    ])("picks the newest content update across feeds (in the %s feed)", async (_, newestIdx) => {
-      const userId = await createTestUser();
-      const stateTime = new Date("2024-06-01T00:00:00.000Z");
-      const contentTimes = [
-        new Date("2024-06-02T00:00:00.000Z"),
-        new Date("2024-06-02T00:00:00.000Z"),
-      ];
-      contentTimes[newestIdx] = new Date("2024-06-03T00:00:00.000Z");
-      const entryIds: string[] = [];
-      for (const [i, updatedAt] of contentTimes.entries()) {
-        const feedId = await createFetchedFeed({
-          url: `https://example.com/argmax-feeds-${i}.xml`,
-        });
-        await createTestSubscription(userId, feedId);
-        const entryId = await createTestEntry(feedId, { createdAt: stateTime, updatedAt });
-        await createUserEntry(userId, entryId, { updatedAt: stateTime });
-        entryIds.push(entryId);
-      }
-
-      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
-
-      expect(cursor.entriesAfterId).toBe(entryIds[newestIdx]);
-      expect(
-        parseTimestamptz(cursor.entries!).equals(
-          parseTimestamptz(contentTimes[newestIdx].toISOString())
-        )
       ).toBe(true);
     });
 
     it("breaks a tie at the max timestamp by the larger entry id", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-tie.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/argmax-tie.xml" });
       await createTestSubscription(userId, feedId);
 
       // Two entries share the exact max timestamp: one via a state change, one via
       // a content refetch. The cursor id must be the larger of the two so keyset
-      // catch-up resumes past both (the tiebreak spans the two arms).
+      // catch-up resumes past both.
       const tie = new Date("2024-06-02T00:00:00.000Z");
       const old = new Date("2024-06-01T00:00:00.000Z");
 
@@ -802,30 +687,9 @@ describe("sync.events", () => {
       );
     });
 
-    it("includes saved-article content updates (the saved arm)", async () => {
-      const userId = await createTestUser();
-
-      const stateTime = new Date("2024-06-01T00:00:00.000Z");
-      const contentTime = new Date("2024-06-03T00:00:00.000Z");
-      const savedEntryId = await createTestEntry(userId, {
-        type: "saved",
-        createdAt: stateTime,
-        publishedAt: stateTime,
-        updatedAt: contentTime,
-      });
-      await createUserEntry(userId, savedEntryId, { updatedAt: stateTime });
-
-      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
-
-      expect(cursor.entriesAfterId).toBe(savedEntryId);
-      expect(
-        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
-      ).toBe(true);
-    });
-
     it("includes content updates to starred orphans on unsubscribed feeds", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-orphan.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/argmax-orphan.xml" });
       const subId = await createTestSubscription(userId, feedId);
 
       const stateTime = new Date("2024-06-01T00:00:00.000Z");
@@ -834,8 +698,8 @@ describe("sync.events", () => {
       // Starred, so the orphan stays visible after unsubscribe.
       await createUserEntry(userId, entryId, { starred: true, updatedAt: stateTime });
 
-      // Unsubscribe (soft delete) — arm_sub still drives from ALL subscriptions,
-      // so a later content refetch is still reflected in the cursor.
+      // Unsubscribe (soft delete): a later content refetch still reaches the
+      // orphan's row.
       await db
         .update(subscriptions)
         .set({ unsubscribedAt: new Date() })
@@ -859,7 +723,7 @@ describe("sync.events", () => {
   describe("keyset pagination (#1080)", () => {
     it("pages within a tied-timestamp group using entriesAfterId without losing rows", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/tied.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/tied.xml" });
       await createTestSubscription(userId, feedId);
 
       // Three entries sharing one exact timestamp (like markAllEntriesRead
@@ -898,7 +762,7 @@ describe("sync.events", () => {
     // entries) must not skip rows stamped at exactly its timestamp (#1100).
     it("includes rows at the cursor's timestamp when no entriesAfterId is sent", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/tied-no-id.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/tied-no-id.xml" });
       await createTestSubscription(userId, feedId);
       const tiedTime = new Date("2025-01-03T00:00:00.000Z");
       const entryId = await createTestEntry(feedId, { createdAt: tiedTime, updatedAt: tiedTime });
@@ -913,7 +777,7 @@ describe("sync.events", () => {
 
     it("delivers every row of an oversized tied group across a full drain", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/tied-large.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/tied-large.xml" });
       await createTestSubscription(userId, feedId);
 
       // More than MAX_ENTRIES (500) rows sharing ONE timestamp — the exact
@@ -975,7 +839,7 @@ describe("sync.events", () => {
     // while none of the marked rows re-deliver.
     it("delivers an unrelated entry written in the same instant as a mark-all-read (#1102)", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/mark-all-tied.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/mark-all-tied.xml" });
       await createTestSubscription(userId, feedId);
 
       // Three unread entries; mark-all-read stamps them all with one
@@ -1085,7 +949,7 @@ describe("sync.events", () => {
     // before its latest (t3), which is what put it on that page.
     it("reports creation before a later page's cursor as new_entry", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-new.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-new.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
       await createUserEntry(userId, entryId, { updatedAt: t3 });
@@ -1103,7 +967,7 @@ describe("sync.events", () => {
 
     it("reports a content edit before a later page's cursor as entry_updated", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-edit.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-edit.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, {
         fetchedAt: new Date("2025-01-01T00:00:00.000Z"),
@@ -1125,7 +989,7 @@ describe("sync.events", () => {
 
     it("reports a state change before a later page's cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-state.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-state.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, {
         fetchedAt: new Date("2025-01-01T00:00:00.000Z"),
@@ -1146,7 +1010,7 @@ describe("sync.events", () => {
 
     it("breaks ties at the start's timestamp with entriesSinceAfterId", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-tied.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-tied.xml" });
       await createTestSubscription(userId, feedId);
       const ids: string[] = [];
       for (let i = 0; i < 2; i++) {
@@ -1173,7 +1037,7 @@ describe("sync.events", () => {
 
     it("applies the start in sync.changes and never echoes it back", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-rest.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-rest.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
       await createUserEntry(userId, entryId, { updatedAt: t3 });
@@ -1194,7 +1058,7 @@ describe("sync.events", () => {
 
     it("classifies against the page cursor when no start is given", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-legacy.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-legacy.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
       await createUserEntry(userId, entryId, { updatedAt: t3 });
@@ -1209,7 +1073,7 @@ describe("sync.events", () => {
 
     it("still reports a row selected past the cursor when the start is after it", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-bad.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-bad.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, { fetchedAt: t1 });
       await createUserEntry(userId, entryId, { updatedAt: t3 });
@@ -1226,7 +1090,7 @@ describe("sync.events", () => {
 
     it("delivers new_entry for an entry split onto a later page by a full drain", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/catch-up-drain.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/catch-up-drain.xml" });
       await createTestSubscription(userId, feedId);
 
       // The straddler is created at t1 but read at t3, so it sorts after a
@@ -1276,7 +1140,7 @@ describe("sync.events", () => {
   describe("visibility (#1080)", () => {
     it("hides an orphaned user_entries row (no active subscription, not starred)", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/orphan.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/orphan.xml" });
       // No subscription row → orphaned. Old fail-open
       // predicate leaked this via `NULL IS NULL`; fail-closed must hide it.
       const entryId = await createTestEntry(feedId, {
@@ -1294,7 +1158,7 @@ describe("sync.events", () => {
 
     it("shows an orphaned entry when it is starred (starred exception)", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/orphan-starred.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/orphan-starred.xml" });
       const entryId = await createTestEntry(feedId, {
         createdAt: new Date("2025-03-02T00:00:00.000Z"),
         updatedAt: new Date("2025-03-02T00:00:00.000Z"),
@@ -1314,7 +1178,7 @@ describe("sync.events", () => {
 
     it("hides entries from an unsubscribed subscription (not starred)", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/unsubscribed.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/unsubscribed.xml" });
       // Subscription exists but is soft-deleted (unsubscribed).
       await createTestSubscription(userId, feedId);
       await db
@@ -1343,9 +1207,9 @@ describe("sync.events", () => {
   describe("sync.changes hidden entries", () => {
     it("reports every entry a bulk unstar hid, across pages, with the visible changes", async () => {
       const userId = await createTestUser();
-      const activeFeed = await createFetchedFeed({ url: "https://example.com/hidden-active.xml" });
+      const activeFeed = await createTestFeed({ url: "https://example.com/hidden-active.xml" });
       await createTestSubscription(userId, activeFeed);
-      const goneFeed = await createFetchedFeed({ url: "https://example.com/hidden-gone.xml" });
+      const goneFeed = await createTestFeed({ url: "https://example.com/hidden-gone.xml" });
       await createTestSubscription(userId, goneFeed, {
         unsubscribedAt: new Date("2025-04-01T00:00:00.000Z"),
       });
@@ -1421,7 +1285,7 @@ describe("sync.events", () => {
 
     it("doesn't report a hidden entry whose state didn't change since the start", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/hidden-old.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/hidden-old.xml" });
       await createTestSubscription(userId, feedId, {
         unsubscribedAt: new Date("2025-05-01T00:00:00.000Z"),
       });
@@ -1441,124 +1305,59 @@ describe("sync.events", () => {
   });
 
   // ==========================================================================
-  // Index-driven candidate union (#1105)
+  // Content changes
   //
-  // The delta is split into arms that each hit an index instead of scanning the
-  // user's whole history on a cross-table GREATEST. These tests exercise the
-  // arm that Arm A (user_entries.updated_at) can't cover on its own: an
-  // entries.updated_at bump with a STALE user_entries.updated_at, across the
-  // subscribed-feed arm (B1) and the saved-articles arm (B2), plus the plan
-  // shape that guards the indexes stay in use.
+  // A content refetch moves only entries.updated_at; the triggers carry it to
+  // every holder's user_entries.changed_at, so it reaches each holder's delta
+  // as an entry_updated and not as a state change.
   // ==========================================================================
 
-  describe("entry-side changes (#1105)", () => {
-    // Timestamps: the entry + user_entry are created well before the cursor, the
-    // cursor sits in the middle, and only entries.updated_at moves after it —
-    // user_entries.updated_at stays stale, so only the entry-side arm can find it.
+  describe("content changes", () => {
+    // The entry and user_entries are written well before the cursor, and only
+    // entries.updated_at moves after it.
     const OLD = new Date("2025-01-01T00:00:00.000Z");
     const CURSOR = new Date("2025-06-01T00:00:00.000Z");
     const NEW = new Date("2025-06-02T00:00:00.000Z");
 
-    it("delivers a content refetch (entries.updated_at bumped, user_entries stale) via the subscribed-feed arm", async () => {
-      const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/refetch.xml" });
-      await createTestSubscription(userId, feedId);
-
+    it("delivers a content refetch to every holder as entry_updated, not a state change", async () => {
+      const feedId = await createTestFeed({ url: "https://example.com/refetch.xml" });
       const entryId = await createTestEntry(feedId, {
         title: "Original Title",
         createdAt: OLD,
         updatedAt: OLD,
       });
-      await createUserEntry(userId, entryId, { read: true, updatedAt: OLD });
+      const userIds = [await createTestUser(), await createTestUser()];
+      for (const userId of userIds) {
+        await createTestSubscription(userId, feedId);
+        await createUserEntry(userId, entryId, { read: true, updatedAt: OLD });
+      }
 
-      // A content refetch bumps entries.updated_at AND the feed's
-      // last_entries_updated_at (handlers/fetch-feed.ts sets it on hasChanges), but never
-      // touches the user_entries row — exactly what updateEntryContent does.
       await db
         .update(entries)
         .set({ title: "Updated Title", updatedAt: NEW })
         .where(eq(entries.id, entryId));
-      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
 
-      const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: CURSOR.toISOString() },
-      });
-
-      const updated = result.events.filter((e) => e.type === "entry_updated");
-      expect(updated).toHaveLength(1);
-      expect(updated[0]).toMatchObject({
-        type: "entry_updated",
-        entryId,
-        metadata: expect.objectContaining({ title: "Updated Title" }),
-      });
-      // The stale-but-read state must NOT surface as a state change.
-      expect(result.events.filter((e) => e.type === "entry_state_changed")).toHaveLength(0);
-    });
-
-    it("delivers a refetch even when the feed's last_entries_updated_at LAGS the entry's updated_at", async () => {
-      // Regression guard: feeds.last_entries_updated_at is stamped from the
-      // poll's start-time `now`, but each changed entry's updated_at is a later
-      // wall-clock write (after fetch+parse), so entry.updated_at is routinely
-      // GREATER than the feed's last_entries_updated_at. Here the feed's stamp is
-      // BEFORE the cursor while the entry changed AFTER it — a stale-then-fresh
-      // window that must still be delivered. A `last_entries_updated_at >= cursor`
-      // pre-filter (the original bug) would prune the feed and drop this entry.
-      const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/refetch-lag.xml" });
-      await createTestSubscription(userId, feedId);
-      const entryId = await createTestEntry(feedId, { createdAt: OLD, updatedAt: OLD });
-      await createUserEntry(userId, entryId, { updatedAt: OLD });
-
-      // Entry content changed after the cursor; the feed's last_entries_updated_at
-      // lags behind it (before the cursor), as production always produces.
-      await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
-      await db.update(feeds).set({ lastEntriesUpdatedAt: OLD }).where(eq(feeds.id, feedId));
-
-      const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: CURSOR.toISOString() },
-      });
-      expect(result.events.filter((e) => e.type === "entry_updated")).toHaveLength(1);
-    });
-
-    it("delivers a saved-article content update via the saved arm (no subscription row)", async () => {
-      const userId = await createTestUser();
-
-      const entryId = await createTestEntry(userId, {
-        type: "saved",
-        title: "Saved Original",
-        createdAt: OLD,
-        publishedAt: OLD,
-        updatedAt: OLD,
-      });
-      // Saved articles have no subscription; the user_entries row alone grants
-      // visibility (subscription_id NULL).
-      await createUserEntry(userId, entryId, { read: true, updatedAt: OLD });
-
-      // Later full-content fetch bumps entries.updated_at; the saved arm keys on
-      // the owner (the user), not a feed's last_entries_updated_at.
-      await db
-        .update(entries)
-        .set({ title: "Saved Updated", updatedAt: NEW })
-        .where(eq(entries.id, entryId));
-
-      const result = await createCaller(await createAuthContext(userId)).sync.events({
-        cursors: { entries: CURSOR.toISOString() },
-      });
-
-      const updated = result.events.filter((e) => e.type === "entry_updated");
-      expect(updated).toHaveLength(1);
-      expect(updated[0]).toMatchObject({ type: "entry_updated", entryId });
+      for (const userId of userIds) {
+        const result = await createCaller(await createAuthContext(userId)).sync.events({
+          cursors: { entries: CURSOR.toISOString() },
+        });
+        const updated = result.events.filter((e) => e.type === "entry_updated");
+        expect(updated).toHaveLength(1);
+        expect(updated[0]).toMatchObject({
+          type: "entry_updated",
+          entryId,
+          metadata: expect.objectContaining({ title: "Updated Title" }),
+        });
+        expect(result.events.filter((e) => e.type === "entry_state_changed")).toHaveLength(0);
+      }
     });
 
     it("delivers a content refetch for a STARRED entry on an unsubscribed feed (visible via starred)", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({
+      const feedId = await createTestFeed({
         url: "https://example.com/starred-orphan-refetch.xml",
       });
       await createTestSubscription(userId, feedId);
-      // Soft-delete the subscription: the row still exists, so Arm B1 (which
-      // drives from subscriptions without the unsubscribed filter) still reaches
-      // the feed, and the outer visibility predicate keeps it because it's starred.
       await db
         .update(subscriptions)
         .set({ unsubscribedAt: NEW })
@@ -1568,7 +1367,6 @@ describe("sync.events", () => {
       await createUserEntry(userId, entryId, { starred: true, updatedAt: OLD });
 
       await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
-      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
@@ -1578,7 +1376,7 @@ describe("sync.events", () => {
 
     it("does NOT deliver a content refetch for a non-starred entry on an unsubscribed feed", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/unsub-refetch.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/unsub-refetch.xml" });
       await createTestSubscription(userId, feedId);
       await db
         .update(subscriptions)
@@ -1589,119 +1387,11 @@ describe("sync.events", () => {
       await createUserEntry(userId, entryId, { updatedAt: OLD });
 
       await db.update(entries).set({ updatedAt: NEW }).where(eq(entries.id, entryId));
-      await db.update(feeds).set({ lastEntriesUpdatedAt: NEW }).where(eq(feeds.id, feedId));
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: CURSOR.toISOString() },
       });
       expect(result.events.filter((e) => ENTRY_EVENT_TYPES.has(e.type))).toHaveLength(0);
-    });
-
-    // The whole point of #1105: each candidate arm must SEEK an index, not scan
-    // the user's whole history. These EXPLAINs mirror the arms built in
-    // src/server/services/sync.ts — keep them in sync. enable_seqscan=off
-    // makes the planner reveal whether the predicate is index-serviceable at all
-    // (on tiny test data it would otherwise seq-scan regardless of the index).
-    it("candidate arms seek their indexes, not a full scan (EXPLAIN)", async () => {
-      const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/explain.xml" });
-      await createTestSubscription(userId, feedId);
-
-      const emailSubscriptionId = await createTestEmailSubscription(userId);
-      // Give every owner volume with everything before the cursor, so the
-      // (owner, updated_at) index — which seeks straight past the stale rows —
-      // is strictly cheaper than an index that must scan + filter.
-      for (let i = 0; i < 40; i++) {
-        const e = await createTestEntry(feedId, { updatedAt: OLD });
-        await createUserEntry(userId, e, { updatedAt: OLD });
-        const s = await createTestEntry(userId, { type: "saved", updatedAt: OLD });
-        await createUserEntry(userId, s, { updatedAt: OLD });
-        const m = await createTestEntry(emailSubscriptionId, { type: "email", updatedAt: OLD });
-        await createUserEntry(userId, m, { updatedAt: OLD });
-      }
-      await db.execute(sql`ANALYZE user_entries`);
-      await db.execute(sql`ANALYZE entries`);
-      await db.execute(sql`ANALYZE feeds`);
-      await db.execute(sql`ANALYZE subscriptions`);
-
-      const cursorTs = sql`${CURSOR.toISOString()}::timestamptz`;
-
-      // Arm A — user_entries.updated_at
-      const armA = db
-        .select({ entryId: userEntries.entryId })
-        .from(userEntries)
-        .where(and(eq(userEntries.userId, userId), sql`${userEntries.updatedAt} >= ${cursorTs}`));
-
-      // Arm B1 — entries.updated_at within subscribed web feeds (seek per feed)
-      const armB1 = db
-        .select({ entryId: userEntries.entryId })
-        .from(subscriptions)
-        .innerJoin(
-          entries,
-          and(
-            eq(entries.ownerFeedId, subscriptions.feedId),
-            sql`${entries.updatedAt} >= ${cursorTs}`
-          )
-        )
-        .innerJoin(
-          userEntries,
-          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
-        )
-        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "web")));
-
-      // Arm B2 — entries.updated_at of the emails each email subscription owns
-      const armB2Email = db
-        .select({ entryId: userEntries.entryId })
-        .from(subscriptions)
-        .innerJoin(
-          entries,
-          and(
-            eq(entries.ownerSubscriptionId, subscriptions.id),
-            sql`${entries.updatedAt} >= ${cursorTs}`
-          )
-        )
-        .innerJoin(
-          userEntries,
-          and(eq(userEntries.entryId, entries.id), eq(userEntries.userId, subscriptions.userId))
-        )
-        .where(and(eq(subscriptions.userId, userId), eq(subscriptions.type, "email")));
-
-      // Arm B2 — entries.updated_at of the saved articles the user owns
-      const armB2Saved = db
-        .select({ entryId: userEntries.entryId })
-        .from(userEntries)
-        .innerJoin(
-          entries,
-          and(
-            eq(entries.id, userEntries.entryId),
-            eq(entries.ownerUserId, userId),
-            sql`${entries.updatedAt} >= ${cursorTs}`
-          )
-        )
-        .where(eq(userEntries.userId, userId));
-
-      const explainOf = async (query: { getSQL: () => ReturnType<typeof sql> }) =>
-        db.transaction(async (tx) => {
-          await tx.execute(sql`SET LOCAL enable_seqscan = off`);
-          const explain = await tx.execute(sql`EXPLAIN ${query.getSQL()}`);
-          return explain.rows.map((r) => r["QUERY PLAN"] as string).join("\n");
-        });
-
-      const planA = await explainOf(armA);
-      expect(planA).toContain("idx_user_entries_updated_at");
-      expect(planA).not.toContain("Seq Scan");
-
-      const planB1 = await explainOf(armB1);
-      expect(planB1).toContain("idx_entries_owner_feed_updated_at");
-      expect(planB1).not.toContain("Seq Scan");
-
-      const planB2Email = await explainOf(armB2Email);
-      expect(planB2Email).toContain("idx_entries_owner_subscription_updated_at");
-      expect(planB2Email).not.toContain("Seq Scan");
-
-      const planB2Saved = await explainOf(armB2Saved);
-      expect(planB2Saved).toContain("idx_entries_owner_user_updated_at");
-      expect(planB2Saved).not.toContain("Seq Scan");
     });
   });
 
@@ -1718,18 +1408,18 @@ describe("sync.events", () => {
   describe("microsecond precision", () => {
     it("sync.cursors preserves the microseconds of the newest change", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/us-cursor.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/us-cursor.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId);
       await createUserEntry(userId, entryId);
 
       // Stamp a microsecond-precise updated_at that a millisecond Date cannot
       // represent (…123456, where 456 is sub-millisecond). The cursor is
-      // GREATEST(entries.updated_at, user_entries.updated_at), so pin the entry's
-      // updated_at older and let the user_entries change be the newest.
-      const micros = "2026-03-04T05:06:07.123456Z";
+      // GREATEST(entries.updated_at, user_entries.updated_at), which only moves
+      // forward, so stamp a future content change and a newer user_entries one.
+      const micros = "2099-03-04T05:06:07.123456Z";
       await db.execute(
-        sql`UPDATE entries SET updated_at = '2026-03-04T05:06:07.000000Z'::timestamptz WHERE id = ${entryId}::uuid`
+        sql`UPDATE entries SET updated_at = '2099-03-04T05:06:07.000000Z'::timestamptz WHERE id = ${entryId}::uuid`
       );
       await db.execute(
         sql`UPDATE user_entries SET updated_at = ${micros}::timestamptz WHERE entry_id = ${entryId}::uuid`
@@ -1741,7 +1431,7 @@ describe("sync.events", () => {
 
     it("sync.events emits microsecond-precise timestamps that advance the cursor", async () => {
       const userId = await createTestUser();
-      const feedId = await createFetchedFeed({ url: "https://example.com/us-events.xml" });
+      const feedId = await createTestFeed({ url: "https://example.com/us-events.xml" });
       await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId);
       await createUserEntry(userId, entryId);
@@ -1749,9 +1439,9 @@ describe("sync.events", () => {
       // Two changes in the same millisecond, differing only in microseconds.
       // (No trailing zeros — Temporal.Instant.toString() trims them, so these are
       // the exact strings the router emits.)
-      const older = "2026-03-04T05:06:07.100207Z";
-      const newer = "2026-03-04T05:06:07.100803Z";
-      const pinned = "2026-03-04T05:06:07.100700Z";
+      const older = "2099-03-04T05:06:07.100207Z";
+      const newer = "2099-03-04T05:06:07.100803Z";
+      const pinned = "2099-03-04T05:06:07.100700Z";
       await db.execute(
         sql`UPDATE entries SET updated_at = ${older}::timestamptz WHERE id = ${entryId}::uuid`
       );

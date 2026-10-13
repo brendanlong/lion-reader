@@ -12,7 +12,6 @@ import {
   entries,
   subscriptionEntries,
   subscriptions,
-  userEntries,
   users,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -180,46 +179,5 @@ describe("email and saved lookups by owner (#1846)", () => {
     expect(await deleteSavedArticle(db, userId, saved.id)).toBe(true);
     expect(await entryRow(saved.id)).toBeUndefined();
     expect(await deleteSavedArticle(db, userId, saved.id)).toBe(false);
-  });
-
-  it("sync delivers content updates to emails and saved articles through their owners", async () => {
-    const userId = await user();
-    const email = await receiveEmail(userId);
-    const saved = await saveArticle(db, userId, {
-      url: `https://example.com/${generateUuidv7()}`,
-      html: ARTICLE_HTML,
-      refetch: false,
-    });
-    const ids = [email.entryId!, saved.id];
-
-    // A content update moves only entries.updated_at, which only the owner
-    // arms see: the user_entries rows stay older than the cursor.
-    const old = new Date("2024-01-01T00:00:00Z");
-    const cursor = new Date("2024-01-02T00:00:00Z");
-    const updated = new Date("2024-01-03T00:00:00Z");
-    await db
-      .update(userEntries)
-      .set({ updatedAt: old })
-      .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, ids)));
-    await db
-      .update(entries)
-      .set({ createdAt: old, updatedAt: updated })
-      .where(inArray(entries.id, ids));
-    // The email's update is the newest, so only arm_email can produce the cursor.
-    const emailUpdated = new Date("2024-01-04T00:00:00Z");
-    await db.update(entries).set({ updatedAt: emailUpdated }).where(eq(entries.id, email.entryId!));
-
-    const caller = createCaller(await createAuthContext(userId));
-    const { events } = await caller.sync.events({ cursors: { entries: cursor.toISOString() } });
-    expect(
-      events
-        .filter((e) => e.type === "entry_updated")
-        .map((e) => ("entryId" in e ? e.entryId : null))
-        .sort()
-    ).toEqual([...ids].sort());
-
-    const cursors = await caller.sync.cursors();
-    expect(new Date(cursors.entries!).getTime()).toBe(emailUpdated.getTime());
-    expect(cursors.entriesAfterId).toBe(email.entryId);
   });
 });

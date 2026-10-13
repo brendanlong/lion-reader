@@ -371,17 +371,9 @@ export function buildEntryFilterConditions(params: EntryConditionParams): SQL[] 
     conditions.push(sql`${visibleEntries.publishedOrFetchedAt} <= ${params.publishedBefore}`);
   }
   // "Modified since" filter (Wallabag `since` delta sync). visibleEntries.updatedAt is
-  // GREATEST(entry.updated_at, user_entries.updated_at), so this captures new saves,
+  // user_entries.changed_at (idx_user_entries_changed_at), so this captures new saves,
   // content refetches, AND read/star state changes — the same value we return as the
   // entry's updated_at, so the filter and the reported timestamp can't disagree.
-  //
-  // The GREATEST spans two tables so no single index covers it — but here it is only
-  // a RESIDUAL filter, not the sort key: listEntries still sorts by
-  // publishedOrFetchedAt (idx_user_entries_published_or_fetched) with LIMIT
-  // pushdown. The Wallabag caller also scopes to type='saved', so the scan is
-  // bounded to the user's read-it-later library, not the whole timeline. That keeps
-  // the #1105 problem (a mandatory full sort of the user's entire history) from
-  // applying, so this deliberately stays a simple residual filter.
   if (params.updatedAfter) {
     conditions.push(sql`${visibleEntries.updatedAt} >= ${params.updatedAfter}`);
   }
