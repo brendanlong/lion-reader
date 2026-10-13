@@ -1794,6 +1794,131 @@ mod tests {
         assert!(sanitized > 25_000, "only {sanitized} inputs were sanitized");
     }
 
+    /// Where the deep-markup fuzz worker records the case it is about to run,
+    /// so the parent can report the input that killed it.
+    const FUZZ_CASE_FILE_ENV: &str = "SANITIZER_FUZZ_CASE_FILE";
+
+    #[test]
+    fn pipeline_survives_deep_and_repeated_markup() {
+        // The generators above build short inputs, which can't reach the bugs
+        // that take the process down rather than fail an assertion: a stack
+        // overflow is a SIGSEGV, not a panic, and would kill the test runner
+        // with no word of which input did it. So the cases run in a child
+        // process (this test binary, re-run on the ignored worker below), and a
+        // crash is reported here with the input that caused it.
+        let case_file =
+            std::env::temp_dir().join(format!("sanitizer-fuzz-case-{}.html", std::process::id()));
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "sanitize::tests::deep_markup_fuzz_worker",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env(FUZZ_CASE_FILE_ENV, &case_file)
+            .output()
+            .unwrap();
+        let case = std::fs::read_to_string(&case_file).unwrap_or_default();
+        let _ = std::fs::remove_file(&case_file);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // "1 passed", not just success: a filtered-out worker passes vacuously.
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "worker failed ({}) on {} bytes: {:?}\n{}{}",
+            output.status,
+            case.len(),
+            &case[..case.len().min(400)],
+            stdout,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    #[ignore = "run in a child process by pipeline_survives_deep_and_repeated_markup"]
+    fn deep_markup_fuzz_worker() {
+        // Pieces that each recursive or quadratic path has tripped on, repeated
+        // up to well past MAX_DOM_DEPTH, between payloads whose survival the
+        // oracle would notice.
+        const REPEATED: &[&str] = &[
+            "<g>",
+            "<svg>",
+            "<svg><g/></svg>",
+            "<mjx-mrow>",
+            "<mjx-container>",
+            "<mjx-container><mjx-math>",
+            "<math>",
+            "<mrow>",
+            "<div>",
+            "<b>",
+            "<table>",
+            "<select>",
+            "<foo>",
+            "</p>",
+            "<",
+        ];
+        const PIECES: &[&str] = &[
+            "a",
+            "<p>",
+            "</svg>",
+            "</math>",
+            "<mjx-math>",
+            "<mjx-mi><mjx-c class=\"mjx-c1D465\"></mjx-c></mjx-mi>",
+            "<svg><desc><img src=q onerror=alert(1)></desc></svg>",
+            "<img src=q onerror=alert(1)>",
+            "<a href=javascript:alert(1)>x</a>",
+            "<script>alert(1)</script>",
+            "<style>",
+            "<xmp>",
+            r#"<iframe src="https://www.youtube.com/embed/abc123">"#,
+            "</iframe>",
+        ];
+        // Run in-process (e.g. by `--include-ignored`), a crash would take the
+        // runner down — the very thing the parent exists to prevent.
+        let Some(case_file) = std::env::var_os(FUZZ_CASE_FILE_ENV) else {
+            return;
+        };
+        // Node runs the sanitizer on 8 MB stacks (main thread and libuv pool),
+        // not the test harness's 2 MB.
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let mut seed = 0xC0FF_EE15_DEAD_BEEFu64;
+                let mut next = move || {
+                    seed = seed
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963);
+                    (seed >> 33) as usize
+                };
+                let max_repeat = 4 * crate::limits::MAX_DOM_DEPTH;
+                for _ in 0..400 {
+                    let mut input = String::new();
+                    for _ in 0..1 + next() % 4 {
+                        input.push_str(PIECES[next() % PIECES.len()]);
+                        let piece = REPEATED[next() % REPEATED.len()];
+                        // Half the runs straddle the depth limit, half go past it.
+                        let count = if next() % 2 == 0 {
+                            crate::limits::MAX_DOM_DEPTH - 8 + next() % 16
+                        } else {
+                            next() % max_repeat
+                        };
+                        input.push_str(&piece.repeat(count));
+                        input.push_str(PIECES[next() % PIECES.len()]);
+                    }
+                    std::fs::write(&case_file, &input).unwrap();
+                    // A refusal serves nothing, so only crashes and output fail.
+                    let Ok(out) = crate::sanitize_entry_html(&input, &mut Vec::new()) else {
+                        continue;
+                    };
+                    if let Some(bad) = disallowed_markup_even_if_appended_to(&out, true) {
+                        panic!("output parses to {bad}\n  in : {input:?}\n  out: {out:?}");
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
     #[test]
     fn aria_and_role_attributes_kept() {
         // ARIA hooks are inert and required for assistive tech (e.g. footnotes).
