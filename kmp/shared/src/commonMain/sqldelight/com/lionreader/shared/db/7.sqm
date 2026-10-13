@@ -1,0 +1,65 @@
+-- Drops entry's unused feed_id (#1841). SQLite 3.18 can't drop a column, so
+-- the table is rebuilt, keeping each entry's rowid: the search index is keyed
+-- on it. Copied out and back rather than renamed into place, since a rename
+-- would re-check entry_view and the triggers on entry_body against a missing
+-- entry. Dropping entry drops its search triggers; AppSchema adds them back.
+CREATE TABLE entry_copy (
+  row INTEGER NOT NULL,
+  id TEXT NOT NULL,
+  subscription_id TEXT,
+  type TEXT NOT NULL,
+  url TEXT,
+  title TEXT,
+  author TEXT,
+  summary TEXT,
+  site_name TEXT,
+  feed_title TEXT,
+  published_at INTEGER,
+  fetched_at INTEGER NOT NULL,
+  sort_at INTEGER NOT NULL,
+  read INTEGER NOT NULL,
+  starred INTEGER NOT NULL,
+  last_opened_at INTEGER,
+  body_version INTEGER NOT NULL,
+  read_changed_at INTEGER
+);
+
+INSERT INTO entry_copy
+SELECT rowid, id, subscription_id, type, url, title, author, summary, site_name, feed_title,
+  published_at, fetched_at, sort_at, read, starred, last_opened_at, body_version, read_changed_at
+FROM entry;
+
+DROP INDEX entry_timeline;
+
+DROP TABLE entry;
+
+CREATE TABLE entry (
+  id TEXT NOT NULL PRIMARY KEY,
+  subscription_id TEXT,
+  type TEXT NOT NULL,
+  url TEXT,
+  title TEXT,
+  author TEXT,
+  summary TEXT,
+  site_name TEXT,
+  feed_title TEXT,
+  published_at INTEGER,
+  fetched_at INTEGER NOT NULL,
+  sort_at INTEGER NOT NULL,
+  read INTEGER NOT NULL,
+  starred INTEGER NOT NULL,
+  last_opened_at INTEGER,
+  body_version INTEGER NOT NULL,
+  read_changed_at INTEGER
+);
+
+INSERT INTO entry(rowid, id, subscription_id, type, url, title, author, summary, site_name,
+  feed_title, published_at, fetched_at, sort_at, read, starred, last_opened_at, body_version,
+  read_changed_at)
+SELECT row, id, subscription_id, type, url, title, author, summary, site_name, feed_title,
+  published_at, fetched_at, sort_at, read, starred, last_opened_at, body_version, read_changed_at
+FROM entry_copy;
+
+DROP TABLE entry_copy;
+
+CREATE INDEX entry_timeline ON entry(sort_at DESC, id DESC);

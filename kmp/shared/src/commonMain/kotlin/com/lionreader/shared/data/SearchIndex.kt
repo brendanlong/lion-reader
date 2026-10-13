@@ -1,5 +1,6 @@
 package com.lionreader.shared.data
 
+import app.cash.sqldelight.db.AfterVersion
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
@@ -9,9 +10,9 @@ import com.lionreader.shared.db.LionReaderDatabase
  * The database schema: [LionReaderDatabase.Schema] plus the triggers that keep the search index
  * (`entry_search`, Search.sq) in step with entries and their bodies. They're plain SQL here because
  * SQLDelight can't compile statements that name an FTS4 table's columns. Open databases with this,
- * not the generated schema. The index is keyed by `entry`'s implicit rowid: a migration that
- * rebuilds `entry`, or a VACUUM, renumbers it, so either has to rebuild the index (and recreate the
- * triggers) too.
+ * not the generated schema. The index is keyed by `entry`'s implicit rowid, so a migration that
+ * rebuilds `entry` keeps each row's rowid (7.sqm), and has the triggers on `entry`, which dropping
+ * it drops, recreated after it ([ENTRY_REBUILDS]). A VACUUM renumbers rowids too.
  */
 object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Schema {
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
@@ -19,9 +20,31 @@ object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Sche
         SEARCH_TRIGGERS.forEach { driver.execute(null, it, 0) }
         return QueryResult.Unit
     }
+
+    override fun migrate(
+        driver: SqlDriver,
+        oldVersion: Long,
+        newVersion: Long,
+        vararg callbacks: AfterVersion,
+    ): QueryResult.Value<Unit> =
+        LionReaderDatabase.Schema.migrate(
+            driver,
+            oldVersion,
+            newVersion,
+            *ENTRY_REBUILDS.map { version ->
+                    AfterVersion(version) { d ->
+                        ENTRY_TRIGGERS.forEach { d.execute(null, it, 0) }
+                    }
+                }
+                .toTypedArray(),
+            *callbacks,
+        )
 }
 
-private val SEARCH_TRIGGERS =
+/** The migrations (by the version they start from) that rebuild `entry`. */
+private val ENTRY_REBUILDS = listOf(7L)
+
+private val ENTRY_TRIGGERS =
     listOf(
         """
         CREATE TRIGGER entry_search_insert AFTER INSERT ON entry BEGIN
@@ -48,22 +71,27 @@ private val SEARCH_TRIGGERS =
           DELETE FROM entry_search WHERE rowid = OLD.rowid;
         END
         """,
-        // INSERT OR REPLACE doesn't fire delete triggers, so a replaced body
-        // only fires this one.
-        """
+    )
+
+internal val SEARCH_TRIGGERS =
+    ENTRY_TRIGGERS +
+        listOf(
+            // INSERT OR REPLACE doesn't fire delete triggers, so a replaced body
+            // only fires this one.
+            """
         CREATE TRIGGER entry_search_body AFTER INSERT ON entry_body BEGIN
           UPDATE entry_search SET body = NEW.search_text
           WHERE rowid = (SELECT rowid FROM entry WHERE id = NEW.entry_id);
           UPDATE entry_body SET search_text = '' WHERE entry_id = NEW.entry_id;
         END
         """,
-        """
+            """
         CREATE TRIGGER entry_search_body_delete AFTER DELETE ON entry_body BEGIN
           UPDATE entry_search SET body = NULL
           WHERE rowid = (SELECT rowid FROM entry WHERE id = OLD.entry_id);
         END
         """,
-    )
+        )
 
 /** Tags inside a word (`<b>qu</b>ick`); any other tag separates words. */
 private val INLINE_TAG =

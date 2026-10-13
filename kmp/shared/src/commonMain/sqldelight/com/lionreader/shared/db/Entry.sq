@@ -8,9 +8,6 @@ CREATE TABLE entry (
   -- (refreshFeedTitles), and what a server that predates `subscriptionIds`
   -- adds the entry to.
   subscription_id TEXT,
-  -- Unused (the server sends only subscription ids); SQLite 3.18 can't drop a
-  -- column without rebuilding the table.
-  feed_id TEXT,
   -- The server's entry type ('web', 'email', 'saved'…), as it sent it. Nothing
   -- goes by it: Saved is a subscription like the others.
   type TEXT NOT NULL,
@@ -33,7 +30,7 @@ CREATE TABLE entry (
   -- one (SyncWriter.putBody).
   body_version INTEGER NOT NULL,
   -- When read state last changed, as the server last reported it (Recently
-  -- Read's order); null if it never has. Last, as the migration adds it (1.sqm).
+  -- Read's order); null if it never has.
   read_changed_at INTEGER
 );
 
