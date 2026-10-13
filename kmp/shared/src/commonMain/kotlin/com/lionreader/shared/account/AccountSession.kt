@@ -14,7 +14,6 @@ import com.lionreader.shared.narration.SpeechInterrupted
 import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.sync.RetentionPolicy
 import com.lionreader.shared.sync.SyncEngine
-import com.lionreader.shared.sync.followLiveUpdates
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -97,13 +96,6 @@ internal constructor(
 
     /** Summarizes [entryId] into its article on the device. */
     suspend fun summarize(entryId: String) = withContext(io) { sync.summarize(entryId) }
-
-    /**
-     * Pulls whenever the server says something changed, until cancelled ([followLiveUpdates]). The
-     * app runs it only while on screen; in the background the periodic sync is all there is.
-     */
-    suspend fun followServer() =
-        withContext(io) { followLiveUpdates(connection.api, pull = { sync.sync() }) }
 
     /** The user's changes not yet on the server. */
     suspend fun unsentChanges(): Long =

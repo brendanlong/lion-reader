@@ -45,8 +45,11 @@ import com.lionreader.shared.data.ListScope
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.home.HomeViewModel
+import com.lionreader.shared.home.OPEN_SYNC_SPACING
 import com.lionreader.shared.settings.AppSettings
 import java.time.Duration
+import kotlin.time.TestTimeSource
+import kotlin.time.TimeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -131,6 +134,7 @@ class HomeScreenTest {
         pageScrolling: Boolean = false,
         pageTurns: PageTurns = PageTurns(),
         restoration: StateRestorationTester? = null,
+        clock: TimeSource = TimeSource.Monotonic,
     ) {
         model =
             HomeViewModel(
@@ -138,6 +142,7 @@ class HomeScreenTest {
                 settings,
                 { settings.value = it(settings.value) },
                 sync = { syncs++ },
+                clock = clock,
             )
         val setContent: (@Composable () -> Unit) -> Unit =
             restoration?.let { it::setContent } ?: composeRule::setContent
@@ -151,6 +156,24 @@ class HomeScreenTest {
                 showSelection = showSelection,
             )
         }
+    }
+
+    /** A rotation or a quick look at another app doesn't sync again; coming back later does. */
+    @Test
+    fun openingSyncsOnlyOnceInAWhile() {
+        val clock = TestTimeSource()
+        show(clock = clock)
+
+        model.refreshOnOpen()
+        composeRule.waitForIdle()
+        model.refreshOnOpen()
+        composeRule.waitForIdle()
+        assertEquals(1, syncs)
+
+        clock += OPEN_SYNC_SPACING
+        model.refreshOnOpen()
+        composeRule.waitForIdle()
+        assertEquals(2, syncs)
     }
 
     @Test

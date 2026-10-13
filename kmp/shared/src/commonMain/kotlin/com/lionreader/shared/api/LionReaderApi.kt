@@ -2,7 +2,6 @@ package com.lionreader.shared.api
 
 import com.lionreader.shared.auth.AppAuth
 import io.ktor.client.HttpClient
-import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
@@ -20,7 +19,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readAvailable
-import io.ktor.utils.io.readLine
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -217,38 +215,6 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
                 it.entries?.let { v -> parameter("entriesSince", v) }
                 it.entriesAfterId?.let { v -> parameter("entriesSinceAfterId", v) }
             }
-        }
-
-    /**
-     * Listens to the server's live updates (`/api/v1/events`, server-sent events) until the server
-     * closes the stream: [onOpen] once connected, then [onEvent] with each event's type. Throws on
-     * network/server failure; reconnecting is the caller's.
-     */
-    suspend fun events(onOpen: suspend () -> Unit, onEvent: suspend (String) -> Unit) =
-        withToken { token, canRetry ->
-            http
-                .prepareRequest {
-                    url("$base/events")
-                    bearerAuth(token)
-                    timeout {
-                        requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-                        // The server sends a heartbeat every 30s.
-                        socketTimeoutMillis = 75_000
-                    }
-                }
-                .execute { response ->
-                    checkAnswer(response, canRetry)
-                    // A captive portal's page, say.
-                    if (response.contentType()?.match(ContentType.Text.EventStream) != true) {
-                        throw ApiException(response.status.value, "Not an event stream")
-                    }
-                    onOpen()
-                    val body = response.bodyAsChannel()
-                    while (true) {
-                        val line = body.readLine() ?: break
-                        if (line.startsWith("event:")) onEvent(line.removePrefix("event:").trim())
-                    }
-                }
         }
 
     private suspend fun <T> get(

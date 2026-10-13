@@ -148,14 +148,25 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
                 }
             }
             HorizontalDivider()
-            Section("Sync in the background") {
+            Section("Automatic sync") {
                 Text(
-                    "How often to fetch new articles while the app isn't open. While it's open, they arrive as they're published.",
+                    "How often to check for new articles, whether or not the app is open.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Choices(SyncInterval.entries, settings.syncInterval, { it.label }) { choice ->
                     update { it.copy(syncInterval = choice) }
+                }
+                SettingSwitch("Sync when the app opens", settings.syncOnOpen) { value ->
+                    update { it.copy(syncOnOpen = value) }
+                }
+                SettingSwitch(
+                    "Only on Wi-Fi",
+                    settings.automaticSyncWifiOnly,
+                    note =
+                        "On mobile data, pull to refresh to sync. Your changes are sent on any network. Some VPNs count as mobile data.",
+                ) { value ->
+                    update { it.copy(automaticSyncWifiOnly = value) }
                 }
             }
             HorizontalDivider()

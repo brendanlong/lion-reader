@@ -64,6 +64,13 @@ data class AppSettings(
     val oldestFirst: Boolean = false,
     val retentionDays: Int = 30,
     val syncInterval: SyncInterval = SyncInterval.THIRTY_MINUTES,
+    /** A sync when the app comes on screen (see `HomeViewModel.refreshOnOpen`). */
+    val syncOnOpen: Boolean = true,
+    /**
+     * The periodic and on-open syncs wait for Wi-Fi (any unmetered network). Pull-to-refresh and
+     * sending the user's changes don't.
+     */
+    val automaticSyncWifiOnly: Boolean = true,
     /** Drawer tags shown with their feeds; the rest are collapsed. */
     val expandedTags: Set<String> = emptySet(),
     /** Leave feeds and tags with nothing unread out of the drawer. */
@@ -116,6 +123,10 @@ internal val STORED_SETTINGS: List<Stored<*>> =
             copy(retentionDays = it)
         },
         enumStored("sync_interval", { syncInterval }) { copy(syncInterval = it) },
+        Stored(booleanPreferencesKey("sync_on_open"), { syncOnOpen }) { copy(syncOnOpen = it) },
+        Stored(booleanPreferencesKey("automatic_sync_wifi_only"), { automaticSyncWifiOnly }) {
+            copy(automaticSyncWifiOnly = it)
+        },
         Stored(stringSetPreferencesKey("expanded_tags"), { expandedTags }) {
             copy(expandedTags = it)
         },

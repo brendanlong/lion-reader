@@ -39,14 +39,15 @@ class LionReaderApiTest {
 
     @Test
     fun aCoded401OnAStreamIsTheServersAnswerToo() = runTest {
-        server.eventsError =
+        server.speechError =
             HttpStatusCode.Unauthorized to
                 """{"message":"No.","data":{"httpStatus":401,"appErrorCode":"SOMETHING_ELSE"}}"""
 
-        val error = assertFailsWith<ApiException> { api.events({}, {}) }
+        val error =
+            assertFailsWith<ApiException> { api.streamSpeech("model", "voice", "Hi.", 0f) {} }
 
         assertEquals("SOMETHING_ELSE", error.appErrorCode)
-        assertEquals(listOf("/api/v1/events"), server.requests.map { it.url.encodedPath })
+        assertEquals(listOf("/api/v1/narration/speech"), server.requests.map { it.url.encodedPath })
     }
 
     @Test
