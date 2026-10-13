@@ -547,17 +547,21 @@ ORDER BY ve.published_or_fetched_at DESC, ve.id DESC LIMIT ${n}`
 }
 
 /**
- * `collectSyncEvents` (services/sync.ts) from a cursor ~200 changes back:
+ * `collectSyncEvents` (services/sync.ts) from a cursor `back` changes back:
  * the entry, subscription and tag arms and their count lookups. For
  * `sync.changes` (the Android app's delta sync) it adds the database clock
  * read, `reportHidden` (entries a state change hid come back too),
  * `listCollectionMemberships` and the tombstones read.
  */
-async function syncStatements(db: ClientBase, changes: boolean): Promise<Statement[]> {
+async function syncStatements(
+  db: ClientBase,
+  changes: boolean,
+  back: number = 200
+): Promise<Statement[]> {
   const cursor = await one<{ ts: string; id: string }>(
     db,
     `SELECT updated_at::text AS ts, entry_id AS id FROM user_entries WHERE user_id = ${q(U0)}
-ORDER BY updated_at DESC, entry_id DESC OFFSET 200 LIMIT 1`
+ORDER BY updated_at DESC, entry_id DESC OFFSET ${back} LIMIT 1`
   );
   const subCursor = await one<{ ts: string }>(
     db,
@@ -1043,6 +1047,38 @@ LIMIT 11 OFFSET 0`,
     prepare: async (db) => ({ statements: await syncStatements(db, true) }),
   },
   {
+    name: "sync.events_catchup",
+    kind: "read",
+    source:
+      "services/sync.ts sync.events: collectSyncEvents, first page of a ~5000-change catch-up",
+    prepare: async (db) => ({ statements: await syncStatements(db, false, 5000) }),
+  },
+  {
+    name: "wallabag.entries_since",
+    kind: "read",
+    source:
+      "wallabag entries route: listEntries + countTotalEntries (type saved, since a week ago, perPage 30)",
+    prepare: async () => {
+      const where = [
+        inSaved("ve"),
+        `ve.updated_at >= ${ts(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())}`,
+      ];
+      return {
+        statements: [
+          {
+            label: "list",
+            sql: listEntriesSql({ userId: U0, where, unreadOnly: false, limit: 30 }),
+          },
+          {
+            label: "count",
+            sql: `SELECT count(*)::int FROM visible_entries ve
+WHERE ve.user_id = ${q(U0)} AND ${where.join(" AND ")} AND ve.is_spam = false`,
+          },
+        ],
+      };
+    },
+  },
+  {
     name: "greader.stream_feed",
     kind: "read",
     source:
@@ -1259,6 +1295,32 @@ RETURNING ue.entry_id AS entry_id, prev.${column} AS old_${column}`,
 }
 
 const WRITES: Benchmark[] = [
+  {
+    name: "write.update_entry_content",
+    kind: "write",
+    source: "feed/entry-processor.ts updateEntryContent (popular feed, ~20 holders)",
+    prepare: async (db) => {
+      const feedId = webFeedId(WEB.popular);
+      const { id } = await one<{ id: string }>(
+        db,
+        `SELECT e.id FROM entries e WHERE e.owner_feed_id = ${q(feedId)}
+ORDER BY COALESCE(e.published_at, e.fetched_at) DESC, e.id DESC LIMIT 1`
+      );
+      const article = articleHtml(4242, 3);
+      return {
+        statements: [
+          {
+            label: "update",
+            sql: `UPDATE entries SET title = ${q(article.title)}, author = 'Author 1',
+  content_original = ${q(`<article>${article.html}</article>`)}, content_cleaned = ${q(article.html)},
+  summary = ${q(article.summary)}, content_hash = ${q(benchUuid("refetched"))}, updated_at = ${ts(nowIso())}
+WHERE entries.id = ${q(id)}
+RETURNING *`,
+          },
+        ],
+      };
+    },
+  },
   {
     name: "write.fanout_one",
     kind: "write",
