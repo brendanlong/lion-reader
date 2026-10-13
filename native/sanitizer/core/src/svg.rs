@@ -23,8 +23,8 @@
 
 use scraper::{ElementRef, Html};
 
-use crate::depth::{exceeds_max_depth, MAX_DOM_DEPTH};
 use crate::idrefs::{prefix_fragment_href, prefix_func_iris, prefix_id, SVG_FUNC_IRI_ATTRS};
+use crate::limits::{exceeds_max_depth, MAX_DOM_DEPTH};
 use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{attr_display_name, escape_attr, escape_text};
 use crate::urls::{is_data_image, url_scheme};
@@ -438,7 +438,7 @@ fn emit_svg_element(el: ElementRef, out: &mut String) {
 /// when it parses to nothing (so the caller drops it).
 ///
 /// `None` means the subtree nests deeper than [`MAX_DOM_DEPTH`]: `emit_svg_element`
-/// recurses per level, so it is dropped un-walked (see `depth.rs`) and the
+/// recurses per level, so it is dropped un-walked (see `limits.rs`) and the
 /// caller reports it. That is the same outcome an unparseable range already
 /// gets — the SVG disappears and the rest of the entry is unaffected.
 fn sanitize_svg_subtree(svg_html: &str) -> Option<String> {
@@ -556,26 +556,46 @@ pub fn extract_inline_svg(html: &str, warnings: &mut Vec<String>) -> SvgExtracti
 }
 
 impl SvgExtraction {
+    /// Calls `on_token(start, end, index)` for each whole placeholder token in
+    /// `text`, in order, where `text[start..end]` is the token. One linear scan,
+    /// however many SVGs there are.
+    fn for_each_token(&self, text: &str, mut on_token: impl FnMut(usize, usize, usize)) {
+        // No SVGs can mean no nonce, and an empty nonce matches everywhere.
+        if self.svgs.is_empty() {
+            return;
+        }
+        let nonce = self.nonce.as_str();
+        let mut pos = 0;
+        while let Some(found) = text[pos..].find(nonce) {
+            let start = pos + found;
+            let digits_at = start + nonce.len();
+            let digits = text[digits_at..]
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            let index = text[digits_at..digits_at + digits].parse::<usize>().ok();
+            let end = digits_at + digits + nonce.len();
+            match index {
+                Some(i) if text[digits_at + digits..].starts_with(nonce) && i < self.svgs.len() => {
+                    on_token(start, end, i);
+                    pos = end;
+                }
+                // Not a whole token here (e.g. the closing half of one split
+                // across chunks): step past this nonce and keep looking.
+                _ => pos = digits_at,
+            }
+        }
+    }
+
     /// Set `seen[i]` for each placeholder token that occurs whole in `text`.
     /// Each token occurs once in [`SvgExtraction::html`], so this pins down
     /// where the one occurrence is.
     pub fn mark_placeholders_in(&self, text: &str, seen: &mut [bool]) {
-        let nonce = self.nonce.as_str();
-        let mut rest = text;
-        while let Some(at) = rest.find(nonce) {
-            let after = &rest[at + nonce.len()..];
-            let digits = after.bytes().take_while(u8::is_ascii_digit).count();
-            let index = after[..digits].parse::<usize>().ok();
-            match index {
-                Some(i) if after[digits..].starts_with(nonce) && i < seen.len() => {
-                    seen[i] = true;
-                    rest = &after[digits + nonce.len()..];
-                }
-                // Not a whole token here (e.g. the closing half of one split
-                // across chunks): step past this nonce and keep looking.
-                _ => rest = after,
+        self.for_each_token(text, |_, _, i| {
+            if let Some(seen) = seen.get_mut(i) {
+                *seen = true;
             }
-        }
+        });
     }
 }
 
@@ -583,13 +603,20 @@ impl SvgExtraction {
 /// main pass saw as text (`seen`, from [`SvgExtraction::mark_placeholders_in`]).
 /// Any other token is left where it is: removing it could change how the
 /// bytes around it tokenize, and it is inert text of the pass's own choosing.
+///
+/// Must stay a single pass: replacing token by token rescans the whole body
+/// per SVG, and a body of many tiny SVGs then took tens of seconds per read.
 pub fn reinsert_inline_svg(html: &str, extraction: &SvgExtraction, seen: &[bool]) -> String {
-    let mut result = html.to_string();
-    for (i, svg) in extraction.svgs.iter().enumerate() {
+    let mut result = String::with_capacity(html.len());
+    let mut cursor = 0;
+    extraction.for_each_token(html, |start, end, i| {
         if seen.get(i) == Some(&true) {
-            result = result.replace(&svg_placeholder(&extraction.nonce, i), svg);
+            result.push_str(&html[cursor..start]);
+            result.push_str(&extraction.svgs[i]);
+            cursor = end;
         }
-    }
+    });
+    result.push_str(&html[cursor..]);
     result
 }
 
@@ -749,7 +776,7 @@ mod tests {
         // The guard must not clip real (merely group-heavy) illustrations: a
         // tree that fits under MAX_DOM_DEPTH is emitted in full. 100 levels is
         // already far past anything real; the debug build's fat frames keep
-        // these tests off the limit itself (see the margin note in depth.rs).
+        // these tests off the limit itself (see the margin note in limits.rs).
         let levels = 100;
         let deep = format!(
             "<svg>{}<circle r=\"1\"/>{}</svg>",

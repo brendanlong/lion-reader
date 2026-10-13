@@ -23,7 +23,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use scraper::{ElementRef, Html, Node};
 
-use crate::depth::{exceeds_max_depth, MAX_DOM_DEPTH};
+use crate::limits::{exceeds_max_depth, MAX_DOM_DEPTH};
 use crate::scanner::{find_top_level_ranges, Recovery};
 use crate::serialize::{serialize_mnodes, serialize_subtree, MNode};
 
@@ -554,7 +554,7 @@ pub fn convert_mathjax_chtml(html: &str, warnings: &mut Vec<String>) -> Option<S
         let substring = &html[range.start..range.end];
         let fragment = Html::parse_fragment(substring);
         // Conversion recurses per nesting level, so a container deeper than
-        // MAX_DOM_DEPTH is spliced through verbatim un-walked (see depth.rs)
+        // MAX_DOM_DEPTH is spliced through verbatim un-walked (see limits.rs)
         // — the same degradation an unparseable range gets below. The
         // sanitize pass still runs over it, stripping the mjx-* markup.
         if exceeds_max_depth(&fragment) {
@@ -772,7 +772,7 @@ mod tests {
         // The guard must not clip real math: nesting under MAX_DOM_DEPTH
         // converts exactly as before. (100 levels is already far past real
         // math; the debug build's fat frames keep this test off the limit
-        // itself — see the margin note in depth.rs.)
+        // itself — see the margin note in limits.rs.)
         let levels = 100;
         let html = format!(
             "<mjx-container><mjx-math>{}<mjx-mn><mjx-c class=\"mjx-c31\"></mjx-c></mjx-mn>{}</mjx-math></mjx-container>",
