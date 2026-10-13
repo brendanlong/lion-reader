@@ -994,20 +994,24 @@ LIMIT 11 OFFSET 0`,
     source:
       "wallabag entries route: listEntries + countTotalEntries (type saved, since a week ago, perPage 30)",
     prepare: async () => {
-      const where = [
-        inSaved("ve"),
-        `ve.updated_at >= ${ts(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())}`,
-      ];
+      const since = `ve.updated_at >= ${ts(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())}`;
       return {
         statements: [
+          savedSubscriptionSql,
           {
             label: "list",
-            sql: listEntriesSql({ userId: U0, where, unreadOnly: false, limit: 30 }),
+            sql: listEntriesSql({
+              userId: U0,
+              single: savedSubscriptionId(0),
+              where: [since],
+              unreadOnly: false,
+              limit: 30,
+            }),
           },
           {
             label: "count",
             sql: `SELECT count(*)::int FROM visible_entries ve
-WHERE ve.user_id = ${q(U0)} AND ${where.join(" AND ")} AND ve.is_spam = false`,
+WHERE ve.user_id = ${q(U0)} AND ${inSaved("ve")} AND ${since} AND ve.is_spam = false`,
           },
         ],
       };
