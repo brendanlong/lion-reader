@@ -14,6 +14,12 @@ export const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 export const DISCORD_SAVE_EMOJI = process.env.DISCORD_SAVE_EMOJI || "🦁";
 export const DISCORD_SUCCESS_EMOJI = process.env.DISCORD_SUCCESS_EMOJI || "salutinglionreader";
 export const DISCORD_ERROR_EMOJI = process.env.DISCORD_ERROR_EMOJI || "😿";
+/**
+ * Invite to a server the bot is already in. Discord only lets users DM a bot
+ * they share a server with, so this is how people without their own server
+ * get access to the bot (#1795).
+ */
+export const DISCORD_SERVER_INVITE_URL = process.env.DISCORD_SERVER_INVITE_URL || null;
 
 // ============================================================================
 // Derived Configuration

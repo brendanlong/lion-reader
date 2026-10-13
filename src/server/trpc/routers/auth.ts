@@ -58,6 +58,7 @@ import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import {
   DISCORD_BOT_ENABLED,
   DISCORD_BOT_INVITE_URL,
+  DISCORD_SERVER_INVITE_URL,
   DISCORD_SAVE_EMOJI,
   DISCORD_SUCCESS_EMOJI,
   DISCORD_ERROR_EMOJI,
@@ -715,6 +716,7 @@ export const authRouter = createTRPCRouter({
       z.object({
         enabled: z.boolean(),
         inviteUrl: z.string().nullable(),
+        serverInviteUrl: z.string().nullable(),
         saveEmoji: z.string().nullable(),
         successEmoji: z.string().nullable(),
         errorEmoji: z.string().nullable(),
@@ -724,6 +726,7 @@ export const authRouter = createTRPCRouter({
       return {
         enabled: DISCORD_BOT_ENABLED,
         inviteUrl: DISCORD_BOT_INVITE_URL,
+        serverInviteUrl: DISCORD_BOT_ENABLED ? DISCORD_SERVER_INVITE_URL : null,
         saveEmoji: DISCORD_BOT_ENABLED ? DISCORD_SAVE_EMOJI : null,
         successEmoji: DISCORD_BOT_ENABLED ? DISCORD_SUCCESS_EMOJI : null,
         errorEmoji: DISCORD_BOT_ENABLED ? DISCORD_ERROR_EMOJI : null,

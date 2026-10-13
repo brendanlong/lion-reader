@@ -83,6 +83,26 @@ export function DiscordBotSettings() {
         </div>
       </div>
 
+      {botConfig.serverInviteUrl && (
+        <div className="mt-6">
+          <h3 className="ui-text-sm text-body font-medium">Don&apos;t Have a Server?</h3>
+          <p className="ui-text-sm text-muted mt-1">
+            Discord only lets you message a bot you share a server with. Join the Lion Reader server
+            and you can save links by messaging the bot directly.
+          </p>
+          <a
+            href={botConfig.serverInviteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ui-text-sm text-accent hover:text-accent-hover mt-3 inline-flex items-center gap-1.5 font-medium"
+          >
+            <DiscordIcon className="h-4 w-4" />
+            Join the Lion Reader server
+            <ExternalLinkIcon className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      )}
+
       {/* Usage Instructions */}
       <CardSection>
         <h3 className="ui-text-sm text-body font-medium">How to Use</h3>
@@ -100,7 +120,8 @@ export function DiscordBotSettings() {
             ) : (
               "Add the configured emoji reaction to any message containing a URL"
             )}
-            . You can also send or forward a message with a link directly to the bot in a DM.
+            . You can also send or forward a message with a link directly to the bot in a DM, if you
+            share a server with it.
           </li>
           <li>
             <strong className="text-body">Look for the reaction</strong> -{" "}
