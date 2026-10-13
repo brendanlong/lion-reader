@@ -284,5 +284,11 @@ export function handleSyncEvent(
       // query); null clears it.
       setLiveAnnouncement(event.announcement);
       break;
+
+    default: {
+      // A new event type without a case here fails to compile.
+      const unhandled: never = event;
+      void unhandled;
+    }
   }
 }

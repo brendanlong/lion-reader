@@ -210,7 +210,7 @@ const updatedAtWithFallback = z.string().optional();
  */
 const subscriptionIdsSchema = z.array(z.string()).optional();
 
-const newEntryEventSchema = z.object({
+export const newEntryEventSchema = z.object({
   type: z.literal("new_entry"),
   subscriptionId: z.string().nullable(),
   subscriptionIds: subscriptionIdsSchema,
@@ -232,7 +232,7 @@ const newEntryEventSchema = z.object({
   entry: newEntryListDataSchema.optional(),
 });
 
-const entryUpdatedEventSchema = z.object({
+export const entryUpdatedEventSchema = z.object({
   type: z.literal("entry_updated"),
   subscriptionId: z.string().nullable(),
   entryId: z.string(),
@@ -244,7 +244,7 @@ const entryUpdatedEventSchema = z.object({
   metadata: entryMetadataSchema,
 });
 
-const entryStateChangedEventSchema = z.object({
+export const entryStateChangedEventSchema = z.object({
   type: z.literal("entry_state_changed"),
   entryId: z.string(),
   read: z.boolean(),
@@ -269,7 +269,7 @@ const entryStateChangedEventSchema = z.object({
   subscriptionIds: subscriptionIdsSchema,
 });
 
-const markAllReadEventSchema = z.object({
+export const markAllReadEventSchema = z.object({
   type: z.literal("mark_all_read"),
   // Mark-all-read is unbounded, so instead of a per-entry event or a huge id
   // list, the server sends this single signal with the absolute counts, and
@@ -286,7 +286,7 @@ const markAllReadEventSchema = z.object({
   counts: unreadCountsSchema.optional(),
 });
 
-const subscriptionCreatedEventSchema = z.object({
+export const subscriptionCreatedEventSchema = z.object({
   type: z.literal("subscription_created"),
   subscriptionId: z.string(),
   timestamp: timestampWithDefault,
@@ -300,7 +300,7 @@ const subscriptionCreatedEventSchema = z.object({
   counts: unreadCountsSchema.optional(),
 });
 
-const subscriptionDeletedEventSchema = z.object({
+export const subscriptionDeletedEventSchema = z.object({
   type: z.literal("subscription_deleted"),
   subscriptionId: z.string(),
   timestamp: timestampWithDefault,
@@ -313,7 +313,7 @@ const subscriptionDeletedEventSchema = z.object({
   counts: unreadCountsSchema.optional(),
 });
 
-const subscriptionUpdatedEventSchema = z.object({
+export const subscriptionUpdatedEventSchema = z.object({
   type: z.literal("subscription_updated"),
   subscriptionId: z.string(),
   tags: z.array(syncTagSchema),
@@ -322,21 +322,21 @@ const subscriptionUpdatedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
-const tagCreatedEventSchema = z.object({
+export const tagCreatedEventSchema = z.object({
   type: z.literal("tag_created"),
   tag: syncTagSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });
 
-const tagUpdatedEventSchema = z.object({
+export const tagUpdatedEventSchema = z.object({
   type: z.literal("tag_updated"),
   tag: syncTagSchema,
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });
 
-const tagDeletedEventSchema = z.object({
+export const tagDeletedEventSchema = z.object({
   type: z.literal("tag_deleted"),
   tagId: z.string(),
   timestamp: timestampWithDefault,
@@ -345,7 +345,7 @@ const tagDeletedEventSchema = z.object({
 
 // Articles added to or removed from a collection. SSE-only: delta sync
 // re-delivers each changed entry through its user_entries.updated_at instead.
-const collectionEntriesChangedEventSchema = z.object({
+export const collectionEntriesChangedEventSchema = z.object({
   type: z.literal("collection_entries_changed"),
   subscriptionId: z.string(),
   entryIds: z.array(z.string()),
@@ -355,39 +355,40 @@ const collectionEntriesChangedEventSchema = z.object({
   updatedAt: z.string(),
 });
 
-const importProgressEventSchema = z
-  .object({
-    type: z.literal("import_progress"),
-    importId: z.string(),
-    feedUrl: z.string(),
-    feedStatus: z.enum(["imported", "skipped", "failed"]),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: timestampWithDefault,
-    updatedAt: updatedAtWithFallback,
-  })
-  .transform((event) => ({
-    ...event,
-    updatedAt: event.updatedAt ?? event.timestamp,
-  }));
+// Import and announcement events fill in `updatedAt` with a transform, so the
+// server's Redis schemas extend these bases instead.
+export const importProgressEventBaseSchema = z.object({
+  type: z.literal("import_progress"),
+  importId: z.string(),
+  feedUrl: z.string(),
+  feedStatus: z.enum(["imported", "skipped", "failed"]),
+  imported: z.number(),
+  skipped: z.number(),
+  failed: z.number(),
+  total: z.number(),
+  timestamp: timestampWithDefault,
+  updatedAt: updatedAtWithFallback,
+});
 
-const importCompletedEventSchema = z
-  .object({
-    type: z.literal("import_completed"),
-    importId: z.string(),
-    imported: z.number(),
-    skipped: z.number(),
-    failed: z.number(),
-    total: z.number(),
-    timestamp: timestampWithDefault,
-    updatedAt: updatedAtWithFallback,
-  })
-  .transform((event) => ({
-    ...event,
-    updatedAt: event.updatedAt ?? event.timestamp,
-  }));
+export const importCompletedEventBaseSchema = z.object({
+  type: z.literal("import_completed"),
+  importId: z.string(),
+  imported: z.number(),
+  skipped: z.number(),
+  failed: z.number(),
+  total: z.number(),
+  timestamp: timestampWithDefault,
+  updatedAt: updatedAtWithFallback,
+});
+
+function withUpdatedAtFallback<T extends { timestamp: string; updatedAt?: string }>(
+  event: T
+): T & { updatedAt: string } {
+  return { ...event, updatedAt: event.updatedAt ?? event.timestamp };
+}
+
+const importProgressEventSchema = importProgressEventBaseSchema.transform(withUpdatedAtFallback);
+const importCompletedEventSchema = importCompletedEventBaseSchema.transform(withUpdatedAtFallback);
 
 // ============================================================================
 // Unified Event Schema
@@ -414,32 +415,31 @@ const coreEventSchema = z.discriminatedUnion("type", [
   collectionEntriesChangedEventSchema,
 ]);
 
+export const ANNOUNCEMENT_LEVELS = ["info", "warning"] as const;
+
 /**
  * Global announcement-banner change, broadcast on the site-status channel (not
  * per-user). `announcement` is null when the banner was disabled/cleared. Kept
  * out of `coreEventSchema`/`serverSyncEventSchema` because it's an SSE-only
  * global signal, not part of the per-user entries/subscriptions/tags sync.
  */
-const announcementChangedEventSchema = z
-  .object({
-    type: z.literal("announcement_changed"),
-    announcement: z
-      .object({
-        id: z.string(),
-        message: z.string(),
-        // Must stay in sync with ANNOUNCEMENT_LEVELS in
-        // src/server/services/site-status.ts (can't import it here — server
-        // only). A new level added there but not here would make this parse
-        // reject the whole event and the banner would silently not update.
-        level: z.enum(["info", "warning"]),
-      })
-      .nullable(),
-    timestamp: timestampWithDefault,
-    // Carried only to keep every SyncEvent uniform (cursor bookkeeping reads
-    // `updatedAt`); this event never advances a cursor. Defaults to `timestamp`.
-    updatedAt: z.string().optional(),
-  })
-  .transform((event) => ({ ...event, updatedAt: event.updatedAt ?? event.timestamp }));
+export const announcementChangedEventBaseSchema = z.object({
+  type: z.literal("announcement_changed"),
+  announcement: z
+    .object({
+      id: z.string(),
+      message: z.string(),
+      level: z.enum(ANNOUNCEMENT_LEVELS),
+    })
+    .nullable(),
+  timestamp: timestampWithDefault,
+  // Carried only to keep every SyncEvent uniform (cursor bookkeeping reads
+  // `updatedAt`); this event never advances a cursor. Defaults to `timestamp`.
+  updatedAt: z.string().optional(),
+});
+
+const announcementChangedEventSchema =
+  announcementChangedEventBaseSchema.transform(withUpdatedAtFallback);
 
 export const syncEventSchema = z.union([
   coreEventSchema,
