@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, narrationContent, subscriptions } from "@/server/db/schema";
 import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
@@ -200,10 +200,19 @@ export async function fetchFullContent(
  * Stores only the raw full-content columns; the read path sanitizes per read
  * (issue #1282).
  *
+ * Bumps `updated_at` only when the full content an entry view shows changes:
+ * sync reports every bump as `entry_updated` to every subscriber, and clients
+ * re-download the body on each one (#1850). An entry shows full content when it
+ * has a hash and no error (`showsFullContent`), so that's a success whose hash
+ * differs from the stored one or that clears an error, or a failure that
+ * replaces shown content. A failure on an entry already failed or never fetched
+ * changes nothing shown.
+ *
  * @returns the applied update (the raw full-content columns) on success, or null
  *   when the fetch failed and only the error was persisted.
+ * @testonly
  */
-async function persistFullContentResult(
+export async function persistFullContentResult(
   db: typeof dbType,
   entryId: string,
   result: FetchFullContentResult,
@@ -215,7 +224,7 @@ async function persistFullContentResult(
       .set({
         fullContentError: result.error ?? "Unknown error",
         fullContentFetchedAt: now,
-        updatedAt: now,
+        updatedAt: sql`CASE WHEN ${entries.fullContentError} IS NULL AND ${entries.fullContentHash} IS NOT NULL THEN ${now} ELSE ${entries.updatedAt} END`,
       })
       .where(eq(entries.id, entryId));
     return null;
@@ -233,10 +242,15 @@ async function persistFullContentResult(
     fullContentHash,
     fullContentFetchedAt: now,
     fullContentError: null,
-    updatedAt: now,
   };
 
-  await db.update(entries).set(fullContentUpdate).where(eq(entries.id, entryId));
+  await db
+    .update(entries)
+    .set({
+      ...fullContentUpdate,
+      updatedAt: sql`CASE WHEN ${entries.fullContentError} IS NULL AND ${entries.fullContentHash} IS NOT DISTINCT FROM ${fullContentHash} THEN ${entries.updatedAt} ELSE ${now} END`,
+    })
+    .where(eq(entries.id, entryId));
   return fullContentUpdate;
 }
 
