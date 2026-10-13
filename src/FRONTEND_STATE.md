@@ -81,13 +81,13 @@ which timestamp each write carries per group).
 
 ## Local Store (`src/lib/local-db/`)
 
-| File                   | Role                                                                                                                                                                       |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes)                      |
-| `entries.ts`           | Entry rows and their server writes, all through `mergeServerEntry` (per-group `updatedAt` guard): `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata` |
-| `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (filter targeting, pagination window), `entryListKey`                                                   |
-| `subscriptions.ts`     | Subscription rows: live writes (`writeLiveSubscriptions`, `patchLiveSubscription`, `removeLiveSubscriptions`), fetch ingestion, and `sidebarSectionRows`                   |
-| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion, `saved`), `insertEntryIntoLists` / `addServerEntryToLists` (placement by memberships)                          |
+| File                   | Role                                                                                                                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `synced-collection.ts` | A TanStack DB collection whose synced layer we write from server data (`begin({ immediate: true })`, so writes land under pending optimistic changes)                                                                            |
+| `entries.ts`           | Entry rows and their server writes, all through `mergeServerEntry` (per-group `updatedAt` guard): `upsertServerEntries`, `setServerEntryState`, `patchServerEntryMetadata`                                                       |
+| `entry-lists.ts`       | List membership: `ingestEntryListPages`, `insertIntoMatchingLists` (pagination window), `entryListKey`, and `entryMatchesList` / `compareListEntries`, the one copy of a list's filters and order (the demo store uses them too) |
+| `subscriptions.ts`     | Subscription rows: live writes (`writeLiveSubscriptions`, `patchLiveSubscription`, `removeLiveSubscriptions`), fetch ingestion, and `sidebarSectionRows`                                                                         |
+| `local-db.ts`          | `getLocalDb` (per-QueryClient store + QueryCache ingestion, `saved`), `insertEntryIntoLists` / `addServerEntryToLists` (placement by memberships)                                                                                |
 
 Components read it through `src/lib/hooks/useLocalEntries.ts`:
 `useEntryListEntries(input)` (a list, in order), `useLocalEntry(id)`, and

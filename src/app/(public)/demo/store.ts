@@ -18,6 +18,7 @@ import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
 import { legacyFeedId } from "@/lib/events/schemas";
+import { entryMatchesList, entryMembershipScope } from "@/lib/local-db/entry-lists";
 import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS, type DemoEntry } from "./data";
 
 type Inputs = inferRouterInputs<AppRouter>;
@@ -240,30 +241,16 @@ export function createDemoStore(): DemoStore {
 
   function matches(state: EntryState, filter: EntryFilter): boolean {
     if (!isVisible(state)) return false;
-    const containers = containersOf(state);
-    if (
-      filter.subscriptionId !== undefined &&
-      !containers.some((sub) => sub.id === filter.subscriptionId)
-    ) {
-      return false;
-    }
-    if (
-      filter.tagId !== undefined &&
-      !containers.some((sub) => sub.tagIds.includes(filter.tagId ?? ""))
-    ) {
-      return false;
-    }
-    if (filter.uncategorized && !containers.some((sub) => sub.tagIds.length === 0)) return false;
-    // Saved is the saved subscription's members, like the server's (#1846);
-    // other types filter on the entry's.
-    if (filter.type === "saved") {
-      if (!subscriptionIdsOf(state).includes(DEMO_SAVED_SUBSCRIPTION_ID)) return false;
-    } else if (filter.type !== undefined && state.entry.type !== filter.type) {
+    const subscriptionIds = subscriptionIdsOf(state);
+    const scope = entryMembershipScope(
+      subscriptionIds,
+      DEMO_SAVED_SUBSCRIPTION_ID,
+      (id) => subscriptions.get(id)?.tagIds
+    );
+    if (!entryMatchesList(filter, { ...state, type: state.entry.type, subscriptionIds }, scope)) {
       return false;
     }
     if (filter.excludeTypes?.includes(state.entry.type)) return false;
-    if (filter.unreadOnly && state.read) return false;
-    if (filter.starredOnly && !state.starred) return false;
     if (filter.query) {
       const needle = filter.query.trim().toLowerCase();
       const haystack = [state.entry.title, state.entry.summary, plainText(state.entry.contentHtml)]

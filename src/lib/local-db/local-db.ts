@@ -22,11 +22,11 @@ import {
 import {
   ingestEntryListPages,
   insertIntoMatchingLists,
+  entryMembershipScope,
   markEntryListFetchStarted,
   removeEntryList,
   type EntryListMeta,
   type EntryLists,
-  type EntryMembershipScope,
   type ListEntryRow,
 } from "./entry-lists";
 import { createSyncedCollection } from "./synced-collection";
@@ -226,20 +226,6 @@ export function getLocalDb(queryClient: QueryClient): LocalDb {
   return db;
 }
 
-function entryMembershipScope(db: LocalDb, entry: EntryRow): EntryMembershipScope {
-  const savedSubscriptionId = db.saved.id;
-  const subscriptions = entry.subscriptionIds.flatMap((id) => {
-    // Uncategorized excludes the saved subscription, whatever its tags.
-    const row = id === savedSubscriptionId ? undefined : db.subscriptions.rows.getSynced(id);
-    return row ? [row] : [];
-  });
-  return {
-    tagIds: new Set(subscriptions.flatMap((row) => row.tags.map((tag) => tag.id))),
-    uncategorized: subscriptions.some((row) => row.tags.length === 0),
-    saved: !!savedSubscriptionId && entry.subscriptionIds.includes(savedSubscriptionId),
-  };
-}
-
 /**
  * Inserts an entry into the loaded lists it belongs in, judged by `entry`'s
  * fields and memberships (`subscriptionIds`). Tag/uncategorized membership
@@ -248,7 +234,13 @@ function entryMembershipScope(db: LocalDb, entry: EntryRow): EntryMembershipScop
  * on their next refresh.
  */
 export function insertEntryIntoLists(db: LocalDb, entry: EntryRow): void {
-  insertIntoMatchingLists(db.lists, entry, entryMembershipScope(db, entry));
+  insertIntoMatchingLists(
+    db.lists,
+    entry,
+    entryMembershipScope(entry.subscriptionIds, db.saved.id, (id) =>
+      db.subscriptions.rows.getSynced(id)?.tags.map((tag) => tag.id)
+    )
+  );
 }
 
 /** Stores a server-provided entry and inserts it into the lists it now belongs in. */
