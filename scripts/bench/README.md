@@ -27,7 +27,10 @@ pnpm bench:db          # ~6 minutes; prints a table, writes scripts/bench/result
 
 The scripts use the `DATABASE_URL` in `.env.local-services`. `pnpm bench:db`
 takes `--iterations` (default 5), `--warmup` (default 5), `--filter name,name`
-(substring match), `--out file.json` and `--note text`.
+(substring match), `--out file.json` and `--note text`. Every run first spends
+about 3 minutes running all the write benchmarks unrecorded, `--filter` or
+not, so that each run starts from the same table layout (`settle()` in
+`run.ts`).
 
 Columns: **ms** is planning + execution summed over the benchmark's
 statements, triggers included (median; **max** over the iterations).

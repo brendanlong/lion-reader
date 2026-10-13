@@ -108,12 +108,15 @@ interface Iteration {
   walBytes: number;
 }
 
+const DEFAULT_ITERATIONS = 5;
+const DEFAULT_WARMUP = 5;
+
 const BENCH_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Clears the dead tuples rolled-back writes leave in the tables the write
- * benchmarks touch, so every benchmark and write iteration starts from the
- * seeded state; autovacuum would clear them at some arbitrary point instead.
+ * benchmarks touch, so every benchmark and write iteration starts without
+ * them; autovacuum would clear them at some arbitrary point instead.
  * DISABLE_PAGE_SKIPPING makes VACUUM count every page, keeping the row
  * estimates the planner uses exact: a page-skipping VACUUM extrapolates them,
  * and over a few runs they drifted far enough to change plans. No ANALYZE,
@@ -404,27 +407,21 @@ async function runBenchmark(
 }
 
 /**
- * Runs every write benchmark the way a run does and discards the results, so
- * every run, including the first after a seed, starts from the layout a run
- * leaves behind. Rolled-back writes leave the tables and indexes grown (VACUUM
- * clears the rows but not the space or the leaf-page splits), and the layout
- * keeps shifting for the first few passes; a single pass of each write left the
- * first run reading up to 7% more buffers than the later ones (#1910).
+ * Runs every write benchmark the way a default run does and discards the
+ * results, so every run, including the first after a seed, starts from the
+ * layout a run leaves behind, whatever its flags. Rolled-back writes leave the
+ * tables and indexes grown (VACUUM clears the rows but not the leaf-page
+ * splits), and the layout keeps shifting for the first few passes; a single
+ * pass of each write left the first run reading up to 7% more buffers than the
+ * later ones (#1910).
  */
-async function settle(
-  connect: () => Promise<Client>,
-  iterations: number,
-  warmup: number,
-  opts: RunOptions
-): Promise<void> {
+async function settle(connect: () => Promise<Client>, opts: RunOptions): Promise<void> {
   for (const bench of BENCHMARKS.filter((b) => b.kind === "write")) {
-    await runBenchmark(connect, bench, iterations, warmup, opts);
-  }
-  const client = await connect();
-  try {
-    await vacuum(client);
-  } finally {
-    await client.end();
+    try {
+      await runBenchmark(connect, bench, DEFAULT_ITERATIONS, DEFAULT_WARMUP, opts);
+    } catch (err) {
+      throw new Error(`settling: ${(err as Error).message}`);
+    }
   }
 }
 
@@ -522,8 +519,8 @@ function summaryTable(results: BenchResult[]): string {
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
-      iterations: { type: "string", default: "5" },
-      warmup: { type: "string", default: "5" },
+      iterations: { type: "string", default: String(DEFAULT_ITERATIONS) },
+      warmup: { type: "string", default: String(DEFAULT_WARMUP) },
       filter: { type: "string" },
       out: { type: "string" },
       note: { type: "string" },
@@ -570,8 +567,8 @@ async function main(): Promise<void> {
     values.note
   );
   await admin.end();
-  console.error("settling: running every write benchmark once, unrecorded");
-  await settle(connect, iterations, warmup, opts);
+  console.error("settling: running every write benchmark's full schedule, unrecorded");
+  await settle(connect, opts);
 
   const results: BenchResult[] = [];
   for (const bench of selected) {
