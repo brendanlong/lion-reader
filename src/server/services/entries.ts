@@ -338,12 +338,6 @@ const entryReadSelectFields = {
   author: visibleEntries.author,
   contentOriginal: visibleEntries.contentOriginal,
   contentCleaned: visibleEntries.contentCleaned,
-  // The original is the whole fetched page and is served only when there's no
-  // cleaned version, so don't load it otherwise.
-  fullContentOriginal: sql<
-    string | null
-  >`CASE WHEN ${visibleEntries.fullContentCleaned} IS NULL THEN ${visibleEntries.fullContentOriginal} END`,
-  fullContentCleaned: visibleEntries.fullContentCleaned,
   fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
   fullContentError: visibleEntries.fullContentError,
   summary: visibleEntries.summary,
@@ -364,9 +358,34 @@ const entryReadSelectFields = {
   unsubscribeUrl: visibleEntries.unsubscribeUrl,
 };
 
-function selectEntryRows(db: typeof dbType, where: SQL | undefined) {
+/**
+ * Which fetched full articles a read loads: all of them (the app's entry view
+ * can toggle between full and feed content), or only those the entry view
+ * shows by default, for reads that serve just that variant. The bodies sit on
+ * the shared entry row, so another subscriber's fetch fills them in either
+ * way.
+ */
+type FullContentScope = "all" | "shown";
+
+/**
+ * The full-content bodies, raw. The original is the whole fetched page and is
+ * served only when there's no cleaned version, so it isn't loaded otherwise.
+ */
+function fullContentBodyFields(scope: FullContentScope) {
+  const loaded = scope === "all" ? sql`true` : sql`${subscriptions.fetchFullContent}`;
+  return {
+    fullContentOriginal: sql<
+      string | null
+    >`CASE WHEN ${loaded} AND ${visibleEntries.fullContentCleaned} IS NULL THEN ${visibleEntries.fullContentOriginal} END`,
+    fullContentCleaned: sql<
+      string | null
+    >`CASE WHEN ${loaded} THEN ${visibleEntries.fullContentCleaned} END`,
+  };
+}
+
+function selectEntryRows(db: typeof dbType, where: SQL | undefined, scope: FullContentScope) {
   return db
-    .select(entryReadSelectFields)
+    .select({ ...entryReadSelectFields, ...fullContentBodyFields(scope) })
     .from(visibleEntries)
     .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
@@ -385,12 +404,14 @@ async function readEntries<T extends { id: string }>(
   db: typeof dbType,
   userId: string,
   entryIds: string[],
+  scope: FullContentScope,
   toOutput: (row: EntryRow) => Promise<T>
 ): Promise<T[]> {
   if (entryIds.length === 0) return [];
   const rows = await selectEntryRows(
     db,
-    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId))
+    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)),
+    scope
   );
   const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, toOutput);
   const byId = new Map(mapped.map((entry) => [entry.id, entry]));
@@ -402,11 +423,13 @@ async function readEntry<T>(
   db: typeof dbType,
   userId: string,
   entryId: string,
+  scope: FullContentScope,
   toOutput: (row: EntryRow) => Promise<T>
 ): Promise<T> {
   const [row] = await selectEntryRows(
     db,
-    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId))
+    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)),
+    scope
   ).limit(1);
   if (!row) {
     throw errors.entryNotFound();
@@ -556,7 +579,7 @@ export async function getFullEntry(
   userId: string,
   entryId: string
 ): Promise<{ entry: FullEntry; contentHash: string }> {
-  return readEntry(db, userId, entryId, async (row) => ({
+  return readEntry(db, userId, entryId, "all", async (row) => ({
     entry: await toFullEntry(row),
     contentHash: row.contentHash,
   }));
@@ -571,7 +594,7 @@ export async function getFullEntries(
   userId: string,
   entryIds: string[]
 ): Promise<FullEntry[]> {
-  return readEntries(db, userId, entryIds, toFullEntry);
+  return readEntries(db, userId, entryIds, "all", toFullEntry);
 }
 
 export interface ExportableEntry {
@@ -1077,7 +1100,7 @@ export async function getEntry(
   userId: string,
   entryId: string
 ): Promise<EntryFull> {
-  return readEntry(db, userId, entryId, toEntryFull);
+  return readEntry(db, userId, entryId, "shown", toEntryFull);
 }
 
 /**
@@ -1089,7 +1112,7 @@ export async function getEntries(
   userId: string,
   entryIds: string[]
 ): Promise<EntryFull[]> {
-  return readEntries(db, userId, entryIds, toEntryFull);
+  return readEntries(db, userId, entryIds, "shown", toEntryFull);
 }
 
 /**

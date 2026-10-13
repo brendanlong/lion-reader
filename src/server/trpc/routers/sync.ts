@@ -19,6 +19,7 @@ import {
   collectSyncEvents,
   currentSyncCursors,
   syncChangesInputSchema,
+  syncChangesOutputSchema,
   syncCursorsInputSchema,
   syncCursorsSchema,
 } from "@/server/services/sync";
@@ -36,26 +37,6 @@ const appProcedure = scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS);
 const syncEventsOutputSchema = z.object({
   events: z.array(serverSyncEventSchema),
   hasMore: z.boolean(),
-});
-
-/**
- * Output schema for sync.changes (see the procedure).
- */
-const syncChangesOutputSchema = z.object({
-  events: z.array(serverSyncEventSchema),
-  hasMore: z.boolean(),
-  cursors: z.object({
-    entries: z.string().optional(),
-    entriesAfterId: z.string().optional(),
-    subscriptions: z.string().optional(),
-    tags: z.string().optional(),
-    deletions: z.string().optional(),
-  }),
-  deletions: z.array(z.object({ entryId: z.string(), deletedAt: z.string() })),
-  collectionMemberships: z.array(
-    z.object({ entryId: z.string(), subscriptionIds: z.array(z.string()) })
-  ),
-  resyncRequired: z.boolean(),
 });
 
 // ============================================================================

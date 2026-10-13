@@ -848,14 +848,27 @@ export const syncChangesInputSchema = syncCursorsInputSchema.extend({
   deletions: z.string().datetime().optional(),
 });
 
-export interface SyncChanges {
-  events: z.infer<typeof serverSyncEventSchema>[];
-  hasMore: boolean;
-  cursors: SyncCursorsInput & { deletions?: string };
-  deletions: Array<{ entryId: string; deletedAt: string }>;
-  collectionMemberships: Array<{ entryId: string; subscriptionIds: string[] }>;
-  resyncRequired: boolean;
-}
+/**
+ * Output schema for sync.changes (see the procedure).
+ */
+export const syncChangesOutputSchema = z.object({
+  events: z.array(serverSyncEventSchema),
+  hasMore: z.boolean(),
+  cursors: z.object({
+    entries: z.string().optional(),
+    entriesAfterId: z.string().optional(),
+    subscriptions: z.string().optional(),
+    tags: z.string().optional(),
+    deletions: z.string().optional(),
+  }),
+  deletions: z.array(z.object({ entryId: z.string(), deletedAt: z.string() })),
+  collectionMemberships: z.array(
+    z.object({ entryId: z.string(), subscriptionIds: z.array(z.string()) })
+  ),
+  resyncRequired: z.boolean(),
+});
+
+export type SyncChanges = z.infer<typeof syncChangesOutputSchema>;
 
 /** The native app's delta sync; see the `sync.changes` procedure. */
 export async function collectSyncChanges(

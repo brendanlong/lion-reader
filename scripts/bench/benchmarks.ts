@@ -106,16 +106,24 @@ const LIST_COLUMNS = `ve.id, ve.greader_item_id, subscriptions.greader_stream_id
   subscriptions.id AS subscription_id, ${subscriptionIdsSql("ve.user_id", "ve.id")} AS subscription_ids,
   ve.site_name, ${FEED_TITLE} AS feed_title`;
 
-/** `entryReadSelectFields` (getEntry/getEntries/getFullEntry). */
-const FULL_COLUMNS = `ve.id, ve.greader_item_id, subscriptions.greader_stream_id AS subscription_greader_stream_id,
+/**
+ * `entryReadSelectFields` + `fullContentBodyFields` (services/entries.ts): the
+ * external APIs' reads (getEntry/getEntries) load full-content bodies only for
+ * subscriptions that show them; the app's entry view (getFullEntry) loads all.
+ */
+function fullColumns(scope: "all" | "shown"): string {
+  const loaded = scope === "all" ? "true" : "subscriptions.fetch_full_content";
+  return `ve.id, ve.greader_item_id, subscriptions.greader_stream_id AS subscription_greader_stream_id,
   ve.type, ve.url, ve.title, ve.author, ve.content_original, ve.content_cleaned,
-  CASE WHEN ve.full_content_cleaned IS NULL THEN ve.full_content_original END AS full_content_original,
-  ve.full_content_cleaned, ve.full_content_fetched_at, ve.full_content_error,
+  ve.full_content_fetched_at, ve.full_content_error,
   ve.summary, ve.published_at, ve.fetched_at, ve.read, ve.starred, ve.read_changed_at,
   ve.updated_at, ve.entry_updated_at, ve.content_hash,
   subscriptions.id AS subscription_id, ${subscriptionIdsSql("ve.user_id", "ve.id")} AS subscription_ids,
   subscriptions.fetch_full_content, ve.site_name, ${FEED_TITLE} AS feed_title, feeds.url AS feed_url,
-  ve.unsubscribe_url`;
+  ve.unsubscribe_url,
+  CASE WHEN ${loaded} AND ve.full_content_cleaned IS NULL THEN ve.full_content_original END AS full_content_original,
+  CASE WHEN ${loaded} THEN ve.full_content_cleaned END AS full_content_cleaned`;
+}
 
 /** The joins every entry read performs (`entryOriginJoin`). */
 const FROM_VISIBLE = `FROM visible_entries ve
@@ -164,7 +172,7 @@ LIMIT ${(o.limit ?? 10) + 1} OFFSET 0`;
 
 /** `getEntries` (services/entries.ts). */
 function getEntriesSql(userId: string, entryIds: string[]): string {
-  return `SELECT ${FULL_COLUMNS}
+  return `SELECT ${fullColumns("shown")}
 ${FROM_VISIBLE}
 WHERE ve.id IN (${list(entryIds)}) AND ve.user_id = ${q(userId)}`;
 }
@@ -881,7 +889,7 @@ ORDER BY unread_count DESC, id LIMIT 1`
         statements: [
           {
             label: "get",
-            sql: `SELECT ${FULL_COLUMNS}
+            sql: `SELECT ${fullColumns("all")}
 ${FROM_VISIBLE}
 WHERE ve.id = ${q(id)} AND ve.user_id = ${q(U0)}
 LIMIT 1`,

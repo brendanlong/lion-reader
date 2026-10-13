@@ -8,7 +8,7 @@
  * (~0.09 ms / 10 KB, and off the event loop for large bodies via the async
  * form) to run on every read, so we store only the raw columns and sanitize
  * here at read time. This is the single chokepoint every read path funnels
- * through — see `getEntry`/`getEntries`/`toFullEntry` in
+ * through — see `getFullEntry`/`getEntry` and their batch forms in
  * `@/server/services/entries` and the saved-article read paths.
  *
  * A content "family" is an `(original, cleaned)` pair. The **content** family
