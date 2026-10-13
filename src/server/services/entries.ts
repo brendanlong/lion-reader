@@ -1261,8 +1261,7 @@ export async function markAllEntriesRead(
     changedAt?: Date;
     /**
      * Whether to include spam entries, matching the user's preference. When
-     * false (the default), only entries visible via `visible_entries` with
-     * `is_spam = false` are marked — otherwise "mark all read" would also flip
+     * false (the default), only visible, non-spam entries are marked — otherwise "mark all read" would also flip
      * hidden spam and unsubscribed-orphan `user_entries` rows the user never
      * saw, which would surface as already-read if they later enable showSpam.
      */
@@ -1282,8 +1281,8 @@ export async function markAllEntriesRead(
   // unsubscribed-feed orphans that aren't starred. Both are tested on the
   // user_entries row itself, never by joining visible_entries: that joins
   // `entries`, which for a broad scope planned as a sequential scan of every
-  // entry. `is_spam` is the row's copy of entries.is_spam, which never
-  // changes after insert (the unread counters rely on the same copy).
+  // entry. `is_spam` is the row's immutable copy of entries.is_spam (see its
+  // column in db/schema.ts), which the unread counters rely on too.
   conditions.push(visibleUserEntrySql());
   if (!params.showSpam) {
     conditions.push(eq(userEntries.isSpam, false));

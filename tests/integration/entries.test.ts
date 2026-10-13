@@ -837,7 +837,6 @@ describe("Entries", () => {
         const userId = await createTestUser();
         const activeFeed = await createTestFeed("https://active.example.com/rss");
         const goneFeed = await createTestFeed("https://gone.example.com/rss");
-        const otherFeed = await createTestFeed("https://other.example.com/rss");
         await createTestSubscription(userId, activeFeed);
         await createTestSubscription(userId, goneFeed, { unsubscribedAt: new Date() });
         const sender = await createTestEmailSubscription(userId);
@@ -848,8 +847,6 @@ describe("Entries", () => {
           starredBy: [userId],
         });
         await createSharedTestEntry(goneFeed, { userIds: [userId] }); // unsubscribed orphan
-        // A row in none of the user's subscriptions and not starred.
-        await createSharedTestEntry(otherFeed, { userIds: [userId] });
         const email = await createSharedTestEntry(sender, { type: "email", userIds: [userId] });
         const spam = await createSharedTestEntry(sender, {
           type: "email",

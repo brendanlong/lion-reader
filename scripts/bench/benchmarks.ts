@@ -1231,7 +1231,7 @@ WHERE ve.user_id = ${q(U0)} AND ve.id IN (${q(entry.id)})`,
     name: "write.mark_all_read_reading_list_before",
     kind: "write",
     source:
-      "services/entries.ts markAllEntriesRead (U1's reading list with `before`: Google Reader mark-all-as-read with `ts`, ~50,000 unread)",
+      "services/entries.ts markAllEntriesRead (U1's reading list with `before`: Google Reader mark-all-as-read with `ts`, ~50,000 unread, all fetched before it)",
     prepare: async (db) => ({
       statements: await markAllReadStatements(
         db,
