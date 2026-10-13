@@ -18,7 +18,6 @@ import {
   syncTagSchema,
   subscriptionCreatedDataSchema,
   feedCreatedDataSchema,
-  legacyFeedId,
   unreadCountsSchema,
   type NewEntryListData,
 } from "@/lib/events/schemas";
@@ -249,9 +248,9 @@ export type UserEvent = z.infer<typeof userEventSchema>;
 export type EntryUpdatedMetadata = z.infer<typeof entryMetadataSchema>;
 type SubscriptionCreatedEventSubscription = Omit<
   z.infer<typeof subscriptionCreatedDataSchema>,
-  "id" | "feedId"
+  "id"
 >;
-type SubscriptionCreatedEventFeed = Omit<z.infer<typeof feedCreatedDataSchema>, "id">;
+type SubscriptionCreatedEventFeed = z.infer<typeof feedCreatedDataSchema>;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -503,8 +502,8 @@ export async function publishSubscriptionCreated(
     subscriptionId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-    subscription: { ...subscription, id: subscriptionId, feedId: legacyFeedId(subscriptionId) },
-    feed: { ...feed, id: legacyFeedId(subscriptionId) },
+    subscription: { ...subscription, id: subscriptionId },
+    feed,
     counts,
   });
 }

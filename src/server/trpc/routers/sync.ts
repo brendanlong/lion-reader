@@ -26,7 +26,7 @@ import {
   tags,
   entryTombstones,
 } from "@/server/db/schema";
-import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
 import {
   entryFeedTitleSql,
   entryOriginJoin,
@@ -757,7 +757,6 @@ async function collectSyncEvents(
             updatedAt: updatedAtIso,
             subscription: {
               id: subscription.id,
-              feedId: legacyFeedId(subscription.id),
               customTitle: subscription.customTitle,
               subscribedAt: subscription.subscribedAt.toISOString(),
               unreadCount: subscription.unreadCount,
@@ -765,7 +764,6 @@ async function collectSyncEvents(
             },
             // A subscription without a feed (#1846) has only its own name.
             feed: {
-              id: legacyFeedId(subscription.id),
               type: subscription.type,
               url: feed?.url ?? null,
               title: feed?.title ?? subscription.customTitle,
