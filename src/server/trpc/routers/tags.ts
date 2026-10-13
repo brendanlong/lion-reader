@@ -26,7 +26,10 @@ const protectedProcedure = scopedProtectedProcedure(READER_SCOPES);
 const tagNameSchema = z
   .string()
   .min(1, "Tag name is required")
-  .max(50, "Tag name must be less than 50 characters")
+  .max(
+    tagsService.TAG_NAME_MAX_LENGTH,
+    `Tag name must be at most ${tagsService.TAG_NAME_MAX_LENGTH} characters`
+  )
   .trim();
 
 // ============================================================================

@@ -18,19 +18,16 @@ import {
   feeds,
   opmlImports,
   subscriptions,
-  subscriptionTags,
   tags,
   type OpmlImportFeedData,
   type OpmlImportFeedResult,
 } from "@/server/db/schema";
 import { parseOpmlAsync } from "@/server/feed/opml";
 import { createJob } from "@/server/jobs/queue";
-import {
-  publishImportProgress,
-  publishImportCompleted,
-  publishSubscriptionUpdated,
-} from "@/server/redis/pubsub";
-import { createSubscription } from "@/server/services/subscriptions";
+import { publishImportProgress, publishImportCompleted } from "@/server/redis/pubsub";
+import { createSubscription, setSubscriptionTags } from "@/server/services/subscriptions";
+import { fitTagName } from "@/server/services/tags";
+import { getAppErrorCode } from "@/server/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 
@@ -154,7 +151,6 @@ export async function importOpml(
  */
 const OPML_IMPORT_DB_BATCH_SIZE = 10;
 
-/** Tag identity needed to publish a `subscription_updated` event. */
 interface ImportTagInfo {
   id: string;
   name: string;
@@ -190,25 +186,30 @@ export type ProcessOpmlImportResult =
 
 /**
  * Resolves every category name used by the import to a tag row, creating the
- * missing ones in a single batch insert (rather than a query per feed). Tag
- * names are unique ignoring case, so categories are matched to tags by
- * Postgres's `lower()`, the same comparison the unique index makes, and
- * categories differing only in case share one tag. Keyed by category name.
+ * missing ones in a single batch insert (rather than a query per feed). A
+ * category becomes the tag named by `fitTagName`. Tag names are unique
+ * ignoring case, so they're matched to tags by Postgres's `lower()`, the same
+ * comparison the unique index makes, and categories differing only in case
+ * share one tag. Keyed by category name.
  */
 async function ensureImportTags(
   db: typeof dbType,
   userId: string,
   feedsData: OpmlImportFeedData[]
 ): Promise<Map<string, ImportTagInfo>> {
-  const categoryNames = [...new Set(feedsData.flatMap((feed) => feed.category ?? []))];
+  const tagNameByCategory = new Map<string, string>();
+  for (const category of feedsData.flatMap((feed) => feed.category ?? [])) {
+    const tagName = fitTagName(category);
+    if (tagName !== null) tagNameByCategory.set(category, tagName);
+  }
   const categoryToTag = new Map<string, ImportTagInfo>();
-  if (categoryNames.length === 0) {
+  if (tagNameByCategory.size === 0) {
     return categoryToTag;
   }
 
   const categoryKeys = await db.execute<{ name: string; key: string }>(
     sql`SELECT name, lower(name) AS key FROM unnest(ARRAY[${sql.join(
-      categoryNames.map((name) => sql`${name}`),
+      [...new Set(tagNameByCategory.values())].map((name) => sql`${name}`),
       sql`, `
     )}]::text[]) WITH ORDINALITY AS c(name, i) ORDER BY i`
   );
@@ -265,66 +266,38 @@ async function ensureImportTags(
     });
   }
 
-  for (const { name, key } of categoryKeys.rows) {
-    const tag = tagsByKey.get(key);
-    if (tag) categoryToTag.set(name, tag);
+  const keyByTagName = new Map(categoryKeys.rows.map(({ name, key }) => [name, key]));
+  for (const [category, tagName] of tagNameByCategory) {
+    const tag = tagsByKey.get(keyByTagName.get(tagName) ?? "");
+    if (tag) categoryToTag.set(category, tag);
   }
   return categoryToTag;
 }
 
 /**
- * Attaches an imported subscription to the tags named by its OPML categories
- * and tells open clients about it.
+ * Gives an imported subscription the tags named by its OPML categories,
+ * replacing any a reactivated subscription still had.
  */
 async function applyImportTags(
   db: typeof dbType,
   userId: string,
   subscriptionId: string,
-  feedUrl: string,
   categories: string[],
   tagNameToInfo: Map<string, ImportTagInfo>
 ): Promise<void> {
-  const tagInfos = [
-    ...new Map(
-      categories
-        .map((categoryName) => tagNameToInfo.get(categoryName))
-        .filter((info): info is ImportTagInfo => info !== undefined)
-        .map((info) => [info.id, info])
-    ).values(),
-  ];
-
-  if (tagInfos.length === 0) {
-    return;
-  }
-
-  // Clear first: the subscription may be a reactivation carrying old tags.
-  await db.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, subscriptionId));
-
-  const now = new Date();
-  await db.insert(subscriptionTags).values(
-    tagInfos.map((tagInfo) => ({
+  const tagIds = categories.flatMap((category) => tagNameToInfo.get(category)?.id ?? []);
+  if (tagIds.length === 0) return;
+  try {
+    await setSubscriptionTags(db, userId, subscriptionId, tagIds);
+  } catch (error) {
+    // The user deleted one of the import's tags meanwhile; the subscription
+    // itself was imported.
+    if (getAppErrorCode(error) !== "VALIDATION_ERROR") throw error;
+    logger.warn("OPML import: a category's tag was deleted during the import", {
+      userId,
       subscriptionId,
-      tagId: tagInfo.id,
-      createdAt: now,
-    }))
-  );
-
-  // Fire-and-forget: a failed event must not fail the feed's import.
-  publishSubscriptionUpdated(
-    userId,
-    subscriptionId,
-    now,
-    tagInfos,
-    null // no custom title
-  ).catch((err) => {
-    logger.error("Failed to publish subscription_updated event", { err, userId, subscriptionId });
-  });
-
-  logger.debug("OPML import: associated subscription with tags", {
-    subscriptionId,
-    feedUrl,
-    tagIds: tagInfos.map((t) => t.id),
-  });
+    });
+  }
 }
 
 /**
@@ -456,14 +429,7 @@ export async function processOpmlImport(
 
         const subscriptionId = subscriptionResult.subscriptionId;
 
-        await applyImportTags(
-          db,
-          userId,
-          subscriptionId,
-          feedUrl,
-          opmlFeed.category ?? [],
-          tagNameToInfo
-        );
+        await applyImportTags(db, userId, subscriptionId, opmlFeed.category ?? [], tagNameToInfo);
 
         // Prevents a duplicate URL later in the same import from re-subscribing.
         existingUrls.add(feedUrl);

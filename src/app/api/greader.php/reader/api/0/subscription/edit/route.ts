@@ -14,20 +14,27 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
+import {
+  parseFormData,
+  textResponse,
+  errorResponse,
+  withClientErrors,
+} from "@/server/google-reader/parse";
 import { feedStreamIdToSubscriptionUuid } from "@/server/google-reader/id";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
-import { eq, and, isNull, sql } from "drizzle-orm";
-import { subscriptions, subscriptionTags } from "@/server/db/schema";
 import * as tagsService from "@/server/services/tags";
-import { clearedCustomTitle, unsubscribe } from "@/server/services/subscriptions";
-import { isUniqueViolation } from "@/server/db/errors";
+import {
+  clearedCustomTitle,
+  editSubscriptionTags,
+  unsubscribe,
+  updateSubscription,
+} from "@/server/services/subscriptions";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
   const userId = session.user.id;
@@ -63,13 +70,7 @@ export async function POST(request: Request): Promise<Response> {
       const existingSubId = await feedStreamIdToSubscriptionUuid(db, userId, subscriptionInt64);
       if (existingSubId) {
         // Already subscribed — apply any tag/title changes.
-        const renameError = title ? await renameSubscription(userId, existingSubId, title) : null;
-        if (renameError) return renameError;
-
-        // Handle tag additions
-        await applyTagChanges(db, userId, existingSubId, addTags, removeTags);
-
-        return textResponse("OK");
+        return editSubscription(userId, existingSubId, title, addTags, removeTags);
       }
       // If subscription doesn't exist, we can't subscribe by int64 ID alone
       return errorResponse("Use quickadd to subscribe to new feeds", 400);
@@ -81,13 +82,7 @@ export async function POST(request: Request): Promise<Response> {
         return errorResponse("Subscription not found", 404);
       }
 
-      const renameError = title ? await renameSubscription(userId, subscriptionId, title) : null;
-      if (renameError) return renameError;
-
-      // Handle tag changes
-      await applyTagChanges(db, userId, subscriptionId, addTags, removeTags);
-
-      return textResponse("OK");
+      return editSubscription(userId, subscriptionId, title, addTags, removeTags);
     }
 
     case "unsubscribe": {
@@ -103,96 +98,48 @@ export async function POST(request: Request): Promise<Response> {
     default:
       return errorResponse(`Unknown action: ${action}`, 400);
   }
-}
+});
 
 /**
- * Sets a subscription's title, trimmed like the tRPC rename. The IS DISTINCT
- * FROM guard makes a same-title re-save match no row, so updated_at doesn't
- * move and the subscription delta-sync cursor doesn't churn when a client
- * re-asserts the title it already has (#1160). Returns an error response when
- * the subscription is a collection and the name is blank or another of the
- * user's active collections has it, ignoring case (#1846). A blank title for a
- * feed is ignored.
+ * Applies an edit's title and tag changes. An empty `t` is no title; a blank
+ * one is ignored, except that a collection must keep a name (#1846).
  */
-async function renameSubscription(
+async function editSubscription(
   userId: string,
   subscriptionId: string,
-  rawTitle: string
-): Promise<Response | null> {
-  const title = rawTitle.trim();
-  if (!title) {
-    return (await clearedCustomTitle(db, userId, subscriptionId)) === null
-      ? errorResponse("Collection name is required", 400)
-      : null;
-  }
-  try {
-    await db
-      .update(subscriptions)
-      .set({ customTitle: title, updatedAt: new Date() })
-      .where(
-        and(
-          eq(subscriptions.id, subscriptionId),
-          eq(subscriptions.userId, userId),
-          isNull(subscriptions.unsubscribedAt),
-          sql`${subscriptions.customTitle} IS DISTINCT FROM ${title}`
-        )
-      );
-    return null;
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      return errorResponse(`Collection already exists: ${title}`, 409);
-    }
-    throw error;
-  }
-}
-
-/**
- * Applies tag additions and removals to a subscription.
- * Creates tags that don't exist yet.
- */
-async function applyTagChanges(
-  database: typeof db,
-  userId: string,
-  subscriptionId: string,
+  rawTitle: string | null,
   addTags: string[],
   removeTags: string[]
-): Promise<void> {
-  // Process tag removals
-  for (const tagStreamId of removeTags) {
-    const labelMatch = tagStreamId.match(/^user\/[^/]+\/label\/(.+)$/);
-    if (!labelMatch) continue;
-
-    const tagName = labelMatch[1];
-    const tag = await resolveTagByName(database, userId, tagName);
-    if (tag) {
-      await database
-        .delete(subscriptionTags)
-        .where(
-          and(
-            eq(subscriptionTags.subscriptionId, subscriptionId),
-            eq(subscriptionTags.tagId, tag.id)
-          )
-        );
-    }
+): Promise<Response> {
+  const title = rawTitle ? rawTitle.trim() : undefined;
+  if (title) {
+    await updateSubscription(db, userId, subscriptionId, { customTitle: title });
+  } else if (title === "" && (await clearedCustomTitle(db, userId, subscriptionId)) === null) {
+    return errorResponse("Collection name is required", 400);
   }
 
-  // Process tag additions
-  for (const tagStreamId of addTags) {
-    const labelMatch = tagStreamId.match(/^user\/[^/]+\/label\/(.+)$/);
-    if (!labelMatch) continue;
-
-    const tagName = labelMatch[1];
+  const removeTagIds: string[] = [];
+  for (const tagName of labelNames(removeTags)) {
+    const tag = await resolveTagByName(db, userId, tagName);
+    if (tag) removeTagIds.push(tag.id);
+  }
+  const addTagIds: string[] = [];
+  for (const tagName of labelNames(addTags)) {
     const tag =
-      (await resolveTagByName(database, userId, tagName)) ??
-      (await tagsService.createTag(database, userId, { name: tagName })).tag;
-
-    // Add tag to subscription (ignore if already exists)
-    await database
-      .insert(subscriptionTags)
-      .values({
-        subscriptionId,
-        tagId: tag.id,
-      })
-      .onConflictDoNothing();
+      (await resolveTagByName(db, userId, tagName)) ??
+      (await tagsService.createTag(db, userId, { name: tagName })).tag;
+    addTagIds.push(tag.id);
   }
+  if (addTagIds.length > 0 || removeTagIds.length > 0) {
+    await editSubscriptionTags(db, userId, subscriptionId, {
+      add: addTagIds,
+      remove: removeTagIds,
+    });
+  }
+  return textResponse("OK");
+}
+
+/** The label names in `user/{id}/label/{name}` tag stream ids; other ids are skipped. */
+function labelNames(tagStreamIds: string[]): string[] {
+  return tagStreamIds.flatMap((id) => id.match(/^user\/[^/]+\/label\/(.+)$/)?.[1].trim() || []);
 }

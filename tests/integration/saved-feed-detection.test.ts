@@ -17,7 +17,7 @@ import { type AddressInfo } from "node:net";
 import { TRPCError } from "@trpc/server";
 import { db } from "../../src/server/db";
 import { saveArticle } from "../../src/server/services/saved";
-import { getAppErrorCode } from "../../src/server/trpc/errors";
+import { getAppErrorCode } from "../../src/server/errors";
 import { createTestUser } from "./helpers";
 
 const RSS_BODY = `<?xml version="1.0" encoding="UTF-8"?>

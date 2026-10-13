@@ -18,7 +18,7 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
+import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { entryFeedStreamId } from "@/server/google-reader/format";
 import { resolveGreaderIdsForEntries } from "@/server/google-reader/id";
@@ -30,7 +30,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -171,4 +171,4 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   return jsonResponse(response);
-}
+});

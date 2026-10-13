@@ -354,7 +354,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const userId = await createTestUser();
 
       // A row with lastFetchedAt=null can be an unresolved/raw URL (e.g. inserted
-      // by Google Reader quickadd or OPML import that may be an HTML page), so the
+      // by an OPML import, which may be an HTML page), so the
       // subscribe path must still run feed discovery rather than trusting the URL
       // as a feed. Discovery fetches the URL, which isn't reachable in tests, so
       // it throws — surfacing as a subscribe error, as before.

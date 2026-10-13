@@ -37,7 +37,7 @@ import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishUserNewEntry, publishUserEntryUpdated } from "@/server/redis/pubsub";
 import { entryListPayload } from "@/server/services/entry-sync-events";
-import { errors, getAppErrorCode } from "@/server/trpc/errors";
+import { errors, getAppErrorCode } from "@/server/errors";
 import { markEntriesRead } from "@/server/services/entries";
 import { publishMarkReadStateChanges } from "@/server/services/entry-events";
 import { acquireArticleContent, type AcquiredArticle, type PluginArticle } from "@/server/plugins";

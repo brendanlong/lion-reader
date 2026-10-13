@@ -8,14 +8,14 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse } from "@/server/google-reader/parse";
+import { jsonResponse, withClientErrors } from "@/server/google-reader/parse";
 import { formatSubscription } from "@/server/google-reader/format";
 import { listGreaderSubscriptions } from "@/server/google-reader/subscriptions";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -27,4 +27,4 @@ export async function GET(request: Request): Promise<Response> {
   );
 
   return jsonResponse({ subscriptions });
-}
+});

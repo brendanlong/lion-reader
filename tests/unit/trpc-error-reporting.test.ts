@@ -6,7 +6,7 @@ import * as Sentry from "@sentry/nextjs";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "@/server/trpc/context";
 import { createCallerFactory, createTRPCRouter, publicProcedure } from "@/server/trpc/trpc";
-import { errors, markReported } from "@/server/trpc/errors";
+import { errors, markReported } from "@/server/errors";
 
 vi.mock("@sentry/nextjs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@sentry/nextjs")>()),

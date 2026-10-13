@@ -17,7 +17,7 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { textResponse, errorResponse } from "@/server/google-reader/parse";
+import { textResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
 import { importOpml, MAX_OPML_BYTES } from "@/server/services/imports";
 import { OpmlParseError } from "@/server/feed/opml";
 import { checkRouteRateLimit } from "@/server/rate-limit";
@@ -25,7 +25,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -56,9 +56,6 @@ export async function POST(request: Request): Promise<Response> {
     if (err instanceof OpmlParseError) {
       return errorResponse(`Failed to parse OPML: ${err.message}`, 400);
     }
-    // Log the detail server-side but return a generic message — internal error
-    // text must not be echoed to clients (issue #1266).
-    console.error("Failed to import OPML:", err);
-    return errorResponse("Failed to import OPML", 500);
+    throw err;
   }
-}
+});

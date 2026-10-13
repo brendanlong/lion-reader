@@ -27,6 +27,7 @@ import {
   parseItemIds,
   jsonResponse,
   errorResponse,
+  withClientErrors,
 } from "@/server/google-reader/parse";
 import { formatEntryAsItem } from "@/server/google-reader/format";
 import { greaderItemIdsToUuids, resolveGreaderIdsForEntries } from "@/server/google-reader/id";
@@ -42,7 +43,7 @@ export const dynamic = "force-dynamic";
  */
 const MAX_ITEM_IDS = 1000;
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -92,4 +93,4 @@ export async function POST(request: Request): Promise<Response> {
     updated: Math.floor(Date.now() / 1000),
     items,
   });
-}
+});

@@ -25,7 +25,7 @@ import { join } from "node:path";
 import JSZip from "jszip";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 
 /**
  * Inflated-size budgets, as multiples of the saved-article size limit (5MB by

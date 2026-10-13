@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import { eq, and, gt, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   blockedSenders,
@@ -24,7 +25,7 @@ import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
-import { feedDefaultsToFullContent } from "@/server/plugins";
+import { feedDefaultsToFullContent, getFeedHooks } from "@/server/plugins";
 import {
   publishSubscriptionCreated,
   publishSubscriptionDeleted,
@@ -42,8 +43,13 @@ import {
   holdsRedirectTwin,
   insertUserEntriesWithMemberships,
 } from "@/server/services/subscription-entries";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
+import { isUniqueViolation } from "@/server/db/errors";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
+import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
+import { parseFeedAsync } from "@/server/feed/parser";
+import { discoverFeeds } from "@/server/feed/discovery";
+import { getDomainFromUrl } from "@/server/feed/types";
 
 // ============================================================================
 // Types
@@ -277,23 +283,28 @@ export async function lockSubscriptionMembers(
 /**
  * Locks one of the user's subscription rows for the rest of the transaction,
  * so a change to its tags or state takes locks in the order `src/server/CLAUDE.md`
- * requires. Unsubscribing moves its members' user_entries rows, so `members`
- * locks those first.
+ * requires, returning the locked row's fields a subscription_updated event
+ * carries. Unsubscribing moves its members'
+ * user_entries rows, so `members` locks those first.
  */
 async function lockSubscriptionRow(
   tx: DbOrTx,
   userId: string,
   subscriptionId: string,
   { members = false }: { members?: boolean } = {}
-): Promise<void> {
+): Promise<{ customTitle: string | null; fetchFullContent: boolean } | undefined> {
   if (members) {
     await lockSubscriptionMembers(tx, userId, eq(subscriptions.id, subscriptionId));
   }
-  await tx
-    .select({ id: subscriptions.id })
+  const [row] = await tx
+    .select({
+      customTitle: subscriptions.customTitle,
+      fetchFullContent: subscriptions.fetchFullContent,
+    })
     .from(subscriptions)
     .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
     .for("update");
+  return row;
 }
 
 /**
@@ -837,6 +848,225 @@ export async function createSubscription(
 }
 
 /**
+ * Fetch a URL, discover feeds if HTML, parse the feed content,
+ * and return metadata for subscription creation.
+ */
+async function fetchAndResolveFeed(inputUrl: string): Promise<CreateSubscriptionFeedInput> {
+  const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(inputUrl);
+
+  let feedContent: string;
+  let finalFeedUrl: string;
+
+  if (isHtmlContent(contentType, content)) {
+    const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
+    if (discoveredFeeds.length === 0) {
+      throw errors.validation("No feeds found at this URL");
+    }
+
+    const discoveredFetch = await fetchUrl(discoveredFeeds[0].url);
+    feedContent = discoveredFetch.text;
+    finalFeedUrl = discoveredFetch.finalUrl;
+  } else {
+    feedContent = content;
+    finalFeedUrl = initialFinalUrl;
+  }
+
+  let parsedFeed;
+  try {
+    parsedFeed = await parseFeedAsync(feedContent);
+  } catch {
+    throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
+  }
+
+  let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
+  if (feedTitle) {
+    feedTitle = getFeedHooks(finalFeedUrl).transformFeedTitle(feedTitle, parsedFeed.items);
+  }
+
+  return {
+    url: finalFeedUrl,
+    title: feedTitle ?? null,
+    description: parsedFeed.description || null,
+    siteUrl: parsedFeed.siteUrl || null,
+  };
+}
+
+/**
+ * Subscribes the user to the feed at a URL the user gave us, which may be an
+ * HTML page that advertises its feed. Every surface that subscribes by URL
+ * (tRPC, Google Reader `quickadd`) goes through here, so they all validate the
+ * feed, schedule its fetch and notify open clients the same way.
+ */
+export async function subscribeToUrl(
+  db: typeof dbType,
+  userId: string,
+  feedUrl: string
+): Promise<CreateSubscriptionResult> {
+  const [existing] = await db
+    .select({
+      id: feeds.id,
+      lastFetchedAt: feeds.lastFetchedAt,
+      nextFetchAt: feeds.nextFetchAt,
+      websubActive: feeds.websubActive,
+    })
+    .from(feeds)
+    .where(eq(feeds.url, feedUrl))
+    .limit(1);
+
+  // A feed we've never fetched successfully (brand new, or a raw URL from an
+  // OPML import that may really be an HTML page) is fetched and parsed here to
+  // resolve the real feed URL and its metadata; its entries come from the
+  // background fetch job, so it needs no forced refresh. An unreachable or
+  // unparseable URL fails the subscribe.
+  if (!existing || existing.lastFetchedAt === null) {
+    return createSubscription(db, userId, await fetchAndResolveFeed(feedUrl));
+  }
+
+  // A known feed's cached entries may be stale (a WebSub feed whose last real
+  // poll has aged out, or a feed past its poll cadence), and we can't know the
+  // current set without re-fetching. Rather than fetch on the request path,
+  // skip the synchronous populate and force a background refresh, whose fanout
+  // populates this subscriber from ground truth, excluding anything the
+  // publisher has since removed (#1078).
+  const stale = shouldRefetchOnSubscribe(existing);
+  const result = await createSubscription(
+    db,
+    userId,
+    { url: feedUrl },
+    {
+      skipInitialPopulate: stale,
+    }
+  );
+  // The job queue is single-flight per feed, so concurrent subscribes coalesce
+  // into one fetch. An already-active subscription has nothing to populate.
+  if (stale && !result.alreadyActive) {
+    await scheduleFeedRefreshNow(existing.id);
+  }
+  return result;
+}
+
+function selectSubscriptionTags(db: DbOrTx, subscriptionId: string): Promise<Tag[]> {
+  return db
+    .select({ id: tags.id, name: tags.name, color: tags.color })
+    .from(subscriptionTags)
+    .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
+    .where(eq(subscriptionTags.subscriptionId, subscriptionId));
+}
+
+export const CUSTOM_TITLE_MAX_LENGTH = 255;
+
+export interface UpdateSubscriptionParams {
+  /**
+   * The new name, trimmed. Blank or null clears it: a feed falls back to its
+   * own title, an email subscription to its sender, and a collection, which
+   * must have a name, fails.
+   */
+  customTitle?: string | null;
+  fetchFullContent?: boolean;
+}
+
+/**
+ * Updates one of the user's listed subscriptions. A collection's name is
+ * unique among the user's active collections ignoring case
+ * (COLLECTION_NAME_TAKEN otherwise). Bumps `updated_at` and publishes
+ * subscription_updated only when a value actually changes (#1160).
+ */
+export async function updateSubscription(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string,
+  params: UpdateSubscriptionParams
+): Promise<Subscription> {
+  const updateData: { customTitle?: string | null; fetchFullContent?: boolean } = {};
+
+  if (params.customTitle !== undefined) {
+    const title = params.customTitle?.trim() ?? "";
+    if (title.length > CUSTOM_TITLE_MAX_LENGTH) {
+      throw errors.validation(`Custom title must be at most ${CUSTOM_TITLE_MAX_LENGTH} characters`);
+    }
+    if (title) {
+      updateData.customTitle = title;
+    } else {
+      // A subscription's type never changes, so checking first can't race.
+      const cleared = await clearedCustomTitle(db, userId, subscriptionId);
+      if (!cleared) {
+        throw errors.validation("Collection name is required");
+      }
+      updateData.customTitle = cleared.customTitle;
+    }
+  }
+  if (params.fetchFullContent !== undefined) {
+    updateData.fetchFullContent = params.fetchFullContent;
+  }
+
+  // `updated_at` drives the subscription delta-sync cursor and gates the
+  // publish, so it moves only when a value changes. The self-join on `prev`
+  // captures the pre-update values in the UPDATE itself, so a concurrent
+  // update can't slip into a pre-SELECT's window.
+  const prev = alias(subscriptions, "prev");
+  const changedFragments: SQL[] = [];
+  if (updateData.customTitle !== undefined) {
+    changedFragments.push(sql`${prev.customTitle} IS DISTINCT FROM ${updateData.customTitle}`);
+  }
+  if (updateData.fetchFullContent !== undefined) {
+    changedFragments.push(sql`${prev.fetchFullContent} <> ${updateData.fetchFullContent}`);
+  }
+  const meaningfulChange =
+    changedFragments.length > 0 ? sql`(${sql.join(changedFragments, sql` OR `)})` : sql`false`;
+
+  const now = new Date();
+  const [updated] = await db
+    .update(subscriptions)
+    .set({
+      ...updateData,
+      updatedAt: sql`CASE WHEN ${meaningfulChange} THEN ${now} ELSE ${prev.updatedAt} END`,
+    })
+    .from(prev)
+    .where(
+      and(
+        eq(prev.id, subscriptions.id),
+        eq(subscriptions.id, subscriptionId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
+        isListedSubscription()
+      )
+    )
+    .returning({
+      customTitle: subscriptions.customTitle,
+      fetchFullContent: subscriptions.fetchFullContent,
+      changed: sql<boolean>`${meaningfulChange}`,
+    })
+    .catch((err: unknown) => {
+      // Only custom_title can collide: with another active collection's name.
+      throw isUniqueViolation(err) ? errors.collectionNameTaken() : err;
+    });
+
+  if (!updated) {
+    throw errors.subscriptionNotFound();
+  }
+
+  if (updated.changed) {
+    const currentTags = await selectSubscriptionTags(db, subscriptionId);
+    publishSubscriptionUpdated(
+      userId,
+      subscriptionId,
+      now,
+      currentTags,
+      updated.customTitle,
+      updated.fetchFullContent
+    ).catch((err) => {
+      logger.error("Failed to publish subscription_updated event", {
+        err,
+        userId,
+        subscriptionId,
+      });
+    });
+  }
+
+  return getSubscription(db, userId, subscriptionId);
+}
+
+/**
  * Replaces a subscription's tags (an empty list makes it uncategorized).
  * Publishes subscription_updated and bumps updated_at only on a real change.
  */
@@ -846,12 +1076,34 @@ export async function setSubscriptionTags(
   subscriptionId: string,
   tagIds: string[]
 ): Promise<void> {
-  tagIds = [...new Set(tagIds)];
-  // Verify the subscription exists and belongs to the user. The saved
-  // subscription can't be tagged (#1846): like any subscription the user
-  // can't see, it's not found.
-  const existingSubscription = await db
-    .select()
+  await changeSubscriptionTags(db, userId, subscriptionId, { set: tagIds });
+}
+
+/**
+ * Adds and removes some of a subscription's tags, leaving the others, for
+ * clients that edit tags one at a time (Google Reader). Same rules as
+ * {@link setSubscriptionTags}.
+ */
+export async function editSubscriptionTags(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string,
+  change: { add: string[]; remove: string[] }
+): Promise<void> {
+  await changeSubscriptionTags(db, userId, subscriptionId, change);
+}
+
+async function changeSubscriptionTags(
+  db: typeof dbType,
+  userId: string,
+  subscriptionId: string,
+  change: { set: string[] } | { add: string[]; remove: string[] }
+): Promise<void> {
+  const addedTagIds = [...new Set("set" in change ? change.set : change.add)];
+  // The saved subscription can't be tagged (#1846): like any subscription the
+  // user can't see, it's not found.
+  const [existingSubscription] = await db
+    .select({ id: subscriptions.id })
     .from(subscriptions)
     .where(
       and(
@@ -863,87 +1115,106 @@ export async function setSubscriptionTags(
     )
     .limit(1);
 
-  if (existingSubscription.length === 0) {
+  if (!existingSubscription) {
     throw errors.subscriptionNotFound();
+  }
+
+  // Excluding tombstoned tags prevents assigning a tag that is invisible in
+  // listTags (which would silently drop the subscription from "Uncategorized").
+  const validTags =
+    addedTagIds.length === 0
+      ? []
+      : await db
+          .select({ id: tags.id })
+          .from(tags)
+          .where(
+            and(eq(tags.userId, userId), inArray(tags.id, addedTagIds), isNull(tags.deletedAt))
+          );
+  if (validTags.length !== addedTagIds.length) {
+    throw errors.validation("One or more tag IDs are invalid or do not belong to you");
   }
 
   const now = new Date();
 
-  // Verify all tag IDs belong to the current user, are not soft-deleted, and
-  // get tag details. Excluding tombstoned tags prevents assigning a tag that
-  // is invisible in listTags (which would silently drop the subscription
-  // from "Uncategorized").
-  const userTags =
-    tagIds.length === 0
-      ? []
-      : await db
-          .select({ id: tags.id, name: tags.name, color: tags.color })
-          .from(tags)
-          .where(and(eq(tags.userId, userId), inArray(tags.id, tagIds), isNull(tags.deletedAt)));
-
-  const validTagIds = new Set(userTags.map((t) => t.id));
-  const invalidTagIds = tagIds.filter((id) => !validTagIds.has(id));
-
-  if (invalidTagIds.length > 0) {
-    throw errors.validation("One or more tag IDs are invalid or do not belong to you");
-  }
-
-  // Replace (or clear) tags atomically: delete-then-insert (+updated_at bump)
-  // must be one unit, or a crash/concurrent call between them could leave the
-  // subscription untagged or with a partial tag set (issue #952).
-  const changed = await db.transaction(async (tx) => {
+  // One transaction, or a crash or concurrent call between the delete and the
+  // insert could leave a partial tag set (#952).
+  const after = await db.transaction(async (tx) => {
     // Subscription row first: the counter triggers lock subscriptions, then
-    // users, then tags, and the tag changes below reach users and tags.
-    await lockSubscriptionRow(tx, userId, subscriptionId);
+    // users, then tags, and the tag changes below reach users and tags. Its
+    // title is read under the lock, so the event can't revert a concurrent
+    // rename.
+    const locked = await lockSubscriptionRow(tx, userId, subscriptionId);
 
-    // Delete all existing tags for the subscription. The RETURNING captures
-    // the prior tag set race-free (no pre-SELECT TOCTOU window) so we can
-    // tell a real change from a re-apply of the identical set (issue #1160).
-    const deleted = await tx
-      .delete(subscriptionTags)
-      .where(eq(subscriptionTags.subscriptionId, subscriptionId))
-      .returning({ tagId: subscriptionTags.tagId });
-
-    if (tagIds.length > 0) {
-      await tx.insert(subscriptionTags).values(
-        tagIds.map((tagId) => ({
-          subscriptionId: subscriptionId,
-          tagId,
-          createdAt: now,
-        }))
-      );
+    let changed: boolean;
+    if ("set" in change) {
+      // RETURNING captures the prior tag set race-free, to tell a real change
+      // from a re-apply of the identical set (#1160).
+      const deleted = await tx
+        .delete(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, subscriptionId))
+        .returning({ tagId: subscriptionTags.tagId });
+      if (addedTagIds.length > 0) {
+        await tx
+          .insert(subscriptionTags)
+          .values(addedTagIds.map((tagId) => ({ subscriptionId, tagId, createdAt: now })));
+      }
+      const previousTagIds = new Set(deleted.map((d) => d.tagId));
+      changed =
+        previousTagIds.size !== addedTagIds.length ||
+        !addedTagIds.every((id) => previousTagIds.has(id));
+    } else {
+      const removedTagIds = change.remove.filter((id) => !addedTagIds.includes(id));
+      const deleted =
+        removedTagIds.length === 0
+          ? []
+          : await tx
+              .delete(subscriptionTags)
+              .where(
+                and(
+                  eq(subscriptionTags.subscriptionId, subscriptionId),
+                  inArray(subscriptionTags.tagId, removedTagIds)
+                )
+              )
+              .returning({ tagId: subscriptionTags.tagId });
+      const inserted =
+        addedTagIds.length === 0
+          ? []
+          : await tx
+              .insert(subscriptionTags)
+              .values(addedTagIds.map((tagId) => ({ subscriptionId, tagId, createdAt: now })))
+              .onConflictDoNothing()
+              .returning({ tagId: subscriptionTags.tagId });
+      changed = deleted.length > 0 || inserted.length > 0;
     }
 
-    // Re-applying the identical tag set (including clearing an already-empty
-    // one) is not a meaningful change: skip the updated_at bump so the
-    // delta-sync cursor doesn't move (and skip the publish below).
-    const previousTagIds = new Set(deleted.map((d) => d.tagId));
-    if (previousTagIds.size === validTagIds.size && tagIds.every((id) => previousTagIds.has(id))) {
-      return false;
+    if (!changed) {
+      return null;
     }
-
-    // Update subscription's updated_at for sync cursor tracking
+    // updated_at drives the subscription delta-sync cursor.
     await tx
       .update(subscriptions)
       .set({ updatedAt: now })
       .where(eq(subscriptions.id, subscriptionId));
-    return true;
+    return {
+      tags: await selectSubscriptionTags(tx, subscriptionId),
+      customTitle: locked?.customTitle ?? null,
+      fetchFullContent: locked?.fetchFullContent,
+    };
   });
 
-  // Publish SSE event with new tags
-  if (changed) {
+  if (after) {
     publishSubscriptionUpdated(
       userId,
       subscriptionId,
       now,
-      userTags,
-      existingSubscription[0].customTitle,
-      existingSubscription[0].fetchFullContent
+      after.tags,
+      after.customTitle,
+      after.fetchFullContent
     ).catch((err) => {
       logger.error("Failed to publish subscription_updated event", {
         err,
         userId,
-        subscriptionId: subscriptionId,
+        subscriptionId,
       });
     });
   }

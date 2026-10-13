@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
-import { errors } from "../../src/server/trpc/errors";
+import { errors } from "../../src/server/errors";
 import { toMcpError } from "../../src/server/mcp/tools";
 
 describe("toMcpError", () => {

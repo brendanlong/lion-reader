@@ -16,7 +16,7 @@ import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { selectFullEntry, toFullEntry } from "./entries";
 
 /**

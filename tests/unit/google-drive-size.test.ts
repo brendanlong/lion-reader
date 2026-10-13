@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { readDriveFileBody } from "@/server/google/drive";
 import { usageLimitsConfig } from "@/server/config/env";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 
 const DOWNLOAD_URL = "https://www.googleapis.com/drive/v3/files/abc?alt=media";
 

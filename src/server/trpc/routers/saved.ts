@@ -28,7 +28,7 @@ import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { API_TOKEN_SCOPES, READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import { MAX_SAVE_COLLECTIONS } from "@/lib/collections";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
 import { logger } from "@/lib/logger";

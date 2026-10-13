@@ -25,7 +25,7 @@ import {
   HttpFetchError,
   type FetchHtmlPageResult,
 } from "@/server/http/fetch";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 
 // Register all available plugins at module load time
 const plugins = [

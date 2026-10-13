@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import { logger } from "@/lib/logger";
 import { createTRPCRouter, expensiveConfirmedProtectedProcedure } from "../trpc";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { feedUrlSchema } from "../validation";
 import {
   fetchUrl,

@@ -22,7 +22,7 @@ import type { MarkdownLimits, RenderedMarkdown } from "@lion-reader/markdown";
 import { parse as parseYaml } from "yaml";
 import { extractAndStripTitleHeader } from "@/server/html/strip-title-header";
 import { startMarkdownRenderTimer } from "@/server/metrics/metrics";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 
 /**
  * Result of parsing YAML frontmatter from Markdown.

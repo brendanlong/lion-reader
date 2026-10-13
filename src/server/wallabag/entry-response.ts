@@ -1,6 +1,6 @@
 import type { db as dbType } from "@/server/db";
 import * as entriesService from "@/server/services/entries";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 import { formatEntryFull } from "./format";
 import type { ResolvedWallabagEntry } from "./id";
 import { errorResponse, jsonResponse } from "./parse";

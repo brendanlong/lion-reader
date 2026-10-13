@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 import { createTRPCRouter, confirmedProtectedProcedure as protectedProcedure } from "../trpc";
-import { errors } from "../errors";
+import { errors } from "@/server/errors";
 import { listUserConsentGrants, revokeUserConsentGrant } from "@/server/oauth/service";
 import { SCOPE_DESCRIPTIONS, type OAuthScope } from "@/server/oauth/utils";
 import { revokeWallabagTokens } from "@/server/wallabag/auth";

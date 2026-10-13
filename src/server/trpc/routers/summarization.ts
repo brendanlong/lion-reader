@@ -14,7 +14,7 @@ import {
   expensiveScopedProtectedProcedure,
   scopedProtectedProcedure,
 } from "../trpc";
-import { errors, markReported } from "../errors";
+import { errors, markReported } from "@/server/errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";

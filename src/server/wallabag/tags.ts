@@ -19,7 +19,7 @@ import {
 } from "@/server/services/collections";
 import { isCollectionSubscription, unsubscribe } from "@/server/services/subscriptions";
 import { COLLECTION_NAME_MAX_LENGTH, MAX_SAVE_COLLECTIONS } from "@/lib/collections";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { formatTag, type WallabagTag } from "./format";
 
 export interface CollectionTag {

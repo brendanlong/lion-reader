@@ -11,7 +11,12 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
+import {
+  parseFormData,
+  textResponse,
+  errorResponse,
+  withClientErrors,
+} from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
 import { resolveTagByName } from "@/server/google-reader/tags";
@@ -20,7 +25,7 @@ import { markAllEntriesRead } from "@/server/services/entries";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
   const userId = session.user.id;
@@ -99,4 +104,4 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   return textResponse("OK");
-}
+});

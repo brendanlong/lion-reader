@@ -8,7 +8,7 @@
 import { USER_AGENT } from "./user-agent";
 import { fetchWithSsrfProtection } from "./ssrf";
 import { decodeBody } from "./charset";
-import { errors } from "../trpc/errors";
+import { errors } from "@/server/errors";
 import { usageLimitsConfig } from "../config/env";
 
 // ============================================================================

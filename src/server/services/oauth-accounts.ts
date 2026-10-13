@@ -19,7 +19,7 @@ import type { Database } from "@/server/db";
 import { oauthAccounts, users } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 import { PROVIDER_LABELS, type OAuthProviderName } from "@/server/auth/oauth/config";
 
 export interface LinkOAuthAccountParams {

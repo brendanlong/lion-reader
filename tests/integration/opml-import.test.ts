@@ -23,7 +23,12 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { processOpmlImport } from "../../src/server/services/imports";
-import { createTag, deleteTag, listTags } from "../../src/server/services/tags";
+import {
+  createTag,
+  deleteTag,
+  listTags,
+  TAG_NAME_MAX_LENGTH,
+} from "../../src/server/services/tags";
 import { createCaller } from "../../src/server/trpc/root";
 import { waitForMessages } from "../utils/pubsub";
 import {
@@ -400,6 +405,21 @@ describe("OPML Import", () => {
         ["Tech", 2],
       ]);
       expect(listed.items[0].id).toBe(news.id);
+    });
+
+    it("fits a category name to the tag-name limit", async () => {
+      const userId = await createTestUser();
+      const longCategory = `  ${"x".repeat(TAG_NAME_MAX_LENGTH + 10)}  `;
+
+      const importId = await seedImport(userId, [
+        { xmlUrl: "https://a.example.com/feed.xml", title: "A", category: [longCategory] },
+      ]);
+      await processOpmlImport(db, importId);
+
+      const listed = await listTags(db, userId);
+      expect(listed.items.map((t) => [t.name, t.feedCount])).toEqual([
+        ["x".repeat(TAG_NAME_MAX_LENGTH), 1],
+      ]);
     });
 
     it("skips feeds the user is already subscribed to", async () => {

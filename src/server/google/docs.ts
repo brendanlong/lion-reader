@@ -28,7 +28,7 @@ import { fetchAndUploadImage, isStorageAvailable } from "@/server/storage/s3";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { fetchWithSsrfProtection } from "@/server/http/ssrf";
 import { ContentTooLargeError, readResponseWithSizeLimit } from "@/server/http/fetch";
-import { errors, getAppErrorCode } from "@/server/trpc/errors";
+import { errors, getAppErrorCode } from "@/server/errors";
 import { escapeHtml } from "@/server/http/html";
 import { stripTitleHeader } from "@/server/html/strip-title-header";
 import {

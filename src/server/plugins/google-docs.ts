@@ -1,6 +1,6 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { extractDocId, normalizeGoogleDocsUrl, fetchGoogleDocsFromUrl } from "@/server/google/docs";
-import { getAppErrorCode } from "@/server/trpc/errors";
+import { getAppErrorCode } from "@/server/errors";
 import { logger } from "@/lib/logger";
 
 /**

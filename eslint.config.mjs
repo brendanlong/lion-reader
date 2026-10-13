@@ -53,6 +53,28 @@ const NO_ENTRY_ROW_COUNT = [
   },
 ];
 
+// API surfaces stay thin adapters over the services ("Services Layer" in
+// src/server/CLAUDE.md): a write to a core table outside services/ skips
+// whatever the service does around it (locks, updated_at, the SSE publish,
+// fetch jobs), which is how the Google Reader routes drifted (#1935). Matches
+// `.insert/.update/.delete(table)` on these tables; raw SQL slips past it.
+const CORE_TABLES =
+  "/^(subscriptions|subscriptionTags|subscriptionEntries|userEntries|entries|feeds|tags)$/";
+const NO_SURFACE_CORE_WRITE = [
+  {
+    selector: `CallExpression[callee.property.name=/^(insert|update|delete)$/][arguments.0.name=${CORE_TABLES}]`,
+    message:
+      "Write subscriptions, tags, entries and feeds through a service in src/server/services/, which every surface shares.",
+  },
+];
+const API_SURFACES = [
+  "src/app/api/**/*.ts",
+  "src/server/trpc/routers/**/*.ts",
+  "src/server/google-reader/**/*.ts",
+  "src/server/wallabag/**/*.ts",
+  "src/server/mcp/**/*.ts",
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -86,6 +108,12 @@ const eslintConfig = defineConfig([
   {
     files: ["src/**/*.{ts,tsx}"],
     rules: { "no-restricted-syntax": ["error", ...NO_ENTRY_ROW_COUNT] },
+  },
+  {
+    files: API_SURFACES,
+    rules: {
+      "no-restricted-syntax": ["error", ...NO_ENTRY_ROW_COUNT, ...NO_SURFACE_CORE_WRITE],
+    },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([

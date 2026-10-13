@@ -9,124 +9,56 @@
  *   quickadd={feedUrl}
  */
 
+import { eq } from "drizzle-orm";
 import { requireAuth } from "@/server/google-reader/auth";
-import { parseFormData, jsonResponse, errorResponse } from "@/server/google-reader/parse";
+import {
+  parseFormData,
+  jsonResponse,
+  errorResponse,
+  withClientErrors,
+} from "@/server/google-reader/parse";
 import { feedStreamId } from "@/server/google-reader/id";
-import * as subscriptionsService from "@/server/services/subscriptions";
+import { subscribeToUrl } from "@/server/services/subscriptions";
+import { feedUrlSchema } from "@/server/trpc/validation";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { db } from "@/server/db";
-import { eq, isNull, and } from "drizzle-orm";
-import { feeds, subscriptions } from "@/server/db/schema";
-import { generateUuidv7 } from "@/lib/uuidv7";
+import { subscriptions } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request): Promise<Response> {
+export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
-  // Creating a feed schedules an immediate fetch — the tRPC subscribe path is an
-  // "expensive" procedure, so rate-limit this compat path the same way to stop an
-  // authenticated client from enqueuing many immediate feed fetches (issue #1266).
-  // Key the bucket per user (the caller is authenticated), matching the tRPC
-  // middleware rather than falling back to a per-IP key.
+  // Subscribing fetches the URL and schedules feed fetches, so it's rate
+  // limited like the tRPC subscribe, per user (issue #1266).
   const rateLimited = await checkRouteRateLimit(request, "expensive", {
     userId: session.user.id,
   });
   if (rateLimited) return rateLimited;
 
   const params = await parseFormData(request);
-  const feedUrl = params.get("quickadd");
+  const rawUrl = params.get("quickadd");
 
-  if (!feedUrl) {
+  if (!rawUrl) {
     return errorResponse("Missing required parameter: quickadd", 400);
   }
 
-  // Validate URL
-  try {
-    new URL(feedUrl);
-  } catch {
+  const parsedUrl = feedUrlSchema.safeParse(rawUrl);
+  if (!parsedUrl.success) {
     return errorResponse("Invalid URL", 400);
   }
 
-  try {
-    // Check if the feed already exists
-    const existingFeed = await db.select().from(feeds).where(eq(feeds.url, feedUrl)).limit(1);
+  const result = await subscribeToUrl(db, session.user.id, parsedUrl.data);
+  const [{ greaderStreamId }] = await db
+    .select({ greaderStreamId: subscriptions.greaderStreamId })
+    .from(subscriptions)
+    .where(eq(subscriptions.id, result.subscriptionId));
 
-    if (existingFeed.length > 0) {
-      // Check if user is already subscribed
-      const existingSub = await db
-        .select()
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.feedId, existingFeed[0].id),
-            eq(subscriptions.userId, session.user.id),
-            isNull(subscriptions.unsubscribedAt)
-          )
-        )
-        .limit(1);
-
-      if (existingSub.length > 0) {
-        // Already subscribed — return existing subscription. The stream id is the
-        // row's stored greader_stream_id serial (already selected above); the
-        // title comes from getSubscription (resolves custom/original title).
-        const sub = await subscriptionsService.getSubscription(
-          db,
-          session.user.id,
-          existingSub[0].id
-        );
-        return jsonResponse({
-          query: feedUrl,
-          numResults: 1,
-          streamId: feedStreamId(existingSub[0].greaderStreamId),
-          streamName: sub.title ?? feedUrl,
-        });
-      }
-    }
-
-    // Create the feed if it doesn't exist, then subscribe
-    // Use a simplified approach: create the feed record and subscription
-    let feedId: string;
-
-    if (existingFeed.length > 0) {
-      feedId = existingFeed[0].id;
-    } else {
-      feedId = generateUuidv7();
-      await db.insert(feeds).values({
-        id: feedId,
-        url: feedUrl,
-        nextFetchAt: new Date(), // Fetch immediately
-      });
-    }
-
-    // Create subscription, returning the DB-assigned greader_stream_id serial for
-    // the response stream id.
-    const subscriptionId = generateUuidv7();
-    const now = new Date();
-    const [created] = await db
-      .insert(subscriptions)
-      .values({
-        id: subscriptionId,
-        userId: session.user.id,
-        feedId,
-        type: "web",
-        subscribedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning({ greaderStreamId: subscriptions.greaderStreamId });
-
-    return jsonResponse({
-      query: feedUrl,
-      numResults: 1,
-      streamId: feedStreamId(created.greaderStreamId),
-      streamName: feedUrl,
-    });
-  } catch (err) {
-    // Log the detail server-side but return a generic message — internal error
-    // text must not be echoed to clients (issue #1266).
-    console.error("Failed to subscribe to feed:", err);
-    return errorResponse("Failed to subscribe to feed", 500);
-  }
-}
+  return jsonResponse({
+    query: rawUrl,
+    numResults: 1,
+    streamId: feedStreamId(greaderStreamId),
+    streamName: result.customTitle ?? result.feed.title ?? result.feed.url ?? rawUrl,
+  });
+});

@@ -8,7 +8,7 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { jsonResponse } from "@/server/google-reader/parse";
+import { jsonResponse, withClientErrors } from "@/server/google-reader/parse";
 import { formatTagList } from "@/server/google-reader/format";
 import { db } from "@/server/db";
 import { and, eq, isNull } from "drizzle-orm";
@@ -16,7 +16,7 @@ import { tags } from "@/server/db/schema";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
 
@@ -32,4 +32,4 @@ export async function GET(request: Request): Promise<Response> {
   return jsonResponse({
     tags: formatTagList(userTags),
   });
-}
+});

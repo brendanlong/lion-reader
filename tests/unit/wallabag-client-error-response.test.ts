@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { clientErrorResponse } from "@/server/wallabag/parse";
-import { errors } from "@/server/trpc/errors";
+import { errors } from "@/server/errors";
 
 /**
  * clientErrorResponse decides whether a thrown service error should become a
