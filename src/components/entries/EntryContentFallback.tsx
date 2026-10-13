@@ -20,22 +20,24 @@ import { Button } from "@/components/ui/button";
 import { SparklesIcon } from "@/components/ui/icons";
 import { NarrationControlsSkeleton } from "@/components/narration";
 import { useNarrationSettings } from "@/lib/narration/settings";
-import { trpc } from "@/lib/trpc/client";
 import { CollectionsButton } from "./CollectionsButton";
 import { ENTRY_ACTION_BAR_CLASSES, EntryArticle, EntryArticleSkeleton } from "./EntryArticle";
 
 interface EntryContentFallbackProps {
   entryId: string;
   onBack?: () => void;
+  isSummarizationAvailable: boolean;
 }
 
-export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackProps) {
+export function EntryContentFallback({
+  entryId,
+  onBack,
+  isSummarizationAvailable,
+}: EntryContentFallbackProps) {
   const cachedEntry = useLocalEntry(entryId);
   // Star/read work optimistically even while the full entry loads
   const { markRead, star, unstar } = useEntryMutations();
   const [narrationSettings] = useNarrationSettings();
-  const isSummarizationAvailable =
-    trpc.summarization.isAvailable.useQuery().data?.available ?? false;
 
   return (
     <ScrollContainer className="h-full overflow-y-auto">

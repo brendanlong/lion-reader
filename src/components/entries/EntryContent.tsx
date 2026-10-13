@@ -268,7 +268,13 @@ function EntryContentInner({
   // undefined only while the query is loading; once it resolves (or hits the
   // warm cache) we render content immediately, with no Suspense throttle.
   if (!entry) {
-    return <EntryContentFallback entryId={entryId} onBack={onBack} />;
+    return (
+      <EntryContentFallback
+        entryId={entryId}
+        onBack={onBack}
+        isSummarizationAvailable={isSummarizationAvailable}
+      />
+    );
   }
 
   const slots = renderSlots?.(entryId);

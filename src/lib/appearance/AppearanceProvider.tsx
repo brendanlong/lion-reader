@@ -10,7 +10,7 @@
 import { createContext, useContext, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import { useTheme } from "next-themes";
 import { useAppearanceSettings, type AppearanceSettings } from "./settings";
-import { entryTextStyleVars } from "./config";
+import { ENTRY_TEXT_STYLE, entryTextStyleVars } from "./config";
 
 interface AppearanceContextValue {
   settings: AppearanceSettings;
@@ -91,15 +91,7 @@ export function useEntryTextStyles(): {
 
   // Return styles that use CSS custom properties (set by head script on initial load)
   return useMemo(
-    () => ({
-      className: "prose prose-zinc dark:prose-invert",
-      style: {
-        fontFamily: "var(--entry-font-family, inherit)",
-        fontSize: "var(--entry-font-size, 1rem)",
-        lineHeight: "var(--entry-line-height, 1.7)",
-        textAlign: "var(--entry-text-align, left)" as React.CSSProperties["textAlign"],
-      },
-    }),
+    () => ({ className: "prose prose-zinc dark:prose-invert", style: ENTRY_TEXT_STYLE }),
     []
   );
 }

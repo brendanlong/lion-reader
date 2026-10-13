@@ -12,6 +12,7 @@ import { buttonClassName } from "@/components/ui/button";
 import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { LocalTime } from "@/components/ui/local-time";
 import { SkeletonText } from "@/components/ui/skeleton";
+import { ENTRY_TEXT_STYLE } from "@/lib/appearance/config";
 import { getDomain } from "@/lib/format";
 import { formatDate } from "./EntryContentHelpers";
 import { EntryContentRenderer } from "./EntryContentRenderer";
@@ -173,7 +174,7 @@ export function EntryArticle({
 
       {/* Content - show skeleton during progressive loading, otherwise render content */}
       {isContentLoading ? (
-        <ContentSkeleton textSizeClass={textSizeClass} textStyle={textStyle} />
+        <ContentSkeleton />
       ) : (
         <EntryContentRenderer
           sanitizedContent={contentHtml}
@@ -262,7 +263,8 @@ export function EntryArticleSkeleton({ onBack }: { onBack?: () => void }) {
           </div>
           <div className={META_ROW_CLASSES}>
             <SkeletonText width="w-24" />
-            <SkeletonText width="w-32" />
+            {/* The date wraps to its own line on mobile, as in the real meta row */}
+            <SkeletonText width="w-32" className="basis-full sm:basis-auto" />
           </div>
         </div>
 
@@ -286,16 +288,11 @@ const CONTENT_SKELETON_PARAGRAPHS = [
   ["w-full", "w-4/5"],
 ];
 
-/** Paragraphs of placeholder lines in the reader's own text size, so each line is a line of the article. */
-function ContentSkeleton({
-  textSizeClass = DEFAULT_TEXT_SIZE_CLASS,
-  textStyle,
-}: {
-  textSizeClass?: string;
-  textStyle?: CSSProperties;
-}) {
+/** Paragraphs of placeholder lines in the reader's text settings, so each line is a line of the article. */
+function ContentSkeleton() {
   return (
-    <div className={textSizeClass} style={textStyle} role="status" aria-label="Loading content">
+    <div className={`${DEFAULT_TEXT_SIZE_CLASS} max-w-none`} style={ENTRY_TEXT_STYLE} role="status">
+      <span className="sr-only">Loading content...</span>
       {CONTENT_SKELETON_PARAGRAPHS.map((lines, i) => (
         <p key={i}>
           {lines.map((width, j) => (

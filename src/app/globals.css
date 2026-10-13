@@ -126,7 +126,7 @@
   --surface: #ffffff; /* white - cards, inputs, controls */
   --surface-muted: #f4f4f5; /* zinc-100 - chips, hover fill (hover:bg-surface-muted) */
   --surface-subtle: #fafafa; /* zinc-50 - note boxes, subtle fills */
-  --fill-muted: #e4e4e7; /* zinc-200 - e-paper skeleton bars, toggle-off/progress/range tracks, thin dividers */
+  --fill-muted: #e4e4e7; /* zinc-200 - settings skeleton pulses, e-paper skeleton bars, toggle-off/progress/range tracks, thin dividers */
 
   /* Borders: `edge` for card outlines, `edge-strong` for dividers/note boxes
      (more visible in dark mode), `edge-input` for input/control outlines */

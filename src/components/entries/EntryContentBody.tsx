@@ -117,8 +117,6 @@ export interface EntryContentBodyProps {
   onSummaryClose?: () => void;
   /** Callback when regenerate summary is clicked */
   onSummaryRegenerate?: () => void;
-  /** Whether the main content is still loading (for progressive rendering) */
-  isContentLoading?: boolean;
   /** See EntryContentOptions */
   prerecordedNarration?: PrerecordedVoice;
   /** Host-supplied content rendered after the summary card, before the body */
@@ -171,8 +169,6 @@ export function EntryContentBody({
   onSummarize,
   onSummaryClose,
   onSummaryRegenerate,
-  // Progressive loading
-  isContentLoading,
   prerecordedNarration,
   beforeContent,
   afterContent,
@@ -354,7 +350,6 @@ export function EntryContentBody({
         textStyle={textStyle}
         footerLinkDomain={footerLinkDomain}
         unsubscribeUrl={unsubscribeUrl}
-        isContentLoading={isContentLoading}
         contentRef={contentRef}
         onContentClick={handleContentClick}
         onTouchStart={handleTouchStart}

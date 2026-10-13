@@ -14,6 +14,8 @@
  * Theme (dark/light) config lives in `../theme/config.ts`.
  */
 
+import type { CSSProperties } from "react";
+
 /** localStorage key the appearance settings are persisted under. */
 export const APPEARANCE_STORAGE_KEY = "lion-reader-appearance-settings";
 
@@ -121,6 +123,14 @@ export const BASE_SIZES: Record<TextSize, number> = {
   medium: 1,
   large: 1.125,
   "x-large": 1.25,
+};
+
+/** Inline style applying the `--entry-*` vars to entry text. */
+export const ENTRY_TEXT_STYLE: CSSProperties = {
+  fontFamily: "var(--entry-font-family, inherit)",
+  fontSize: "var(--entry-font-size, 1rem)",
+  lineHeight: "var(--entry-line-height, 1.7)",
+  textAlign: "var(--entry-text-align, left)" as CSSProperties["textAlign"],
 };
 
 /**
