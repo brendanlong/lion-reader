@@ -13,8 +13,9 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
   function it mirrors**, keeping its name so comparisons line up.
 - `run.ts` runs them and says how (EXPLAIN ANALYZE, rolled-back writes,
   warm-up, vacuuming between iterations); `compare.ts` diffs two runs.
-- `baseline.json` is the phase 0 run of #1846, for seeing which benchmarks
-  are heavy and how they plan, not the "before" of a comparison.
+- `baseline.json` is a run of master after phase 7 of #1846 (2026-10-13), for
+  seeing which benchmarks are heavy and how they plan, not the "before" of a
+  comparison.
 
 ## Running
 
@@ -75,7 +76,9 @@ again. A run ANALYZEs any table a migration left without fresh statistics
 differ in machine, Postgres or row counts.
 
 Read buffer ratios first: on an unchanged tree they repeat within 1%, except
-the parallel plans (`ssr.list_saved`, `greader.stream_saved`, about ±10%).
+the parallel plan `ssr.sync_cursors` and `write.delete_feed` (a few percent),
+and except the first run after a seed, which reads up to 7% more on some
+lists (#1910).
 For trigger-heavy writes, read buffers together with trigger ms, WAL and cold
 ms, since that's where those writes spend their time. Times repeat within
 about 10% on an idle machine, but a busy one moves them all together, and
