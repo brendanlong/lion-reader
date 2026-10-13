@@ -2,9 +2,8 @@
  * Unit tests for Wallabag response formatting.
  *
  * Wallabag integer ids are stored serials (issue #1117): entry ids expose
- * `entries.greader_item_id` (via `EntryListItem`/`EntryFull.greaderItemId`, or
- * passed explicitly for saved articles), tag ids expose a collection's
- * `subscriptions.greader_stream_id`.
+ * `entries.greader_item_id` (passed in by the caller), tag ids expose a
+ * collection's `subscriptions.greader_stream_id`.
  * These tests pin the serial → JSON-number mapping that replaced the old
  * 31-bit UUID-hash ids.
  */
@@ -22,8 +21,6 @@ import type { SavedArticle } from "../../src/server/services/saved";
 function makeListItem(overrides: Partial<EntryListItem> = {}): EntryListItem {
   return {
     id: "01912345-0000-7000-8000-000000000001",
-    greaderItemId: BigInt(42),
-    subscriptionGreaderStreamId: null,
     subscriptionId: null,
     subscriptionIds: [],
     type: "saved",
@@ -45,7 +42,7 @@ function makeListItem(overrides: Partial<EntryListItem> = {}): EntryListItem {
 
 describe("formatEntryListItem", () => {
   it("exposes the entry's stored serial as the Wallabag id", () => {
-    const formatted = formatEntryListItem(makeListItem({ greaderItemId: BigInt(31337) }), []);
+    const formatted = formatEntryListItem(makeListItem(), 31337, []);
 
     expect(formatted.id).toBe(31337);
     expect(typeof formatted.id).toBe("number");
@@ -55,7 +52,7 @@ describe("formatEntryListItem", () => {
   });
 
   it("produces JSON-serializable output (no bigint leaks)", () => {
-    expect(() => JSON.stringify(formatEntryListItem(makeListItem(), []))).not.toThrow();
+    expect(() => JSON.stringify(formatEntryListItem(makeListItem(), 42, []))).not.toThrow();
   });
 });
 
@@ -95,8 +92,6 @@ describe("formatTag", () => {
 function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
   return {
     id: "01912345-0000-7000-8000-000000000001",
-    greaderItemId: BigInt(42),
-    subscriptionGreaderStreamId: BigInt(7),
     subscriptionId: "01912345-0000-7000-8000-000000000003",
     subscriptionIds: [],
     type: "web",
@@ -123,7 +118,7 @@ function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
 describe("formatEntryFull", () => {
   // Issue #1787: clients got the feed teaser when the full article was fetched.
   it("serves the fetched full article over the feed content", () => {
-    expect(formatEntryFull(makeFullEntry({ fullContent: "<p>full</p>" }), []).content).toBe(
+    expect(formatEntryFull(makeFullEntry({ fullContent: "<p>full</p>" }), 42, []).content).toBe(
       "<p>full</p>"
     );
   });

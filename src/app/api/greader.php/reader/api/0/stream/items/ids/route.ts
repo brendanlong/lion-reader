@@ -21,6 +21,7 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId } from "@/server/google-reader/streams";
 import { entryFeedStreamId } from "@/server/google-reader/format";
+import { resolveGreaderIdsForEntries } from "@/server/google-reader/id";
 import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { isState } from "@/server/google-reader/streams";
@@ -144,13 +145,18 @@ export async function GET(request: Request): Promise<Response> {
 
   const result = await entriesService.listEntries(db, listParams);
 
-  const itemRefs = result.items.map((entry) => {
-    const int64Id = entry.greaderItemId;
-    // The item's origin stream, as in its `origin` (saved articles' is the
-    // "Saved Articles" subscription, issue #730).
-    const directStreamId = entryFeedStreamId(entry);
+  const idsByEntry = await resolveGreaderIdsForEntries(
+    db,
+    session.user.id,
+    result.items.map((e) => e.id)
+  );
+  const itemRefs = result.items.flatMap((entry) => {
+    const ids = idsByEntry.get(entry.id);
+    if (!ids) return [];
+    // The item's origin stream, as in its `origin`.
+    const directStreamId = entryFeedStreamId(ids);
     return {
-      id: int64Id.toString(),
+      id: ids.itemId.toString(),
       directStreamIds: directStreamId ? [directStreamId] : [],
       timestampUsec: (entry.fetchedAt.getTime() * 1000).toString(),
     };

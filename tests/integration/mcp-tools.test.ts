@@ -111,9 +111,8 @@ describe("MCP tool argument validation", () => {
 
   it("returns JSON-serializable results with no greaderItemId leak", async () => {
     // Both MCP transports serialize tool results with plain JSON.stringify,
-    // which throws on bigint. Entries carry the Google Reader-internal
-    // greaderItemId (a bigint); list_entries/get_entry must strip it — this
-    // mirrors what the tRPC/REST output schemas do on those surfaces.
+    // which throws on bigint, so the Google Reader serials must stay out of
+    // the service entry types.
     const list = (await tool("list_entries").handler(db, userId, {})) as {
       items: Array<Record<string, unknown>>;
     };

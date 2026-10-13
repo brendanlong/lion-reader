@@ -8,7 +8,8 @@
  * reversible ids (item ids, feed stream ids) are unique-index seeks — no runtime
  * UUID→int64 projection and no timestamp-window candidate scan.
  *
- * - **Item ids** (`entries.greader_item_id`): reversed by `greaderItemIdsToUuids`.
+ * - **Item ids** (`entries.greader_item_id`): reversed by `greaderItemIdsToUuids`,
+ *   looked up for formatting by `resolveGreaderIdsForEntries`.
  *   The Wallabag API exposes the same serial as its entry id
  *   (src/server/wallabag/id.ts).
  * - **Feed stream ids** (`subscriptions.greader_stream_id` /
@@ -26,6 +27,7 @@
  */
 
 import { and, eq, inArray } from "drizzle-orm";
+import { entryOriginJoin } from "@/server/services/entry-filters";
 import { isListedSubscription } from "@/server/services/subscriptions";
 import type { db as dbType } from "@/server/db";
 import { subscriptions, visibleEntries } from "@/server/db/schema";
@@ -117,6 +119,51 @@ export async function greaderItemIdsToUuids(
     result.set(row.greaderItemId, row.id);
   }
 
+  return result;
+}
+
+/** The Google Reader serials of one entry, as `resolveGreaderIdsForEntries` reads them. */
+export interface GreaderEntryIds {
+  itemId: bigint;
+  /**
+   * The origin subscription's feed stream serial (for a saved article, the
+   * saved subscription's, which clients see as "Saved Articles", issue #730);
+   * null if the entry has no origin.
+   */
+  originStreamId: bigint | null;
+}
+
+/**
+ * Looks up the serials the compat formatters need for a page of entries, keyed
+ * by entry UUID, in one query. The service entry types don't carry them, so
+ * bigints never reach a surface that serializes service results verbatim.
+ * Scoped to the user via `visible_entries`; entries that vanished since the
+ * page was read are absent.
+ */
+export async function resolveGreaderIdsForEntries(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[]
+): Promise<Map<string, GreaderEntryIds>> {
+  const result = new Map<string, GreaderEntryIds>();
+  if (entryIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      id: visibleEntries.id,
+      itemId: visibleEntries.greaderItemId,
+      originStreamId: subscriptions.greaderStreamId,
+    })
+    .from(visibleEntries)
+    .leftJoin(
+      subscriptions,
+      entryOriginJoin({ userId: visibleEntries.userId, entryId: visibleEntries.id })
+    )
+    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
+
+  for (const row of rows) {
+    result.set(row.id, { itemId: row.itemId, originStreamId: row.originStreamId });
+  }
   return result;
 }
 

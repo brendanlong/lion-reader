@@ -12,7 +12,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { resolveWallabagEntry, entryIdToWallabagId } from "../../src/server/wallabag/id";
+import { resolveWallabagEntry, entryIdsToWallabagIds } from "../../src/server/wallabag/id";
 import { createTestEntry, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
@@ -42,25 +42,27 @@ afterAll(async () => {
   }
 });
 
-describe("entryIdToWallabagId", () => {
-  it("returns the entry's stored serial as a number", async () => {
+describe("entryIdsToWallabagIds", () => {
+  it("maps each entry to its stored serial as a number, skipping unknown entries", async () => {
     const userId = await createUser();
-    const { entryId, serial } = await createTestSavedArticle(userId);
+    const a = await createTestSavedArticle(userId);
+    const b = await createTestSavedArticle(userId);
 
-    expect(await entryIdToWallabagId(db, userId, entryId)).toBe(Number(serial));
+    const ids = await entryIdsToWallabagIds(db, userId, [a.entryId, b.entryId, generateUuidv7()]);
+    expect(ids).toEqual(
+      new Map([
+        [a.entryId, Number(a.serial)],
+        [b.entryId, Number(b.serial)],
+      ])
+    );
   });
 
-  it("returns null for an unknown entry", async () => {
-    const userId = await createUser();
-    expect(await entryIdToWallabagId(db, userId, generateUuidv7())).toBeNull();
-  });
-
-  it("returns null for another user's entry (visibility scoping)", async () => {
+  it("skips another user's entry (visibility scoping)", async () => {
     const owner = await createUser();
     const other = await createUser();
     const { entryId } = await createTestSavedArticle(owner);
 
-    expect(await entryIdToWallabagId(db, other, entryId)).toBeNull();
+    expect((await entryIdsToWallabagIds(db, other, [entryId])).size).toBe(0);
   });
 });
 

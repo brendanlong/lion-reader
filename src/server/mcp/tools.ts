@@ -95,25 +95,6 @@ export function toMcpError(error: unknown): unknown {
 }
 
 /**
- * Strips the Google Reader-internal compat ids (`greaderItemId` and the feed
- * stream serials) from an entry before it reaches an MCP response. They are
- * bigints, which the transports' `JSON.stringify` can't serialize (it throws),
- * and they're meaningless to MCP clients — only the Google Reader compat layer
- * consumes them. The tRPC/REST surfaces strip them via their Zod output schemas;
- * MCP serializes service results directly, so they must be dropped here.
- */
-function stripGreaderIds<
-  T extends {
-    greaderItemId: bigint;
-    subscriptionGreaderStreamId: bigint | null;
-  },
->(entry: T): Omit<T, "greaderItemId" | "subscriptionGreaderStreamId"> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { greaderItemId, subscriptionGreaderStreamId, ...rest } = entry;
-  return rest;
-}
-
-/**
  * Drops the article body from save/upload results: agents need the id and
  * metadata, and a long page's body can exceed client tool-output limits
  * (#1835). `get_entry` returns the full content.
@@ -390,12 +371,11 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);
-        const result = await entriesService.listEntries(db, {
+        return entriesService.listEntries(db, {
           userId,
           ...params,
           showSpam: false, // Default to hiding spam for MCP
         });
-        return { ...result, items: result.items.map(stripGreaderIds) };
       },
     },
 
@@ -406,8 +386,7 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(getEntryArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(getEntryArgs, args);
-        const entry = await entriesService.getEntry(db, userId, params.entryId);
-        return entry ? stripGreaderIds(entry) : entry;
+        return entriesService.getEntry(db, userId, params.entryId);
       },
     },
 

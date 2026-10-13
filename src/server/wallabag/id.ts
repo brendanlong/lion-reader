@@ -16,7 +16,7 @@
  * sequence, so that bound is not reachable in practice.
  */
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { visibleEntries } from "@/server/db/schema";
 import { isInt64 } from "@/server/google-reader/id";
@@ -77,26 +77,25 @@ export async function resolveWallabagEntry(
 }
 
 /**
- * Looks up the Wallabag integer id for a known entry UUID, **scoped to the
- * requesting user** via `visible_entries`. Used where a route already holds a
- * verified entry id (a just-saved article, an exists-by-URL hit) but the service
- * result doesn't carry the serial (`SavedArticle` stays bigint-free for the
- * MCP/tRPC surfaces that return it verbatim). The user scope keeps this
- * consistent with `resolveWallabagEntry` — the serial is only ever read for an
- * entry the user can see, so a caller can't be tricked into returning another
- * user's serial. Returns null if the entry vanished (or was never visible)
- * meanwhile.
+ * Looks up the Wallabag integer ids for known entry UUIDs in one query, keyed
+ * by UUID, **scoped to the requesting user** via `visible_entries`. The service
+ * entry types don't carry the serial (they stay bigint-free for the MCP/tRPC
+ * surfaces that return them verbatim), so every route formatting entries reads
+ * it here. The user scope keeps this consistent with `resolveWallabagEntry` —
+ * the serial is only ever read for an entry the user can see, so a caller can't
+ * be tricked into returning another user's serial. Entries that vanished (or
+ * were never visible) meanwhile are absent.
  */
-export async function entryIdToWallabagId(
+export async function entryIdsToWallabagIds(
   db: typeof dbType,
   userId: string,
-  entryId: string
-): Promise<number | null> {
-  const [row] = await db
-    .select({ greaderItemId: visibleEntries.greaderItemId })
+  entryIds: string[]
+): Promise<Map<string, number>> {
+  if (entryIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: visibleEntries.id, greaderItemId: visibleEntries.greaderItemId })
     .from(visibleEntries)
-    .where(and(eq(visibleEntries.userId, userId), eq(visibleEntries.id, entryId)))
-    .limit(1);
+    .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
 
-  return row ? Number(row.greaderItemId) : null;
+  return new Map(rows.map((row) => [row.id, Number(row.greaderItemId)]));
 }

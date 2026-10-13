@@ -31,6 +31,7 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse } from "@/server/google-reader/parse";
 import { parseStreamId, type StreamId } from "@/server/google-reader/streams";
 import { formatEntryAsItem } from "@/server/google-reader/format";
+import { resolveGreaderIdsForEntries } from "@/server/google-reader/id";
 import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import * as entriesService from "@/server/services/entries";
@@ -149,13 +150,16 @@ async function handleStreamContents(
   const result = await entriesService.listEntries(db, listParams);
 
   // Get full content in a single bulk query rather than one getEntry per entry.
-  const fullEntries = await entriesService.getEntries(
-    db,
-    session.user.id,
-    result.items.map((e) => e.id)
-  );
+  const entryIds = result.items.map((e) => e.id);
+  const [fullEntries, idsByEntry] = await Promise.all([
+    entriesService.getEntries(db, session.user.id, entryIds),
+    resolveGreaderIdsForEntries(db, session.user.id, entryIds),
+  ]);
   const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
-  const items = result.items.map((entry) => {
+  const items = result.items.flatMap((entry) => {
+    const ids = idsByEntry.get(entry.id);
+    // Deleted since the page was listed.
+    if (!ids) return [];
     const full = fullMap.get(entry.id);
     // If full content isn't available, fall back to list data.
     return formatEntryAsItem(
@@ -166,7 +170,8 @@ async function handleStreamContents(
         fullContent: null,
         feedUrl: null,
         unsubscribeUrl: null,
-      }
+      },
+      ids
     );
   });
 
