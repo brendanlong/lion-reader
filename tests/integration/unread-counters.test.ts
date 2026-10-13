@@ -304,26 +304,12 @@ describe("unread counters (triggers + reconciliation)", () => {
     await expectNoDrift();
   });
 
-  it("countEntries never counts spam and serves the badge shapes from counters", async () => {
+  it("countEntries rejects combined scopes, which have no counter", async () => {
     const userId = await createTestUser();
-    // An email subscription with one ham + one spam entry (spam is only valid
-    // on email).
     const subId = await createTestEmailSubscription(userId);
-    await createTestEntry(subId, { type: "email", userIds: [userId] });
-    await createTestEntry(subId, { type: "email", isSpam: true, userIds: [userId] });
-
-    // The three sidebar badge shapes (counter fast-path) exclude spam, always —
-    // there is no showSpam parameter anymore (issue #1117: unread counts never
-    // include spam, matching the counters).
-    expect(await countEntries(db, userId, {})).toEqual({ unread: 1 });
-    expect(await countEntries(db, userId, { starredOnly: true })).toEqual({ unread: 0 });
-    expect(await countEntries(db, userId, { type: "saved" })).toEqual({ unread: 0 });
-
-    // Scoped filters take the visible_entries scan path — same spam exclusion,
-    // and the same value as the subscription's counter.
-    expect(await countEntries(db, userId, { subscriptionId: subId })).toEqual({ unread: 1 });
-    expect((await subscriptionCounters(subId)).unread).toBe(1);
-    await expectNoDrift();
+    await expect(
+      countEntries(db, userId, { subscriptionId: subId, starredOnly: true })
+    ).rejects.toThrow(/one list at a time/);
   });
 
   it("reconcileCounters detects and repairs corruption", async () => {

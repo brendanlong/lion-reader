@@ -28,6 +28,31 @@ function restrictImports(...paths) {
   return { "no-restricted-imports": ["error", { paths }] };
 }
 
+// Unread counts read the trigger-maintained counters, never a scan (see
+// "Unread Counts" in src/server/CLAUDE.md): a `count(` over the per-user entry
+// rows is how a badge drifts from its list (#1542). Matches a Drizzle query
+// that counts from or joins `visibleEntries`/`userEntries`, and a `sql`
+// template that counts and names either table. Heuristic: a count assembled
+// from separate fragments slips past it.
+const ENTRY_ROWS = "/^(visibleEntries|userEntries)$/";
+const SQL_COUNT = "TemplateElement[value.raw=/\\bcount\\s*\\(/i]";
+const NO_ENTRY_ROW_COUNT_MESSAGE =
+  "Don't count visible_entries/user_entries rows: read the unread counters with countEntries (services/entries.ts) or services/counts.ts. A count that isn't an unread count (a page total, the counter reconciliation) disables no-restricted-syntax on that line, saying why.";
+const NO_ENTRY_ROW_COUNT = [
+  {
+    selector: `CallExpression[callee.property.name=/^(from|innerJoin|leftJoin|rightJoin|fullJoin)$/][arguments.0.name=${ENTRY_ROWS}]:matches(:has(${SQL_COUNT}), :has(CallExpression[callee.name=/^count(Distinct)?$/]))`,
+    message: NO_ENTRY_ROW_COUNT_MESSAGE,
+  },
+  {
+    selector: `CallExpression[callee.property.name="$count"][arguments.0.name=${ENTRY_ROWS}]`,
+    message: NO_ENTRY_ROW_COUNT_MESSAGE,
+  },
+  {
+    selector: `TaggedTemplateExpression[tag.name="sql"]:has(${SQL_COUNT}):matches(:has(TemplateElement[value.raw=/\\b(visible_entries|user_entries)\\b/]), :has(Identifier[name=${ENTRY_ROWS}]))`,
+    message: NO_ENTRY_ROW_COUNT_MESSAGE,
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -55,6 +80,12 @@ const eslintConfig = defineConfig([
   {
     files: ["src/server/markdown/index.ts"],
     rules: restrictImports(NEXT_LINK),
+  },
+  // A later block setting no-restricted-syntax for a subset of src/ replaces
+  // these selectors there (flat config doesn't merge them): include them.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: { "no-restricted-syntax": ["error", ...NO_ENTRY_ROW_COUNT] },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([
