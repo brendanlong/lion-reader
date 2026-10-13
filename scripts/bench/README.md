@@ -22,12 +22,15 @@ suite** (#1846). Slowdowns are acceptable when they're measured and explained.
 ```bash
 pnpm services          # as a background task: throwaway Postgres + Redis
 pnpm bench:db:seed     # ~3 minutes; refuses to wipe a database that isn't a benchmark one
-pnpm bench:db          # ~3 minutes; prints a table, writes scripts/bench/results/<time>-<sha>.json
+pnpm bench:db          # ~6 minutes; prints a table, writes scripts/bench/results/<time>-<sha>.json
 ```
 
 The scripts use the `DATABASE_URL` in `.env.local-services`. `pnpm bench:db`
 takes `--iterations` (default 5), `--warmup` (default 5), `--filter name,name`
-(substring match), `--out file.json` and `--note text`.
+(substring match), `--out file.json` and `--note text`. Every run first spends
+about 3 minutes running all the write benchmarks unrecorded, `--filter` or
+not, so that each run starts from the same table layout (`settle()` in
+`run.ts`).
 
 Columns: **ms** is planning + execution summed over the benchmark's
 statements, triggers included (median; **max** over the iterations).
@@ -76,9 +79,7 @@ again. A run ANALYZEs any table a migration left without fresh statistics
 differ in machine, Postgres or row counts.
 
 Read buffer ratios first: on an unchanged tree they repeat within 1%, except
-the parallel plan `ssr.sync_cursors` and `write.delete_feed` (a few percent),
-and except the first run after a seed, which reads up to 7% more on some
-lists (#1910).
+the parallel plan `ssr.sync_cursors` and `write.delete_feed` (a few percent).
 For trigger-heavy writes, read buffers together with trigger ms, WAL and cold
 ms, since that's where those writes spend their time. Times repeat within
 about 10% on an idle machine, but a busy one moves them all together, and
