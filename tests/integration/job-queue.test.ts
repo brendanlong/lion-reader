@@ -74,7 +74,7 @@ describe("Job Queue", () => {
       expect(job.lastRunAt).toBeNull();
       expect(job.lastError).toBeNull();
 
-      const payload = getJobPayload<"fetch_feed">(job);
+      const payload = getJobPayload(job, "fetch_feed");
       expect(payload.feedId).toBe("test-feed-id");
     });
   });
@@ -540,7 +540,7 @@ describe("Job Queue", () => {
       const job = await ensureFeedJob(feedId);
 
       expect(job.type).toBe("fetch_feed");
-      expect(getJobPayload<"fetch_feed">(job).feedId).toBe(feedId);
+      expect(getJobPayload(job, "fetch_feed").feedId).toBe(feedId);
     });
 
     it("ensureFeedJob does not create duplicate jobs under concurrency (#952)", async () => {
@@ -592,7 +592,7 @@ describe("Job Queue", () => {
       const job = await scheduleFeedRefreshNow(feedId);
 
       expect(job.type).toBe("fetch_feed");
-      const payload = getJobPayload<"fetch_feed">(job);
+      const payload = getJobPayload(job, "fetch_feed");
       expect(payload.feedId).toBe(feedId);
       expect(typeof payload.forceReprocessRequestedAt).toBe("string");
       expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
@@ -612,7 +612,7 @@ describe("Job Queue", () => {
       // feedId preserved.
       expect(await listJobs({ type: "fetch_feed" })).toHaveLength(1);
       expect(job.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
-      const payload = getJobPayload<"fetch_feed">(job);
+      const payload = getJobPayload(job, "fetch_feed");
       expect(payload.feedId).toBe(feedId);
       expect(typeof payload.forceReprocessRequestedAt).toBe("string");
     });
@@ -621,7 +621,7 @@ describe("Job Queue", () => {
       const feedId = generateUuidv7();
       await scheduleFeedRefreshNow(feedId);
       const claimed = await claimJob();
-      const claimedAt = getJobPayload<"fetch_feed">(claimed!).forceReprocessRequestedAt;
+      const claimedAt = getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt;
       expect(typeof claimedAt).toBe("string");
 
       const cadence = new Date(Date.now() + 60 * 60 * 1000);
@@ -632,8 +632,8 @@ describe("Job Queue", () => {
       });
 
       // Token consumed, feedId preserved, normal cadence used.
-      expect(getJobPayload<"fetch_feed">(finished!).forceReprocessRequestedAt).toBeUndefined();
-      expect(getJobPayload<"fetch_feed">(finished!).feedId).toBe(feedId);
+      expect(getJobPayload(finished!, "fetch_feed").forceReprocessRequestedAt).toBeUndefined();
+      expect(getJobPayload(finished!, "fetch_feed").feedId).toBe(feedId);
       expect(finished!.nextRunAt!.getTime()).toBe(cadence.getTime());
     });
 
@@ -645,7 +645,7 @@ describe("Job Queue", () => {
       const feedId = generateUuidv7();
       await scheduleFeedRefreshNow(feedId);
       const claimed = await claimJob();
-      const claimedAt = getJobPayload<"fetch_feed">(claimed!).forceReprocessRequestedAt!;
+      const claimedAt = getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt!;
 
       // Re-arm with a strictly-later token (simulate sub2 mid-run).
       await db
@@ -662,7 +662,7 @@ describe("Job Queue", () => {
       });
 
       // Token still present (sub2's request survives) and scheduled to run now.
-      expect(getJobPayload<"fetch_feed">(finished!).forceReprocessRequestedAt).toBeDefined();
+      expect(getJobPayload(finished!, "fetch_feed").forceReprocessRequestedAt).toBeDefined();
       expect(finished!.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
     });
 
@@ -672,7 +672,7 @@ describe("Job Queue", () => {
       const feedId = generateUuidv7();
       await createJob({ type: "fetch_feed", payload: { feedId }, nextRunAt: new Date() });
       const claimed = await claimJob();
-      expect(getJobPayload<"fetch_feed">(claimed!).forceReprocessRequestedAt).toBeUndefined();
+      expect(getJobPayload(claimed!, "fetch_feed").forceReprocessRequestedAt).toBeUndefined();
 
       // A subscribe arms the job during the run.
       await scheduleFeedRefreshNow(feedId);
@@ -683,7 +683,7 @@ describe("Job Queue", () => {
         consumeForceReprocess: { claimedAt: null },
       });
 
-      expect(getJobPayload<"fetch_feed">(finished!).forceReprocessRequestedAt).toBeDefined();
+      expect(getJobPayload(finished!, "fetch_feed").forceReprocessRequestedAt).toBeDefined();
       expect(finished!.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
     });
   });
@@ -725,7 +725,7 @@ describe("Job Queue", () => {
       // Has subscriber - job should be claimed
       const claimed = await claimFeedJob();
       expect(claimed).not.toBeNull();
-      expect(getJobPayload<"fetch_feed">(claimed!).feedId).toBe(feedId);
+      expect(getJobPayload(claimed!, "fetch_feed").feedId).toBe(feedId);
     });
 
     it("does not claim feed job when subscriber has unsubscribed", async () => {

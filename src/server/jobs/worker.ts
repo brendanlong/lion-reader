@@ -20,10 +20,13 @@ import {
   claimFullContentJob,
   finishJob,
   getJobPayload,
+  isJobType,
   renewJobLease,
   JOB_LEASE_HEARTBEAT_MS,
-  ONE_TIME_JOB_TYPES,
+  GENERIC_CLAIM_JOB_TYPES,
   SINGLETON_JOB_TYPES,
+  type FinishJobOptions,
+  type JobPayloads,
   type JobType,
 } from "./queue";
 import { handleFetchFeed } from "./handlers/fetch-feed";
@@ -252,9 +255,6 @@ export interface WorkerClaimDeps {
   claimFullContent: () => Promise<Job | null>;
 }
 
-/** The one-time job types the generic regular claim handles (OPML imports). */
-const REGULAR_JOB_TYPES: JobType[] = ONE_TIME_JOB_TYPES.filter((t) => t !== "fetch_full_content");
-
 /**
  * The cycle, within each SINGLETON_PRIORITY_INTERVAL, on which
  * `fetch_full_content` jobs are checked first. Cycle 0 is the singletons'.
@@ -334,6 +334,35 @@ export function createWorkerClaimJob(deps: WorkerClaimDeps): () => Promise<Job |
   };
 }
 
+const UNKNOWN_JOB_TYPE_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+type WorkerJobResult = JobHandlerResult & Pick<FinishJobOptions, "consumeForceReprocess">;
+
+/** Runs each job type. Exhaustive, so a new `JobType` without a handler doesn't compile. */
+const JOB_HANDLERS: {
+  [K in JobType]: (payload: JobPayloads[K], job: Job) => Promise<WorkerJobResult>;
+} = {
+  fetch_feed: async (payload) => {
+    // The one-shot forceReprocess token observed at claim (null for an
+    // ordinary poll). On a successful run finishJob consumes it with optimistic
+    // concurrency, or re-runs now if a subscribe re-armed the job mid-run.
+    const claimedAt = payload.forceReprocessRequestedAt ?? null;
+    const result = await handleFetchFeed(payload, { forceReprocess: claimedAt !== null });
+    return { ...result, consumeForceReprocess: { claimedAt } };
+  },
+  renew_websub: handleRenewWebsub,
+  monitor_feed_health: handleMonitorFeedHealth,
+  cleanup: handleCleanup,
+  reconcile_membership_counters: handleReconcileCounters,
+  backfill_getting_started: handleBackfillGettingStarted,
+  process_opml_import: handleProcessOpmlImport,
+  fetch_full_content: (payload, job) => handleFetchFullContent(payload, job.consecutiveFailures),
+};
+
+function runJobHandler<K extends JobType>(job: Job, type: K): Promise<WorkerJobResult> {
+  return JOB_HANDLERS[type](getJobPayload(job, type), job);
+}
+
 /**
  * Default structured logger.
  */
@@ -364,7 +393,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
   //    fetch_full_content jobs - round-robined so none can starve the others
   //    (see createWorkerClaimJob).
   const claimJob = createWorkerClaimJob({
-    claimRegular: () => claimRegularJob({ types: REGULAR_JOB_TYPES }),
+    claimRegular: () => claimRegularJob({ types: GENERIC_CLAIM_JOB_TYPES }),
     claimFeed: claimFeedJob,
     claimSingleton: claimSingletonJob,
     claimFullContent: claimFullContentJob,
@@ -444,66 +473,23 @@ function createWorker(config: WorkerConfig = {}): Worker {
         consecutiveFailures: job.consecutiveFailures,
       });
 
-      let result: JobHandlerResult;
-      // For a fetch_feed job, the one-shot forceReprocess token observed at claim
-      // (null for an ordinary poll). Passed to finishJob so a successful run can
-      // consume it with optimistic concurrency (see FinishJobOptions).
-      let consumeForceReprocess: { claimedAt: string | null } | undefined;
-
-      switch (job.type) {
-        case "fetch_feed": {
-          const payload = getJobPayload<"fetch_feed">(job);
-          const claimedAt = payload.forceReprocessRequestedAt ?? null;
-          consumeForceReprocess = { claimedAt };
-          result = await handleFetchFeed(payload, { forceReprocess: claimedAt !== null });
-          break;
-        }
-        case "renew_websub":
-          result = await handleRenewWebsub();
-          break;
-        case "monitor_feed_health":
-          result = await handleMonitorFeedHealth();
-          break;
-        case "cleanup":
-          result = await handleCleanup();
-          break;
-        case "reconcile_membership_counters":
-          result = await handleReconcileCounters();
-          break;
-        case "backfill_getting_started":
-          result = await handleBackfillGettingStarted();
-          break;
-        case "process_opml_import": {
-          const payload = getJobPayload<"process_opml_import">(job);
-          result = await handleProcessOpmlImport(payload);
-          break;
-        }
-        case "fetch_full_content": {
-          const payload = getJobPayload<"fetch_full_content">(job);
-          result = await handleFetchFullContent(payload, job.consecutiveFailures);
-          break;
-        }
-        default: {
-          // Unknown job type - schedule far in future
-          result = {
+      const result: WorkerJobResult = isJobType(job.type)
+        ? await runJobHandler(job, job.type)
+        : {
+            // Possibly enqueued by a newer release during a rolling deploy:
+            // leave it for a worker that knows the type.
             success: false,
-            nextRunAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+            nextRunAt: new Date(Date.now() + UNKNOWN_JOB_TYPE_RETRY_MS),
             error: `Unknown job type: ${job.type}`,
           };
-        }
-      }
 
       const duration = Date.now() - startTime;
 
-      // Finish the job (update its state for next run). consumeForceReprocess is
-      // set only for fetch_feed; on a successful run finishJob uses it to consume
-      // the one-shot forceReprocess request (or re-run now if a subscribe
-      // re-armed the job mid-run).
       await finishWithLease({
         success: result.success,
         nextRunAt: result.nextRunAt,
         error: result.error,
-        consumeForceReprocess,
+        consumeForceReprocess: result.consumeForceReprocess,
       });
 
       if (result.success) {

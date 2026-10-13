@@ -20,6 +20,7 @@ import { db } from "../db";
 import { jobs, type Job } from "../db/schema";
 import { isUniqueViolation } from "../db/errors";
 import { generateUuidv7 } from "../../lib/uuidv7";
+import { z } from "zod";
 
 /**
  * Raw job row returned from SQL queries (dates are strings).
@@ -59,10 +60,36 @@ function firstJob(result: { rows: RawJobRow[] }): Job | null {
   return result.rows.length === 0 ? null : rowToJob(result.rows[0]);
 }
 
+const emptyPayload = z.object({});
+
 /**
- * Job payload types for different job types.
+ * Where a job type is claimed (see `createWorkerClaimJob` in worker.ts):
+ *
+ * - `feed`: the data-driven fetch_feed claim (only feeds with subscribers).
+ * - `singleton`: exactly one row, self-created on first run (see
+ *   {@link SINGLETON_JOB_TYPES}).
+ * - `one_time`: the generic due-job claim. Each row is a single task; see
+ *   {@link ONE_TIME_JOB_TYPES}.
+ * - `full_content`: the concurrency-capped {@link claimFullContentJob}. Also
+ *   one-time.
  */
-export interface JobPayloads {
+type JobLane = "feed" | "singleton" | "one_time" | "full_content";
+
+interface JobDefinition {
+  payload: z.ZodType;
+  lane: JobLane;
+  /**
+   * A singleton that, under a backlog, reschedules itself near-immediately.
+   * Ordered last in {@link SINGLETON_JOB_TYPES} so it can't starve the others.
+   */
+  reschedulesFast?: true;
+}
+
+/**
+ * Every job type, its payload schema and its claim lane. The worker's handler
+ * table (`JOB_HANDLERS` in worker.ts) must cover exactly these keys.
+ */
+const JOB_DEFINITIONS = {
   // `forceReprocessRequestedAt` is a one-shot request set by
   // `scheduleFeedRefreshNow` (the interactive subscribe path forcing a refresh
   // of a stale feed). Its presence makes the fetch reprocess and re-stamp
@@ -74,42 +101,69 @@ export interface JobPayloads {
   // mid-run bumps the token, so the consume leaves it in place and the fetch
   // re-runs (covering the late subscriber) instead of dropping the request. A
   // failed run keeps it so the retry re-forces.
-  fetch_feed: { feedId: string; forceReprocessRequestedAt?: string };
-  renew_websub: Record<string, never>; // Empty payload - renews all expiring subscriptions
-  process_opml_import: { importId: string }; // Process an OPML import in the background
-  // Fetch full content for entries a WebSub push just created, off the hub's
-  // callback request. `pending` marks the feed's one not-yet-claimed job, which
-  // new entries are appended to — see enqueueFullContentFetch.
-  fetch_full_content: { feedId: string; entryIds: string[]; pending?: true };
-  // Periodic feed fetch health check. Empty payload — alert cadence and
-  // de-duplication are owned by the external healthchecks.io monitor, so no
-  // state is carried across runs.
-  monitor_feed_health: Record<string, never>;
+  fetch_feed: {
+    payload: z.object({ feedId: z.string(), forceReprocessRequestedAt: z.string().optional() }),
+    lane: "feed",
+  },
+  // Renews all expiring WebSub subscriptions.
+  renew_websub: { payload: emptyPayload, lane: "singleton" },
+  // Periodic feed fetch health check. Alert cadence and de-duplication are
+  // owned by the external healthchecks.io monitor, so no state is carried
+  // across runs.
+  monitor_feed_health: { payload: emptyPayload, lane: "singleton" },
   // Daily retention cleanup of expired/revoked credentials and parked
   // one-time jobs. See src/server/services/retention.ts.
-  cleanup: Record<string, never>;
+  cleanup: { payload: emptyPayload, lane: "singleton" },
   // Daily self-healing sweep of the denormalized unread counters (issue
   // #1117), by the membership rules of #1846. See
   // src/server/services/reconcile-counters.ts.
-  reconcile_membership_counters: Record<string, never>;
+  reconcile_membership_counters: { payload: emptyPayload, lane: "singleton" },
   // Fills the Getting Started article in for users who predate it, a batch per
   // run (issue #1397). Stateless — `users.getting_started_at` is the progress
-  // marker. See src/server/services/getting-started.ts.
-  backfill_getting_started: Record<string, never>;
+  // marker. See src/server/services/getting-started.ts. While a backlog remains
+  // it reschedules itself in seconds.
+  backfill_getting_started: { payload: emptyPayload, lane: "singleton", reschedulesFast: true },
+  // Process an OPML import in the background.
+  process_opml_import: { payload: z.object({ importId: z.string() }), lane: "one_time" },
+  // Fetch full content for entries a WebSub push just created, off the hub's
+  // callback request. `pending` marks the feed's one not-yet-claimed job, which
+  // new entries are appended to — see enqueueFullContentFetch.
+  fetch_full_content: {
+    payload: z.object({
+      feedId: z.string(),
+      entryIds: z.array(z.string()),
+      pending: z.literal(true).optional(),
+    }),
+    lane: "full_content",
+  },
+} as const satisfies Record<string, JobDefinition>;
+
+export type JobType = keyof typeof JOB_DEFINITIONS;
+
+export type JobPayloads = {
+  [K in JobType]: z.infer<(typeof JOB_DEFINITIONS)[K]["payload"]>;
+};
+
+const ALL_JOB_TYPES = Object.keys(JOB_DEFINITIONS) as JobType[];
+
+function jobTypesInLanes(...lanes: JobLane[]): JobType[] {
+  return ALL_JOB_TYPES.filter((type) => lanes.includes(JOB_DEFINITIONS[type].lane));
 }
 
-export type JobType = keyof JobPayloads;
+/** Whether `type` is known to this release (a newer one may enqueue others mid-deploy). */
+export function isJobType(type: string): type is JobType {
+  return Object.hasOwn(JOB_DEFINITIONS, type);
+}
 
 /**
  * One-time job types: each row is a single task, parked `ONE_TIME_JOB_PARK_MS`
  * out when done — whatever the outcome, it must not run again. The retention
- * cleanup sweeps parked rows (see src/server/services/retention.ts). How each
- * type is claimed differs; see `createWorkerClaimJob` in worker.ts.
+ * cleanup sweeps parked rows (see src/server/services/retention.ts).
  */
-export const ONE_TIME_JOB_TYPES = [
-  "process_opml_import",
-  "fetch_full_content",
-] as const satisfies readonly JobType[];
+export const ONE_TIME_JOB_TYPES = jobTypesInLanes("one_time", "full_content");
+
+/** The one-time job types the generic {@link claimJob} handles. */
+export const GENERIC_CLAIM_JOB_TYPES = jobTypesInLanes("one_time");
 
 /** How far out a finished one-time job parks itself (see {@link ONE_TIME_JOB_TYPES}). */
 export const ONE_TIME_JOB_PARK_MS = 365 * 24 * 60 * 60 * 1000;
@@ -427,13 +481,14 @@ export async function renewJobLease(
 }
 
 /**
- * Gets the parsed payload for a job.
- *
- * @param job The job
- * @returns The parsed payload
+ * Validates and returns a job's payload. Throws if the job isn't of `type` or
+ * its payload doesn't match the type's schema.
  */
-export function getJobPayload<T extends JobType>(job: Job): JobPayloads[T] {
-  return job.payload as JobPayloads[T];
+export function getJobPayload<T extends JobType>(job: Job, type: T): JobPayloads[T] {
+  if (job.type !== type) {
+    throw new Error(`Expected a ${type} job, got ${job.type}`);
+  }
+  return JOB_DEFINITIONS[type].payload.parse(job.payload) as JobPayloads[T];
 }
 
 /**
@@ -672,22 +727,19 @@ export async function claimFullContentJob(): Promise<Job | null> {
 /**
  * Singleton job types that have exactly one instance and self-create on first run.
  *
- * ORDERING INVARIANT: the worker's claim loop tries these first-due-wins, in
- * array order. A singleton that reschedules itself near-immediately under
- * backlog must be listed LAST — placed earlier it would be due again on every
- * claim cycle and starve every type after it. The current types reschedule at
- * +15min or slower, so ordering among them is harmless; keep any
- * fast-rescheduling type at the end when adding one.
+ * The worker's claim loop tries these first-due-wins, in array order, so a
+ * type that reschedules itself near-immediately under backlog would starve
+ * every type after it: `reschedulesFast` types go last.
  */
 export const SINGLETON_JOB_TYPES: JobType[] = [
-  "renew_websub",
-  "monitor_feed_health",
-  "cleanup",
-  "reconcile_membership_counters",
-  // Last on purpose: while a backlog remains it reschedules itself in seconds,
-  // so anything after it would starve (see the ordering invariant above).
-  "backfill_getting_started",
+  ...jobTypesInLanes("singleton").filter((type) => !isFastRescheduler(type)),
+  ...jobTypesInLanes("singleton").filter(isFastRescheduler),
 ];
+
+function isFastRescheduler(type: JobType): boolean {
+  const definition: JobDefinition = JOB_DEFINITIONS[type];
+  return definition.reschedulesFast === true;
+}
 
 /**
  * Tries to claim a singleton job for processing.
