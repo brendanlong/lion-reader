@@ -19,7 +19,6 @@ import {
 } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
-import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";
@@ -263,10 +262,9 @@ const setStarredOutputSchema = z.object({
 // Router
 // ============================================================================
 //
-// Full-entry reads go through `entriesService.selectFullEntry` /
-// `entriesService.toFullEntry`, which resolve the persisted sanitized content
-// (the read-path sanitization chokepoint lives in the services layer so MCP,
-// Google Reader, and Wallabag get the same guarantee).
+// Full-entry reads go through `entriesService.getFullEntry`, which sanitizes
+// the content (the read-path sanitization chokepoint lives in the services
+// layer so MCP, Google Reader, and Wallabag get the same guarantee).
 
 export const entriesRouter = createTRPCRouter({
   /**
@@ -392,12 +390,8 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      const row = await entriesService.selectFullEntry(ctx.db, userId, input.id);
-      if (!row) {
-        throw errors.entryNotFound();
-      }
-
-      return { entry: withLegacyFeedId(await entriesService.toFullEntry(row)) };
+      const { entry } = await entriesService.getFullEntry(ctx.db, userId, input.id);
+      return { entry: withLegacyFeedId(entry) };
     }),
 
   /**

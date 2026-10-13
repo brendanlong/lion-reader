@@ -16,8 +16,7 @@ import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
-import { errors } from "@/server/errors";
-import { selectFullEntry, toFullEntry } from "./entries";
+import { getFullEntry, type FullEntry } from "./entries";
 
 /**
  * Result of fetching full article content.
@@ -317,12 +316,6 @@ export async function fetchFullContentForNewEntries(
   return { fetched, failed };
 }
 
-/**
- * Full entry shape returned by fetchAndStoreFullContent (the toFullEntry
- * output shape used by entries.get).
- */
-type FullEntry = Awaited<ReturnType<typeof toFullEntry>>;
-
 export interface FetchAndStoreFullContentResult {
   success: boolean;
   entry?: FullEntry;
@@ -351,31 +344,22 @@ export async function fetchAndStoreFullContent(
   userId: string,
   entryId: string
 ): Promise<FetchAndStoreFullContentResult> {
-  // Verify the entry exists and the user has access
-  const rawEntry = await selectFullEntry(db, userId, entryId);
-  if (!rawEntry) {
-    throw errors.entryNotFound();
-  }
+  // Throws unless the entry exists and is visible to the user
+  const { entry, contentHash } = await getFullEntry(db, userId, entryId);
 
-  const contentHash = rawEntry.contentHash;
-
-  // Check if entry has a URL to fetch (before building the response entry —
-  // toFullEntry resolves sanitized content, which is wasted work here)
-  if (!rawEntry.url) {
+  if (!entry.url) {
     return {
       success: false,
       error: "Entry has no URL to fetch content from",
     };
   }
 
-  const entry = await toFullEntry(rawEntry);
-
   logger.info("Fetching full content for entry", {
     entryId: entry.id,
-    url: rawEntry.url,
+    url: entry.url,
   });
 
-  const result = await fetchFullContent(rawEntry.url);
+  const result = await fetchFullContent(entry.url);
   const now = new Date();
   // Persist the raw full-content columns onto the shared entry row (see note
   // above); sanitized for the response below (per-read sanitization, #1282).
@@ -384,7 +368,7 @@ export async function fetchAndStoreFullContent(
   if (!result.success || !fullContentUpdate) {
     logger.warn("Failed to fetch full content", {
       entryId: entry.id,
-      url: rawEntry.url,
+      url: entry.url,
       error: result.error,
     });
 
@@ -420,7 +404,7 @@ export async function fetchAndStoreFullContent(
 
   logger.info("Successfully fetched full content for entry", {
     entryId: entry.id,
-    url: rawEntry.url,
+    url: entry.url,
     contentLength: result.contentCleaned?.length,
   });
 
