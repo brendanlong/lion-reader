@@ -3,17 +3,16 @@
  *
  * A `<time>` whose text is formatted in the visitor's clock and zone.
  *
- * Statically prerendered pages (the demo) bake the *server's* clock and zone
- * into the HTML — "just now" at build, or a UTC timestamp — and that text is
- * what the browser shows until something re-renders it. This re-renders once
- * right after hydration so the visitor gets their own time, and suppresses the
- * expected server/client text mismatch on the way. In the app, entries mount
- * after hydration and this is a plain `<time>`.
+ * Server-rendered HTML bakes in the *server's* clock and zone — at request
+ * time, or at build time for statically prerendered pages (the demo) — and
+ * hydration keeps that text (React never patches a suppressed text mismatch).
+ * So the element is remounted with the visitor's own time right after
+ * hydration. Mounts after hydration render the visitor's time from the start.
  */
 
 "use client";
 
-import { useIsHydrated, useIsPrerendered } from "@/lib/hooks/useIsHydrated";
+import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
 
 interface LocalTimeProps {
   date: Date;
@@ -22,16 +21,15 @@ interface LocalTimeProps {
 }
 
 export function LocalTime({ date, format, className }: LocalTimeProps) {
-  // Subscribed only for its post-hydration re-render (see module comment).
-  useIsHydrated();
-  // Only a prerendered mount expects the text to differ; in the app a mismatch
-  // would be a real bug and must stay visible.
-  const prerendered = useIsPrerendered();
+  // A new key replaces the server-rendered node; re-rendering with the same
+  // key would keep its text, which hydration left as the server's.
+  const isHydrated = useIsHydrated();
   return (
     <time
+      key={isHydrated ? "local" : "server"}
       dateTime={date.toISOString()}
       className={className}
-      suppressHydrationWarning={prerendered}
+      suppressHydrationWarning
     >
       {format(date)}
     </time>

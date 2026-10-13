@@ -28,7 +28,11 @@ live after that fetch started: its server snapshot predates them, so they are
 kept rather than dropped when it lands. Removing the query from
 the cache (gc) drops the list's membership rows. Never write entry state into
 `entries.list` or `entries.get`, or render state from them: their copies are
-only as fresh as their fetch.
+only as fresh as their fetch. The one exception is a page load's entry list,
+which is server-rendered from the page's streamed `entries.list` prefetch
+(`useCanRenderStreamedQuery`) and hydrates from those same pages, since the
+store may already be newer by then (the open entry auto-marked read); it
+switches to the store right after hydration.
 
 **Memberships, not types (#1846).** Every stored entry carries `subscriptionIds`,
 every active subscription holding it: its origin (`subscriptionId`), its

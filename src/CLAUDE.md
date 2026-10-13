@@ -16,3 +16,4 @@ Suspense holds a committed fallback for at least 300ms (`FALLBACK_THROTTLE_MS`) 
 
 - **Page-load / persistent-shell data** (route first render, sidebar counts, `fallback={null}`): `useSuspenseQuery` + `<Suspense>`.
 - **Interaction-triggered swaps usually served from cache** (open entry, switch list view, route titles): `useQuery` + inline `if (isLoading) return <Fallback/>`, with `throwOnError: true` to keep the `ErrorBoundary`, and keep the server prefetch. A hand-written cache-reading fallback means this pattern. See `EntryContent` / `EntryListContainer`.
+- **Both** (a route's main content, server-rendered on a page load but swapped by later navigations): the inline pattern inside its own `<Suspense>`, gated on `useCanRenderStreamedQuery`, which suspends only before hydration, on the page's streamed prefetch. See `EntryListContainer`.

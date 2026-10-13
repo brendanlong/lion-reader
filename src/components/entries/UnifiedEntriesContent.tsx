@@ -206,7 +206,8 @@ function EntryListTitle({ routeInfo }: { routeInfo: RouteInfo }) {
 /**
  * Inner content component that renders based on route.
  * Title, entry content, and entry list each render their own non-suspending
- * inline loading state (no Suspense boundaries).
+ * inline loading state (the entry list suspends only on a page load; see
+ * EntryListContainer).
  */
 function UnifiedEntriesContentInner() {
   const pathname = useAppPathname();
@@ -337,7 +338,7 @@ function UnifiedEntriesContentInner() {
     />
   ) : null;
 
-  // Entry list - renders its own inline loading fallback (no Suspense)
+  // Entry list - renders its own inline loading fallback after hydration
   const emptyMessage = searchQuery
     ? showUnreadOnly
       ? `No unread entries matching "${searchQuery}". Toggle to search read items too.`
@@ -365,9 +366,10 @@ function UnifiedEntriesContentInner() {
  * to determine what to render. When navigation happens via pushState, useAppPathname()
  * updates and this component re-renders with the appropriate content.
  *
- * Note: No Suspense is used. The title, entry list, and entry content each use
- * non-suspending queries and render their own inline loading fallback, to avoid
- * React's 300ms fallback throttle on warm-cache navigations. An ErrorBoundary
+ * Note: Navigations never suspend. The title, entry list, and entry content each
+ * use non-suspending queries and render their own inline loading fallback, to
+ * avoid React's 300ms fallback throttle on warm-cache navigations (only a page
+ * load's entry list suspends, to server-render it). An ErrorBoundary
  * (with throwOnError on the queries) handles load failures.
  */
 export function UnifiedEntriesContent() {

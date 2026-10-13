@@ -8,10 +8,13 @@
  *
  * Fetches entries with a non-suspending useInfiniteQuery, renders them from
  * the local entry store, and shows a smart inline loading fallback (stored
- * entries matching the view) while the first page loads. It deliberately does NOT suspend: a committed Suspense fallback is
- * pinned on screen for React's FALLBACK_THROTTLE_MS (300ms) even on a
- * warm-cache navigation, which made switching list views feel laggy. See
- * "Suspense vs. inline loading" in src/CLAUDE.md.
+ * entries matching the view) while the first page loads. Once hydrated it
+ * never suspends: a committed Suspense fallback is pinned on screen for
+ * React's FALLBACK_THROTTLE_MS (300ms) even on a warm-cache navigation, which
+ * made switching list views feel laggy. See "Suspense vs. inline loading" in
+ * src/CLAUDE.md. Only the page load suspends, on the page's streamed
+ * prefetch, so the first page of entries is in the server-rendered HTML
+ * (`useCanRenderStreamedQuery`).
  *
  * Uses useEntriesListInput to get query input, ensuring cache is shared
  * with the parent's non-suspending query (used for navigation).
@@ -19,8 +22,9 @@
 
 "use client";
 
-import { useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { Suspense, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { getQueryKey } from "@trpc/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { refreshEntryLists } from "@/lib/hooks/useEntryListRefreshOnNavigate";
@@ -31,7 +35,7 @@ import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntriesListInput } from "@/lib/hooks/useEntriesListInput";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { entryListKey } from "@/lib/local-db/entry-lists";
-import { useCanRenderFromCache } from "@/lib/hooks/useIsHydrated";
+import { useCanRenderStreamedQuery, useIsHydrated } from "@/lib/hooks/useIsHydrated";
 import { useScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { EntryList, type ExternalQueryState } from "./EntryList";
 import { EntryListFallback } from "./EntryListFallback";
@@ -78,6 +82,17 @@ function entryToReturnTo(
 }
 
 export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
+  // Only the page load can suspend here (on the streamed prefetch; see
+  // useCanRenderStreamedQuery), and the skeleton is what it would otherwise
+  // render before hydration.
+  return (
+    <Suspense fallback={<EntryListSkeleton />}>
+      <EntryListContainerContent emptyMessage={emptyMessage} />
+    </Suspense>
+  );
+}
+
+function EntryListContainerContent({ emptyMessage }: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();
   const { showUnreadOnly, sortOrder, toggleShowUnreadOnly } = useUrlViewPreferences();
   const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
@@ -85,20 +100,23 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   const queryClient = useQueryClient();
   const scrollContainerRef = useScrollContainer();
 
-  // False during SSR + first client render. The smart (cache-reading) fallback
-  // below would mismatch hydration (empty server cache vs. hydrated client
-  // cache), so until hydration we render a deterministic skeleton.
-  const canRenderFromCache = useCanRenderFromCache();
-
   // Get query input from URL - shared with parent's non-suspending query
   const queryInput = useEntriesListInput();
+
+  // Before hydration, the list renders only from the page's streamed prefetch
+  // (suspending until it lands, on both sides). Otherwise the server renders a
+  // deterministic skeleton, since the smart (cache-reading) fallback below
+  // would mismatch hydration (empty server cache vs. hydrated client cache).
+  const canRenderFromCache = useCanRenderStreamedQuery(
+    getQueryKey(trpc.entries.list, queryInput, "infinite")
+  );
 
   // Non-suspending query so the loading state renders inline (see the
   // `isLoading` branch below) instead of via a Suspense fallback that React
   // would pin for 300ms on warm-cache navigations. `throwOnError` preserves the
   // surrounding ErrorBoundary behavior. Shares cache with the parent's
   // useInfiniteQuery via the same queryInput.
-  const { fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     trpc.entries.list.useInfiniteQuery(queryInput, {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       staleTime: Infinity,
@@ -110,7 +128,17 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   // which the fetched pages are ingested into (src/lib/local-db/). Entry
   // state lives there too, so a next-page fetch can't clobber a read/starred
   // change made while it was in flight.
-  const entries = useEntryListEntries(queryInput, openEntryId);
+  const storedEntries = useEntryListEntries(queryInput, openEntryId);
+  // Except while hydrating: the server rendered the fetched pages, and by the
+  // time this boundary hydrates the store can already be newer (the open
+  // entry auto-marked read, an SSE event), which React would leave
+  // unpatched as an attribute mismatch. The re-render after hydration
+  // switches to the store.
+  const isHydrated = useIsHydrated();
+  const entries = useMemo(
+    () => (isHydrated || !data ? storedEntries : data.pages.flatMap((page) => page.items)),
+    [isHydrated, data, storedEntries]
+  );
 
   // Next/previous entry IDs for keyboard navigation, and how close we are to
   // the pagination boundary
@@ -249,9 +277,9 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
     [isFetchingNextPage, hasNextPage, fetchNextPage]
   );
 
-  // Deterministic skeleton on the server + first client render so hydration
-  // matches (EntryListFallback reads the cache, which differs between server
-  // and client at that point).
+  // Deterministic skeleton on the server + first client render when the page
+  // didn't stream this list, so hydration matches (EntryListFallback reads the
+  // cache, which differs between server and client at that point).
   if (!canRenderFromCache) {
     return <EntryListSkeleton />;
   }
