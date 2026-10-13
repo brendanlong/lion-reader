@@ -40,30 +40,38 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+// Only the UI font is preloaded. The rest (code, and the article fonts, whose
+// default is the system font) are fetched when CSS first uses them, rather
+// than on every page load.
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  preload: false,
   subsets: ["latin"],
 });
 
 // Article content fonts
 const merriweather = Merriweather({
   variable: "--font-merriweather",
+  preload: false,
   subsets: ["latin"],
   weight: ["300", "400", "700"],
 });
 
 const literata = Literata({
   variable: "--font-literata",
+  preload: false,
   subsets: ["latin"],
 });
 
 const inter = Inter({
   variable: "--font-inter",
+  preload: false,
   subsets: ["latin"],
 });
 
 const sourceSans = Source_Sans_3({
   variable: "--font-source-sans",
+  preload: false,
   subsets: ["latin"],
 });
 
