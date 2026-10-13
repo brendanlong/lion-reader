@@ -43,8 +43,22 @@ interface AppLayoutProps {
  * but their rendered output is not used - AppRouter handles all rendering.
  */
 export default async function AppLayout({ children }: AppLayoutProps) {
+  // Global announcement banner (admin-controlled, Redis-backed). Fetched and
+  // rendered here — inside the authenticated SPA — rather than in the root
+  // layout, so the public pages (demo/legal/anonymous auth) never carry a
+  // temporary message. The dismissed id is read from a cookie
+  // (not localStorage) so the server can hide an already-dismissed banner and it
+  // never flashes back on reload. Live updates arrive over the SPA's SSE
+  // connection (announcement_changed → announcement store).
+  // Neither depends on the session, so they load while it's validated.
+  const [authenticated, [announcement, cookieStore]] = await Promise.all([
+    isAuthenticated(),
+    Promise.all([getAnnouncement(), cookies()]),
+  ]);
+  const dismissedId = cookieStore.get(ANNOUNCEMENT_DISMISSED_COOKIE)?.value ?? null;
+
   // Redirect unauthenticated users to login
-  if (!(await isAuthenticated())) {
+  if (!authenticated) {
     redirect("/login");
   }
 
@@ -79,16 +93,6 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     trpc.users["me.preferences"].prefetch(), // For entry content settings
   ]);
   const initialCursors = await trpc.sync.cursors(); // Lightweight cursor-only query
-
-  // Global announcement banner (admin-controlled, Redis-backed). Fetched and
-  // rendered here — inside the authenticated SPA — rather than in the root
-  // layout, so the public pages (demo/legal/anonymous auth) never carry a
-  // temporary message. The dismissed id is read from a cookie
-  // (not localStorage) so the server can hide an already-dismissed banner and it
-  // never flashes back on reload. Live updates arrive over the SPA's SSE
-  // connection (announcement_changed → announcement store).
-  const [announcement, cookieStore] = await Promise.all([getAnnouncement(), cookies()]);
-  const dismissedId = cookieStore.get(ANNOUNCEMENT_DISMISSED_COOKIE)?.value ?? null;
 
   // children contains the page.tsx output (prefetch triggers), but AppRouter
   // handles all rendering based on pathname. We include children to ensure
