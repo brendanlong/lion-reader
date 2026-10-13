@@ -22,7 +22,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { db } from "../../src/server/db";
-import { users, userEntries, narrationContent, userApiKeys } from "../../src/server/db/schema";
+import { users, narrationContent, userApiKeys } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import { splitNarrationParagraphs } from "../../src/lib/narration/paragraph-map";
@@ -36,6 +36,7 @@ import {
   createTestFeed,
   createTestSubscription,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 
 /**
@@ -96,7 +97,7 @@ async function createVisibleEntry(
   // Not createTestEntry's `userIds`, which can't express `starred` or the
   // explicit change stamps. subscription_id is filled by the
   // user_entries_fill_denormalized trigger.
-  await db.insert(userEntries).values({
+  await createTestUserEntries({
     userId,
     entryId,
     read: false,

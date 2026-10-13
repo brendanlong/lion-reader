@@ -6,7 +6,7 @@
  * counters match their definition afterwards.
  */
 
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import pg from "pg";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
@@ -37,7 +37,6 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
-  setMembershipMirror,
 } from "./helpers";
 
 async function cleanup(): Promise<void> {
@@ -111,18 +110,9 @@ function fanOutNewEntries(feedIds: string[]): Array<Promise<unknown>> {
   });
 }
 
-// With the previous release's membership mirror triggers on (a rollout) and
-// off (this release alone; #1846).
-describe.each([
-  ["on", true],
-  ["off", false],
-])("unread counters under concurrent writes, mirror triggers %s", (_, mirror) => {
-  beforeAll(() => setMembershipMirror(mirror));
+describe("unread counters under concurrent writes", () => {
   beforeEach(cleanup);
-  afterAll(async () => {
-    await setMembershipMirror(true);
-    await cleanup();
-  });
+  afterAll(cleanup);
 
   it("concurrent adds to one collection all succeed", async () => {
     const userId = await createTestUser();
@@ -375,20 +365,15 @@ describe.each([
 
 describe("a fan-out that loses a deadlock (#1846)", () => {
   beforeEach(cleanup);
-  afterAll(async () => {
-    await setMembershipMirror(true);
-    await cleanup();
-  });
+  afterAll(cleanup);
 
   it("retries, so the fetch's new entries still reach every subscriber", async () => {
-    // A WebSub push runs outside the per-feed job, so another fan-out of the
-    // same entries can take the rows before the memberships: the previous
-    // release does (its mirror trigger copies the row at the end of the
-    // statement). Replay that by hand, with the mirror off, so the fetch's
-    // fan-out (memberships first) waits on the other's row while the other
-    // waits on its membership. The fetch waited first, so it's the victim; a
-    // fetch never fans the same entries out again, so it must retry.
-    await setMembershipMirror(false);
+    // A WebSub push runs outside the per-feed job, so two fan-outs of the
+    // same entries can deadlock. Force one by hand: another writer takes the
+    // row, the fetch's fan-out (memberships first) waits on it, then the
+    // other waits on the fan-out's membership. The fetch waited first, so it's
+    // the victim; a fetch never fans the same entries out again, so it must
+    // retry.
     const [first, second] = await createUsers(2);
     const [feedId] = await subscribeAll([first, second], 1);
     const entryId = await createTestEntry(feedId);

@@ -16,15 +16,14 @@
  *   2. the reconcile job, which recomputes every counter from its definition,
  *      finds nothing to fix,
  *   3. every badge equals the number of unread articles its list shows (tag,
- *      Uncategorized, each subscription, All, Starred, Saved), and
- *   4. memberships match the previous release's forms of them (#1846).
+ *      Uncategorized, each subscription, All, Starred, Saved).
  * Interleavings that hand-written tests miss (an article reaching a tag through
  * both its feed and a collection, retagging while members are unread, ...)
  * come up here. Every random pick indexes a world's ids in creation order, so
  * a seed replays the same operations; a failure prints the seed and step.
  */
 
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
@@ -58,7 +57,6 @@ import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor"
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
-import { checkSubscriptionEntries } from "../../src/server/services/subscription-entries";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -69,7 +67,6 @@ import {
   createTestSubscription,
   createTestTag,
   createTestUser,
-  setMembershipMirror,
 } from "./helpers";
 
 const STEPS = 150;
@@ -731,19 +728,9 @@ async function expectBadgesMatchLists(userId: string): Promise<void> {
   expect(globals.saved, "Saved").toBe(await listed({ type: "saved" }));
 }
 
-// With the previous release's membership mirror triggers on, as during a
-// rollout (a membership both write is counted once), and off, as this release
-// alone (each write path adds its own memberships; #1846).
-describe.each([
-  ["on", true],
-  ["off", false],
-])("unread counters under random operations, mirror triggers %s", (_, mirror) => {
-  beforeAll(() => setMembershipMirror(mirror));
+describe("unread counters under random operations", () => {
   beforeEach(cleanup);
-  afterAll(async () => {
-    await setMembershipMirror(true);
-    await cleanup();
-  });
+  afterAll(cleanup);
 
   it.each(SEEDS)(
     "stay exact (seed %i)",
@@ -779,11 +766,6 @@ describe.each([
           tagsFixed: 0,
         });
         await expectBadgesMatchLists(world.userId);
-        expect(await checkSubscriptionEntries(db), context).toEqual({
-          missing: 0,
-          extra: 0,
-          misdated: 0,
-        });
       }
     },
     120_000

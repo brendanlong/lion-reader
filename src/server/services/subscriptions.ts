@@ -41,7 +41,6 @@ import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import {
   holdsRedirectTwin,
   insertUserEntriesWithMemberships,
-  legacyMembershipForms,
 } from "@/server/services/subscription-entries";
 import { errors } from "@/server/trpc/errors";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
@@ -1188,14 +1187,6 @@ export async function mergeSubscriptionIntoFeed(
       WHERE subscription_id = ${oldSubscriptionId}
       ON CONFLICT DO NOTHING
     `);
-    // For the previous release's redirect check and merges, which find a
-    // subscription's articles by the column (legacyMembershipForms).
-    if (await legacyMembershipForms(tx)) {
-      await tx.execute(sql`
-        UPDATE user_entries SET subscription_id = ${survivor.id}
-        WHERE user_id = ${userId} AND subscription_id = ${oldSubscriptionId}
-      `);
-    }
 
     if (!survivorWasActive) {
       // Tags left on an inactive subscription are stale (unsubscribing clears them).

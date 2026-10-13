@@ -18,6 +18,7 @@
  */
 
 import { and, eq, sql } from "drizzle-orm";
+import type { PgInsertValue } from "drizzle-orm/pg-core";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -220,7 +221,7 @@ export async function createTestEntry(
   });
 
   if (userIds?.length) {
-    await db.insert(userEntries).values(
+    await createTestUserEntries(
       userIds.map((userId) => ({
         userId,
         entryId,
@@ -228,23 +229,44 @@ export async function createTestEntry(
         starred: starredBy.includes(userId),
       }))
     );
-    if (type === "saved") {
-      await db.execute(sql`SELECT ensure_saved_subscriptions(${`{${userIds.join(",")}}`}::uuid[])`);
-    }
-    await db.execute(sql`
-      INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-      SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
-      FROM user_entries ue
-      JOIN entries e ON e.id = ue.entry_id
-      JOIN subscriptions s ON s.user_id = ue.user_id
-        AND (s.feed_id = e.owner_feed_id OR s.id = e.owner_subscription_id
-             OR (e.type = 'saved' AND s.type = 'saved'))
-      WHERE ue.entry_id = ${entryId}
-      ON CONFLICT DO NOTHING
-    `);
   }
 
   return entryId;
+}
+
+/**
+ * Inserts `user_entries` rows as given, each with its membership (#1846) in
+ * the entry's source, when the user has one: their subscription to its feed,
+ * for an email its owner, for a saved article their saved subscription
+ * (created if missing, as a first save does). A row with no such
+ * subscription gets none, so it's visible only if starred.
+ */
+export async function createTestUserEntries(
+  rows: PgInsertValue<typeof userEntries>[] | PgInsertValue<typeof userEntries>
+): Promise<void> {
+  const list = Array.isArray(rows) ? rows : [rows];
+  if (list.length === 0) return;
+  await db.insert(userEntries).values(list);
+  const userIds = `{${list.map((r) => r.userId).join(",")}}`;
+  const entryIds = `{${list.map((r) => r.entryId).join(",")}}`;
+  await db.execute(sql`
+    SELECT ensure_saved_subscriptions(ARRAY(
+      SELECT c.user_id FROM unnest(${userIds}::uuid[], ${entryIds}::uuid[]) AS c(user_id, entry_id)
+      JOIN entries e ON e.id = c.entry_id
+      WHERE e.type = 'saved'
+    ))
+  `);
+  await db.execute(sql`
+    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+    SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
+    FROM unnest(${userIds}::uuid[], ${entryIds}::uuid[]) AS c(user_id, entry_id)
+    JOIN user_entries ue ON ue.user_id = c.user_id AND ue.entry_id = c.entry_id
+    JOIN entries e ON e.id = ue.entry_id
+    JOIN subscriptions s ON s.user_id = ue.user_id
+      AND (s.feed_id = e.owner_feed_id OR s.id = e.owner_subscription_id
+           OR (e.type = 'saved' AND s.type = 'saved'))
+    ON CONFLICT DO NOTHING
+  `);
 }
 
 /**
@@ -266,26 +288,6 @@ export async function createTestMembership(
              e.is_spam, ${read}::boolean AS read
       FROM entries e WHERE e.id = ${entryId}
     `
-  );
-}
-
-/**
- * Turns the triggers that copy the previous release's membership writes into
- * `subscription_entries` (#1846) off or on, so a test can show a write path
- * adds its memberships itself. A schema change for every connection: turn them
- * back on in `afterAll`.
- */
-export async function setMembershipMirror(enabled: boolean): Promise<void> {
-  const action = enabled ? "ENABLE" : "DISABLE";
-  await db.execute(
-    sql.raw(`
-      ALTER TABLE user_entries
-        ${action} TRIGGER user_entries_copy_memberships_insert_trigger,
-        ${action} TRIGGER user_entries_copy_membership_restamp_trigger;
-      ALTER TABLE collection_entries
-        ${action} TRIGGER collection_entries_copy_memberships_insert_trigger,
-        ${action} TRIGGER collection_entries_copy_memberships_delete_trigger;
-    `)
   );
 }
 

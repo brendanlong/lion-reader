@@ -47,6 +47,7 @@ import {
   createTestFeed,
   createTestSubscription,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 
 let subscriber: Redis;
@@ -105,7 +106,7 @@ async function seedEntry(
   });
   // starred_changed_at is NOT NULL (defaults to now()); seed an explicitly-old
   // value so the positive tests' default changedAt (now) wins the guard.
-  await db.insert(userEntries).values({
+  await createTestUserEntries({
     userId,
     entryId,
     read: false,

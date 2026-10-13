@@ -15,13 +15,14 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, userEntries, subscriptions } from "../../src/server/db/schema";
+import { users, feeds, subscriptions } from "../../src/server/db/schema";
 import {
   createTestEntry,
   createTestFeed,
   createTestSavedSubscription,
   createTestSubscription,
   createTestUser,
+  createTestUserEntries,
 } from "./helpers";
 import { getGreaderUnreadCounts } from "../../src/server/google-reader/subscriptions";
 
@@ -96,7 +97,7 @@ async function addEntry(opts: {
   if (opts.withUserEntry) {
     // publishedOrFetchedAt is filled by the user_entries_fill_denormalized
     // trigger (COALESCE(published_at, fetched_at)).
-    await db.insert(userEntries).values({
+    await createTestUserEntries({
       userId: opts.userId,
       entryId,
       read: opts.read,

@@ -1,14 +1,12 @@
 /**
  * `subscription_entries` (#1846): every write path adds an article's
  * memberships itself (its source, a collection, or the user's saved
- * subscription for a saved article). The previous release still writes the
- * older forms, which mirror triggers copy, so each write path runs with the
- * mirror triggers on (both releases during a rollout: each membership counted
- * once) and off (this release alone). Also the saved subscription a first save
- * creates, the backfill script and the daily check against the older forms.
+ * subscription for a saved article) and keeps the counters exact. Also the
+ * saved subscription a first save creates, and the foreign keys that keep
+ * memberships within one user.
  */
 
-import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db, pool } from "../../src/server/db";
 import {
@@ -36,20 +34,16 @@ import {
   unsubscribe,
 } from "../../src/server/services/subscriptions";
 import { uploadArticle } from "../../src/server/services/saved";
-import { checkSubscriptionEntries } from "../../src/server/services/subscription-entries";
 import { getGlobalUnreadCounts } from "../../src/server/services/counts";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
-import { backfillSubscriptionEntries } from "../../scripts/backfill-subscription-entries";
 import {
   createTestEntry,
   createTestFeed,
   createTestIngestAddress,
   createTestSubscription,
   createTestUser,
-  setMembershipMirror,
 } from "./helpers";
 
-const CONSISTENT = { missing: 0, extra: 0, misdated: 0 };
 const NO_FIXES = { userEntriesFixed: 0, subscriptionsFixed: 0, usersFixed: 0, tagsFixed: 0 };
 
 async function cleanup(): Promise<void> {
@@ -102,22 +96,13 @@ async function currentFeed(count: number): Promise<{ feedId: string; entryIds: s
   return { feedId, entryIds };
 }
 
-describe.each([
-  ["on", true],
-  ["off", false],
-])("write paths, mirror triggers %s (#1846)", (_, mirror) => {
-  beforeAll(() => setMembershipMirror(mirror));
+describe("membership write paths (#1846)", () => {
   beforeEach(cleanup);
-  // Every write path below keeps the counters exact and the previous
-  // release's forms matching.
+  // Every write path below keeps the counters exact.
   afterEach(async () => {
     expect(await reconcileCounters(db)).toEqual(NO_FIXES);
-    expect(await checkSubscriptionEntries(db)).toEqual(CONSISTENT);
   });
-  afterAll(async () => {
-    await setMembershipMirror(true);
-    await cleanup();
-  });
+  afterAll(cleanup);
 
   it("adds a fetch's fan-out to each subscriber, idempotently", async () => {
     const [alice, bob] = [await createTestUser(), await createTestUser()];
@@ -239,30 +224,25 @@ describe.each([
     const held = await pool.connect();
     const heldEntryId = generateUuidv7();
     try {
-      // The first save creates the saved subscription and stays open: the
-      // previous release's (whose mirror trigger creates it) or this one's...
+      // The first save creates the saved subscription and stays open...
       await held.query("BEGIN");
       await held.query(
         `INSERT INTO entries (id, owner_user_id, type, guid, content_hash, fetched_at)
          VALUES ($1, $2, 'saved', $3, $3, now())`,
         [heldEntryId, userId, `guid-${heldEntryId}`]
       );
-      if (!mirror) {
-        await held.query("SELECT ensure_saved_subscriptions(ARRAY[$1::uuid])", [userId]);
-      }
+      await held.query("SELECT ensure_saved_subscriptions(ARRAY[$1::uuid])", [userId]);
       await held.query("INSERT INTO user_entries (user_id, entry_id) VALUES ($1, $2)", [
         userId,
         heldEntryId,
       ]);
-      if (!mirror) {
-        await held.query(
-          `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
-           SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
-           FROM user_entries ue JOIN subscriptions s ON s.user_id = ue.user_id AND s.type = 'saved'
-           WHERE ue.user_id = $1 AND ue.entry_id = $2`,
-          [userId, heldEntryId]
-        );
-      }
+      await held.query(
+        `INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+         SELECT s.id, ue.user_id, ue.entry_id, ue.published_or_fetched_at
+         FROM user_entries ue JOIN subscriptions s ON s.user_id = ue.user_id AND s.type = 'saved'
+         WHERE ue.user_id = $1 AND ue.entry_id = $2`,
+        [userId, heldEntryId]
+      );
       // ...so the second waits on the saved subscription's unique index.
       const second = uploadArticle(db, userId, { content: "# Two\n\nBody", title: "" });
       await expect
@@ -334,119 +314,5 @@ describe("subscription_entries foreign keys (#1846)", () => {
     // As Bob: the subscription isn't his. As Alice: she has no such article.
     await expect(insert(bob)).rejects.toMatchObject({ cause: { code: "23503" } });
     await expect(insert(alice)).rejects.toMatchObject({ cause: { code: "23503" } });
-  });
-});
-
-describe("backfill and check (#1846)", () => {
-  beforeEach(cleanup);
-  afterAll(cleanup);
-
-  /**
-   * The user's memberships with the saved subscription named by its type, since
-   * the backfill recreates it with a new id.
-   */
-  async function membershipsByKind(userId: string): Promise<string[]> {
-    const rows = await db
-      .select({
-        s: subscriptionEntries.subscriptionId,
-        type: subscriptions.type,
-        e: subscriptionEntries.entryId,
-      })
-      .from(subscriptionEntries)
-      .innerJoin(subscriptions, eq(subscriptions.id, subscriptionEntries.subscriptionId))
-      .where(eq(subscriptionEntries.userId, userId));
-    return rows.map((r) => `${r.type === "saved" ? "saved" : r.s} ${r.e}`).sort();
-  }
-
-  /** One of each membership kind, then the copy wiped as before the migration. */
-  async function oldForms() {
-    const userId = await createTestUser();
-    const feedId = await createTestFeed();
-    const sourceId = await createTestSubscription(userId, feedId);
-    const entryIds = [
-      await createTestEntry(feedId, { userIds: [userId] }),
-      await createTestEntry(feedId, { userIds: [userId] }),
-      await createTestEntry(feedId, { userIds: [userId] }),
-    ];
-    const collectionId = (await createCollection(db, userId, "Reading")).subscription.id;
-    await addEntriesToCollection(db, userId, collectionId, [entryIds[0]]);
-    const savedId = (await uploadArticle(db, userId, { content: "# Saved\n\nBody", title: "" })).id;
-    const expected = await membershipsByKind(userId);
-    await db.delete(subscriptionEntries);
-    await db.delete(subscriptions).where(eq(subscriptions.type, "saved"));
-    return { userId, sourceId, collectionId, savedId, entryIds, expected };
-  }
-
-  it("rebuilds every membership in batches, and re-running adds nothing", async () => {
-    const { userId, expected } = await oldForms();
-    expect(expected).toHaveLength(5);
-    expect(await checkSubscriptionEntries(db)).toEqual({ ...CONSISTENT, missing: 5 });
-
-    expect(await backfillSubscriptionEntries(db, { batchSize: 2 })).toEqual({
-      savedSubscriptionsCreated: 1,
-      userEntryMemberships: 4,
-      collectionMemberships: 1,
-    });
-    expect(await membershipsByKind(userId)).toEqual(expected);
-    expect(await checkSubscriptionEntries(db)).toEqual(CONSISTENT);
-
-    expect(await backfillSubscriptionEntries(db, { batchSize: 2 })).toEqual({
-      savedSubscriptionsCreated: 0,
-      userEntryMemberships: 0,
-      collectionMemberships: 0,
-    });
-  });
-
-  it("resumes the user_entries walk after a cursor", async () => {
-    const { userId, collectionId } = await oldForms();
-    const rows = await db
-      .select({ entryId: userEntries.entryId })
-      .from(userEntries)
-      .where(eq(userEntries.userId, userId))
-      .orderBy(userEntries.entryId);
-
-    await backfillSubscriptionEntries(db, { after: { userId, entryId: rows[1].entryId } });
-
-    const walked = (await membershipsOf(userId))
-      .filter((m) => !m.startsWith(collectionId))
-      .map((m) => m.split(" ")[1])
-      .sort();
-    expect(walked).toEqual(rows.slice(2).map((r) => r.entryId));
-  });
-
-  it("reports missing, unexplained and misdated memberships", async () => {
-    const { userId, sourceId, collectionId, entryIds } = await oldForms();
-    await backfillSubscriptionEntries(db);
-
-    await db
-      .delete(subscriptionEntries)
-      .where(
-        and(
-          eq(subscriptionEntries.subscriptionId, sourceId),
-          eq(subscriptionEntries.entryId, entryIds[1])
-        )
-      );
-    // In the collection without a collection_entries row, and in another
-    // active web subscription whose feed it isn't from.
-    const otherFeedSub = await createTestSubscription(userId, await createTestFeed());
-    for (const subscriptionId of [collectionId, otherFeedSub]) {
-      await db.insert(subscriptionEntries).values({
-        subscriptionId,
-        userId,
-        entryId: entryIds[2],
-        publishedOrFetchedAt: sql`(SELECT published_or_fetched_at FROM user_entries WHERE user_id = ${userId} AND entry_id = ${entryIds[2]})`,
-      });
-    }
-    await db
-      .update(subscriptionEntries)
-      .set({ publishedOrFetchedAt: sql`published_or_fetched_at - interval '1 second'` })
-      .where(
-        and(
-          eq(subscriptionEntries.subscriptionId, sourceId),
-          eq(subscriptionEntries.entryId, entryIds[0])
-        )
-      );
-
-    expect(await checkSubscriptionEntries(db)).toEqual({ missing: 1, extra: 2, misdated: 1 });
   });
 });

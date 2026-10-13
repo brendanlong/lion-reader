@@ -31,7 +31,6 @@ import {
 import { errors, getAppErrorCode } from "@/server/trpc/errors";
 import { MAX_COLLECTION_ENTRIES } from "@/lib/collections";
 import { isUniqueViolation } from "@/server/db/errors";
-import { legacyMembershipForms } from "@/server/services/subscription-entries";
 
 /** The user's active collections holding an entry. */
 export async function listEntryCollectionIds(
@@ -306,13 +305,6 @@ export async function addEntriesToCollection(
       .onConflictDoNothing()
       .returning({ entryId: subscriptionEntries.entryId });
     const ids = inserted.map((row) => row.entryId);
-    if (ids.length > 0 && (await legacyMembershipForms(tx))) {
-      await tx.execute(sql`
-        INSERT INTO collection_entries (subscription_id, user_id, entry_id)
-        SELECT ${subscriptionId}::uuid, ${userId}::uuid, unnest(${`{${ids.join(",")}}`}::uuid[])
-        ON CONFLICT DO NOTHING
-      `);
-    }
     await touchUserEntries(tx, userId, ids);
     return ids;
   });
@@ -341,15 +333,6 @@ export async function removeEntriesFromCollection(
       )
       .returning({ entryId: subscriptionEntries.entryId });
     const ids = deleted.map((row) => row.entryId);
-    if (await legacyMembershipForms(tx)) {
-      // All of entryIds, not just ids: a member only the previous release's
-      // form still holds would block its re-adding it.
-      await tx.execute(sql`
-        DELETE FROM collection_entries
-        WHERE subscription_id = ${subscriptionId} AND user_id = ${userId}
-          AND entry_id = ANY(${`{${entryIds.join(",")}}`}::uuid[])
-      `);
-    }
     await touchUserEntries(tx, userId, ids);
     return ids;
   });
