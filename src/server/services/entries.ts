@@ -1430,9 +1430,7 @@ export async function markAllEntriesRead(
   // if its live event was missed (#1102). UUIDs are lowercase, so string
   // comparison matches Postgres uuid ordering.
   const maxEntryId = entryIds.reduce((max, id) => (id > max ? id : max));
-  void publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts).catch(() => {
-    // Ignore publish errors - SSE is best-effort
-  });
+  void publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts);
 
   return { entryIds, counts };
 }

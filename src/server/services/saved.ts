@@ -553,7 +553,7 @@ async function insertSavedEntry(
     entryId,
     now,
     entryListPayload(values, SAVED_ARTICLES_TITLE)
-  ).catch(() => {});
+  );
 
   // Sanitize the body for the returned SavedArticle: callers like the Wallabag
   // POST response send it to clients, so raw fetched HTML must not leave the
@@ -1219,7 +1219,7 @@ export async function saveArticle(
         publishedAt: oldEntry.publishedAt,
         updatedAt: now,
       }
-    ).catch(() => {});
+    );
 
     return {
       id: oldEntry.id,

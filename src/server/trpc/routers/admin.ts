@@ -37,7 +37,6 @@ import {
 } from "@/server/services/site-status";
 import { ANNOUNCEMENT_LEVELS } from "@/lib/events/schemas";
 import { publishAnnouncementChanged } from "@/server/redis/pubsub";
-import { logger } from "@/lib/logger";
 
 // ============================================================================
 // CONSTANTS
@@ -931,15 +930,9 @@ const siteStatusEndpoints = {
       // Broadcast the change so open clients update the banner live (no reload).
       // getAnnouncement() reflects the just-written value (setAnnouncement busts
       // the cache) and resolves the message-derived id, or null when disabled.
-      // The broadcast is best-effort: a Redis publish failure must not fail an
-      // otherwise-successful save (clients still pick it up on next page load).
-      try {
-        await publishAnnouncementChanged(await getAnnouncement());
-      } catch (error) {
-        logger.error("Failed to broadcast announcement change", {
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
+      // A failed broadcast doesn't fail the save: clients pick it up on their
+      // next page load.
+      await publishAnnouncementChanged(await getAnnouncement());
       return { success: true };
     }),
 

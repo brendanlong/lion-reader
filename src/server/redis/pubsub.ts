@@ -9,6 +9,7 @@
  * Redis connection with reference-counted channels and in-process fan-out.
  */
 
+import { logger } from "@/lib/logger";
 import Redis from "ioredis";
 import { z } from "zod";
 import { getRedisClient } from "@/server/redis";
@@ -182,11 +183,16 @@ export function getSiteStatusChannel(): string {
 /**
  * Publishes an event to a Redis channel. Every `publish*` function below funnels
  * through here: they own the typed signature and the event shape, this owns the
- * client lookup, serialization, and the Redis-unavailable no-op.
+ * client lookup, serialization, and the failure handling.
+ *
+ * Events are best-effort (clients catch up through sync), so this never
+ * throws: a failed publish is logged here, and callers neither catch nor
+ * await it unless they need the subscriber count.
  *
  * @param channel - The channel to publish on
  * @param event - The event to publish
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
+ * @returns The number of subscribers that received the message (0 if Redis is
+ *   unavailable or the publish failed)
  */
 async function publishToChannel(
   channel: string,
@@ -199,7 +205,12 @@ async function publishToChannel(
   if (!client) {
     return 0;
   }
-  return client.publish(channel, JSON.stringify(event));
+  try {
+    return await client.publish(channel, JSON.stringify(event));
+  } catch (err) {
+    logger.error("Failed to publish event", { err, channel, type: event.type });
+    return 0;
+  }
 }
 
 // Each event scope derives its own channel from the event, so a user event can't

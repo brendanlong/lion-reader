@@ -420,13 +420,7 @@ async function processEntryWithCache(
     // Publish entry_updated event for real-time updates (safe to publish here:
     // subscribers' user_entries rows already exist for a previously-seen entry).
     // Fire and forget - we don't want publishing failures to affect entry processing
-    publishEntryUpdatedFromEntry(feedId, entry).catch((err) => {
-      logger.error("Failed to publish entry_updated event", {
-        feedId,
-        entryId: entry.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
+    publishEntryUpdatedFromEntry(feedId, entry);
 
     return {
       id: entry.id,
@@ -766,13 +760,7 @@ export async function processEntries(
           ? newEntryAnnouncement(result.newEntryData, feedTitle ?? null)
           : null;
       if (announcement && result.updatedAt) {
-        publishNewEntry(feedId, result.id, result.updatedAt, announcement.entry).catch((err) => {
-          logger.error("Failed to publish new_entry event", {
-            feedId,
-            entryId: result.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
+        publishNewEntry(feedId, result.id, result.updatedAt, announcement.entry);
       }
     }
   }
