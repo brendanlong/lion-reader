@@ -336,12 +336,7 @@ export async function validateSession(
           if (data.session.scopes !== null && !allowScoped) {
             return null;
           }
-          // Update last_active_at asynchronously (fire and forget)
-          void updateLastActiveAt(
-            data.session.id,
-            data.session.userId,
-            data.session.scopes !== null
-          );
+          // No last_active_at write here: the cache fill below does it.
           return data;
         }
 
@@ -398,7 +393,6 @@ export async function validateSession(
     return null;
   }
 
-  // Update last_active_at asynchronously (fire and forget)
   void updateLastActiveAt(
     sessionData.session.id,
     sessionData.session.userId,
@@ -434,9 +428,13 @@ export const LAST_ACTIVE_REFRESH_MS = 60 * 1000;
  * looking perpetually "active" (and inflate the active-users stats) despite
  * never opening the reader.
  *
- * Every authenticated request lands here, so each row is only written when its
- * timestamp is stale: the common case writes nothing. For a full-access
- * (browser) session both rows go in one round trip via a writable CTE.
+ * Called only when a session is read from Postgres, which with Redis is once
+ * per {@link SESSION_CACHE_TTL_SECONDS} per active session, not per request:
+ * that bounds how far behind both timestamps run, and is close enough for what
+ * reads them. Without Redis every request lands here, so each row is still
+ * only written when stale (also keeping one user's several sessions from each
+ * rewriting the user row). For a full-access (browser) session both rows go in
+ * one round trip via a writable CTE.
  *
  * @testonly
  */
