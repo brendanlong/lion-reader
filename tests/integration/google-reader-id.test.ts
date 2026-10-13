@@ -1,7 +1,7 @@
 /**
  * Integration tests for greaderItemIdsToUuids — the Google Reader item-id ->
  * UUIDv7 resolver used by stream/items/contents and edit-tag — and its forward
- * counterpart resolveGreaderIdsForEntries.
+ * counterparts resolveGreaderIdsForEntries and listGreaderItemRefs.
  *
  * Item ids are now a stored global serial (`entries.greader_item_id`), assigned
  * by a sequence default at insert time. Resolution is a single
@@ -23,6 +23,7 @@ import {
   greaderItemIdsToUuids,
   resolveGreaderIdsForEntries,
 } from "../../src/server/google-reader/id";
+import { listEntries, listGreaderItemRefs } from "../../src/server/services/entries";
 
 const createdUserIds: string[] = [];
 const createdFeedIds: string[] = [];
@@ -193,5 +194,33 @@ describe("resolveGreaderIdsForEntries", () => {
       [entry.id, { itemId: entry.greaderItemId, originStreamId: streamId }],
     ]);
     expect((await resolveGreaderIdsForEntries(db, other, [entry.id])).size).toBe(0);
+  });
+});
+
+describe("listGreaderItemRefs", () => {
+  it("pages the user's list like listEntries, with each entry's serials", async () => {
+    const owner = await createUser();
+    const other = await createUser();
+    const feedId = await createFeed();
+    const inserted = [await insertEntry(feedId, owner), await insertEntry(feedId, owner)];
+    const itemIdOf = new Map(inserted.map((e) => [e.id, e.greaderItemId]));
+    const [{ streamId }] = await db
+      .select({ streamId: subscriptions.greaderStreamId })
+      .from(subscriptions)
+      .where(eq(subscriptions.feedId, feedId));
+    const params = { userId: owner, limit: 1, showSpam: false };
+    const listed = await listEntries(db, { ...params, limit: 2 });
+    const refOf = (entry: (typeof listed.items)[number]) => ({
+      id: entry.id,
+      itemId: itemIdOf.get(entry.id),
+      originStreamId: streamId,
+      fetchedAt: entry.fetchedAt,
+    });
+
+    const first = await listGreaderItemRefs(db, params);
+    expect(first.items).toEqual([refOf(listed.items[0])]);
+    const second = await listGreaderItemRefs(db, { ...params, cursor: first.nextCursor });
+    expect(second).toEqual({ items: [refOf(listed.items[1])] });
+    expect((await listGreaderItemRefs(db, { ...params, userId: other })).items).toEqual([]);
   });
 });

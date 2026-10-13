@@ -855,6 +855,37 @@ describe("Entries", () => {
       const { entryIds: markedWithSpam } = await markAllEntriesRead(db, { userId, showSpam: true });
       expect(markedWithSpam).toEqual([spamId]);
     });
+
+    it("filters by entry type and by fetch time", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://typed-feed.com/rss");
+      await createTestSubscription(userId, feedId);
+      const emailSubscription = await createTestEmailSubscription(userId);
+      const early = new Date("2024-01-01T00:00:00Z");
+      const late = new Date("2024-06-01T00:00:00Z");
+      const oldWeb = await createSharedTestEntry(feedId, { fetchedAt: early, userIds: [userId] });
+      await createSharedTestEntry(feedId, { fetchedAt: late, userIds: [userId] });
+      const oldEmail = await createSharedTestEntry(emailSubscription, {
+        type: "email",
+        fetchedAt: early,
+        userIds: [userId],
+      });
+
+      const { entryIds: marked } = await markAllEntriesRead(db, {
+        userId,
+        type: "web",
+        before: new Date("2024-03-01T00:00:00Z"),
+        showSpam: false,
+      });
+      expect(marked).toEqual([oldWeb]);
+
+      const { entryIds: emails } = await markAllEntriesRead(db, {
+        userId,
+        type: "email",
+        showSpam: false,
+      });
+      expect(emails).toEqual([oldEmail]);
+    });
   });
 
   describe("idempotency", () => {

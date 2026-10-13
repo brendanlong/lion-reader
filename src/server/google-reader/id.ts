@@ -9,7 +9,8 @@
  * UUID→int64 projection and no timestamp-window candidate scan.
  *
  * - **Item ids** (`entries.greader_item_id`): reversed by `greaderItemIdsToUuids`,
- *   looked up for formatting by `resolveGreaderIdsForEntries`.
+ *   looked up for formatting by `resolveGreaderIdsForEntries` (or, for a
+ *   stream's page, with the page: `listGreaderItemRefs`).
  *   The Wallabag API exposes the same serial as its entry id
  *   (src/server/wallabag/id.ts).
  * - **Feed stream ids** (`subscriptions.greader_stream_id` /
@@ -26,11 +27,16 @@
  * - Decimal string: 31
  */
 
-import { and, eq, inArray } from "drizzle-orm";
-import { entryOriginJoin } from "@/server/services/entry-filters";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { entryMemberships, entryOriginOn } from "@/server/services/entry-filters";
 import { isListedSubscription } from "@/server/services/subscriptions";
 import type { db as dbType } from "@/server/db";
 import { subscriptions, visibleEntries } from "@/server/db/schema";
+
+const VISIBLE_MEMBERSHIPS = entryMemberships({
+  userId: visibleEntries.userId,
+  entryId: visibleEntries.id,
+});
 
 /**
  * Formats an int64 as a long-form Google Reader item ID.
@@ -134,11 +140,11 @@ export interface GreaderEntryIds {
 }
 
 /**
- * Looks up the serials the compat formatters need for a page of entries, keyed
- * by entry UUID, in one query. The service entry types don't carry them, so
- * bigints never reach a surface that serializes service results verbatim.
- * Scoped to the user via `visible_entries`; entries that vanished since the
- * page was read are absent.
+ * Looks up the serials the compat formatters need for entries a client named
+ * by id (stream/items/contents), keyed by entry UUID, in one query. The
+ * service entry types don't carry them, so bigints never reach a surface that
+ * serializes service results verbatim. Scoped to the user via
+ * `visible_entries`; entries the user can't see are absent.
  */
 export async function resolveGreaderIdsForEntries(
   db: typeof dbType,
@@ -155,10 +161,8 @@ export async function resolveGreaderIdsForEntries(
       originStreamId: subscriptions.greaderStreamId,
     })
     .from(visibleEntries)
-    .leftJoin(
-      subscriptions,
-      entryOriginJoin({ userId: visibleEntries.userId, entryId: visibleEntries.id })
-    )
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, visibleEntries))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
 
   for (const row of rows) {

@@ -31,7 +31,6 @@ import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
 import { parseStreamId, type StreamId } from "@/server/google-reader/streams";
 import { formatEntryAsItem } from "@/server/google-reader/format";
-import { resolveGreaderIdsForEntries } from "@/server/google-reader/id";
 import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import * as entriesService from "@/server/services/entries";
@@ -146,33 +145,18 @@ const handleStreamContents = withClientErrors(async function (
     listParams.unreadOnly = true;
   }
 
-  // Fetch entries using service layer
-  const result = await entriesService.listEntries(db, listParams);
-
-  // Get full content in a single bulk query rather than one getEntry per entry.
-  const entryIds = result.items.map((e) => e.id);
-  const [fullEntries, idsByEntry] = await Promise.all([
-    entriesService.getEntries(db, session.user.id, entryIds),
-    resolveGreaderIdsForEntries(db, session.user.id, entryIds),
-  ]);
-  const fullMap = new Map(fullEntries.map((e) => [e.id, e]));
-  const items = result.items.flatMap((entry) => {
-    const ids = idsByEntry.get(entry.id);
-    // Deleted since the page was listed.
-    if (!ids) return [];
-    const full = fullMap.get(entry.id);
-    // If full content isn't available, fall back to list data.
-    return formatEntryAsItem(
-      full ?? {
-        ...entry,
-        contentOriginal: null,
-        contentCleaned: null,
-        fullContent: null,
-        feedUrl: null,
-        unsubscribeUrl: null,
-      },
-      ids
-    );
+  // The page's serials, then its entries' content in one bulk read; an entry
+  // deleted in between is left out.
+  const result = await entriesService.listGreaderItemRefs(db, listParams);
+  const fullEntries = await entriesService.getEntries(
+    db,
+    session.user.id,
+    result.items.map((ref) => ref.id)
+  );
+  const refById = new Map(result.items.map((ref) => [ref.id, ref]));
+  const items = fullEntries.flatMap((entry) => {
+    const ref = refById.get(entry.id);
+    return ref ? formatEntryAsItem(entry, ref) : [];
   });
 
   const response: Record<string, unknown> = {

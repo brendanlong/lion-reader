@@ -25,8 +25,8 @@ import {
 import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
 import {
   entryFeedTitleSql,
-  entryOriginJoin,
-  entrySubscriptionIdsSql,
+  entryMemberships,
+  entryOriginOn,
   visibleUserEntrySql,
 } from "@/server/services/entry-filters";
 import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
@@ -313,6 +313,7 @@ async function listCollectionMemberships(
 
 /** A `user_entries` row, for the origin and membership lookups. */
 const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
+const USER_MEMBERSHIPS = entryMemberships(USER_ROW);
 
 /** Per-entity-type cursors, as a client sends them back. */
 interface SyncCursorsInput {
@@ -579,7 +580,7 @@ export async function collectSyncEvents(
         starred: userEntries.starred,
         readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
-        subscriptionIds: entrySubscriptionIdsSql(USER_ROW),
+        subscriptionIds: USER_MEMBERSHIPS.subscriptionIds,
         feedType: entries.type,
         feedTitle: entryFeedTitleSql(),
         visible: sql<boolean>`${visibleUserEntrySql()}`,
@@ -600,7 +601,8 @@ export async function collectSyncEvents(
       )
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
       .leftJoin(feeds, eq(feeds.id, entries.ownerFeedId))
-      .leftJoin(subscriptions, entryOriginJoin(USER_ROW))
+      .leftJoinLateral(USER_MEMBERSHIPS, sql`true`)
+      .leftJoin(subscriptions, entryOriginOn(USER_MEMBERSHIPS, USER_ROW))
       .where(
         and(
           afterCursor(greatest),
