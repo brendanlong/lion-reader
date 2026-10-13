@@ -19,6 +19,7 @@ import {
 import { useLocalSubscriptions } from "@/lib/hooks/useLocalSubscriptions";
 import { sidebarSectionRows } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
+import { SkeletonText } from "@/components/ui/skeleton";
 import { SubscriptionItem } from "./SubscriptionItem";
 import { untitledSubscriptionLabel } from "@/lib/collections";
 
@@ -107,9 +108,9 @@ export function TagSubscriptionList({
   if (subscriptionsQuery.isLoading) {
     return (
       <ul className="mt-1 ml-6 space-y-1">
-        {[1, 2].map((i) => (
-          <li key={i}>
-            <div className="bg-fill-muted h-9 animate-pulse rounded-md" />
+        {["w-28", "w-20"].map((width) => (
+          <li key={width} className="ui-text-sm text-body flex min-h-[44px] items-center px-3 py-2">
+            <SkeletonText width={width} className="flex-1" />
           </li>
         ))}
       </ul>

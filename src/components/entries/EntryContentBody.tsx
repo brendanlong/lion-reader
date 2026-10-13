@@ -27,7 +27,7 @@ import { selectDisplayedContent, showsFullContent } from "@/lib/narration/select
 import { useNarrationSettings } from "@/lib/narration/settings";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
-import { EntryArticle } from "./EntryArticle";
+import { ENTRY_ACTION_BAR_CLASSES, EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
 import { seekTargetElement } from "@/lib/narration/seek-target";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
@@ -362,7 +362,7 @@ export function EntryContentBody({
         onTouchCancel={handleTouchCancel}
         onBack={onBack}
         actionButtons={
-          <div ref={actionButtonsRef} className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div ref={actionButtonsRef} className={ENTRY_ACTION_BAR_CLASSES}>
             {/* Star + Read/Unread toggles (shared with the fallback and demo readers) */}
             <StarButton starred={starred} onToggle={onToggleStar} />
             <ReadToggleButton read={read} onToggle={onToggleRead} />

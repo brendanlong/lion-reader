@@ -26,7 +26,7 @@ import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { getDomain } from "@/lib/format";
 import { EntryContentBody } from "./EntryContentBody";
 import { EntryContentFallback } from "./EntryContentFallback";
-import { EntryContentSkeleton } from "./EntryContentStates";
+import { EntryArticleSkeleton } from "./EntryArticle";
 import { useEntryContentOptions } from "./EntryContentOptions";
 
 /**
@@ -258,7 +258,7 @@ function EntryContentInner({
   if (!canRenderFromCache) {
     return (
       <ScrollContainer className="h-full overflow-y-auto">
-        <EntryContentSkeleton />
+        <EntryArticleSkeleton onBack={onBack} />
       </ScrollContainer>
     );
   }

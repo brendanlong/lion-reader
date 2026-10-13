@@ -5,9 +5,9 @@
  * fields from the local store while the full content loads. Falls back to a
  * skeleton when the store doesn't hold the entry.
  *
- * Shows functional Star/Read buttons with optimistic updates.
- * Buttons that need full entry data (content toggle, full content, narration,
- * summarize) show as shimmers.
+ * Shows the reader's action bar as it will render: Star/Read/Collections work
+ * now (optimistically), and the buttons that need the full entry (full
+ * content, narration, summarize) are disabled with their idle labels.
  */
 
 "use client";
@@ -16,25 +16,26 @@ import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { ScrollContainer } from "@/components/layout/ScrollContainerContext";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
-import { EntryArticle } from "./EntryArticle";
-import { EntryContentSkeleton } from "./EntryContentStates";
+import { Button } from "@/components/ui/button";
+import { SparklesIcon } from "@/components/ui/icons";
+import { NarrationControlsSkeleton } from "@/components/narration";
+import { useNarrationSettings } from "@/lib/narration/settings";
+import { trpc } from "@/lib/trpc/client";
+import { CollectionsButton } from "./CollectionsButton";
+import { ENTRY_ACTION_BAR_CLASSES, EntryArticle, EntryArticleSkeleton } from "./EntryArticle";
 
 interface EntryContentFallbackProps {
   entryId: string;
   onBack?: () => void;
 }
 
-/**
- * Shimmer placeholder for a button.
- */
-function ButtonShimmer({ width }: { width: string }) {
-  return <div className={`h-10 ${width} bg-fill-muted animate-pulse rounded`} />;
-}
-
 export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackProps) {
   const cachedEntry = useLocalEntry(entryId);
   // Star/read work optimistically even while the full entry loads
   const { markRead, star, unstar } = useEntryMutations();
+  const [narrationSettings] = useNarrationSettings();
+  const isSummarizationAvailable =
+    trpc.summarization.isAvailable.useQuery().data?.available ?? false;
 
   return (
     <ScrollContainer className="h-full overflow-y-auto">
@@ -50,7 +51,7 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
           isContentLoading
           onBack={onBack}
           actionButtons={
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div className={ENTRY_ACTION_BAR_CLASSES}>
               <StarButton
                 starred={cachedEntry.starred}
                 onToggle={() => (cachedEntry.starred ? unstar(entryId) : star(entryId))}
@@ -59,14 +60,24 @@ export function EntryContentFallback({ entryId, onBack }: EntryContentFallbackPr
                 read={cachedEntry.read}
                 onToggle={() => markRead([entryId], !cachedEntry.read)}
               />
-              {/* Shimmers for the full content toggle and narration controls */}
-              {cachedEntry.url && <ButtonShimmer width="w-28" />}
-              <ButtonShimmer width="w-20" />
+              <CollectionsButton entryId={entryId} />
+              {cachedEntry.url && (
+                <Button variant="secondary" size="sm" disabled>
+                  Full Content
+                </Button>
+              )}
+              {narrationSettings.enabled && <NarrationControlsSkeleton />}
+              {isSummarizationAvailable && (
+                <Button variant="secondary" size="sm" disabled>
+                  <SparklesIcon className="h-4 w-4" />
+                  <span className="ml-2">Summarize</span>
+                </Button>
+              )}
             </div>
           }
         />
       ) : (
-        <EntryContentSkeleton />
+        <EntryArticleSkeleton onBack={onBack} />
       )}
     </ScrollContainer>
   );

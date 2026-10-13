@@ -15,6 +15,7 @@ import dynamic from "next/dynamic";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { SkeletonText } from "@/components/ui/skeleton";
 import { useEntryListRefreshOnNavigate } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 import { useEntryListScrollResetOnNavigate } from "@/lib/hooks/useEntryListScrollResetOnNavigate";
 
@@ -24,12 +25,10 @@ import { useEntryListScrollResetOnNavigate } from "@/lib/hooks/useEntryListScrol
 function PageSkeleton() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-4 sm:p-6">
-      <div className="mb-4 sm:mb-6">
-        <div className="bg-fill-muted h-8 w-48 animate-pulse rounded" />
-      </div>
+      <SkeletonText width="w-48" className="ui-text-xl sm:ui-text-2xl text-body mb-4 sm:mb-6" />
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-fill-muted h-24 animate-pulse rounded-lg" />
+          <div key={i} className="border-edge bg-surface h-24 rounded-lg border" />
         ))}
       </div>
     </div>

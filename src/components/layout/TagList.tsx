@@ -14,6 +14,7 @@ import { NavLinkWithIcon } from "@/components/ui/nav-link";
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { ColorDot } from "@/components/ui/color-picker";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { SkeletonText } from "@/components/ui/skeleton";
 import { SIDEBAR_FEEDS_ATTRIBUTE } from "./sidebar-feed-navigation";
 import { isSidebarLinkCurrent, useSidebarSelection } from "@/lib/hooks/useSidebarSelection";
 import { UNCATEGORIZED_SECTION, isInSidebarSection } from "@/lib/sidebar-sections";
@@ -195,11 +196,18 @@ function TagListContent({
  */
 function TagListSkeleton() {
   return (
-    <div className="space-y-2">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="bg-fill-muted h-9 animate-pulse rounded-md" />
+    <ul className="space-y-1">
+      {["w-24", "w-32", "w-20"].map((width) => (
+        <li key={width} className="flex min-h-[44px] items-center">
+          {/* Blank where the chevron and color dot go, so labels don't shift */}
+          <span className="w-6 shrink-0" />
+          <span className="ui-text-sm text-body flex flex-1 items-center gap-2 px-3 py-2">
+            <span className="h-3 w-3 shrink-0" />
+            <SkeletonText width={width} className="flex-1" />
+          </span>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 

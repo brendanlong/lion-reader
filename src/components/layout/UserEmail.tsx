@@ -9,6 +9,7 @@
 import { Suspense } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { SkeletonText } from "@/components/ui/skeleton";
 
 /**
  * Inner component that suspends on auth.me query.
@@ -22,7 +23,7 @@ function UserEmailContent() {
  * Skeleton fallback while loading.
  */
 function UserEmailSkeleton() {
-  return <span className="bg-fill-muted inline-block h-4 w-20 animate-pulse rounded" />;
+  return <SkeletonText width="w-full" className="inline-flex w-36 align-top" />;
 }
 
 /**

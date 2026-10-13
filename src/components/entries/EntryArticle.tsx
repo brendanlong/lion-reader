@@ -8,12 +8,23 @@
  */
 
 import { type ReactNode, type CSSProperties, type RefObject } from "react";
+import { buttonClassName } from "@/components/ui/button";
 import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { LocalTime } from "@/components/ui/local-time";
+import { SkeletonText } from "@/components/ui/skeleton";
 import { getDomain } from "@/lib/format";
 import { formatDate } from "./EntryContentHelpers";
 import { EntryContentRenderer } from "./EntryContentRenderer";
-import { ContentSkeleton } from "./EntryContentStates";
+
+const DEFAULT_TEXT_SIZE_CLASS = "prose prose-zinc dark:prose-invert";
+const ARTICLE_CLASSES = "mx-auto max-w-3xl px-4 py-6 sm:py-8";
+const TITLE_TEXT_CLASSES =
+  "ui-text-xl sm:ui-text-2xl text-body leading-tight font-bold md:text-3xl";
+const META_ROW_CLASSES =
+  "ui-text-xs sm:ui-text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-4 sm:gap-y-2";
+
+/** Layout for the `actionButtons` row, shared by the reader and its loading states. */
+export const ENTRY_ACTION_BAR_CLASSES = "flex flex-wrap items-center gap-2 sm:gap-3";
 
 export interface EntryArticleProps {
   /** The article title */
@@ -80,7 +91,7 @@ export function EntryArticle({
   datePrefix,
   contentHtml,
   fallbackContent,
-  textSizeClass = "prose prose-zinc dark:prose-invert",
+  textSizeClass = DEFAULT_TEXT_SIZE_CLASS,
   textStyle,
   footerLinkDomain,
   unsubscribeUrl,
@@ -100,20 +111,12 @@ export function EntryArticle({
 
   return (
     <article
-      className="mx-auto max-w-3xl px-4 py-6 sm:py-8"
+      className={ARTICLE_CLASSES}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       onTouchCancel={onTouchCancel}
     >
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="control-outline ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          <span>Back to list</span>
-        </button>
-      )}
+      {onBack && <BackButton onBack={onBack} />}
 
       {/* Header */}
       <header className="mb-6 sm:mb-8">
@@ -126,19 +129,17 @@ export function EntryArticle({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ui-text-xl sm:ui-text-2xl hover:text-accent text-body block leading-tight font-bold transition-colors md:text-3xl"
+                className={`${TITLE_TEXT_CLASSES} hover:text-accent block transition-colors`}
               >
                 {title}
               </a>
             ) : (
-              <h1 className="ui-text-xl sm:ui-text-2xl text-body leading-tight font-bold md:text-3xl">
-                {title}
-              </h1>
+              <h1 className={TITLE_TEXT_CLASSES}>{title}</h1>
             )}
           </div>
 
           {/* Meta row: Source, Author, Date */}
-          <div className="ui-text-xs sm:ui-text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1 sm:gap-x-4 sm:gap-y-2">
+          <div className={META_ROW_CLASSES}>
             <span className="font-medium">{source}</span>
             {author && author.toLowerCase().trim() !== source.toLowerCase().trim() && (
               <>
@@ -172,7 +173,7 @@ export function EntryArticle({
 
       {/* Content - show skeleton during progressive loading, otherwise render content */}
       {isContentLoading ? (
-        <ContentSkeleton />
+        <ContentSkeleton textSizeClass={textSizeClass} textStyle={textStyle} />
       ) : (
         <EntryContentRenderer
           sanitizedContent={contentHtml}
@@ -220,5 +221,88 @@ export function EntryArticle({
       {/* Sticky controls slot - shown when main action buttons scroll out of view */}
       {stickyControls}
     </article>
+  );
+}
+
+function BackButton({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="control-outline ui-text-sm text-muted hover:bg-surface-muted hover:text-body mb-4 -ml-2 inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 transition-colors active:bg-zinc-200 sm:mb-6 dark:active:bg-zinc-700"
+    >
+      <ArrowLeftIcon className="h-4 w-4" />
+      <span>Back to list</span>
+    </button>
+  );
+}
+
+/** A secondary button's frame with a placeholder label, for a button whose label isn't known yet. */
+function ButtonSkeleton({ width }: { width: string }) {
+  return (
+    <span className={buttonClassName({ variant: "secondary", size: "sm" })}>
+      <SkeletonText width={width} />
+    </span>
+  );
+}
+
+/**
+ * The article layout with placeholder lines, for when nothing about the entry
+ * is known yet. The back button is real: it doesn't need the entry.
+ */
+export function EntryArticleSkeleton({ onBack }: { onBack?: () => void }) {
+  return (
+    <div className={ARTICLE_CLASSES}>
+      {onBack && <BackButton onBack={onBack} />}
+
+      <header className="mb-6 sm:mb-8">
+        <div className="mb-4 sm:mb-6">
+          <div className={`${TITLE_TEXT_CLASSES} mb-2`}>
+            <SkeletonText width="w-3/4" />
+            <SkeletonText width="w-1/2" />
+          </div>
+          <div className={META_ROW_CLASSES}>
+            <SkeletonText width="w-24" />
+            <SkeletonText width="w-32" />
+          </div>
+        </div>
+
+        <div className={ENTRY_ACTION_BAR_CLASSES}>
+          <ButtonSkeleton width="w-14" />
+          <ButtonSkeleton width="w-16" />
+          <ButtonSkeleton width="w-32" />
+        </div>
+      </header>
+
+      <hr className="border-edge-strong mb-6 sm:mb-8" />
+
+      <ContentSkeleton />
+    </div>
+  );
+}
+
+const CONTENT_SKELETON_PARAGRAPHS = [
+  ["w-full", "w-full", "w-11/12", "w-2/3"],
+  ["w-full", "w-11/12", "w-full", "w-1/3"],
+  ["w-full", "w-4/5"],
+];
+
+/** Paragraphs of placeholder lines in the reader's own text size, so each line is a line of the article. */
+function ContentSkeleton({
+  textSizeClass = DEFAULT_TEXT_SIZE_CLASS,
+  textStyle,
+}: {
+  textSizeClass?: string;
+  textStyle?: CSSProperties;
+}) {
+  return (
+    <div className={textSizeClass} style={textStyle} role="status" aria-label="Loading content">
+      {CONTENT_SKELETON_PARAGRAPHS.map((lines, i) => (
+        <p key={i}>
+          {lines.map((width, j) => (
+            <SkeletonText key={j} width={width} />
+          ))}
+        </p>
+      ))}
+    </div>
   );
 }
