@@ -18,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "@testing-library/react";
 import { renderHook } from "@testing-library/react";
+import type { EntryType } from "@/lib/entry-types";
 
 const trackPageView = vi.fn();
 vi.mock("@/lib/analytics/beacon", () => ({
@@ -90,8 +91,7 @@ describe("PageViewTracker", () => {
 describe("useTrackEntryView", () => {
   it("reports the entry type once the entry has loaded", () => {
     const { rerender } = renderHook(
-      ({ id, kind }: { id?: string; kind?: "web" | "email" | "saved" }) =>
-        useTrackEntryView(id, kind),
+      ({ id, kind }: { id?: string; kind?: EntryType }) => useTrackEntryView(id, kind),
       { initialProps: {} }
     );
     // Nothing while the query is still loading.

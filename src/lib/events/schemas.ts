@@ -13,6 +13,7 @@
  */
 
 import { z } from "zod";
+import { ENTRY_TYPES, SUBSCRIPTION_TYPES } from "@/lib/entry-types";
 
 // ============================================================================
 // Reusable Sub-Schemas
@@ -45,7 +46,7 @@ export const newEntryListDataSchema = entryMetadataSchema.extend({
   // name); list membership comes from `subscriptionIds` (#1846). Replaces the
   // event's `feedType`, which #1846 phase 9 drops; absent from a previous
   // release's events.
-  type: z.enum(["web", "email", "saved"]).optional(),
+  type: z.enum(ENTRY_TYPES).optional(),
   fetchedAt: z.string(),
   siteName: z.string().nullable(),
   feedTitle: z.string().nullable(),
@@ -171,7 +172,7 @@ export const subscriptionCreatedDataSchema = z.object({
  */
 export const feedCreatedDataSchema = z.object({
   id: legacyFeedIdSchema,
-  type: z.enum(["web", "email", "saved", "collection"]),
+  type: z.enum(SUBSCRIPTION_TYPES),
   url: z.string().nullable(),
   title: z.string().nullable(),
   description: z.string().nullable(),
@@ -216,7 +217,7 @@ const newEntryEventSchema = z.object({
   entryId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
-  feedType: z.enum(["web", "email", "saved"]),
+  feedType: z.enum(ENTRY_TYPES),
   // Absolute unread counts from the server, computed per-user at emit time.
   // The client sets these directly rather than applying a +1 delta, so a
   // new_entry delivered by both the live SSE stream and a reconnect catch-up
@@ -263,7 +264,7 @@ const entryStateChangedEventSchema = z.object({
   // (nothing to insert) and on events from servers predating this field; the
   // client then falls back to restoring from another cached list's copy.
   subscriptionId: z.string().nullable().optional(),
-  feedType: z.enum(["web", "email", "saved"]).optional(),
+  feedType: z.enum(ENTRY_TYPES).optional(),
   entry: newEntryListDataSchema.optional(),
   subscriptionIds: subscriptionIdsSchema,
 });

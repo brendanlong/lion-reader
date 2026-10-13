@@ -26,7 +26,7 @@
  */
 
 import { db } from "@/server/db";
-import { subscriptions, type EntryType } from "@/server/db/schema";
+import { subscriptions } from "@/server/db/schema";
 import { isListedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
@@ -50,6 +50,7 @@ import {
   decrementSSEConnections,
   trackSSEEventSent,
 } from "@/server/metrics/metrics";
+import type { EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Constants

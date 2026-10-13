@@ -546,26 +546,20 @@ const USER_BY_SLUG_QUERY = `
 `;
 
 /**
- * GraphQL query to fetch user by ID.
+ * Fetches a LessWrong user by their slug using the GraphQL API.
+ *
+ * @param slug - The user's URL slug (e.g., "brendan-long")
+ * @returns User info including ID, or null if not found
+ * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
  */
-const USER_BY_ID_QUERY = `
-  query GetUserById($userId: String!) {
-    user(input: { selector: { _id: $userId } }) {
-      result {
-        _id
-        displayName
-        slug
-      }
-    }
-  }
-`;
-
-async function fetchLessWrongUser(
-  query: string,
-  variables: Record<string, string>,
-  logContext: Record<string, string>
-): Promise<LessWrongUser | null> {
-  const data = await lessWrongGraphql({ query, variables, dataSchema: userDataSchema, logContext });
+export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongUser | null> {
+  const logContext = { operation: "userBySlug", slug };
+  const data = await lessWrongGraphql({
+    query: USER_BY_SLUG_QUERY,
+    variables: { slug },
+    dataSchema: userDataSchema,
+    logContext,
+  });
 
   const user = data?.user?.result;
   if (!user) {
@@ -578,28 +572,6 @@ async function fetchLessWrongUser(
     displayName: user.displayName,
     slug: user.slug,
   };
-}
-
-/**
- * Fetches a LessWrong user by their slug using the GraphQL API.
- *
- * @param slug - The user's URL slug (e.g., "brendan-long")
- * @returns User info including ID, or null if not found
- * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
- */
-export async function fetchLessWrongUserBySlug(slug: string): Promise<LessWrongUser | null> {
-  return fetchLessWrongUser(USER_BY_SLUG_QUERY, { slug }, { operation: "userBySlug", slug });
-}
-
-/**
- * Fetches a LessWrong user by their ID using the GraphQL API.
- *
- * @param userId - The user's internal ID
- * @returns User info, or null if not found
- * @throws HttpFetchError when LessWrong rate limits us (see `lessWrongGraphql`)
- */
-export async function fetchLessWrongUserById(userId: string): Promise<LessWrongUser | null> {
-  return fetchLessWrongUser(USER_BY_ID_QUERY, { userId }, { operation: "userById", userId });
 }
 
 // ============================================================================

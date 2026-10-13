@@ -21,9 +21,10 @@ import { useEffect, useRef } from "react";
 import { useRouteBase } from "@/lib/hooks/useAppLocation";
 import { DEMO_BASE_PATH } from "@/lib/routes";
 import { trackPageView } from "./beacon";
-import { analyticsPathForDemoEntry, analyticsPathForEntry, type EntryKind } from "./paths";
+import { analyticsPathForDemoEntry, analyticsPathForEntry } from "./paths";
+import type { EntryType } from "@/lib/entry-types";
 
-export function useTrackEntryView(entryId: string | undefined, kind: EntryKind | undefined): void {
+export function useTrackEntryView(entryId: string | undefined, kind: EntryType | undefined): void {
   const reported = useRef<string | null>(null);
   const isDemo = useRouteBase() === DEMO_BASE_PATH;
 

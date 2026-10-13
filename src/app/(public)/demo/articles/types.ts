@@ -4,10 +4,13 @@
  * Each article specifies its own subscription, starred status, and published date.
  * The main data.ts file generates everything else (entry counts, feedTitle, etc.).
  */
+
+import type { EntryType } from "@/lib/entry-types";
+
 export interface DemoArticle {
   id: string;
   subscriptionId: string;
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string;
   author: string | null;

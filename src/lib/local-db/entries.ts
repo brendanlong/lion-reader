@@ -21,6 +21,7 @@
  */
 
 import type { SyncedCollection } from "./synced-collection";
+import type { EntryType } from "@/lib/entry-types";
 
 /** An entry's list-item fields as the server sends them. */
 export type EntryRow = {
@@ -34,7 +35,7 @@ export type EntryRow = {
    * group (a membership change moves the server's `user_entries.updated_at`).
    */
   subscriptionIds: string[];
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;

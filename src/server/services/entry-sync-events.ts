@@ -14,10 +14,10 @@ import {
   type serverSyncEventSchema,
   type unreadCountsSchema,
 } from "@/lib/events/schemas";
+import type { EntryType } from "@/lib/entry-types";
 
 type ServerSyncEvent = z.infer<typeof serverSyncEventSchema>;
 type UnreadCounts = z.infer<typeof unreadCountsSchema>;
-type FeedType = "web" | "email" | "saved";
 
 /** An entry_updated event's metadata. */
 export function toEntryMetadata(entry: {
@@ -82,7 +82,7 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   subscriptionId: string | null;
   /** Every active subscription holding the entry (#1846). */
   subscriptionIds: string[];
-  feedType: FeedType;
+  feedType: EntryType;
   feedTitle: string | null;
   /** The entry's content changed (or it was created) since the catch-up's start. */
   metadataChanged: boolean;

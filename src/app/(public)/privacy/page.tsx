@@ -16,6 +16,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { PageLink } from "@/components/ui/page-link";
 import { TextLink } from "@/components/ui/text-link";
+import { AI_PROVIDER_INFO } from "@/lib/ai/providers";
 import { CONTACT_EMAIL } from "@/lib/contact";
 
 export const metadata: Metadata = {
@@ -188,23 +189,31 @@ export default function PrivacyPolicyPage() {
               </LegalParagraph>
               <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 <TextLink
-                  href="https://www.anthropic.com/legal/privacy"
+                  href={AI_PROVIDER_INFO.anthropic.privacyPolicyUrl}
                   external
                   className="ui-text-sm"
                 >
                   Anthropic&apos;s Privacy Policy &rarr;
                 </TextLink>
                 <TextLink
-                  href="https://www.cerebras.ai/privacy-policy"
+                  href={AI_PROVIDER_INFO.cerebras.privacyPolicyUrl}
                   external
                   className="ui-text-sm"
                 >
                   Cerebras&apos;s Privacy Policy &rarr;
                 </TextLink>
-                <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
+                <TextLink
+                  href={AI_PROVIDER_INFO.groq.privacyPolicyUrl}
+                  external
+                  className="ui-text-sm"
+                >
                   Groq&apos;s Privacy Policy &rarr;
                 </TextLink>
-                <TextLink href="https://openrouter.ai/privacy" external className="ui-text-sm">
+                <TextLink
+                  href={AI_PROVIDER_INFO.openrouter.privacyPolicyUrl}
+                  external
+                  className="ui-text-sm"
+                >
                   OpenRouter&apos;s Privacy Policy &rarr;
                 </TextLink>
               </p>
@@ -246,23 +255,35 @@ export default function PrivacyPolicyPage() {
               </LegalParagraph>
               <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 <TextLink
-                  href="https://www.cerebras.ai/privacy-policy"
+                  href={AI_PROVIDER_INFO.cerebras.privacyPolicyUrl}
                   external
                   className="ui-text-sm"
                 >
                   Cerebras&apos;s Privacy Policy &rarr;
                 </TextLink>
-                <TextLink href="https://groq.com/privacy-policy/" external className="ui-text-sm">
+                <TextLink
+                  href={AI_PROVIDER_INFO.groq.privacyPolicyUrl}
+                  external
+                  className="ui-text-sm"
+                >
                   Groq&apos;s Privacy Policy &rarr;
                 </TextLink>
-                <TextLink href="https://openrouter.ai/privacy" external className="ui-text-sm">
+                <TextLink
+                  href={AI_PROVIDER_INFO.openrouter.privacyPolicyUrl}
+                  external
+                  className="ui-text-sm"
+                >
                   OpenRouter&apos;s Privacy Policy &rarr;
                 </TextLink>
-                <TextLink href="https://deepinfra.com/privacy" external className="ui-text-sm">
+                <TextLink
+                  href={AI_PROVIDER_INFO.deepinfra.privacyPolicyUrl}
+                  external
+                  className="ui-text-sm"
+                >
                   DeepInfra&apos;s Privacy Policy &rarr;
                 </TextLink>
                 <TextLink
-                  href="https://breezeblue.ai/legal/privacy"
+                  href={AI_PROVIDER_INFO.breezeblue.privacyPolicyUrl}
                   external
                   className="ui-text-sm"
                 >

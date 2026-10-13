@@ -7,9 +7,8 @@
 
 import type { ParsedEntry } from "./types";
 import { absolutizeUrls } from "./content-cleaner";
-import { getFeedPlugin } from "@/server/plugins";
+import { getFeedHooks } from "@/server/plugins";
 import { generateSummary } from "../html/strip-html";
-import { logger } from "@/lib/logger";
 
 /**
  * Content processing result for an entry.
@@ -52,32 +51,18 @@ export function cleanEntryContent(
   options: CleanEntryContentOptions = {}
 ): EntryContentResult {
   const { entryUrl, feedUrl } = options;
-  const feedCapability = getFeedPlugin(feedUrl)?.capabilities.feed;
+  const feedHooks = getFeedHooks(feedUrl);
   const originalContent = parsedEntry.content ?? parsedEntry.summary ?? null;
 
   // Absolutize relative URLs in original content if we have a base URL
   const absolutizedOriginal =
     originalContent && entryUrl ? absolutizeUrls(originalContent, entryUrl) : originalContent;
 
-  let contentCleaned: string | null = null;
-
   // Content synthesis via the matching plugin (if any): builds the entry body
   // from parsed-entry metadata for sources whose feeds carry no usable HTML
   // (e.g. YouTube's video embed + media:description). Takes precedence over
   // cleaning — the synthesized body replaces the feed content for display.
-  const builder = feedCapability?.buildEntryContent;
-  if (builder) {
-    // Isolate plugin failures: a throwing hook must not fail the entry (or,
-    // since this runs per-entry, every entry of the feed).
-    try {
-      contentCleaned = builder(parsedEntry, entryUrl);
-    } catch (error) {
-      logger.warn("Plugin buildEntryContent hook threw; using feed content", {
-        feedUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+  let contentCleaned = feedHooks.buildEntryContent(parsedEntry, entryUrl);
 
   // If no synthesized and no feed-provided content, return early
   if (!contentCleaned && !absolutizedOriginal) {
@@ -90,21 +75,11 @@ export function cleanEntryContent(
 
   // Apply feed-specific content cleaning via the matching plugin (if any),
   // unless synthesis already produced the cleaned content.
-  const cleaner = feedCapability?.cleanEntryContent;
-  if (!contentCleaned && absolutizedOriginal && cleaner) {
-    // Isolate plugin failures: fall back to the uncleaned-but-absolutized
-    // content.
-    try {
-      const cleaned = cleaner(absolutizedOriginal);
-      // Only set contentCleaned if cleaning actually changed something
-      if (cleaned !== absolutizedOriginal) {
-        contentCleaned = cleaned;
-      }
-    } catch (error) {
-      logger.warn("Plugin cleanEntryContent hook threw; using uncleaned content", {
-        feedUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  if (!contentCleaned && absolutizedOriginal) {
+    const cleaned = feedHooks.cleanEntryContent(absolutizedOriginal);
+    // Only set contentCleaned if cleaning actually changed something
+    if (cleaned !== absolutizedOriginal) {
+      contentCleaned = cleaned;
     }
   }
 

@@ -20,6 +20,7 @@ import { trpc } from "@/lib/trpc/client";
 import { handleMarkAllRead, setBulkCounts } from "@/lib/cache/operations";
 import { setServerEntryState, type EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb, insertEntryIntoLists, type LocalDb } from "@/lib/local-db/local-db";
+import type { EntryType } from "@/lib/entry-types";
 
 /**
  * Sends a mutation with `applyOptimistic` layered over the entries the store
@@ -53,11 +54,6 @@ function mutateEntries(
   }
   return transaction.commit();
 }
-
-/**
- * Entry type for routing.
- */
-export type EntryType = "web" | "email" | "saved";
 
 /**
  * Options for the markAllRead mutation.

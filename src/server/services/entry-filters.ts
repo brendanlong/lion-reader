@@ -27,6 +27,7 @@ import {
   visibleEntries,
 } from "@/server/db/schema";
 import { isListedSubscription, SAVED_ARTICLES_TITLE } from "@/server/services/subscriptions";
+import type { EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Types
@@ -43,8 +44,8 @@ export interface EntryConditionParams {
   readOnly?: boolean;
   starredOnly?: boolean;
   unstarredOnly?: boolean;
-  type?: "web" | "email" | "saved";
-  excludeTypes?: Array<"web" | "email" | "saved">;
+  type?: EntryType;
+  excludeTypes?: EntryType[];
   publishedAfter?: Date;
   publishedBefore?: Date;
   updatedAfter?: Date;

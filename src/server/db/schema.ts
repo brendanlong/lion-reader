@@ -23,6 +23,7 @@ import {
 import { sql } from "drizzle-orm";
 import type { ParagraphMapEntry } from "@/lib/narration/paragraph-map";
 import { temporalTimestamp } from "./temporal";
+import { SUBSCRIPTION_TYPES, type EntryType } from "@/lib/entry-types";
 
 /**
  * Postgres citext (case-insensitive text). Behaves as a plain string in
@@ -50,12 +51,9 @@ const tsvector = customType<{ data: string }>({
 // ENUMS
 // ============================================================================
 
-const feedTypeEnum = pgEnum("feed_type", ["web", "email", "saved", "collection"]);
+const feedTypeEnum = pgEnum("feed_type", SUBSCRIPTION_TYPES);
 
 export type FeedType = (typeof feedTypeEnum.enumValues)[number];
-
-/** Collections never hold entries of their own, so an entry's type excludes it. */
-export type EntryType = Exclude<FeedType, "collection">;
 
 const websubStateEnum = pgEnum("websub_state", ["pending", "active", "unsubscribed"]);
 

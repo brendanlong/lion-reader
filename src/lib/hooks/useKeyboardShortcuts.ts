@@ -24,10 +24,10 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { type EntryType } from "./useEntryMutations";
 import { clientPush } from "@/lib/navigation";
 import { useAppHref } from "./useAppLocation";
 import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
+import type { EntryType } from "@/lib/entry-types";
 
 /**
  * Entry data needed for keyboard actions.

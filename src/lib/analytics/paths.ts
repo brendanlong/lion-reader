@@ -19,6 +19,8 @@
  * construction and TypeScript rejects any attempt to report a computed string.
  */
 
+import type { EntryType } from "@/lib/entry-types";
+
 /**
  * Routes with no dynamic segment. Keys are real pathnames, values are what we
  * report. Anything absent is deliberately not counted — including `/admin` and
@@ -100,15 +102,12 @@ const DEMO_ARTICLE_IDS = [
   "welcome",
 ] as const;
 
-/** Entry types, mirroring the `feed_type` enum. */
-export type EntryKind = "web" | "email" | "saved";
-
 export type AnalyticsPath =
   | (typeof STATIC_ROUTES)[keyof typeof STATIC_ROUTES]
   | (typeof ID_ROUTES)[keyof typeof ID_ROUTES]
   | "/demo/entry"
   | `/demo/entry/${(typeof DEMO_ARTICLE_IDS)[number]}`
-  | `/app/entry/${EntryKind}`;
+  | `/app/entry/${EntryType}`;
 
 const DEMO_ARTICLE_ID_SET: ReadonlySet<string> = new Set(DEMO_ARTICLE_IDS);
 
@@ -168,6 +167,6 @@ export function analyticsPathForDemoEntry(id: string | null | undefined): Analyt
  * The path for an opened entry in the app: its type, never its id. This is the
  * only thing we ever learn about what a signed-in person reads.
  */
-export function analyticsPathForEntry(kind: EntryKind): AnalyticsPath {
+export function analyticsPathForEntry(kind: EntryType): AnalyticsPath {
   return `/app/entry/${kind}`;
 }

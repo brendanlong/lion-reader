@@ -10,10 +10,10 @@
 import { memo, type MouseEvent } from "react";
 import { formatRelativeTime } from "@/lib/format";
 import { LocalTime } from "@/components/ui/local-time";
-import type { EntryType } from "@/lib/hooks/useEntryMutations";
 import type { ListDensity } from "@/lib/appearance/settings";
 import { StarIcon, StarFilledIcon } from "@/components/ui/icons";
 import { getItemClasses } from "./entryItemClasses";
+import type { EntryType } from "@/lib/entry-types";
 
 /**
  * Entry data for list display (lightweight, no full content).

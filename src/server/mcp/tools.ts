@@ -27,6 +27,7 @@ import {
   MAX_COLLECTION_BATCH,
   MAX_SAVE_COLLECTIONS,
 } from "@/lib/collections";
+import { ENTRY_TYPES } from "@/lib/entry-types";
 
 // ============================================================================
 // Types
@@ -131,7 +132,7 @@ const listEntriesArgs = z.object({
     .describe("Filter by subscription ID (a feed or a collection)"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
-  type: z.enum(["web", "email", "saved"]).optional().describe("Filter by entry type"),
+  type: z.enum(ENTRY_TYPES).optional().describe("Filter by entry type"),
   unreadOnly: z.boolean().optional().describe("Show only unread entries"),
   readOnly: z.boolean().optional().describe("Show only read entries"),
   starredOnly: z.boolean().optional().describe("Show only starred entries"),

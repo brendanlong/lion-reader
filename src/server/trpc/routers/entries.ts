@@ -27,6 +27,7 @@ import * as entriesService from "@/server/services/entries";
 import { verifySubscriptionOwnership } from "@/server/services/entry-filters";
 import { toServerTime } from "@/server/services/client-time";
 import { legacyFeedId, legacyFeedIdSchema } from "@/lib/events/schemas";
+import { ENTRY_TYPES } from "@/lib/entry-types";
 
 // Endpoints exposed via the MCP tool surface, plus the ones the native app needs.
 const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
@@ -86,7 +87,7 @@ const sortBySchema = z.enum(["published", "readChanged"]).optional();
 /**
  * Feed type validation schema for filtering entries by type.
  */
-const feedTypeSchema = z.enum(["web", "email", "saved"]);
+const feedTypeSchema = z.enum(ENTRY_TYPES);
 
 /**
  * Boolean query parameter schema that handles string coercion.

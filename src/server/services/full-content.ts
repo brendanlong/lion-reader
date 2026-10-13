@@ -10,11 +10,10 @@ import { createHash } from "crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, narrationContent, subscriptions } from "@/server/db/schema";
-import { fetchHtmlPage, HttpFetchError } from "@/server/http/fetch";
+import { HttpFetchError } from "@/server/http/fetch";
 import { cleanContent, cleanContentAsync, absolutizeUrls } from "@/server/feed/content-cleaner";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
-import { pluginRegistry, claimFetchedPage } from "@/server/plugins";
-import type { SavedArticleContent } from "@/server/plugins/types";
+import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
 import { processMarkdown } from "@/server/markdown";
 import { errors } from "@/server/trpc/errors";
@@ -37,10 +36,9 @@ export interface FetchFullContentResult {
 /**
  * Fetches full article content from a URL.
  *
- * This function:
- * 1. Checks if there's a plugin that can handle the URL (LessWrong GraphQL, etc.)
- * 2. Falls back to standard HTML fetching + Readability if no plugin matches
- * 3. Returns both the original HTML and the cleaned content
+ * Acquires the article through `acquireArticleContent` (a plugin, or a generic
+ * fetch), runs Readability unless the content is already clean, and returns
+ * both the original HTML and the cleaned content.
  *
  * @param url - The article URL to fetch
  * @param options.offloadClean - Run the content-cleaning pass (Readability, or
@@ -62,72 +60,32 @@ export async function fetchFullContent(
       ? cleanContentAsync(html, { url: resolveUrl })
       : Promise.resolve(cleanContent(html, { url: resolveUrl }));
 
-  // Plugin content is already the article: store it as the original and run
-  // Readability only if the plugin didn't declare it clean.
-  const resultFromPlugin = async (
-    pluginContent: SavedArticleContent,
-    skipReadability: boolean | undefined,
-    fallbackResolveUrl: string
-  ): Promise<FetchFullContentResult> => {
-    const html = pluginContent.html;
-    const resolveUrl = pluginContent.canonicalUrl || fallbackResolveUrl;
-    const contentOriginal = absolutizeUrls(html, resolveUrl);
-    if (skipReadability) {
-      return { success: true, contentOriginal };
-    }
-    const cleaned = await runClean(html, resolveUrl);
-    return { success: true, contentOriginal, contentCleaned: cleaned?.content };
-  };
-
   try {
-    const urlObj = new URL(url);
+    const acquired = await acquireArticleContent(url);
 
-    // Check if there's a plugin that can handle this URL
-    const plugin = pluginRegistry.findWithCapability(urlObj, "savedArticle");
-
-    if (plugin) {
-      logger.debug("Using plugin for full content fetch", {
-        url,
-        plugin: plugin.name,
-      });
-
-      try {
-        const pluginContent = await plugin.capabilities.savedArticle.fetchContent(urlObj);
-
-        if (pluginContent) {
-          logger.debug("Plugin successfully fetched content", {
-            url,
-            plugin: plugin.name,
-          });
-          return await resultFromPlugin(
-            pluginContent,
-            plugin.capabilities.savedArticle.skipReadability,
-            url
-          );
-        }
-      } catch (error) {
-        logger.warn("Plugin fetch failed, falling back to standard fetching", {
-          url,
-          plugin: plugin.name,
-          error: error instanceof Error ? error.message : String(error),
-        });
+    // Plugin content is already the article: store it as the original and run
+    // Readability only if the plugin didn't declare it clean.
+    if (acquired.kind === "plugin") {
+      const { html, canonicalUrl } = acquired.content;
+      const resolveUrl = canonicalUrl || acquired.baseUrl;
+      const contentOriginal = absolutizeUrls(html, resolveUrl);
+      if (acquired.skipReadability) {
+        return { success: true, contentOriginal };
       }
+      const cleaned = await runClean(html, resolveUrl);
+      return { success: true, contentOriginal, contentCleaned: cleaned?.content };
     }
 
-    // Fall back to standard HTML fetching + Readability
-    logger.debug("Fetching full content using standard method", { url });
-
-    const result = await fetchHtmlPage(url);
-    const resolveUrl = result.finalUrl;
+    const resolveUrl = acquired.finalUrl;
 
     // We request HTML, not Markdown (#1280), so this is a fallback: a server
     // returned Markdown anyway (e.g. a raw `.md` URL). Convert it to HTML and
     // skip Readability — a markdown-only endpoint's body is the content itself,
     // and once flattened to markdown the DOM structure Readability needs to
     // separate chrome from content is already gone.
-    if (result.isMarkdown) {
+    if (acquired.isMarkdown) {
       logger.debug("Converting Markdown to HTML (skipping Readability)", { url });
-      const { html } = await processMarkdown(result.content, {
+      const { html } = await processMarkdown(acquired.content, {
         offload: offloadClean,
       });
 
@@ -145,22 +103,8 @@ export async function fetchFullContent(
       };
     }
 
-    // A page no hostname-matched plugin handled may still be a source a plugin
-    // recognizes from the document itself (a Notion page on a custom domain).
-    if (!plugin) {
-      const claimed = await claimFetchedPage({ html: result.content, url: new URL(resolveUrl) });
-      if (claimed) {
-        logger.debug("Plugin claimed the fetched page", { url, plugin: claimed.plugin.name });
-        return await resultFromPlugin(
-          claimed.content,
-          claimed.plugin.capabilities.savedArticle.skipReadability,
-          resolveUrl
-        );
-      }
-    }
-
     // For HTML, absolutize URLs in the original
-    const html = result.content;
+    const html = acquired.content;
     const contentOriginal = absolutizeUrls(html, resolveUrl);
 
     // Clean the content using Readability

@@ -52,6 +52,7 @@ import {
   filterableSubscriptionWhere,
   inSavedSubscriptionSql,
 } from "./entry-filters";
+import type { EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Types
@@ -63,8 +64,8 @@ export interface ListEntriesParams {
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
-  type?: "web" | "email" | "saved";
-  excludeTypes?: Array<"web" | "email" | "saved">;
+  type?: EntryType;
+  excludeTypes?: EntryType[];
   unreadOnly?: boolean;
   readOnly?: boolean;
   starredOnly?: boolean;
@@ -95,8 +96,8 @@ export interface SearchEntriesParams {
   subscriptionId?: string;
   tagId?: string;
   uncategorized?: boolean;
-  type?: "web" | "email" | "saved";
-  excludeTypes?: Array<"web" | "email" | "saved">;
+  type?: EntryType;
+  excludeTypes?: EntryType[];
   unreadOnly?: boolean;
   readOnly?: boolean;
   starredOnly?: boolean;
@@ -117,7 +118,7 @@ export interface EntryListItem {
   subscriptionId: string | null;
   /** Every active subscription holding the entry (`entrySubscriptionIdsSql`). */
   subscriptionIds: string[];
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -148,7 +149,7 @@ export interface EntryFull {
   /** See EntryListItem. */
   subscriptionId: string | null;
   subscriptionIds: string[];
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -201,7 +202,7 @@ export interface MarkReadEntryState {
   subscriptionIds: string[];
   read: boolean;
   starred: boolean;
-  type: "web" | "email" | "saved";
+  type: EntryType;
   updatedAt: Date;
   readChangedAt: Date | null;
 }
@@ -228,7 +229,7 @@ interface EntryListRow {
   id: string;
   subscriptionId: string | null;
   subscriptionIds: string[];
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -544,7 +545,7 @@ export async function getFullEntries(db: typeof dbType, userId: string, entryIds
 
 export interface ExportableEntry {
   id: string;
-  type: "web" | "email" | "saved";
+  type: EntryType;
   url: string | null;
   title: string | null;
   author: string | null;
@@ -1255,7 +1256,7 @@ export async function markAllEntriesRead(
     tagId?: string;
     uncategorized?: boolean;
     starredOnly?: boolean;
-    type?: "web" | "email" | "saved";
+    type?: EntryType;
     before?: Date;
     changedAt?: Date;
     /**
@@ -1657,8 +1658,8 @@ export async function countTotalEntries(
     subscriptionId?: string;
     tagId?: string;
     uncategorized?: boolean;
-    type?: "web" | "email" | "saved";
-    excludeTypes?: Array<"web" | "email" | "saved">;
+    type?: EntryType;
+    excludeTypes?: EntryType[];
     unreadOnly?: boolean;
     readOnly?: boolean;
     starredOnly?: boolean;

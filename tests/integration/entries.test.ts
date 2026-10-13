@@ -25,6 +25,7 @@ import {
   createTestFeed as createSharedTestFeed,
   createTestUserEntries,
 } from "./helpers";
+import type { EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Test Helpers
@@ -54,7 +55,7 @@ async function createTestEntry(
     contentOriginal?: string;
     publishedAt?: Date;
     isSpam?: boolean;
-    type?: "web" | "email" | "saved";
+    type?: EntryType;
   } = {}
 ): Promise<string> {
   const entryId = generateUuidv7();
