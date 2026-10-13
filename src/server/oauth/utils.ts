@@ -80,6 +80,25 @@ export function generateToken(): string {
 }
 
 /**
+ * Prefix on every OAuth access token, so a bearer token's kind can be told from
+ * its text (`isOAuthAccessTokenFormat`) instead of by trying it against every
+ * credential table. The `.` is outside the base64url alphabet `generateToken`
+ * draws from, so no session or API token can carry the prefix. It only routes
+ * the lookup: a token is still accepted only if its hash matches a live row.
+ */
+const ACCESS_TOKEN_PREFIX = "lr_at.";
+
+/** Generates an OAuth access token: {@link generateToken} with its prefix. */
+export function generateAccessToken(): string {
+  return `${ACCESS_TOKEN_PREFIX}${generateToken()}`;
+}
+
+/** Whether `token` has the shape of an OAuth access token we mint. */
+export function isOAuthAccessTokenFormat(token: string): boolean {
+  return token.startsWith(ACCESS_TOKEN_PREFIX);
+}
+
+/**
  * How stale a token's `last_used_at` may get before a use rewrites it. Clients
  * present their token on every request (the app on each speech chunk), and the
  * timestamp is only shown as "last used", so a write per request is churn.

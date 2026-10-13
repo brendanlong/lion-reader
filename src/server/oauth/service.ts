@@ -18,6 +18,7 @@ import {
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import {
+  generateAccessToken,
   generateToken,
   hashToken,
   isLastUsedStale,
@@ -391,7 +392,7 @@ export async function createTokens(
   params: CreateTokensParams,
   executor: DbOrTx = db
 ): Promise<TokenPair> {
-  const accessToken = generateToken();
+  const accessToken = generateAccessToken();
   const refreshToken = generateToken();
   const accessTokenHash = hashToken(accessToken);
   const refreshTokenHash = hashToken(refreshToken);
