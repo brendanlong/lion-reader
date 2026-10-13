@@ -38,9 +38,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
-import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.jsonObject
 
@@ -82,8 +80,8 @@ class FakeServer {
     /** Queued `sync.changes` responses; empty means "no changes". */
     val changes = ArrayDeque<SyncChanges>()
 
-    /** Status and body to answer `/events` with, instead of [eventStreams]. */
-    var eventsError: Pair<HttpStatusCode, String>? = null
+    /** Status and body to answer `/narration/speech` with. */
+    var speechError: Pair<HttpStatusCode, String>? = null
     val requests = mutableListOf<HttpRequestData>()
     val markReadRequests = mutableListOf<MarkReadRequest>()
     val starRequests = mutableListOf<SetStarredRequest>()
@@ -100,12 +98,6 @@ class FakeServer {
 
     /** Runs while a body fetch for these ids is in flight (before the server answers). */
     var duringBatch: (suspend (List<String>) -> Unit)? = null
-
-    /**
-     * What each connection to `/events` gets, in order: a stream (which ends when its channel
-     * does), or null for a 503. Once they run out, connections stay open with nothing to say.
-     */
-    val eventStreams = ArrayDeque<ByteReadChannel?>()
 
     /** Runs while a state write is in flight (before the server answers). */
     var duringStateWrite: (suspend () -> Unit)? = null
@@ -214,18 +206,8 @@ class FakeServer {
         requests += request
         val path = request.url.encodedPath.removePrefix("/api/v1")
         when {
-            path == "/events" && eventsError != null ->
-                respond(eventsError!!.second, eventsError!!.first, jsonHeaders)
-            path == "/events" ->
-                if (eventStreams.isEmpty()) awaitCancellation()
-                else
-                    eventStreams.removeFirst()?.let {
-                        respond(
-                            it,
-                            HttpStatusCode.OK,
-                            headersOf("Content-Type", "text/event-stream"),
-                        )
-                    } ?: respond("{}", HttpStatusCode.ServiceUnavailable, jsonHeaders)
+            path == "/narration/speech" && speechError != null ->
+                respond(speechError!!.second, speechError!!.first, jsonHeaders)
             path == "/sync/changes" ->
                 json(
                     SyncChanges.serializer(),

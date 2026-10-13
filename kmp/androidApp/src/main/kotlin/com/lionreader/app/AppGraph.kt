@@ -2,6 +2,8 @@ package com.lionreader.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.core.content.edit
 import androidx.datastore.preferences.preferencesDataStore
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
@@ -124,14 +126,30 @@ class AppGraph(
         scope.launch { settings.update { it.copy(narrationSpeed = speed) } }
     }
 
-    /** Keeps the periodic sync on the interval the settings say, as they change. */
-    fun followSyncInterval() {
+    /** Keeps the periodic sync's schedule and network in step with the settings. */
+    fun followSyncSettings() {
         scope.launch {
             settings.settings
-                .map { it.syncInterval }
+                .map { it.syncInterval to it.automaticSyncWifiOnly }
                 .distinctUntilChanged()
-                .collect { SyncScheduler.schedulePeriodic(context, it) }
+                .collect { (interval, wifiOnly) ->
+                    SyncScheduler.schedulePeriodic(context, interval, wifiOnly)
+                }
         }
+    }
+
+    /**
+     * Whether the app coming on screen should sync: as the settings say, judging the network as
+     * WorkManager's `UNMETERED` does (so a VPN is metered unless it says otherwise).
+     */
+    suspend fun syncOnOpenAllowed(): Boolean {
+        val stored = settings.settings.first()
+        if (!stored.syncOnOpen) return false
+        if (!stored.automaticSyncWifiOnly) return true
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        return connectivity
+            .getNetworkCapabilities(connectivity.activeNetwork)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
     }
 
     /** A full sync (article bodies included) in a background job. */
@@ -231,11 +249,16 @@ private class WorkManagerSync(
 
     override fun syncNow() = SyncScheduler.syncNow(context)
 
-    // The stored setting, not currentSettings, which can lag a change followSyncInterval has
+    // The stored setting, not currentSettings, which can lag a change followSyncSettings has
     // already applied and so bring back a sync the user just turned off.
     override fun schedulePeriodic() {
         scope.launch {
-            SyncScheduler.schedulePeriodic(context, settings.settings.first().syncInterval)
+            val stored = settings.settings.first()
+            SyncScheduler.schedulePeriodic(
+                context,
+                stored.syncInterval,
+                stored.automaticSyncWifiOnly,
+            )
         }
     }
 

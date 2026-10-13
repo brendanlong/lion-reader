@@ -10,7 +10,7 @@ class LionReaderApplication : Application() {
         super.onCreate()
         graph = AppGraph(this)
         useLauncherIcon()
-        graph.followSyncInterval()
+        graph.followSyncSettings()
     }
 }
 

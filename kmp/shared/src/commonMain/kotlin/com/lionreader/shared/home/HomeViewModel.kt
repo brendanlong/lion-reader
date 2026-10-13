@@ -10,6 +10,10 @@ import com.lionreader.shared.data.Navigation
 import com.lionreader.shared.data.Reader
 import com.lionreader.shared.data.TimelineItem
 import com.lionreader.shared.settings.AppSettings
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -54,6 +58,12 @@ sealed interface SyncStatus {
 }
 
 /**
+ * Spacing between syncs for the app coming on screen ([HomeViewModel.refreshOnOpen]), so a rotation
+ * or a quick look at another app doesn't sync again.
+ */
+val OPEN_SYNC_SPACING: Duration = 5.minutes
+
+/**
  * The article lists: which is on screen and its entries, the drawer's lists, search, and syncing
  * when asked. [sync] is what pulling to refresh waits for.
  */
@@ -62,8 +72,10 @@ class HomeViewModel(
     private val reader: Reader,
     settings: Flow<AppSettings>,
     private val updateSettings: suspend ((AppSettings) -> AppSettings) -> Unit,
+    private val clock: TimeSource = TimeSource.Monotonic,
     private val sync: suspend () -> Unit,
 ) : ViewModel() {
+    private var lastSync: TimeMark? = null
 
     /** Every change to it is one [ListState] step, so a query never sees half of one. */
     private val view = MutableStateFlow(ListState())
@@ -147,10 +159,6 @@ class HomeViewModel(
             it.id
         }
 
-    init {
-        refresh()
-    }
-
     fun select(scope: ListScope) {
         view.update { it.select(scope) }
     }
@@ -220,9 +228,16 @@ class HomeViewModel(
         refresh()
     }
 
+    /** Syncs unless one started within [OPEN_SYNC_SPACING]. */
+    fun refreshOnOpen() {
+        if (lastSync?.let { it.elapsedNow() < OPEN_SYNC_SPACING } == true) return
+        refresh()
+    }
+
     fun refresh() {
         if (_status.value == SyncStatus.Syncing) return
         _status.value = SyncStatus.Syncing
+        lastSync = clock.markNow()
         viewModelScope.launch {
             _status.value =
                 try {

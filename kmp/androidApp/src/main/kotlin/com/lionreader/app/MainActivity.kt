@@ -213,10 +213,6 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3AdaptiveApi::class)
     @Composable
     private fun AccountApp(account: AccountSession) {
-        val lifecycle = LocalLifecycleOwner.current.lifecycle
-        LaunchedEffect(account) {
-            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { account.followServer() }
-        }
         val backStack = rememberNavBackStack(HomeKey)
         val sessions = viewModel<SessionViewModels>()
         val owner = remember(account) { sessions.ownerFor(account) }
@@ -232,6 +228,12 @@ class MainActivity : ComponentActivity() {
                     graph.syncInBackground()
                 }
             }
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        LaunchedEffect(home) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                if (graph.syncOnOpenAllowed()) home.refreshOnOpen()
+            }
+        }
         val settings by graph.currentSettings.collectAsStateWithLifecycle()
         val transitions = remember(settings.animations) { ScreenTransitions(settings.animations) }
         // Side by side where there's room (tablets, foldables, landscape).

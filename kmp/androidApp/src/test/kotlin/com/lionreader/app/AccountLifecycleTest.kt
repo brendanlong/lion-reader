@@ -3,10 +3,13 @@ package com.lionreader.app
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.Configuration
+import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
@@ -37,11 +40,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowNetworkCapabilities
 
 /**
  * AppGraph's accounts on Android against a fake server: where their data goes, and what else ends
@@ -197,13 +202,13 @@ class AccountLifecycleTest {
     private fun syncNow() =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork("sync-now").get()
 
-    private fun scheduledEvery() =
+    private fun periodicSync() =
         WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork(SyncScheduler.PERIODIC)
             .get()
             .singleOrNull { !it.state.isFinished }
-            ?.periodicityInfo
-            ?.repeatIntervalMillis
+
+    private fun scheduledEvery() = periodicSync()?.periodicityInfo?.repeatIntervalMillis
 
     private fun AppGraph.setSyncInterval(interval: SyncInterval) = runBlocking {
         settings.update { it.copy(syncInterval = interval) }
@@ -214,15 +219,57 @@ class AccountLifecycleTest {
     @Test
     fun thePeriodicSyncFollowsTheSetting() {
         val graph = AppGraph(context, http)
-        graph.followSyncInterval()
+        graph.followSyncSettings()
         try {
             graph.setSyncInterval(SyncInterval.HOUR)
             until { scheduledEvery() == hourly }
+            assertEquals(
+                NetworkType.UNMETERED,
+                periodicSync()!!.constraints.requiredNetworkType,
+            )
+
+            runBlocking { graph.settings.update { it.copy(automaticSyncWifiOnly = false) } }
+            until { periodicSync()?.constraints?.requiredNetworkType == NetworkType.CONNECTED }
 
             graph.setSyncInterval(SyncInterval.NEVER)
             until { scheduledEvery() == null }
         } finally {
-            graph.setSyncInterval(AppSettings().syncInterval)
+            runBlocking { graph.settings.update { AppSettings() } }
+        }
+    }
+
+    @Test
+    fun openingTheAppSyncsAsTheSettingsSayForTheNetwork() {
+        val graph = AppGraph(context, http)
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        fun onNetwork(unmetered: Boolean) =
+            shadowOf(connectivity)
+                .setNetworkCapabilities(
+                    connectivity.activeNetwork,
+                    ShadowNetworkCapabilities.newInstance().apply {
+                        if (unmetered) {
+                            shadowOf(this)
+                                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                        }
+                    },
+                )
+        fun allowed() = runBlocking { graph.syncOnOpenAllowed() }
+        try {
+            onNetwork(unmetered = false)
+            assertFalse(allowed())
+            onNetwork(unmetered = true)
+            assertTrue(allowed())
+
+            runBlocking { graph.settings.update { it.copy(syncOnOpen = false) } }
+            assertFalse(allowed())
+
+            onNetwork(unmetered = false)
+            runBlocking {
+                graph.settings.update { it.copy(syncOnOpen = true, automaticSyncWifiOnly = false) }
+            }
+            assertTrue(allowed())
+        } finally {
+            runBlocking { graph.settings.update { AppSettings() } }
         }
     }
 
@@ -230,7 +277,7 @@ class AccountLifecycleTest {
     @Test
     fun signingOutKeepsThePeriodicSyncsInterval() {
         val graph = AppGraph(context, http)
-        graph.followSyncInterval()
+        graph.followSyncSettings()
         try {
             graph.setSyncInterval(SyncInterval.HOUR)
             until { scheduledEvery() == hourly }

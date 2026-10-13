@@ -27,15 +27,21 @@ object SyncScheduler {
     private const val FLUSH = "sync-flush"
     private const val NOW = "sync-now"
 
-    private val online = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+    private val online = constraints(NetworkType.CONNECTED)
 
-    /** Every [interval], or not at all; a change of interval doesn't restart the period. */
-    fun schedulePeriodic(context: Context, interval: SyncInterval) {
+    private fun constraints(network: NetworkType) =
+        Constraints.Builder().setRequiredNetworkType(network).build()
+
+    /**
+     * Every [interval] (only on an unmetered network if [wifiOnly]), or not at all; a change
+     * doesn't restart the period.
+     */
+    fun schedulePeriodic(context: Context, interval: SyncInterval, wifiOnly: Boolean) {
         val workManager = WorkManager.getInstance(context)
         val minutes = interval.minutes ?: return run { workManager.cancelUniqueWork(PERIODIC) }
         val request =
             PeriodicWorkRequestBuilder<SyncWorker>(minutes, TimeUnit.MINUTES)
-                .setConstraints(online)
+                .setConstraints(if (wifiOnly) constraints(NetworkType.UNMETERED) else online)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .build()
         workManager.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
