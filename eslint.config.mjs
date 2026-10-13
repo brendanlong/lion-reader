@@ -24,8 +24,16 @@ const NATIVE_MARKDOWN = {
     "Import markdownToHtmlAsync or processMarkdown from @/server/markdown instead — that module owns the app's Markdown dialect and its size budgets.",
 };
 
-function restrictImports(...paths) {
-  return { "no-restricted-imports": ["error", { paths }] };
+// Shared code doesn't depend on the routes: src/server and src/lib import
+// nothing from src/app. Data a route and the server both need lives under
+// src/lib (the demo's articles are in src/lib/demo for that reason).
+const APP_LAYER = {
+  group: ["@/app/*", "@/app/**"],
+  message: "src/server and src/lib don't import from src/app: move what both need under src/lib.",
+};
+
+function restrictImports(paths, patterns = []) {
+  return { "no-restricted-imports": ["error", { paths, patterns }] };
 }
 
 // Unread counts read the trigger-maintained counters, never a scan (see
@@ -93,15 +101,19 @@ const eslintConfig = defineConfig([
   // for the same files replaces an earlier one's paths instead of merging.
   {
     files: ["src/**/*.{ts,tsx}"],
-    rules: restrictImports(NEXT_LINK, NATIVE_MARKDOWN),
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN]),
+  },
+  {
+    files: ["src/server/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER]),
   },
   {
     files: ["src/components/ui/page-link.tsx"],
-    rules: restrictImports(NATIVE_MARKDOWN),
+    rules: restrictImports([NATIVE_MARKDOWN]),
   },
   {
     files: ["src/server/markdown/index.ts"],
-    rules: restrictImports(NEXT_LINK),
+    rules: restrictImports([NEXT_LINK], [APP_LAYER]),
   },
   // A later block setting no-restricted-syntax for a subset of src/ replaces
   // these selectors there (flat config doesn't merge them): include them.

@@ -62,7 +62,7 @@ jobs:
         # also passed as a runtime env var, using the SAME timestamp as
         # BUILD_TIME, so the demo's "Welcome" published time matches between the
         # client and server renders (see
-        # src/app/(public)/demo/articles/welcome-published-at.ts).
+        # src/lib/demo/articles/welcome-published-at.ts).
         run: |
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           SHORT_SHA="$(git rev-parse --short HEAD)"

@@ -7,7 +7,7 @@
 
 import { type Metadata } from "next";
 import { pageMetadata } from "@/lib/metadata";
-import { DEMO_TAGS, getDemoTag } from "../../data";
+import { DEMO_TAGS, getDemoTag } from "@/lib/demo/data";
 import { DemoApp } from "../../DemoApp";
 
 // Unknown ids 404 instead of being rendered (and cached) on demand.

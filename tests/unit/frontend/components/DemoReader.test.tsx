@@ -24,7 +24,7 @@ import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOp
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
 import { createDemoStore } from "@/app/(public)/demo/store";
 import { demoEntrySlots } from "@/app/(public)/demo/DemoEntrySlots";
-import { DEMO_ENTRIES } from "@/app/(public)/demo/data";
+import { DEMO_ENTRIES } from "@/lib/demo/data";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({

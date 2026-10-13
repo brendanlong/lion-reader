@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import superjson from "superjson";
 import { buildDemoDehydratedState } from "@/app/(public)/demo/seed";
 import { createDemoStore } from "@/app/(public)/demo/store";
-import { DEMO_ENTRIES, getDemoSubscription } from "@/app/(public)/demo/data";
+import { DEMO_ENTRIES, getDemoSubscription } from "@/lib/demo/data";
 
 type Query = { queryKey: unknown; state: { data: unknown } };
 

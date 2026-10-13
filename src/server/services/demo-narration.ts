@@ -5,8 +5,8 @@
  * unauthenticated route from speaking arbitrary text on the server's key.
  */
 
-import { DEMO_ENTRIES } from "@/app/(public)/demo/data";
-import { DEMO_NARRATION_VOICE } from "@/app/(public)/demo/narration";
+import { DEMO_ENTRIES } from "@/lib/demo/data";
+import { DEMO_NARRATION_VOICE } from "@/lib/demo/narration";
 import { cloudSpeechTexts } from "@/lib/narration/cloud-speech";
 import { buildAlignedNarration, withEndOfArticle } from "@/lib/narration/paragraph-map";
 import { parseBodyAsBrowser } from "@/lib/narration/parse-html";

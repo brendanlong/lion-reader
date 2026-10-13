@@ -22,7 +22,7 @@
 
 import { type Metadata } from "next";
 import { pageMetadata } from "@/lib/metadata";
-import { DEMO_ENTRIES, getDemoEntry } from "../../data";
+import { DEMO_ENTRIES, getDemoEntry } from "@/lib/demo/data";
 import { DemoApp } from "../../DemoApp";
 
 export const dynamicParams = false;
