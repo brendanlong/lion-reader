@@ -26,8 +26,8 @@ private const val STEPS = 60
  * Random sequences of local changes, changes from another device, server-side changes, flaky
  * requests (failed before or after being applied), overlapping syncs and restarts, checked against
  * invariants once everything settles:
- * - the device agrees with the server on which entries exist and their read/starred state, and on
- *   unread counts;
+ * - the device agrees with the server on which entries exist and their read/starred state, on
+ *   what's in Saved and the collection, and on unread counts;
  * - the user's last change to every entry and field reached the server;
  * - downloaded bodies are the server's current ones;
  * - nothing is left unsent.
@@ -55,7 +55,8 @@ class SyncModelTest {
         // Small pages make multi-page catch-ups (and their edge cases) common.
         server.syncPageSize = 1 + random.nextInt(8)
         repeat(8) { server.addEntry(read = random.nextBoolean(), starred = random.nextInt(4) == 0) }
-        repeat(2) { server.addEntry(subscriptionId = null) }
+        // Sometimes nothing's saved yet: the first save then creates Saved after the bootstrap.
+        repeat(random.nextInt(3)) { server.addEntry(subscriptionId = null) }
 
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         AppSchema.create(driver)
@@ -112,8 +113,13 @@ class SyncModelTest {
                     in 0..29 -> localChange()
                     in 30..34 -> {
                         val scope =
-                            if (random.nextBoolean()) ListScope.All
-                            else ListScope.Subscription("sub-1")
+                            listOf(
+                                    ListScope.All,
+                                    ListScope.Subscription("sub-1"),
+                                    ListScope.Subscription(server.collection),
+                                    ListScope.Saved,
+                                )
+                                .random(random)
                         reader.setRead(reader.unreadIds(scope), true)
                         // Mark-all records a read change per unread local entry.
                         db.outboxQueries
@@ -137,17 +143,21 @@ class SyncModelTest {
                         log += "server new ${server.addEntry(subscriptionId = subscription).id}"
                     }
                     in 57..60 -> {
-                        val saved =
-                            server.visible.filter { it.subscriptionId == null }.randomOrNull(random)
+                        val saved = server.visible.filter { it.saved }.randomOrNull(random)
                         if (saved != null) {
                             server.delete(saved)
                             log += "server delete ${saved.id}"
                         }
                     }
-                    in 61..64 -> {
+                    in 61..62 -> {
                         val entry = server.visible.randomOrNull(random) ?: return@repeat
                         server.editContent(entry)
                         log += "server edit ${entry.id}"
+                    }
+                    in 63..64 -> {
+                        val entry = server.visible.randomOrNull(random) ?: return@repeat
+                        server.toggleCollection(entry)
+                        log += "server collection ${entry.id}"
                     }
                     in 65..79 -> {
                         quietly { engine.sync(downloadContent = random.nextBoolean()) }
@@ -225,6 +235,16 @@ class SyncModelTest {
             }
         }
 
+        suspend fun ids(scope: ListScope) =
+            reader.timeline(scope, false, false, emptySet(), 10_000).first().map { it.id }.toSet()
+        val saved = remote.values.filter { it.saved }.map { it.id }.toSet()
+        if (ids(ListScope.Saved) != saved)
+            return "saved: device ${ids(ListScope.Saved)}, server $saved"
+        val collected =
+            remote.values.filter { server.collection in it.collections }.map { it.id }.toSet()
+        val inCollection = ids(ListScope.Subscription(server.collection))
+        if (inCollection != collected) return "collection: device $inCollection, server $collected"
+
         val pending = db.outboxQueries.countStates().executeAsOne()
         if (pending != 0L) return "$pending changes still unsent"
 
@@ -278,7 +298,8 @@ class SyncModelTest {
 
         for ((id, entry) in remote) {
             val body = reader.entry(id).first()?.content
-            val wanted = !entry.read || entry.starred || entry.subscriptionId == null
+            val wanted =
+                !entry.read || entry.starred || entry.saved || entry.collections.isNotEmpty()
             if (body != null && body != entry.content)
                 return "$id: stale body $body, server ${entry.content}"
             if (wanted && body == null) return "$id: body never downloaded"

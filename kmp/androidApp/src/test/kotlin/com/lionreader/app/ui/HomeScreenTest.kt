@@ -103,6 +103,7 @@ class HomeScreenTest {
             null,
             id,
         )
+        subscription?.let { db.subscriptionEntryQueries.insertIgnore(it, id) }
     }
 
     private lateinit var model: HomeViewModel
@@ -365,6 +366,7 @@ class HomeScreenTest {
             "Nested Feed",
             "https://example.com/feed",
             "Nested Feed",
+            null,
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("sub", "tag")
@@ -493,6 +495,7 @@ class HomeScreenTest {
                 title,
                 "https://e.com/$id",
                 title,
+                null,
             )
         }
         seed("a", "An article", read = false, subscription = "busy")
@@ -516,6 +519,7 @@ class HomeScreenTest {
             "Quiet Feed",
             "https://e.com/quiet",
             "Quiet Feed",
+            null,
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("quiet", "tag")
@@ -601,12 +605,14 @@ class HomeScreenTest {
             "Tagged Feed",
             "https://example.com/1",
             "Tagged Feed",
+            null,
         )
         db.subscriptionQueries.upsertSubscription(
             "loose",
             "Loose Feed",
             "https://example.com/2",
             "Loose Feed",
+            null,
         )
         db.subscriptionQueries.insertTagIgnore("tag", "News", null)
         db.subscriptionQueries.addSubscriptionTag("tagged", "tag")

@@ -4,7 +4,10 @@ CREATE TABLE subscription (
   title TEXT,
   url TEXT,
   -- The feed's own title, which clearing the custom title goes back to.
-  original_title TEXT
+  original_title TEXT,
+  -- The server's type, a string ('web', 'email', 'collection'…); null until
+  -- a sync lists it. Last, as the migration adds it (5.sqm).
+  type TEXT
 );
 
 CREATE TABLE tag (
@@ -19,8 +22,15 @@ CREATE TABLE subscription_tag (
   PRIMARY KEY (subscription_id, tag_id)
 );
 
-upsertSubscription:
-INSERT OR REPLACE INTO subscription(id, title, url, original_title) VALUES (?, ?, ?, ?);
+-- Insert-or-ignore + update (kmp/CLAUDE.md). A null type (a server that didn't
+-- say) keeps the known one, which kept_entry depends on.
+upsertSubscription {
+  INSERT OR IGNORE INTO subscription(id, title, url, original_title, type)
+  VALUES (:id, :title, :url, :originalTitle, :type);
+  UPDATE subscription
+  SET title = :title, url = :url, original_title = :originalTitle, type = COALESCE(:type, type)
+  WHERE id = :id;
+}
 
 -- A null custom title means there is none.
 updateSubscriptionTitle:

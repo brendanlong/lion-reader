@@ -65,6 +65,10 @@ class SyncEngineTest {
             fetchFullContent = false,
         )
 
+    /** A saved article, as the server sends it: its subscription is Saved. */
+    private fun saved(id: String, ageDays: Long = 1, read: Boolean = false) =
+        entry(id, ageDays, read, subscriptionId = SAVED_SUBSCRIPTION, type = "saved")
+
     private fun subscription(id: String, title: String? = null, tags: List<TagRef> = emptyList()) =
         Subscription(id, title = title, originalTitle = title, tags = tags)
 
@@ -229,6 +233,7 @@ class SyncEngineTest {
     @Test
     fun unreadEntriesOutsideTheWindowAreNotCounted() = runTest {
         policy = RetentionPolicy(windowDays = 3)
+        server.subscriptions += subscription("sub-1")
         serve(entry("recent"), entry("old", ageDays = 10))
 
         engine.sync()
@@ -511,17 +516,42 @@ class SyncEngineTest {
         serveCollection()
         engine.sync()
 
+        server.collections["col-1"] = mutableSetOf("b", "c")
         server.queueChanges(
             events =
                 listOf("a", "b").map {
                     SyncEvent.EntryStateChanged(it, read = false, starred = false)
-                },
-            memberships = mapOf("a" to emptyList(), "b" to listOf("col-1")),
+                }
         )
         engine.sync(downloadContent = false)
 
         assertEquals(listOf("b", "c"), unread(ListScope.Subscription("col-1")))
+        assertEquals(listOf("a", "b"), unread(ListScope.Subscription("sub-1")))
         assertEquals(3, reader.navigation().first().tags.single().unread)
+    }
+
+    @Test
+    fun aServerWithoutSubscriptionIdsStillMovesArticlesBetweenCollections() = runTest {
+        server.legacy = true
+        serveCollection()
+        serve(saved("s"))
+        engine.sync()
+        assertEquals(listOf("s"), timeline(ListScope.Saved))
+
+        server.collections["col-1"] = mutableSetOf("b", "c", "s")
+        server.queueChanges(
+            events =
+                listOf("a", "b", "s").map {
+                    SyncEvent.EntryStateChanged(it, read = false, starred = false)
+                }
+        )
+        engine.sync(downloadContent = false)
+
+        // Collections follow; each article's feed, and Saved, stay.
+        assertEquals(listOf("s", "b", "c"), unread(ListScope.Subscription("col-1")))
+        assertEquals(listOf("a", "b"), unread(ListScope.Subscription("sub-1")))
+        assertEquals(listOf("s"), timeline(ListScope.Saved))
+        assertEquals(1, reader.navigation().first().savedUnread)
     }
 
     @Test
@@ -530,13 +560,13 @@ class SyncEngineTest {
         engine.sync()
 
         // b joins the collection in the same page as its feed's unsubscribe.
+        server.collections.getValue("col-1") += "b"
         server.queueChanges(
             events =
                 listOf(
                     SyncEvent.EntryStateChanged("b", read = false, starred = false),
                     SyncEvent.SubscriptionDeleted("sub-1"),
-                ),
-            memberships = mapOf("b" to listOf("col-1")),
+                )
         )
         engine.sync(downloadContent = false)
 
@@ -612,11 +642,12 @@ class SyncEngineTest {
     @Test
     fun retentionDropsOldEntriesButKeepsStarredAndSaved() = runTest {
         policy = RetentionPolicy(windowDays = 3)
+        server.subscriptions += subscription("sub-1")
         serve(
             entry("recent", ageDays = 1),
             entry("old", ageDays = 5),
             entry("old-starred", ageDays = 5, starred = true),
-            entry("old-saved", ageDays = 5, type = "saved", subscriptionId = null),
+            saved("old-saved", ageDays = 5),
         )
 
         engine.sync()
@@ -655,7 +686,7 @@ class SyncEngineTest {
         serve(
             entry("tagged"),
             entry("untagged", subscriptionId = "sub-2"),
-            entry("saved", subscriptionId = null, type = "saved"),
+            saved("saved"),
         )
         engine.sync()
 
@@ -673,8 +704,7 @@ class SyncEngineTest {
             entry("c", ageDays = 2, subscriptionId = "sub-2"),
             entry("d", ageDays = 3, read = true, subscriptionId = "sub-2")
                 .copy(readChangedAt = minutesAgo(10)),
-            entry("e", ageDays = 4, subscriptionId = null, type = "saved")
-                .copy(readChangedAt = minutesAgo(20)),
+            saved("e", ageDays = 4).copy(readChangedAt = minutesAgo(20)),
         )
         engine.sync()
 
@@ -714,8 +744,7 @@ class SyncEngineTest {
             entry("c", ageDays = 2, subscriptionId = "sub-2"),
             entry("d", ageDays = 3, read = true, subscriptionId = "sub-2")
                 .copy(readChangedAt = minutesAgo(10)),
-            entry("e", ageDays = 4, subscriptionId = null, type = "saved")
-                .copy(readChangedAt = minutesAgo(20)),
+            saved("e", ageDays = 4).copy(readChangedAt = minutesAgo(20)),
         )
         engine.sync()
 
@@ -978,7 +1007,7 @@ class SyncEngineTest {
     fun anEntryOfATypeNewerThanTheAppIsKeptAsNotSaved() = runTest {
         serve(
             entry("new-type", type = "podcast"),
-            entry("saved", subscriptionId = null, type = "saved"),
+            saved("saved"),
         )
 
         engine.sync()
@@ -986,6 +1015,116 @@ class SyncEngineTest {
         assertEquals(setOf("new-type", "saved"), timeline().toSet())
         assertEquals(listOf("saved"), timeline(ListScope.Saved))
         assertEquals(1, reader.navigation().first().savedUnread)
+    }
+
+    @Test
+    fun savedIsTheSavedSubscriptionsArticlesWhateverTheirType() = runTest {
+        serve(
+            entry("member").copy(subscriptionIds = listOf(SAVED_SUBSCRIPTION)),
+            entry("typed", type = "saved"),
+        )
+
+        engine.sync()
+
+        assertEquals(listOf("member"), timeline(ListScope.Saved))
+        assertEquals(listOf("member"), reader.unreadIds(ListScope.Saved))
+        assertEquals(1, reader.navigation().first().savedUnread)
+    }
+
+    @Test
+    fun retentionAndBodiesKeepTheSavedSubscriptionsArticlesNotSavedTypes() = runTest {
+        policy = RetentionPolicy(windowDays = 3)
+        server.subscriptions += subscription("sub-1")
+        serve(
+            entry("member", ageDays = 5, read = true)
+                .copy(subscriptionIds = listOf(SAVED_SUBSCRIPTION)),
+            entry("typed", ageDays = 5, read = true, type = "saved"),
+            entry("typed-recent", ageDays = 1, read = true, type = "saved"),
+        )
+
+        engine.sync()
+
+        assertEquals(setOf("member", "typed-recent"), timeline().toSet())
+        // Read, but saved: its body is downloaded and kept for offline.
+        assertEquals("<p>Body member</p>", reader.entry("member").first()?.content)
+        assertNull(reader.entry("typed-recent").first()?.content)
+    }
+
+    @Test
+    fun articlesSavedAfterTheDeviceListedSubscriptionsGoIntoSaved() = runTest {
+        // Retention keeps no read article that isn't exempt.
+        policy = RetentionPolicy(maxReadEntries = 0)
+        server.savedSubscriptionId = null
+        engine.sync()
+        // The first save creates the Saved subscription. Read elsewhere, s arrives through
+        // Recently Read before any change names Saved.
+        server.savedSubscriptionId = SAVED_SUBSCRIPTION
+        serve(saved("s", read = true).copy(readChangedAt = minutesAgo(1)), saved("t"))
+        engine.sync(downloadContent = false)
+        // Kept, though the device doesn't know yet that its subscription is Saved.
+        assertEquals(listOf("s"), timeline(ListScope.RecentlyRead))
+
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.NewEntry(
+                        "t",
+                        SAVED_SUBSCRIPTION,
+                        "saved",
+                        EventEntry(title = "t", fetchedAt = "2026-09-28T12:00:00Z"),
+                    )
+                )
+        )
+        // A pull alone, which doesn't list Recently Read again.
+        engine.flushOutbox()
+
+        assertEquals(listOf("t", "s"), timeline(ListScope.Saved))
+        assertEquals(1, reader.navigation().first().savedUnread)
+    }
+
+    @Test
+    fun aSubscriptionNoListingExplainsIsListedForOnce() = runTest {
+        server.savedSubscriptionId = null
+        engine.sync()
+        serve(entry("a", subscriptionId = "unlisted"))
+        server.queueChanges(
+            events = listOf(SyncEvent.EntryStateChanged("a", read = false, starred = false)),
+            times = 3,
+        )
+
+        repeat(3) { engine.sync(downloadContent = false) }
+
+        // The bootstrap's, and one more for the unknown subscription.
+        assertEquals(2, requests("/subscriptions").size)
+    }
+
+    @Test
+    fun aListingWithoutTypesKeepsCollectionsArticles() = runTest {
+        serveCollection()
+        engine.sync()
+        // An older server, whose listing doesn't say which subscriptions are collections.
+        server.legacy = true
+        server.subscriptions.replaceAll { it.copy(type = null) }
+        db.appMetadataQueries.delete("collections_listed")
+
+        engine.sync()
+
+        // c, older than the window, is still kept as a collection's article.
+        assertEquals(listOf("a", "c"), timeline(ListScope.Subscription("col-1")))
+    }
+
+    @Test
+    fun aServerThatListsSavedDoesNotMakeItAFeed() = runTest {
+        server.savedSubscriptionId = null
+        server.subscriptions += subscription("sub-1", title = "Feed")
+        server.subscriptions +=
+            Subscription(SAVED_SUBSCRIPTION, type = "saved", title = "Saved", tags = emptyList())
+        serve(entry("a"), saved("s"))
+
+        engine.sync()
+
+        assertEquals(listOf("Feed"), reader.navigation().first().subscriptions.map { it.title })
+        assertEquals(listOf("s"), timeline(ListScope.Saved))
     }
 
     @Test
@@ -997,7 +1136,7 @@ class SyncEngineTest {
                 listOf(
                     SyncEvent.NewEntry(
                         "new",
-                        subscriptionId = null,
+                        subscriptionId = SAVED_SUBSCRIPTION,
                         feedType = null,
                         entry = EventEntry(type = "saved", fetchedAt = "2026-09-29T11:00:00Z"),
                     ),
@@ -1021,7 +1160,7 @@ class SyncEngineTest {
     @Test
     fun aNewEntryEventWithoutAnyTypeFetchesTheEntryWhole() = runTest {
         engine.sync()
-        serve(entry("untyped", type = "saved", subscriptionId = null))
+        serve(saved("untyped"))
         val fetched = mutableListOf<String>()
         server.duringBatch = { fetched += it }
         server.queueChanges(
@@ -1029,7 +1168,7 @@ class SyncEngineTest {
                 listOf(
                     SyncEvent.NewEntry(
                         "untyped",
-                        "sub-1",
+                        SAVED_SUBSCRIPTION,
                         feedType = null,
                         entry = EventEntry(fetchedAt = "2026-09-29T11:00:00Z"),
                     )

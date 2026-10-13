@@ -1,0 +1,46 @@
+-- Which subscriptions hold which entries, as the server's subscription_entries
+-- do: an entry's feed, the collections it's in, and Saved for a saved article
+-- (an entry's `subscriptionIds`). Every list and count of a subscription, a tag
+-- or Uncategorized goes through it. The Saved subscription is kept under the id
+-- 'saved' (SAVED_SUBSCRIPTION_ID, LocalStore.kt) whatever its server id, and
+-- never has a `subscription` row, so it's in no tag and not Uncategorized.
+CREATE TABLE subscription_entry (
+  subscription_id TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  PRIMARY KEY (subscription_id, entry_id)
+);
+
+CREATE INDEX subscription_entry_entry ON subscription_entry(entry_id);
+
+-- Entries kept whatever their age, bodies included: those in a collection or
+-- in a subscription the device doesn't list. That's Saved ('saved', or its
+-- server id before the device learns it), and none of a feed's: unsubscribing
+-- deletes its memberships.
+CREATE VIEW kept_entry AS
+SELECT entry_id FROM subscription_entry
+WHERE subscription_id NOT IN (SELECT id FROM subscription WHERE type IS NOT 'collection');
+
+insertIgnore:
+INSERT OR IGNORE INTO subscription_entry(subscription_id, entry_id) VALUES (?, ?);
+
+contains:
+SELECT count(*) FROM subscription_entry WHERE subscription_id = ? AND entry_id = ?;
+
+deleteForEntry:
+DELETE FROM subscription_entry WHERE entry_id = ?;
+
+deleteForSubscription:
+DELETE FROM subscription_entry WHERE subscription_id = ?;
+
+-- Moves one subscription's memberships to another id.
+moveSubscription {
+  UPDATE OR IGNORE subscription_entry SET subscription_id = :to WHERE subscription_id = :from;
+  DELETE FROM subscription_entry WHERE subscription_id = :from;
+}
+
+-- Memberships of entries no longer on the device (retention, unsubscribes).
+pruneOrphans:
+DELETE FROM subscription_entry WHERE entry_id NOT IN (SELECT id FROM entry);
+
+deleteAll:
+DELETE FROM subscription_entry;

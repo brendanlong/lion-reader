@@ -4,7 +4,7 @@ import com.lionreader.shared.api.BulkStateResponse
 import com.lionreader.shared.api.CollectionMembership
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.FullEntry
-import com.lionreader.shared.api.Subscription
+import com.lionreader.shared.api.SubscriptionPage
 import com.lionreader.shared.api.SyncCursors
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.api.TagList
@@ -18,6 +18,7 @@ import com.lionreader.shared.db.Outbox_state
 internal class PulledPage(
     val events: List<SyncEvent>,
     val deletedIds: List<String>,
+    /** Only from a server that predates entries' `subscriptionIds` (see [SyncWriter]). */
     val collectionMemberships: List<CollectionMembership>,
     val cursors: SyncCursors,
     val hasMore: Boolean,
@@ -37,8 +38,8 @@ internal class PulledPage(
  * suspends: whatever a commit needs is fetched before it by [SyncEngine], so a cursor can never be
  * committed ahead of data a later request was supposed to bring.
  *
- * Table ownership: `entry` state and metadata, collection membership, subscriptions, tags and
- * cursors are written here under the sync lock; bodies only by [storeBodies] and summaries only by
+ * Table ownership: `entry` state and metadata, memberships, subscriptions, tags and cursors are
+ * written here under the sync lock; bodies only by [storeBodies] and summaries only by
  * [storeSummary] and, when the body they summarized is replaced, [storeBodies] (outside the lock,
  * version-guarded, and deleted here with their entry); the outbox by `Reader` (and cleared here
  * once sent).
@@ -64,9 +65,18 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         store.bootstrapCursors = start
     }
 
-    fun saveSubscriptions(items: List<Subscription>) = db.transaction {
-        items.forEach(store::upsertSubscription)
+    fun saveSubscriptions(page: SubscriptionPage) = db.transaction {
+        page.savedSubscriptionId?.let(store::learnSavedSubscription)
+        page.items.forEach(store::upsertSubscription)
     }
+
+    /** Whether the device doesn't know the Saved subscription's server id yet. */
+    val savedSubscriptionUnknown: Boolean
+        get() = store.savedServerId == null
+
+    /** The ids of the subscriptions on the device. */
+    fun subscriptionIds(): Set<String> =
+        db.subscriptionQueries.selectSubscriptions().executeAsList().map { it.id }.toSet()
 
     fun saveTags(tags: TagList) = db.transaction { tags.items.forEach(store::upsertTag) }
 
@@ -83,10 +93,10 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
      */
     fun saveCollectionPage(collectionId: String, items: List<EntryListItem>, first: Boolean) =
         db.transaction {
-            if (first) db.collectionEntryQueries.deleteForSubscription(collectionId)
+            if (first) db.subscriptionEntryQueries.deleteForSubscription(collectionId)
             for (item in items) {
                 store.upsertEntry(item)
-                db.collectionEntryQueries.insertIgnore(collectionId, item.id)
+                db.subscriptionEntryQueries.insertIgnore(collectionId, item.id)
             }
         }
 
@@ -126,8 +136,18 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     private fun commitPageInTransaction(page: PulledPage, texts: Map<String, String>, now: Long) {
         page.deletedIds.forEach(store::deleteEntry)
-        // Before the events: an unsubscribe in the same page keeps what's in a collection.
-        page.collectionMemberships.forEach { store.setCollections(it.entryId, it.subscriptionIds) }
+        // Memberships before the events, as the server has them now: an unsubscribe in the same
+        // page keeps what's still in another subscription. A server that predates entries'
+        // subscriptionIds sends only their collections.
+        val reported = page.events.reportedMemberships()
+        for ((entryId, ids) in reported) {
+            if (store.entryExists(entryId)) store.setMemberships(entryId, ids)
+        }
+        for (membership in page.collectionMemberships) {
+            if (membership.entryId !in reported) {
+                store.setCollections(membership.entryId, membership.subscriptionIds)
+            }
+        }
         page.events.forEach(::apply)
         for (entry in page.fetchedEntries) {
             store.upsertEntry(
@@ -145,6 +165,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 entry.read,
                 entry.starred,
                 entry.readChangedAt,
+                entry.subscriptionIds,
             )
             // The fetched body is current: it replaces the old one and wins
             // over any download already in flight.
@@ -179,6 +200,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         entry.read ?: false,
                         entry.starred ?: false,
                         entry.readChangedAt,
+                        event.subscriptionIds,
                     )
                 }
             }
@@ -226,6 +248,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                             event.read,
                             event.starred,
                             event.readChangedAt,
+                            event.subscriptionIds,
                         )
                 }
             }
@@ -236,16 +259,12 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         subscription.customTitle ?: feed.title,
                         feed.title,
                         feed.url,
+                        feed.type,
                         subscription.tags,
                     )
                 }
-            is SyncEvent.SubscriptionUpdated -> {
-                db.subscriptionQueries.updateSubscriptionTitle(
-                    event.customTitle,
-                    event.subscriptionId,
-                )
-                store.setSubscriptionTags(event.subscriptionId, event.tags)
-            }
+            is SyncEvent.SubscriptionUpdated ->
+                store.updateSubscription(event.subscriptionId, event.customTitle, event.tags)
             is SyncEvent.SubscriptionDeleted -> {
                 store.deleteSubscription(event.subscriptionId)
             }
@@ -384,6 +403,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     fun evict(policy: RetentionPolicy, now: Long) = db.transaction {
         db.entryQueries.evictOutsideWindow(now - policy.windowMillis)
         db.entryQueries.evictBeyondCount(policy.maxReadEntries.toLong())
+        db.subscriptionEntryQueries.pruneOrphans()
         db.bodyQueries.pruneOrphans()
         db.summaryQueries.pruneOrphans()
         var size = db.bodyQueries.totalSize().executeAsOne()
@@ -403,3 +423,14 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 }
 
 private const val RECENTLY_OPENED_MILLIS = 24L * 60 * 60 * 1000
+
+/** Each entry's memberships the events report (the server's, as of the page). */
+private fun List<SyncEvent>.reportedMemberships(): Map<String, List<String>> = buildMap {
+    for (event in this@reportedMemberships) {
+        when (event) {
+            is SyncEvent.NewEntry -> event.subscriptionIds?.let { put(event.entryId, it) }
+            is SyncEvent.EntryStateChanged -> event.subscriptionIds?.let { put(event.entryId, it) }
+            else -> {}
+        }
+    }
+}

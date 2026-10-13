@@ -2,6 +2,8 @@ package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.BulkStateResponse
+import com.lionreader.shared.api.COLLECTION_TYPE
+import com.lionreader.shared.api.CollectionMembership
 import com.lionreader.shared.api.Deletion
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.EntryListPage
@@ -46,6 +48,10 @@ import kotlinx.serialization.json.jsonObject
  * - `sync.changes` pages entries changed after a cursor in change order (new/updated/state events),
  *   classifying each against `entriesSince` (the catch-up's start) or, without it, the page's own
  *   cursor (#1663), and reports deletions separately;
+ * - every subscription holds its entries as memberships (#1846): entries and their events carry
+ *   `subscriptionIds` (a feed or Saved, plus [collection] if the entry's in it), and joining or
+ *   leaving the collection is a state change. Saved is a subscription the list doesn't show, whose
+ *   id `/subscriptions` reports once the first save has created it;
  * - requests over the real endpoints' size limits ([ServerLimits]) get a 400.
  *
  * Counts aren't modeled on the wire: the app counts its own entries.
@@ -68,9 +74,21 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         var metadataSeq: Long,
         var stateSeq: Long,
         var deletedSeq: Long? = null,
+        val collections: MutableSet<String> = mutableSetOf(),
     ) {
         val updatedSeq: Long
             get() = maxOf(createdSeq, metadataSeq, stateSeq)
+
+        val saved: Boolean
+            get() = subscriptionId == null
+
+        /** The subscription the server reports as the entry's origin. */
+        val origin: String?
+            get() = if (saved) SAVED_SUBSCRIPTION_ID else subscriptionId
+
+        /** Every subscription holding the entry. */
+        val memberships: List<String>
+            get() = (listOfNotNull(origin) + collections).sorted()
     }
 
     /** A read/star write the server received from the app, after rebasing. */
@@ -82,6 +100,10 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     )
 
     val subscriptions = listOf("sub-1", "sub-2")
+    val collection = "col-1"
+
+    /** Created by the first save. */
+    private var savedSubscriptionId: String? = null
     val entries = linkedMapOf<String, Entry>()
     val clientWrites = mutableListOf<ClientWrite>()
     var faultRate = 0.0
@@ -133,6 +155,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     ): Entry {
         val id = "e%03d".format(nextId++)
         val now = clock()
+        if (subscriptionId == null) savedSubscriptionId = SAVED_SUBSCRIPTION_ID
         val s = ++seq
         return Entry(
                 id = id,
@@ -154,6 +177,12 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     fun editContent(entry: Entry) {
         entry.content = "<p>${entry.id} v${entry.metadataSeq + 1}</p>"
         entry.metadataSeq = ++seq
+    }
+
+    /** Adds the entry to [collection], or takes it out. */
+    fun toggleCollection(entry: Entry) {
+        if (!entry.collections.remove(collection)) entry.collections += collection
+        entry.stateSeq = ++seq
     }
 
     fun delete(entry: Entry) {
@@ -192,10 +221,10 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         Counts(
             all = visible.count { !it.read },
             starred = visible.count { !it.read && it.starred },
-            saved = visible.count { !it.read && it.type == "saved" },
+            saved = visible.count { !it.read && it.saved },
             bySubscription =
-                subscriptions.associateWith { sub ->
-                    visible.count { !it.read && it.subscriptionId == sub }
+                (subscriptions + collection).associateWith { sub ->
+                    visible.count { !it.read && sub in it.memberships }
                 },
         )
 
@@ -229,7 +258,14 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                     originalTitle = sub,
                                     tags = emptyList(),
                                 )
-                            }
+                            } +
+                                Subscription(
+                                    collection,
+                                    type = COLLECTION_TYPE,
+                                    title = collection,
+                                    tags = emptyList(),
+                                ),
+                            savedSubscriptionId = savedSubscriptionId,
                         ),
                     )
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))
@@ -308,9 +344,10 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                     add(
                         SyncEvent.NewEntry(
                             e.id,
-                            e.wireSubscriptionId(),
+                            e.origin,
                             e.type,
                             e.eventEntry(),
+                            e.memberships,
                         )
                     )
                 } else {
@@ -329,9 +366,10 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.read,
                                 e.starred,
                                 e.readChangedAt?.let { e.time(it) },
-                                e.wireSubscriptionId(),
+                                e.origin,
                                 e.type,
                                 if (e.read) null else e.eventEntry(),
+                                e.memberships,
                             )
                         )
                     }
@@ -355,6 +393,10 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                     ),
                 deletions = deleted.map { Deletion(it.id, "${it.deletedSeq}") },
                 resyncRequired = false,
+                collectionMemberships =
+                    page
+                        .filter { it.stateSeq > since }
+                        .map { CollectionMembership(it.id, it.collections.sorted()) },
             ),
         )
     }
@@ -370,8 +412,9 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val matching =
             visible
                 .filter { !starredOnly || it.starred }
-                .filter { type != "saved" || it.type == "saved" }
-                .filter { subscriptionId == null || it.subscriptionId == subscriptionId }
+                // Saved is the Saved subscription's list.
+                .filter { type != "saved" || savedSubscriptionId in it.memberships }
+                .filter { subscriptionId == null || subscriptionId in it.memberships }
                 .filter { !recentlyRead || it.readChangedAt != null }
                 .sortedWith(
                     if (recentlyRead) recentlyReadOrder
@@ -404,7 +447,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .map {
                     EntryState(
                         it.id,
-                        it.wireSubscriptionId(),
+                        it.origin,
                         it.read,
                         it.starred,
                         it.readChangedAt?.let { t -> it.time(t) },
@@ -417,13 +460,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     }
 
     private fun Entry.time(millis: Long) = Instant.fromEpochMilliseconds(millis).toString()
-
-    /**
-     * The subscription id the server reports: a saved article's origin is the user's saved
-     * subscription (#1846), which the subscription list never shows.
-     */
-    private fun Entry.wireSubscriptionId() =
-        if (type == "saved") SAVED_SUBSCRIPTION_ID else subscriptionId
 
     private fun Entry.eventEntry() =
         EventEntry(
@@ -438,7 +474,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     private fun Entry.listItem() =
         EntryListItem(
             id = id,
-            subscriptionId = wireSubscriptionId(),
+            subscriptionId = origin,
+            subscriptionIds = memberships,
             type = type,
             title = id,
             publishedAt = time(published),
@@ -451,7 +488,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
     private fun Entry.full() =
         FullEntry(
             id = id,
-            subscriptionId = wireSubscriptionId(),
+            subscriptionId = origin,
+            subscriptionIds = memberships,
             type = type,
             title = id,
             publishedAt = time(published),

@@ -127,7 +127,6 @@ class Reader(
                     subscriptionId = filter.subscriptionId,
                     tagId = filter.tagId,
                     starredOnly = filter.starredOnly,
-                    savedOnly = filter.savedOnly,
                     uncategorizedOnly = filter.uncategorizedOnly,
                     unreadOnly = unread,
                     keepIds = keepIds,
@@ -139,7 +138,6 @@ class Reader(
                     subscriptionId = filter.subscriptionId,
                     tagId = filter.tagId,
                     starredOnly = filter.starredOnly,
-                    savedOnly = filter.savedOnly,
                     uncategorizedOnly = filter.uncategorizedOnly,
                     unreadOnly = unread,
                     keepIds = keepIds,
@@ -165,7 +163,6 @@ class Reader(
                     subscriptionId = filter.subscriptionId,
                     tagId = filter.tagId,
                     starredOnly = filter.starredOnly,
-                    savedOnly = filter.savedOnly,
                     uncategorizedOnly = filter.uncategorizedOnly,
                     unreadOnly = if (unreadOnly) 1L else 0L,
                     keepIds = keepIds,
@@ -173,11 +170,8 @@ class Reader(
         return query.asFlow().mapToOne(context)
     }
 
-    @Suppress("UNUSED_PARAMETER")
     private fun timelineItem(
         id: String,
-        subscriptionId: String?,
-        type: String,
         url: String?,
         title: String?,
         author: String?,
@@ -291,7 +285,7 @@ class Reader(
             Navigation(
                 allUnread = totals.all_unread.toInt(),
                 starredUnread = totals.starred_unread.toInt(),
-                savedUnread = totals.saved_unread.toInt(),
+                savedUnread = subUnread[SAVED_SUBSCRIPTION_ID] ?: 0,
                 tags = tags.map { NavTag(it.id, it.name, it.color, tagUnread[it.id] ?: 0) },
                 subscriptions =
                     subscriptions.map {
@@ -340,7 +334,6 @@ class Reader(
                 subscriptionId = filter.subscriptionId,
                 tagId = filter.tagId,
                 starredOnly = filter.starredOnly,
-                savedOnly = filter.savedOnly,
                 uncategorizedOnly = filter.uncategorizedOnly,
                 recentlyReadOnly = if (scope == ListScope.RecentlyRead) 1L else 0L,
             )
@@ -350,9 +343,13 @@ class Reader(
 
 /** A list's filter arguments to the queries over one list (`selectTimeline` and the rest). */
 private class ScopeFilter(scope: ListScope) {
-    val subscriptionId = (scope as? ListScope.Subscription)?.id
+    val subscriptionId =
+        when (scope) {
+            is ListScope.Subscription -> scope.id
+            ListScope.Saved -> SAVED_SUBSCRIPTION_ID
+            else -> null
+        }
     val tagId = (scope as? ListScope.Tag)?.id
     val starredOnly = if (scope == ListScope.Starred) 1L else 0L
-    val savedOnly = if (scope == ListScope.Saved) 1L else 0L
     val uncategorizedOnly = if (scope == ListScope.Uncategorized) 1L else 0L
 }

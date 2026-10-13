@@ -12,10 +12,16 @@ import kotlinx.serialization.json.JsonObject
 @Serializable
 data class EntryListItem(
     val id: String,
+    /** The entry's origin: its feed's subscription, or Saved for a saved article. */
     val subscriptionId: String? = null,
     /**
-     * `web`, `email` or `saved`; a string, so a type newer than this app still decodes. The local
-     * database treats anything but `saved` as not saved.
+     * Every active subscription holding the entry (its feed, its collections, Saved for a saved
+     * article). Null from a server that predates it; see `LocalStore.upsertEntry`.
+     */
+    val subscriptionIds: List<String>? = null,
+    /**
+     * `web`, `email` or `saved`; a string, so a type newer than this app still decodes. Only
+     * stored: what's saved is decided by [subscriptionIds].
      */
     val type: String,
     val url: String? = null,
@@ -39,6 +45,8 @@ data class EntryListPage(val items: List<EntryListItem>, val nextCursor: String?
 data class FullEntry(
     val id: String,
     val subscriptionId: String? = null,
+    /** As [EntryListItem.subscriptionIds]. */
+    val subscriptionIds: List<String>? = null,
     val type: String,
     val url: String? = null,
     val title: String? = null,
@@ -101,9 +109,15 @@ data class EntryState(
 
 /**
  * [Subscription.type] of a collection: a list of articles from other feeds (see
- * CollectionEntry.sq).
+ * SubscriptionEntry.sq).
  */
 const val COLLECTION_TYPE = "collection"
+
+/**
+ * [Subscription.type] of the user's Saved subscription, which the server doesn't list (yet): the
+ * app learns its id from [SubscriptionPage.savedSubscriptionId].
+ */
+const val SAVED_TYPE = "saved"
 
 @Serializable
 data class Subscription(
@@ -119,7 +133,15 @@ data class Subscription(
 )
 
 @Serializable
-data class SubscriptionPage(val items: List<Subscription>, val nextCursor: String? = null)
+data class SubscriptionPage(
+    val items: List<Subscription>,
+    val nextCursor: String? = null,
+    /**
+     * The user's Saved subscription, which [items] doesn't list; null until the first save creates
+     * it, and from a server that predates it.
+     */
+    val savedSubscriptionId: String? = null,
+)
 
 @Serializable data class Tag(val id: String, val name: String, val color: String? = null)
 
@@ -136,7 +158,10 @@ data class SyncCursors(
 
 @Serializable data class Deletion(val entryId: String, val deletedAt: String)
 
-/** The collections holding an entry now; empty when it's in none. */
+/**
+ * The collections holding an entry now; empty when it's in none. Only a server that predates
+ * entries' `subscriptionIds` needs it (see `SyncWriter`).
+ */
 @Serializable
 data class CollectionMembership(val entryId: String, val subscriptionIds: List<String>)
 
@@ -185,7 +210,13 @@ data class EventSubscription(
     val tags: List<TagRef>,
 )
 
-@Serializable data class EventFeed(val url: String? = null, val title: String? = null)
+@Serializable
+data class EventFeed(
+    val url: String? = null,
+    val title: String? = null,
+    /** The subscription's type, as [Subscription.type]. */
+    val type: String? = null,
+)
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
@@ -199,6 +230,8 @@ sealed interface SyncEvent {
         val feedType: String? = null,
         /** Absent for spam, which the server's lists leave out. */
         val entry: EventEntry? = null,
+        /** As [EntryListItem.subscriptionIds]. */
+        val subscriptionIds: List<String>? = null,
     ) : SyncEvent {
         /**
          * The entry's type, from the event or else its [entry]; null when neither says, and then
@@ -222,6 +255,8 @@ sealed interface SyncEvent {
         val subscriptionId: String? = null,
         val feedType: String? = null,
         val entry: EventEntry? = null,
+        /** As [EntryListItem.subscriptionIds]; sent with or without [entry]. */
+        val subscriptionIds: List<String>? = null,
     ) : SyncEvent {
         /** As [NewEntry.entryType]. */
         val entryType: String?
