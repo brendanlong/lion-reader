@@ -11,6 +11,7 @@ import { db } from "../db";
 import { generateSummary } from "../html/strip-html";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
+import { parseListUnsubscribeUrl } from "./parse-utils";
 import {
   entries,
   subscriptions,
@@ -127,58 +128,6 @@ function extractToken(toAddress: string): string {
   // Strip plus codes
   const plusIndex = localPart.indexOf("+");
   return plusIndex === -1 ? localPart : localPart.slice(0, plusIndex);
-}
-
-/**
- * Parses a List-Unsubscribe header and extracts the mailto: URL.
- * The header can contain multiple URLs in angle brackets, comma-separated.
- * Example: "<mailto:unsub@example.com>, <https://example.com/unsub>"
- *
- * @param header - The List-Unsubscribe header value
- * @returns The mailto: URL or null if not found
- */
-function parseListUnsubscribeMailto(header: string | undefined): string | null {
-  if (!header) {
-    return null;
-  }
-
-  // Match mailto: URLs in angle brackets
-  const mailtoRegex = /<(mailto:[^>]+)>/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = mailtoRegex.exec(header)) !== null) {
-    if (match[1]) {
-      return match[1];
-    }
-  }
-
-  return null;
-}
-
-/**
- * Parses a List-Unsubscribe header and extracts the https: URL.
- * The header can contain multiple URLs in angle brackets, comma-separated.
- * Example: "<mailto:unsub@example.com>, <https://example.com/unsub>"
- *
- * @param header - The List-Unsubscribe header value
- * @returns The https: URL or null if not found
- */
-function parseListUnsubscribeHttps(header: string | undefined): string | null {
-  if (!header) {
-    return null;
-  }
-
-  // Match https: URLs in angle brackets
-  const httpsRegex = /<(https:[^>]+)>/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = httpsRegex.exec(header)) !== null) {
-    if (match[1]) {
-      return match[1];
-    }
-  }
-
-  return null;
 }
 
 /**
@@ -412,8 +361,8 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   const unsubscribeUrl = email.html ? extractUnsubscribeUrl(email.html) : null;
 
   // Parse List-Unsubscribe headers
-  const listUnsubscribeMailto = parseListUnsubscribeMailto(email.headers.listUnsubscribe);
-  const listUnsubscribeHttps = parseListUnsubscribeHttps(email.headers.listUnsubscribe);
+  const listUnsubscribeMailto = parseListUnsubscribeUrl(email.headers.listUnsubscribe, "mailto");
+  const listUnsubscribeHttps = parseListUnsubscribeUrl(email.headers.listUnsubscribe, "https");
   const listUnsubscribePost =
     email.headers.listUnsubscribePost?.toLowerCase().includes("one-click") ?? false;
 
