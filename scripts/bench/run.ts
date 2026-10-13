@@ -145,26 +145,6 @@ async function analyzeStale(client: Client): Promise<string[]> {
   return stale.rows.map((r) => r.relname);
 }
 
-/**
- * Runs every write benchmark once and rolls it back. The tables grow to hold
- * the rows a write writes, and keep that space after the rollback; doing it
- * here first means every run, including the first after a seed, measures the
- * same physical layout and row estimates.
- */
-async function settle(client: Client): Promise<void> {
-  for (const bench of BENCHMARKS.filter((b) => b.kind === "write")) {
-    const prepared = await bench.prepare(client);
-    await client.query("BEGIN");
-    try {
-      for (const sql of prepared.setup ?? []) await client.query(sql);
-      for (const statement of prepared.statements) await client.query(statement.sql);
-    } finally {
-      await client.query("ROLLBACK");
-    }
-  }
-  await vacuum(client);
-}
-
 /** Whether pg_stat_statements is usable, creating the extension if needed. */
 async function enablePgStatStatements(client: Client): Promise<boolean> {
   try {
@@ -423,6 +403,31 @@ async function runBenchmark(
   }
 }
 
+/**
+ * Runs every write benchmark the way a run does and discards the results, so
+ * every run, including the first after a seed, starts from the layout a run
+ * leaves behind. Rolled-back writes leave the tables and indexes grown (VACUUM
+ * clears the rows but not the space or the leaf-page splits), and the layout
+ * keeps shifting for the first few passes; a single pass of each write left the
+ * first run reading up to 7% more buffers than the later ones (#1910).
+ */
+async function settle(
+  connect: () => Promise<Client>,
+  iterations: number,
+  warmup: number,
+  opts: RunOptions
+): Promise<void> {
+  for (const bench of BENCHMARKS.filter((b) => b.kind === "write")) {
+    await runBenchmark(connect, bench, iterations, warmup, opts);
+  }
+  const client = await connect();
+  try {
+    await vacuum(client);
+  } finally {
+    await client.end();
+  }
+}
+
 function git(args: string): string {
   try {
     return execSync(`git ${args}`, { cwd: BENCH_DIR, encoding: "utf8" }).trim();
@@ -564,8 +569,9 @@ async function main(): Promise<void> {
     { iterations, warmup, pgss: opts.pgss, analyzed },
     values.note
   );
-  await settle(admin);
   await admin.end();
+  console.error("settling: running every write benchmark once, unrecorded");
+  await settle(connect, iterations, warmup, opts);
 
   const results: BenchResult[] = [];
   for (const bench of selected) {
