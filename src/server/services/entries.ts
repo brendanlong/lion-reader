@@ -216,7 +216,7 @@ export interface MarkReadEntryState {
 // ============================================================================
 
 const DEFAULT_LIMIT = 50;
-/** The most entries one page of a list or search returns, on every surface. */
+/** The most entries one page of a list or search, or one read by id, returns, on every surface. */
 export const MAX_ENTRIES_PAGE_SIZE = 100;
 /** The most entries one read or star write may name, on every surface. */
 export const MAX_ENTRY_STATE_BATCH = 1000;
@@ -1430,7 +1430,7 @@ export async function markAllEntriesRead(
   // if its live event was missed (#1102). UUIDs are lowercase, so string
   // comparison matches Postgres uuid ordering.
   const maxEntryId = entryIds.reduce((max, id) => (id > max ? id : max));
-  void publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts);
+  publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts);
 
   return { entryIds, counts };
 }

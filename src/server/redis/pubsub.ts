@@ -201,11 +201,11 @@ async function publishToChannel(
   // Published on the shared main client: PUBLISH is an ordinary command, so it
   // needs no dedicated connection (only SUBSCRIBE mode does — see
   // getSharedSubscriberClient).
-  const client = getRedisClient();
-  if (!client) {
-    return 0;
-  }
   try {
+    const client = getRedisClient();
+    if (!client) {
+      return 0;
+    }
     return await client.publish(channel, JSON.stringify(event));
   } catch (err) {
     logger.error("Failed to publish event", { err, channel, type: event.type });

@@ -400,8 +400,7 @@ function buildTools(): Tool[] {
 
     {
       name: "mark_entries_read",
-      description:
-        "Mark entries as read or unread (bulk operation, max 1000). Returns updated entries and unread counts.",
+      description: `Mark entries as read or unread (bulk operation, max ${entriesService.MAX_ENTRY_STATE_BATCH}). Returns updated entries and unread counts.`,
       inputSchema: toInputSchema(markEntriesReadArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(markEntriesReadArgs, args);

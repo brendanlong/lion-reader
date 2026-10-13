@@ -34,10 +34,6 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-// Bound the item-id list so a single call can't ask the server to issue an
-// unbounded number of per-entry updates (issue #1266).
-const MAX_ITEM_IDS = entriesService.MAX_ENTRY_STATE_BATCH;
-
 export const POST = withClientErrors(async (request: Request): Promise<Response> => {
   const session = await requireAuth(request);
   if (session instanceof Response) return session;
@@ -51,9 +47,10 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
     return errorResponse("Invalid item ID format", 400);
   }
 
-  if (itemIds.length > MAX_ITEM_IDS) {
+  // Bounded so one call can't issue an unbounded number of per-entry updates (#1266).
+  if (itemIds.length > entriesService.MAX_ENTRY_STATE_BATCH) {
     return errorResponse(
-      `Too many item ids: ${itemIds.length} requested, maximum ${MAX_ITEM_IDS} per request. Split into smaller batches.`,
+      `Too many item ids: ${itemIds.length} requested, maximum ${entriesService.MAX_ENTRY_STATE_BATCH} per request. Split into smaller batches.`,
       400
     );
   }

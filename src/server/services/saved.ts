@@ -548,7 +548,7 @@ async function insertSavedEntry(
 
   // Fire-and-forget: SSE is best-effort and must never fail the save response
   // (the entry transaction has already committed). See entry-events.ts.
-  void publishUserNewEntry(
+  publishUserNewEntry(
     { userId, subscriptionId: inserted.savedSubscriptionId, feedType: "saved" },
     entryId,
     now,
@@ -1208,7 +1208,7 @@ export async function saveArticle(
     // Publish event to notify other browser windows/tabs of the content update.
     // Fire-and-forget: SSE is best-effort and must never fail the response (the
     // transaction has already committed). See entry-events.ts.
-    void publishUserEntryUpdated(
+    publishUserEntryUpdated(
       { userId, subscriptionId: null, feedType: "saved" },
       {
         id: oldEntry.id,

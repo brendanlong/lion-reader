@@ -1,6 +1,6 @@
 /**
  * The demo's backend: an in-memory implementation of the tRPC procedures the
- * reader tree issues, over the static article fixtures in ./data.
+ * reader tree issues, over the static article fixtures in `@/lib/demo/data`.
  *
  * The demo renders the app's real routing/state layer (`UnifiedEntriesContent`,
  * `Sidebar`, `useEntryMutations`, …) through a `createHandlerLink` built from
