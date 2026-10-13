@@ -5,15 +5,17 @@
 -- (mark-all-read, the counters' recomputes) the (user_id)-only ones did.
 SET LOCAL lock_timeout = '5s';
 
-DROP INDEX IF EXISTS idx_user_entries_unread;
---> statement-breakpoint
-DROP INDEX IF EXISTS idx_user_entries_starred;
---> statement-breakpoint
+-- Build before dropping: a build takes a SHARE lock (reads continue), a drop
+-- an ACCESS EXCLUSIVE one, which would otherwise be held across the builds.
 CREATE INDEX IF NOT EXISTS idx_user_entries_unread_timeline
   ON user_entries (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE NOT read;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS idx_user_entries_starred_timeline
   ON user_entries (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
+--> statement-breakpoint
+DROP INDEX IF EXISTS idx_user_entries_unread;
+--> statement-breakpoint
+DROP INDEX IF EXISTS idx_user_entries_starred;
 --> statement-breakpoint
 -- visible_entries takes every column a list filters or sorts on by default
 -- from user_entries (`id`, and `is_spam`, which is copied from the entry at
