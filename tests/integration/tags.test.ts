@@ -603,7 +603,9 @@ describe("Tags API", () => {
 
       const result = await caller.subscriptions.setTags({ id: subId, tagIds: [tag1Id, tag2Id] });
 
-      expect(result).toEqual({});
+      // The updated subscription, so the client applies it without a refetch.
+      expect(result).toMatchObject({ id: subId });
+      expect(result.tags.map((t) => t.id).sort()).toEqual([tag1Id, tag2Id].sort());
 
       // Verify tags are set in database
       const dbTags = await db

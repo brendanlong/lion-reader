@@ -491,7 +491,8 @@ export const subscriptionsRouter = createTRPCRouter({
           subscription.id,
           now,
           tagsResult,
-          subscription.customTitle
+          subscription.customTitle,
+          subscription.fetchFullContent
         ).catch((err) => {
           logger.error("Failed to publish subscription_updated event", {
             err,
@@ -641,7 +642,7 @@ export const subscriptionsRouter = createTRPCRouter({
    *
    * @param id - The subscription ID
    * @param tagIds - Array of tag IDs to set
-   * @returns Empty object on success
+   * @returns The updated subscription
    */
   setTags: readerProcedure
     .meta({
@@ -658,7 +659,7 @@ export const subscriptionsRouter = createTRPCRouter({
         tagIds: z.array(z.string().uuid("Invalid tag ID")),
       })
     )
-    .output(z.object({}))
+    .output(subscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       await subscriptionsService.setSubscriptionTags(
         ctx.db,
@@ -666,7 +667,7 @@ export const subscriptionsRouter = createTRPCRouter({
         input.id,
         input.tagIds
       );
-      return {};
+      return subscriptionsService.getSubscription(ctx.db, ctx.session.user.id, input.id);
     }),
 });
 

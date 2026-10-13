@@ -10,18 +10,14 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   applyCollectionEntriesChange,
+  applyEntryStateChanges,
+  applySubscriptionUpdate,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
   handleMarkAllRead,
-  loadSubscriptionForSidebar,
   setEntryRelatedCounts,
 } from "./operations";
-import {
-  patchServerEntryMetadata,
-  setServerEntryState,
-  setSubscriptionEntriesFeedTitle,
-  type EntryRow,
-} from "@/lib/local-db/entries";
+import { patchServerEntryMetadata, type EntryRow } from "@/lib/local-db/entries";
 import {
   addServerEntryToLists,
   getLocalDb,
@@ -30,7 +26,6 @@ import {
 } from "@/lib/local-db/local-db";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { applySyncTagChanges, removeSyncTags } from "./tag-cache";
-import { patchLiveSubscription } from "@/lib/local-db/subscriptions";
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
@@ -158,33 +153,25 @@ export function handleSyncEvent(
       break;
 
     case "entry_state_changed": {
+      const feedType = event.entry?.type ?? event.feedType;
       const state = { read: event.read, starred: event.starred };
-      setServerEntryState(db.entries, event.entryId, {
-        ...state,
-        subscriptionIds: event.subscriptionIds,
-        updatedAt: new Date(event.updatedAt),
+      applyEntryStateChanges(utils, queryClient, {
+        entries: [
+          {
+            id: event.entryId,
+            ...state,
+            subscriptionIds: event.subscriptionIds,
+            updatedAt: new Date(event.updatedAt),
+            // Sent with an unread flip; older servers and star/unstar of an
+            // unread entry fall back to the stored row.
+            ...(event.entry &&
+              feedType && {
+                listItem: toEntryRow({ ...event, feedType }, event.entry, state),
+              }),
+          },
+        ],
+        counts: event.counts,
       });
-
-      // An entry that became unread (here or on another device) belongs in
-      // unread-only lists that don't contain it (fetched while it was read).
-      // Prefer the event's list-item payload — it lets the entry appear even
-      // when the store doesn't hold it (e.g. marked unread on another device
-      // or via MCP), the same way new_entry payloads make new entries appear
-      // live (issue #1237). Events without a payload (older servers,
-      // star/unstar of an unread entry) fall back to the stored row.
-      if (!event.read) {
-        const { entry } = event;
-        const feedType = entry?.type ?? event.feedType;
-        if (entry && feedType) {
-          addServerEntryToLists(db, toEntryRow({ ...event, feedType }, entry, state));
-        } else {
-          const stored = db.entries.getSynced(event.entryId);
-          if (stored) insertEntryIntoLists(db, stored);
-        }
-      }
-
-      // Set all counts from the server directly — no delta estimation needed.
-      setEntryRelatedCounts(utils, event.counts, queryClient);
       break;
     }
 
@@ -218,27 +205,15 @@ export function handleSyncEvent(
     }
 
     case "subscription_updated": {
-      // The stored row moves between sidebar sections with its tags. A
-      // cleared custom title falls back to the feed's own, which the row has.
+      // A cleared custom title falls back to the feed's own, which only a
+      // stored row knows.
       const stored = db.subscriptions.rows.getSynced(event.subscriptionId);
-      // Its entries show the same title (the server sends it as their
-      // feedTitle), so a rename carries over to the ones already loaded.
-      const title = event.customTitle ?? stored?.originalTitle;
-      if (title !== undefined) {
-        setSubscriptionEntriesFeedTitle(db.entries, event.subscriptionId, title);
-      }
-      if (stored) {
-        patchLiveSubscription(db.subscriptions, event.subscriptionId, {
-          tags: event.tags,
-          title: event.customTitle ?? stored.originalTitle,
-        });
-      } else {
-        const tagIds = event.tags.map((tag) => tag.id);
-        loadSubscriptionForSidebar(utils, queryClient, event.subscriptionId, tagIds);
-      }
-      // Tag feed counts changed, and the collection picker searches by title.
-      utils.tags.list.invalidate();
-      void utils.subscriptions.list.invalidate({ type: "collection" });
+      applySubscriptionUpdate(utils, queryClient, {
+        id: event.subscriptionId,
+        tags: event.tags,
+        title: event.customTitle ?? stored?.originalTitle,
+        fetchFullContent: event.fetchFullContent,
+      });
       break;
     }
 

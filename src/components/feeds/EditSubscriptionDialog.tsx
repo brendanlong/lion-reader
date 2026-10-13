@@ -8,8 +8,11 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { applySubscriptionUpdate } from "@/lib/cache/operations";
+import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 import type { Tag } from "@/lib/types/tag";
 import { Dialog, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -86,9 +89,11 @@ function EditSubscriptionForm({
   const { data: tagsData } = trpc.tags.list.useQuery();
   const tags: Tag[] = tagsData?.items ?? [];
 
-  // Mutations
-  const updateMutation = trpc.subscriptions.update.useMutation();
-  const setTagsMutation = trpc.subscriptions.setTags.useMutation();
+  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
+  const applyResponse = (row: SubscriptionRow) => applySubscriptionUpdate(utils, queryClient, row);
+  const updateMutation = trpc.subscriptions.update.useMutation({ onSuccess: applyResponse });
+  const setTagsMutation = trpc.subscriptions.setTags.useMutation({ onSuccess: applyResponse });
 
   const handleSave = async () => {
     try {

@@ -14,10 +14,11 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useLocalEntriesMatching } from "@/lib/hooks/useLocalEntries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
-import { writeLiveSubscriptions, type SubscriptionRow } from "@/lib/local-db/subscriptions";
+import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import type { EntryListFilters } from "@/lib/local-db/entry-lists";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
+import { createSubscriptionRow } from "../../../utils/cache-test-helpers";
 
 afterEach(() => {
   cleanup();
@@ -68,22 +69,6 @@ function learnSavedSubscription(queryClient: QueryClient): void {
   });
 }
 
-function subscriptionRow(id: string, tagIds: string[]): SubscriptionRow {
-  return {
-    id,
-    type: "web",
-    url: `https://example.com/${id}.xml`,
-    title: id,
-    originalTitle: id,
-    description: null,
-    siteUrl: null,
-    subscribedAt: new Date("2024-01-01T00:00:00Z"),
-    unreadCount: 0,
-    tags: tagIds.map((tagId) => ({ id: tagId, name: tagId, color: null })),
-    fetchFullContent: false,
-  };
-}
-
 function renderMatching(
   filters: EntryListFilters,
   {
@@ -97,7 +82,12 @@ function renderMatching(
     upsertServerEntries(db.entries, STORED);
     writeLiveSubscriptions(
       db.subscriptions,
-      Object.entries(subscriptions).map(([id, tagIds]) => subscriptionRow(id, tagIds))
+      Object.entries(subscriptions).map(([id, tagIds]) =>
+        createSubscriptionRow({
+          id,
+          tags: tagIds.map((tagId) => ({ id: tagId, name: tagId, color: null })),
+        })
+      )
     );
   });
   if (savedKnown) learnSavedSubscription(rendered.queryClient);

@@ -973,6 +973,31 @@ describe("handleSyncEvent - subscription_created", () => {
 // ============================================================================
 
 describe("handleSyncEvent - subscription_updated", () => {
+  it("carries a changed full-content setting to every open entry of the subscription", () => {
+    const entryOf = (id: string, subscriptionId: string) => ({
+      entry: { ...DEFAULT_ENTRIES[0], id, subscriptionId, fetchFullContent: false },
+    });
+    setUtilsData(utils.entries.get, { id: "entry-1" }, entryOf("entry-1", "sub-1"));
+    setUtilsData(utils.entries.get, { id: "entry-2" }, entryOf("entry-2", "sub-1"));
+    setUtilsData(utils.entries.get, { id: "entry-3" }, entryOf("entry-3", "sub-2"));
+
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createSubscriptionUpdatedEvent({ subscriptionId: "sub-1", fetchFullContent: true })
+    );
+
+    const setting = (id: string) =>
+      getUtilsData<{ entry: { fetchFullContent: boolean } }>(utils.entries.get, { id })?.entry
+        .fetchFullContent;
+    expect([setting("entry-1"), setting("entry-2"), setting("entry-3")]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(findSubscription("sub-1")?.fetchFullContent).toBe(true);
+  });
+
   it("updates tags on subscription", () => {
     handleSyncEvent(
       utils,

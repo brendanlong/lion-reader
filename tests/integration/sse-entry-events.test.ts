@@ -182,7 +182,7 @@ describe("SSE entry events", () => {
             event: "entry_updated",
             entryId: saved.id,
             subscriptionId: null,
-            feedType: "saved",
+            feedType: undefined,
             feedTitle: undefined,
             type: undefined,
           },

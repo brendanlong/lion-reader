@@ -14,8 +14,8 @@
 
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { trpc, UNBATCHED } from "@/lib/trpc/client";
-import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
+import { useFullContent } from "@/lib/hooks/useFullContent";
 import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
 import { showOriginalKey, useShowOriginalPreference } from "@/lib/hooks/useShowOriginalPreference";
 import { useSavedSubscriptionId } from "@/lib/hooks/useSavedSubscriptionId";
@@ -77,7 +77,6 @@ function EntryContentInner({
   nextEntryId,
   previousEntryId,
 }: EntryContentProps) {
-  const utils = trpc.useUtils();
   const { prerecordedNarration, ssrDateTimeZone, renderSlots } = useEntryContentOptions();
 
   // False during SSR + first client render. The cache-reading fallback below
@@ -126,102 +125,21 @@ function EntryContentInner({
   trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId, ...UNBATCHED });
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId, ...UNBATCHED });
 
-  // Get fetchFullContent setting directly from entry (included in entries.get response)
-  // This avoids a separate subscriptions.get query
-  const fetchFullContent = entry?.fetchFullContent ?? false;
-
   // Entry mutations for marking read, starring, etc.
   const { markRead, star, unstar } = useEntryMutations();
 
-  // Mutation to update subscription's fetchFullContent setting
-  const updateSubscriptionMutation = trpc.subscriptions.update.useMutation({
-    onSuccess: (_data, variables) => {
-      // Invalidate subscriptions list to reflect the new setting
-      utils.subscriptions.list.invalidate();
-      // Update entry cache with new fetchFullContent value if it was changed
-      if (variables.fetchFullContent !== undefined) {
-        utils.entries.get.setData({ id: entryId }, (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            entry: { ...oldData.entry, fetchFullContent: variables.fetchFullContent! },
-          };
-        });
-      }
-    },
-    onError: (error) => {
-      toast.error("Failed to update subscription setting", {
-        description: error.message,
-      });
-    },
-  });
-
-  // Mutation to fetch full content for the entry
-  const fetchFullContentMutation = trpc.entries.fetchFullContent.useMutation({
-    onSuccess: (result) => {
-      // Update the entry cache with the returned data
-      // The mutation returns the updated entry with fullContentFetchedAt/fullContentError
-      if (result.entry) {
-        utils.entries.get.setData({ id: entryId }, (oldData) => {
-          if (!oldData) return oldData;
-          return { entry: { ...oldData.entry, ...result.entry } };
-        });
-      } else {
-        // Fallback: invalidate to refetch from server
-        utils.entries.get.invalidate({ id: entryId });
-      }
-
-      if (!result.success && result.error) {
-        toast.error("Failed to fetch full content", {
-          description: result.error,
-        });
-      }
-    },
-    onError: (error) => {
-      toast.error("Failed to fetch full content", {
-        description: error.message,
-      });
-    },
-  });
-
-  // Handle toggling fetchFullContent setting
   // Full content is a feed subscription's setting; the saved subscription
   // (a saved article's origin) has none.
   const fullContentSubscriptionId =
     savedSubscriptionId === undefined || entry?.subscriptionId === savedSubscriptionId
       ? null
       : entry?.subscriptionId;
-  const handleToggleFetchFullContent = useCallback(() => {
-    if (!entry || !fullContentSubscriptionId) return;
-
-    const newValue = !fetchFullContent;
-    updateSubscriptionMutation.mutate({
-      id: fullContentSubscriptionId,
-      fetchFullContent: newValue,
-    });
-
-    // If enabling full content and it hasn't been fetched successfully, trigger fetch
-    // This includes retrying after a previous error
-    const needsFetch = !entry.fullContentFetchedAt || entry.fullContentError;
-    if (newValue && needsFetch) {
-      fetchFullContentMutation.mutate({ id: entryId });
-    }
-  }, [
-    entry,
-    fullContentSubscriptionId,
+  const {
     fetchFullContent,
-    entryId,
-    updateSubscriptionMutation,
-    fetchFullContentMutation,
-  ]);
-
-  // Determine if full content is currently being shown
-  // This mirrors the logic in EntryContentBody for content selection
-  const hasFullContent = Boolean(
-    (entry?.fullContentCleaned || entry?.fullContentOriginal) &&
-    entry?.fullContentFetchedAt &&
-    !entry?.fullContentError
-  );
-  const isShowingFullContent = fetchFullContent && hasFullContent;
+    isShowingFullContent,
+    isFetching: isFullContentFetching,
+    toggle: toggleFetchFullContent,
+  } = useFullContent(entryId, entry, fullContentSubscriptionId);
 
   // Summarization state — track separate summaries for feed vs full content
   type SummaryData = {
@@ -296,19 +214,6 @@ function EntryContentInner({
       regenerate: true,
     });
   }, [summarizationMutation, entryId, isShowingFullContent]);
-
-  // Auto-fetch full content when entry loads and setting is enabled
-  const hasAutoFetchedFullContent = useRef(false);
-  useEffect(() => {
-    if (hasAutoFetchedFullContent.current || !entry) return;
-    if (!fetchFullContent) return;
-    // Skip if already fetched successfully (has timestamp but no error)
-    if (entry.fullContentFetchedAt && !entry.fullContentError) return;
-    if (fetchFullContentMutation.isPending) return; // Already fetching
-
-    hasAutoFetchedFullContent.current = true;
-    fetchFullContentMutation.mutate({ id: entryId });
-  }, [entry, fetchFullContent, entryId, fetchFullContentMutation]);
 
   // Auto-mark-read: fire the mutation once, as soon as entries.get data is
   // available (from cache when prefetched, otherwise when the fetch lands) —
@@ -404,10 +309,8 @@ function EntryContentInner({
         fullContentFetchedAt={entry.fullContentFetchedAt}
         fullContentError={entry.fullContentError}
         fetchFullContent={fetchFullContent}
-        isFullContentFetching={fetchFullContentMutation.isPending}
-        onToggleFetchFullContent={
-          fullContentSubscriptionId ? handleToggleFetchFullContent : undefined
-        }
+        isFullContentFetching={isFullContentFetching}
+        onToggleFetchFullContent={toggleFetchFullContent}
         // Summarization props
         isSummarizationAvailable={isSummarizationAvailable}
         summary={summary}

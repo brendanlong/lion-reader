@@ -318,6 +318,8 @@ export const subscriptionUpdatedEventSchema = z.object({
   subscriptionId: z.string(),
   tags: z.array(syncTagSchema),
   customTitle: z.string().nullable(),
+  // Absent when the publisher didn't read it, and from a previous release's events.
+  fetchFullContent: z.boolean().optional(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });

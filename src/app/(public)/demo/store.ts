@@ -518,12 +518,17 @@ export function createDemoStore(): DemoStore {
           !(input.before instanceof Date) ||
           (state.entry.publishedAt ?? state.entry.fetchedAt) < input.before
       );
+      const affected = new Map<string, SubscriptionState>();
       for (const state of targets) {
         state.read = true;
         state.readChangedAt = toDate(input.changedAt, now);
         state.updatedAt = now;
+        for (const sub of containersOf(state)) affected.set(sub.id, sub);
       }
-      return { count: targets.length };
+      return {
+        count: targets.length,
+        counts: targets.length > 0 ? countsForSubscriptions([...affected.values()]) : undefined,
+      };
     },
 
     "entries.setStarred": (input) => {
@@ -622,7 +627,7 @@ export function createDemoStore(): DemoStore {
     "subscriptions.setTags": (input) => {
       const sub = requireSubscription(input.id);
       sub.tagIds = input.tagIds.filter((id) => tags.has(id));
-      return {};
+      return toSubscription(sub);
     },
 
     "subscriptions.delete": (input) => {

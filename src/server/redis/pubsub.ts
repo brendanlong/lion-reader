@@ -456,6 +456,7 @@ export async function publishSubscriptionDeleted(
  * @param updatedAt - The database updated_at timestamp for cursor tracking
  * @param tags - The subscription's current tags
  * @param customTitle - The subscription's custom title (null for default)
+ * @param fetchFullContent - The subscription's full-content setting, when the publisher has it
  * @returns The number of subscribers that received the message (0 if Redis unavailable)
  */
 export async function publishSubscriptionUpdated(
@@ -463,7 +464,8 @@ export async function publishSubscriptionUpdated(
   subscriptionId: string,
   updatedAt: Date,
   tags: Array<{ id: string; name: string; color: string | null }>,
-  customTitle: string | null
+  customTitle: string | null,
+  fetchFullContent?: boolean
 ): Promise<number> {
   return publishUserEvent({
     type: "subscription_updated",
@@ -471,6 +473,7 @@ export async function publishSubscriptionUpdated(
     subscriptionId,
     tags,
     customTitle,
+    fetchFullContent,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
   });

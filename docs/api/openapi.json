@@ -5698,7 +5698,98 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {},
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "email",
+                        "saved",
+                        "collection"
+                      ]
+                    },
+                    "url": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "originalTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "siteUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "subscribedAt": {
+                      "type": "string"
+                    },
+                    "unreadCount": {
+                      "type": "number"
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "color": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "color"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "fetchFullContent": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "type",
+                    "url",
+                    "title",
+                    "originalTitle",
+                    "description",
+                    "siteUrl",
+                    "subscribedAt",
+                    "unreadCount",
+                    "tags",
+                    "fetchFullContent"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -13699,6 +13790,9 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "fetchFullContent": {
+                                "type": "boolean"
                               },
                               "timestamp": {
                                 "type": "string"

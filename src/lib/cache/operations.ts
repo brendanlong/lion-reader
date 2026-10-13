@@ -12,8 +12,13 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import { getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
-import { setStoredEntryCollection } from "@/lib/local-db/entries";
+import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
+import {
+  setServerEntryState,
+  setStoredEntryCollection,
+  setSubscriptionEntriesFeedTitle,
+  type EntryRow,
+} from "@/lib/local-db/entries";
 import {
   patchLiveSubscription,
   removeLiveSubscriptions,
@@ -101,6 +106,58 @@ export function handleSubscriptionCreated(
 }
 
 /**
+ * A subscription's new settings: the whole row from an update/setTags
+ * response, or what a subscription_updated event carries. An undefined field
+ * is unknown and left as it is.
+ */
+type EntryGetData = NonNullable<ReturnType<TRPCClientUtils["entries"]["get"]["getData"]>>;
+
+type SubscriptionUpdate = Pick<SubscriptionRow, "id" | "tags"> &
+  Partial<Pick<SubscriptionRow, "title" | "fetchFullContent">>;
+
+/**
+ * Applies a subscription's new tags, title and settings, from its mutation
+ * response or its event. Idempotent, so the acting tab can apply both.
+ */
+export function applySubscriptionUpdate(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  update: SubscriptionUpdate
+): void {
+  const { id, tags, title, fetchFullContent } = update;
+  const db = getLocalDb(queryClient);
+  // Its entries show the same title (the server sends it as their
+  // feedTitle), so a rename carries over to the ones already loaded.
+  if (title !== undefined) setSubscriptionEntriesFeedTitle(db.entries, id, title);
+  if (fetchFullContent !== undefined) {
+    // Each entry carries its subscription's setting.
+    queryClient.setQueriesData<EntryGetData>({ queryKey: [["entries", "get"]] }, (old) =>
+      old && old.entry.subscriptionId === id && old.entry.fetchFullContent !== fetchFullContent
+        ? { ...old, entry: { ...old.entry, fetchFullContent } }
+        : old
+    );
+  }
+  // The stored row moves between sidebar sections with its tags.
+  if (db.subscriptions.rows.getSynced(id)) {
+    patchLiveSubscription(db.subscriptions, id, {
+      tags,
+      ...(title !== undefined && { title }),
+      ...(fetchFullContent !== undefined && { fetchFullContent }),
+    });
+  } else {
+    loadSubscriptionForSidebar(
+      utils,
+      queryClient,
+      id,
+      tags.map((tag) => tag.id)
+    );
+  }
+  // Tag feed counts changed, and the collection picker searches by title.
+  utils.tags.list.invalidate();
+  void utils.subscriptions.list.invalidate({ type: "collection" });
+}
+
+/**
  * Applies articles being added to or removed from a collection: the absolute
  * counts, each article's cached `collections.listForEntry`, and the
  * collection's loaded entry lists. Idempotent, so the acting tab can apply
@@ -140,6 +197,47 @@ export function applyCollectionEntriesChange(
       if (stored) insertEntryIntoLists(db, stored);
     }
   }
+}
+
+/** An entry's read/starred state as the server reported it. */
+export interface EntryStateChange {
+  id: string;
+  read: boolean;
+  starred: boolean;
+  updatedAt: Date;
+  subscriptionIds?: string[];
+  /** The entry's list item, when the server sent one with an unread flip. */
+  listItem?: EntryRow;
+}
+
+/**
+ * Applies read/starred changes from the server, whether a markRead/setStarred
+ * response or an `entry_state_changed` event: the entries' state, their place
+ * in unread-only lists, and the absolute counts. Idempotent, so the acting tab
+ * can apply both its response and the event.
+ */
+export function applyEntryStateChanges(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  change: { entries: EntryStateChange[]; counts?: EntryRelatedCounts }
+): void {
+  const db = getLocalDb(queryClient);
+  for (const entry of change.entries) {
+    setServerEntryState(db.entries, entry.id, entry);
+    // An entry that became unread (here or on another device) belongs in
+    // unread-only lists that don't contain it (fetched while it was read).
+    // The list item lets it appear even when the store doesn't hold it (e.g.
+    // marked unread on another device or via MCP), the same way new_entry
+    // payloads make new entries appear live (#1237).
+    if (entry.read) continue;
+    if (entry.listItem) {
+      addServerEntryToLists(db, entry.listItem);
+    } else {
+      const stored = db.entries.getSynced(entry.id);
+      if (stored) insertEntryIntoLists(db, stored);
+    }
+  }
+  if (change.counts) setEntryRelatedCounts(utils, change.counts, queryClient);
 }
 
 /**
@@ -236,8 +334,7 @@ export interface BulkUnreadCounts {
 }
 
 /**
- * Sets absolute counts from an entry mutation response (markRead, setStarred)
- * or a count-bearing realtime event. `saved` is optional: the server always
+ * Sets absolute counts from the server. `saved` is optional: the server always
  * provides it, but events from a previous release may omit it (web/email
  * entries), in which case the write is skipped.
  *
@@ -245,7 +342,7 @@ export interface BulkUnreadCounts {
  * @param counts - Absolute counts from server (saved optional)
  * @param queryClient - React Query client for updating infinite query caches
  */
-export function setBulkCounts(
+function setBulkCounts(
   utils: TRPCClientUtils,
   counts: EntryRelatedCounts,
   queryClient: QueryClient
@@ -335,7 +432,7 @@ function setSubscriptionUnreadCounts(
  * section may list it: one with these tags (unknown tags count as maybe).
  * One that only collapsed tags would list isn't fetched; expanding them loads it.
  */
-export function loadSubscriptionForSidebar(
+function loadSubscriptionForSidebar(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
   id: string,
