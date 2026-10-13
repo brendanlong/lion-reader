@@ -4,8 +4,9 @@
 CREATE TABLE entry (
   id TEXT NOT NULL PRIMARY KEY,
   -- The server's origin subscription (its `subscriptionId`), as it sent it.
-  -- Lists go by subscription_entry; only syncing with a server that predates
-  -- `subscriptionIds` reads this.
+  -- Lists go by subscription_entry; this says whose title feed_title follows
+  -- (refreshFeedTitles), and what a server that predates `subscriptionIds`
+  -- adds the entry to.
   subscription_id TEXT,
   -- Unused (the server sends only subscription ids); SQLite 3.18 can't drop a
   -- column without rebuilding the table.
@@ -91,7 +92,10 @@ WHERE subscription_id IN (SELECT id FROM subscription)
 
 refreshFeedTitlesFor:
 UPDATE entry SET feed_title = (SELECT title FROM subscription WHERE id = :subscriptionId)
-WHERE subscription_id = :subscriptionId AND subscription_id IN (SELECT id FROM subscription)
+-- Through subscription_entry for its index (an origin is always a membership).
+WHERE id IN (SELECT entry_id FROM subscription_entry WHERE subscription_id = :subscriptionId)
+  AND subscription_id = :subscriptionId
+  AND EXISTS (SELECT 1 FROM subscription WHERE id = :subscriptionId)
   AND feed_title IS NOT (SELECT title FROM subscription WHERE id = :subscriptionId);
 
 updateServerState:

@@ -147,7 +147,7 @@ class SearchTest {
     }
 
     @Test
-    fun entriesFollowTheirSubscriptionsRename() = runTest {
+    fun entriesFollowTheirSubscriptionsTitle() = runTest {
         server.subscriptions +=
             Subscription(
                 "sub-1",
@@ -157,17 +157,21 @@ class SearchTest {
             )
         serve("a", hoursAgo = 1, title = "A")
         engine.sync()
+        suspend fun source() = reader.search("a", 1).first().single().source
 
-        // Renames don't re-send the entries (#1856).
+        // Renamed with no event for it (#1856): the next listing of subscriptions (as after 5.sqm)
+        // catches the entries up.
+        server.subscriptions[0] = server.subscriptions[0].copy(title = "Oxide")
+        driver.execute(null, "DELETE FROM app_metadata WHERE key = 'collections_listed'", 0)
+        engine.sync()
+        assertEquals("Oxide", source())
+        assertEquals(emptyList(), search("weekly"))
+
         server.queueChanges(
-            events =
-                listOf(SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = "Oxide"))
+            events = listOf(SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = null))
         )
         engine.sync()
-
-        assertEquals(listOf("a"), search("oxide"))
-        assertEquals(emptyList(), search("weekly"))
-        assertEquals("Oxide", reader.search("oxide", 1).first().single().source)
+        assertEquals("Rust Weekly", source())
     }
 
     @Test
