@@ -21,6 +21,9 @@ const withPWAConfig = withPWA({
   dest: "public",
   // Disable PWA in development for faster builds
   disable: process.env.NODE_ENV === "development",
+  // Registers /sw.js from the main bundle (next-pwa's default; it bundles
+  // workbox-window either way, so `register: false` would save nothing).
+  register: true,
   // Custom worker source for share target handling
   customWorkerSrc: "worker",
   // Don't cache or intercept the start URL ("/"): navigations are deliberately

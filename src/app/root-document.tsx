@@ -16,8 +16,9 @@
  *   HTML — see SECURITY.md before adding any content to the public group.
  *
  * Everything document-level that both layouts share lives here — fonts,
- * metadata/viewport, the blocking theme/appearance scripts, the service-worker
- * registration, the analytics page-view tracker — so the two can't drift. Only
+ * metadata/viewport, the blocking theme/appearance scripts, the analytics
+ * page-view tracker — so the two can't drift. (next-pwa registers the service
+ * worker from the main bundle; see next.config.ts.) Only
  * the nonce plumbing differs.
  *
  * Navigating between the two groups is a full page load (multiple root
@@ -162,23 +163,6 @@ const themeScript = `
  */
 const textAppearanceScript = buildTextAppearanceScript();
 
-/**
- * Service worker registration script.
- *
- * Registers the service worker for PWA support including:
- * - Share Target API (receiving shares from other apps)
- * - Basic caching for offline resilience
- */
-const swScript = `
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js').catch(function(err) {
-      console.log('ServiceWorker registration failed:', err);
-    });
-  });
-}
-`;
-
 interface RootDocumentProps {
   children: React.ReactNode;
   /**
@@ -210,11 +194,6 @@ export function RootDocument({ children, nonce }: RootDocumentProps) {
           nonce={nonce}
           suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: textAppearanceScript }}
-        />
-        <script
-          nonce={nonce}
-          suppressHydrationWarning
-          dangerouslySetInnerHTML={{ __html: swScript }}
         />
       </head>
       <body className="antialiased">
