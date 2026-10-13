@@ -353,6 +353,7 @@ async function populateInitialUserEntries(
       FROM entries e
       JOIN feeds f ON f.id = e.owner_feed_id
       WHERE e.owner_feed_id = ${feedId}
+        AND e.type = 'web' -- lets the partial idx_entries_owner_feed_last_seen serve the range
         AND f.last_entries_updated_at IS NOT NULL
         AND e.last_seen_at >= f.last_entries_updated_at
         AND NOT ${holdsRedirectTwin(sql`${subscriptionId}::uuid`, "e")}

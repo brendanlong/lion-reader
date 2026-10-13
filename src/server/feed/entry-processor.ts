@@ -526,20 +526,30 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
 
   // Each active subscriber gets every entry it doesn't hold yet (its row and
   // its membership), except an entry whose twin from another feed it already
-  // holds (holdsRedirectTwin).
+  // holds (holdsRedirectTwin). Nearly every pair is already held, so the
+  // MATERIALIZED fence drops held pairs before the twin check, which the
+  // planner would otherwise run for every subscriber and entry first.
   const fanOut = () =>
     insertUserEntriesWithMemberships(
       db,
       sql`
-      SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
-             COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
-             e.is_spam, e.is_backfill AS read
-      FROM subscriptions s
-      INNER JOIN entries e ON e.owner_feed_id = s.feed_id
-      WHERE s.feed_id = ${feedId}::uuid
-        AND s.unsubscribed_at IS NULL
-        AND e.id = ANY(${entryIdsArray}::uuid[])
-        AND NOT ${holdsRedirectTwin(sql`s.id`, "e")}
+      WITH missing AS MATERIALIZED (
+        SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
+               COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+               e.is_spam, e.is_backfill AS read, e.guid, e.owner_feed_id
+        FROM subscriptions s
+        INNER JOIN entries e ON e.owner_feed_id = s.feed_id
+        WHERE s.feed_id = ${feedId}::uuid
+          AND s.unsubscribed_at IS NULL
+          AND e.id = ANY(${entryIdsArray}::uuid[])
+          AND NOT EXISTS (
+            SELECT 1 FROM subscription_entries se
+            WHERE se.subscription_id = s.id AND se.entry_id = e.id
+          )
+      )
+      SELECT subscription_id, user_id, entry_id, published_or_fetched_at, is_spam, read
+      FROM missing m
+      WHERE NOT ${holdsRedirectTwin(sql`m.subscription_id`, "m")}
     `
     );
   // A WebSub push runs outside the feed's job, so two fan-outs of the same
@@ -697,7 +707,13 @@ export async function processEntries(
       .select({ guid: entries.guid })
       .from(entries)
       .where(
-        and(eq(entries.ownerFeedId, feedId), gte(entries.lastSeenAt, previousLastEntriesUpdatedAt))
+        and(
+          eq(entries.ownerFeedId, feedId),
+          // Every fetched entry is a web entry; saying so lets the partial
+          // idx_entries_owner_feed_last_seen serve the range.
+          eq(entries.type, "web"),
+          gte(entries.lastSeenAt, previousLastEntriesUpdatedAt)
+        )
       );
 
     for (const entry of previouslyCurrentEntries) {

@@ -1016,6 +1016,13 @@
       "when": 1782956640000,
       "tag": "0145_visible_entries_entry_updated_at",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1782956700000,
+      "tag": "0146_drop_idx_feeds_next_fetch",
+      "breakpoints": true
     }
   ]
 }
