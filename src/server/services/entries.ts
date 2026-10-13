@@ -29,7 +29,7 @@ import {
   tags,
   visibleEntries,
 } from "@/server/db/schema";
-import { getSavedSubscriptionId, isListedSubscription } from "./subscriptions";
+import { getSavedSubscriptionId } from "./subscriptions";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -49,6 +49,7 @@ import {
   entryFeedTitleSql,
   entryOriginJoin,
   entrySubscriptionIdsSql,
+  filterableSubscriptionWhere,
   inSavedSubscriptionSql,
 } from "./entry-filters";
 
@@ -1631,18 +1632,10 @@ export async function countEntries(
   }
 
   if (params.subscriptionId) {
-    // The subscriptions the list accepts (verifySubscriptionOwnership).
     const [row] = await db
       .select({ unread: subscriptions.unreadCount })
       .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.id, params.subscriptionId),
-          eq(subscriptions.userId, userId),
-          isNull(subscriptions.unsubscribedAt),
-          isListedSubscription()
-        )
-      );
+      .where(filterableSubscriptionWhere(userId, params.subscriptionId));
     return { unread: row?.unread ?? 0 };
   }
 

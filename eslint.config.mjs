@@ -81,6 +81,8 @@ const eslintConfig = defineConfig([
     files: ["src/server/markdown/index.ts"],
     rules: restrictImports(NEXT_LINK),
   },
+  // A later block setting no-restricted-syntax for a subset of src/ replaces
+  // these selectors there (flat config doesn't merge them): include them.
   {
     files: ["src/**/*.{ts,tsx}"],
     rules: { "no-restricted-syntax": ["error", ...NO_ENTRY_ROW_COUNT] },

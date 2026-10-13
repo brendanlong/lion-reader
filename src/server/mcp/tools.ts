@@ -180,7 +180,7 @@ const starEntriesArgs = z.object({
   starred: z.boolean().describe("Star (true) or unstar (false)"),
 });
 
-const countEntriesArgs = z.object({
+const countEntriesArgs = z.strictObject({
   subscriptionId: uuidSchema
     .optional()
     .describe("Count a subscription's unread entries (a feed or a collection)"),

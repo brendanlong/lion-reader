@@ -338,8 +338,10 @@ export const entriesRouter = createTRPCRouter({
       },
     })
     .input(
+      // Strict: a removed filter (excludeTypes, readOnly, ...) must fail, not
+      // be stripped into a different list's count.
       z
-        .object({
+        .strictObject({
           subscriptionId: uuidSchema.optional(),
           tagId: uuidSchema.optional(),
           uncategorized: booleanQueryParam,

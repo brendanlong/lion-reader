@@ -672,8 +672,8 @@ function pickOp(rng: ReturnType<typeof prng>): Op {
 /**
  * Every badge (`countEntries`, which serves `entries.count` and MCP from the
  * counters) must match the number of unread articles its list shows, spam
- * excluded (#1117). Covers every subscription and tag, including unsubscribed
- * and deleted ones and the saved subscription, whose lists are empty.
+ * excluded (#1117). Covers every subscription and tag, including other users',
+ * unsubscribed and deleted ones and the saved subscription, whose lists are empty.
  */
 async function expectBadgesMatchLists(userId: string): Promise<void> {
   const expectBadge = async (filter: CountEntriesParams, label: string) => {
@@ -693,13 +693,12 @@ async function expectBadgesMatchLists(userId: string): Promise<void> {
   await expectBadge({ starredOnly: true }, "Starred");
   await expectBadge({ type: "saved" }, "Saved");
   await expectBadge({ uncategorized: true }, "Uncategorized");
-  for (const tag of await db.select({ id: tags.id }).from(tags).where(eq(tags.userId, userId))) {
+  // Every user's tags and subscriptions: another user's must count 0, as
+  // their lists show nothing.
+  for (const tag of await db.select({ id: tags.id }).from(tags)) {
     await expectBadge({ tagId: tag.id }, `tag ${tag.id}`);
   }
-  for (const sub of await db
-    .select({ id: subscriptions.id })
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, userId))) {
+  for (const sub of await db.select({ id: subscriptions.id }).from(subscriptions)) {
     await expectBadge({ subscriptionId: sub.id }, `subscription ${sub.id}`);
   }
 }
