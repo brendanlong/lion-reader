@@ -1,6 +1,6 @@
 /**
  * The demo's backend: an in-memory implementation of the tRPC procedures the
- * reader tree issues, over the static article fixtures in ./data.
+ * reader tree issues, over the static article fixtures in `@/lib/demo/data`.
  *
  * The demo renders the app's real routing/state layer (`UnifiedEntriesContent`,
  * `Sidebar`, `useEntryMutations`, …) through a `createHandlerLink` built from
@@ -19,7 +19,7 @@ import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
 import { legacyFeedId } from "@/lib/events/schemas";
 import { entryMatchesList, entryMembershipScope } from "@/lib/local-db/entry-lists";
-import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS, type DemoEntry } from "./data";
+import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS, type DemoEntry } from "@/lib/demo/data";
 
 type Inputs = inferRouterInputs<AppRouter>;
 type Outputs = inferRouterOutputs<AppRouter>;

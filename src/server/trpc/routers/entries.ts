@@ -37,11 +37,6 @@ const appProcedure = scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS);
 // Constants
 // ============================================================================
 
-/**
- * Maximum number of entries that can be requested per page.
- */
-const MAX_LIMIT = 100;
-
 // ============================================================================
 // Validation Schemas
 // ============================================================================
@@ -66,12 +61,15 @@ const stateChangeEntriesSchema = z
     })
   )
   .min(1, "At least one entry is required")
-  .max(1000, "Maximum 1000 entries per request");
+  .max(
+    entriesService.MAX_ENTRY_STATE_BATCH,
+    `Maximum ${entriesService.MAX_ENTRY_STATE_BATCH} entries per request`
+  );
 
 /**
  * Limit validation schema.
  */
-const limitSchema = z.number().int().min(1).max(MAX_LIMIT).optional();
+const limitSchema = z.number().int().min(1).max(entriesService.MAX_ENTRIES_PAGE_SIZE).optional();
 
 /**
  * Sort order validation schema.
@@ -410,7 +408,7 @@ export const entriesRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        ids: z.array(uuidSchema).min(1).max(MAX_LIMIT),
+        ids: z.array(uuidSchema).min(1).max(entriesService.MAX_ENTRIES_PAGE_SIZE),
       })
     )
     .output(z.object({ entries: z.array(entryFullSchema) }))

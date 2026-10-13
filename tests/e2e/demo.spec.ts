@@ -18,7 +18,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { DEMO_ENTRIES, getDemoEntry, getDemoSubscription } from "../../src/app/(public)/demo/data";
+import { DEMO_ENTRIES, getDemoEntry, getDemoSubscription } from "../../src/lib/demo/data";
 
 // Counts and copy come from the demo data so editing articles doesn't break
 // these tests.

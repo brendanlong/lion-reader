@@ -55,7 +55,7 @@ import { DEMO_BASE_PATH } from "@/lib/routes";
 import { createDemoStore } from "./store";
 import { buildDemoDehydratedState } from "./seed";
 import { demoEntrySlots } from "./DemoEntrySlots";
-import { DEMO_NARRATION_VOICE } from "./narration";
+import { DEMO_NARRATION_VOICE } from "@/lib/demo/narration";
 
 const ENTRY_CONTENT_OPTIONS: EntryContentOptions = {
   // The demo has no server to synthesize speech, so it plays recordings.

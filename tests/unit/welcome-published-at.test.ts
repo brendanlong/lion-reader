@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   resolveWelcomePublishedAt,
   WELCOME_FALLBACK_PUBLISHED_AT,
-} from "@/app/(public)/demo/articles/welcome-published-at";
-import { DEMO_ARTICLES } from "@/app/(public)/demo/articles";
+} from "@/lib/demo/articles/welcome-published-at";
+import { DEMO_ARTICLES } from "@/lib/demo/articles";
 
 describe("resolveWelcomePublishedAt", () => {
   it("parses a valid ISO build timestamp", () => {

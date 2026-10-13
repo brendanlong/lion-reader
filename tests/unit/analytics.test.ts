@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { DEMO_ARTICLES } from "../../src/app/(public)/demo/articles/index";
+import { DEMO_ARTICLES } from "../../src/lib/demo/articles/index";
 import { buildCountUrl } from "../../src/lib/analytics/beacon";
 import { goatCounterConfig } from "../../src/lib/analytics/goatcounter";
 import {

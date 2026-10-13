@@ -158,7 +158,7 @@ ENV NEXT_PUBLIC_GOATCOUNTER_URL=$NEXT_PUBLIC_GOATCOUNTER_URL
 
 # Deploy timestamp, inlined into the client bundle so the demo's "Welcome"
 # article shows a stable published time that matches the server render (see
-# src/app/(public)/demo/articles/welcome-published-at.ts). CI passes the same value as a
+# src/lib/demo/articles/welcome-published-at.ts). CI passes the same value as a
 # runtime --env too, so the server reads an identical value; unset builds fall
 # back to a fixed date. Placed last among the NEXT_PUBLIC args so its per-deploy
 # churn only busts the build layer (which re-runs each deploy anyway).

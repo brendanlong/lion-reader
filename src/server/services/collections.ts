@@ -199,13 +199,7 @@ async function finishCreate(
     },
     feedData,
     counts
-  ).catch((err) => {
-    logger.error("Failed to publish subscription_created event", {
-      err,
-      userId,
-      subscriptionId,
-    });
-  });
+  );
 
   return {
     subscription: {
@@ -416,16 +410,7 @@ export async function publishEntryLeftCollections(
     collectionIds.map((subscriptionId) => ({ subscriptionId }))
   );
   for (const subscriptionId of collectionIds) {
-    publishCollectionEntriesChanged(
-      userId,
-      subscriptionId,
-      [entryId],
-      false,
-      new Date(),
-      counts
-    ).catch((err) => {
-      logger.error("Failed to publish collection_entries_changed event", { err, userId });
-    });
+    publishCollectionEntriesChanged(userId, subscriptionId, [entryId], false, new Date(), counts);
   }
 }
 
@@ -443,20 +428,7 @@ async function finishMembershipChange(
   // when an article's only route into view is a collection.
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
 
-  publishCollectionEntriesChanged(
-    userId,
-    subscriptionId,
-    changedIds,
-    added,
-    new Date(),
-    counts
-  ).catch((err) => {
-    logger.error("Failed to publish collection_entries_changed event", {
-      err,
-      userId,
-      subscriptionId,
-    });
-  });
+  publishCollectionEntriesChanged(userId, subscriptionId, changedIds, added, new Date(), counts);
 
   return { entryIds: changedIds, counts };
 }

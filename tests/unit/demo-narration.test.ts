@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { DEMO_ENTRIES } from "@/app/(public)/demo/data";
+import { DEMO_ENTRIES } from "@/lib/demo/data";
 import { cloudSpeechTexts } from "@/lib/narration/cloud-speech";
 import { htmlToClientNarration } from "@/lib/narration/client-paragraph-ids";
 import { withEndOfArticle } from "@/lib/narration/paragraph-map";

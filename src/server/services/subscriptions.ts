@@ -364,6 +364,9 @@ async function populateInitialUserEntries(
 // Service Functions
 // ============================================================================
 
+/** The most subscriptions one page of the list returns, on every surface. */
+export const MAX_SUBSCRIPTIONS_PAGE_SIZE = 100;
+
 export interface ListSubscriptionsParams {
   userId: string;
   query?: string; // Case-insensitive title search
@@ -396,8 +399,7 @@ export async function listSubscriptions(
 ): Promise<ListSubscriptionsResult> {
   const { userId, query, tagId, uncategorized, unreadOnly, type, cursor, limit = 50 } = params;
 
-  // Cap limit at 100
-  const effectiveLimit = Math.min(limit, 100);
+  const effectiveLimit = Math.min(limit, MAX_SUBSCRIPTIONS_PAGE_SIZE);
 
   // Apply filters
   const conditions = [eq(userFeeds.userId, userId)];
@@ -831,9 +833,7 @@ export async function createSubscription(
     },
     feedData,
     counts
-  ).catch((err) => {
-    logger.error("Failed to publish subscription_created event", { err, userId, feedId });
-  });
+  );
 
   return {
     subscriptionId,
@@ -1054,13 +1054,7 @@ export async function updateSubscription(
       currentTags,
       updated.customTitle,
       updated.fetchFullContent
-    ).catch((err) => {
-      logger.error("Failed to publish subscription_updated event", {
-        err,
-        userId,
-        subscriptionId,
-      });
-    });
+    );
   }
 
   return getSubscription(db, userId, subscriptionId);
@@ -1210,13 +1204,7 @@ async function changeSubscriptionTags(
       after.tags,
       after.customTitle,
       after.fetchFullContent
-    ).catch((err) => {
-      logger.error("Failed to publish subscription_updated event", {
-        err,
-        userId,
-        subscriptionId,
-      });
-    });
+    );
   }
 }
 
@@ -1360,13 +1348,7 @@ export async function unsubscribe(
   // tags, so it omits counts and the client invalidates instead).
   const counts = await getSubscriptionDeletionCounts(db, userId, formerTagIds);
 
-  publishSubscriptionDeleted(userId, existing.feedId, subscriptionId, now, counts).catch((err) => {
-    logger.error("Failed to publish subscription_deleted event", {
-      err,
-      userId,
-      subscriptionId,
-    });
-  });
+  publishSubscriptionDeleted(userId, existing.feedId, subscriptionId, now, counts);
 
   return { counts };
 }
@@ -1528,13 +1510,7 @@ export async function mergeSubscriptionIntoFeed(
   if (oldWasUncategorized && !counts.uncategorized) {
     counts.uncategorized = { unread: (await getUserUnreadCounts(db, userId)).uncategorizedUnread };
   }
-  const onPublishError = (err: unknown) => {
-    logger.error("Failed to publish subscription merge event", { err, userId, oldSubscriptionId });
-  };
-
-  publishSubscriptionDeleted(userId, oldFeedId, oldSubscriptionId, now, counts).catch(
-    onPublishError
-  );
+  publishSubscriptionDeleted(userId, oldFeedId, oldSubscriptionId, now, counts);
   if (!survivorWasActive) {
     publishSubscriptionCreated(
       userId,
@@ -1555,11 +1531,9 @@ export async function mergeSubscriptionIntoFeed(
         siteUrl: newFeed.siteUrl,
       },
       counts
-    ).catch(onPublishError);
-  } else if (merged.survivorTagsChanged) {
-    publishSubscriptionUpdated(userId, survivor.id, now, survivorTags, survivor.customTitle).catch(
-      onPublishError
     );
+  } else if (merged.survivorTagsChanged) {
+    publishSubscriptionUpdated(userId, survivor.id, now, survivorTags, survivor.customTitle);
   }
 
   return true;

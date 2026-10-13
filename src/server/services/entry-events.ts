@@ -106,9 +106,7 @@ export function publishMarkReadStateChanges(
           counts,
           listData.get(entry.id),
           entry.subscriptionIds
-        ).catch(() => {
-          // Ignore publish errors - SSE is best-effort
-        })
+        )
       )
     );
   })();
@@ -136,9 +134,7 @@ export function publishStarredStateChanges(
         counts,
         undefined,
         entry.subscriptionIds
-      ).catch(() => {
-        // Ignore publish errors - SSE is best-effort
-      })
+      )
     )
   );
 }

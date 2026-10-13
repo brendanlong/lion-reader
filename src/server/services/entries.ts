@@ -82,7 +82,7 @@ export interface ListEntriesParams {
   cursor?: string;
   offset?: number; // Skip this many rows (for page/offset-based compat APIs like Wallabag). Mutually exclusive with cursor.
   limit?: number;
-  maxLimit?: number; // Override MAX_LIMIT (e.g., for Google Reader API which needs larger batches)
+  maxLimit?: number; // Override MAX_ENTRIES_PAGE_SIZE (e.g., for Google Reader API which needs larger batches)
   publishedAfter?: Date; // Only entries published/fetched after this timestamp
   publishedBefore?: Date; // Only entries published/fetched before this timestamp
   updatedAfter?: Date; // Only entries modified at/after this timestamp (GREATEST(entry.updated_at, user_entries.updated_at); powers Wallabag `since` delta sync)
@@ -216,7 +216,10 @@ export interface MarkReadEntryState {
 // ============================================================================
 
 const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 100;
+/** The most entries one page of a list or search, or one read by id, returns, on every surface. */
+export const MAX_ENTRIES_PAGE_SIZE = 100;
+/** The most entries one read or star write may name, on every surface. */
+export const MAX_ENTRY_STATE_BATCH = 1000;
 
 // ============================================================================
 // Row Mapping Helper
@@ -787,7 +790,7 @@ export async function listEntries(
     });
   }
 
-  const effectiveMaxLimit = params.maxLimit ?? MAX_LIMIT;
+  const effectiveMaxLimit = params.maxLimit ?? MAX_ENTRIES_PAGE_SIZE;
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
   const sortOrder = params.sortOrder ?? "newest";
 
@@ -931,7 +934,7 @@ async function searchEntries(
   db: typeof dbType,
   params: SearchEntriesParams
 ): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
-  const effectiveMaxLimit = params.maxLimit ?? MAX_LIMIT;
+  const effectiveMaxLimit = params.maxLimit ?? MAX_ENTRIES_PAGE_SIZE;
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
 
   const conditions = [eq(visibleEntries.userId, params.userId)];
@@ -1177,8 +1180,8 @@ export async function markEntriesRead(
     return { entries: [], changed: [] };
   }
 
-  if (entriesToMark.length > 1000) {
-    throw errors.validation("Maximum 1000 entries per request");
+  if (entriesToMark.length > MAX_ENTRY_STATE_BATCH) {
+    throw errors.validation(`Maximum ${MAX_ENTRY_STATE_BATCH} entries per request`);
   }
 
   const now = new Date();
@@ -1427,9 +1430,7 @@ export async function markAllEntriesRead(
   // if its live event was missed (#1102). UUIDs are lowercase, so string
   // comparison matches Postgres uuid ordering.
   const maxEntryId = entryIds.reduce((max, id) => (id > max ? id : max));
-  void publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts).catch(() => {
-    // Ignore publish errors - SSE is best-effort
-  });
+  publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts);
 
   return { entryIds, counts };
 }
@@ -1561,8 +1562,8 @@ export async function updateEntriesStarred(
     return { entries: [], changed: [] };
   }
 
-  if (entriesToStar.length > 1000) {
-    throw errors.validation("Maximum 1000 entries per request");
+  if (entriesToStar.length > MAX_ENTRY_STATE_BATCH) {
+    throw errors.validation(`Maximum ${MAX_ENTRY_STATE_BATCH} entries per request`);
   }
 
   const now = new Date();

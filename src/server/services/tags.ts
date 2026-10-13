@@ -185,9 +185,7 @@ export async function createTag(
         userId,
         { id: createdTag.id, name: createdTag.name, color: createdTag.color },
         createdTag.updatedAt
-      ).catch(() => {
-        // Ignore publish errors - SSE is best-effort
-      });
+      );
       return {
         tag: {
           id: createdTag.id,
@@ -302,9 +300,7 @@ export async function updateTag(
       color: tag.color,
     },
     tag.updatedAt
-  ).catch(() => {
-    // Ignore publish errors - SSE is best-effort
-  });
+  );
 
   return toTag(tag);
 }
@@ -386,7 +382,5 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
   });
 
   // Publish tag deleted event for multi-tab/device sync (fire and forget)
-  publishTagDeleted(userId, tagId, updatedAt).catch(() => {
-    // Ignore publish errors - SSE is best-effort
-  });
+  publishTagDeleted(userId, tagId, updatedAt);
 }

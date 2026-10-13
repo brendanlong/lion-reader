@@ -161,7 +161,7 @@ export const subscriptionsRouter = createTRPCRouter({
    * - tagId: Filter by tag
    * - uncategorized: Only show subscriptions with no tags
    * - unreadOnly: Only show feeds with unread items
-   * - cursor/limit: Cursor-based pagination (max 100 per page)
+   * - cursor/limit: Cursor-based pagination (MAX_SUBSCRIPTIONS_PAGE_SIZE per page)
    *
    * Returns subscriptions with their associated feed information and unread counts.
    */
@@ -183,7 +183,7 @@ export const subscriptionsRouter = createTRPCRouter({
           unreadOnly: z.boolean().optional(),
           type: subscriptionOutputSchema.shape.type.optional(),
           cursor: z.string().optional(),
-          limit: z.number().min(1).max(100).optional(),
+          limit: z.number().min(1).max(subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE).optional(),
         })
         .optional()
     )

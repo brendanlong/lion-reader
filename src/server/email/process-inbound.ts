@@ -297,12 +297,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
         description: null,
         siteUrl: null,
       }
-    ).catch((err) => {
-      logger.error("Failed to publish subscription_created event for email subscription", {
-        subscriptionId: owner.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
+    );
   }
 
   // 6. Check for duplicate Message-ID: a seek on the (owner_subscription_id,
@@ -430,13 +425,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     entryId,
     now,
     entryListPayload(newEntry, owner.title)
-  ).catch((err) => {
-    logger.error("Failed to publish new_entry event for email", {
-      subscriptionId: owner.id,
-      entryId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  });
+  );
 
   return {
     success: true,

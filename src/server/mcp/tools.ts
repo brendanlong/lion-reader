@@ -142,9 +142,9 @@ const listEntriesArgs = z.object({
     .number()
     .int()
     .min(1)
-    .max(100)
+    .max(entriesService.MAX_ENTRIES_PAGE_SIZE)
     .optional()
-    .describe("Number of entries per page (max 100)"),
+    .describe(`Number of entries per page (max ${entriesService.MAX_ENTRIES_PAGE_SIZE})`),
   cursor: z.string().optional().describe("Pagination cursor from previous response"),
 });
 
@@ -153,7 +153,11 @@ const getEntryArgs = z.object({
 });
 
 const markEntriesReadArgs = z.object({
-  entryIds: z.array(uuidSchema).min(1).max(1000).describe("Array of entry IDs to mark"),
+  entryIds: z
+    .array(uuidSchema)
+    .min(1)
+    .max(entriesService.MAX_ENTRY_STATE_BATCH)
+    .describe("Array of entry IDs to mark"),
   read: z.boolean().describe("Mark as read (true) or unread (false)"),
 });
 
@@ -275,9 +279,11 @@ const listSubscriptionsArgs = z.object({
     .number()
     .int()
     .min(1)
-    .max(100)
+    .max(subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE)
     .optional()
-    .describe("Number of subscriptions per page (max 100)"),
+    .describe(
+      `Number of subscriptions per page (max ${subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE})`
+    ),
   cursor: z.string().optional().describe("Pagination cursor from previous response"),
 });
 
@@ -394,8 +400,7 @@ function buildTools(): Tool[] {
 
     {
       name: "mark_entries_read",
-      description:
-        "Mark entries as read or unread (bulk operation, max 1000). Returns updated entries and unread counts.",
+      description: `Mark entries as read or unread (bulk operation, max ${entriesService.MAX_ENTRY_STATE_BATCH}). Returns updated entries and unread counts.`,
       inputSchema: toInputSchema(markEntriesReadArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(markEntriesReadArgs, args);

@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { appUrl } from "@/server/config/env";
-import { DEMO_ARTICLES } from "./(public)/demo/articles";
-import { DEMO_SUBSCRIPTIONS, DEMO_TAGS } from "./(public)/demo/data";
+import { DEMO_ARTICLES } from "@/lib/demo/articles";
+import { DEMO_SUBSCRIPTIONS, DEMO_TAGS } from "@/lib/demo/data";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const demoSubscriptionPages = DEMO_SUBSCRIPTIONS.map((sub) => ({
