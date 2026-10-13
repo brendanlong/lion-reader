@@ -43,8 +43,9 @@ export type EntryRow = {
   fetchedAt: Date;
   updatedAt: Date;
   /**
-   * When the entry's own fields last changed. Absent from event payloads,
-   * whose metadata then counts as fresh as `updatedAt`.
+   * When the entry's own fields last changed. Absent from a live new_entry
+   * (and a previous release's responses), whose metadata then counts as
+   * fresh as `updatedAt`.
    */
   entryUpdatedAt?: Date;
   read: boolean;
@@ -75,7 +76,7 @@ export type EntryWrite =
   | { kind: "state"; state: EntryStateWrite; updatedAt: Date }
   | { kind: "metadata"; metadata: EntryMetadata; updatedAt: Date };
 
-export function toEntryRow(entry: EntryRow): EntryRow {
+function toEntryRow(entry: EntryRow): EntryRow {
   return {
     id: entry.id,
     subscriptionId: entry.subscriptionId,

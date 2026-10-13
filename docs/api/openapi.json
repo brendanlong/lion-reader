@@ -12950,6 +12950,9 @@
                                       "string",
                                       "null"
                                     ]
+                                  },
+                                  "entryUpdatedAt": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -12996,6 +12999,9 @@
                                 "type": "string"
                               },
                               "updatedAt": {
+                                "type": "string"
+                              },
+                              "entryUpdatedAt": {
                                 "type": "string"
                               },
                               "metadata": {
@@ -13266,6 +13272,9 @@
                                       "string",
                                       "null"
                                     ]
+                                  },
+                                  "entryUpdatedAt": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [

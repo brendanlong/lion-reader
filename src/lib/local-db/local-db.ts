@@ -14,7 +14,6 @@
 import type { Query, QueryClient } from "@tanstack/react-query";
 import { BasicIndex } from "@tanstack/db";
 import {
-  toEntryRow,
   upsertServerEntries,
   type EntryRow,
   type EntryStore,
@@ -130,7 +129,7 @@ function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append"): voi
       ingestListData(db, inputOf(query), data as EntriesListData, mode);
       break;
     case "entries.get":
-      upsertServerEntries(db.entries, [toEntryRow((data as { entry: EntryRow }).entry)]);
+      upsertServerEntries(db.entries, [(data as { entry: EntryRow }).entry]);
       break;
     case "subscriptions.list": {
       // Infinite (the sidebar, the collection picker) or a single page.

@@ -66,6 +66,7 @@ function toEntryRow(
     publishedAt: entry.publishedAt ? new Date(entry.publishedAt) : null,
     fetchedAt: new Date(entry.fetchedAt),
     updatedAt: new Date(event.updatedAt),
+    ...(entry.entryUpdatedAt && { entryUpdatedAt: new Date(entry.entryUpdatedAt) }),
     read: state.read,
     starred: state.starred,
     feedTitle: entry.feedTitle,
@@ -152,7 +153,7 @@ export function handleSyncEvent(
           ...event.metadata,
           publishedAt: event.metadata.publishedAt ? new Date(event.metadata.publishedAt) : null,
         },
-        new Date(event.updatedAt)
+        new Date(event.entryUpdatedAt ?? event.updatedAt)
       );
       break;
 

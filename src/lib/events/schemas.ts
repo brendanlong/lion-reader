@@ -54,6 +54,10 @@ export const newEntryListDataSchema = entryMetadataSchema.extend({
   // When read state last changed (Recently Read's order), with read/starred on
   // the catch-up path; null if it never has.
   readChangedAt: z.string().nullable().optional(),
+  // The entry's own updated_at, when the event's `updatedAt` may be its user
+  // state's (see `EntryRow.entryUpdatedAt`). Absent from a live new_entry,
+  // whose `updatedAt` is already the entry's.
+  entryUpdatedAt: z.string().optional(),
 });
 
 export type NewEntryListData = z.infer<typeof newEntryListDataSchema>;
@@ -72,6 +76,7 @@ export interface NewEntryListDataSource {
   publishedAt?: Date | null;
   fetchedAt: Date;
   siteName?: string | null;
+  entryUpdatedAt?: Date;
 }
 
 /**
@@ -93,6 +98,7 @@ export function toNewEntryListData(
     fetchedAt: entry.fetchedAt.toISOString(),
     siteName: entry.siteName ?? null,
     feedTitle,
+    ...(entry.entryUpdatedAt && { entryUpdatedAt: entry.entryUpdatedAt.toISOString() }),
     ...(state
       ? {
           read: state.read,
@@ -231,6 +237,9 @@ const entryUpdatedEventSchema = z.object({
   entryId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
+  // The entry's own updated_at, set by the sync.events catch-up, whose
+  // `updatedAt` is a cursor stamp that may be the user state's.
+  entryUpdatedAt: z.string().optional(),
   metadata: entryMetadataSchema,
 });
 

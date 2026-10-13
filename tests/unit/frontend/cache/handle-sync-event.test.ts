@@ -458,6 +458,80 @@ describe("handleSyncEvent - entry_updated", () => {
     });
   });
 
+  // #1759: a feed update stamped before a mark-read can commit after it, so
+  // every write must judge metadata by the entry's own timestamp.
+  describe("racing a mark-read (#1759)", () => {
+    const entryEdited = "2024-06-10T00:00:00.000Z";
+    const feedUpdate = "2024-06-20T00:00:00.000Z";
+    const markedRead = "2024-06-30T00:00:00.000Z";
+    const lateUpdate = () =>
+      createEntryUpdatedEvent({
+        entryId: "entry-1",
+        updatedAt: feedUpdate,
+        metadata: { ...createEntryUpdatedEvent().metadata, title: "Late Title" },
+      });
+
+    it("applies after an entries.get fetched after the mark-read", () => {
+      const entry1 = DEFAULT_ENTRIES.find((e) => e.id === "entry-1");
+      queryClient.setQueryData([["entries", "get"], { input: { id: "entry-1" }, type: "query" }], {
+        entry: {
+          ...entry1,
+          read: true,
+          updatedAt: new Date(markedRead),
+          entryUpdatedAt: new Date(entryEdited),
+        },
+      });
+
+      handleSyncEvent(utils, queryClient, lateUpdate());
+
+      expect(storedEntry("entry-1")).toMatchObject({ title: "Late Title", read: true });
+    });
+
+    it("applies after a catch-up entry_updated stamped with the mark-read", () => {
+      handleSyncEvent(
+        utils,
+        queryClient,
+        createEntryUpdatedEvent({
+          entryId: "entry-1",
+          updatedAt: markedRead,
+          entryUpdatedAt: entryEdited,
+        })
+      );
+      handleSyncEvent(utils, queryClient, lateUpdate());
+
+      expect(storedEntry("entry-1")?.title).toBe("Late Title");
+    });
+
+    it("applies after an entry_state_changed payload for the mark-unread", () => {
+      handleSyncEvent(
+        utils,
+        queryClient,
+        createEntryStateChangedEvent({
+          entryId: "entry-1",
+          read: false,
+          starred: false,
+          subscriptionId: "sub-1",
+          feedType: "web",
+          updatedAt: markedRead,
+          entry: {
+            url: null,
+            title: "Entry One",
+            author: null,
+            summary: null,
+            publishedAt: null,
+            fetchedAt: entryEdited,
+            siteName: null,
+            feedTitle: "Feed One",
+            entryUpdatedAt: entryEdited,
+          },
+        })
+      );
+      handleSyncEvent(utils, queryClient, lateUpdate());
+
+      expect(storedEntry("entry-1")).toMatchObject({ title: "Late Title", read: false });
+    });
+  });
+
   it("does not crash for non-cached entry", () => {
     expect(() => {
       handleSyncEvent(

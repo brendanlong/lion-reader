@@ -602,6 +602,7 @@ async function collectSyncEvents(
         publishedAt: entries.publishedAt,
         fetchedAt: entries.fetchedAt,
         siteName: entries.siteName,
+        entryUpdatedAt: entries.updatedAt,
         isSpam: entries.isSpam,
         isBackfill: entries.isBackfill,
         read: userEntries.read,

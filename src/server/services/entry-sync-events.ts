@@ -90,6 +90,7 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   stateChanged: boolean;
   /** The entry was created since then. */
   isNew: boolean;
+  entryUpdatedAt: Date;
   /** When it last changed: the event's timestamp, and the cursor past it. */
   updatedAt: string;
 }
@@ -132,6 +133,7 @@ export function entryRowToSyncEvents(
       subscriptionId: row.subscriptionId,
       entryId: row.id,
       ...stamps,
+      entryUpdatedAt: row.entryUpdatedAt.toISOString(),
       metadata: toEntryMetadata(row),
     });
   }
