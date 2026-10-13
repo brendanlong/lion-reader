@@ -10,9 +10,9 @@
 -- (a rolled-back deploy runs it on this schema indefinitely).
 --
 -- Locks: adding the column takes ACCESS EXCLUSIVE on user_entries, so every
--- read and write of it waits for the backfill (about 11 s at production's
--- size on a dedicated core): deploy at a quiet time or with maintenance mode
--- on.
+-- read and write of it waits for the backfill and rewrite (about 12 s at
+-- production's size on a dedicated core): deploy at a quiet time or with
+-- maintenance mode on.
 SET LOCAL lock_timeout = '5s';
 
 -- Every lock up front, in the order readers take them (the view, then its
@@ -27,6 +27,9 @@ UPDATE user_entries ue
 SET changed_at = GREATEST(ue.updated_at, e.updated_at)
 FROM entries e
 WHERE e.id = ue.entry_id;
+-- That wrote every row anew, scattering each user's rows over twice the
+-- pages and into every index, which vacuum doesn't shrink: rewrite both.
+CLUSTER user_entries USING user_entry_states_user_id_entry_id_pk;
 
 -- A row's own changes. An insert takes its entry's updated_at too, for a
 -- row created after the entry last changed.

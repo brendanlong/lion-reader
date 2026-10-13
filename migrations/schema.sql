@@ -1012,6 +1012,8 @@ ALTER TABLE ONLY public.user_api_keys
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_entry_id_pk PRIMARY KEY (user_id, entry_id);
 
+ALTER TABLE public.user_entries CLUSTER ON user_entry_states_user_id_entry_id_pk;
+
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_email_unique UNIQUE (email);
 
