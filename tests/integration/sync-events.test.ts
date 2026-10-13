@@ -702,6 +702,33 @@ describe("sync.events", () => {
       ).toBe(true);
     });
 
+    it("skips a newer entry of the feed that the user has no row for (#1863)", async () => {
+      const userId = await createTestUser();
+      const feedId = await createFetchedFeed({ url: "https://example.com/argmax-unowned.xml" });
+      await createTestSubscription(userId, feedId);
+
+      const stateTime = new Date("2024-06-01T00:00:00.000Z");
+      const contentTime = new Date("2024-06-02T00:00:00.000Z");
+      const entryId = await createTestEntry(feedId, {
+        createdAt: stateTime,
+        updatedAt: contentTime,
+      });
+      await createUserEntry(userId, entryId, { updatedAt: stateTime });
+      // Pre-subscription content refetched later: in the feed, but not the user's.
+      // arm_sub takes one entry per feed, so it must be the newest *of the user's*.
+      await createTestEntry(feedId, {
+        createdAt: stateTime,
+        updatedAt: new Date("2024-06-03T00:00:00.000Z"),
+      });
+
+      const cursor = await createCaller(await createAuthContext(userId)).sync.cursors();
+
+      expect(cursor.entriesAfterId).toBe(entryId);
+      expect(
+        parseTimestamptz(cursor.entries!).equals(parseTimestamptz(contentTime.toISOString()))
+      ).toBe(true);
+    });
+
     it("breaks a tie at the max timestamp by the larger entry id", async () => {
       const userId = await createTestUser();
       const feedId = await createFetchedFeed({ url: "https://example.com/argmax-tie.xml" });
