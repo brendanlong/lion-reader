@@ -10,7 +10,7 @@ import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription"
 export function useSavedSubscriptionId(): string | null | undefined {
   const { data } = trpc.subscriptions.list.useQuery(SAVED_SUBSCRIPTION_LIST_INPUT, {
     staleTime: Infinity,
-    select: (result) => result.savedSubscriptionId,
+    select: (result) => result.items[0]?.id ?? null,
   });
   return data;
 }

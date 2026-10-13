@@ -17,7 +17,6 @@ import {
 
 type ServerSyncEvent = z.infer<typeof serverSyncEventSchema>;
 type UnreadCounts = z.infer<typeof unreadCountsSchema>;
-type FeedType = "web" | "email" | "saved";
 
 /** An entry_updated event's metadata. */
 export function toEntryMetadata(entry: {
@@ -82,7 +81,6 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   subscriptionId: string | null;
   /** Every active subscription holding the entry (#1846). */
   subscriptionIds: string[];
-  feedType: FeedType;
   feedTitle: string | null;
   /** The entry's content changed (or it was created) since the catch-up's start. */
   metadataChanged: boolean;
@@ -121,8 +119,7 @@ export function entryRowToSyncEvents(
         subscriptionIds: row.subscriptionIds,
         entryId: row.id,
         ...stamps,
-        feedType: row.feedType,
-        ...(announcement.entry && { entry: { ...announcement.entry, type: row.feedType } }),
+        ...announcement,
         ...(counts.newEntry && { counts: counts.newEntry }),
       });
     }
@@ -147,13 +144,7 @@ export function entryRowToSyncEvents(
       counts: counts.stateChanged,
       subscriptionIds: row.subscriptionIds,
       ...stamps,
-      ...(payload
-        ? {
-            subscriptionId: row.subscriptionId,
-            feedType: row.feedType,
-            entry: { ...payload, type: row.feedType },
-          }
-        : {}),
+      ...(payload ? { subscriptionId: row.subscriptionId, entry: payload } : {}),
     });
   }
 

@@ -26,7 +26,7 @@ import {
   tags,
   entryTombstones,
 } from "@/server/db/schema";
-import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
 import {
   entryFeedTitleSql,
   entryOriginJoin,
@@ -36,7 +36,10 @@ import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
-import { isCollectionSubscription, isListedSubscription } from "@/server/services/subscriptions";
+import {
+  isCollectionSubscription,
+  isUserManagedSubscription,
+} from "@/server/services/subscriptions";
 
 // ============================================================================
 // Helpers
@@ -260,14 +263,15 @@ async function currentSyncCursors(
       LIMIT 1
     `),
 
-    // Subscriptions: max(updated_at) from ALL listed subscriptions (active and
-    // removed); updated_at is set when unsubscribing, so this covers both cases
+    // Subscriptions: max(updated_at) from ALL subscriptions (active and
+    // removed) but Saved; updated_at is set when unsubscribing, so this covers
+    // both cases
     db
       .select({
         max: sql`MAX(${subscriptions.updatedAt})`.mapWith(parseTimestamptzOrNull),
       })
       .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), isListedSubscription())),
+      .where(and(eq(subscriptions.userId, userId), isUserManagedSubscription())),
 
     // Tags: max(updated_at) - captures creates, updates, and soft deletes
     db
@@ -609,7 +613,7 @@ async function collectSyncEvents(
         readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
         subscriptionIds: entrySubscriptionIdsSql(USER_ROW),
-        feedType: entries.type,
+        type: entries.type,
         feedTitle: entryFeedTitleSql(),
         visible: sql<boolean>`${visibleEntrySql()}`,
         // Categorization booleans, computed in SQL at µs precision so a row
@@ -719,7 +723,9 @@ async function collectSyncEvents(
       .where(
         and(
           eq(subscriptions.userId, userId),
-          isListedSubscription(),
+          // Saved is never announced, live or here: a first save creates it,
+          // and clients learn it from subscriptions.list.
+          isUserManagedSubscription(),
           sql`${subscriptions.updatedAt} > ${subscriptionsCursor}::timestamptz`
         )
       )
@@ -757,7 +763,6 @@ async function collectSyncEvents(
             updatedAt: updatedAtIso,
             subscription: {
               id: subscription.id,
-              feedId: legacyFeedId(subscription.id),
               customTitle: subscription.customTitle,
               subscribedAt: subscription.subscribedAt.toISOString(),
               unreadCount: subscription.unreadCount,
@@ -765,7 +770,6 @@ async function collectSyncEvents(
             },
             // A subscription without a feed (#1846) has only its own name.
             feed: {
-              id: legacyFeedId(subscription.id),
               type: subscription.type,
               url: feed?.url ?? null,
               title: feed?.title ?? subscription.customTitle,

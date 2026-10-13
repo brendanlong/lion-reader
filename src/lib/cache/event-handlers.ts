@@ -40,14 +40,13 @@ export type { SyncEvent } from "@/lib/events/schemas";
 /**
  * Builds the entry row for an event's list-item payload. A previous release's
  * events carry no `subscriptionIds` (a new entry's one membership is then its
- * origin) and no payload `type` (the event's `feedType` stands in).
+ * origin).
  */
 function toEntryRow(
   event: {
     entryId: string;
     subscriptionId?: string | null;
     subscriptionIds?: string[];
-    feedType: EntryRow["type"];
     updatedAt: string;
   },
   entry: NewEntryListData,
@@ -58,7 +57,7 @@ function toEntryRow(
     id: event.entryId,
     subscriptionId,
     subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
-    type: entry.type ?? event.feedType,
+    type: entry.type,
     url: entry.url,
     title: entry.title,
     author: entry.author,
@@ -173,9 +172,8 @@ export function handleSyncEvent(
       // star/unstar of an unread entry) fall back to the stored row.
       if (!event.read) {
         const { entry } = event;
-        const feedType = entry?.type ?? event.feedType;
-        if (entry && feedType) {
-          addServerEntryToLists(db, toEntryRow({ ...event, feedType }, entry, state));
+        if (entry) {
+          addServerEntryToLists(db, toEntryRow(event, entry, state));
         } else {
           const stored = db.entries.getSynced(event.entryId);
           if (stored) insertEntryIntoLists(db, stored);

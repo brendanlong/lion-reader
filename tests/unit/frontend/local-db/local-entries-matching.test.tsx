@@ -17,6 +17,7 @@ import { upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
 import type { EntryListFilters } from "@/lib/local-db/entry-lists";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
+import { savedSubscriptionRow } from "../../../utils/cache-test-helpers";
 
 afterEach(() => {
   cleanup();
@@ -57,12 +58,12 @@ const STORED = [
   makeEntry("f", "2024-06-06", { read: true, subscriptionIds: ["sub-1", "col-1", "sub-saved"] }),
 ];
 
-/** Lands the `subscriptions.list` result that names the saved subscription. */
+/** Lands the `subscriptions.list` result that lists the saved subscription. */
 function learnSavedSubscription(queryClient: QueryClient): void {
   act(() => {
     queryClient.setQueryData(
       [["subscriptions", "list"], { input: SAVED_SUBSCRIPTION_LIST_INPUT, type: "query" }],
-      { items: [], savedSubscriptionId: "sub-saved" }
+      { items: [savedSubscriptionRow("sub-saved")] }
     );
   });
 }

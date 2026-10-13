@@ -184,8 +184,7 @@ async function finishCreate(
     siteUrl: null,
   };
 
-  // No feed channel to follow; clients still get `feedId`/`feed.id` (the
-  // subscription id, `legacyFeedId`).
+  // No feed channel to follow.
   publishSubscriptionCreated(
     userId,
     null,

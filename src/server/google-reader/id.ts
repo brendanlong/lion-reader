@@ -26,7 +26,7 @@
  */
 
 import { and, eq, inArray } from "drizzle-orm";
-import { isListedSubscription } from "@/server/services/subscriptions";
+import { isUserManagedSubscription } from "@/server/services/subscriptions";
 import type { db as dbType } from "@/server/db";
 import { subscriptions, visibleEntries } from "@/server/db/schema";
 
@@ -151,7 +151,7 @@ export async function feedStreamIdToSubscriptionUuid(
       and(
         eq(subscriptions.userId, userId),
         eq(subscriptions.greaderStreamId, streamId),
-        isListedSubscription()
+        isUserManagedSubscription()
       )
     )
     .limit(1);

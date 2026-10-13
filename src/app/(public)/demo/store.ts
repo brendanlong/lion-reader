@@ -17,7 +17,6 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
-import { legacyFeedId } from "@/lib/events/schemas";
 import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS, type DemoEntry } from "./data";
 
 type Inputs = inferRouterInputs<AppRouter>;
@@ -157,7 +156,7 @@ interface EntryFilter {
   query?: string;
 }
 
-/** The demo user's saved subscription: saved articles' origin, never listed. */
+/** The demo user's saved subscription: saved articles' origin, in no tag or Uncategorized. */
 const DEMO_SAVED_SUBSCRIPTION_ID = "demo-saved";
 
 export function createDemoStore(): DemoStore {
@@ -206,8 +205,8 @@ export function createDemoStore(): DemoStore {
 
   /**
    * The live subscriptions containing the entry: its feed and any collections
-   * holding it. A saved article's feed is the saved subscription, which no
-   * list shows, like the server's (#1846).
+   * holding it. A saved article's origin is the saved subscription instead,
+   * which isn't one of these (#1846).
    */
   function containersOf(state: EntryState): SubscriptionState[] {
     const feed = state.entry.type === "saved" ? undefined : subscriptionOf(state);
@@ -217,7 +216,7 @@ export function createDemoStore(): DemoStore {
 
   /**
    * The entry's origin as the API reports it: for a saved article the saved
-   * subscription (#1846), which no list shows and nothing can update.
+   * subscription (#1846), which nothing can update.
    */
   function originOf(state: EntryState): string | null {
     if (state.entry.type === "saved") return DEMO_SAVED_SUBSCRIPTION_ID;
@@ -243,7 +242,7 @@ export function createDemoStore(): DemoStore {
     const containers = containersOf(state);
     if (
       filter.subscriptionId !== undefined &&
-      !containers.some((sub) => sub.id === filter.subscriptionId)
+      !subscriptionIdsOf(state).includes(filter.subscriptionId)
     ) {
       return false;
     }
@@ -298,7 +297,6 @@ export function createDemoStore(): DemoStore {
       id: entry.id,
       subscriptionId: originOf(state),
       subscriptionIds: subscriptionIdsOf(state),
-      feedId: legacyFeedId(originOf(state)),
       type: entry.type,
       url: entry.url,
       title: entry.title,
@@ -352,6 +350,23 @@ export function createDemoStore(): DemoStore {
         return tag ? [{ id: tag.id, name: tag.name, color: tag.color }] : [];
       }),
       fetchFullContent: sub.fetchFullContent,
+    };
+  }
+
+  /** The saved subscription as the API lists it (#1846). */
+  function toSavedSubscription(): Subscription {
+    return {
+      id: DEMO_SAVED_SUBSCRIPTION_ID,
+      type: "saved",
+      url: null,
+      title: "Saved",
+      originalTitle: "Saved",
+      description: null,
+      siteUrl: null,
+      subscribedAt: SUBSCRIBED_AT,
+      unreadCount: unread({ type: "saved" }),
+      tags: [],
+      fetchFullContent: false,
     };
   }
 
@@ -579,25 +594,33 @@ export function createDemoStore(): DemoStore {
 
     "subscriptions.list": (input) => {
       const needle = input?.query?.trim().toLowerCase();
-      const matching = liveSubscriptions()
-        .filter((sub) => input?.tagId === undefined || sub.tagIds.includes(input.tagId))
-        .filter((sub) => !input?.uncategorized || sub.tagIds.length === 0)
-        .filter((sub) => !input?.unreadOnly || unread({ subscriptionId: sub.id }) > 0)
+      // Saved is listed too, but is in no tag or Uncategorized (#1846).
+      const saved = input?.tagId === undefined && !input?.uncategorized;
+      const matching = [
+        ...liveSubscriptions()
+          .filter((sub) => input?.tagId === undefined || sub.tagIds.includes(input.tagId))
+          .filter((sub) => !input?.uncategorized || sub.tagIds.length === 0)
+          .map(toSubscription),
+        ...(saved ? [toSavedSubscription()] : []),
+      ]
+        .filter((sub) => !input?.unreadOnly || sub.unreadCount > 0)
         .filter((sub) => input?.type === undefined || sub.type === input.type)
-        .filter((sub) => !needle || sub.title.toLowerCase().includes(needle));
+        .filter((sub) => !needle || sub.title?.toLowerCase().includes(needle));
       const after = input?.cursor ? matching.findIndex((s) => s.id === input.cursor) : -1;
       // A cursor that no longer matches (unsubscribed meanwhile) ends the list.
       const start = input?.cursor ? (after === -1 ? matching.length : after + 1) : 0;
       const limit = input?.limit ?? 50;
       const page = matching.slice(start, start + limit);
       return {
-        items: page.map(toSubscription),
+        items: page,
         nextCursor: start + limit < matching.length ? page[page.length - 1].id : undefined,
-        savedSubscriptionId: DEMO_SAVED_SUBSCRIPTION_ID,
       };
     },
 
-    "subscriptions.get": (input) => toSubscription(requireSubscription(input.id)),
+    "subscriptions.get": (input) =>
+      input.id === DEMO_SAVED_SUBSCRIPTION_ID
+        ? toSavedSubscription()
+        : toSubscription(requireSubscription(input.id)),
 
     "subscriptions.update": (input) => {
       const sub = requireSubscription(input.id);

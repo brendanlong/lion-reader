@@ -156,7 +156,7 @@ describe("sync.events", () => {
         type: "new_entry",
         entryId,
         subscriptionId: subId,
-        feedType: "web",
+        entry: expect.objectContaining({ type: "web" }),
         // Absolute unread counts the client sets directly. Untagged
         // subscription, so uncategorized is affected rather than any tag.
         counts: {
@@ -327,9 +327,10 @@ describe("sync.events", () => {
         entryId,
         read: false,
         subscriptionId,
-        feedType: "web",
-        entry: expect.objectContaining({ title: "Payload Entry" }),
+        entry: expect.objectContaining({ title: "Payload Entry", type: "web" }),
       });
+      // Clients read the entry's own type; the event names no feed (#1846).
+      expect(stateEvents[0]).not.toHaveProperty("feedType");
     });
 
     it("returns both metadata and state events when both change", async () => {

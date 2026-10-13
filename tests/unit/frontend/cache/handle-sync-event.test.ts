@@ -132,7 +132,6 @@ describe("handleSyncEvent - new_entry", () => {
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
-        feedType: "web",
         counts: {
           all: { unread: 19 },
           starred: { unread: 0 },
@@ -155,7 +154,6 @@ describe("handleSyncEvent - new_entry", () => {
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
-        feedType: "web",
         counts: {
           all: { unread: 19 },
           starred: { unread: 0 },
@@ -178,7 +176,6 @@ describe("handleSyncEvent - new_entry", () => {
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
-        feedType: "web",
         counts: {
           all: { unread: 19 },
           starred: { unread: 0 },
@@ -203,7 +200,6 @@ describe("handleSyncEvent - new_entry", () => {
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-1",
-        feedType: "web",
       })
     );
 
@@ -221,7 +217,6 @@ describe("handleSyncEvent - new_entry", () => {
       queryClient,
       createNewEntryEvent({
         subscriptionId: null,
-        feedType: "saved",
         counts: {
           all: { unread: 19 },
           starred: { unread: 0 },
@@ -245,7 +240,6 @@ describe("handleSyncEvent - new_entry", () => {
     // applying twice leaves the cache identical to applying once.
     const event = createNewEntryEvent({
       subscriptionId: "sub-1",
-      feedType: "web",
       counts: {
         all: { unread: 19 },
         starred: { unread: 0 },
@@ -272,9 +266,9 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         entryId: "entry-live",
         subscriptionId: "sub-1",
-        feedType: "web",
         updatedAt: "2024-07-01T00:00:00.000Z",
         entry: {
+          type: "web",
           url: "https://example.com/live",
           title: "Live Entry",
           author: "Live Author",
@@ -305,6 +299,7 @@ describe("handleSyncEvent - new_entry", () => {
   });
 
   const LIVE_PAYLOAD = {
+    type: "web" as const,
     url: null,
     title: "Live Entry",
     author: null,
@@ -328,7 +323,6 @@ describe("handleSyncEvent - new_entry", () => {
         entryId: "entry-live",
         subscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID,
         subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
-        feedType: "saved",
         entry: { ...LIVE_PAYLOAD, type: "saved" },
       })
     );
@@ -345,7 +339,7 @@ describe("handleSyncEvent - new_entry", () => {
       { type: "email", subscriptionIds: ["sub-1", "sub-2"] },
     ],
     [
-      "falls back to feedType and the origin for a previous release's event",
+      "falls back to the origin for a previous release's event without memberships",
       { entry: LIVE_PAYLOAD },
       { type: "web", subscriptionIds: ["sub-1"] },
     ],
@@ -362,6 +356,7 @@ describe("handleSyncEvent - new_entry", () => {
     const event = createNewEntryEvent({
       entryId: "entry-live",
       entry: {
+        type: "web",
         url: null,
         title: "Live Entry",
         author: null,
@@ -514,9 +509,9 @@ describe("handleSyncEvent - entry_state_changed", () => {
         read: false,
         starred: false,
         subscriptionId: "sub-1",
-        feedType: "web",
         updatedAt: "2024-07-01T00:00:00.000Z",
         entry: {
+          type: "web",
           url: "https://example.com/uncached",
           title: "Uncached Entry",
           author: null,
@@ -553,8 +548,8 @@ describe("handleSyncEvent - entry_state_changed", () => {
       read: false,
       starred: false,
       subscriptionId: "sub-1",
-      feedType: "web",
       entry: {
+        type: "web",
         url: null,
         title: "Uncached Entry",
         author: null,
@@ -584,8 +579,8 @@ describe("handleSyncEvent - entry_state_changed", () => {
         read: false,
         starred: true,
         subscriptionId: "sub-1",
-        feedType: "web",
         entry: {
+          type: "web",
           url: null,
           title: "Starred Uncached Entry",
           author: null,
@@ -778,14 +773,12 @@ describe("handleSyncEvent - subscription_created", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-new",
-          feedId: "feed-new",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 7,
           tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
         },
         feed: {
-          id: "feed-new",
           type: "web",
           url: "https://example.com/new.xml",
           title: "New Feed",
@@ -818,14 +811,12 @@ describe("handleSyncEvent - subscription_created", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-new",
-          feedId: "feed-new",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 3,
           tags: [],
         },
         feed: {
-          id: "feed-new",
           type: "web",
           url: "https://example.com/new.xml",
           title: "Uncat Feed",
@@ -872,14 +863,12 @@ describe("handleSyncEvent - subscription_created", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-new",
-          feedId: "feed-new",
           customTitle: "My Custom Title",
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 0,
           tags: [],
         },
         feed: {
-          id: "feed-new",
           type: "web",
           url: "https://example.com/new.xml",
           title: "Original Feed Title",
@@ -1602,7 +1591,6 @@ describe("handleSyncEvent - event sequences", () => {
       createNewEntryEvent({
         subscriptionId: "sub-1",
         entryId: "new-entry-seq",
-        feedType: "web",
         counts: {
           all: { unread: 19 },
           starred: { unread: 2 },
@@ -1647,14 +1635,12 @@ describe("handleSyncEvent - event sequences", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-seq",
-          feedId: "feed-seq",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 2,
           tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }],
         },
         feed: {
-          id: "feed-seq",
           type: "web",
           url: "https://example.com/seq.xml",
           title: "Seq Feed",
@@ -1679,7 +1665,6 @@ describe("handleSyncEvent - event sequences", () => {
       queryClient,
       createNewEntryEvent({
         subscriptionId: "sub-seq",
-        feedType: "web",
         counts: {
           all: { unread: 21 },
           starred: { unread: 1 },
@@ -1703,14 +1688,12 @@ describe("handleSyncEvent - event sequences", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-temp",
-          feedId: "feed-temp",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 5,
           tags: [],
         },
         feed: {
-          id: "feed-temp",
           type: "web",
           url: "https://example.com/temp.xml",
           title: "Temp Feed",

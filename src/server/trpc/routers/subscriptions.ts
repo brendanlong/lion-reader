@@ -291,9 +291,13 @@ export const subscriptionsRouter = createTRPCRouter({
    * - tagId: Filter by tag
    * - uncategorized: Only show subscriptions with no tags
    * - unreadOnly: Only show feeds with unread items
+   * - type: Only show subscriptions of this type
    * - cursor/limit: Cursor-based pagination (max 100 per page)
    *
    * Returns subscriptions with their associated feed information and unread counts.
+   * The user's saved subscription (#1846, type `saved`, created by their first
+   * save) is listed too: its members are the Saved list, and it's in no tag or
+   * Uncategorized.
    */
   list: readerProcedure
     .meta({
@@ -321,19 +325,14 @@ export const subscriptionsRouter = createTRPCRouter({
       z.object({
         items: z.array(subscriptionOutputSchema),
         nextCursor: z.string().optional(),
-        // The user's saved subscription (#1846), which `items` never lists:
-        // entries' `subscriptionIds` name it for saved articles. Null until
-        // the first save creates it.
-        savedSubscriptionId: z.string().nullable(),
       })
     )
     .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const [result, savedSubscriptionId] = await Promise.all([
-        subscriptionsService.listSubscriptions(ctx.db, { userId, ...input }),
-        subscriptionsService.getSavedSubscriptionId(ctx.db, userId),
-      ]);
-      return { items: result.subscriptions, nextCursor: result.nextCursor, savedSubscriptionId };
+      const result = await subscriptionsService.listSubscriptions(ctx.db, {
+        userId: ctx.session.user.id,
+        ...input,
+      });
+      return { items: result.subscriptions, nextCursor: result.nextCursor };
     }),
 
   /**
@@ -445,7 +444,8 @@ export const subscriptionsRouter = createTRPCRouter({
             eq(subscriptions.id, input.id),
             eq(subscriptions.userId, userId),
             isNull(subscriptions.unsubscribedAt),
-            subscriptionsService.isListedSubscription()
+            // The saved subscription can't be renamed (#1846): not found.
+            subscriptionsService.isUserManagedSubscription()
           )
         )
         .returning({

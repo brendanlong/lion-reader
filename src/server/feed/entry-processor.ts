@@ -332,6 +332,7 @@ export async function updateEntryContent(
  */
 function toNewEntryData(entry: Entry): NewEntryEventSource {
   return {
+    type: entry.type,
     url: entry.url,
     title: entry.title,
     author: entry.author,

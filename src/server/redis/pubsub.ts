@@ -18,7 +18,6 @@ import {
   syncTagSchema,
   subscriptionCreatedDataSchema,
   feedCreatedDataSchema,
-  legacyFeedId,
   unreadCountsSchema,
   type NewEntryListData,
 } from "@/lib/events/schemas";
@@ -66,7 +65,8 @@ const userEventSchema = z.discriminatedUnion("type", [
   // Entry events for sources with exactly one recipient (email, saved), which
   // go to that user's channel instead of a feed channel. They carry what the
   // SSE route adds to a web feed's events itself: the user's subscriptionId
-  // (null for saved articles).
+  // (null for saved articles). Like `feedId`, `feedType` is server-side only:
+  // the SSE route counts by it and clients get the payload's `type`.
   z.object({
     type: z.literal("new_entry"),
     userId: z.string(),
@@ -152,7 +152,6 @@ const userEventSchema = z.discriminatedUnion("type", [
     // spam), so clients can insert it into cached lists it's missing from —
     // mirroring the new_entry payload (issue #1237).
     subscriptionId: z.string().nullable().optional(),
-    feedType: z.enum(["web", "email", "saved"]).optional(),
     entry: newEntryListDataSchema.optional(),
     // Every active subscription holding the entry (#1846).
     subscriptionIds: z.array(z.string()).optional(),
@@ -249,9 +248,9 @@ export type UserEvent = z.infer<typeof userEventSchema>;
 export type EntryUpdatedMetadata = z.infer<typeof entryMetadataSchema>;
 type SubscriptionCreatedEventSubscription = Omit<
   z.infer<typeof subscriptionCreatedDataSchema>,
-  "id" | "feedId"
+  "id"
 >;
-type SubscriptionCreatedEventFeed = Omit<z.infer<typeof feedCreatedDataSchema>, "id">;
+type SubscriptionCreatedEventFeed = z.infer<typeof feedCreatedDataSchema>;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -355,7 +354,7 @@ export async function publishNewEntry(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     feedType: "web",
-    ...(entry ? { entry: { ...entry, type: "web" as const } } : {}),
+    ...(entry ? { entry } : {}),
   });
 }
 
@@ -391,7 +390,7 @@ export async function publishUserNewEntry(
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
     feedType: target.feedType,
-    ...(entry ? { entry: { ...entry, type: target.feedType } } : {}),
+    ...(entry ? { entry } : {}),
   });
 }
 
@@ -503,8 +502,8 @@ export async function publishSubscriptionCreated(
     subscriptionId,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-    subscription: { ...subscription, id: subscriptionId, feedId: legacyFeedId(subscriptionId) },
-    feed: { ...feed, id: legacyFeedId(subscriptionId) },
+    subscription: { ...subscription, id: subscriptionId },
+    feed,
     counts,
   });
 }
@@ -649,7 +648,6 @@ export async function publishImportCompleted(
  */
 export interface EntryStateListData {
   subscriptionId: string | null;
-  feedType: "web" | "email" | "saved";
   entry: NewEntryListData;
 }
 
@@ -685,7 +683,7 @@ export async function publishEntryStateChanged(
     counts,
     timestamp: new Date().toISOString(),
     updatedAt: updatedAt.toISOString(),
-    ...(listData && { ...listData, entry: { ...listData.entry, type: listData.feedType } }),
+    ...listData,
     ...(subscriptionIds ? { subscriptionIds } : {}),
   });
 }

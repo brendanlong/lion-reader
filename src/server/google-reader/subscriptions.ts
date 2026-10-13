@@ -91,19 +91,14 @@ export async function listGreaderSubscriptions(
     db
       .select({ id: subscriptions.id, greaderStreamId: subscriptions.greaderStreamId })
       .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          isNull(subscriptions.unsubscribedAt),
-          subscriptionsService.isListedSubscription()
-        )
-      ),
+      .where(and(eq(subscriptions.userId, userId), isNull(subscriptions.unsubscribedAt))),
     getSavedSubscription(db, userId),
   ]);
 
   const streamIdById = new Map(streamIds.map((s) => [s.id, s.greaderStreamId]));
   const withStreamIds: GreaderSubscription[] = all.flatMap((sub) =>
-    sub.type === "collection"
+    // The saved subscription is appended below as "Saved Articles".
+    sub.type === "collection" || sub.type === "saved"
       ? []
       : [
           {
