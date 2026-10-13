@@ -345,6 +345,7 @@ const populateSql = (userId: string, subscriptionId: string, feedId: string): St
 FROM entries e
 JOIN feeds f ON f.id = e.owner_feed_id
 WHERE e.owner_feed_id = ${q(feedId)}
+  AND e.type = 'web'
   AND f.last_entries_updated_at IS NOT NULL
   AND e.last_seen_at >= f.last_entries_updated_at
   AND NOT ${holdsRedirectTwinSql(`${q(subscriptionId)}::uuid`, "e")}`
@@ -1074,7 +1075,8 @@ WHERE subscriptions.user_id = ${q(U0)}::uuid AND subscriptions.unsubscribed_at I
  * `processEntries` (feed/entry-processor.ts) for one fetch of the popular feed
  * whose document holds `fresh` new items followed by `kept` of the feed's
  * current ones: the guid lookup, `createEntry` per new item, the disappeared
- * check, `updateEntriesLastSeenAt` and `createUserEntriesForFeed`.
+ * check, `updateEntriesLastSeenAt` and `createUserEntriesForFeed`; then the
+ * feed row's update in `processSuccessfulFetch` (jobs/handlers/fetch-feed.ts).
  */
 async function fetchStatements(db: ClientBase, fresh: number, kept: number): Promise<Statement[]> {
   const feedId = webFeedId(WEB.popular);
@@ -1117,7 +1119,8 @@ RETURNING *`,
     {
       label: "previously_current",
       sql: `SELECT entries.guid FROM entries
-WHERE entries.owner_feed_id = ${q(feedId)} AND entries.last_seen_at >= ${ts(feed.last_entries_updated_at)}`,
+WHERE entries.owner_feed_id = ${q(feedId)} AND entries.type = 'web'
+  AND entries.last_seen_at >= ${ts(feed.last_entries_updated_at)}`,
     },
     {
       label: "update_last_seen",
@@ -1127,16 +1130,35 @@ WHERE entries.id IN (${list(allIds)})
     },
     insertWithMembershipsSql(
       "fanout",
-      `SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
-       COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
-       e.is_spam, e.is_backfill AS read
-FROM subscriptions s
-INNER JOIN entries e ON e.owner_feed_id = s.feed_id
-WHERE s.feed_id = ${q(feedId)}::uuid
-  AND s.unsubscribed_at IS NULL
-  AND e.id = ANY(${uuidArray(allIds)})
-  AND NOT ${holdsRedirectTwinSql("s.id", "e")}`
+      `WITH missing AS MATERIALIZED (
+  SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
+         COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
+         e.is_spam, e.is_backfill AS read, e.guid, e.owner_feed_id
+  FROM subscriptions s
+  INNER JOIN entries e ON e.owner_feed_id = s.feed_id
+  WHERE s.feed_id = ${q(feedId)}::uuid
+    AND s.unsubscribed_at IS NULL
+    AND e.id = ANY(${uuidArray(allIds)})
+    AND NOT EXISTS (
+      SELECT 1 FROM subscription_entries se
+      WHERE se.subscription_id = s.id AND se.entry_id = e.id
+    )
+)
+SELECT subscription_id, user_id, entry_id, published_or_fetched_at, is_spam, read
+FROM missing m
+WHERE NOT ${holdsRedirectTwinSql("m.subscription_id", "m")}`
     ),
+    {
+      label: "update_feed",
+      sql: `UPDATE feeds SET title = feeds.title, description = feeds.description, site_url = feeds.site_url,
+  etag = NULL, last_modified_header = NULL, body_hash = ${q(benchUuid(`body:${fetchedAt}`))},
+  last_fetched_at = ${ts(fetchedAt)}, last_entries_updated_at = ${ts(fetchedAt)},
+  next_fetch_at = ${ts(fetchedAt)}::timestamptz + interval '1 hour',
+  ttl_minutes = NULL, syndication_update_period = NULL, syndication_update_frequency = NULL,
+  consecutive_failures = 0, last_error = NULL, hub_url = NULL, self_url = feeds.self_url,
+  last_fetch_entry_count = ${allIds.length}, last_fetch_size_bytes = 100000, updated_at = ${ts(fetchedAt)}
+WHERE feeds.id = ${q(feedId)}`,
+    },
   ];
 }
 
