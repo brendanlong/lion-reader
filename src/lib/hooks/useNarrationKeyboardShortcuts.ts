@@ -64,9 +64,8 @@ export interface UseNarrationKeyboardShortcutsOptions {
  *
  * @example
  * ```tsx
- * function ArticleView() {
- *   const narration = useNarration({ id, type, title, feedTitle });
- *
+ * // `narration` is the view NarrationEngine reports (it runs useNarration).
+ * function NarrationControlsImpl({ narration }: { narration: UseNarrationReturn }) {
  *   useNarrationKeyboardShortcuts({
  *     phase: getNarrationPhase(narration.state),
  *     controls: {
@@ -77,8 +76,7 @@ export interface UseNarrationKeyboardShortcutsOptions {
  *     },
  *     isSupported: narration.isSupported,
  *   });
- *
- *   return <NarrationControls {...} />;
+ *   // ...
  * }
  * ```
  */

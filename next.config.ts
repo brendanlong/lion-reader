@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import withPWA from "@ducanh2912/next-pwa";
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 // PWA configuration - wraps the Next.js config to add the service worker.
 //
@@ -21,6 +21,9 @@ const withPWAConfig = withPWA({
   dest: "public",
   // Disable PWA in development for faster builds
   disable: process.env.NODE_ENV === "development",
+  // Registers /sw.js from the main bundle (next-pwa's default; it bundles
+  // workbox-window either way, so `register: false` would save nothing).
+  register: true,
   // Custom worker source for share target handling
   customWorkerSrc: "worker",
   // Don't cache or intercept the start URL ("/"): navigations are deliberately
@@ -316,8 +319,16 @@ const sentryWebpackPluginOptions = {
   // Hides source maps from generated client bundles
   hideSourceMaps: true,
 
-  // Automatically tree-shake Sentry logger statements to reduce bundle size
-  disableLogger: true,
+  webpack: {
+    // Tree-shake SDK code we don't use. Tracing stays (tracesSampleRate in
+    // src/lib/sentry/client-sdk.ts); we don't use Session Replay.
+    treeshake: {
+      removeDebugLogging: true,
+      excludeReplayIframe: true,
+      excludeReplayShadowDOM: true,
+      excludeReplayCompressionWorker: true,
+    },
+  },
 };
 
 // Wrap with PWA first, then Sentry if configured

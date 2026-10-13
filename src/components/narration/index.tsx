@@ -1,9 +1,10 @@
 /**
- * NarrationControls dynamic import wrapper.
+ * Dynamic import wrappers for the narration controls and engine.
  *
- * NarrationControls depends on browser-only APIs (speechSynthesis, localStorage).
- * Using ssr: false avoids hydration mismatches and the flash of the button appearing.
- * The skeleton placeholder prevents layout shift while the component loads.
+ * Both depend on browser-only APIs (speechSynthesis, localStorage, Media
+ * Source), so they load with ssr: false: no hydration mismatch, and the engine
+ * stays out of the initial bundle until an article with narration enabled is
+ * open. The skeleton placeholder prevents layout shift while they load.
  *
  * NOTE: EnhancedVoiceList and useEnhancedVoices depend on piper-tts-web which has
  * Node.js-only code (require('fs')) that breaks client bundling. Import them directly
@@ -11,6 +12,7 @@
  */
 
 import dynamic from "next/dynamic";
+import type { UseNarrationReturn } from "./useNarrationTypes";
 
 function NarrationControlsSkeleton() {
   return (
@@ -18,7 +20,21 @@ function NarrationControlsSkeleton() {
   );
 }
 
-export const NarrationControls = dynamic(
+const LazyNarrationControls = dynamic(
   () => import("./NarrationControls").then((mod) => mod.NarrationControlsImpl),
   { ssr: false, loading: () => <NarrationControlsSkeleton /> }
+);
+
+/** The narration controls, or their skeleton until the engine has loaded. */
+export function NarrationControls({ narration }: { narration: UseNarrationReturn | null }) {
+  return narration ? (
+    <LazyNarrationControls narration={narration} />
+  ) : (
+    <NarrationControlsSkeleton />
+  );
+}
+
+export const NarrationEngine = dynamic(
+  () => import("./NarrationEngine").then((mod) => mod.NarrationEngineImpl),
+  { ssr: false }
 );

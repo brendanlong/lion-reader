@@ -127,7 +127,7 @@ describe("advanceCursors", () => {
 
   // #683: cursors carry microsecond precision. A new Date() comparison truncates
   // to milliseconds, so an event newer by microseconds within the same
-  // millisecond would fail to advance the cursor. Temporal.Instant.compare fixes
+  // millisecond would fail to advance the cursor. Comparing exact instants fixes
   // this — the sub-millisecond-newer event must move the cursor forward.
   it("advances the cursor for an event newer by microseconds within the same millisecond", () => {
     const cursors = advanceCursors(EMPTY_CURSORS, subscriptionEvent("2026-01-01T00:00:00.000500Z"));
@@ -159,6 +159,51 @@ describe("advanceCursors", () => {
     const next = advanceCursors(legacy, entryEvent("2026-01-01T00:00:00.123Z", "b"));
     expect(next.entriesAfterId).toBe("b");
     expect(next.entries).toBe("2026-01-01T00:00:00.123000Z");
+  });
+
+  // Timestamps compare as exact instants whatever form the server emits them
+  // in (Temporal's trimmed fraction, legacy 6 digits, Date's 3, an offset).
+  // Observed through the entries keyset: a newer event moves the timestamp, an
+  // equal one only the id tiebreaker, an older one nothing.
+  describe("timestamp comparison", () => {
+    function compareThroughCursor(cursor: string, event: string): number {
+      const cursors: SyncCursors = { ...EMPTY_CURSORS, entries: cursor, entriesAfterId: "m" };
+      const next = advanceCursors(cursors, entryEvent(event, "z"));
+      if (next === cursors) return -1;
+      return next.entries === cursor ? 0 : 1;
+    }
+
+    it.each([
+      ["2026-01-01T00:00:00Z", "2026-01-01T00:00:00.000000Z", 0],
+      ["2026-01-01T00:00:00.1Z", "2026-01-01T00:00:00.100000Z", 0],
+      ["2026-01-01T00:00:00.000001Z", "2026-01-01T00:00:00.000000001Z", -1],
+      ["2026-01-01T00:00:00.000000001Z", "2026-01-01T00:00:00.000000002Z", 1],
+      ["2026-01-01T00:00:00.999999Z", "2026-01-01T00:00:01Z", 1],
+      ["2026-01-01T00:00:01Z", "2026-01-01T00:00:00.999999Z", -1],
+      ["2026-01-01T00:00:00.0005Z", "2025-12-31T19:30:00.0005-04:30", 0],
+      ["2026-01-01T00:00:00.0005Z", "2026-01-01T05:30:00.000501+0530", 1],
+      ["2025-12-31T23:59:59.999999Z", "2026-01-01T00:00:00Z", 1],
+      ["0099-12-31T23:59:59Z", "0100-01-01T00:00:00Z", 1],
+    ])("cursor %s vs event %s compares %i", (cursor, event, expected) => {
+      expect(compareThroughCursor(cursor, event)).toBe(expected);
+    });
+
+    // Anything Temporal.Instant.from would reject, rather than Date rolling an
+    // out-of-range field into the next one.
+    it.each([
+      "2026-01-01 00:00:00Z",
+      "2026-01-01T00:00:00",
+      "2026-01-01T00:00:00+05:",
+      "2026-13-01T00:00:00Z",
+      "2026-02-29T00:00:00Z",
+      "2026-01-01T24:00:00Z",
+      "2026-01-01T00:60:00Z",
+      "2026-01-01T00:00:61Z",
+      "2026-01-01T00:00:00+05:60",
+    ])("rejects %s", (timestamp) => {
+      const cursors = advanceCursors(EMPTY_CURSORS, entryEvent("2026-01-01T00:00:00Z"));
+      expect(() => advanceCursors(cursors, entryEvent(timestamp))).toThrow(RangeError);
+    });
   });
 
   describe("entries keyset (ts, entriesAfterId)", () => {

@@ -11,10 +11,9 @@
 "use client";
 
 import { Suspense } from "react";
+import dynamic from "next/dynamic";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { UnifiedEntriesContent } from "@/components/entries/UnifiedEntriesContent";
-import { UnifiedSettingsContent } from "@/components/settings/UnifiedSettingsContent";
-import { SubscribeContent } from "@/components/subscribe/SubscribeContent";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { useEntryListRefreshOnNavigate } from "@/lib/hooks/useEntryListRefreshOnNavigate";
 import { useEntryListScrollResetOnNavigate } from "@/lib/hooks/useEntryListScrollResetOnNavigate";
@@ -36,6 +35,20 @@ function PageSkeleton() {
     </div>
   );
 }
+
+// Settings and Subscribe are split out of the initial bundle: the entry lists
+// are where nearly every session starts, and settings pull in heavy,
+// rarely-used code (narration voices, OPML, QR codes).
+const UnifiedSettingsContent = dynamic(
+  () =>
+    import("@/components/settings/UnifiedSettingsContent").then((m) => m.UnifiedSettingsContent),
+  { loading: PageSkeleton }
+);
+
+const SubscribeContent = dynamic(
+  () => import("@/components/subscribe/SubscribeContent").then((m) => m.SubscribeContent),
+  { loading: PageSkeleton }
+);
 
 /**
  * Determines which page section to render based on pathname.

@@ -8,30 +8,60 @@
  * Includes the settings layout (sidebar navigation) and switches
  * content based on the current pathname.
  *
- * Settings pages are NOT lazy-loaded so that static content (titles,
- * descriptions) can render immediately while data loads. The settings
- * bundle is small enough that this tradeoff is worthwhile for better UX.
+ * Each settings page is its own chunk, so opening settings doesn't download
+ * every page's dependencies (narration voices, OPML, QR codes, ...). The
+ * sidebar renders immediately; the page shows a skeleton until its chunk loads.
  */
 
 "use client";
 
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { ClientLink } from "@/components/ui/client-link";
 import { ChevronLeftIcon } from "@/components/ui/icons";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
-// Settings page components - directly imported (not lazy) so static content
-// like titles renders immediately while data loads
-import AccountSettingsContent from "./pages/AccountSettingsContent";
-import { AppearanceSettings as AppearanceSettingsContent } from "./AppearanceSettings";
-import SubscriptionsSettingsContent from "./pages/SubscriptionsSettingsContent";
-import EmailSettingsContent from "./pages/EmailSettingsContent";
-import AiSettingsContent from "./pages/AiSettingsContent";
-import IntegrationsSettingsContent from "./pages/IntegrationsSettingsContent";
-import FeedHealthSettingsContent from "./pages/FeedHealthSettingsContent";
-import SessionsSettingsContent from "./pages/SessionsSettingsContent";
-import ConnectedAppsSettingsContent from "./pages/ConnectedAppsSettingsContent";
-import DeleteAccountSettingsContent from "./pages/DeleteAccountSettingsContent";
+import { SettingsListSkeleton } from "./SettingsListSkeleton";
+
+function SettingsPageSkeleton() {
+  return (
+    <div className="space-y-6">
+      <SettingsListSkeleton variant="card" count={2} height="h-40" />
+    </div>
+  );
+}
+
+const AccountSettingsContent = dynamic(() => import("./pages/AccountSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const AppearanceSettingsContent = dynamic(
+  () => import("./AppearanceSettings").then((m) => m.AppearanceSettings),
+  { loading: SettingsPageSkeleton }
+);
+const SubscriptionsSettingsContent = dynamic(() => import("./pages/SubscriptionsSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const EmailSettingsContent = dynamic(() => import("./pages/EmailSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const AiSettingsContent = dynamic(() => import("./pages/AiSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const IntegrationsSettingsContent = dynamic(() => import("./pages/IntegrationsSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const FeedHealthSettingsContent = dynamic(() => import("./pages/FeedHealthSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const SessionsSettingsContent = dynamic(() => import("./pages/SessionsSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const ConnectedAppsSettingsContent = dynamic(() => import("./pages/ConnectedAppsSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
+const DeleteAccountSettingsContent = dynamic(() => import("./pages/DeleteAccountSettingsContent"), {
+  loading: SettingsPageSkeleton,
+});
 
 const settingsLinks = [
   { href: "/settings", label: "Account" },

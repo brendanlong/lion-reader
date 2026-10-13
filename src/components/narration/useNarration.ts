@@ -5,16 +5,8 @@
  * Piper TTS (enhanced voices), or server-synthesized cloud voices. Handles
  * narration generation, playback controls, and Media Session integration.
  *
- * The owning component holds the hook (it also needs `state.currentParagraph`
- * for highlighting) and hands the whole thing to the controls:
- *
- * ```tsx
- * function ArticleView({ articleId }: { articleId: string }) {
- *   const narration = useNarration({ id: articleId, title: 'Article Title', feedTitle: 'Feed' });
- *
- *   return <NarrationControls narration={narration} />;
- * }
- * ```
+ * Only `NarrationEngine` calls it, so this module and its players load lazily;
+ * the article view gets the engine's report and hands it to the controls.
  */
 
 "use client";
