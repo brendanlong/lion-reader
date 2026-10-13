@@ -57,5 +57,5 @@ export async function POST(
     if (response) return response;
     throw error;
   }
-  return formatEntryResponse(db, auth.userId, resolved.id);
+  return formatEntryResponse(db, auth.userId, resolved);
 }

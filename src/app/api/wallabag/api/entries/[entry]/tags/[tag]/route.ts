@@ -32,5 +32,5 @@ export async function DELETE(
     return errorResponse("not_found", "Tag not found", 404);
   }
   await removeEntriesFromCollection(db, auth.userId, tag.subscriptionId, [resolved.id]);
-  return formatEntryResponse(db, auth.userId, resolved.id);
+  return formatEntryResponse(db, auth.userId, resolved);
 }

@@ -1,60 +1,14 @@
 /**
  * Unit tests for Wallabag response formatting.
  *
- * Wallabag integer ids are stored serials (issue #1117): entry ids expose
- * `entries.greader_item_id` (passed in by the caller), tag ids expose a
- * collection's `subscriptions.greader_stream_id`.
- * These tests pin the serial → JSON-number mapping that replaced the old
- * 31-bit UUID-hash ids.
+ * Tag ids expose a collection's stored `subscriptions.greader_stream_id`
+ * serial (issue #1117); these tests pin the serial → JSON-number mapping.
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  formatEntryFull,
-  formatEntryListItem,
-  formatSavedArticle,
-  formatTag,
-} from "../../src/server/wallabag/format";
-import type { EntryFull, EntryListItem } from "../../src/server/services/entries";
+import { formatEntryFull, formatSavedArticle, formatTag } from "../../src/server/wallabag/format";
+import type { EntryFull } from "../../src/server/services/entries";
 import type { SavedArticle } from "../../src/server/services/saved";
-
-function makeListItem(overrides: Partial<EntryListItem> = {}): EntryListItem {
-  return {
-    id: "01912345-0000-7000-8000-000000000001",
-    subscriptionId: null,
-    subscriptionIds: [],
-    type: "saved",
-    url: "https://example.com/article",
-    title: "An Article",
-    author: null,
-    summary: "<p>Summary</p>",
-    publishedAt: null,
-    fetchedAt: new Date("2026-01-01T00:00:00Z"),
-    updatedAt: new Date("2026-01-02T00:00:00Z"),
-    read: false,
-    starred: false,
-    readChangedAt: null,
-    feedTitle: null,
-    siteName: null,
-    ...overrides,
-  };
-}
-
-describe("formatEntryListItem", () => {
-  it("exposes the entry's stored serial as the Wallabag id", () => {
-    const formatted = formatEntryListItem(makeListItem(), 31337, []);
-
-    expect(formatted.id).toBe(31337);
-    expect(typeof formatted.id).toBe("number");
-    // The UUID still rides along for clients that keep it
-    expect(formatted.uid).toBe("01912345-0000-7000-8000-000000000001");
-    expect(formatted._lion_reader_id).toBe("01912345-0000-7000-8000-000000000001");
-  });
-
-  it("produces JSON-serializable output (no bigint leaks)", () => {
-    expect(() => JSON.stringify(formatEntryListItem(makeListItem(), 42, []))).not.toThrow();
-  });
-});
 
 describe("formatSavedArticle", () => {
   it("uses the caller-supplied Wallabag id (SavedArticle carries no serial)", () => {
