@@ -86,6 +86,13 @@ export const savedSubscriptionId = (userIdx: number): string => subscriptionId(u
 export const tagId = (userIdx: number, n: number): string => benchUuid(`tag:${userIdx}:${n}`);
 export const tagName = (n: number): string => `Tag ${String(n).padStart(2, "0")}`;
 
+/**
+ * U0's tag holding only its tagged web feed with the fewest entries (~60
+ * across the timeline): the sparse-tag list target. Numbered after U0's
+ * randomly assigned tags.
+ */
+export const SPARSE_TAG = 31;
+
 const SYLLABLES = [
   "ka", "lo", "mi", "ren", "tas", "vel", "dor", "pin", "sul", "bra",
   "gen", "fo", "lut", "mar", "nex", "ol", "pra", "qui", "ros", "tir",

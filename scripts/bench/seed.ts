@@ -26,6 +26,7 @@ import {
   ANCHOR,
   COLLECTIONS,
   FIRST_POOL_FEED,
+  SPARSE_TAG,
   WEB,
   benchUuid,
   collectionSubscriptionId,
@@ -819,6 +820,25 @@ FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::int[], $5::bool[], $6::float
      FROM bench_sub b WHERE b.id = s.id AND NOT b.active`
   );
   await step("collection members", COLLECTION_ENTRIES);
+  if (SPARSE_TAG <= HEAVY[0].tags) throw new Error("SPARSE_TAG must follow U0's seeded tags");
+  // Picked among feeds that already have a tag, so Uncategorized keeps its members.
+  await step(
+    "sparse tag",
+    `WITH t AS (
+       INSERT INTO tags (id, user_id, name, created_at, updated_at)
+       VALUES ($1, $2, $3, ${A} - interval '700 days', ${A} - interval '700 days')
+       RETURNING id, user_id
+     )
+     INSERT INTO subscription_tags (subscription_id, tag_id, created_at)
+     SELECT q.id, t.id, ${A} - interval '700 days' FROM t, LATERAL (
+       SELECT s.id FROM subscriptions s
+       WHERE s.user_id = t.user_id AND s.type = 'web' AND s.unsubscribed_at IS NULL
+         AND EXISTS (SELECT 1 FROM subscription_tags st WHERE st.subscription_id = s.id)
+       ORDER BY (SELECT count(*) FROM subscription_entries se WHERE se.subscription_id = s.id), s.id
+       LIMIT 1
+     ) q`,
+    [tagId(0, SPARSE_TAG), userId(0), tagName(SPARSE_TAG)]
+  );
   await step(
     "feed jobs",
     `INSERT INTO jobs (id, type, payload, next_run_at, created_at, updated_at)
