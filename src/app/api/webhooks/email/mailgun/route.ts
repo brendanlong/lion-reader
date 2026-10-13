@@ -225,11 +225,13 @@ function parseMailgunEmail(formData: FormData): InboundEmail {
  * - 500 Internal Server Error: Transient processing failure (Mailgun retries)
  */
 export async function POST(request: Request): Promise<Response> {
-  // 1. Check webhook signing key is configured
+  // 1. Check newsletters are configured
   const signingKey = ingestConfig.mailgunWebhookSigningKey;
 
-  if (!signingKey) {
-    logger.error("Mailgun webhook received but MAILGUN_WEBHOOK_SIGNING_KEY is not configured");
+  if (!signingKey || !ingestConfig.enabledDomain) {
+    logger.error(
+      "Mailgun webhook received but INGEST_EMAIL_DOMAIN or MAILGUN_WEBHOOK_SIGNING_KEY is not configured"
+    );
     // Return 406 to tell Mailgun not to retry - configuration error
     return new Response("Not Configured", { status: 406 });
   }

@@ -35,7 +35,7 @@ import { insertUserEntriesWithMemberships } from "@/server/services/subscription
  * Provider-specific webhooks parse their format into this structure.
  */
 export interface InboundEmail {
-  /** Recipient address (e.g., "token@ingest.lionreader.com") */
+  /** Recipient address (e.g., "token@ingest.example.com") */
   to: string;
   /** Sender information */
   from: {
@@ -112,7 +112,7 @@ function normalizeSenderEmail(email: string): string {
 
 /**
  * Extracts the token from a recipient address.
- * Handles plus codes in the recipient (e.g., "abc123+test@ingest.lionreader.com" -> "abc123").
+ * Handles plus codes in the recipient (e.g., "abc123+test@ingest.example.com" -> "abc123").
  *
  * @param toAddress - The recipient email address
  * @returns The extracted token

@@ -2,10 +2,8 @@
 # IMPORTANT: Before editing, read docs/references/fly-toml.md for valid options
 # See also: https://fly.io/docs/reference/configuration/
 #
-# Self-hosting: this is lionreader.com's own deploy config. Change or delete
-# every value marked "lionreader.com only" before deploying, or your instance
-# sends page counts to our analytics, loads assets from our CDN and hands out
-# newsletter addresses on our domain. See docs/DEPLOYMENT.md.
+# This is lionreader.com's own deploy config. Self-hosting: replace every value
+# marked "lionreader.com only" first (docs/DEPLOYMENT.md).
 
 app = "lion-reader"
 primary_region = "sjc"
@@ -60,11 +58,11 @@ kill_timeout = 30
   ALLOWED_SIGNUP_PROVIDERS = "apple,google,email"
   ALLOWED_PUBLIC_SIGNUP_PROVIDERS = "apple,google"
 
-  # The hosted instance is not offered to EU users: require the not-in-the-EU
+  # lionreader.com only. The hosted instance is not offered to EU users: require the not-in-the-EU
   # certification at signup and show the "not available in the EU" notice. Unset
   # (the default) on self-hosted instances, which take on no EU obligation.
   EU_RESTRICTED = "true"
-  # lionreader.com only.
+  # lionreader.com only: set your own URL.
   NEXT_PUBLIC_APP_URL = "https://lionreader.com"
   NODE_ENV = "production"
   PORT = "3000"
@@ -102,8 +100,7 @@ kill_timeout = 30
   STORAGE_REGION = "auto"
   STORAGE_PUBLIC_URL_BASE = "https://lion-reader-prod.t3.storage.dev/"
 
-  # lionreader.com only. Newsletters (off unless this and the
-  # MAILGUN_WEBHOOK_SIGNING_KEY secret are both set).
+  # lionreader.com only. Newsletters.
   INGEST_EMAIL_DOMAIN = "in.app.lionreader.com"
 
   # Prometheus metrics

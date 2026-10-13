@@ -166,6 +166,11 @@ export const ingestConfig = {
   get mailgunWebhookSigningKey(): string | undefined {
     return process.env.MAILGUN_WEBHOOK_SIGNING_KEY || undefined;
   },
+
+  /** The ingest domain when newsletters are enabled, undefined when they're off. */
+  get enabledDomain(): string | undefined {
+    return this.mailgunWebhookSigningKey ? this.emailDomain : undefined;
+  },
 };
 
 /**

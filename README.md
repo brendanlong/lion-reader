@@ -145,8 +145,6 @@ Inbound email is delivered by [Mailgun](https://www.mailgun.com) receiving route
 | `INGEST_EMAIL_DOMAIN`         | Domain for ingest email addresses; **required**                |
 | `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun webhook signing key (Sending → Webhooks); **required** |
 
-Newsletters are off until both are set.
-
 The webhook verifies Mailgun's HMAC-SHA256 signature; requests with invalid signatures are rejected.
 
 ## Production Deployment

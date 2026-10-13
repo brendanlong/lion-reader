@@ -29,11 +29,12 @@ This creates the app on Fly.io and updates your `fly.toml` with the app name.
 
 ### 2. Replace lionreader.com's Settings
 
-`fly.toml` is lionreader.com's own deploy config. Change or delete every value commented "lionreader.com only" before your first deploy. Left as they are, your instance:
+`fly.toml` is lionreader.com's own deploy config. Change or delete every value commented "lionreader.com only" before your first deploy (set `NEXT_PUBLIC_APP_URL` to your own URL). Left as they are, your instance:
 
 - reports page counts to lionreader.com's GoatCounter (`NEXT_PUBLIC_GOATCOUNTER_URL`; delete it to send none);
 - loads its scripts from lionreader.com's CDN (`ASSET_PREFIX`; delete it to serve them yourself);
-- hands out newsletter addresses on lionreader.com's mail domain, so newsletters never reach you (`INGEST_EMAIL_DOMAIN`; delete it to turn newsletters off, or set up your own domain as in the README's "Email Newsletter Subscriptions").
+- hands out newsletter addresses on lionreader.com's mail domain, so newsletters never reach you (`INGEST_EMAIL_DOMAIN`; delete it to turn newsletters off, or set up your own domain as in the README's "Email Newsletter Subscriptions");
+- asks every new user to certify they're outside the EU (`EU_RESTRICTED`; delete it).
 
 ---
 
@@ -147,21 +148,12 @@ flyctl secrets set REDIS_URL="rediss://default:password@your-endpoint.upstash.io
 
 Lion Reader requires several secrets for production.
 
-### 1. Set Application URL (Optional but Recommended)
-
-```bash
-flyctl secrets set NEXT_PUBLIC_APP_URL="https://lionreader.com"
-```
-
-Replace with your custom domain if you have one.
-
 ### Complete Secrets Reference
 
 | Secret                          | Required | Description                                                                 | How to Get                                                                            |
 | ------------------------------- | -------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                  | Yes      | Postgres connection string                                                  | Set by `fly postgres attach`                                                          |
 | `REDIS_URL`                     | Yes      | Redis/Upstash connection string                                             | From Upstash console or `fly redis create`                                            |
-| `NEXT_PUBLIC_APP_URL`           | No       | Public URL for the app                                                      | Your Fly.io URL or custom domain                                                      |
 | `ANDROID_APP_CERT_SHA256`       | No       | Android app signing-key SHA-256 fingerprints (comma-separated), for sign-in | `keytool -list -v -keystore <release keystore>`; add Play App Signing's key once used |
 | `ANDROID_DEBUG_APP_CERT_SHA256` | No       | Same, for the debug app (`com.lionreader.app.debug`)                        | The private dev keystore (see `kmp/CLAUDE.md`)                                        |
 

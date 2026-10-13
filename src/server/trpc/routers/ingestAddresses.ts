@@ -75,14 +75,8 @@ function generateToken(): string {
   return randomBytes(TOKEN_BYTES).toString("base64url").toLowerCase();
 }
 
-/** The ingest domain, or undefined when newsletters aren't set up on this server. */
-function enabledIngestDomain(): string | undefined {
-  const { emailDomain, mailgunWebhookSigningKey } = ingestConfig;
-  return emailDomain && mailgunWebhookSigningKey ? emailDomain : undefined;
-}
-
 function requireIngestDomain(): string {
-  const domain = enabledIngestDomain();
+  const domain = ingestConfig.enabledDomain;
   if (!domain) throw errors.newslettersNotConfigured();
   return domain;
 }
@@ -116,7 +110,7 @@ export const ingestAddressesRouter = createTRPCRouter({
       })
     )
     .query(async ({ ctx }) => {
-      const domain = enabledIngestDomain();
+      const domain = ingestConfig.enabledDomain;
       if (!domain) return { enabled: false, items: [] };
 
       const userId = ctx.session.user.id;

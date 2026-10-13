@@ -12,9 +12,10 @@
  *   with a captured triple would send — is acked 200 but NOT processed
  *   (the Redis nonce, not Message-ID dedup, blocks it)
  * - a bad signature / missing fields are rejected with 406
+ * - with newsletters off (no ingest domain), mail is rejected with 406 (#1797)
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createHmac, randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
@@ -24,7 +25,6 @@ import { POST } from "../../src/app/api/webhooks/email/mailgun/route";
 import { createTestUser } from "./helpers";
 
 const SIGNING_KEY = "test-mailgun-signing-key";
-process.env.MAILGUN_WEBHOOK_SIGNING_KEY = SIGNING_KEY;
 
 /** Signs (timestamp, token) the way Mailgun does: HMAC-SHA256(timestamp + token). */
 function sign(timestamp: string, token: string): string {
@@ -91,7 +91,13 @@ describe("Mailgun webhook route", () => {
   let recipient: string;
 
   beforeEach(async () => {
+    vi.stubEnv("MAILGUN_WEBHOOK_SIGNING_KEY", SIGNING_KEY);
+    vi.stubEnv("INGEST_EMAIL_DOMAIN", "ingest.example.com");
     recipient = await createIngestRecipient();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("processes a correctly signed, fresh webhook end-to-end (entry created)", async () => {
@@ -168,6 +174,14 @@ describe("Mailgun webhook route", () => {
     const response = await POST(
       buildWebhookRequest({ recipient, subject, token: "", signature: "" })
     );
+    expect(response.status).toBe(406);
+    expect(await countEntriesTitled(subject)).toBe(0);
+  });
+
+  it("rejects mail with 406 when newsletters are off (no ingest domain)", async () => {
+    vi.stubEnv("INGEST_EMAIL_DOMAIN", "");
+    const subject = `Newsletters off ${generateUuidv7()}`;
+    const response = await POST(buildWebhookRequest({ recipient, subject }));
     expect(response.status).toBe(406);
     expect(await countEntriesTitled(subject)).toBe(0);
   });
