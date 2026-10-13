@@ -4,10 +4,12 @@
 -- foreign key) and collection_entries. Catalog only.
 SET LOCAL lock_timeout = '5s';
 
--- In the app's lock order, so a transaction holding a later one can't make
--- this wait on it while it waits on us.
-LOCK TABLE user_entries, collection_entries IN ACCESS EXCLUSIVE MODE;
-LOCK TABLE subscriptions IN SHARE ROW EXCLUSIVE MODE;
+-- Every lock this needs, up front, so no statement below upgrades one while
+-- a reader waits behind it (a deadlock): the view first, since its readers
+-- lock it before its tables; then the tables, including the ones the dropped
+-- foreign keys reference (subscriptions, users).
+DROP VIEW visible_entries;
+LOCK TABLE user_entries, collection_entries, subscriptions, users IN ACCESS EXCLUSIVE MODE;
 
 DROP TRIGGER user_entries_copy_memberships_insert_trigger ON user_entries;
 DROP TRIGGER user_entries_copy_membership_restamp_trigger ON user_entries;
@@ -94,8 +96,8 @@ BEGIN
 END;
 $$;
 
--- An entry's subscriptions come from its memberships (entryOriginJoin).
-DROP VIEW visible_entries;
+-- Recreated without the column dropped below: an entry's subscriptions come
+-- from its memberships (entryOriginJoin).
 CREATE VIEW visible_entries AS
  SELECT ue.user_id,
     e.id,

@@ -5,7 +5,7 @@
  */
 
 import { db } from "../../db";
-import { reconcileCounters } from "../../services/reconcile-counters";
+import { countUnheldUserEntries, reconcileCounters } from "../../services/reconcile-counters";
 import type { JobHandlerResult } from "./types";
 
 /**
@@ -22,10 +22,11 @@ const RECONCILE_COUNTERS_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export async function handleReconcileCounters(): Promise<JobHandlerResult> {
   const now = new Date();
   const result = await reconcileCounters(db);
+  const unheldUserEntries = await countUnheldUserEntries(db);
 
   return {
     success: true,
     nextRunAt: new Date(now.getTime() + RECONCILE_COUNTERS_INTERVAL_MS),
-    metadata: { ...result },
+    metadata: { ...result, unheldUserEntries },
   };
 }

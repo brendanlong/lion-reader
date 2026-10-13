@@ -56,7 +56,10 @@ import { deleteSavedArticle, saveArticle, uploadArticle } from "../../src/server
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { reconcileCounters } from "../../src/server/services/reconcile-counters";
+import {
+  countUnheldUserEntries,
+  reconcileCounters,
+} from "../../src/server/services/reconcile-counters";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -765,6 +768,7 @@ describe("unread counters under random operations", () => {
           usersFixed: 0,
           tagsFixed: 0,
         });
+        expect(await countUnheldUserEntries(db), context).toBe(0);
         await expectBadgesMatchLists(world.userId);
       }
     },

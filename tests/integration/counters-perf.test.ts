@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
@@ -29,10 +29,12 @@ const FANOUT_BATCH = 5_000; // rows per bulk fanout-style INSERT benchmark
 const SMALL_BATCH = 50; // rows per markEntriesRead-style UPDATE benchmark
 const RUNS = 5;
 
-const COUNTER_TRIGGERS = [
-  "user_entries_counters_insert_trigger",
-  "user_entries_counters_update_trigger",
-  "user_entries_counters_delete_trigger",
+const COUNTER_TRIGGERS: Array<[table: string, trigger: string]> = [
+  ["user_entries", "user_entries_counters_insert_trigger"],
+  ["user_entries", "user_entries_counters_update_trigger"],
+  ["user_entries", "user_entries_counters_delete_trigger"],
+  ["subscription_entries", "subscription_entries_counters_insert_trigger"],
+  ["subscription_entries", "subscription_entries_counters_delete_trigger"],
 ];
 
 // ============================================================================
@@ -51,9 +53,9 @@ async function timed(fn: () => Promise<unknown>): Promise<number> {
 }
 
 async function setTriggers(enabled: boolean) {
-  for (const t of COUNTER_TRIGGERS) {
+  for (const [table, trigger] of COUNTER_TRIGGERS) {
     await db.execute(
-      sql.raw(`ALTER TABLE user_entries ${enabled ? "ENABLE" : "DISABLE"} TRIGGER ${t}`)
+      sql.raw(`ALTER TABLE ${table} ${enabled ? "ENABLE" : "DISABLE"} TRIGGER ${trigger}`)
     );
   }
 }
@@ -77,6 +79,29 @@ function report(label: string, off: number[], on: number[]) {
   return { offMs, onMs };
 }
 
+/**
+ * A fan-out's shape (insertUserEntriesWithMemberships): the user's rows for
+ * the perf feeds' entries, each with its membership, in one statement.
+ */
+function fanoutSql(user: string, limit: SQL) {
+  return sql`
+    WITH c AS (
+      SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
+             COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at
+      FROM entries e
+      JOIN subscriptions s ON s.feed_id = e.owner_feed_id AND s.user_id = ${user}::uuid
+      WHERE e.guid LIKE 'perf-guid-%'
+      ${limit}
+    ),
+    new_rows AS (
+      INSERT INTO user_entries (user_id, entry_id, is_spam, published_or_fetched_at, active_memberships)
+      SELECT user_id, entry_id, false, published_or_fetched_at, 1 FROM c
+    )
+    INSERT INTO subscription_entries (subscription_id, user_id, entry_id, published_or_fetched_at)
+    SELECT subscription_id, user_id, entry_id, published_or_fetched_at FROM c
+  `;
+}
+
 // ============================================================================
 // Setup
 // ============================================================================
@@ -96,8 +121,8 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
 
     // 200 feeds + subscriptions + 50k entries + 50k user_entries, all set-based.
     await db.execute(sql`
-      INSERT INTO feeds (id, type, url, title)
-      SELECT gen_random_uuid(), 'web', 'https://perf.example.com/feed-' || g, 'Perf Feed ' || g
+      INSERT INTO feeds (id, url, title)
+      SELECT gen_random_uuid(), 'https://perf.example.com/feed-' || g, 'Perf Feed ' || g
       FROM generate_series(1, ${NUM_SUBSCRIPTIONS}) g
       ON CONFLICT DO NOTHING
     `);
@@ -115,15 +140,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
     `);
     // Seed user_entries with counter triggers ENABLED — this itself is a giant
     // fanout-shaped statement, and leaves the counters exact for later checks.
-    await db.execute(sql`
-      INSERT INTO user_entries (user_id, entry_id, subscription_id, is_spam, published_or_fetched_at)
-      SELECT ${userId}::uuid, e.id, s.id, false, COALESCE(e.published_at, e.fetched_at)
-      FROM entries e
-      JOIN feeds f ON f.id = e.owner_feed_id
-      JOIN subscriptions s ON s.feed_id = f.id AND s.user_id = ${userId}::uuid
-      WHERE f.url LIKE 'https://perf.example.com/feed-%'
-      ON CONFLICT DO NOTHING
-    `);
+    await db.execute(fanoutSql(userId, sql``));
 
     console.log(`  Seeded in ${((performance.now() - start) / 1000).toFixed(1)}s`);
   }, 300_000);
@@ -132,7 +149,7 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
     await setTriggers(true);
     await db.execute(sql`DELETE FROM users WHERE id = ${userId}::uuid`);
     await db.execute(sql`DELETE FROM feeds WHERE url LIKE 'https://perf.example.com/feed-%'`);
-  });
+  }, 300_000);
 
   it("measures trigger overhead on the hot write paths", async () => {
     console.log(`\n--- Write-path trigger overhead (median of ${RUNS}) ---`);
@@ -150,20 +167,13 @@ describe.skipIf(!process.env.RUN_PERF_TESTS)("Unread counter performance", () =>
       FROM feeds f WHERE f.url LIKE 'https://perf.example.com/feed-%'
     `);
 
-    const insertBatch = () => sql`
-      INSERT INTO user_entries (user_id, entry_id, subscription_id, is_spam, published_or_fetched_at)
-      SELECT ${scratchUser}::uuid, e.id, s.id, false, COALESCE(e.published_at, e.fetched_at)
-      FROM entries e
-      JOIN subscriptions s ON s.feed_id = e.owner_feed_id AND s.user_id = ${scratchUser}::uuid
-      WHERE e.guid LIKE 'perf-guid-%'
-        AND NOT EXISTS (
-          SELECT 1 FROM user_entries ue
-          WHERE ue.user_id = ${scratchUser}::uuid AND ue.entry_id = e.id
-        )
-      LIMIT ${FANOUT_BATCH}
-    `;
-    const resetInserts = () =>
-      db.execute(sql`DELETE FROM user_entries WHERE user_id = ${scratchUser}::uuid`);
+    const insertBatch = () => fanoutSql(scratchUser, sql`LIMIT ${FANOUT_BATCH}`);
+    // Memberships first: with the triggers off, the user_entries delete trigger
+    // doesn't remove them.
+    const resetInserts = async () => {
+      await db.execute(sql`DELETE FROM subscription_entries WHERE user_id = ${scratchUser}::uuid`);
+      await db.execute(sql`DELETE FROM user_entries WHERE user_id = ${scratchUser}::uuid`);
+    };
 
     const insertOff: number[] = [];
     const insertOn: number[] = [];

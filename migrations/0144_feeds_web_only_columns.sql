@@ -6,6 +6,10 @@
 -- Catalog only.
 SET LOCAL lock_timeout = '5s';
 
+-- Up front, so nothing below upgrades a lock: users for the feeds.user_id
+-- foreign key.
+LOCK TABLE feeds, users IN ACCESS EXCLUSIVE MODE;
+
 ALTER TABLE feeds DROP CONSTRAINT feeds_web_only;
 DROP INDEX idx_feeds_type;
 DROP INDEX idx_feeds_user_id;

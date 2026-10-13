@@ -35,7 +35,10 @@ import {
 } from "../../src/server/services/subscriptions";
 import { uploadArticle } from "../../src/server/services/saved";
 import { getGlobalUnreadCounts } from "../../src/server/services/counts";
-import { reconcileCounters } from "../../src/server/services/reconcile-counters";
+import {
+  countUnheldUserEntries,
+  reconcileCounters,
+} from "../../src/server/services/reconcile-counters";
 import {
   createTestEntry,
   createTestFeed,
@@ -98,9 +101,11 @@ async function currentFeed(count: number): Promise<{ feedId: string; entryIds: s
 
 describe("membership write paths (#1846)", () => {
   beforeEach(cleanup);
-  // Every write path below keeps the counters exact.
+  // Every write path below keeps the counters exact, and gives every row a
+  // membership.
   afterEach(async () => {
     expect(await reconcileCounters(db)).toEqual(NO_FIXES);
+    expect(await countUnheldUserEntries(db)).toBe(0);
   });
   afterAll(cleanup);
 
@@ -314,5 +319,20 @@ describe("subscription_entries foreign keys (#1846)", () => {
     // As Bob: the subscription isn't his. As Alice: she has no such article.
     await expect(insert(bob)).rejects.toMatchObject({ cause: { code: "23503" } });
     await expect(insert(alice)).rejects.toMatchObject({ cause: { code: "23503" } });
+  });
+});
+
+describe("the daily check for rows in no subscription (#1846)", () => {
+  beforeEach(cleanup);
+  afterAll(cleanup);
+
+  it("counts an unstarred row with no membership, and not a starred one", async () => {
+    const userId = await createTestUser();
+    const feedId = await createTestFeed();
+    // No subscription to the feed, so the rows get no membership.
+    await createTestEntry(feedId, { userIds: [userId] });
+    await createTestEntry(feedId, { userIds: [userId], starredBy: [userId] });
+
+    expect(await countUnheldUserEntries(db)).toBe(1);
   });
 });
