@@ -6,9 +6,9 @@
  * (sidebar counts + tags, the route's entry list, the open entry, the
  * subscription title), resolved synchronously from the demo store instead of
  * streamed from the server. The result is a dehydrated state for
- * `<HydrationBoundary>`; because the store is deterministic, the server render
- * and the client's hydration render hydrate identical data (the contract behind
- * `PrerenderedCacheProvider`). Seeding also applies the open entry's
+ * `<HydrationBoundary>`; because the store is deterministic (but for count
+ * stamps, which nothing renders), the server render and the client's hydration
+ * render show identical data (the contract behind `PrerenderedCacheProvider`). Seeding also applies the open entry's
  * auto-mark-read to the store, so call it once per store, before rendering.
  */
 

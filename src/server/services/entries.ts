@@ -37,7 +37,14 @@ import { showsFullContent } from "@/lib/narration/select-content";
 import { errors } from "@/server/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";
-import { getBulkEntryRelatedCounts, getUserUnreadCounts, type BulkUnreadCounts } from "./counts";
+import {
+  countsAsOfColumn,
+  countsAsOfNow,
+  formatCountsAsOf,
+  getBulkEntryRelatedCounts,
+  getUserUnreadCounts,
+  type BulkUnreadCounts,
+} from "./counts";
 import { publishMarkReadStateChanges, publishStarredStateChanges } from "./entry-events";
 import {
   buildEntrySubscriptionFilter,
@@ -1155,27 +1162,52 @@ export async function getEntries(
  * the `read_changed_at <= changedAt` guard) update no rows, and same-value
  * re-asserts flip nothing; neither publishes. Fire and forget.
  *
- * This publishes after the (autocommitted) UPDATEs complete. Callers that pass
- * the global `db` get post-commit publishing for free. A caller running this
- * inside a transaction must pass `publish: false` and publish the returned
- * `changed`+`counts` itself after the commit, so a rolled-back mark can't emit
- * a phantom event.
- *
- * @param options.publish - Whether to publish `entry_state_changed` events here
- *   (default true). Pass false when calling inside a transaction and publish the
- *   returned `changed`/`counts` after the commit.
+ * This reads counts and publishes after the (autocommitted) UPDATEs complete,
+ * so it takes the global `db`. A caller running the write inside a transaction
+ * uses `writeEntriesRead` and calls `finishEntriesRead` after the commit, so a
+ * rolled-back mark can't emit a phantom event and counts are read (and
+ * stamped) after the write they reflect.
  */
 export async function markEntriesRead(
-  db: DbOrTx,
+  db: typeof dbType,
   userId: string,
   entriesToMark: MarkReadEntry[],
-  read: boolean,
-  options: { publish?: boolean } = {}
+  read: boolean
 ): Promise<{
   entries: MarkReadEntryState[];
   changed: MarkReadEntryState[];
   counts?: BulkUnreadCounts;
 }> {
+  const { entries, changed } = await writeEntriesRead(db, userId, entriesToMark, read);
+  return { entries, changed, counts: await finishEntriesRead(db, userId, changed) };
+}
+
+/**
+ * Reads the counts a committed `writeEntriesRead` moved and publishes its
+ * flips. Returns undefined when nothing flipped.
+ */
+export async function finishEntriesRead(
+  db: typeof dbType,
+  userId: string,
+  changed: MarkReadEntryState[]
+): Promise<BulkUnreadCounts | undefined> {
+  // Only when a value actually flipped: a batch of pure re-asserts changes no
+  // count, so the aggregation would be wasted work (issue #1118). Counts cover
+  // the flipped entries' lists, which are exactly the lists that moved.
+  if (changed.length === 0) return undefined;
+  const counts = await getBulkEntryRelatedCounts(db, userId, changed);
+  // Fire and forget.
+  publishMarkReadStateChanges(db, userId, changed, counts);
+  return counts;
+}
+
+/** The write half of `markEntriesRead`, safe inside a transaction. */
+export async function writeEntriesRead(
+  db: DbOrTx,
+  userId: string,
+  entriesToMark: MarkReadEntry[],
+  read: boolean
+): Promise<{ entries: MarkReadEntryState[]; changed: MarkReadEntryState[] }> {
   if (entriesToMark.length === 0) {
     return { entries: [], changed: [] };
   }
@@ -1247,27 +1279,7 @@ export async function markEntriesRead(
     .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 
-  // Compute absolute counts once, for both the return value and the SSE
-  // publish — but only when a value actually flipped. A batch of pure
-  // re-asserts changes no count, so the aggregation (several scans of
-  // visible_entries) would be wasted work (issue #1118). Counts cover the
-  // flipped entries' lists, which are exactly the lists that moved.
-  const changed = entries.filter((entry) => flippedIds.has(entry.id));
-  const counts =
-    changed.length > 0 ? await getBulkEntryRelatedCounts(db, userId, changed) : undefined;
-
-  // Notify the user's other tabs/devices for the entries that actually flipped,
-  // carrying the absolute counts so they set them directly. See the function
-  // doc for publish/transaction ordering. Fire and forget.
-  //
-  // Transactional callers pass `publish: false` and publish `changed`+`counts`
-  // themselves after the commit, so a rolled-back mark can't emit a phantom
-  // event (see the function doc).
-  if (options.publish !== false && changed.length > 0 && counts) {
-    publishMarkReadStateChanges(db, userId, changed, counts);
-  }
-
-  return { entries, changed, counts };
+  return { entries, changed: entries.filter((entry) => flippedIds.has(entry.id)) };
 }
 
 /**
@@ -1489,7 +1501,7 @@ async function selectStarredEntryStates(
  * @throws entryNotFound when the user has no such entry
  */
 export async function updateEntryStarred(
-  db: DbOrTx,
+  db: typeof dbType,
   userId: string,
   entryId: string,
   starred: boolean,
@@ -1549,7 +1561,7 @@ export async function updateEntryStarred(
  * @param changedAt - When the user initiated the action. Defaults to now.
  */
 export async function updateEntriesStarred(
-  db: DbOrTx,
+  db: typeof dbType,
   userId: string,
   entriesToStar: MarkReadEntry[],
   starred: boolean
@@ -1640,7 +1652,7 @@ export async function countEntries(
   db: typeof dbType,
   userId: string,
   params: CountEntriesParams
-): Promise<{ unread: number }> {
+): Promise<{ unread: number; asOf: string }> {
   const scopes = [
     params.subscriptionId,
     params.tagId,
@@ -1656,25 +1668,32 @@ export async function countEntries(
 
   if (params.subscriptionId) {
     const [row] = await db
-      .select({ unread: subscriptions.unreadCount })
+      .select({ unread: subscriptions.unreadCount, asOf: countsAsOfColumn() })
       .from(subscriptions)
       .where(filterableSubscriptionWhere(userId, params.subscriptionId));
-    return { unread: row?.unread ?? 0 };
+    return {
+      unread: row?.unread ?? 0,
+      asOf: formatCountsAsOf(row?.asOf ?? (await countsAsOfNow(db))),
+    };
   }
 
   if (params.tagId) {
     const [row] = await db
-      .select({ unread: tags.unreadCount })
+      .select({ unread: tags.unreadCount, asOf: countsAsOfColumn() })
       .from(tags)
       .where(and(eq(tags.id, params.tagId), eq(tags.userId, userId), isNull(tags.deletedAt)));
-    return { unread: row?.unread ?? 0 };
+    return {
+      unread: row?.unread ?? 0,
+      asOf: formatCountsAsOf(row?.asOf ?? (await countsAsOfNow(db))),
+    };
   }
 
   const counts = await getUserUnreadCounts(db, userId);
-  if (params.uncategorized) return { unread: counts.uncategorizedUnread };
-  if (params.type === "saved") return { unread: counts.savedUnread };
-  if (params.starredOnly) return { unread: counts.starredUnread };
-  return { unread: counts.allUnread };
+  const asOf = formatCountsAsOf(counts.asOf);
+  if (params.uncategorized) return { unread: counts.uncategorizedUnread, asOf };
+  if (params.type === "saved") return { unread: counts.savedUnread, asOf };
+  if (params.starredOnly) return { unread: counts.starredUnread, asOf };
+  return { unread: counts.allUnread, asOf };
 }
 
 /**

@@ -21,7 +21,9 @@
 
 import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import { isListedSubscription } from "./subscriptions";
-import type { db as dbType, DbOrTx } from "@/server/db";
+import type { Temporal } from "temporal-polyfill";
+import type { db as dbType } from "@/server/db";
+import { parseTimestamptz } from "@/server/db/temporal";
 import {
   subscriptionEntries,
   subscriptionTags,
@@ -43,6 +45,43 @@ export interface TagCount {
 }
 
 // ============================================================================
+// Count stamps
+// ============================================================================
+
+/**
+ * Counts are read with the global `db`, never inside a transaction: a stamp
+ * taken before the commit of the write it reflects would let an older read
+ * stamped after it win on the client.
+ */
+type CountsDb = typeof dbType;
+
+/**
+ * A select column stamping the counts a statement reads (`countsAsOfSchema`).
+ * Counts read by several statements take the earliest stamp
+ * (`earliestCountsAsOf`): each value is at least that new.
+ */
+export function countsAsOfColumn() {
+  return sql`statement_timestamp()`.mapWith(parseTimestamptz);
+}
+
+/** A stamp for counts read now that no statement read (a list that doesn't exist). */
+export async function countsAsOfNow(db: CountsDb): Promise<Temporal.Instant> {
+  const { rows } = await db.execute<{ as_of: string }>(sql`SELECT statement_timestamp() AS as_of`);
+  return parseTimestamptz(rows[0].as_of);
+}
+
+export function earliestCountsAsOf(...stamps: Temporal.Instant[]): Temporal.Instant {
+  return stamps.reduce((earliest, stamp) =>
+    stamp.epochNanoseconds < earliest.epochNanoseconds ? stamp : earliest
+  );
+}
+
+/** The wire form of a count stamp (`countsAsOfSchema`). */
+export function formatCountsAsOf(stamp: Temporal.Instant): string {
+  return stamp.toString({ fractionalSecondDigits: 6 });
+}
+
+// ============================================================================
 // Service Functions
 // ============================================================================
 
@@ -51,9 +90,10 @@ interface UserUnreadCounts {
   starredUnread: number;
   savedUnread: number;
   uncategorizedUnread: number;
+  asOf: Temporal.Instant;
 }
 
-export async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<UserUnreadCounts> {
+export async function getUserUnreadCounts(db: CountsDb, userId: string): Promise<UserUnreadCounts> {
   const [row] = await db
     .select({
       allUnread: users.allUnreadCount,
@@ -65,15 +105,24 @@ export async function getUserUnreadCounts(db: DbOrTx, userId: string): Promise<U
         WHERE s.user_id = users.id AND s.type = 'saved'
       ), 0)`,
       uncategorizedUnread: users.uncategorizedUnreadCount,
+      asOf: countsAsOfColumn(),
     })
     .from(users)
     .where(eq(users.id, userId));
-  return row ?? { allUnread: 0, starredUnread: 0, savedUnread: 0, uncategorizedUnread: 0 };
+  return (
+    row ?? {
+      allUnread: 0,
+      starredUnread: 0,
+      savedUnread: 0,
+      uncategorizedUnread: 0,
+      asOf: await countsAsOfNow(db),
+    }
+  );
 }
 
 /** Global unread counts (all + starred + saved) for a user. */
 export async function getGlobalUnreadCounts(
-  db: DbOrTx,
+  db: CountsDb,
   userId: string
 ): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
   const { allUnread, starredUnread, savedUnread } = await getUserUnreadCounts(db, userId);
@@ -86,7 +135,7 @@ export async function getGlobalUnreadCounts(
  * badge.
  */
 async function getTagUnreadCounts(
-  db: DbOrTx,
+  db: CountsDb,
   userId: string,
   tagIds: string[]
 ): Promise<TagCount[]> {
@@ -122,6 +171,8 @@ export interface BulkUnreadCounts {
 
   // Uncategorized count (if any affected subscription has no tags)
   uncategorized?: { unread: number };
+
+  asOf: string;
 }
 
 /**
@@ -135,7 +186,7 @@ export interface BulkUnreadCounts {
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
-  db: DbOrTx,
+  db: CountsDb,
   userId: string,
   entries: Array<{ id?: string; subscriptionId: string | null }>
 ): Promise<BulkUnreadCounts> {
@@ -178,6 +229,7 @@ export async function getBulkEntryRelatedCounts(
           .select({
             subscriptionId: subscriptions.id,
             unread: subscriptions.unreadCount,
+            asOf: countsAsOfColumn(),
           })
           .from(subscriptions)
           .where(and(eq(subscriptions.userId, userId), inArray(subscriptions.id, subscriptionIds)))
@@ -193,12 +245,16 @@ export async function getBulkEntryRelatedCounts(
       : Promise.resolve([]),
   ]);
 
+  // The tag counts below are read after both of these, so are at least as new.
   const baseCounts: BulkUnreadCounts = {
     all: { unread: userCounts.allUnread },
     starred: { unread: userCounts.starredUnread },
     saved: { unread: userCounts.savedUnread },
     subscriptions: [],
     tags: [],
+    asOf: formatCountsAsOf(
+      earliestCountsAsOf(userCounts.asOf, ...subscriptionCounts.slice(0, 1).map((s) => s.asOf))
+    ),
   };
 
   // If no subscriptions affected (all saved entries), return base counts
@@ -254,6 +310,7 @@ export async function getSubscriptionDeletionCounts(
     saved: { unread: userCounts.savedUnread },
     subscriptions: [],
     tags: [],
+    asOf: formatCountsAsOf(userCounts.asOf),
   };
 
   if (formerTagIds.length === 0) {

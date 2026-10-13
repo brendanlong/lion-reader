@@ -154,7 +154,9 @@ describe("createDemoStore", () => {
         subscriptions: [{ id: welcome.subscriptionId, unread: expect.any(Number) }],
         tags: [{ id: "about", unread: expect.any(Number) }],
       });
-      expect(procedures["entries.count"]({ starredOnly: true })).toEqual({ unread: STARRED - 1 });
+      expect(procedures["entries.count"]({ starredOnly: true })).toMatchObject({
+        unread: STARRED - 1,
+      });
     });
 
     it("omits counts on a same-value re-assert but still advances the read-changed time (#1118)", () => {
@@ -188,9 +190,19 @@ describe("createDemoStore", () => {
         all: { unread: TOTAL - sub.entryCount },
         subscriptions: [{ id: sub.id, unread: 0 }],
       });
-      expect(procedures["entries.count"]({ subscriptionId: sub.id })).toEqual({ unread: 0 });
-      expect(procedures["entries.count"]({})).toEqual({ unread: TOTAL - sub.entryCount });
+      expect(procedures["entries.count"]({ subscriptionId: sub.id })).toMatchObject({ unread: 0 });
+      expect(procedures["entries.count"]({})).toMatchObject({ unread: TOTAL - sub.entryCount });
     });
+  });
+
+  it("stamps each count later than the last, as the server does", () => {
+    const { procedures } = createDemoStore();
+    const first = procedures["entries.count"]({}).asOf;
+    const second = procedures["tags.list"]().asOf;
+    const third = procedures["entries.setStarred"]({ id: "opml", starred: true }).counts?.asOf;
+
+    expect([first < second, second < (third ?? "")]).toEqual([true, true]);
+    expect(first).toMatch(/\.\d{6}Z$/);
   });
 
   describe("starring", () => {

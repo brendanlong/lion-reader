@@ -1,10 +1,10 @@
 /**
  * The client-side normalized store (TanStack DB) for entries, entry list
- * membership, and subscriptions. React Query remains the network layer:
- * `entries.*` and `subscriptions.list/get` results are ingested from the query
- * cache as they land (a QueryCache subscription, so SSR-hydrated, prefetched
- * and fetched data all take the same path), and components render from the
- * store.
+ * membership, subscriptions, tags and unread counts. React Query remains the
+ * network layer: `entries.*`, `subscriptions.list/get` and `tags.list` results
+ * are ingested from the query cache as they land (a QueryCache subscription,
+ * so SSR-hydrated, prefetched and fetched data all take the same path), and
+ * components render from the store. Nothing patches those queries' data.
  *
  * One store per QueryClient, never module-global: on the server each request
  * has its own QueryClient, and a shared store would leak one user's entries
@@ -32,24 +32,39 @@ import {
 import { createSyncedCollection } from "./synced-collection";
 import {
   ingestFetchedSubscriptions,
-  markSubscriptionFetchStarted,
+  writeSubscriptionCount,
+  type FetchedSubscriptionRow,
   type SubscriptionPages,
   type SubscriptionRow,
   type SubscriptionStore,
 } from "./subscriptions";
+import {
+  countedListOf,
+  removeTagCount,
+  writeCounts,
+  type CountRow,
+  type CountStore,
+} from "./counts";
+import { ingestFetchedTags, type TagRow, type TagStore } from "./tags";
+import { createVersionedStore, markFetchStarted } from "./versioned-store";
+import type { TRPCClientUtils } from "@/lib/trpc/client";
 
 export interface LocalDb {
   entries: EntryStore;
   lists: EntryLists;
   subscriptions: SubscriptionStore;
+  tags: TagStore;
+  counts: CountStore;
   saved: SavedSubscription;
 }
+
+type TagsListData = NonNullable<ReturnType<TRPCClientUtils["tags"]["list"]["getData"]>>;
 
 /**
  * The user's saved subscription (#1846), whose members are the Saved list.
  * Its id comes from `subscriptions.list` results (every one names it): null
  * before the first save creates it, undefined until a result has landed.
- * Components read it through `useStoredSavedSubscriptionId`.
+ * Components read it through `useSavedSubscriptionId`.
  */
 export interface SavedSubscription {
   id: string | null | undefined;
@@ -95,18 +110,25 @@ function createLocalDb(): LocalDb {
   rows.collection.createIndex((row) => row.listKey, { indexType: BasicIndex });
   rows.collection.createIndex((row) => row.entryId, { indexType: BasicIndex });
   const subscriptions: SubscriptionStore = {
-    rows: createSyncedCollection<SubscriptionRow>({
-      id: `subscriptions-${dbId}`,
-      getKey: (row) => row.id,
-    }),
-    versions: new Map(),
-    fetchStartedAt: new Map(),
-    clock: { now: 0 },
+    ...createVersionedStore(
+      createSyncedCollection<SubscriptionRow>({
+        id: `subscriptions-${dbId}`,
+        getKey: (row) => row.id,
+      })
+    ),
+    countAsOf: new Map(),
   };
   return {
     entries,
     lists: { rows, meta: new Map() },
     subscriptions,
+    tags: createVersionedStore(
+      createSyncedCollection<TagRow>({ id: `tags-${dbId}`, getKey: (row) => row.id })
+    ),
+    counts: {
+      rows: createSyncedCollection<CountRow>({ id: `counts-${dbId}`, getKey: (row) => row.key }),
+      asOf: new Map(),
+    },
     saved: { id: undefined, lookedUp: false, listeners: new Set() },
   };
 }
@@ -139,9 +161,42 @@ function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append"): voi
       break;
     }
     case "subscriptions.get":
-      ingestFetchedSubscriptions(db.subscriptions, query.queryHash, [data as SubscriptionRow]);
+      ingestFetchedSubscriptions(db.subscriptions, query.queryHash, [
+        data as FetchedSubscriptionRow,
+      ]);
+      break;
+    case "entries.count":
+      ingestCount(db, inputOf(query), data as { unread: number; asOf: string });
+      break;
+    case "tags.list":
+      ingestTags(db, query.queryHash, data as TagsListData);
       break;
   }
+}
+
+function ingestCount(
+  db: LocalDb,
+  input: Record<string, unknown>,
+  { unread, asOf }: { unread: number; asOf: string }
+): void {
+  const list = countedListOf(input);
+  if (list) {
+    writeCounts(db.counts, [{ list, unread }], asOf);
+  } else if (typeof input.subscriptionId === "string") {
+    writeSubscriptionCount(db.subscriptions, input.subscriptionId, unread, asOf);
+  }
+}
+
+function ingestTags(db: LocalDb, queryHash: string, data: TagsListData): void {
+  for (const id of ingestFetchedTags(db.tags, queryHash, data)) removeTagCount(db.counts, id);
+  writeCounts(
+    db.counts,
+    [
+      ...data.items.map((tag) => ({ list: { tagId: tag.id }, unread: tag.unreadCount })),
+      { list: { uncategorized: true }, unread: data.uncategorized.unreadCount },
+    ],
+    data.asOf
+  );
 }
 
 function ingestSubscriptionPages(
@@ -194,7 +249,13 @@ function connectQueryCache(db: LocalDb, queryClient: QueryClient): void {
       event.action.type === "fetch" &&
       SUBSCRIPTION_QUERIES.has(procedureOf(query) ?? "")
     ) {
-      markSubscriptionFetchStarted(db.subscriptions, query.queryHash);
+      markFetchStarted(db.subscriptions, query.queryHash);
+    } else if (
+      event.type === "updated" &&
+      event.action.type === "fetch" &&
+      procedureOf(query) === "tags.list"
+    ) {
+      markFetchStarted(db.tags, query.queryHash);
     } else if (
       event.type === "updated" &&
       event.action.type === "fetch" &&

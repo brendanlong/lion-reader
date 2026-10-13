@@ -72,10 +72,6 @@ export type DemoProcedures = {
     Inputs["collections"]["removeEntries"],
     Outputs["collections"]["removeEntries"]
   >;
-  "collections.listForEntry": Handler<
-    Inputs["collections"]["listForEntry"],
-    Outputs["collections"]["listForEntry"]
-  >;
   "summarization.isAvailable": Handler<
     Inputs["summarization"]["isAvailable"],
     Outputs["summarization"]["isAvailable"]
@@ -160,6 +156,19 @@ interface EntryFilter {
 
 /** The demo user's saved subscription: saved articles' origin, never listed. */
 const DEMO_SAVED_SUBSCRIPTION_ID = "demo-saved";
+
+let lastAsOfMicros = 0;
+
+/**
+ * A count stamp (`countsAsOfSchema`) for a count read now: strictly
+ * increasing, as the server's are for counts read in turn. The only output
+ * that isn't deterministic, and never rendered.
+ */
+function nextCountsAsOf(): string {
+  lastAsOfMicros = Math.max(Date.now() * 1000, lastAsOfMicros + 1);
+  const iso = new Date(Math.floor(lastAsOfMicros / 1000)).toISOString();
+  return iso.replace("Z", `${String(lastAsOfMicros % 1000).padStart(3, "0")}Z`);
+}
 
 export function createDemoStore(): DemoStore {
   const tags = new Map(DEMO_TAGS.map((tag) => [tag.id, tag]));
@@ -336,6 +345,7 @@ export function createDemoStore(): DemoStore {
       siteUrl: null,
       subscribedAt: SUBSCRIBED_AT,
       unreadCount: unread({ subscriptionId: sub.id }),
+      unreadCountAsOf: nextCountsAsOf(),
       tags: sub.tagIds.flatMap((id) => {
         const tag = tags.get(id);
         return tag ? [{ id: tag.id, name: tag.name, color: tag.color }] : [];
@@ -357,6 +367,7 @@ export function createDemoStore(): DemoStore {
     const tagIds = [...new Set(subs.flatMap((sub) => sub.tagIds))];
     return {
       ...globalCounts(),
+      asOf: nextCountsAsOf(),
       subscriptions: subs.map((sub) => ({
         id: sub.id,
         unread: unread({ subscriptionId: sub.id }),
@@ -463,6 +474,7 @@ export function createDemoStore(): DemoStore {
         type: input?.type,
         starredOnly: bool(input?.starredOnly),
       }),
+      asOf: nextCountsAsOf(),
     }),
 
     "entries.markRead": (input) => {
@@ -568,6 +580,7 @@ export function createDemoStore(): DemoStore {
         feedCount: liveSubscriptions().filter((sub) => sub.tagIds.length === 0).length,
         unreadCount: unread({ uncategorized: true }),
       },
+      asOf: nextCountsAsOf(),
     }),
 
     "subscriptions.list": (input) => {
@@ -670,12 +683,6 @@ export function createDemoStore(): DemoStore {
     "collections.addEntries": (input) => changeMembership(input.id, input.entryIds, true),
 
     "collections.removeEntries": (input) => changeMembership(input.id, input.entryIds, false),
-
-    "collections.listForEntry": (input) => ({
-      collectionIds: liveSubscriptions()
-        .filter((sub) => sub.members.has(input.entryId))
-        .map((sub) => sub.id),
-    }),
 
     "summarization.isAvailable": () => ({ available: true }),
 

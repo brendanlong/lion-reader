@@ -212,6 +212,7 @@ async function finishCreate(
       siteUrl: null,
       subscribedAt: now,
       unreadCount: 0,
+      unreadCountAsOf: counts.asOf,
       tags: [],
       fetchFullContent: false,
     },

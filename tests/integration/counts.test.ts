@@ -21,7 +21,9 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
+import { createCaller } from "../../src/server/trpc/root";
 import {
+  createAuthContext,
   createTestEntry,
   createTestFeed,
   createTestSubscription,
@@ -274,6 +276,25 @@ describe("Entry counts service", () => {
       expect(counts.subscriptions).toEqual([{ id: subId, unread: 0, tagIds: [] }]);
       expect(counts.tags).toEqual([]);
       expect(counts.uncategorized).toEqual({ unread: 0 });
+    });
+  });
+
+  describe("count stamps", () => {
+    it("stamps every count surface, later reads later, in the fixed-width wire form", async () => {
+      const userId = await createTestUser();
+      const { subId1 } = await createOverlappingSubscriptions(userId);
+      const caller = createCaller(await createAuthContext(userId));
+
+      const stamps = [
+        (await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId1 }])).asOf,
+        (await caller.entries.count({})).asOf,
+        (await caller.tags.list()).asOf,
+        (await caller.subscriptions.get({ id: subId1 })).unreadCountAsOf,
+      ];
+
+      for (const stamp of stamps) expect(stamp).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/);
+      expect([...stamps].sort()).toEqual(stamps);
+      expect(new Set(stamps).size).toBe(stamps.length);
     });
   });
 });

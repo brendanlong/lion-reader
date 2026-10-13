@@ -122,6 +122,23 @@ export const syncTagSchema = z.object({
 });
 
 /**
+ * When the server read a count: the start of the statement that read it
+ * (every count is read after its write commits), as an ISO instant with
+ * exactly six fractional digits so stamps compare as strings. The client keeps
+ * the newest value for each list, so a response or event that arrives late
+ * can't overwrite a newer count.
+ */
+export const countsAsOfSchema = z.string();
+
+/** Orders two `countsAsOfSchema` stamps; an unstamped value (a previous release's) counts as newest. */
+export function isCountsAsOfNewer(
+  incoming: string | undefined,
+  stored: string | undefined
+): boolean {
+  return incoming === undefined || stored === undefined || incoming >= stored;
+}
+
+/**
  * Absolute unread counts included in count-affecting events (new_entry,
  * entry_state_changed). The client sets these directly from the server
  * instead of estimating deltas from cached state, which makes the events
@@ -138,6 +155,8 @@ export const unreadCountsSchema = z.object({
   ),
   tags: z.array(z.object({ id: z.string(), unread: z.number() })),
   uncategorized: z.object({ unread: z.number() }).optional(),
+  // Absent from a previous release's events.
+  asOf: countsAsOfSchema.optional(),
 });
 
 /**

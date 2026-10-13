@@ -1,6 +1,8 @@
 /**
  * The open entry's full content: its subscription's setting, the toggle, and
- * fetching it (on demand, and once on open when the setting is on).
+ * fetching it (on demand, and once on open when the setting is on). The
+ * setting is read from the stored subscription, which updates and events
+ * keep current, and from the entry's copy when the store doesn't hold it.
  */
 
 "use client";
@@ -11,6 +13,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { applySubscriptionUpdate } from "@/lib/cache/operations";
 import { showsFullContent } from "@/lib/narration/select-content";
+import { useLocalSubscription } from "@/lib/hooks/useLocalSubscriptions";
 
 interface FullContentEntry {
   fetchFullContent: boolean;
@@ -39,7 +42,8 @@ export function useFullContent(
 ): FullContent {
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
-  const fetchFullContent = entry?.fetchFullContent ?? false;
+  const subscription = useLocalSubscription(subscriptionId ?? undefined);
+  const fetchFullContent = subscription?.fetchFullContent ?? entry?.fetchFullContent ?? false;
 
   const updateSubscriptionMutation = trpc.subscriptions.update.useMutation({
     onSuccess: (row) => applySubscriptionUpdate(utils, queryClient, row),
@@ -102,7 +106,7 @@ export function useFullContent(
 
   return {
     fetchFullContent,
-    isShowingFullContent: !!entry && showsFullContent(entry),
+    isShowingFullContent: !!entry && showsFullContent({ ...entry, fetchFullContent }),
     isFetching: fetchMutation.isPending,
     toggle: subscriptionId ? toggle : undefined,
   };

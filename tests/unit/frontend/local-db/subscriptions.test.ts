@@ -8,13 +8,20 @@ import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import {
   patchLiveSubscription,
-  removeLiveSubscriptions,
-  restoreRemovedSubscription,
   sidebarSectionRows,
-  type SubscriptionRow,
+  writeSubscriptionCount,
+  type FetchedSubscriptionRow,
 } from "@/lib/local-db/subscriptions";
+import { removeLiveRows, restoreRemovedRow } from "@/lib/local-db/versioned-store";
 
-function sub(id: string, title: string, overrides: Partial<SubscriptionRow> = {}): SubscriptionRow {
+const EARLIER = "2026-01-01T00:00:00.000001Z";
+const LATER = "2026-01-01T00:00:00.000002Z";
+
+function sub(
+  id: string,
+  title: string,
+  overrides: Partial<FetchedSubscriptionRow> = {}
+): FetchedSubscriptionRow {
   return {
     id,
     type: "web",
@@ -25,13 +32,14 @@ function sub(id: string, title: string, overrides: Partial<SubscriptionRow> = {}
     siteUrl: null,
     subscribedAt: new Date("2024-01-01"),
     unreadCount: 1,
+    unreadCountAsOf: EARLIER,
     tags: [{ id: "tag-1", name: "Tag", color: null }],
     fetchFullContent: false,
     ...overrides,
   };
 }
 
-const pages = (items: SubscriptionRow[], nextCursor?: string) => ({
+const pages = (items: FetchedSubscriptionRow[], nextCursor?: string) => ({
   pages: [{ items, nextCursor }],
 });
 
@@ -88,7 +96,7 @@ describe("ingesting subscription queries", () => {
   const store = () => getLocalDb(queryClient).subscriptions;
   const stored = (id: string) => store().rows.getSynced(id);
 
-  type SectionPage = { items: SubscriptionRow[]; nextCursor?: string };
+  type SectionPage = { items: FetchedSubscriptionRow[]; nextCursor?: string };
 
   /**
    * Starts a fetch of `page` (0: a full refetch) whose response is held until
@@ -96,7 +104,7 @@ describe("ingesting subscription queries", () => {
    */
   function fetching(
     page: number,
-    items: SubscriptionRow[],
+    items: FetchedSubscriptionRow[],
     nextCursor?: string,
     section = observer
   ) {
@@ -134,35 +142,53 @@ describe("ingesting subscription queries", () => {
   }
 
   it("stores fetched rows, except over a write made while the fetch ran", async () => {
-    const first = fetching(0, [sub("a", "A", { unreadCount: 3 })]);
+    const first = fetching(0, [sub("a", "A")]);
     await settled(first);
-    const refetch = fetching(0, [sub("a", "A", { unreadCount: 3 })]);
-    patchLiveSubscription(store(), "a", { unreadCount: 4 });
+    const refetch = fetching(0, [sub("a", "A")]);
+    patchLiveSubscription(store(), "a", { title: "Renamed" });
+    await settled(refetch);
+
+    expect(stored("a")?.title).toBe("Renamed");
+  });
+
+  it("keeps a newer count over a fetched one read before it", async () => {
+    await settled(fetching(0, [sub("a", "A", { unreadCount: 3 })]));
+    const refetch = fetching(0, [sub("a", "A", { unreadCount: 3, unreadCountAsOf: EARLIER })]);
+    writeSubscriptionCount(store(), "a", 4, LATER);
     await settled(refetch);
 
     expect(stored("a")?.unreadCount).toBe(4);
+  });
+
+  it("stores the rest of a fetched row when only its count was written while the fetch ran", async () => {
+    await settled(fetching(0, [sub("a", "A")]));
+    const refetch = fetching(0, [sub("a", "Renamed")]);
+    writeSubscriptionCount(store(), "a", 4, LATER);
+    await settled(refetch);
+
+    expect(stored("a")).toMatchObject({ title: "Renamed", unreadCount: 4 });
   });
 
   it("doesn't bring back a row removed while the fetch ran", async () => {
     const first = fetching(0, [sub("a", "A")]);
     await settled(first);
     const refetch = fetching(0, [sub("a", "A")]);
-    removeLiveSubscriptions(store(), ["a"]);
+    removeLiveRows(store(), ["a"]);
     await settled(refetch);
 
     expect(stored("a")).toBeUndefined();
   });
 
   it("stores only the new page of a next-page fetch", async () => {
-    const first = fetching(0, [sub("a", "A", { unreadCount: 3 }), sub("b", "B")], "more");
+    const first = fetching(0, [sub("a", "A"), sub("b", "B")], "more");
     await settled(first);
-    // Read, and unsubscribed, before the next page loads.
-    patchLiveSubscription(store(), "a", { unreadCount: 0 });
-    removeLiveSubscriptions(store(), ["b"]);
+    // Renamed, and unsubscribed, before the next page loads.
+    patchLiveSubscription(store(), "a", { title: "Renamed" });
+    removeLiveRows(store(), ["b"]);
     const next = fetching(1, [sub("c", "C")]);
     await settled(next);
 
-    expect(stored("a")?.unreadCount).toBe(0);
+    expect(stored("a")?.title).toBe("Renamed");
     expect(stored("b")).toBeUndefined();
     expect(stored("c")).toBeDefined();
   });
@@ -173,21 +199,21 @@ describe("ingesting subscription queries", () => {
       { id: "tag-2", name: "Two", color: null },
     ];
     const other = observeSection("tag-2");
-    const older = fetching(0, [sub("a", "A", { tags: both, unreadCount: 3 })], undefined, other);
-    await settled(fetching(0, [sub("a", "A", { tags: both, unreadCount: 0 })]));
+    const older = fetching(0, [sub("a", "A", { tags: both })], undefined, other);
+    await settled(fetching(0, [sub("a", "Renamed", { tags: both })]));
     await settled(older);
 
-    expect(stored("a")?.unreadCount).toBe(0);
+    expect(stored("a")?.title).toBe("Renamed");
   });
 
   it("restores an optimistic removal only if nothing wrote the row since", () => {
     const row = sub("a", "A");
     store().rows.upsert([row]);
-    const removedAt = removeLiveSubscriptions(store(), ["a"]);
+    const removedAt = removeLiveRows(store(), ["a"]);
     // The subscription_deleted event beat the mutation's (failed) response.
-    removeLiveSubscriptions(store(), ["a"]);
+    removeLiveRows(store(), ["a"]);
 
-    restoreRemovedSubscription(store(), row, removedAt);
+    restoreRemovedRow(store(), row, removedAt);
 
     expect(stored("a")).toBeUndefined();
   });

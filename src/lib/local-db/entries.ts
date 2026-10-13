@@ -225,6 +225,19 @@ export function setStoredEntryCollection(
   store.upsert([{ ...stored, subscriptionIds }]);
 }
 
+/** Drops a deleted subscription from the stored entries' `subscriptionIds`. */
+export function removeStoredEntryMemberships(store: EntryStore, subscriptionId: string): void {
+  store.upsert(
+    store
+      .allSynced()
+      .filter((entry) => entry.subscriptionIds.includes(subscriptionId))
+      .map((entry) => ({
+        ...entry,
+        subscriptionIds: entry.subscriptionIds.filter((id) => id !== subscriptionId),
+      }))
+  );
+}
+
 /** Writes metadata from an `entry_updated` event. */
 export function patchServerEntryMetadata(
   store: EntryStore,

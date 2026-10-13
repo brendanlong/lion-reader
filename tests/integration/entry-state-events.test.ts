@@ -238,7 +238,7 @@ describe("markEntriesRead SSE publishing", () => {
     // Establish a recent read_changed_at.
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true, {})
+      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
     );
 
     // Replaying an older action loses the read_changed_at <= changedAt guard, so

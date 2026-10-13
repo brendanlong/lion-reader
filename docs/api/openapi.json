@@ -4424,6 +4424,9 @@
                     "unreadCount": {
                       "type": "number"
                     },
+                    "unreadCountAsOf": {
+                      "type": "string"
+                    },
                     "tags": {
                       "type": "array",
                       "items": {
@@ -4547,6 +4550,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -4568,6 +4574,7 @@
                     "siteUrl",
                     "subscribedAt",
                     "unreadCount",
+                    "unreadCountAsOf",
                     "tags",
                     "fetchFullContent"
                   ],
@@ -4751,6 +4758,9 @@
                           "unreadCount": {
                             "type": "number"
                           },
+                          "unreadCountAsOf": {
+                            "type": "string"
+                          },
                           "tags": {
                             "type": "array",
                             "items": {
@@ -4791,6 +4801,7 @@
                           "siteUrl",
                           "subscribedAt",
                           "unreadCount",
+                          "unreadCountAsOf",
                           "tags",
                           "fetchFullContent"
                         ],
@@ -4949,6 +4960,9 @@
                     "unreadCount": {
                       "type": "number"
                     },
+                    "unreadCountAsOf": {
+                      "type": "string"
+                    },
                     "tags": {
                       "type": "array",
                       "items": {
@@ -4989,6 +5003,7 @@
                     "siteUrl",
                     "subscribedAt",
                     "unreadCount",
+                    "unreadCountAsOf",
                     "tags",
                     "fetchFullContent"
                   ],
@@ -5154,6 +5169,9 @@
                     "unreadCount": {
                       "type": "number"
                     },
+                    "unreadCountAsOf": {
+                      "type": "string"
+                    },
                     "tags": {
                       "type": "array",
                       "items": {
@@ -5194,6 +5212,7 @@
                     "siteUrl",
                     "subscribedAt",
                     "unreadCount",
+                    "unreadCountAsOf",
                     "tags",
                     "fetchFullContent"
                   ],
@@ -5382,6 +5401,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -5747,6 +5769,9 @@
                     "unreadCount": {
                       "type": "number"
                     },
+                    "unreadCountAsOf": {
+                      "type": "string"
+                    },
                     "tags": {
                       "type": "array",
                       "items": {
@@ -5787,6 +5812,7 @@
                     "siteUrl",
                     "subscribedAt",
                     "unreadCount",
+                    "unreadCountAsOf",
                     "tags",
                     "fetchFullContent"
                   ],
@@ -6277,10 +6303,14 @@
                   "properties": {
                     "unread": {
                       "type": "number"
+                    },
+                    "asOf": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "unread"
+                    "unread",
+                    "asOf"
                   ],
                   "additionalProperties": false
                 }
@@ -7111,6 +7141,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -7118,7 +7151,8 @@
                         "starred",
                         "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -7340,6 +7374,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -7347,7 +7384,8 @@
                         "starred",
                         "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -7578,6 +7616,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -7585,7 +7626,8 @@
                         "starred",
                         "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -7863,6 +7905,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -7870,7 +7915,8 @@
                         "starred",
                         "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -8584,11 +8630,15 @@
                         "unreadCount"
                       ],
                       "additionalProperties": false
+                    },
+                    "asOf": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "items",
-                    "uncategorized"
+                    "uncategorized",
+                    "asOf"
                   ],
                   "additionalProperties": false
                 }
@@ -9133,6 +9183,9 @@
                         "unreadCount": {
                           "type": "number"
                         },
+                        "unreadCountAsOf": {
+                          "type": "string"
+                        },
                         "tags": {
                           "type": "array",
                           "items": {
@@ -9173,6 +9226,7 @@
                         "siteUrl",
                         "subscribedAt",
                         "unreadCount",
+                        "unreadCountAsOf",
                         "tags",
                         "fetchFullContent"
                       ],
@@ -9272,6 +9326,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -9596,6 +9653,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -9815,6 +9875,9 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -12940,6 +13003,9 @@
                                       "unread"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  "asOf": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -13242,6 +13308,9 @@
                                       "unread"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  "asOf": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -13597,6 +13666,9 @@
                                       "unread"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  "asOf": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [
@@ -13729,6 +13801,9 @@
                                       "unread"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  "asOf": {
+                                    "type": "string"
                                   }
                                 },
                                 "required": [

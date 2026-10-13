@@ -21,7 +21,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
-import type { BulkUnreadCounts } from "@/lib/cache/operations";
+import type { UnreadCounts } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
@@ -29,7 +29,11 @@ import {
   renderHookWithTrpc,
   type RenderWithTrpcOptions,
 } from "../../../utils/component-test-helpers";
-import { invalidatedProcedures, spyOnInvalidate } from "../../../utils/cache-test-helpers";
+import {
+  invalidatedProcedures,
+  spyOnInvalidate,
+  storedCount,
+} from "../../../utils/cache-test-helpers";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -40,7 +44,7 @@ afterEach(() => {
 
 const fixedDate = new Date("2026-07-05T00:00:00.000Z");
 
-function bulkCounts(overrides: Partial<BulkUnreadCounts> = {}): BulkUnreadCounts {
+function bulkCounts(overrides: Partial<UnreadCounts> = {}): UnreadCounts {
   return {
     all: { unread: 0 },
     starred: { unread: 0 },
@@ -131,7 +135,7 @@ describe("useEntryMutations markRead", () => {
       saved: { unread: 2 },
     });
 
-    const { result, callsFor } = renderHookWithTrpc(
+    const { result, queryClient, callsFor } = renderHookWithTrpc(
       () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
       {
         handlers: {
@@ -156,13 +160,11 @@ describe("useEntryMutations markRead", () => {
     });
 
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
-    await waitFor(() =>
-      expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 5 })
-    );
-    expect(result.current.utils.entries.count.getData({ starredOnly: true })).toEqual({
+    await waitFor(() => expect(storedCount(queryClient, {})).toEqual({ unread: 5 }));
+    expect(storedCount(queryClient, { starredOnly: true })).toEqual({
       unread: 3,
     });
-    expect(result.current.utils.entries.count.getData({ type: "saved" })).toEqual({ unread: 2 });
+    expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 });
   });
 
   it("writes the server's read state to the entry store on success", async () => {
@@ -259,7 +261,7 @@ describe("useEntryMutations markAllRead", () => {
   });
 
   it("applies the counts in the response", async () => {
-    const { result } = renderHookWithTrpc(
+    const { result, queryClient } = renderHookWithTrpc(
       () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
       {
         handlers: {
@@ -272,9 +274,7 @@ describe("useEntryMutations markAllRead", () => {
       result.current.mutations.markAllRead();
     });
 
-    await waitFor(() =>
-      expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 5 })
-    );
+    await waitFor(() => expect(storedCount(queryClient, {})).toEqual({ unread: 5 }));
   });
 
   it("still refreshes the entry lists when nothing was marked", async () => {
@@ -309,7 +309,7 @@ describe("useEntryMutations markAllRead", () => {
 
 describe("useEntryMutations star/unstar", () => {
   it("star calls entries.setStarred with starred: true and applies counts on success", async () => {
-    const { result, callsFor } = renderHookWithTrpc(
+    const { result, queryClient, callsFor } = renderHookWithTrpc(
       () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
       {
         handlers: {
@@ -340,11 +340,11 @@ describe("useEntryMutations star/unstar", () => {
 
     // onSuccess ran setBulkCounts against the real cache with the server's numbers.
     await waitFor(() =>
-      expect(result.current.utils.entries.count.getData({ starredOnly: true })).toEqual({
+      expect(storedCount(queryClient, { starredOnly: true })).toEqual({
         unread: 7,
       })
     );
-    expect(result.current.utils.entries.count.getData({})).toEqual({ unread: 4 });
+    expect(storedCount(queryClient, {})).toEqual({ unread: 4 });
   });
 
   it("skips a previous-release single-subscription counts shape without failing", async () => {
@@ -379,8 +379,8 @@ describe("useEntryMutations star/unstar", () => {
     await waitFor(() => expect(queryClient.isMutating()).toBe(0));
     // ...without an error toast or any counts written from the old shape.
     expect(toast.error).not.toHaveBeenCalled();
-    expect(result.current.utils.entries.count.getData({ starredOnly: true })).toBeUndefined();
-    expect(result.current.utils.entries.count.getData({})).toBeUndefined();
+    expect(storedCount(queryClient, { starredOnly: true })).toBeUndefined();
+    expect(storedCount(queryClient, {})).toBeUndefined();
   });
 
   it("toggleStar unstars an entry that is currently starred", async () => {

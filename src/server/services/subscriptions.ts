@@ -33,6 +33,9 @@ import {
 } from "@/server/redis/pubsub";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import {
+  countsAsOfColumn,
+  countsAsOfNow,
+  formatCountsAsOf,
   getBulkEntryRelatedCounts,
   getSubscriptionDeletionCounts,
   getUserUnreadCounts,
@@ -71,6 +74,8 @@ export interface Subscription {
   siteUrl: string | null;
   subscribedAt: Date;
   unreadCount: number;
+  /** When `unreadCount` was read (`countsAsOfSchema`). */
+  unreadCountAsOf: string;
   tags: Tag[];
   fetchFullContent: boolean;
 }
@@ -165,6 +170,7 @@ function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undefined) {
       siteUrl: userFeeds.siteUrl,
       // Trigger-maintained unread counter (spam excluded)
       unreadCount: userFeeds.unreadCount,
+      unreadCountAsOf: countsAsOfColumn(),
       // Tags aggregated as JSON array
       tags: sql<Array<{ id: string; name: string; color: string | null }>>`
         COALESCE(
@@ -205,8 +211,8 @@ export type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBa
  */
 function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { feedId, ...subscription } = row;
-  return subscription;
+  const { feedId, unreadCountAsOf, ...subscription } = row;
+  return { ...subscription, unreadCountAsOf: formatCountsAsOf(unreadCountAsOf) };
 }
 
 // ============================================================================
@@ -580,6 +586,8 @@ export interface CreateSubscriptionResult {
   subscribedAt: Date;
   /** Unread count for the subscription (trigger-maintained counter, spam excluded) */
   unreadCount: number;
+  /** When `unreadCount` was read (`countsAsOfSchema`) */
+  unreadCountAsOf: string;
   /** True if the subscription already existed and was active (idempotent return) */
   alreadyActive: boolean;
   /** User's custom title for this subscription (null = use feed title) */
@@ -793,6 +801,9 @@ export async function createSubscription(
       subscriptionId: txResult.subscriptionId,
       subscribedAt: txResult.subscribedAt,
       unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
+      unreadCountAsOf: formatCountsAsOf(
+        viewResults.length > 0 ? viewResults[0].unreadCountAsOf : await countsAsOfNow(db)
+      ),
       alreadyActive: true,
       customTitle: txResult.customTitle,
       fetchFullContent: txResult.fetchFullContent,
@@ -839,6 +850,7 @@ export async function createSubscription(
     subscriptionId,
     subscribedAt,
     unreadCount,
+    unreadCountAsOf: counts.asOf,
     alreadyActive: false,
     customTitle,
     fetchFullContent,

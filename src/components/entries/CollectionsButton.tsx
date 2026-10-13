@@ -172,8 +172,8 @@ function CollectionsPicker({
     }
   };
 
-  const loading = collectionsQuery.isLoading || membership.membershipStatus === "pending";
-  const failed = collectionsQuery.isError || membership.membershipStatus === "error";
+  const failed = collectionsQuery.isError || membership.membershipFailed;
+  const loading = !failed && (collectionsQuery.isLoading || !membership.collectionIds);
   const showList = !loading && !failed && options.length > 0;
 
   return (

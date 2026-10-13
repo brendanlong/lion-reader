@@ -24,13 +24,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import {
-  forgetDeletedSubscription,
-  removeSubscriptionFromCaches,
-  setEntryRelatedCounts,
-} from "@/lib/cache/operations";
+import { handleSubscriptionDeleted, removeSubscriptionFromCaches } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { restoreRemovedSubscription } from "@/lib/local-db/subscriptions";
+import { restoreRemovedRow } from "@/lib/local-db/versioned-store";
 
 export interface UseUnsubscribeMutationOptions {
   /** Extra work after the optimistic cache removal (e.g. close a dialog). */
@@ -55,13 +51,7 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
       return { removed, removedAt };
     },
     onSuccess: (data, variables) => {
-      // Apply the server-absolute counts for the affected lists, and drop the
-      // subscription's entries from any cached lists.
-      if (data.counts) {
-        setEntryRelatedCounts(utils, data.counts, queryClient);
-      }
-      utils.entries.list.invalidate();
-      forgetDeletedSubscription(utils, variables.id);
+      handleSubscriptionDeleted(utils, variables.id, queryClient, data.counts);
       options?.onSuccess?.();
     },
     onError: (_error, _variables, context) => {
@@ -70,7 +60,7 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
       // then refetch to correct anything else.
       if (context?.removed) {
         const store = getLocalDb(queryClient).subscriptions;
-        restoreRemovedSubscription(store, context.removed, context.removedAt);
+        restoreRemovedRow(store, context.removed, context.removedAt);
       }
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();

@@ -12,6 +12,7 @@ import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { uuidSchema, tagColorSchema } from "../validation";
 import * as tagsService from "@/server/services/tags";
+import { countsAsOfSchema } from "@/lib/events/schemas";
 
 // All tag operations are part of the MCP tool surface; the native app uses them too.
 const protectedProcedure = scopedProtectedProcedure(READER_SCOPES);
@@ -76,6 +77,7 @@ export const tagsRouter = createTRPCRouter({
           feedCount: z.number(),
           unreadCount: z.number(),
         }),
+        asOf: countsAsOfSchema,
       })
     )
     .query(async ({ ctx }) => {

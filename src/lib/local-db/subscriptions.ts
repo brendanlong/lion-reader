@@ -6,32 +6,37 @@
  * count, title or tags changing moves it in or out of a section with no list
  * refetch.
  *
- * Every write is versioned by a local clock: a live write (event, mutation
- * response, counts) by when it happened, a fetched row by when its fetch
- * started. A fetched row is stored only over an older version, so a fetch that
- * started before a newer write (or a removal) can't undo it when it lands.
+ * Rows are versioned (`versioned-store.ts`), except for `unreadCount`, which is
+ * ordered by its server stamp like every other count (`counts.ts`): a count
+ * changes far more often than the rest of the row, and a count-only write
+ * mustn't make a fetch in flight drop the row's other fields.
  */
 
 import type { TRPCClientUtils } from "@/lib/trpc/client";
+import { isCountsAsOfNewer } from "@/lib/events/schemas";
 import {
   UNCATEGORIZED_SECTION,
   compareSidebarOrder,
   isInSidebarSection,
 } from "@/lib/sidebar-sections";
-import type { SyncedCollection } from "./synced-collection";
+import {
+  fetchVersion,
+  isFetchedRowFresh,
+  writeLiveRows,
+  type VersionedStore,
+} from "./versioned-store";
 
 /** A subscription as `subscriptions.list` / `subscriptions.get` return it. */
-export type SubscriptionRow = NonNullable<
+export type FetchedSubscriptionRow = NonNullable<
   ReturnType<TRPCClientUtils["subscriptions"]["list"]["getData"]>
 >["items"][number];
 
-export interface SubscriptionStore {
-  rows: SyncedCollection<SubscriptionRow>;
-  /** The version of each subscription's stored row, kept after it's removed. */
-  versions: Map<string, number>;
-  /** By query hash: when its latest fetch started. */
-  fetchStartedAt: Map<string, number>;
-  clock: { now: number };
+/** A stored subscription: its count's stamp is kept in `SubscriptionStore.countAsOf`. */
+export type SubscriptionRow = Omit<FetchedSubscriptionRow, "unreadCountAsOf">;
+
+export interface SubscriptionStore extends VersionedStore<SubscriptionRow> {
+  /** The stamp of each stored `unreadCount` (`countsAsOfSchema`). */
+  countAsOf: Map<string, string>;
 }
 
 /** A `subscriptions.list` input, as the sidebar sections pass it. */
@@ -45,68 +50,87 @@ export interface SubscriptionListInput {
 
 export interface SubscriptionPages {
   pages: Array<{
-    items: SubscriptionRow[];
+    items: FetchedSubscriptionRow[];
     nextCursor?: string;
     savedSubscriptionId?: string | null;
   }>;
 }
 
-function tick(store: SubscriptionStore): number {
-  return ++store.clock.now;
+/** A row and, when its source has one, its count's stamp. */
+type StampedSubscriptionRow = SubscriptionRow & { unreadCountAsOf?: string };
+
+/**
+ * The row to store for `row`: it keeps the stored count when that's newer, and
+ * records the stamp of the count it takes.
+ */
+function withNewestCount(store: SubscriptionStore, row: StampedSubscriptionRow): SubscriptionRow {
+  const { unreadCountAsOf, ...rest } = row;
+  const stored = store.rows.getSynced(row.id);
+  if (stored && !isCountsAsOfNewer(unreadCountAsOf, store.countAsOf.get(row.id))) {
+    return { ...rest, unreadCount: stored.unreadCount };
+  }
+  if (unreadCountAsOf !== undefined) store.countAsOf.set(row.id, unreadCountAsOf);
+  return rest;
 }
 
 /** Writes rows from an event or mutation response. */
-export function writeLiveSubscriptions(store: SubscriptionStore, rows: SubscriptionRow[]): void {
-  const now = tick(store);
-  for (const row of rows) store.versions.set(row.id, now);
-  store.rows.upsert(rows);
+export function writeLiveSubscriptions(
+  store: SubscriptionStore,
+  rows: StampedSubscriptionRow[]
+): void {
+  writeLiveRows(
+    store,
+    rows.map((row) => withNewestCount(store, row))
+  );
 }
 
 /** Patches a stored subscription from an event; a no-op when it isn't stored. */
 export function patchLiveSubscription(
   store: SubscriptionStore,
   id: string,
-  patch: Partial<SubscriptionRow>
+  patch: Partial<Omit<SubscriptionRow, "unreadCount">>
 ): void {
   const row = store.rows.getSynced(id);
-  if (row) writeLiveSubscriptions(store, [{ ...row, ...patch }]);
-}
-
-/** Returns the removal's version, for `restoreRemovedSubscription`. */
-export function removeLiveSubscriptions(store: SubscriptionStore, ids: string[]): number {
-  const now = tick(store);
-  for (const id of ids) store.versions.set(id, now);
-  store.rows.remove(ids);
-  return now;
+  if (row) writeLiveRows(store, [{ ...row, ...patch }]);
 }
 
 /**
- * Undoes an optimistic removal, unless something has written the row since
- * (say, its `subscription_deleted` event arrived before the mutation failed).
+ * Sets a stored subscription's unread count unless a newer one is stored.
+ * Returns whether the store holds the subscription.
  */
-export function restoreRemovedSubscription(
+export function writeSubscriptionCount(
   store: SubscriptionStore,
-  row: SubscriptionRow,
-  removedAt: number
-): void {
-  if (store.versions.get(row.id) === removedAt) writeLiveSubscriptions(store, [row]);
+  id: string,
+  unread: number,
+  asOf: string | undefined
+): boolean {
+  const row = store.rows.getSynced(id);
+  if (!row) return false;
+  if (!isCountsAsOfNewer(asOf, store.countAsOf.get(id))) return true;
+  if (asOf !== undefined) store.countAsOf.set(id, asOf);
+  if (row.unreadCount !== unread) store.rows.upsert([{ ...row, unreadCount: unread }]);
+  return true;
 }
 
-export function markSubscriptionFetchStarted(store: SubscriptionStore, queryHash: string): void {
-  store.fetchStartedAt.set(queryHash, tick(store));
-}
-
-const NEVER = -1;
-
-/** Stores rows a query fetched, except over a newer version. */
+/**
+ * Stores rows a query fetched, except over a newer version; a row too old to
+ * store still brings its count when that's the newest.
+ */
 export function ingestFetchedSubscriptions(
   store: SubscriptionStore,
   queryHash: string,
-  rows: SubscriptionRow[]
+  rows: FetchedSubscriptionRow[]
 ): void {
-  const version = store.fetchStartedAt.get(queryHash) ?? 0;
-  const fresh = rows.filter((row) => (store.versions.get(row.id) ?? NEVER) < version);
-  for (const row of fresh) store.versions.set(row.id, version);
+  const version = fetchVersion(store, queryHash);
+  const fresh: SubscriptionRow[] = [];
+  for (const row of rows) {
+    if (isFetchedRowFresh(store, row.id, version)) {
+      store.versions.set(row.id, version);
+      fresh.push(withNewestCount(store, row));
+    } else {
+      writeSubscriptionCount(store, row.id, row.unreadCount, row.unreadCountAsOf);
+    }
+  }
   store.rows.upsert(fresh);
 }
 

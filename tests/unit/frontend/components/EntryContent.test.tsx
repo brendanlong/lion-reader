@@ -50,6 +50,7 @@ function createEntry(overrides: Record<string, unknown> = {}) {
   return {
     id: "entry-1",
     subscriptionId: "sub-1",
+    subscriptionIds: ["sub-1"],
     type: "web",
     url: "https://example.com/article",
     title: "The Great Article",
@@ -80,7 +81,6 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
     "entries.get": (input) => ({ entry: createEntry({ id: (input as { id: string }).id }) }),
     "summarization.isAvailable": () => ({ available: false }),
-    "collections.listForEntry": () => ({ collectionIds: [] }),
     "subscriptions.list": () => ({ items: [], savedSubscriptionId: "saved-sub" }),
     "entries.markRead": (input) => {
       const entries = (input as { entries: { id: string }[] }).entries;

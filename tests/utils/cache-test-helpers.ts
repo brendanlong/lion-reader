@@ -14,6 +14,9 @@ import type { SyncEvent } from "@/lib/events/schemas";
 import type { AppRouter } from "@/server/trpc/root";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import type { EntryType } from "@/lib/entry-types";
+import { getLocalDb } from "@/lib/local-db/local-db";
+import { countKey, countedListOf } from "@/lib/local-db/counts";
+import type { TagRow } from "@/lib/local-db/tags";
 import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 // ============================================================================
@@ -339,6 +342,37 @@ export function getUtilsData<T>(node: unknown, input?: unknown): T | undefined {
 }
 
 type SetInfiniteData = (input: unknown, data: unknown) => void;
+
+/** The unread count the store holds for an `entries.count` input. */
+export function storedCount(
+  queryClient: QueryClient,
+  input: Record<string, unknown> = {}
+): { unread: number } | undefined {
+  const list = countedListOf(input);
+  if (!list) throw new Error(`Not a counted list: ${JSON.stringify(input)}`);
+  const row = getLocalDb(queryClient).counts.rows.getSynced(countKey(list));
+  return row && { unread: row.unread };
+}
+
+/** The stored tags and their counts, in `tags.list`'s shape (undefined before any loaded). */
+export function storedTagsList(queryClient: QueryClient):
+  | {
+      items: Array<TagRow & { unreadCount: number }>;
+      uncategorized: { unreadCount: number | undefined };
+    }
+  | undefined {
+  const db = getLocalDb(queryClient);
+  const tags = db.tags.rows.allSynced();
+  const unread = (key: string) => db.counts.rows.getSynced(key)?.unread;
+  const uncategorized = unread(countKey({ uncategorized: true }));
+  if (tags.length === 0 && uncategorized === undefined) return undefined;
+  return {
+    items: tags
+      .map((tag) => ({ ...tag, unreadCount: unread(countKey({ tagId: tag.id })) ?? 0 }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    uncategorized: { unreadCount: uncategorized },
+  };
+}
 
 /**
  * Seeds the tRPC utils cache with default subscription, tag, and entry count data.
