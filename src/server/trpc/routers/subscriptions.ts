@@ -6,8 +6,6 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 
 import {
   createTRPCRouter,
@@ -18,22 +16,12 @@ import {
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { errors } from "../errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
-import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
-import { feeds, subscriptions, tags, subscriptionTags } from "@/server/db/schema";
-import { parseFeedAsync } from "@/server/feed/parser";
-import { discoverFeeds } from "@/server/feed/discovery";
-import { getDomainFromUrl } from "@/server/feed/types";
-import { getFeedHooks } from "@/server/plugins";
-import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
 import { OpmlParseError } from "@/server/feed/opml";
-import { scheduleFeedRefreshNow } from "@/server/jobs/queue";
-import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
-import { publishSubscriptionUpdated } from "@/server/redis/pubsub";
 import { logger } from "@/lib/logger";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { importOpml } from "@/server/services/imports";
-import { isUniqueViolation } from "@/server/db/errors";
 import { unreadCountsSchema } from "@/lib/events/schemas";
+import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
 
 // Endpoints exposed via the MCP tool surface; the native app uses them too.
 const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
@@ -49,7 +37,10 @@ const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
 const customTitleSchema = z
   .string()
   .trim()
-  .max(255, "Custom title must be less than 255 characters")
+  .max(
+    subscriptionsService.CUSTOM_TITLE_MAX_LENGTH,
+    `Custom title must be at most ${subscriptionsService.CUSTOM_TITLE_MAX_LENGTH} characters`
+  )
   .nullable();
 
 // ============================================================================
@@ -117,55 +108,6 @@ function formatSubscriptionResponse(
   };
 }
 
-/**
- * Fetch a URL, discover feeds if HTML, parse the feed content,
- * and return metadata for subscription creation.
- */
-async function fetchAndResolveFeed(inputUrl: string): Promise<{
-  url: string;
-  title: string | null;
-  description: string | null;
-  siteUrl: string | null;
-}> {
-  const { text: content, contentType, finalUrl: initialFinalUrl } = await fetchUrl(inputUrl);
-
-  let feedContent: string;
-  let finalFeedUrl: string;
-
-  if (isHtmlContent(contentType, content)) {
-    const discoveredFeeds = discoverFeeds(content, initialFinalUrl);
-    if (discoveredFeeds.length === 0) {
-      throw errors.validation("No feeds found at this URL");
-    }
-
-    const discoveredFetch = await fetchUrl(discoveredFeeds[0].url);
-    feedContent = discoveredFetch.text;
-    finalFeedUrl = discoveredFetch.finalUrl;
-  } else {
-    feedContent = content;
-    finalFeedUrl = initialFinalUrl;
-  }
-
-  let parsedFeed;
-  try {
-    parsedFeed = await parseFeedAsync(feedContent);
-  } catch {
-    throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
-  }
-
-  let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
-  if (feedTitle) {
-    feedTitle = getFeedHooks(finalFeedUrl).transformFeedTitle(feedTitle, parsedFeed.items);
-  }
-
-  return {
-    url: finalFeedUrl,
-    title: feedTitle ?? null,
-    description: parsedFeed.description || null,
-    siteUrl: parsedFeed.siteUrl || null,
-  };
-}
-
 // ============================================================================
 // Router
 // ============================================================================
@@ -203,63 +145,11 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(createSubscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const feedUrl = input.url;
-
-      // Look up whether we already know this feed, and its fetch state.
-      const existingFeed = await ctx.db
-        .select({
-          id: feeds.id,
-          lastFetchedAt: feeds.lastFetchedAt,
-          nextFetchAt: feeds.nextFetchAt,
-          websubActive: feeds.websubActive,
-        })
-        .from(feeds)
-        .where(eq(feeds.url, feedUrl))
-        .limit(1);
-
-      let feedInput: subscriptionsService.CreateSubscriptionFeedInput;
-      // Feed id to force-refresh in the background after the subscription is
-      // created (set only when a known feed is stale — see below).
-      let staleFeedId: string | null = null;
-      if (existingFeed.length === 0 || existingFeed[0].lastFetchedAt === null) {
-        // Brand-new feed, or a feed row that has never been successfully fetched
-        // (e.g. a raw URL inserted by Google Reader `quickadd` / OPML import that
-        // may actually be an HTML page): fetch and parse to resolve the real feed
-        // URL + metadata via feed discovery. Its entries are populated by the
-        // background fetch job, so no forced refresh is needed here. Discovery
-        // throwing on an unreachable/unparseable URL surfaces as a subscribe
-        // error, as before.
-        feedInput = await fetchAndResolveFeed(feedUrl);
-      } else {
-        const existing = existingFeed[0];
-        feedInput = { url: feedUrl };
-        // Known feed (already fetched, so feed.url is a validated feed URL). If
-        // its cached entries may be stale (WebSub feed whose last real poll has
-        // aged out, or a normal feed past its poll cadence), we can't know the
-        // current set without re-fetching. Rather than fetch on the request path,
-        // skip the synchronous populate and schedule an immediate forced
-        // background refresh (below), whose fanout populates this subscriber from
-        // ground truth — excluding anything the publisher has since removed
-        // (#1078). Fresh feeds skip the refresh and are populated synchronously.
-        if (shouldRefetchOnSubscribe(existing)) {
-          staleFeedId = existing.id;
-        }
-      }
-
-      const result = await subscriptionsService.createSubscription(ctx.db, userId, feedInput, {
-        skipInitialPopulate: staleFeedId !== null,
-      });
-
-      // For a stale feed with a newly created (or reactivated) subscription,
-      // trigger the forced background refresh. The job queue is single-flight per
-      // feed, so concurrent subscribes coalesce into one fetch (and it merges
-      // with any pending scheduled poll). Skipped when the subscription was
-      // already active — nothing to populate.
-      if (staleFeedId !== null && !result.alreadyActive) {
-        await scheduleFeedRefreshNow(staleFeedId);
-      }
-
+      const result = await subscriptionsService.subscribeToUrl(
+        ctx.db,
+        ctx.session.user.id,
+        input.url
+      );
       return formatSubscriptionResponse(result);
     }),
 
@@ -368,154 +258,8 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(subscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Update the subscription and return key fields (WHERE clause ensures ownership)
-      const now = new Date();
-      const updateData: {
-        customTitle?: string | null;
-        fetchFullContent?: boolean;
-      } = {};
-
-      if (input.customTitle) {
-        updateData.customTitle = input.customTitle;
-      } else if (input.customTitle !== undefined) {
-        // A subscription without a feed keeps its name in custom_title
-        // (#1846). A subscription's type never changes, so checking first
-        // can't race.
-        const cleared = await subscriptionsService.clearedCustomTitle(ctx.db, userId, input.id);
-        if (!cleared) {
-          throw errors.validation("Collection name is required");
-        }
-        updateData.customTitle = cleared.customTitle;
-      }
-      if (input.fetchFullContent !== undefined) {
-        updateData.fetchFullContent = input.fetchFullContent;
-      }
-
-      // "Meaningful change vs row touched" (issue #1160, mirroring #1118 for
-      // entries): `updated_at` drives the subscription delta-sync cursor
-      // (sync.events tracks MAX(subscriptions.updated_at)) and, below, gates
-      // the subscription_updated publish — so it must move only when a
-      // user-visible field actually changes. The self-join on `prev` captures
-      // the pre-update values in the UPDATE itself, so a concurrent update
-      // can't slip into a pre-SELECT's TOCTOU window; a re-save with identical
-      // settings writes the row but leaves updated_at alone.
-      const prev = alias(subscriptions, "prev");
-      const changedFragments: SQL[] = [];
-      if (input.customTitle !== undefined) {
-        changedFragments.push(sql`${prev.customTitle} IS DISTINCT FROM ${updateData.customTitle}`);
-      }
-      if (input.fetchFullContent !== undefined) {
-        changedFragments.push(sql`${prev.fetchFullContent} <> ${input.fetchFullContent}`);
-      }
-      const meaningfulChange =
-        changedFragments.length > 0 ? sql`(${sql.join(changedFragments, sql` OR `)})` : sql`false`;
-
-      const updateResult = await ctx.db
-        .update(subscriptions)
-        .set({
-          ...updateData,
-          updatedAt: sql`CASE WHEN ${meaningfulChange} THEN ${now} ELSE ${prev.updatedAt} END`,
-        })
-        .from(prev)
-        .where(
-          and(
-            eq(prev.id, subscriptions.id),
-            eq(subscriptions.id, input.id),
-            eq(subscriptions.userId, userId),
-            isNull(subscriptions.unsubscribedAt),
-            subscriptionsService.isListedSubscription()
-          )
-        )
-        .returning({
-          id: subscriptions.id,
-          feedId: subscriptions.feedId,
-          type: subscriptions.type,
-          customTitle: subscriptions.customTitle,
-          fetchFullContent: subscriptions.fetchFullContent,
-          subscribedAt: subscriptions.subscribedAt,
-          unreadCount: subscriptions.unreadCount,
-          changed: sql<boolean>`${meaningfulChange}`,
-        })
-        .catch((err: unknown) => {
-          // Only custom_title can collide: with another active collection's name.
-          throw isUniqueViolation(err) ? errors.collectionNameTaken() : err;
-        });
-
-      if (updateResult.length === 0) {
-        throw errors.subscriptionNotFound();
-      }
-
-      const subscription = updateResult[0];
-
-      // Fetch feed and tags in separate queries to avoid a cross-join that
-      // multiplies rows (#680). The unread count comes off the UPDATE's
-      // RETURNING — the trigger-maintained counter, not a scan.
-      const feedId = subscription.feedId;
-      const [feedResult, tagsResult] = await Promise.all([
-        // Feed metadata; none for a subscription without a feed (#1846)
-        feedId === null
-          ? []
-          : ctx.db
-              .select({
-                url: feeds.url,
-                title: feeds.title,
-                description: feeds.description,
-                siteUrl: feeds.siteUrl,
-              })
-              .from(feeds)
-              .where(eq(feeds.id, feedId))
-              .limit(1),
-
-        // Tags for this subscription
-        ctx.db
-          .select({
-            id: tags.id,
-            name: tags.name,
-            color: tags.color,
-          })
-          .from(subscriptionTags)
-          .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
-          .where(eq(subscriptionTags.subscriptionId, subscription.id)),
-      ]);
-
-      const feed = feedResult.at(0);
-
-      // Publish SSE event for other tabs/devices — only when something
-      // actually changed. A no-op re-save (identical customTitle /
-      // fetchFullContent) must not notify other tabs (issue #1160).
-      if (subscription.changed) {
-        publishSubscriptionUpdated(
-          userId,
-          subscription.id,
-          now,
-          tagsResult,
-          subscription.customTitle,
-          subscription.fetchFullContent
-        ).catch((err) => {
-          logger.error("Failed to publish subscription_updated event", {
-            err,
-            userId,
-            subscriptionId: subscription.id,
-          });
-        });
-      }
-
-      // Return flat format
-      return {
-        id: subscription.id,
-        type: subscription.type,
-        url: feed?.url ?? null,
-        title: subscription.customTitle ?? feed?.title ?? null, // resolved title
-        originalTitle: feed?.title ?? subscription.customTitle,
-        description: feed?.description ?? null,
-        siteUrl: feed?.siteUrl ?? null,
-        subscribedAt: subscription.subscribedAt,
-        unreadCount: subscription.unreadCount,
-        tags: tagsResult,
-        fetchFullContent: subscription.fetchFullContent,
-      };
+      const { id, ...params } = input;
+      return subscriptionsService.updateSubscription(ctx.db, ctx.session.user.id, id, params);
     }),
 
   /**

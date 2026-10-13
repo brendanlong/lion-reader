@@ -110,6 +110,33 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
   };
 }
 
+export const TAG_NAME_MAX_LENGTH = 50;
+
+/** Trims a tag name and checks it's within the limits every surface shares. */
+function validTagName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw errors.validation("Tag name is required");
+  }
+  if (trimmed.length > TAG_NAME_MAX_LENGTH) {
+    throw errors.validation(`Tag name must be at most ${TAG_NAME_MAX_LENGTH} characters`);
+  }
+  return trimmed;
+}
+
+/**
+ * Fits a name from an outside source (an OPML folder) to the tag-name limits
+ * by trimming and truncating it, or null if nothing is left.
+ */
+export function fitTagName(name: string): string | null {
+  let fitted = "";
+  for (const char of name.trim()) {
+    if (fitted.length + char.length > TAG_NAME_MAX_LENGTH) break;
+    fitted += char;
+  }
+  return fitted.trimEnd() || null;
+}
+
 /** Tag names are unique per user ignoring case, among live (not deleted) tags. */
 export function tagNameMatches(name: string): SQL {
   return sql`lower(${tags.name}) = lower(${name})`;
@@ -130,6 +157,7 @@ export async function createTag(
   userId: string,
   params: CreateTagParams
 ): Promise<CreateTagResult> {
+  const name = validTagName(params.name);
   // An existing tag can be deleted between the conflicting insert and the
   // lookup; then the next insert succeeds.
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -139,7 +167,7 @@ export async function createTag(
       .values({
         id: generateUuidv7(),
         userId,
-        name: params.name,
+        name,
         color: params.color ?? null,
         createdAt: now,
       })
@@ -176,7 +204,7 @@ export async function createTag(
     const existing = await selectTagWithCounts(
       db,
       eq(tags.userId, userId),
-      tagNameMatches(params.name),
+      tagNameMatches(name),
       isNull(tags.deletedAt)
     );
     if (existing) {
@@ -198,6 +226,7 @@ export async function updateTag(
   tagId: string,
   params: UpdateTagParams
 ): Promise<Tag> {
+  const name = params.name === undefined ? undefined : validTagName(params.name);
   // Verify the tag exists and belongs to the user (and is not deleted)
   const existingTag = await db
     .select()
@@ -212,14 +241,14 @@ export async function updateTag(
   // Check for duplicates among *live* tags only, so this fails with a clear
   // error up front; the unique index decides races (caught below). A tag may
   // be renamed to a different capitalization of its own name.
-  if (params.name !== undefined && params.name !== existingTag[0].name) {
+  if (name !== undefined && name !== existingTag[0].name) {
     const duplicateName = await db
       .select({ id: tags.id })
       .from(tags)
       .where(
         and(
           eq(tags.userId, userId),
-          tagNameMatches(params.name),
+          tagNameMatches(name),
           isNull(tags.deletedAt),
           ne(tags.id, tagId)
         )
@@ -236,8 +265,8 @@ export async function updateTag(
     updatedAt: new Date(),
   };
 
-  if (params.name !== undefined) {
-    updateData.name = params.name;
+  if (name !== undefined) {
+    updateData.name = name;
   }
 
   if (params.color !== undefined) {

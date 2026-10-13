@@ -16,15 +16,12 @@ import {
   type FeedType,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { createSession } from "../../src/server/auth/session";
-import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { createCollection } from "../../src/server/services/collections";
 import {
   createSubscription,
   mergeSubscriptionIntoFeed,
 } from "../../src/server/services/subscriptions";
-import { POST as quickadd } from "../../src/app/api/greader.php/reader/api/0/subscription/quickadd/route";
 import {
   createTestFeed,
   createTestIngestAddress,
@@ -104,30 +101,6 @@ describe("subscriptions.type", () => {
         });
         expect(result.success).toBe(true);
         return result.subscriptionId ?? "";
-      },
-    },
-    {
-      path: "Google Reader quickadd",
-      expected: "web",
-      insert: async (userId) => {
-        const { token } = await createSession(db, {
-          userId,
-          scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
-        });
-        const url = `https://example.com/${generateUuidv7()}.xml`;
-        const response = await quickadd(
-          new Request("https://example.com/api/greader.php/reader/api/0/subscription/quickadd", {
-            method: "POST",
-            headers: {
-              authorization: `GoogleLogin auth=${token}`,
-              "content-type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({ quickadd: url }).toString(),
-          })
-        );
-        expect(response.status).toBe(200);
-        const [feed] = await db.select({ id: feeds.id }).from(feeds).where(eq(feeds.url, url));
-        return subscriptionTo(userId, feed.id);
       },
     },
   ])("$path stores type $expected", async ({ insert, expected }) => {

@@ -11,7 +11,12 @@
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
-import { parseFormData, textResponse, errorResponse } from "@/server/google-reader/parse";
+import {
+  parseFormData,
+  textResponse,
+  errorResponse,
+  clientErrorResponse,
+} from "@/server/google-reader/parse";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import * as tagsService from "@/server/services/tags";
 import { getAppErrorCode } from "@/server/trpc/errors";
@@ -54,6 +59,8 @@ export async function POST(request: Request): Promise<Response> {
     if (getAppErrorCode(error) === "TAG_NAME_TAKEN") {
       return errorResponse(`Tag already exists: ${newName}`, 409);
     }
+    const clientError = clientErrorResponse(error);
+    if (clientError) return clientError;
     throw error;
   }
 

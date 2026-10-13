@@ -315,8 +315,10 @@ const createTagArgs = z.object({
   name: z
     .string()
     .min(1)
-    .max(50)
-    .describe("Tag name (max 50 characters, unique per user ignoring case)"),
+    .max(tagsService.TAG_NAME_MAX_LENGTH)
+    .describe(
+      `Tag name (max ${tagsService.TAG_NAME_MAX_LENGTH} characters, unique per user ignoring case)`
+    ),
   color: tagColorSchema
     .optional()
     .describe("Optional hex color (e.g., #ff6b6b). Null to remove color."),
@@ -327,9 +329,11 @@ const updateTagArgs = z.object({
   name: z
     .string()
     .min(1)
-    .max(50)
+    .max(tagsService.TAG_NAME_MAX_LENGTH)
     .optional()
-    .describe("New tag name (max 50 characters, unique per user ignoring case)"),
+    .describe(
+      `New tag name (max ${tagsService.TAG_NAME_MAX_LENGTH} characters, unique per user ignoring case)`
+    ),
   color: tagColorSchema.optional().describe("New hex color (e.g., #ff6b6b). Null to remove color."),
 });
 

@@ -5,6 +5,9 @@
  * formats expected by Google Reader clients.
  */
 
+import { TRPCError } from "@trpc/server";
+import { getHTTPStatusCodeFromError } from "@trpc/server/http";
+import { isClientError } from "@/server/trpc/errors";
 import { parseItemId } from "./id";
 
 /**
@@ -110,4 +113,15 @@ export function errorResponse(message: string, status = 400): Response {
       "Content-Type": "text/plain; charset=UTF-8",
     },
   });
+}
+
+/**
+ * Converts a client error (`isClientError`) thrown by a service, such as an
+ * invalid tag name or the subscription cap, into an error response, or returns
+ * null for anything else so it still propagates (and reaches Sentry). Without
+ * this, the route would turn the client's mistake into an unhandled 500.
+ */
+export function clientErrorResponse(error: unknown): Response | null {
+  if (!(error instanceof TRPCError) || !isClientError(error)) return null;
+  return errorResponse(error.message, getHTTPStatusCodeFromError(error));
 }
