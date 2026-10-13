@@ -274,7 +274,7 @@ describe("createDemoStore", () => {
       expect(result.success).toBe(true);
       expect(result.counts).toMatchObject({
         all: { unread: TOTAL - sub.entryCount + starredInSub },
-        subscriptions: [{ id: sub.id, unread: 0 }],
+        subscriptions: [],
         tags: [{ id: "about", unread: 0 }],
       });
       expect(() => procedures["subscriptions.get"]({ id: sub.id })).toThrow(/not found/i);

@@ -19,7 +19,14 @@ import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
 import { legacyFeedId } from "@/lib/events/schemas";
 import { entryMatchesList, entryMembershipScope } from "@/lib/local-db/entry-lists";
-import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS, type DemoEntry } from "@/lib/demo/data";
+import {
+  DEMO_ENTRIES,
+  DEMO_SUBSCRIPTIONS,
+  DEMO_TAGS,
+  type DemoEntry,
+  type DemoSubscription,
+  type DemoTag,
+} from "@/lib/demo/data";
 
 type Inputs = inferRouterInputs<AppRouter>;
 type Outputs = inferRouterOutputs<AppRouter>;
@@ -103,7 +110,7 @@ interface SubscriptionState {
   type: "web" | "collection";
   title: string;
   originalTitle: string;
-  description: string;
+  description: string | null;
   tagIds: string[];
   fetchFullContent: boolean;
   deleted: boolean;
@@ -170,11 +177,23 @@ function nextCountsAsOf(): string {
   return iso.replace("Z", `${String(lastAsOfMicros % 1000).padStart(3, "0")}Z`);
 }
 
-export function createDemoStore(): DemoStore {
-  const tags = new Map(DEMO_TAGS.map((tag) => [tag.id, tag]));
+export interface DemoFixtures {
+  tags: DemoTag[];
+  subscriptions: DemoSubscription[];
+  entries: DemoEntry[];
+}
+
+const DEMO_FIXTURES: DemoFixtures = {
+  tags: DEMO_TAGS,
+  subscriptions: DEMO_SUBSCRIPTIONS,
+  entries: DEMO_ENTRIES,
+};
+
+export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoStore {
+  const tags = new Map(fixtures.tags.map((tag) => [tag.id, tag]));
 
   const subscriptions = new Map<string, SubscriptionState>(
-    DEMO_SUBSCRIPTIONS.map((sub) => [
+    fixtures.subscriptions.map((sub) => [
       sub.id,
       {
         id: sub.id,
@@ -191,7 +210,7 @@ export function createDemoStore(): DemoStore {
   );
 
   const entries = new Map<string, EntryState>(
-    DEMO_ENTRIES.map((entry) => [
+    fixtures.entries.map((entry) => [
       entry.id,
       {
         entry,
@@ -368,11 +387,14 @@ export function createDemoStore(): DemoStore {
     return {
       ...globalCounts(),
       asOf: nextCountsAsOf(),
-      subscriptions: subs.map((sub) => ({
-        id: sub.id,
-        unread: unread({ subscriptionId: sub.id }),
-        tagIds: sub.tagIds,
-      })),
+      // A deleted subscription has no count to show, as on the server.
+      subscriptions: subs
+        .filter((sub) => !sub.deleted)
+        .map((sub) => ({
+          id: sub.id,
+          unread: unread({ subscriptionId: sub.id }),
+          tagIds: sub.tagIds,
+        })),
       tags: tagIds.map((id) => ({ id, unread: unread({ tagId: id }) })),
       uncategorized: subs.some((sub) => sub.tagIds.length === 0)
         ? { unread: unread({ uncategorized: true }) }
@@ -666,7 +688,7 @@ export function createDemoStore(): DemoStore {
         type: "collection",
         title: input.name,
         originalTitle: input.name,
-        description: "",
+        description: null,
         tagIds: [],
         fetchFullContent: false,
         deleted: false,
