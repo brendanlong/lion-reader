@@ -148,7 +148,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
                 }
             }
             HorizontalDivider()
-            Section("Sync in the background") {
+            Section("Automatic sync") {
                 Text(
                     "How often to fetch new articles while the app isn't open. While it's open, they arrive as they're published.",
                     style = MaterialTheme.typography.bodySmall,
@@ -156,6 +156,14 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onSignOut: () -> Unit) {
                 )
                 Choices(SyncInterval.entries, settings.syncInterval, { it.label }) { choice ->
                     update { it.copy(syncInterval = choice) }
+                }
+                SettingSwitch(
+                    "Only on Wi-Fi",
+                    settings.automaticSyncWifiOnly,
+                    note =
+                        "On mobile data, the app syncs when you open it or pull to refresh, and new articles don't arrive while it's open. Your changes are sent on any network.",
+                ) { value ->
+                    update { it.copy(automaticSyncWifiOnly = value) }
                 }
             }
             HorizontalDivider()

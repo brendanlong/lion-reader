@@ -7,6 +7,7 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.Configuration
+import androidx.work.NetworkType
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
@@ -197,13 +198,13 @@ class AccountLifecycleTest {
     private fun syncNow() =
         WorkManager.getInstance(context).getWorkInfosForUniqueWork("sync-now").get()
 
-    private fun scheduledEvery() =
+    private fun periodicSync() =
         WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork(SyncScheduler.PERIODIC)
             .get()
             .singleOrNull { !it.state.isFinished }
-            ?.periodicityInfo
-            ?.repeatIntervalMillis
+
+    private fun scheduledEvery() = periodicSync()?.periodicityInfo?.repeatIntervalMillis
 
     private fun AppGraph.setSyncInterval(interval: SyncInterval) = runBlocking {
         settings.update { it.copy(syncInterval = interval) }
@@ -214,15 +215,22 @@ class AccountLifecycleTest {
     @Test
     fun thePeriodicSyncFollowsTheSetting() {
         val graph = AppGraph(context, http)
-        graph.followSyncInterval()
+        graph.followSyncSettings()
         try {
             graph.setSyncInterval(SyncInterval.HOUR)
             until { scheduledEvery() == hourly }
+            assertEquals(
+                NetworkType.UNMETERED,
+                periodicSync()!!.constraints.requiredNetworkType,
+            )
+
+            runBlocking { graph.settings.update { it.copy(automaticSyncWifiOnly = false) } }
+            until { periodicSync()?.constraints?.requiredNetworkType == NetworkType.CONNECTED }
 
             graph.setSyncInterval(SyncInterval.NEVER)
             until { scheduledEvery() == null }
         } finally {
-            graph.setSyncInterval(AppSettings().syncInterval)
+            runBlocking { graph.settings.update { AppSettings() } }
         }
     }
 
@@ -230,7 +238,7 @@ class AccountLifecycleTest {
     @Test
     fun signingOutKeepsThePeriodicSyncsInterval() {
         val graph = AppGraph(context, http)
-        graph.followSyncInterval()
+        graph.followSyncSettings()
         try {
             graph.setSyncInterval(SyncInterval.HOUR)
             until { scheduledEvery() == hourly }

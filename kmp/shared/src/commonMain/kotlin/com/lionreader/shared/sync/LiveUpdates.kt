@@ -13,6 +13,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /** The server's events that mean the account's data changed, so there's something to pull. */
@@ -30,6 +33,28 @@ private val DATA_EVENTS =
         "tag_deleted",
         "collection_entries_changed",
     )
+
+/**
+ * Runs [follow] (live updates) while [live] says to, and stops it when [live] turns false. If
+ * [live] starts out false (mobile data, with live updates kept for Wi-Fi), [pull]s once instead, so
+ * opening the app still catches up; a later turn to false doesn't, since [follow] just did.
+ */
+suspend fun followWhile(live: Flow<Boolean>, follow: suspend () -> Unit, pull: suspend () -> Unit) {
+    var first = true
+    live.distinctUntilChanged().collectLatest { on ->
+        val catchUp = first
+        first = false
+        if (on) {
+            follow()
+        } else if (catchUp) {
+            try {
+                pull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {}
+        }
+    }
+}
 
 /**
  * Pulls whenever the server says the account's data changed, until cancelled (the app runs it while

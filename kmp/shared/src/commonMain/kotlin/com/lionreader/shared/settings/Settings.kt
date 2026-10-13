@@ -64,6 +64,11 @@ data class AppSettings(
     val oldestFirst: Boolean = false,
     val retentionDays: Int = 30,
     val syncInterval: SyncInterval = SyncInterval.THIRTY_MINUTES,
+    /**
+     * The periodic sync and live updates wait for Wi-Fi (any unmetered network). Opening the app
+     * still syncs once, and the user's changes are sent on any network.
+     */
+    val automaticSyncWifiOnly: Boolean = true,
     /** Drawer tags shown with their feeds; the rest are collapsed. */
     val expandedTags: Set<String> = emptySet(),
     /** Leave feeds and tags with nothing unread out of the drawer. */
@@ -116,6 +121,9 @@ internal val STORED_SETTINGS: List<Stored<*>> =
             copy(retentionDays = it)
         },
         enumStored("sync_interval", { syncInterval }) { copy(syncInterval = it) },
+        Stored(booleanPreferencesKey("automatic_sync_wifi_only"), { automaticSyncWifiOnly }) {
+            copy(automaticSyncWifiOnly = it)
+        },
         Stored(stringSetPreferencesKey("expanded_tags"), { expandedTags }) {
             copy(expandedTags = it)
         },

@@ -29,11 +29,15 @@ import io.ktor.client.plugins.UserAgent
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -124,15 +128,27 @@ class AppGraph(
         scope.launch { settings.update { it.copy(narrationSpeed = speed) } }
     }
 
-    /** Keeps the periodic sync on the interval the settings say, as they change. */
-    fun followSyncInterval() {
+    /** Keeps the periodic sync as the settings say, as they change. */
+    fun followSyncSettings() {
         scope.launch {
             settings.settings
-                .map { it.syncInterval }
+                .map { it.syncInterval to it.automaticSyncWifiOnly }
                 .distinctUntilChanged()
-                .collect { SyncScheduler.schedulePeriodic(context, it) }
+                .collect { (interval, wifiOnly) ->
+                    SyncScheduler.schedulePeriodic(context, interval, wifiOnly)
+                }
         }
     }
+
+    /** Whether the app on screen may hold the live updates stream (see [AppSettings]). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val liveUpdatesAllowed: Flow<Boolean> =
+        settings.settings
+            .map { it.automaticSyncWifiOnly }
+            .distinctUntilChanged()
+            .flatMapLatest { wifiOnly ->
+                if (wifiOnly) context.onUnmeteredNetwork() else flowOf(true)
+            }
 
     /** A full sync (article bodies included) in a background job. */
     fun syncInBackground() = SyncScheduler.syncNow(context)
@@ -231,11 +247,16 @@ private class WorkManagerSync(
 
     override fun syncNow() = SyncScheduler.syncNow(context)
 
-    // The stored setting, not currentSettings, which can lag a change followSyncInterval has
+    // The stored setting, not currentSettings, which can lag a change followSyncSettings has
     // already applied and so bring back a sync the user just turned off.
     override fun schedulePeriodic() {
         scope.launch {
-            SyncScheduler.schedulePeriodic(context, settings.settings.first().syncInterval)
+            val stored = settings.settings.first()
+            SyncScheduler.schedulePeriodic(
+                context,
+                stored.syncInterval,
+                stored.automaticSyncWifiOnly,
+            )
         }
     }
 

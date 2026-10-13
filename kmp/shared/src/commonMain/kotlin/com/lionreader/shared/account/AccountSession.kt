@@ -15,6 +15,7 @@ import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.sync.RetentionPolicy
 import com.lionreader.shared.sync.SyncEngine
 import com.lionreader.shared.sync.followLiveUpdates
+import com.lionreader.shared.sync.followWhile
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -22,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -99,11 +101,18 @@ internal constructor(
     suspend fun summarize(entryId: String) = withContext(io) { sync.summarize(entryId) }
 
     /**
-     * Pulls whenever the server says something changed, until cancelled ([followLiveUpdates]). The
-     * app runs it only while on screen; in the background the periodic sync is all there is.
+     * Pulls whenever the server says something changed while [live] allows it, until cancelled
+     * ([followWhile], [followLiveUpdates]). The app runs it only while on screen; in the background
+     * the periodic sync is all there is.
      */
-    suspend fun followServer() =
-        withContext(io) { followLiveUpdates(connection.api, pull = { sync.sync() }) }
+    suspend fun followServer(live: Flow<Boolean>) =
+        withContext(io) {
+            followWhile(
+                live,
+                follow = { followLiveUpdates(connection.api, pull = { sync.sync() }) },
+                pull = { sync.sync() },
+            )
+        }
 
     /** The user's changes not yet on the server. */
     suspend fun unsentChanges(): Long =

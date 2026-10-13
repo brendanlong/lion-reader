@@ -215,7 +215,9 @@ class MainActivity : ComponentActivity() {
     private fun AccountApp(account: AccountSession) {
         val lifecycle = LocalLifecycleOwner.current.lifecycle
         LaunchedEffect(account) {
-            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { account.followServer() }
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                account.followServer(graph.liveUpdatesAllowed)
+            }
         }
         val backStack = rememberNavBackStack(HomeKey)
         val sessions = viewModel<SessionViewModels>()
