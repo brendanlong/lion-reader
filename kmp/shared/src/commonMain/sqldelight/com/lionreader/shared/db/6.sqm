@@ -1,0 +1,5 @@
+-- Entries take their subscription's current title (Entry.sq refreshFeedTitles),
+-- for renames synced before the app kept them in step.
+UPDATE entry SET feed_title = (SELECT title FROM subscription WHERE id = entry.subscription_id)
+WHERE subscription_id IN (SELECT id FROM subscription)
+  AND feed_title IS NOT (SELECT title FROM subscription WHERE id = entry.subscription_id);

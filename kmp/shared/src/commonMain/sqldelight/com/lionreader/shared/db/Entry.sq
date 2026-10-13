@@ -81,6 +81,19 @@ UPDATE entry SET title = ?, author = ?, summary = ?, url = ?, published_at = ?,
   sort_at = COALESCE(?, fetched_at)
 WHERE id = ?;
 
+-- The server sends an entry's feed_title as its subscription's title (custom
+-- if set), but a rename doesn't re-send the entries, so they follow it here.
+-- Saved isn't in subscription, so its entries keep theirs.
+refreshFeedTitles:
+UPDATE entry SET feed_title = (SELECT title FROM subscription WHERE id = entry.subscription_id)
+WHERE subscription_id IN (SELECT id FROM subscription)
+  AND feed_title IS NOT (SELECT title FROM subscription WHERE id = entry.subscription_id);
+
+refreshFeedTitlesFor:
+UPDATE entry SET feed_title = (SELECT title FROM subscription WHERE id = :subscriptionId)
+WHERE subscription_id = :subscriptionId AND subscription_id IN (SELECT id FROM subscription)
+  AND feed_title IS NOT (SELECT title FROM subscription WHERE id = :subscriptionId);
+
 updateServerState:
 UPDATE entry SET read = ?, starred = ?, read_changed_at = COALESCE(?, read_changed_at) WHERE id = ?;
 

@@ -3,6 +3,7 @@ package com.lionreader.shared.data
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.lionreader.shared.api.EntryMetadata
 import com.lionreader.shared.api.FullEntry
+import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SyncEvent
 import com.lionreader.shared.db.LionReaderDatabase
 import com.lionreader.shared.sync.FakeServer
@@ -143,6 +144,30 @@ class SearchTest {
         // The old body's words, replaced in place.
         assertEquals(emptyList(), search("nothing"))
         assertEquals(emptyList(), search("doomed"))
+    }
+
+    @Test
+    fun entriesFollowTheirSubscriptionsRename() = runTest {
+        server.subscriptions +=
+            Subscription(
+                "sub-1",
+                title = "Rust Weekly",
+                originalTitle = "Rust Weekly",
+                tags = emptyList(),
+            )
+        serve("a", hoursAgo = 1, title = "A")
+        engine.sync()
+
+        // Renames don't re-send the entries (#1856).
+        server.queueChanges(
+            events =
+                listOf(SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = "Oxide"))
+        )
+        engine.sync()
+
+        assertEquals(listOf("a"), search("oxide"))
+        assertEquals(emptyList(), search("weekly"))
+        assertEquals("Oxide", reader.search("oxide", 1).first().single().source)
     }
 
     @Test

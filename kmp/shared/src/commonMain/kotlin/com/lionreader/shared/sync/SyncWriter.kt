@@ -68,6 +68,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     fun saveSubscriptions(page: SubscriptionPage) = db.transaction {
         page.savedSubscriptionId?.let(store::learnSavedSubscription)
         page.items.forEach(store::upsertSubscription)
+        db.entryQueries.refreshFeedTitles()
     }
 
     /** Whether the device doesn't know the Saved subscription's server id yet. */
@@ -262,9 +263,12 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         feed.type,
                         subscription.tags,
                     )
+                    db.entryQueries.refreshFeedTitlesFor(subscription.id)
                 }
-            is SyncEvent.SubscriptionUpdated ->
+            is SyncEvent.SubscriptionUpdated -> {
                 store.updateSubscription(event.subscriptionId, event.customTitle, event.tags)
+                db.entryQueries.refreshFeedTitlesFor(event.subscriptionId)
+            }
             is SyncEvent.SubscriptionDeleted -> {
                 store.deleteSubscription(event.subscriptionId)
             }
