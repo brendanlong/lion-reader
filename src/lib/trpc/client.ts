@@ -27,3 +27,11 @@ export const trpc = createTRPCReact<AppRouter>();
  * Used by cache helper functions.
  */
 export type TRPCClientUtils = ReturnType<typeof trpc.useUtils>;
+
+/**
+ * Query options that send the request on its own instead of in the shared
+ * batch. A batch responds only when its slowest call finishes, so use this
+ * for speculative fetches (prefetching neighbours) that must not hold up a
+ * request the user is waiting on.
+ */
+export const UNBATCHED = { trpc: { context: { skipBatch: true } } } as const;

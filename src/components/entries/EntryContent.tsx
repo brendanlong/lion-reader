@@ -13,7 +13,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { trpc, UNBATCHED } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
 import { useLocalEntry } from "@/lib/hooks/useLocalEntries";
@@ -121,10 +121,10 @@ function EntryContentInner({
       : undefined
   );
 
-  // Prefetch next and previous entries - use regular useQuery since these are optional
-  // and should not suspend the UI
-  trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId });
-  trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId });
+  // Keep the neighbours cached for swiping and j/k. Unbatched, or the open
+  // entry's response would wait on theirs.
+  trpc.entries.get.useQuery({ id: nextEntryId! }, { enabled: !!nextEntryId, ...UNBATCHED });
+  trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId, ...UNBATCHED });
 
   // Get fetchFullContent setting directly from entry (included in entries.get response)
   // This avoids a separate subscriptions.get query
