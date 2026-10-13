@@ -27,7 +27,10 @@ const feedUrls: string[] = [];
 
 beforeAll(async () => {
   server = createServer((req, res) => {
-    if (req.url?.startsWith("/feed")) {
+    if (req.url === "/broken") {
+      res.writeHead(500);
+      res.end("upstream detail");
+    } else if (req.url?.startsWith("/feed")) {
       res.writeHead(200, { "content-type": "application/rss+xml" });
       res.end(RSS);
     } else {
@@ -146,5 +149,16 @@ describe("Google Reader quickadd", () => {
     const res = await quickadd(quickaddRequest(token, `${baseUrl}/page.html`));
 
     expect(res.status).toBe(400);
+  });
+
+  // #1266: the fetch error's detail (such as what a host resolved to) stays
+  // in our logs.
+  it("answers an upstream failure without its detail", async () => {
+    const { token } = await createReader();
+
+    const res = await quickadd(quickaddRequest(token, `${baseUrl}/broken`));
+
+    expect(res.status).toBe(502);
+    expect(await res.text()).toBe("Failed to fetch the URL");
   });
 });

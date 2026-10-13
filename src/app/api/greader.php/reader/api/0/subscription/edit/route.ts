@@ -102,8 +102,8 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 /**
- * Applies an edit's title and tag changes. A blank title is ignored, except
- * that a collection must keep a name (#1846).
+ * Applies an edit's title and tag changes. An empty `t` is no title; a blank
+ * one is ignored, except that a collection must keep a name (#1846).
  */
 async function editSubscription(
   userId: string,
@@ -113,7 +113,7 @@ async function editSubscription(
   removeTags: string[]
 ): Promise<Response> {
   try {
-    const title = rawTitle?.trim();
+    const title = rawTitle ? rawTitle.trim() : undefined;
     if (title) {
       await updateSubscription(db, userId, subscriptionId, { customTitle: title });
     } else if (title === "" && (await clearedCustomTitle(db, userId, subscriptionId)) === null) {
@@ -151,5 +151,5 @@ async function editSubscription(
 
 /** The label names in `user/{id}/label/{name}` tag stream ids; other ids are skipped. */
 function labelNames(tagStreamIds: string[]): string[] {
-  return tagStreamIds.flatMap((id) => id.match(/^user\/[^/]+\/label\/(.+)$/)?.[1] ?? []);
+  return tagStreamIds.flatMap((id) => id.match(/^user\/[^/]+\/label\/(.+)$/)?.[1].trim() || []);
 }

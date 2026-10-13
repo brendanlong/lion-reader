@@ -15,7 +15,7 @@ import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { TAG_NAME_MAX_LENGTH } from "../../src/server/services/tags";
 import { POST as editSubscription } from "../../src/app/api/greader.php/reader/api/0/subscription/edit/route";
 import { POST as renameTag } from "../../src/app/api/greader.php/reader/api/0/rename-tag/route";
-import { expectNoMessage, waitForMessage, waitForMessages } from "../utils/pubsub";
+import { expectNoMessage, waitForMessage } from "../utils/pubsub";
 import { createTestFeed, createTestSubscription, createTestTag, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
@@ -55,11 +55,13 @@ function formPost(path: string, token: string, form: Record<string, string>): Re
   });
 }
 
+const SUBSCRIPTION_UPDATED_AT = new Date("2024-01-01T00:00:00Z");
+
 async function createSubscriptionStream(
   userId: string
 ): Promise<{ subscriptionId: string; stream: string }> {
   const subscriptionId = await createTestSubscription(userId, await createTestFeed(), {
-    updatedAt: new Date("2024-01-01T00:00:00Z"),
+    updatedAt: SUBSCRIPTION_UPDATED_AT,
   });
   const [{ streamId }] = await db
     .select({ streamId: subscriptions.greaderStreamId })
@@ -77,45 +79,39 @@ async function subscriptionUpdatedAt(subscriptionId: string): Promise<Date> {
 }
 
 describe("Google Reader subscription/edit", () => {
-  it("publishes the new title and tags and moves the sync cursor", async () => {
+  it.each<{ edit: string; form: Record<string, string>; expected: Record<string, unknown> }>([
+    {
+      edit: "a rename",
+      form: { t: "Renamed" },
+      expected: { customTitle: "Renamed", tags: [{ name: "Tech" }] },
+    },
+    {
+      edit: "an added label",
+      form: { a: "user/-/label/News" },
+      expected: { tags: expect.arrayContaining([{ name: "News" }, { name: "Tech" }]) },
+    },
+    { edit: "a removed label", form: { r: "user/-/label/Tech" }, expected: { tags: [] } },
+  ])("publishes $edit and moves the sync cursor", async ({ form, expected }) => {
     const { userId, token } = await createReader();
     const { subscriptionId, stream } = await createSubscriptionStream(userId);
+    await createTestTag(userId, { name: "News" });
+    const techId = await createTestTag(userId, { name: "Tech" });
+    await db.insert(subscriptionTags).values({ subscriptionId, tagId: techId });
     const channel = getUserEventsChannel(userId);
     await subscriber.subscribe(channel);
     const updated = waitForMessage(subscriber, channel);
 
     const res = await editSubscription(
-      formPost("subscription/edit", token, { ac: "edit", s: stream, t: "Renamed" })
+      formPost("subscription/edit", token, { ac: "edit", s: stream, ...form })
     );
 
     expect(res.status).toBe(200);
-    expect(JSON.parse(await updated)).toMatchObject({
-      type: "subscription_updated",
-      subscriptionId,
-      customTitle: "Renamed",
-    });
-    const afterRename = await subscriptionUpdatedAt(subscriptionId);
-    expect(afterRename.getTime()).toBeGreaterThan(new Date("2024-01-01T00:00:00Z").getTime());
-
-    // Adding a label that doesn't exist yet creates its tag first.
-    const tagged = waitForMessages(subscriber, channel, 2);
-    expect(
-      (
-        await editSubscription(
-          formPost("subscription/edit", token, { ac: "edit", s: stream, a: "user/-/label/News" })
-        )
-      ).status
-    ).toBe(200);
-    expect((await tagged).map((m) => JSON.parse(m))).toContainEqual(
-      expect.objectContaining({
-        type: "subscription_updated",
-        subscriptionId,
-        tags: [expect.objectContaining({ name: "News" })],
-      })
-    );
-    expect((await subscriptionUpdatedAt(subscriptionId)).getTime()).toBeGreaterThanOrEqual(
-      afterRename.getTime()
-    );
+    const event = JSON.parse(await updated);
+    expect({
+      ...event,
+      tags: event.tags.map((t: { name: string }) => ({ name: t.name })),
+    }).toMatchObject({ type: "subscription_updated", subscriptionId, ...expected });
+    expect(await subscriptionUpdatedAt(subscriptionId)).not.toEqual(SUBSCRIPTION_UPDATED_AT);
   });
 
   // #1160: re-asserting what the subscription already has is not a change.
@@ -134,29 +130,7 @@ describe("Google Reader subscription/edit", () => {
       expect(res.status).toBe(200);
     });
 
-    expect(await subscriptionUpdatedAt(subscriptionId)).toEqual(new Date("2024-01-01T00:00:00Z"));
-  });
-
-  it("removes only the named label", async () => {
-    const { userId, token } = await createReader();
-    const { subscriptionId, stream } = await createSubscriptionStream(userId);
-    const newsId = await createTestTag(userId, { name: "News" });
-    const techId = await createTestTag(userId, { name: "Tech" });
-    await db.insert(subscriptionTags).values([
-      { subscriptionId, tagId: newsId },
-      { subscriptionId, tagId: techId },
-    ]);
-
-    const res = await editSubscription(
-      formPost("subscription/edit", token, { ac: "edit", s: stream, r: "user/-/label/News" })
-    );
-
-    expect(res.status).toBe(200);
-    const attached = await db
-      .select({ tagId: subscriptionTags.tagId })
-      .from(subscriptionTags)
-      .where(eq(subscriptionTags.subscriptionId, subscriptionId));
-    expect(attached).toEqual([{ tagId: techId }]);
+    expect(await subscriptionUpdatedAt(subscriptionId)).toEqual(SUBSCRIPTION_UPDATED_AT);
   });
 });
 

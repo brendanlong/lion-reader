@@ -283,23 +283,28 @@ export async function lockSubscriptionMembers(
 /**
  * Locks one of the user's subscription rows for the rest of the transaction,
  * so a change to its tags or state takes locks in the order `src/server/CLAUDE.md`
- * requires. Unsubscribing moves its members' user_entries rows, so `members`
- * locks those first.
+ * requires, returning the locked row's fields a subscription_updated event
+ * carries. Unsubscribing moves its members'
+ * user_entries rows, so `members` locks those first.
  */
 async function lockSubscriptionRow(
   tx: DbOrTx,
   userId: string,
   subscriptionId: string,
   { members = false }: { members?: boolean } = {}
-): Promise<void> {
+): Promise<{ customTitle: string | null; fetchFullContent: boolean } | undefined> {
   if (members) {
     await lockSubscriptionMembers(tx, userId, eq(subscriptions.id, subscriptionId));
   }
-  await tx
-    .select({ id: subscriptions.id })
+  const [row] = await tx
+    .select({
+      customTitle: subscriptions.customTitle,
+      fetchFullContent: subscriptions.fetchFullContent,
+    })
     .from(subscriptions)
     .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
     .for("update");
+  return row;
 }
 
 /**
@@ -940,6 +945,14 @@ export async function subscribeToUrl(
   return result;
 }
 
+function selectSubscriptionTags(db: DbOrTx, subscriptionId: string): Promise<Tag[]> {
+  return db
+    .select({ id: tags.id, name: tags.name, color: tags.color })
+    .from(subscriptionTags)
+    .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
+    .where(eq(subscriptionTags.subscriptionId, subscriptionId));
+}
+
 export const CUSTOM_TITLE_MAX_LENGTH = 255;
 
 export interface UpdateSubscriptionParams {
@@ -1032,14 +1045,13 @@ export async function updateSubscription(
     throw errors.subscriptionNotFound();
   }
 
-  const subscription = await getSubscription(db, userId, subscriptionId);
-
   if (updated.changed) {
+    const currentTags = await selectSubscriptionTags(db, subscriptionId);
     publishSubscriptionUpdated(
       userId,
       subscriptionId,
       now,
-      subscription.tags,
+      currentTags,
       updated.customTitle,
       updated.fetchFullContent
     ).catch((err) => {
@@ -1051,7 +1063,7 @@ export async function updateSubscription(
     });
   }
 
-  return subscription;
+  return getSubscription(db, userId, subscriptionId);
 }
 
 /**
@@ -1091,10 +1103,7 @@ async function changeSubscriptionTags(
   // The saved subscription can't be tagged (#1846): like any subscription the
   // user can't see, it's not found.
   const [existingSubscription] = await db
-    .select({
-      customTitle: subscriptions.customTitle,
-      fetchFullContent: subscriptions.fetchFullContent,
-    })
+    .select({ id: subscriptions.id })
     .from(subscriptions)
     .where(
       and(
@@ -1129,10 +1138,12 @@ async function changeSubscriptionTags(
 
   // One transaction, or a crash or concurrent call between the delete and the
   // insert could leave a partial tag set (#952).
-  const tagsAfter = await db.transaction(async (tx) => {
+  const after = await db.transaction(async (tx) => {
     // Subscription row first: the counter triggers lock subscriptions, then
-    // users, then tags, and the tag changes below reach users and tags.
-    await lockSubscriptionRow(tx, userId, subscriptionId);
+    // users, then tags, and the tag changes below reach users and tags. Its
+    // title is read under the lock, so the event can't revert a concurrent
+    // rename.
+    const locked = await lockSubscriptionRow(tx, userId, subscriptionId);
 
     let changed: boolean;
     if ("set" in change) {
@@ -1184,21 +1195,21 @@ async function changeSubscriptionTags(
       .update(subscriptions)
       .set({ updatedAt: now })
       .where(eq(subscriptions.id, subscriptionId));
-    return tx
-      .select({ id: tags.id, name: tags.name, color: tags.color })
-      .from(subscriptionTags)
-      .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
-      .where(eq(subscriptionTags.subscriptionId, subscriptionId));
+    return {
+      tags: await selectSubscriptionTags(tx, subscriptionId),
+      customTitle: locked?.customTitle ?? null,
+      fetchFullContent: locked?.fetchFullContent,
+    };
   });
 
-  if (tagsAfter) {
+  if (after) {
     publishSubscriptionUpdated(
       userId,
       subscriptionId,
       now,
-      tagsAfter,
-      existingSubscription.customTitle,
-      existingSubscription.fetchFullContent
+      after.tags,
+      after.customTitle,
+      after.fetchFullContent
     ).catch((err) => {
       logger.error("Failed to publish subscription_updated event", {
         err,

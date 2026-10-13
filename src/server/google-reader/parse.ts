@@ -123,5 +123,10 @@ export function errorResponse(message: string, status = 400): Response {
  */
 export function clientErrorResponse(error: unknown): Response | null {
   if (!(error instanceof TRPCError) || !isClientError(error)) return null;
-  return errorResponse(error.message, getHTTPStatusCodeFromError(error));
+  const status = getHTTPStatusCodeFromError(error);
+  // An upstream failure's message carries the fetch error's detail (such as
+  // what an internal host resolved to), which mustn't reach the client (#1266).
+  return status >= 500
+    ? errorResponse("Failed to fetch the URL", 502)
+    : errorResponse(error.message, status);
 }

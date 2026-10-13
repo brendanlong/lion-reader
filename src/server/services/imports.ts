@@ -27,6 +27,7 @@ import { createJob } from "@/server/jobs/queue";
 import { publishImportProgress, publishImportCompleted } from "@/server/redis/pubsub";
 import { createSubscription, setSubscriptionTags } from "@/server/services/subscriptions";
 import { fitTagName } from "@/server/services/tags";
+import { getAppErrorCode } from "@/server/trpc/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 
@@ -285,8 +286,17 @@ async function applyImportTags(
   tagNameToInfo: Map<string, ImportTagInfo>
 ): Promise<void> {
   const tagIds = categories.flatMap((category) => tagNameToInfo.get(category)?.id ?? []);
-  if (tagIds.length > 0) {
+  if (tagIds.length === 0) return;
+  try {
     await setSubscriptionTags(db, userId, subscriptionId, tagIds);
+  } catch (error) {
+    // The user deleted one of the import's tags meanwhile; the subscription
+    // itself was imported.
+    if (getAppErrorCode(error) !== "VALIDATION_ERROR") throw error;
+    logger.warn("OPML import: a category's tag was deleted during the import", {
+      userId,
+      subscriptionId,
+    });
   }
 }
 
