@@ -126,6 +126,7 @@ export function applySubscriptionUpdate(
 ): void {
   const { id, tags, title, fetchFullContent } = update;
   const db = getLocalDb(queryClient);
+  const stored = db.subscriptions.rows.getSynced(id);
   // Its entries show the same title (the server sends it as their
   // feedTitle), so a rename carries over to the ones already loaded.
   if (title !== undefined) setSubscriptionEntriesFeedTitle(db.entries, id, title);
@@ -138,12 +139,14 @@ export function applySubscriptionUpdate(
     );
   }
   // The stored row moves between sidebar sections with its tags.
-  if (db.subscriptions.rows.getSynced(id)) {
+  if (stored) {
     patchLiveSubscription(db.subscriptions, id, {
       tags,
       ...(title !== undefined && { title }),
       ...(fetchFullContent !== undefined && { fetchFullContent }),
     });
+  } else if (isFullSubscriptionRow(update)) {
+    writeLiveSubscriptions(db.subscriptions, [update]);
   } else {
     loadSubscriptionForSidebar(
       utils,
@@ -152,9 +155,20 @@ export function applySubscriptionUpdate(
       tags.map((tag) => tag.id)
     );
   }
-  // Tag feed counts changed, and the collection picker searches by title.
-  utils.tags.list.invalidate();
-  void utils.subscriptions.list.invalidate({ type: "collection" });
+  const tagIds = (row: Pick<SubscriptionRow, "tags">) =>
+    row.tags
+      .map((tag) => tag.id)
+      .sort()
+      .join();
+  // Tag feed counts change with the tags, and the collection picker searches by title.
+  if (!stored || tagIds(stored) !== tagIds(update)) utils.tags.list.invalidate();
+  if (!stored || (title !== undefined && title !== stored.title)) {
+    void utils.subscriptions.list.invalidate({ type: "collection" });
+  }
+}
+
+function isFullSubscriptionRow(update: SubscriptionUpdate): update is SubscriptionRow {
+  return "originalTitle" in update;
 }
 
 /**

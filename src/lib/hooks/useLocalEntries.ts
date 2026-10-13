@@ -99,19 +99,48 @@ export function useLocalEntriesMatching(filters: EntryListFilters): EntryRow[] {
   const { data: entries } = useLiveQuery({
     query: (q) => q.from({ entry: db.entries.collection }),
   });
+  // Callers pass a fresh object each render, so the memo keys on its fields.
+  const { subscriptionId, tagId, uncategorized, starredOnly, unreadOnly, type, sortOrder } =
+    filters;
   return useMemo(() => {
+    const input = {
+      subscriptionId,
+      tagId,
+      uncategorized,
+      starredOnly,
+      unreadOnly,
+      type,
+      sortOrder,
+    };
+    const needsScope = !!tagId || !!uncategorized || type === "saved";
     const tagIds = new Map(
-      subscriptions.map((row) => [row.id, row.tags.map((tag) => tag.id)] as const)
+      needsScope ? subscriptions.map((row) => [row.id, row.tags.map((tag) => tag.id)] as const) : []
     );
+    const noScope = { tagIds: new Set<string>(), uncategorized: false, saved: false };
     return entries
       .filter((entry) =>
         entryMatchesList(
-          filters,
+          input,
           entry,
-          entryMembershipScope(entry.subscriptionIds, savedSubscriptionId, (id) => tagIds.get(id))
+          needsScope
+            ? entryMembershipScope(entry.subscriptionIds, savedSubscriptionId, (id) =>
+                tagIds.get(id)
+              )
+            : noScope
         )
       )
-      .sort(compareListEntries(filters))
+      .sort(compareListEntries(input))
       .slice(0, MATCHING_ENTRIES_LIMIT);
-  }, [entries, filters, subscriptions, savedSubscriptionId]);
+  }, [
+    entries,
+    subscriptions,
+    savedSubscriptionId,
+    subscriptionId,
+    tagId,
+    uncategorized,
+    starredOnly,
+    unreadOnly,
+    type,
+    sortOrder,
+  ]);
 }

@@ -89,7 +89,13 @@ const userEventSchema = z.discriminatedUnion("type", [
     ...serverTimestamp,
     feedType: z.enum(["email", "saved"]),
   }),
-  entryUpdatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
+  entryUpdatedEventSchema.extend({
+    userId: z.string(),
+    ...serverTimestamp,
+    // Unread, but the previous release's SSE servers require it: drop it the
+    // release after this one.
+    feedType: z.enum(["email", "saved"]).optional(),
+  }),
   subscriptionCreatedEventSchema.extend({
     userId: z.string(),
     ...serverTimestamp,
@@ -299,6 +305,7 @@ export async function publishUserEntryUpdated(
     entryId: entry.id,
     timestamp: new Date().toISOString(),
     updatedAt: entry.updatedAt.toISOString(),
+    feedType: target.feedType,
     metadata: toEntryMetadata(entry),
   });
 }

@@ -1069,12 +1069,23 @@ describe("handleSyncEvent - subscription_updated", () => {
 
   it("refetches tag feed counts and the collection picker, not the sidebar sections", () => {
     invalidateSpy.mockClear();
-    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent());
+    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent({ customTitle: "Renamed" }));
 
     expect(invalidatedQueries(invalidateSpy)).toEqual([
       { path: "tags.list", input: undefined },
       { path: "subscriptions.list", input: { type: "collection" } },
     ]);
+  });
+
+  it("refetches nothing for an update that changes neither tags nor title", () => {
+    const update = createSubscriptionUpdatedEvent({ customTitle: "Renamed" });
+    handleSyncEvent(utils, queryClient, update);
+    invalidateSpy.mockClear();
+
+    // The acting tab gets its own change back as an event.
+    handleSyncEvent(utils, queryClient, update);
+
+    expect(invalidatedQueries(invalidateSpy)).toEqual([]);
   });
 
   it("loads an unstored subscription it moves into a loaded section, not into a collapsed one", () => {
