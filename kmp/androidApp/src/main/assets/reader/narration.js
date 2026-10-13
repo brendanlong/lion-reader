@@ -92,10 +92,13 @@
       paragraphMap: paragraphMap2
     };
   }
+  function isSpeakable(text) {
+    return /[\p{L}\p{N}]/u.test(text);
+  }
   var END_OF_ARTICLE = "End of article.";
   function withEndOfArticle(narration) {
     const paragraphs = splitNarrationParagraphs(narration.narrationText);
-    if (paragraphs.length === 0) return narration;
+    if (!paragraphs.some(isSpeakable)) return narration;
     return {
       narrationText: [...paragraphs, END_OF_ARTICLE].join("\n\n"),
       paragraphMap: [...narration.paragraphMap, { n: paragraphs.length, o: -1 }]

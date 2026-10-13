@@ -27,6 +27,7 @@
  * @module narration/media-source-player
  */
 
+import { isSpeakable } from "./paragraph-map";
 import { splitIntoSentences } from "./sentence-splitter";
 
 /** AAC-LC in MP4: what every MSE implementation plays, and what the server sends. */
@@ -99,14 +100,6 @@ export interface PlayerCallbacks {
 export interface SpeechChunk {
   paragraph: number;
   text: string;
-}
-
-/**
- * Whether `text` has a letter or digit to say. Voices garble text that's only
- * symbols (a footnote's "↩", a "* * *" separator), so it isn't synthesized.
- */
-function isSpeakable(text: string): boolean {
-  return /[\p{L}\p{N}]/u.test(text);
 }
 
 /** One chunk per sentence, for synthesis that's slow enough to want the first audio fast. */

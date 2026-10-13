@@ -152,8 +152,10 @@ describe("withEndOfArticle", () => {
     expect(narrationParagraphForElement(ended.paragraphMap, 1)).toBeNull();
   });
 
-  it("leaves an article with nothing to narrate silent", () => {
+  it("leaves an article with nothing speakable silent", () => {
     const empty = buildAlignedNarration([{ o: 0, text: "  " }]);
     expect(withEndOfArticle(empty)).toEqual(empty);
+    const symbols = buildAlignedNarration([{ o: 0, text: "* * *" }]);
+    expect(withEndOfArticle(symbols)).toEqual(symbols);
   });
 });

@@ -20,7 +20,7 @@
 import { useMemo } from "react";
 
 export interface UseNarrationHighlightProps {
-  /** DOM element index (`para-N`) of the paragraph being narrated. */
+  /** DOM element index (`para-N`) of the paragraph being narrated, or -1 for none. */
   currentParagraphIndex: number;
   /** Whether narration is on: playing, paused or buffering, with a position. */
   isActive: boolean;
