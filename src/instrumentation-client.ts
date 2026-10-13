@@ -2,68 +2,55 @@
  * Client Instrumentation (Next.js convention, replaces sentry.client.config.ts)
  *
  * Runs in the browser before the app hydrates. This is where client-side
- * Sentry is initialized. Like src/instrumentation.ts, Next.js resolves this
+ * Sentry is started. Like src/instrumentation.ts, Next.js resolves this
  * file from `src/` first, then the repo root.
+ *
+ * The SDK loads once the page is idle (see `@/lib/sentry/client`), keeping it
+ * out of the critical path. Until then, uncaught errors and unhandled
+ * rejections are buffered here and reported once it's initialized. Tracing
+ * still measures the page load from navigation start, but requests and
+ * interactions before the SDK loads aren't traced.
  *
  * https://nextjs.org/docs/app/guides/instrumentation-client
  * https://docs.sentry.io/platforms/javascript/guides/nextjs/
  */
 
-import * as Sentry from "@sentry/nextjs";
+import { loadSentry } from "@/lib/sentry/client";
 
-// Only initialize Sentry if DSN is provided.
-// NEXT_PUBLIC_* vars are inlined at build time, so the DSN must be available
-// to `next build` (not just at runtime) for client Sentry to work.
+type SentrySdk = NonNullable<Awaited<ReturnType<typeof loadSentry>>>;
+
+let sentry: SentrySdk | null = null;
+
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
-  Sentry.init({
-    dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  const earlyErrors: unknown[] = [];
+  const onError = (event: ErrorEvent) => {
+    if (event.error !== undefined) earlyErrors.push(event.error);
+  };
+  const onRejection = (event: PromiseRejectionEvent) => earlyErrors.push(event.reason);
+  window.addEventListener("error", onError);
+  window.addEventListener("unhandledrejection", onRejection);
 
-    // Adjust this value in production, or use tracesSampler for greater control
-    tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
-
-    // Setting this option to true will print useful information to the console while you're setting up Sentry.
-    debug: false,
-
-    // Environment tag for filtering
-    environment: process.env.NODE_ENV,
-
-    // Only send errors from production
-    enabled: process.env.NODE_ENV === "production",
-
-    // Filter out common client-side noise
-    beforeSend(event) {
-      // Don't send events from browser extensions
-      if (
-        event.exception?.values?.some((exception) =>
-          exception.stacktrace?.frames?.some(
-            (frame) =>
-              frame.filename?.includes("chrome-extension://") ||
-              frame.filename?.includes("moz-extension://")
-          )
-        )
-      ) {
-        return null;
-      }
-      return event;
-    },
-
-    // Ignore common benign errors
-    ignoreErrors: [
-      // Network errors that happen when user goes offline
-      "Failed to fetch",
-      "Load failed",
-      "NetworkError",
-      // User cancelled request
-      "AbortError",
-      // Browser extensions
-      "Extension context invalidated",
-      // React hydration mismatches (usually benign)
-      "Minified React error",
-    ],
-  });
+  const start = () => {
+    void loadSentry().then((loaded) => {
+      // Sentry's own global handlers take over from here.
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+      sentry = loaded;
+      for (const error of earlyErrors.splice(0)) loaded?.captureException(error);
+    });
+  };
+  const startWhenIdle = () => {
+    if ("requestIdleCallback" in window) requestIdleCallback(start, { timeout: 5000 });
+    else setTimeout(start, 0);
+  };
+  if (document.readyState === "complete") startWhenIdle();
+  else window.addEventListener("load", startWhenIdle, { once: true });
 }
 
 // Instruments Next.js router transitions for tracing. Most in-app navigation
 // here bypasses the Next router (ClientLink uses pushState directly), so this
-// mainly covers initial-load route changes; exported to follow the convention.
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+// mainly covers initial-load route changes (none before the SDK loads);
+// exported to follow the convention.
+export function onRouterTransitionStart(href: string, navigationType: string): void {
+  sentry?.captureRouterTransitionStart(href, navigationType);
+}

@@ -18,8 +18,8 @@
  * https://nextjs.org/docs/app/building-your-application/routing/error-handling
  */
 
-import * as Sentry from "@sentry/nextjs";
 import { useEffect, useState } from "react";
+import { captureClientException } from "@/lib/sentry/client";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, THEMES } from "@/lib/theme/config";
 
 /**
@@ -65,8 +65,7 @@ export default function GlobalError({
   const [theme] = useState(storedTheme);
 
   useEffect(() => {
-    // Report error to Sentry
-    Sentry.captureException(error);
+    captureClientException(error);
   }, [error]);
 
   return (
