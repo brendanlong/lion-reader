@@ -13,6 +13,7 @@
 import { useTheme } from "next-themes";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useIsEInkDisplay } from "@/lib/theme/eink";
+import { useIsHydrated } from "@/lib/hooks/useIsHydrated";
 import { useAppearance, useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import type {
   TextSize,
@@ -131,7 +132,13 @@ function TextPreview() {
 
 export function AppearanceSettings() {
   const { settings, updateSettings } = useAppearance();
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const nextTheme = useTheme();
+  // next-themes reads localStorage during the client's hydration render but not
+  // on the server, so use its values only after hydration (#1934).
+  const isHydrated = useIsHydrated();
+  const theme = isHydrated ? nextTheme.theme : undefined;
+  const resolvedTheme = isHydrated ? nextTheme.resolvedTheme : undefined;
+  const { setTheme } = nextTheme;
   // On e-ink displays, "Auto" resolves to the e-paper theme (see ThemeProvider)
   const isEInk = useIsEInkDisplay();
 
