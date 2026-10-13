@@ -845,11 +845,20 @@ async function acquireSavedArticleContent(
   // This needs no interactivity once the account is linked and the scopes are
   // granted, so the compat surfaces (Wallabag/MCP) use "non-interactive" mode —
   // the only difference is the message thrown when auth isn't set up yet.
+  // Its failures are already classified (consent prompts) or our bugs, so they
+  // skip the fetch-error mapping below.
   const googleDocsAuth = params.googleDocsAuth;
+  let privateDocError: { error: unknown } | null = null;
   const beforePageFetch =
     googleDocsAuth && isGoogleDocsUrl(params.url)
       ? async (): Promise<PluginArticle | null> => {
-          const doc = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl, googleDocsAuth);
+          let doc: GoogleDocsContent | null;
+          try {
+            doc = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl, googleDocsAuth);
+          } catch (error) {
+            privateDocError = { error };
+            throw error;
+          }
           if (!doc) return null;
           logger.debug("Successfully fetched private Google Docs content", {
             userId,
@@ -884,8 +893,7 @@ async function acquireSavedArticleContent(
       beforePageFetch,
     });
   } catch (error) {
-    // Already classified (e.g. the private Google Docs consent prompts).
-    if (error instanceof TRPCError) {
+    if (privateDocError !== null || error instanceof TRPCError) {
       throw error;
     }
     logger.warn("Failed to fetch URL for saved article", {
