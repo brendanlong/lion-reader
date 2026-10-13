@@ -378,6 +378,23 @@ export function recordTrpcProcedures(page: Page): string[] {
   return calls;
 }
 
+/**
+ * Collects every console error and page error (hydration mismatches, React
+ * warnings such as duplicate keys, thrown errors). The dev server has no
+ * service worker, so its registration 404 is the one expected noise.
+ */
+export function collectRenderErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (/sw\.js|ServiceWorker|bad HTTP response code \(404\)/.test(text)) return;
+    errors.push(text);
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  return errors;
+}
+
 /** The tRPC procedures a (possibly batched) request URL calls. */
 export function trpcProcedures(url: string): string[] {
   const match = url.match(/\/api\/trpc\/([^?]+)/);

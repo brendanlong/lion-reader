@@ -19,6 +19,7 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { DEMO_ENTRIES, getDemoEntry, getDemoSubscription } from "../../src/app/(public)/demo/data";
+import { collectRenderErrors } from "./helpers";
 
 // Counts and copy come from the demo data so editing articles doesn't break
 // these tests.
@@ -26,23 +27,6 @@ const TOTAL_ENTRIES = DEMO_ENTRIES.length;
 const welcome = getDemoEntry("welcome")!;
 const welcomeTitle = welcome.title!;
 const performanceTitle = getDemoEntry("performance")!.title!;
-
-/**
- * Collects every console error and page error (hydration mismatches, React
- * warnings such as duplicate keys, thrown errors). The dev server has no
- * service worker, so its registration 404 is the one expected noise.
- */
-function collectRenderErrors(page: Page): string[] {
-  const errors: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() !== "error") return;
-    const text = message.text();
-    if (/sw\.js|ServiceWorker|bad HTTP response code \(404\)/.test(text)) return;
-    errors.push(text);
-  });
-  page.on("pageerror", (error) => errors.push(error.message));
-  return errors;
-}
 
 /** Records every /api/trpc request the page makes. */
 function recordApiRequests(page: Page): string[] {
