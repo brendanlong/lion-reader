@@ -22,7 +22,7 @@
 
 "use client";
 
-import { Suspense, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { memo, Suspense, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getQueryKey } from "@trpc/react-query";
 import { trpc } from "@/lib/trpc/client";
@@ -81,16 +81,20 @@ function entryToReturnTo(
   return (before.slice(index + 1).find(isListed) ?? before.slice(0, index).findLast(isListed))?.id;
 }
 
-export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
+export const EntryListContainer = memo(function EntryListContainer({
+  emptyMessage,
+}: EntryListContainerProps) {
   // Only the page load can suspend here (on the streamed prefetch; see
   // useCanRenderStreamedQuery), and the skeleton is what it would otherwise
-  // render before hydration.
+  // render before hydration. memo() keeps the parent's re-render when the
+  // prefetch lands from reaching a boundary still waiting to hydrate, which
+  // would make React discard the server HTML.
   return (
     <Suspense fallback={<EntryListSkeleton />}>
       <EntryListContainerContent emptyMessage={emptyMessage} />
     </Suspense>
   );
-}
+});
 
 function EntryListContainerContent({ emptyMessage }: EntryListContainerProps) {
   const { openEntryId, setOpenEntryId, closeEntry, entryHref } = useEntryUrlState();

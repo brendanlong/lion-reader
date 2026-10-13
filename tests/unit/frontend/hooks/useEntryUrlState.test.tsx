@@ -21,23 +21,18 @@ import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
 import { createDemoStore } from "@/app/(public)/demo/store";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
+import { setMockLocation } from "../../../utils/mock-next-navigation";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-let mockPathname = "/all";
-let mockSearch = "";
-vi.mock("next/navigation", () => ({
-  usePathname: () => mockPathname,
-  useSearchParams: () => new URLSearchParams(mockSearch),
-}));
+vi.mock("next/navigation", () => import("../../../utils/mock-next-navigation"));
 
 const { useEntryUrlState } = await import("@/lib/hooks/useEntryUrlState");
 
 beforeEach(() => {
-  mockPathname = "/all";
-  mockSearch = "";
+  setMockLocation({ pathname: "/all", search: "" });
   window.history.replaceState(null, "", "/all");
 });
 
@@ -45,10 +40,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Points the mocked location at `search` and re-runs the given hook renders. */
-function navigate(search: string, ...rerenders: Array<() => void>): void {
-  mockSearch = search;
-  for (const rerender of rerenders) act(() => rerender());
+/** Points the mocked location at `search`. */
+function navigate(search: string): void {
+  act(() => setMockLocation({ search }));
 }
 
 describe("useEntryUrlState", () => {
@@ -60,7 +54,7 @@ describe("useEntryUrlState", () => {
 
     act(() => list.result.current.setOpenEntryId("entry-1"));
     expect(window.location.search).toBe("?entry=entry-1");
-    navigate("entry=entry-1", list.rerender, reader.rerender);
+    navigate("entry=entry-1");
 
     const replaceState = vi.spyOn(window.history, "replaceState");
     act(() => reader.result.current.closeEntry());
@@ -87,14 +81,14 @@ describe("useEntryUrlState", () => {
       return originalPushState(data, unused, url);
     });
     window.history.replaceState({ __NA: true }, "", "/all");
-    const { result, rerender } = renderHook(() => useEntryUrlState());
+    const { result } = renderHook(() => useEntryUrlState());
 
     act(() => result.current.setOpenEntryId("entry-1"));
     expect(routerSyncs).toBe(1);
 
     // Browser Back restores the list's entry, which Next had stamped too.
     window.history.replaceState({ __NA: true }, "", "/all");
-    navigate("", rerender);
+    navigate("");
 
     act(() => result.current.setOpenEntryId("entry-1"));
     expect(routerSyncs).toBe(2);
@@ -111,13 +105,13 @@ describe("useEntryUrlState", () => {
 
   it("keeps the marker across entry-to-entry navigation, which replaces", () => {
     const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
-    const { result, rerender } = renderHook(() => useEntryUrlState());
+    const { result } = renderHook(() => useEntryUrlState());
     const lengthBeforeOpen = window.history.length;
 
     act(() => result.current.setOpenEntryId("entry-1"));
-    navigate("entry=entry-1", rerender);
+    navigate("entry=entry-1");
     act(() => result.current.setOpenEntryId("entry-2"));
-    navigate("entry=entry-2", rerender);
+    navigate("entry=entry-2");
 
     expect(window.location.search).toBe("?entry=entry-2");
     // Swiping between entries replaces rather than pushing, so exactly one
@@ -130,7 +124,7 @@ describe("useEntryUrlState", () => {
 
   it("replaces instead of popping when nothing was pushed (deep link into an entry)", () => {
     // Landing directly on ?entry=… : going back would leave the app entirely.
-    mockSearch = "entry=entry-1";
+    setMockLocation({ search: "entry=entry-1" });
     window.history.replaceState(null, "", "/all?entry=entry-1");
     const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
     const { result } = renderHook(() => useEntryUrlState());
@@ -142,15 +136,14 @@ describe("useEntryUrlState", () => {
   });
 
   it("preserves the other query params when opening and closing", () => {
-    mockPathname = "/all";
-    mockSearch = "unread=false";
+    setMockLocation({ pathname: "/all", search: "unread=false" });
     window.history.replaceState(null, "", "/all?unread=false");
-    const { result, rerender } = renderHook(() => useEntryUrlState());
+    const { result } = renderHook(() => useEntryUrlState());
 
     act(() => result.current.setOpenEntryId("entry-1"));
     expect(window.location.search).toBe("?unread=false&entry=entry-1");
 
-    navigate("unread=false&entry=entry-1", rerender);
+    navigate("unread=false&entry=entry-1");
     expect(result.current.openEntryId).toBe("entry-1");
     expect(result.current.entryHref("entry-2")).toBe("/all?unread=false&entry=entry-2");
   });
@@ -166,7 +159,7 @@ describe("useEntryUrlState", () => {
 describe("Escape closes the entry through closeEntry", () => {
   beforeEach(() => {
     stubMemoryLocalStorage();
-    mockPathname = "/demo/all";
+    setMockLocation({ pathname: "/demo/all" });
   });
 
   function renderReader() {
@@ -187,13 +180,12 @@ describe("Escape closes the entry through closeEntry", () => {
 
   it("pops the history entry that opening pushed", async () => {
     window.history.replaceState(null, "", "/demo/all");
-    const { rerender } = renderReader();
+    renderReader();
 
     // Open the article the way a click does, then let the mocked location catch up.
     fireEvent.click(await screen.findByRole("link", { name: "Welcome to Lion Reader" }));
     expect(window.history.state).toMatchObject({ entryOpened: true });
-    mockSearch = "entry=welcome";
-    rerender(<UnifiedEntriesContent />);
+    navigate("entry=welcome");
     expect(
       await screen.findByRole("heading", { name: "Welcome to Lion Reader", level: 1 })
     ).toBeVisible();

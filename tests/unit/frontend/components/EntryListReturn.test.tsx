@@ -19,17 +19,13 @@ import { applyCollectionEntriesChange } from "@/lib/cache/operations";
 import { createDemoStore } from "@/app/(public)/demo/store";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 import { createRealTrpcUtils } from "../../../utils/cache-test-helpers";
+import { getMockPathname, setMockLocation } from "../../../utils/mock-next-navigation";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-let mockPathname = "";
-let mockSearch = "";
-vi.mock("next/navigation", () => ({
-  usePathname: () => mockPathname,
-  useSearchParams: () => new URLSearchParams(mockSearch),
-}));
+vi.mock("next/navigation", () => import("../../../utils/mock-next-navigation"));
 
 /** A collection of three demo entries, open in the reader's list. */
 function renderCollection() {
@@ -37,7 +33,7 @@ function renderCollection() {
   const { subscription } = store.procedures["collections.create"]({ name: "Collection" });
   const entryIds = store.procedures["entries.list"]({ limit: 3 }).items.map((e) => e.id);
   store.procedures["collections.addEntries"]({ id: subscription.id, entryIds });
-  mockPathname = `/demo/subscription/${subscription.id}`;
+  setMockLocation({ pathname: `/demo/subscription/${subscription.id}` });
   const rendered = renderWithTrpc(<UnifiedEntriesContent />, {
     handlers: store.handlers,
     wrapper: (children) => (
@@ -50,10 +46,8 @@ function renderCollection() {
       </AppLocationProvider>
     ),
   });
-  const setOpenEntry = (id: string | null, pathname = mockPathname) => {
-    mockSearch = id ? `entry=${id}` : "";
-    mockPathname = pathname;
-    rendered.rerender(<UnifiedEntriesContent />);
+  const setOpenEntry = (id: string | null, pathname = getMockPathname()) => {
+    act(() => setMockLocation({ pathname, search: id ? `entry=${id}` : "" }));
   };
   const removeFromCollection = (entryId: string) => {
     const result = store.procedures["collections.removeEntries"]({
@@ -82,7 +76,7 @@ function renderCollection() {
 describe("returning from an entry to the list", () => {
   beforeEach(() => {
     stubMemoryLocalStorage();
-    mockSearch = "";
+    setMockLocation({ search: "" });
     Element.prototype.scrollIntoView = vi.fn();
   });
 
@@ -125,7 +119,7 @@ describe("returning from an entry to the list", () => {
     // The new view starts at the top; a row from the old view's position
     // would be an arbitrary, off-screen selection.
     const { entryIds, setOpenEntry, listedIds, focusedId } = renderCollection();
-    const collectionPath = mockPathname;
+    const collectionPath = getMockPathname();
     await vi.waitFor(() => expect(listedIds()).toEqual(entryIds));
     // Load the other view first, so it renders straight from cache.
     setOpenEntry(null, "/demo/all");

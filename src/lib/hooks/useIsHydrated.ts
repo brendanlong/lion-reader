@@ -99,9 +99,13 @@ function whenFetchSettles(queryClient: QueryClient, query: Query): Promise<void>
  * hydration, so it doesn't suspend and stays gated like `useCanRenderFromCache`.
  *
  * Needs a `<Suspense>` boundary of its own, with the deterministic skeleton as
- * its fallback. It never suspends once hydrated, so later client navigations
- * keep their inline cache-reading fallbacks and never meet the Suspense
- * fallback throttle (see "Suspense vs. inline loading" in src/CLAUDE.md).
+ * its fallback, rendered by a memoized component whose props don't change on
+ * a page load: if anything re-renders the boundary before it has hydrated
+ * (say, a parent observing the same query, as the result lands), React throws
+ * the server HTML away and client-renders it. It never suspends once
+ * hydrated, so later client navigations keep their inline cache-reading
+ * fallbacks and never meet the Suspense fallback throttle (see "Suspense vs.
+ * inline loading" in src/CLAUDE.md).
  */
 export function useCanRenderStreamedQuery(queryKey: QueryKey): boolean {
   const canRenderFromCache = useCanRenderFromCache();
