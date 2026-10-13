@@ -14,21 +14,41 @@
  * *within* a tied-timestamp group (keyset pagination, same as `listEntries`).
  */
 
-import { Temporal } from "temporal-polyfill";
-
 import type { SyncEvent } from "./schemas";
 
 /**
+ * An ISO-8601 instant as the server emits it: `Temporal.Instant.toString()`
+ * (0-9 fractional digits, trailing zeros trimmed), a legacy `to_char` cursor
+ * (always 6), or `Date.toISOString()` (3), in UTC or with a numeric offset.
+ */
+const INSTANT_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(?:Z|([+-])(\d{2}):?(\d{2})?)$/;
+
+/** Exact epoch nanoseconds; a `Date` would truncate to milliseconds. */
+function epochNanoseconds(timestamp: string): bigint {
+  const match = INSTANT_PATTERN.exec(timestamp);
+  if (!match) throw new RangeError(`Invalid cursor timestamp: ${timestamp}`);
+  const [, year, month, day, hour, minute, second, fraction = "", sign, offsetH, offsetM] = match;
+  const offsetMinutes = sign
+    ? (sign === "-" ? -1 : 1) * (Number(offsetH) * 60 + Number(offsetM ?? 0))
+    : 0;
+  const epochMs =
+    Date.UTC(+year, +month - 1, +day, +hour, +minute, +second) - offsetMinutes * 60_000;
+  return BigInt(epochMs) * 1_000_000n + BigInt(fraction.padEnd(9, "0"));
+}
+
+/**
  * Compares two ISO-8601 cursor timestamps as instants: -1, 0, or 1. Both come
- * from the server (`Temporal.Instant.toString()`, microsecond precision). A
- * `new Date()` comparison would truncate to milliseconds and miss sub-ms
- * differences, so a newer event sharing a millisecond with the cursor would fail
- * to advance it (#683). Comparing instants (not strings) is also robust across
- * the format change: a legacy `to_char` cursor (always 6 fractional digits) and
- * a Temporal cursor (trailing zeros trimmed) for the same moment compare equal.
+ * from the server with microsecond precision. A `new Date()` comparison would
+ * truncate to milliseconds and miss sub-ms differences, so a newer event sharing
+ * a millisecond with the cursor would fail to advance it (#683). Comparing
+ * instants (not strings) also makes a legacy `to_char` cursor (always 6
+ * fractional digits) and a Temporal cursor (trailing zeros trimmed) for the same
+ * moment compare equal.
  */
 function compareTimestamps(a: string, b: string): number {
-  return Temporal.Instant.compare(Temporal.Instant.from(a), Temporal.Instant.from(b));
+  const diff = epochNanoseconds(a) - epochNanoseconds(b);
+  return diff > 0n ? 1 : diff < 0n ? -1 : 0;
 }
 
 /**
