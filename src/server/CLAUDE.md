@@ -17,7 +17,7 @@ The announcement banner and maintenance mode live in **Redis, not Postgres**, be
 ## Views
 
 - **`user_feeds`**: active subscriptions merged with feed data (NULL for a subscription without a feed), including `unread_count`. **Display-only** — ownership/scoping checks query `subscriptions` directly. When grouping over a view, list every selected column in `GROUP BY`: Postgres doesn't infer functional dependencies through views (#1516).
-- **`visible_entries`**: entries with visibility applied, for `entries.list/get`.
+- **`visible_entries`**: entries with visibility applied, for `entries.list/get`. It LEFT JOINs `entries` and takes `id`, `is_spam` and the sort keys from `user_entries`, so a page filtered on those reads entry rows only for the rows it returns: keep it that way (migration 0146).
 
 ## Entry Visibility
 
@@ -32,7 +32,7 @@ Starring is itself a visibility arm, so **never read a star write back through `
 
 ## Subscription Attribution
 
-`subscription_entries` (#1846) holds every membership in one table: an article's source subscription, its collections, and for a saved article the user's saved subscription. **Every read goes through it**: filter "entries in these subscriptions" with `buildEntriesInSubscriptionsCondition` (`services/entry-filters.ts`), one `EXISTS` (no row fan-out, so no `DISTINCT`), never a join. An entry's single `subscriptionId` in the API is its **origin**, its membership in a web, email or saved subscription, an active one first, computed per row read (`entryOriginJoin`); `subscriptionIds` lists every active subscription holding it. Membership changes move `user_entries.updated_at`, so delta sync re-delivers the entry.
+`subscription_entries` (#1846) holds every membership in one table: an article's source subscription, its collections, and for a saved article the user's saved subscription. **Every read goes through it**: filter "entries in these subscriptions" with `buildEntriesInSubscriptionsCondition` (`services/entry-filters.ts`), one `EXISTS` (no row fan-out, so no `DISTINCT`), never a join. An entry's single `subscriptionId` in the API is its **origin**, its membership in a web, email or saved subscription, an active one first; `subscriptionIds` lists every active subscription holding it. Read both with one per-row LATERAL over the entry's memberships (`entryMemberships`), never a subquery each. Membership changes move `user_entries.updated_at`, so delta sync re-delivers the entry.
 
 **Every path that gives a user an article writes its membership itself**, in the statement that inserts the `user_entries` row (`insertUserEntriesWithMemberships`, `services/subscription-entries.ts`); collections add and remove memberships, and a redirect merge (`mergeSubscriptionIntoFeed`) copies the old subscription's into the survivor. A `user_entries` row carries no subscription: memberships alone say which subscriptions hold an article.
 
