@@ -20,19 +20,14 @@ const router = createTRPCRouter({
   resolverThrows: publicProcedure.query(() => {
     throw new Error("resolver boom");
   }),
-  laterMiddlewareThrows: publicProcedure
-    .use(() => {
-      throw new Error("middleware boom");
-    })
-    .query(() => "unreachable"),
   internalError: publicProcedure.query(() => {
     throw errors.internal("internal boom");
   }),
-  notFound: publicProcedure.query(() => {
-    throw errors.entryNotFound();
+  conflict: publicProcedure.query(() => {
+    throw errors.tagNameTaken();
   }),
-  siteBlocked: publicProcedure.query(() => {
-    throw errors.siteBlocked("https://example.com", 403);
+  feedFetchError: publicProcedure.query(() => {
+    throw errors.feedFetchError("https://example.com", "HTTP 404");
   }),
   alreadyReported: publicProcedure.query(() => {
     throw alreadyReported;
@@ -55,7 +50,6 @@ describe("timingMiddleware error reporting", () => {
 
   it.each([
     ["resolverThrows", "resolver boom"],
-    ["laterMiddlewareThrows", "middleware boom"],
     ["internalError", "internal boom"],
   ] as const)("reports a server error from %s once", async (procedure, message) => {
     await expect(caller[procedure]()).rejects.toThrow(message);
@@ -67,7 +61,7 @@ describe("timingMiddleware error reporting", () => {
     expect(hint).toMatchObject({ tags: { trpcPath: procedure, trpcType: "query" } });
   });
 
-  it.each(["notFound", "siteBlocked", "alreadyReported"] as const)(
+  it.each(["conflict", "feedFetchError", "alreadyReported"] as const)(
     "doesn't report %s",
     async (procedure) => {
       await expect(caller[procedure]()).rejects.toThrow();

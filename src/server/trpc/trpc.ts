@@ -19,7 +19,7 @@ import {
   type RateLimitType,
 } from "@/server/rate-limit";
 import { signupConfig } from "@/server/config/env";
-import { errors, getAppErrorCode, isExpectedClientError, wasReported } from "./errors";
+import { errors, getAppErrorCode, isClientError, wasReported } from "./errors";
 import {
   ADMIN_COOKIE_NAME,
   validateAdminSessionToken,
@@ -99,23 +99,13 @@ const timingMiddleware = t.middleware(async ({ path, type, next, ctx }) => {
 
 /**
  * Logs and reports a failed procedure to Sentry, unless it's a client error
- * (UNAUTHORIZED, NOT_FOUND, …), rate limiting (ours or an upstream site's), an
- * expected upstream condition that maps to a 5xx (see isExpectedClientError),
- * or one its thrower already reported (see markReported).
+ * (see isClientError) or one its thrower already reported (see markReported).
  */
 function reportUnexpectedError(
   error: TRPCError,
   details: { path: string; type: string; durationMs: number; userId: string | undefined }
 ): void {
-  if (
-    ["UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST", "FORBIDDEN", "TOO_MANY_REQUESTS"].includes(
-      error.code
-    ) ||
-    isExpectedClientError(error) ||
-    wasReported(error)
-  ) {
-    return;
-  }
+  if (isClientError(error) || wasReported(error)) return;
 
   const { path, type, ...extra } = details;
   logger.error("tRPC request failed", { ...details, error: error.message });

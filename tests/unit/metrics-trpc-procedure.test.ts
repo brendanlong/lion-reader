@@ -52,7 +52,8 @@ describe("timingMiddleware records the procedure metric", () => {
     await expect(caller.metricsWiringErr()).rejects.toThrow();
 
     const output = await metrics.registry.metrics();
-    // Exactly one observation each, and a thrown procedure is recorded as ok="false".
+    // Exactly one observation each, and a thrown procedure is recorded as
+    // ok="false".
     expect(output).toMatch(/procedure="metricsWiringOk"[^}]*ok="true"[^}]*\} 1\b/);
     expect(output).toMatch(/procedure="metricsWiringErr"[^}]*ok="false"[^}]*\} 1\b/);
   });
