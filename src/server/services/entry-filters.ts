@@ -17,6 +17,7 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import type { db as dbType } from "@/server/db";
 import {
   feeds,
@@ -69,8 +70,8 @@ export interface EntryConditionParams {
  * `feedTitle` to a client uses this, so a renamed subscription's articles
  * never show the original name. An email's comes from its subscription
  * (#1846), and saved articles all show "Saved Articles". The query must LEFT
- * JOIN `feeds` on the entry's owner feed and `subscriptions` on
- * {@link entryOriginJoin}.
+ * JOIN `feeds` on the entry's owner feed and `subscriptions` on its origin
+ * ({@link entryMemberships}).
  */
 export function entryFeedTitleSql(): SQL<string | null> {
   return sql<
@@ -79,38 +80,51 @@ export function entryFeedTitleSql(): SQL<string | null> {
     ELSE COALESCE(${subscriptions.customTitle}, ${feeds.title}) END`;
 }
 
+const membership = alias(subscriptionEntries, "membership");
+const membershipSubscription = alias(subscriptions, "membership_subscription");
+
 /**
- * Joins `subscriptions` to a per-user entry row (`visible_entries` or
- * `user_entries`) on the entry's **origin** (#1846): its membership in a web,
- * email or saved subscription (never a collection), an active one first,
- * then the newest. Clients' single `subscriptionId`, Google Reader's origin
- * stream and the custom title come from it. Scoped to the row's user, so it
- * can never reach another user's subscription. Computed per row read (an
- * index lookup on `idx_subscription_entries_user_entry`), so use it on pages,
- * not scans.
+ * An entry's memberships (#1846), read once per row as a LATERAL subquery
+ * over `idx_subscription_entries_user_entry`, so use it on pages, not scans:
+ *
+ * - `originId`, the entry's **origin**: its membership in a web, email or
+ *   saved subscription (never a collection), an active one first, then the
+ *   newest. Clients' single `subscriptionId`, Google Reader's origin stream
+ *   and the custom title come from it: LEFT JOIN `subscriptions` on
+ *   {@link entryOriginOn}.
+ * - `subscriptionIds`, the active subscriptions holding it: its origin, its
+ *   collections and, for a saved article, the saved subscription. Sorted.
+ *
+ * Join it with `leftJoinLateral(memberships, sql\`true\`)` to a per-user
+ * entry row (`visible_entries` or `user_entries`).
  */
-export function entryOriginJoin(row: { userId: AnyColumn; entryId: AnyColumn }): SQL {
-  return sql`${subscriptions.userId} = ${row.userId} AND ${subscriptions.id} = (
-    SELECT se.subscription_id FROM subscription_entries se
-    JOIN subscriptions os ON os.id = se.subscription_id
-    WHERE se.user_id = ${row.userId} AND se.entry_id = ${row.entryId} AND os.type <> 'collection'
-    ORDER BY os.unsubscribed_at IS NULL DESC, se.subscription_id DESC
-    LIMIT 1)`;
+export function entryMemberships(row: { userId: AnyColumn; entryId: AnyColumn }) {
+  return new QueryBuilder()
+    .select({
+      originId: sql<string | null>`(array_agg(${membership.subscriptionId}
+        ORDER BY ${membershipSubscription.unsubscribedAt} IS NULL DESC, ${membership.subscriptionId} DESC)
+        FILTER (WHERE ${membershipSubscription.type} <> 'collection'))[1]`.as("origin_id"),
+      subscriptionIds: sql<string[]>`COALESCE(array_agg(${membership.subscriptionId}::text
+        ORDER BY ${membership.subscriptionId})
+        FILTER (WHERE ${membershipSubscription.unsubscribedAt} IS NULL), '{}')`.as(
+        "subscription_ids"
+      ),
+    })
+    .from(membership)
+    .innerJoin(membershipSubscription, eq(membershipSubscription.id, membership.subscriptionId))
+    .where(and(eq(membership.userId, row.userId), eq(membership.entryId, row.entryId)))
+    .as("entry_memberships");
 }
 
 /**
- * The active subscriptions holding an entry (#1846): its origin, its
- * collections and, for a saved article, the saved subscription. Sorted.
+ * Joins `subscriptions` to the origin {@link entryMemberships} found, scoped
+ * to the row's user so it can never reach another user's subscription.
  */
-export function entrySubscriptionIdsSql(row: {
-  userId: AnyColumn;
-  entryId: AnyColumn;
-}): SQL<string[]> {
-  return sql<string[]>`ARRAY(
-    SELECT se.subscription_id::text FROM subscription_entries se
-    JOIN subscriptions ms ON ms.id = se.subscription_id AND ms.unsubscribed_at IS NULL
-    WHERE se.user_id = ${row.userId} AND se.entry_id = ${row.entryId}
-    ORDER BY se.subscription_id)`;
+export function entryOriginOn(
+  memberships: ReturnType<typeof entryMemberships>,
+  row: { userId: AnyColumn }
+): SQL {
+  return and(eq(subscriptions.id, memberships.originId), eq(subscriptions.userId, row.userId))!;
 }
 
 // ============================================================================
@@ -208,7 +222,9 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
 /**
  * Matches entries contained in any of the given subscriptions: one `EXISTS`
  * over their memberships (#1846), so an entry in several of them still
- * appears once and the query needs no `DISTINCT`.
+ * appears once and the query needs no `DISTINCT`. A subquery of ids (a tag's,
+ * Uncategorized's) is read once per statement, as an `ARRAY(...)`, not again
+ * for every row probed.
  *
  * `paged` keeps it a per-row lookup (`OFFSET 0` stops Postgres turning it into
  * a semi-join) for a page read newest first: walking the user's timeline stops
@@ -225,7 +241,11 @@ export function buildEntriesInSubscriptionsCondition(
     sql`(SELECT 1 FROM ${subscriptionEntries}
       WHERE ${subscriptionEntries.userId} = ${columns.userId}
         AND ${subscriptionEntries.entryId} = ${columns.entryId}
-        AND ${inArray(subscriptionEntries.subscriptionId, subscriptionIds)}${paged ? sql` OFFSET 0` : sql``})`
+        AND ${
+          Array.isArray(subscriptionIds)
+            ? inArray(subscriptionEntries.subscriptionId, subscriptionIds)
+            : sql`${subscriptionEntries.subscriptionId} = ANY(ARRAY(${subscriptionIds}))`
+        }${paged ? sql` OFFSET 0` : sql``})`
   );
 }
 

@@ -404,6 +404,31 @@ describe("Entries", () => {
       expect(recentlyRead.items.map((e) => e.id)).toEqual([readId]);
     });
 
+    it("sortBy=readChanged within one subscription pages by read-change time", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://example.com/feed.xml");
+      const otherFeedId = await createTestFeed("https://example.com/other.xml");
+      const subscriptionId = await createTestSubscription(userId, feedId);
+      await createTestSubscription(userId, otherFeedId);
+
+      const readAt = (day: number) => new Date(Date.UTC(2024, 0, day));
+      const ids: string[] = [];
+      for (const day of [1, 3, 2]) {
+        const id = await createTestEntry(feedId, { title: `Read on ${day}` });
+        await createUserEntry(userId, id, { read: true, readChangedAt: readAt(day) });
+        ids.push(id);
+      }
+      const elsewhere = await createTestEntry(otherFeedId, { title: "Other feed" });
+      await createUserEntry(userId, elsewhere, { read: true, readChangedAt: readAt(4) });
+
+      const params = { userId, subscriptionId, sortBy: "readChanged" as const, showSpam: false };
+      const first = await listEntries(db, { ...params, limit: 2 });
+      expect(first.items.map((e) => e.id)).toEqual([ids[1], ids[2]]);
+      const second = await listEntries(db, { ...params, limit: 2, cursor: first.nextCursor });
+      expect(second.items.map((e) => e.id)).toEqual([ids[0]]);
+      expect(second.nextCursor).toBeUndefined();
+    });
+
     // #683: the cursor sort key is decoded to a Temporal.Instant per row. For the
     // archived sort a row's readChangedAt can be NULL, so decoding must be
     // null-tolerant (no throw) and a NULL boundary row must not produce a cursor.
@@ -854,6 +879,37 @@ describe("Entries", () => {
       // With showSpam, the spam entry is marked too.
       const { entryIds: markedWithSpam } = await markAllEntriesRead(db, { userId, showSpam: true });
       expect(markedWithSpam).toEqual([spamId]);
+    });
+
+    it("filters by entry type and by fetch time", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://typed-feed.com/rss");
+      await createTestSubscription(userId, feedId);
+      const emailSubscription = await createTestEmailSubscription(userId);
+      const early = new Date("2024-01-01T00:00:00Z");
+      const late = new Date("2024-06-01T00:00:00Z");
+      const oldWeb = await createSharedTestEntry(feedId, { fetchedAt: early, userIds: [userId] });
+      await createSharedTestEntry(feedId, { fetchedAt: late, userIds: [userId] });
+      const oldEmail = await createSharedTestEntry(emailSubscription, {
+        type: "email",
+        fetchedAt: early,
+        userIds: [userId],
+      });
+
+      const { entryIds: marked } = await markAllEntriesRead(db, {
+        userId,
+        type: "web",
+        before: new Date("2024-03-01T00:00:00Z"),
+        showSpam: false,
+      });
+      expect(marked).toEqual([oldWeb]);
+
+      const { entryIds: emails } = await markAllEntriesRead(db, {
+        userId,
+        type: "email",
+        showSpam: false,
+      });
+      expect(emails).toEqual([oldEmail]);
     });
   });
 

@@ -11,15 +11,24 @@
  * fail the mutation response.
  */
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { publishEntryStateChanged, type EntryStateListData } from "@/server/redis/pubsub";
 import type { DbOrTx } from "@/server/db";
 import { feeds, subscriptions, visibleEntries } from "@/server/db/schema";
-import { entryFeedTitleSql, entryOriginJoin } from "@/server/services/entry-filters";
+import {
+  entryFeedTitleSql,
+  entryMemberships,
+  entryOriginOn,
+} from "@/server/services/entry-filters";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
 import type { MarkReadEntryState } from "@/server/services/entries";
+
+const VISIBLE_MEMBERSHIPS = entryMemberships({
+  userId: visibleEntries.userId,
+  entryId: visibleEntries.id,
+});
 
 /**
  * Fetches the list-item context for entries that flipped to unread, keyed by
@@ -49,10 +58,8 @@ async function fetchUnreadListData(
     })
     .from(visibleEntries)
     .leftJoin(feeds, eq(feeds.id, visibleEntries.ownerFeedId))
-    .leftJoin(
-      subscriptions,
-      entryOriginJoin({ userId: visibleEntries.userId, entryId: visibleEntries.id })
-    )
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, visibleEntries))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, entryIds)));
 
   const result = new Map<string, EntryStateListData>();

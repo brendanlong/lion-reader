@@ -972,10 +972,10 @@ export const userFeeds = pgView("user_feeds", {
 /**
  * visible_entries view - Entries the user can see: starred, or in at least one
  * active subscription (`user_entries.active_memberships > 0`, #1846). An
- * entry's subscriptions come from its memberships (`entryOriginJoin`).
+ * entry's subscriptions come from its memberships (`entryMemberships`).
  *
  * Note: This view is defined in migration 0035_subscription_views.sql
- * (most recently redefined in 0145_visible_entries_entry_updated_at.sql).
+ * (most recently redefined in 0147_list_read_paths.sql).
  * The Drizzle definition here allows type-safe queries against the view.
  */
 export const visibleEntries = pgView("visible_entries", {

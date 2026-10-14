@@ -9,6 +9,7 @@ import {
   eq,
   and,
   desc,
+  exists,
   asc,
   inArray,
   gt,
@@ -19,6 +20,8 @@ import {
   or,
   type SQL,
 } from "drizzle-orm";
+import type { PgSelect } from "drizzle-orm/pg-core";
+import type { Temporal } from "temporal-polyfill";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   entries,
@@ -51,11 +54,12 @@ import {
   buildEntryFilterConditions,
   buildEntriesInSubscriptionsCondition,
   buildTaggedSubscriptionIdsSubquery,
+  visibleUserEntrySql,
   verifySubscriptionOwnership,
   buildUncategorizedSubscriptionIdsSubquery,
   entryFeedTitleSql,
-  entryOriginJoin,
-  entrySubscriptionIdsSql,
+  entryMemberships,
+  entryOriginOn,
   filterableSubscriptionWhere,
   inSavedSubscriptionSql,
 } from "./entry-filters";
@@ -121,9 +125,9 @@ export interface SearchEntriesParams {
 
 export interface EntryListItem {
   id: string;
-  /** The entry's origin subscription (`entryOriginJoin`). */
+  /** The entry's origin subscription (`entryMemberships`). */
   subscriptionId: string | null;
-  /** Every active subscription holding the entry (`entrySubscriptionIdsSql`). */
+  /** Every active subscription holding the entry (`entryMemberships`). */
   subscriptionIds: string[];
   type: EntryType;
   url: string | null;
@@ -307,9 +311,11 @@ const searchCursor = createCursorCodec(
 // Sanitized Content Resolution
 // ============================================================================
 
-/** A `visible_entries` row, for the origin and membership lookups. */
+/** A `visible_entries` or `user_entries` row, for the membership lookups. */
 const VISIBLE_ROW = { userId: visibleEntries.userId, entryId: visibleEntries.id };
 const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
+const VISIBLE_MEMBERSHIPS = entryMemberships(VISIBLE_ROW);
+const USER_MEMBERSHIPS = entryMemberships(USER_ROW);
 
 /**
  * Columns shared by the list and search queries (each adds its feed title and
@@ -330,7 +336,7 @@ const entryListSelectFields = {
   updatedAt: visibleEntries.updatedAt,
   entryUpdatedAt: visibleEntries.entryUpdatedAt,
   subscriptionId: subscriptions.id,
-  subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
+  subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
   siteName: visibleEntries.siteName,
 };
 
@@ -360,7 +366,7 @@ const entryReadSelectFields = {
   entryUpdatedAt: visibleEntries.entryUpdatedAt,
   contentHash: visibleEntries.contentHash,
   subscriptionId: subscriptions.id,
-  subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
+  subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
   fetchFullContent: subscriptions.fetchFullContent,
   siteName: visibleEntries.siteName,
   feedTitle: entryFeedTitleSql(),
@@ -398,7 +404,8 @@ function selectEntryRows(db: typeof dbType, where: SQL | undefined, scope: FullC
     .select({ ...entryReadSelectFields, ...fullContentBodyFields(scope) })
     .from(visibleEntries)
     .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
-    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
     .where(where);
 }
 
@@ -724,7 +731,8 @@ export async function listExportableEntries(
     })
     .from(visibleEntries)
     .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
-    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
     .where(
       and(
         eq(visibleEntries.userId, userId),
@@ -780,22 +788,111 @@ export async function listEntries(
   db: typeof dbType,
   params: ListEntriesParams
 ): Promise<{ items: EntryListItem[]; nextCursor?: string }> {
-  // `cursor` and `offset` are two different ways to page and must not be combined:
-  // the cursor predicate would narrow the window and offset would then skip *more*
-  // rows on top of it, silently double-skipping. Callers use one or the other.
-  if (params.cursor && params.offset) {
-    throw new Error("listEntries: `cursor` and `offset` are mutually exclusive");
-  }
-
   // If query is provided, delegate to search implementation (indexed full-text
   // search over the stored entries.search_vector column — see searchEntries).
   if (params.query) {
+    assertOnePaging(params);
     return searchEntries(db, {
       ...params,
       query: params.query,
       showSpam: params.showSpam,
     });
   }
+
+  const page = await planEntryPage(db, params);
+  if (!page) return { items: [] };
+
+  const rows = await page.apply(
+    db
+      .select({
+        ...entryListSelectFields,
+        feedTitle: entryFeedTitleSql(),
+        sortTs: page.sortTs,
+      })
+      .from(visibleEntries)
+      .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+      .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+      .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
+      .$dynamic()
+  );
+  const { items, nextCursor } = page.paginate(rows);
+  return { items: items.map(toEntryListItem), nextCursor };
+}
+
+/** An entry as Google Reader's item lists key it (`listGreaderItemRefs`). */
+export interface GreaderItemRef {
+  id: string;
+  /** `entries.greader_item_id`, the item's id on the wire. */
+  itemId: bigint;
+  /**
+   * The origin subscription's feed stream serial (for a saved article, the
+   * saved subscription's, which clients see as "Saved Articles", #730); null
+   * if the entry has no origin.
+   */
+  originStreamId: bigint | null;
+  fetchedAt: Date;
+}
+
+/**
+ * One page of `listEntries` holding only what Google Reader's stream
+ * endpoints key items on: each entry's serials and fetch time, read with the
+ * page in one statement, so stream/items/ids (up to 10,000 a page) reads no
+ * content and stream/contents reads each entry's once (`getEntries`). Its own
+ * type keeps the bigint serials off the shared entry types, which other
+ * surfaces serialize as they are.
+ */
+export async function listGreaderItemRefs(
+  db: typeof dbType,
+  params: Omit<ListEntriesParams, "query">
+): Promise<{ items: GreaderItemRef[]; nextCursor?: string }> {
+  const page = await planEntryPage(db, params);
+  if (!page) return { items: [] };
+
+  const rows = await page.apply(
+    db
+      .select({
+        id: visibleEntries.id,
+        itemId: visibleEntries.greaderItemId,
+        originStreamId: subscriptions.greaderStreamId,
+        fetchedAt: visibleEntries.fetchedAt,
+        sortTs: page.sortTs,
+      })
+      .from(visibleEntries)
+      .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+      .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
+      .$dynamic()
+  );
+  const { items, nextCursor } = page.paginate(rows);
+  return {
+    items: items.map((row) => ({
+      id: row.id,
+      itemId: row.itemId,
+      originStreamId: row.originStreamId,
+      fetchedAt: row.fetchedAt,
+    })),
+    nextCursor,
+  };
+}
+
+/**
+ * `cursor` and `offset` are two different ways to page and must not be
+ * combined: the cursor predicate would narrow the window and offset would then
+ * skip *more* rows on top of it, silently double-skipping.
+ */
+function assertOnePaging(params: { cursor?: string; offset?: number }): void {
+  if (params.cursor && params.offset) {
+    throw new Error("listEntries: `cursor` and `offset` are mutually exclusive");
+  }
+}
+
+/**
+ * One `listEntries` page's filters, order and window, for a select over
+ * `visible_entries` to `apply`, and `paginate` to split its rows into the
+ * page and the next cursor. Null when the page is empty without a query (a
+ * subscription filter the user can't use).
+ */
+async function planEntryPage(db: typeof dbType, params: Omit<ListEntriesParams, "query">) {
+  assertOnePaging(params);
 
   const effectiveMaxLimit = params.maxLimit ?? MAX_ENTRIES_PAGE_SIZE;
   const limit = Math.min(params.limit ?? DEFAULT_LIMIT, effectiveMaxLimit);
@@ -807,16 +904,17 @@ export async function listEntries(
   const subscriptionFilter = await buildEntrySubscriptionFilter(db, params, params.userId, {
     paged: true,
   });
-  if (subscriptionFilter === null) {
-    return { items: [], nextCursor: undefined };
-  }
+  if (subscriptionFilter === null) return null;
 
-  // One subscription's list (a subscription filter, or Saved) walks that
-  // subscription's timeline (idx_subscription_entries_timeline, whose sort key
-  // is the row's) rather than the user's: joining one subscription's
-  // memberships can't fan out, and the user's timeline may hold it sparsely.
+  // One subscription's list (a subscription filter, or Saved) joins that
+  // subscription's memberships, which can't fan out. Sorted by the timeline,
+  // it walks them (idx_subscription_entries_timeline, whose sort key is the
+  // row's) rather than the user's timeline, which may hold them sparsely.
+  // Sorted otherwise, the join still lets Postgres start from the
+  // memberships when they're few, where an EXISTS filter left it walking the
+  // user's whole history for a sparse page (Wallabag's Saved by `archived`).
   const timelineSort = params.sortBy !== "readChanged" && params.sortBy !== "archived";
-  const single = timelineSort ? await singleSubscriptionOf(db, params) : null;
+  const single = await singleSubscriptionOf(db, params);
   if (subscriptionFilter && !single) {
     conditions.push(subscriptionFilter);
   }
@@ -839,8 +937,9 @@ export async function listEntries(
   }
 
   // Sort column (all choices are served by an existing index):
-  //  - "published" (default) uses the denormalized user_entries sort key so the
-  //    planner can serve filter + sort from idx_user_entries_published_or_fetched.
+  //  - "published" (default) uses the denormalized user_entries sort key, so
+  //    idx_user_entries_published_or_fetched (or, for unread or starred lists,
+  //    the partial index of that order) serves filter + sort.
   //  - "readChanged"/"archived" sort by when read state was last changed
   //    (idx_user_entries_read_changed_at).
   const sortColumn = !timelineSort
@@ -848,20 +947,7 @@ export async function listEntries(
     : single
       ? subscriptionEntries.publishedOrFetchedAt
       : visibleEntries.publishedOrFetchedAt;
-  const idColumn = single ? subscriptionEntries.entryId : visibleEntries.id;
-
-  // Full-precision sort key for cursor encoding. The pool hands back Postgres's
-  // raw microsecond string for timestamptz (see parseTimestamptz); mapWith decodes
-  // it to a Temporal.Instant so the cursor never loses the microseconds a JS Date
-  // would truncate — which corrupted keyset pagination (#680, #683).
-  //
-  // Null-tolerant: the "archived" sort (Wallabag) orders by readChangedAt WITHOUT
-  // the readChanged view's isNotNull filter, so a row can have a null sort key.
-  // That path is offset-paginated and ignores nextCursor, but the decoder still
-  // runs on every row — matching the old to_char(NULL) → NULL behaviour. For the
-  // cursor-paginated sorts (published is NOT NULL; readChanged filters non-null)
-  // the sort key is always present.
-  const sortTsInstant = sql`${sortColumn}`.mapWith(parseTimestamptzOrNull);
+  const idColumn = single && timelineSort ? subscriptionEntries.entryId : visibleEntries.id;
 
   // Cursor condition
   // Pass timestamp string directly to Postgres (::timestamptz) to preserve
@@ -880,55 +966,61 @@ export async function listEntries(
     }
   }
 
-  // Query
   const orderByClause =
     sortOrder === "newest" ? [desc(sortColumn), desc(idColumn)] : [asc(sortColumn), asc(idColumn)];
 
-  // visible_entries emits exactly one row per (user, entry), and so does a
-  // join on one subscription's memberships, so no DISTINCT ON dedup is needed
-  // and the (sortColumn, id) keyset cursor resumes cleanly over unique rows.
-  const base = db
-    .select({
-      ...entryListSelectFields,
-      feedTitle: entryFeedTitleSql(),
-      sortTs: sortTsInstant,
-    })
-    .from(visibleEntries)
-    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
-    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
-    .$dynamic();
-  const queryResults = await (
-    single
-      ? base.innerJoin(
-          subscriptionEntries,
-          and(
-            eq(subscriptionEntries.subscriptionId, single),
-            eq(subscriptionEntries.userId, visibleEntries.userId),
-            eq(subscriptionEntries.entryId, visibleEntries.id)
+  return {
+    // Full-precision sort key for cursor encoding. The pool hands back
+    // Postgres's raw microsecond string for timestamptz (see parseTimestamptz);
+    // mapWith decodes it to a Temporal.Instant so the cursor never loses the
+    // microseconds a JS Date would truncate — which corrupted keyset pagination
+    // (#680, #683).
+    //
+    // Null-tolerant: the "archived" sort (Wallabag) orders by readChangedAt
+    // WITHOUT the readChanged view's isNotNull filter, so a row can have a null
+    // sort key. That path is offset-paginated and ignores nextCursor. For the
+    // cursor-paginated sorts (published is NOT NULL; readChanged filters
+    // non-null) the sort key is always present.
+    sortTs: sql`${sortColumn}`.mapWith(parseTimestamptzOrNull),
+
+    // visible_entries emits exactly one row per (user, entry), and so does a
+    // join on one subscription's memberships, so no DISTINCT ON dedup is
+    // needed and the (sortColumn, id) keyset cursor resumes cleanly over
+    // unique rows.
+    apply: <T extends PgSelect>(query: T) =>
+      (single
+        ? query.innerJoin(
+            subscriptionEntries,
+            and(
+              eq(subscriptionEntries.subscriptionId, single),
+              eq(subscriptionEntries.userId, visibleEntries.userId),
+              eq(subscriptionEntries.entryId, visibleEntries.id)
+            )
           )
-        )
-      : base
-  )
-    .where(and(...conditions))
-    .orderBy(...orderByClause)
-    .limit(limit + 1)
-    .offset(params.offset ?? 0);
+        : query
+      )
+        .where(and(...conditions))
+        .orderBy(...orderByClause)
+        .limit(limit + 1)
+        .offset(params.offset ?? 0),
 
-  const hasMore = queryResults.length > limit;
-  const resultEntries = hasMore ? queryResults.slice(0, limit) : queryResults;
-  const items = resultEntries.map(toEntryListItem);
-
-  let nextCursor: string | undefined;
-  if (hasMore && resultEntries.length > 0) {
-    const lastEntry = resultEntries[resultEntries.length - 1];
-    // sortTs is only null for the offset-paginated "archived" sort (which ignores
-    // nextCursor); the cursor-paginated sorts always have a non-null sort key.
-    if (lastEntry.sortTs) {
-      nextCursor = timelineCursor.encode({ ts: lastEntry.sortTs.toString(), id: lastEntry.id });
-    }
-  }
-
-  return { items, nextCursor };
+    paginate: <R extends { id: string; sortTs: Temporal.Instant | null }>(
+      rows: R[]
+    ): { items: R[]; nextCursor?: string } => {
+      if (rows.length <= limit) return { items: rows };
+      const items = rows.slice(0, limit);
+      const last = items[items.length - 1];
+      // sortTs is only null for the offset-paginated "archived" sort (which
+      // ignores nextCursor).
+      return {
+        items,
+        nextCursor:
+          last?.sortTs != null
+            ? timelineCursor.encode({ ts: last.sortTs.toString(), id: last.id })
+            : undefined,
+      };
+    },
+  };
 }
 
 /**
@@ -992,7 +1084,7 @@ async function searchEntries(
       // Aliases: the origin's columns share names with the view's and the
       // feed's, and raw SQL can't be read back through a subquery without one.
       subscriptionId: sql<string | null>`${subscriptions.id}`.as("origin_subscription_id"),
-      subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW).as("subscription_ids"),
+      subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
       // Alias to avoid colliding with visibleEntries.title (both are "title")
       // inside the subquery, which would make the outer reference ambiguous.
       feedTitle: entryFeedTitleSql().as("feed_title"),
@@ -1001,7 +1093,8 @@ async function searchEntries(
     })
     .from(visibleEntries)
     .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
-    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
     .where(and(...conditions))
     .as("ranked");
 
@@ -1268,7 +1361,7 @@ export async function writeEntriesRead(
     .select({
       id: visibleEntries.id,
       subscriptionId: subscriptions.id,
-      subscriptionIds: entrySubscriptionIdsSql(VISIBLE_ROW),
+      subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
       read: visibleEntries.read,
       starred: visibleEntries.starred,
       type: visibleEntries.type,
@@ -1276,7 +1369,8 @@ export async function writeEntriesRead(
       readChangedAt: visibleEntries.readChangedAt,
     })
     .from(visibleEntries)
-    .leftJoin(subscriptions, entryOriginJoin(VISIBLE_ROW))
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
     .where(and(eq(visibleEntries.userId, userId), inArray(visibleEntries.id, allEntryIds)));
 
   return { entries, changed: entries.filter((entry) => flippedIds.has(entry.id)) };
@@ -1323,21 +1417,13 @@ export async function markAllEntriesRead(
   ];
 
   // Only mark entries the user can actually see, matching listEntries
-  // (which go through visible_entries). This excludes hidden spam (unless
-  // showSpam) and unsubscribed-feed orphans that aren't starred/saved.
-  const visibleConditions = [eq(visibleEntries.userId, params.userId)];
+  // (visible_entries' predicate, on the row being updated). This excludes
+  // hidden spam (unless showSpam) and unsubscribed-feed orphans that aren't
+  // starred/saved.
+  conditions.push(visibleUserEntrySql());
   if (!params.showSpam) {
-    visibleConditions.push(eq(visibleEntries.isSpam, false));
+    conditions.push(eq(userEntries.isSpam, false));
   }
-  conditions.push(
-    inArray(
-      userEntries.entryId,
-      db
-        .select({ id: visibleEntries.id })
-        .from(visibleEntries)
-        .where(and(...visibleConditions))
-    )
-  );
 
   // Filter by subscriptionId: a foreign or unsubscribed subscription matches
   // nothing. (Scoping checks query the subscriptions table, never the
@@ -1381,23 +1467,23 @@ export async function markAllEntriesRead(
     conditions.push(
       inSavedSubscriptionSql({ userId: userEntries.userId, entryId: userEntries.entryId })
     );
-  } else if (params.type) {
-    const typeEntryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(eq(entries.type, params.type));
-
-    conditions.push(inArray(userEntries.entryId, typeEntryIdsSubquery));
   }
 
-  // Filter by before date
-  if (params.before) {
-    const beforeEntryIdsSubquery = db
-      .select({ id: entries.id })
-      .from(entries)
-      .where(lte(entries.fetchedAt, params.before));
-
-    conditions.push(inArray(userEntries.entryId, beforeEntryIdsSubquery));
+  // The type and before filters read the row's entry (one primary-key probe
+  // per row), never every entry of that type or age.
+  const entryConditions = [
+    params.type && params.type !== "saved" ? eq(entries.type, params.type) : undefined,
+    params.before ? lte(entries.fetchedAt, params.before) : undefined,
+  ].filter((condition) => condition !== undefined);
+  if (entryConditions.length > 0) {
+    conditions.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(entries)
+          .where(and(eq(entries.id, userEntries.entryId), ...entryConditions))
+      )
+    );
   }
 
   const updatedAt = new Date();
@@ -1479,7 +1565,7 @@ async function selectStarredEntryStates(
     .select({
       id: userEntries.entryId,
       subscriptionId: subscriptions.id,
-      subscriptionIds: entrySubscriptionIdsSql(USER_ROW),
+      subscriptionIds: USER_MEMBERSHIPS.subscriptionIds,
       read: userEntries.read,
       starred: userEntries.starred,
       type: entries.type,
@@ -1490,7 +1576,8 @@ async function selectStarredEntryStates(
     })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))
-    .leftJoin(subscriptions, entryOriginJoin(USER_ROW))
+    .leftJoinLateral(USER_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(USER_MEMBERSHIPS, USER_ROW))
     .where(and(eq(userEntries.userId, userId), inArray(userEntries.entryId, entryIds)));
 }
 

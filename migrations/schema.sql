@@ -821,7 +821,7 @@ CREATE TABLE public.users (
 
 CREATE VIEW public.visible_entries AS
  SELECT ue.user_id,
-    e.id,
+    ue.entry_id AS id,
     e.owner_feed_id,
     e.type,
     e.guid,
@@ -839,7 +839,7 @@ CREATE VIEW public.visible_entries AS
     e.content_hash,
     e.full_content_hash,
     e.spam_score,
-    e.is_spam,
+    ue.is_spam,
     e.list_unsubscribe_mailto,
     e.list_unsubscribe_https,
     e.list_unsubscribe_post,
@@ -858,7 +858,7 @@ CREATE VIEW public.visible_entries AS
     e.search_vector,
     e.updated_at AS entry_updated_at
    FROM (public.user_entries ue
-     JOIN public.entries e ON ((e.id = ue.entry_id)))
+     LEFT JOIN public.entries e ON ((e.id = ue.entry_id)))
   WHERE (ue.starred OR (ue.active_memberships > 0));
 
 CREATE TABLE public.websub_hub_stats (
@@ -1132,9 +1132,9 @@ CREATE INDEX idx_user_entries_published_or_fetched ON public.user_entries USING 
 
 CREATE INDEX idx_user_entries_read_changed_at ON public.user_entries USING btree (user_id, read_changed_at DESC, entry_id DESC);
 
-CREATE INDEX idx_user_entries_starred ON public.user_entries USING btree (user_id) WHERE (starred = true);
+CREATE INDEX idx_user_entries_starred_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE starred;
 
-CREATE INDEX idx_user_entries_unread ON public.user_entries USING btree (user_id) WHERE (read = false);
+CREATE INDEX idx_user_entries_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
 CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
 

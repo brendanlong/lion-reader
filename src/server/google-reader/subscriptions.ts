@@ -8,7 +8,7 @@
  * here, which add it in exactly one place (issue #1069).
  */
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
@@ -70,7 +70,7 @@ export async function resolveFeedStreamFilter(
  * Enumerates every subscription a Google Reader client should see, with the
  * user's saved subscription appended as "Saved Articles" (issue #730).
  * Google Reader has no pagination on the wire, so the real subscriptions are
- * fetched in a single unbounded query (`listAllSubscriptions`) rather than a
+ * fetched in a single unbounded query (`listAllSubscriptionsWithStreamIds`) rather than a
  * cursor loop, concurrently with the saved-subscription lookup.
  *
  * Centralizing the saved append here means subscription/list and
@@ -88,38 +88,12 @@ export async function listGreaderSubscriptions(
   db: typeof dbType,
   userId: string
 ): Promise<GreaderSubscription[]> {
-  // Fetch the subscriptions, their stream serials, and the saved feed together.
-  // The stream serial is kept off the shared Subscription type (see
-  // GreaderSubscription), so it's read here and zipped on by id.
-  const [all, streamIds, saved] = await Promise.all([
-    subscriptionsService.listAllSubscriptions(db, userId),
-    db
-      .select({ id: subscriptions.id, greaderStreamId: subscriptions.greaderStreamId })
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          isNull(subscriptions.unsubscribedAt),
-          subscriptionsService.isListedSubscription()
-        )
-      ),
+  const [all, saved] = await Promise.all([
+    subscriptionsService.listAllSubscriptionsWithStreamIds(db, userId),
     getSavedSubscription(db, userId),
   ]);
-
-  const streamIdById = new Map(streamIds.map((s) => [s.id, s.greaderStreamId]));
-  const withStreamIds: GreaderSubscription[] = all.flatMap((sub) =>
-    sub.type === "collection"
-      ? []
-      : [
-          {
-            ...sub,
-            // Present for every active subscription (both queries filter the same set).
-            greaderStreamId: streamIdById.get(sub.id) ?? BigInt(0),
-          },
-        ]
-  );
-
-  return saved ? [...withStreamIds, saved] : withStreamIds;
+  const listed = all.filter((sub) => sub.type !== "collection");
+  return saved ? [...listed, saved] : listed;
 }
 
 /**

@@ -164,6 +164,9 @@ function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undefined) {
       siteUrl: userFeeds.siteUrl,
       // Trigger-maintained unread counter (spam excluded)
       unreadCount: userFeeds.unreadCount,
+      // Google Reader's stream serial, kept off `Subscription` (a bigint
+      // doesn't serialize): see listAllSubscriptionsWithStreamIds.
+      greaderStreamId: userFeeds.greaderStreamId,
       unreadCountAsOf: countsAsOfColumn(),
       // Tags aggregated as JSON array
       tags: sql<Array<{ id: string; name: string; color: string | null }>>`
@@ -191,7 +194,8 @@ function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undefined) {
       userFeeds.originalTitle,
       userFeeds.description,
       userFeeds.siteUrl,
-      userFeeds.unreadCount
+      userFeeds.unreadCount,
+      userFeeds.greaderStreamId
     );
 }
 
@@ -205,7 +209,7 @@ export type SubscriptionQueryRow = Awaited<ReturnType<typeof buildSubscriptionBa
  */
 function formatSubscriptionRow(row: SubscriptionQueryRow): Subscription {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { feedId, unreadCountAsOf, ...subscription } = row;
+  const { feedId, greaderStreamId, unreadCountAsOf, ...subscription } = row;
   return { ...subscription, unreadCountAsOf: formatCountsAsOf(unreadCountAsOf) };
 }
 
@@ -501,11 +505,28 @@ export async function listAllSubscriptions(
   db: typeof dbType,
   userId: string
 ): Promise<Subscription[]> {
-  const results = await buildSubscriptionBaseQuery(db, eq(userFeeds.userId, userId)).orderBy(
+  return (await selectAllSubscriptionRows(db, userId)).map(formatSubscriptionRow);
+}
+
+/**
+ * {@link listAllSubscriptions} with each subscription's Google Reader stream
+ * serial (`subscriptions.greader_stream_id`), for the Google Reader layer.
+ */
+export async function listAllSubscriptionsWithStreamIds(
+  db: typeof dbType,
+  userId: string
+): Promise<Array<Subscription & { greaderStreamId: bigint }>> {
+  return (await selectAllSubscriptionRows(db, userId)).map((row) => ({
+    ...formatSubscriptionRow(row),
+    greaderStreamId: row.greaderStreamId,
+  }));
+}
+
+function selectAllSubscriptionRows(db: typeof dbType, userId: string) {
+  return buildSubscriptionBaseQuery(db, eq(userFeeds.userId, userId)).orderBy(
     sql`COALESCE(${userFeeds.title}, '') ASC`,
     userFeeds.id
   );
-  return results.map(formatSubscriptionRow);
 }
 
 /**
