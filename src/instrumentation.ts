@@ -59,9 +59,14 @@ export async function register() {
       // DSN.
       await Sentry.close(2000);
 
-      // Close Redis connection
+      // Close Redis connection. QUIT times out if Redis is unreachable; that
+      // must not skip closing the database pool.
       const { redis } = await import("./server/redis");
-      await redis.quit();
+      try {
+        await redis.quit();
+      } catch {
+        redis.disconnect();
+      }
 
       // Close database pool
       const { pool } = await import("./server/db");
