@@ -17,6 +17,14 @@ import Redis from "ioredis";
  * Will be null if REDIS_URL is not set.
  */
 let redisClient: Redis | null = null;
+
+/**
+ * Upper bound on how long a command may take, including time spent queued while
+ * the connection is down. Every caller falls back when Redis fails, but
+ * ioredis's default retries hold a command for minutes when the host is
+ * unreachable, which hangs every request that touches Redis.
+ */
+export const REDIS_COMMAND_TIMEOUT_MS = 1000;
 let redisInitialized = false;
 
 /**
@@ -55,6 +63,10 @@ export function getRedisClient(): Redis | null {
   redisClient = new Redis(redisUrl, {
     // Enable auto-pipelining for better performance with many small commands
     enableAutoPipelining: true,
+    commandTimeout: REDIS_COMMAND_TIMEOUT_MS,
+    // Flush queued commands with an error on each failed reconnect instead of
+    // holding them through 20 attempts.
+    maxRetriesPerRequest: 1,
     // Reconnect with exponential backoff
     retryStrategy(times) {
       const delay = Math.min(times * 50, 2000);
