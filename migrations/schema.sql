@@ -163,6 +163,17 @@ CREATE FUNCTION public.ensure_saved_subscriptions(p_users uuid[]) RETURNS intege
   SELECT count(*)::integer FROM created;
 $$;
 
+CREATE FUNCTION public.entries_changed_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE user_entries
+  SET changed_at = NEW.updated_at
+  WHERE entry_id = NEW.id AND changed_at < NEW.updated_at;
+  RETURN NULL;
+END;
+$$;
+
 CREATE FUNCTION public.recompute_list_counters(p_user uuid) RETURNS void
     LANGUAGE plpgsql
     SET plan_cache_mode TO 'force_custom_plan'
@@ -296,6 +307,22 @@ BEGIN
   PERFORM recompute_list_counters(u.user_id)
   FROM (SELECT DISTINCT user_id FROM unnest(a_user) AS a(user_id) ORDER BY user_id) u;
   RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION public.user_entries_changed_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT GREATEST(NEW.updated_at, e.updated_at) INTO NEW.changed_at
+      FROM entries e
+      WHERE e.id = NEW.entry_id
+      FOR SHARE;
+  ELSE
+    NEW.changed_at := GREATEST(NEW.changed_at, NEW.updated_at);
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
@@ -772,6 +799,7 @@ CREATE TABLE public.user_entries (
     published_or_fetched_at timestamp with time zone NOT NULL,
     is_spam boolean NOT NULL,
     active_memberships integer DEFAULT 0 NOT NULL,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT user_entries_active_memberships_nonnegative CHECK ((active_memberships >= 0))
 );
 
@@ -844,7 +872,7 @@ CREATE VIEW public.visible_entries AS
     e.list_unsubscribe_https,
     e.list_unsubscribe_post,
     e.created_at,
-    GREATEST(e.updated_at, ue.updated_at) AS updated_at,
+    ue.changed_at AS updated_at,
     e.full_content_original,
     e.full_content_cleaned,
     e.full_content_fetched_at,
@@ -1014,6 +1042,8 @@ ALTER TABLE ONLY public.user_api_keys
 ALTER TABLE ONLY public.user_entries
     ADD CONSTRAINT user_entry_states_user_id_entry_id_pk PRIMARY KEY (user_id, entry_id);
 
+ALTER TABLE public.user_entries CLUSTER ON user_entry_states_user_id_entry_id_pk;
+
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_email_unique UNIQUE (email);
 
@@ -1124,6 +1154,8 @@ CREATE INDEX idx_subscriptions_user_active ON public.subscriptions USING btree (
 
 CREATE INDEX idx_tags_updated_at ON public.tags USING btree (user_id, updated_at);
 
+CREATE INDEX idx_user_entries_changed_at ON public.user_entries USING btree (user_id, changed_at, entry_id);
+
 CREATE INDEX idx_user_entries_entry_id ON public.user_entries USING btree (entry_id);
 
 CREATE INDEX idx_user_entries_multi_member ON public.user_entries USING btree (user_id) WHERE (active_memberships > 1);
@@ -1164,6 +1196,8 @@ CREATE UNIQUE INDEX uq_tags_user_lower_name ON public.tags USING btree (user_id,
 
 CREATE STATISTICS public.entries_guid_canonical_stats ON regexp_replace(guid, '^https?://'::text, 'https://'::text) FROM public.entries;
 
+CREATE TRIGGER entries_changed_at_trigger AFTER UPDATE OF updated_at ON public.entries FOR EACH ROW WHEN ((new.updated_at > old.updated_at)) EXECUTE FUNCTION public.entries_changed_at();
+
 CREATE TRIGGER subscription_entries_counters_delete_trigger AFTER DELETE ON public.subscription_entries REFERENCING OLD TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
 
 CREATE TRIGGER subscription_entries_counters_insert_trigger AFTER INSERT ON public.subscription_entries REFERENCING NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscription_entries_counters();
@@ -1175,6 +1209,8 @@ CREATE TRIGGER subscription_tags_recompute_lists_insert_trigger AFTER INSERT ON 
 CREATE CONSTRAINT TRIGGER subscriptions_recompute_lists_delete_trigger AFTER DELETE ON public.subscriptions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.subscriptions_deleted_recompute_lists();
 
 CREATE TRIGGER subscriptions_recompute_lists_update_trigger AFTER UPDATE ON public.subscriptions REFERENCING OLD TABLE AS old_rows NEW TABLE AS changed_rows FOR EACH STATEMENT EXECUTE FUNCTION public.subscriptions_recompute_lists();
+
+CREATE TRIGGER user_entries_changed_at_trigger BEFORE INSERT OR UPDATE OF updated_at ON public.user_entries FOR EACH ROW EXECUTE FUNCTION public.user_entries_changed_at();
 
 CREATE TRIGGER user_entries_counters_delete_trigger AFTER DELETE ON public.user_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION public.user_entries_counters_delete();
 

@@ -205,4 +205,46 @@ describe("SSE entry events", () => {
       await otherStream.close();
     }
   });
+
+  it("follows each new_entry of a burst with counts for its subscription", async () => {
+    const userId = await createTestUser({ emailPrefix: "sse-burst" });
+    const feedIds = [await createTestFeed(), await createTestFeed()];
+    const subscriptionIds = [
+      await createTestSubscription(userId, feedIds[0]),
+      await createTestSubscription(userId, feedIds[1]),
+    ];
+    const published = [0, 1, 0, 1, 0].map((i) => ({ i, entryId: "" }));
+    for (const p of published) {
+      p.entryId = await createTestEntry(feedIds[p.i], { userIds: [userId] });
+    }
+
+    const stream = await openSseStream(userId);
+    try {
+      await waitForSubscribers(...feedIds.map(getFeedEventsChannel));
+      await Promise.all(
+        published.map((p) => publishNewEntry(feedIds[p.i], p.entryId, new Date(), undefined))
+      );
+      for (const p of published) {
+        await stream.waitFor("new_entry", (data) => data.entryId === p.entryId);
+      }
+
+      // How a burst splits into count-bearing events depends on timing, but
+      // the last event carries counts, and every event's subscription is
+      // counted by it or a later one.
+      const received = stream.events("new_entry");
+      const countedSubscriptions = (data: Record<string, unknown>) =>
+        (
+          (data.counts as { subscriptions: Array<{ id: string }> } | undefined)?.subscriptions ?? []
+        ).map((s) => s.id);
+      expect(received.at(-1)?.counts).toBeDefined();
+      received.forEach((data, index) => {
+        expect(received.slice(index).flatMap(countedSubscriptions)).toContain(data.subscriptionId);
+      });
+      expect(new Set(received.map((data) => data.subscriptionId))).toEqual(
+        new Set(subscriptionIds)
+      );
+    } finally {
+      await stream.close();
+    }
+  });
 });

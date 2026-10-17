@@ -7,9 +7,8 @@
  * Query parameters for GET:
  * - archive: 0|1 - filter by archived (read) state
  * - starred: 0|1 - filter by starred state
- * - sort: created|updated|archived - sort field (default: created). `created` and
- *   `archived` are index-backed; `updated` (last-modified) would require an
- *   un-indexed GREATEST sort (see #1070) so it is approximated as `created`.
+ * - sort: created|updated|archived - sort field (default: created). `updated`
+ *   (last-modified) is approximated as `created`.
  * - order: asc|desc - sort order (default: desc)
  * - page: number - page number (default: 1)
  * - perPage: number - items per page (default: 30, max: 100)
@@ -92,8 +91,8 @@ export async function GET(request: Request): Promise<Response> {
     unstarredOnly: params.starred === false ? true : undefined,
     // Wallabag `since` (unix seconds) means "entries *updated* since" — clients
     // use it to pull new saves AND archive/star state changes for delta sync.
-    // updatedAfter filters on GREATEST(entry.updated_at, user_entries.updated_at),
-    // which captures all three, so this is correct (not a lossy save-time proxy).
+    // updatedAfter filters on user_entries.changed_at, which captures all three,
+    // so this is correct (not a lossy save-time proxy).
     updatedAfter: params.since ? new Date(params.since * 1000) : undefined,
     collectionIdGroups,
   };
@@ -101,9 +100,7 @@ export async function GET(request: Request): Promise<Response> {
   // Wallabag `sort` field → listEntries sort column. `created` (default) is our
   // publish/fetch-time sort; `archived` sorts by when read state last changed
   // (our closest analogue to Wallabag's archived_at). `updated` (last-modified)
-  // would need an un-indexed GREATEST(entry, user_entry) sort with no LIMIT
-  // pushdown (issue #1070), so we approximate it as the default `created` sort
-  // rather than risk a per-user scan.
+  // is approximated as the default `created` sort.
   const sortBy = params.sort === "archived" ? "archived" : "published";
 
   // Serve the requested page with a single indexed query via LIMIT/OFFSET, and
