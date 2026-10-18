@@ -12,6 +12,7 @@ import type { Context } from "./context";
 import type { OpenApiMeta } from "trpc-to-openapi";
 import type { OAuthScope } from "@/server/oauth/utils";
 import {
+  checkAccountRateLimit,
   checkRateLimit,
   getClientIdentifier,
   getRateLimitHeaders,
@@ -305,23 +306,33 @@ async function performRateLimitCheck(
 ): Promise<Record<string, string>> {
   const identifier = getClientIdentifier(userId, headers);
   const result = await checkRateLimit(identifier, type);
+  throwIfRateLimited(result, type);
+  return getRateLimitHeaders(result, RATE_LIMIT_CONFIGS[type]);
+}
 
+function throwIfRateLimited(
+  result: Awaited<ReturnType<typeof checkRateLimit>>,
+  type: RateLimitType
+): void {
   if (!result.allowed) {
-    const config = RATE_LIMIT_CONFIGS[type];
-    const rateLimitHeaders = getRateLimitHeaders(result, config);
-
     throw new TRPCError({
       code: "TOO_MANY_REQUESTS",
       message: `Rate limit exceeded. Please retry after ${result.retryAfterSeconds} seconds.`,
       cause: {
         retryAfter: result.retryAfterSeconds,
-        headers: rateLimitHeaders,
+        headers: getRateLimitHeaders(result, RATE_LIMIT_CONFIGS[type]),
       },
     });
   }
+}
 
-  const config = RATE_LIMIT_CONFIGS[type];
-  return getRateLimitHeaders(result, config);
+/**
+ * Consume a password attempt from the account's bucket (`checkAccountRateLimit`),
+ * throwing TOO_MANY_REQUESTS once it's spent. Every procedure that checks a
+ * password calls this before the check, on top of its per-IP or per-user limit.
+ */
+export async function consumePasswordAttempt(email: string): Promise<void> {
+  throwIfRateLimited(await checkAccountRateLimit(email), "expensive");
 }
 
 /**

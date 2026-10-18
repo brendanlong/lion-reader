@@ -332,11 +332,12 @@ export async function checkRouteRateLimit(
  * `expensivePublicProcedure` middleware) that guard password-accepting
  * endpoints: a per-IP limit alone does not stop a distributed, IP-rotating
  * brute-force against a single account. Sharing this account key across every
- * password path (tRPC login, Google Reader ClientLogin, Wallabag password
- * grant) bounds total guesses per account regardless of source IP.
+ * password path (tRPC login and change-password, Google Reader ClientLogin,
+ * Wallabag password grant) bounds total guesses per account regardless of
+ * source IP.
  *
  * Returns a ConsumeResult; callers turn a disallowed result into their
- * transport-appropriate error (429 Response / TRPCError).
+ * transport-appropriate error (429 Response / `consumePasswordAttempt`'s TRPCError).
  */
 export async function checkAccountRateLimit(email: string): Promise<ConsumeResult> {
   // Fail to a per-process in-memory bucket rather than fully open: this is the
