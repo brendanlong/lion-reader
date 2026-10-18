@@ -914,3 +914,19 @@ describe("streamed speech", () => {
     expect(last?.headers.get("retry-after")).not.toBeNull();
   });
 });
+
+describe("REST responses", () => {
+  it("are uncacheable and carry the limiter's headers when rate limited", async () => {
+    const token = await appToken(await createUser());
+    let last: Response | null = null;
+    for (let i = 0; i <= RATE_LIMIT_CONFIGS.expensive.capacity; i++) {
+      last = await rest(token, "POST", "/summarization/generate", {});
+    }
+    expect(last?.status).toBe(429);
+    expect(last?.headers.get("x-ratelimit-limit")).toBe(
+      String(RATE_LIMIT_CONFIGS.expensive.capacity)
+    );
+    expect(last?.headers.get("retry-after")).not.toBeNull();
+    expect(last?.headers.get("cache-control")).toBe("private, no-store");
+  });
+});
