@@ -242,8 +242,17 @@ export function getFeedPlugin(url: string | URL | null | undefined) {
  * matching plugin every hook is a no-op.
  */
 export interface FeedHooks {
-  /** `items` are the feed's parsed entries, which the plugin may draw on. */
-  transformFeedTitle(title: string, items: readonly ParsedEntry[]): string;
+  /**
+   * The title to store and show for the feed: its own title, else
+   * `previousTitle` (what we stored last time, already resolved), else the
+   * feed URL's hostname, with the plugin's transform applied (e.g. a LessWrong
+   * user feed gets its author appended, from the first entry with one). Null
+   * only when there's nothing at all to fall back to.
+   */
+  resolveFeedTitle(
+    feed: { title?: string; items: readonly ParsedEntry[] },
+    previousTitle?: string | null
+  ): string | null;
   /** Returns `html` unchanged when there's nothing to clean. */
   cleanEntryContent(html: string): string;
   buildEntryContent(entry: ParsedEntry, entryUrl: string | undefined): string | null;
@@ -275,18 +284,23 @@ export function getFeedHooks(feedUrl: string | URL | null | undefined): FeedHook
     };
   }
 
-  const transformFeedTitle = feed?.transformFeedTitle?.bind(feed);
+  const pluginTransformFeedTitle = feed?.transformFeedTitle?.bind(feed);
+  const transformFeedTitle = guarded(
+    "transformFeedTitle",
+    pluginTransformFeedTitle && parsed
+      ? (title: string, items: readonly ParsedEntry[]) =>
+          pluginTransformFeedTitle(title, parsed, {
+            firstAuthor: items.find((item) => item.author)?.author ?? null,
+          })
+      : undefined,
+    (title) => title
+  );
   return {
-    transformFeedTitle: guarded(
-      "transformFeedTitle",
-      transformFeedTitle && parsed
-        ? (title: string, items: readonly ParsedEntry[]) =>
-            transformFeedTitle(title, parsed, {
-              firstAuthor: items.find((item) => item.author)?.author ?? null,
-            })
-        : undefined,
-      (title) => title
-    ),
+    resolveFeedTitle(parsedFeed, previousTitle) {
+      if (parsedFeed.title) return transformFeedTitle(parsedFeed.title, parsedFeed.items);
+      if (previousTitle) return previousTitle;
+      return parsed?.hostname ? transformFeedTitle(parsed.hostname, parsedFeed.items) : null;
+    },
     cleanEntryContent: guarded(
       "cleanEntryContent",
       feed?.cleanEntryContent?.bind(feed),

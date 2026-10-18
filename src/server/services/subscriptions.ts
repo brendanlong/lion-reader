@@ -52,7 +52,6 @@ import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
-import { getDomainFromUrl } from "@/server/feed/types";
 
 // ============================================================================
 // Types
@@ -906,14 +905,9 @@ async function fetchAndResolveFeed(inputUrl: string): Promise<CreateSubscription
     throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
   }
 
-  let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
-  if (feedTitle) {
-    feedTitle = getFeedHooks(finalFeedUrl).transformFeedTitle(feedTitle, parsedFeed.items);
-  }
-
   return {
     url: finalFeedUrl,
-    title: feedTitle ?? null,
+    title: getFeedHooks(finalFeedUrl).resolveFeedTitle(parsedFeed),
     description: parsedFeed.description || null,
     siteUrl: parsedFeed.siteUrl || null,
   };

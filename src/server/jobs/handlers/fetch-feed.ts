@@ -26,7 +26,7 @@ import {
   resolveWebsubAction,
 } from "../../feed/websub";
 import { recordBackupPollNewEntries } from "../../feed/websub-hub-stats";
-import { getDomainFromUrl, isUpdatePeriod } from "../../feed/types";
+import { isUpdatePeriod } from "../../feed/types";
 import type { ParsedCacheHeaders } from "../../feed/cache-headers";
 import type { JobPayloads } from "../queue";
 import { logger } from "@/lib/logger";
@@ -238,19 +238,9 @@ async function processSuccessfulFetch(
 
   // Extract metadata we need before processing entries
   // This allows parsedFeed.items (the large part) to be GC'd after processEntries
-  let feedTitle = parsedFeed.title;
-
   const feedPlugin = feed.url ? getFeedPlugin(feed.url) : null;
 
-  // Let a matching plugin transform the feed title. For LessWrong user feeds this
-  // appends the author name (e.g. "LessWrong - Brendan Long" instead of just
-  // "LessWrong"), and automatically updates if the user changes their display name.
-  if (feedTitle) {
-    feedTitle = getFeedHooks(feed.url).transformFeedTitle(feedTitle, parsedFeed.items);
-  }
-
   const feedMetadata = {
-    title: feedTitle,
     description: parsedFeed.description,
     siteUrl: parsedFeed.siteUrl,
     // HTTP Link headers take precedence over embedded feed links per W3C WebSub spec §4
@@ -260,11 +250,9 @@ async function processSuccessfulFetch(
     syndication: parsedFeed.syndication,
   };
 
-  // Resolved feed title, falling back to the domain name. Must match what the
-  // feeds.title update below stores, so new_entry events carry the same title
-  // a later entries.list refetch would return.
-  const fallbackTitle = feed.url ? getDomainFromUrl(feed.url) : undefined;
-  const resolvedFeedTitle = feedMetadata.title || feed.title || fallbackTitle || null;
+  // Stored as feeds.title below, and carried on new_entry events, which must
+  // match what a later entries.list refetch returns.
+  const resolvedFeedTitle = getFeedHooks(feed.url).resolveFeedTitle(parsedFeed, feed.title);
 
   // Process entries (create new, update changed, detect disappeared)
   // Pass previousLastEntriesUpdatedAt to detect entries that disappeared from the feed

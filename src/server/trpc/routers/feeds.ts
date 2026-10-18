@@ -25,7 +25,7 @@ import { stripHtml } from "@/server/html/strip-html";
 import { USER_AGENT } from "@/server/http/user-agent";
 import { detectFeedType, parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds, getCommonFeedUrls, type DiscoveredFeed } from "@/server/feed/discovery";
-import { getDomainFromUrl, type ParsedEntry, type ParsedFeed } from "@/server/feed/types";
+import { type ParsedEntry, type ParsedFeed } from "@/server/feed/types";
 import { pluginRegistry, getFeedHooks, getFeedPlugin, type FeedHooks } from "@/server/plugins";
 
 // ============================================================================
@@ -362,19 +362,11 @@ export const feedsRouter = createTRPCRouter({
         .slice(0, MAX_SAMPLE_ENTRIES)
         .map((entry) => toSampleEntry(entry, feedHooks));
 
-      // Use domain as fallback if feed has no title
-      const fallbackTitle = getDomainFromUrl(finalFeedUrl) ?? "Untitled Feed";
-      // Let a matching plugin transform the title (e.g. LessWrong user feeds get
-      // the author appended)
-      const feedTitle = feedHooks.transformFeedTitle(
-        parsedFeed.title ?? fallbackTitle,
-        parsedFeed.items
-      );
-
       return {
         feed: {
           url: finalFeedUrl,
-          title: feedTitle,
+          // Null only for a URL without a hostname, which we couldn't have fetched.
+          title: feedHooks.resolveFeedTitle(parsedFeed) ?? "Untitled Feed",
           description: parsedFeed.description ?? null,
           siteUrl: parsedFeed.siteUrl ?? null,
           iconUrl: parsedFeed.iconUrl ?? null,
