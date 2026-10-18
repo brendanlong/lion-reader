@@ -1,7 +1,7 @@
 /**
  * Integration tests for the unified upload → save pipeline.
  *
- * File uploads (`createSavedFromUpload`) and Markdown uploads (`uploadArticle`)
+ * File uploads (`uploadFile`) and Markdown uploads (`uploadArticle`)
  * run their content through the same `buildArticleFields` pipeline as a URL save,
  * so this covers the upload-specific behavior that pipeline adds: title/author
  * precedence, the filename fallback, relative-URL handling against the dummy
@@ -12,8 +12,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries } from "../../src/server/db/schema";
-import { createSavedFromUpload, uploadArticle } from "../../src/server/services/saved";
-import { convertUploadedFile } from "../../src/server/file/process-upload";
+import { uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { buildMinimalDocx } from "../utils/docx";
 import { createTestUser } from "./helpers";
 
@@ -24,6 +23,10 @@ async function createUser(): Promise<string> {
   const userId = await createTestUser({ emailPrefix: "upload" });
   createdUserIds.push(userId);
   return userId;
+}
+
+function upload(userId: string, file: Buffer, filename: string, title?: string) {
+  return uploadFile(db, userId, { content: file.toString("base64"), filename, title });
 }
 
 /** Reads the stored raw columns for a saved entry (bypassing the read-path sanitize). */
@@ -62,14 +65,14 @@ afterAll(async () => {
   }
 });
 
-describe("createSavedFromUpload (HTML)", () => {
+describe("uploadFile (HTML)", () => {
   it("stores a null URL and an uploaded: guid", async () => {
     const userId = await createUser();
-    const converted = await convertUploadedFile(
+    const article = await upload(
+      userId,
       Buffer.from(`<html><head><title>Doc Title</title></head><body>${ARTICLE_BODY}</body></html>`),
       "notes.html"
     );
-    const article = await createSavedFromUpload(db, userId, { converted });
 
     expect(article.url).toBeNull();
     const stored = await readStored(article.id);
@@ -79,34 +82,35 @@ describe("createSavedFromUpload (HTML)", () => {
 
   it("prefers a provided title over the document title", async () => {
     const userId = await createUser();
-    const converted = await convertUploadedFile(
+    const article = await upload(
+      userId,
       Buffer.from(
         `<html><head><title>Document Title</title></head><body>${ARTICLE_BODY}</body></html>`
       ),
-      "notes.html"
+      "notes.html",
+      "Caller Title"
     );
-    const article = await createSavedFromUpload(db, userId, { converted, title: "Caller Title" });
     expect(article.title).toBe("Caller Title");
   });
 
   it("falls back to the filename-derived title when content has none", async () => {
     const userId = await createUser();
     // No <title> and no heading Readability would pick up as a title.
-    const converted = await convertUploadedFile(
+    const article = await upload(
+      userId,
       Buffer.from(`<html><body>${ARTICLE_BODY}</body></html>`),
       "My_Great-Notes.html"
     );
-    const article = await createSavedFromUpload(db, userId, { converted });
     expect(article.title).toBe("My Great Notes");
   });
 
   it("rewrites relative URLs against the dummy upload base (not Lion Reader)", async () => {
     const userId = await createUser();
-    const converted = await convertUploadedFile(
+    const article = await upload(
+      userId,
       Buffer.from(`<html><body>${ARTICLE_BODY}</body></html>`),
       "notes.html"
     );
-    const article = await createSavedFromUpload(db, userId, { converted });
 
     const stored = await readStored(article.id);
     expect(stored.contentCleaned).toBeTruthy();
@@ -122,11 +126,11 @@ describe("createSavedFromUpload (HTML)", () => {
     // Too short for Readability to extract → cleaned is null. Matches how a URL
     // save behaves on a page Readability can't parse: store the original, serve
     // `cleaned ?? original` on read.
-    const converted = await convertUploadedFile(
+    const article = await upload(
+      userId,
       Buffer.from("<html><body><p>Too short.</p></body></html>"),
       "tiny.html"
     );
-    const article = await createSavedFromUpload(db, userId, { converted });
 
     expect(article.contentCleaned).toBeNull();
     const stored = await readStored(article.id);
@@ -143,8 +147,7 @@ describe("createSavedFromUpload (HTML)", () => {
       '<meta name="author" content="Ada Lovelace">' +
       "<title>OG Doc</title></head>" +
       `<body>${ARTICLE_BODY}</body></html>`;
-    const converted = await convertUploadedFile(Buffer.from(html), "og.html");
-    const article = await createSavedFromUpload(db, userId, { converted });
+    const article = await upload(userId, Buffer.from(html), "og.html");
 
     expect(article.author).toBe("Ada Lovelace");
     const stored = await readStored(article.id);
@@ -152,7 +155,7 @@ describe("createSavedFromUpload (HTML)", () => {
   });
 });
 
-describe("createSavedFromUpload (.docx)", () => {
+describe("uploadFile (.docx)", () => {
   // A body long enough that, if Readability *did* run, it would produce a cleaned
   // body — so the assertions below confirm we deliberately skip it and keep the
   // mammoth output as-is.
@@ -173,8 +176,7 @@ describe("createSavedFromUpload (.docx)", () => {
         description: "A concise summary taken straight from the document properties.",
       },
     });
-    const converted = await convertUploadedFile(docx, "some-file-name.docx");
-    const article = await createSavedFromUpload(db, userId, { converted });
+    const article = await upload(userId, docx, "some-file-name.docx");
 
     expect(article.title).toBe("The Real Core.xml Title");
     expect(article.author).toBe("Ada Lovelace");
@@ -189,8 +191,7 @@ describe("createSavedFromUpload (.docx)", () => {
       paragraphs: DOCX_PARAGRAPHS,
       core: { title: "Skip Readability Doc" },
     });
-    const converted = await convertUploadedFile(docx, "notes.docx");
-    const article = await createSavedFromUpload(db, userId, { converted });
+    const article = await upload(userId, docx, "notes.docx");
 
     const stored = await readStored(article.id);
     // The full mammoth output is preserved (not run through Readability, which
@@ -206,8 +207,7 @@ describe("createSavedFromUpload (.docx)", () => {
       paragraphs: DOCX_PARAGRAPHS,
       core: { creator: "Grace Hopper" },
     });
-    const converted = await convertUploadedFile(docx, "My_Weekly-Report.docx");
-    const article = await createSavedFromUpload(db, userId, { converted });
+    const article = await upload(userId, docx, "My_Weekly-Report.docx");
 
     expect(article.title).toBe("My Weekly Report");
     expect(article.author).toBe("Grace Hopper");
@@ -219,11 +219,7 @@ describe("createSavedFromUpload (.docx)", () => {
       paragraphs: DOCX_PARAGRAPHS,
       core: { title: "Core.xml Title" },
     });
-    const converted = await convertUploadedFile(docx, "notes.docx");
-    const article = await createSavedFromUpload(db, userId, {
-      converted,
-      title: "Caller Title",
-    });
+    const article = await upload(userId, docx, "notes.docx", "Caller Title");
 
     expect(article.title).toBe("Caller Title");
   });

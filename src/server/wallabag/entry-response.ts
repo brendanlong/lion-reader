@@ -1,5 +1,5 @@
 import type { db as dbType } from "@/server/db";
-import * as entriesService from "@/server/services/entries";
+import * as entryReadsService from "@/server/services/entry-reads";
 import { getAppErrorCode } from "@/server/errors";
 import { formatEntryFull } from "./format";
 import type { ResolvedWallabagEntry } from "./id";
@@ -13,7 +13,7 @@ export async function formatEntryResponse(
   { id: entryId, wallabagId }: ResolvedWallabagEntry
 ): Promise<Response> {
   const [entry, tags] = await Promise.all([
-    entriesService.getEntry(db, userId, entryId).catch((error: unknown) => {
+    entryReadsService.getEntry(db, userId, entryId).catch((error: unknown) => {
       if (getAppErrorCode(error) === "ENTRY_NOT_FOUND") return null;
       throw error;
     }),

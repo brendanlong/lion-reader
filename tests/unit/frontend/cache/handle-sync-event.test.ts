@@ -32,6 +32,7 @@ import {
   createTagUpdatedEvent,
   createTagDeletedEvent,
   createImportProgressEvent,
+  createCounts,
   DEFAULT_SUBSCRIPTIONS,
   DEFAULT_ENTRIES,
   SEEDED_SAVED_SUBSCRIPTION_ID,
@@ -122,12 +123,12 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
         feedType: "web",
-        counts: {
+        counts: createCounts({
           all: { unread: 19 },
           starred: { unread: 0 },
           subscriptions: [{ id: "sub-uncached", unread: 1 }],
           tags: [{ id: "tag-2", unread: 11 }],
-        },
+        }),
       })
     );
 
@@ -145,13 +146,13 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         subscriptionId: "sub-uncached",
         feedType: "web",
-        counts: {
+        counts: createCounts({
           all: { unread: 19 },
           starred: { unread: 0 },
           subscriptions: [{ id: "sub-uncached", unread: 1 }],
           tags: [],
           uncategorized: { unread: 4 },
-        },
+        }),
       })
     );
 
@@ -168,12 +169,12 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         subscriptionId: "sub-1",
         feedType: "web",
-        counts: {
+        counts: createCounts({
           all: { unread: 19 },
           starred: { unread: 0 },
           subscriptions: [{ id: "sub-1", unread: 6 }],
           tags: [{ id: "tag-1", unread: 16 }],
-        },
+        }),
       })
     );
 
@@ -183,10 +184,9 @@ describe("handleSyncEvent - new_entry", () => {
     expect(tagsList?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(16); // set
 
     expect(getEntriesCount({})?.unread).toBe(19); // set
-    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1); // saved untouched (web entry)
   });
 
-  it("leaves all counts untouched when the event omits counts (old-server event)", () => {
+  it("leaves all counts untouched when the event omits counts (the server failed to read them)", () => {
     handleSyncEvent(
       utils,
       queryClient,
@@ -211,13 +211,13 @@ describe("handleSyncEvent - new_entry", () => {
       createNewEntryEvent({
         subscriptionId: null,
         feedType: "saved",
-        counts: {
+        counts: createCounts({
           all: { unread: 19 },
           starred: { unread: 0 },
           saved: { unread: 2 },
           subscriptions: [],
           tags: [],
-        },
+        }),
       })
     );
 
@@ -235,12 +235,12 @@ describe("handleSyncEvent - new_entry", () => {
     const event = createNewEntryEvent({
       subscriptionId: "sub-1",
       feedType: "web",
-      counts: {
+      counts: createCounts({
         all: { unread: 19 },
         starred: { unread: 0 },
         subscriptions: [{ id: "sub-1", unread: 6 }],
         tags: [{ id: "tag-1", unread: 16 }],
-      },
+      }),
     });
 
     handleSyncEvent(utils, queryClient, event);
@@ -264,6 +264,7 @@ describe("handleSyncEvent - new_entry", () => {
         feedType: "web",
         updatedAt: "2024-07-01T00:00:00.000Z",
         entry: {
+          type: "web",
           url: "https://example.com/live",
           title: "Live Entry",
           author: "Live Author",
@@ -327,30 +328,28 @@ describe("handleSyncEvent - new_entry", () => {
     expect(storedEntry("entry-live")?.subscriptionIds).toEqual([SEEDED_SAVED_SUBSCRIPTION_ID]);
   });
 
-  it.each([
-    [
-      "takes the payload's type and the event's memberships",
-      { subscriptionIds: ["sub-1", "sub-2"], entry: { ...LIVE_PAYLOAD, type: "email" as const } },
-      { type: "email", subscriptionIds: ["sub-1", "sub-2"] },
-    ],
-    [
-      "falls back to feedType and the origin for a previous release's event",
-      { entry: LIVE_PAYLOAD },
-      { type: "web", subscriptionIds: ["sub-1"] },
-    ],
-  ])("%s", (_label, fields, expected) => {
+  it("takes the payload's type and the event's memberships", () => {
     handleSyncEvent(
       utils,
       queryClient,
-      createNewEntryEvent({ entryId: "entry-live", subscriptionId: "sub-1", ...fields })
+      createNewEntryEvent({
+        entryId: "entry-live",
+        subscriptionId: "sub-1",
+        subscriptionIds: ["sub-1", "sub-2"],
+        entry: { ...LIVE_PAYLOAD, type: "email" },
+      })
     );
-    expect(storedEntry("entry-live")).toMatchObject(expected);
+    expect(storedEntry("entry-live")).toMatchObject({
+      type: "email",
+      subscriptionIds: ["sub-1", "sub-2"],
+    });
   });
 
   it("is idempotent: applying the same list-data event twice inserts one row", () => {
     const event = createNewEntryEvent({
       entryId: "entry-live",
       entry: {
+        type: "web",
         url: null,
         title: "Live Entry",
         author: null,
@@ -369,7 +368,7 @@ describe("handleSyncEvent - new_entry", () => {
     expect(copies).toHaveLength(1);
   });
 
-  it("leaves lists unchanged when the event has no list data (older server)", () => {
+  it("leaves lists unchanged when the event has no list data (spam)", () => {
     const before = listedEntries().length;
 
     handleSyncEvent(
@@ -503,6 +502,7 @@ describe("handleSyncEvent - entry_updated", () => {
           feedType: "web",
           updatedAt: markedRead,
           entry: {
+            type: "web",
             url: null,
             title: "Entry One",
             author: null,
@@ -580,6 +580,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
         feedType: "web",
         updatedAt: "2024-07-01T00:00:00.000Z",
         entry: {
+          type: "web",
           url: "https://example.com/uncached",
           title: "Uncached Entry",
           author: null,
@@ -618,6 +619,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
       subscriptionId: "sub-1",
       feedType: "web",
       entry: {
+        type: "web",
         url: null,
         title: "Uncached Entry",
         author: null,
@@ -649,6 +651,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
         subscriptionId: "sub-1",
         feedType: "web",
         entry: {
+          type: "web",
           url: null,
           title: "Starred Uncached Entry",
           author: null,
@@ -664,7 +667,7 @@ describe("handleSyncEvent - entry_state_changed", () => {
     expect(listIds({ starredOnly: true, limit: 25 })).toEqual(["entry-uncached"]);
   });
 
-  it("does not insert a payload-less unread event for an entry the store doesn't hold (older server)", () => {
+  it("does not insert a payload-less unread event for an entry the store doesn't hold", () => {
     const before = listedEntries().length;
 
     handleSyncEvent(
@@ -762,12 +765,12 @@ describe("handleSyncEvent - entry_state_changed", () => {
         entryId: "entry-1",
         read: false,
         starred: true,
-        counts: {
+        counts: createCounts({
           all: { unread: 18 },
           starred: { unread: 2 },
           subscriptions: [{ id: "sub-1", unread: 5 }],
           tags: [{ id: "tag-1", unread: 15 }],
-        },
+        }),
       })
     );
 
@@ -787,13 +790,13 @@ describe("handleSyncEvent - mark_all_read", () => {
       utils,
       queryClient,
       createMarkAllReadEvent({
-        counts: {
+        counts: createCounts({
           all: { unread: 3 },
           starred: { unread: 0 },
           saved: { unread: 0 },
           subscriptions: [{ id: "sub-1", unread: 0, tagIds: ["tag-1"] }],
           tags: [{ id: "tag-1", unread: 10 }],
-        },
+        }),
       })
     );
 
@@ -802,18 +805,6 @@ describe("handleSyncEvent - mark_all_read", () => {
     expect(getEntriesCount()).toEqual({ unread: 3 });
     // The one SSE event that deliberately refetches entries.list.
     expect(invalidatedProcedures(invalidateSpy)).toEqual(["entries.list"]);
-  });
-
-  it("refetches the counts instead for a previous release's event, which has none", () => {
-    handleSyncEvent(utils, queryClient, createMarkAllReadEvent());
-
-    expect(invalidatedProcedures(invalidateSpy).sort()).toEqual([
-      "entries.count",
-      "entries.list",
-      "subscriptions.get",
-      "subscriptions.list",
-      "tags.list",
-    ]);
   });
 
   it("does not touch entry read state directly (invalidation handles it)", () => {
@@ -855,12 +846,12 @@ describe("handleSyncEvent - subscription_created", () => {
           description: null,
           siteUrl: null,
         },
-        counts: {
+        counts: createCounts({
           all: { unread: 25 },
           starred: { unread: 1 },
           subscriptions: [{ id: "sub-new", unread: 7 }],
           tags: [{ id: "tag-1", unread: 22 }],
-        },
+        }),
       })
     );
 
@@ -895,13 +886,13 @@ describe("handleSyncEvent - subscription_created", () => {
           description: null,
           siteUrl: null,
         },
-        counts: {
+        counts: createCounts({
           all: { unread: 21 },
           starred: { unread: 1 },
           subscriptions: [{ id: "sub-new", unread: 3 }],
           tags: [],
           uncategorized: { unread: 6 },
-        },
+        }),
       })
     );
 
@@ -913,12 +904,12 @@ describe("handleSyncEvent - subscription_created", () => {
 
   it("is idempotent: applying the same created event twice does not inflate", () => {
     const event = createSubscriptionCreatedEvent({
-      counts: {
+      counts: createCounts({
         all: { unread: 25 },
         starred: { unread: 1 },
         subscriptions: [{ id: "sub-new", unread: 7 }],
         tags: [{ id: "tag-1", unread: 22 }],
-      },
+      }),
     });
 
     handleSyncEvent(utils, queryClient, event);
@@ -1113,12 +1104,12 @@ describe("handleSyncEvent - subscription_deleted", () => {
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-1",
-        counts: {
+        counts: createCounts({
           all: { unread: 13 },
           starred: { unread: 1 },
           subscriptions: [],
           tags: [{ id: "tag-1", unread: 10 }],
-        },
+        }),
       })
     );
 
@@ -1136,13 +1127,13 @@ describe("handleSyncEvent - subscription_deleted", () => {
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-2", // sub-2 has no tags
-        counts: {
+        counts: createCounts({
           all: { unread: 15 },
           starred: { unread: 1 },
           subscriptions: [],
           tags: [],
           uncategorized: { unread: 0 },
-        },
+        }),
       })
     );
 
@@ -1206,12 +1197,12 @@ describe("handleSyncEvent - subscription_deleted", () => {
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-unknown",
-        counts: {
+        counts: createCounts({
           all: { unread: 12 },
           starred: { unread: 1 },
           subscriptions: [],
           tags: [],
-        },
+        }),
       })
     );
 
@@ -1421,13 +1412,13 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-1",
         read: true,
         starred: true, // starred state unchanged
-        counts: {
+        counts: createCounts({
           all: { unread: 17 },
           starred: { unread: 1 },
           saved: { unread: 1 },
           subscriptions: [{ id: "sub-1", unread: 4 }],
           tags: [{ id: "tag-1", unread: 14 }],
-        },
+        }),
       })
     );
 
@@ -1457,14 +1448,14 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-uncat-unread",
         read: true,
         starred: false,
-        counts: {
+        counts: createCounts({
           all: { unread: 17 },
           starred: { unread: 2 },
           saved: { unread: 1 },
           subscriptions: [{ id: "sub-2", unread: 2 }],
           tags: [],
           uncategorized: { unread: 2 },
-        },
+        }),
       })
     );
 
@@ -1488,14 +1479,14 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-3",
         read: false,
         starred: false,
-        counts: {
+        counts: createCounts({
           all: { unread: 19 },
           starred: { unread: 2 },
           saved: { unread: 1 },
           subscriptions: [{ id: "sub-2", unread: 4 }],
           tags: [],
           uncategorized: { unread: 4 },
-        },
+        }),
       })
     );
 
@@ -1519,13 +1510,13 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-2",
         read: false,
         starred: true,
-        counts: {
+        counts: createCounts({
           all: { unread: 18 },
           starred: { unread: 3 },
           saved: { unread: 1 },
           subscriptions: [{ id: "sub-1", unread: 5 }],
           tags: [{ id: "tag-1", unread: 15 }],
-        },
+        }),
       })
     );
 
@@ -1535,32 +1526,6 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
     // Subscription/tag/all counts unchanged (read state didn't change)
     expect(getSidebarUnreadCount("sub-1")).toBe(5);
     expect(getEntriesCount({})?.unread).toBe(18);
-  });
-
-  it("starring a non-saved entry does not clobber saved count", () => {
-    // Star event for a web entry — server doesn't compute saved count,
-    // so the event omits it. Saved count should be preserved.
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createEntryStateChangedEvent({
-        entryId: "entry-2",
-        read: false,
-        starred: true,
-        counts: {
-          all: { unread: 18 },
-          starred: { unread: 3 },
-          // saved intentionally omitted — server doesn't compute it for non-saved entries
-          subscriptions: [{ id: "sub-1", unread: 5 }],
-          tags: [{ id: "tag-1", unread: 15 }],
-        },
-      })
-    );
-
-    // Saved count should be unchanged (was 1)
-    expect(getEntriesCount({ type: "saved" })?.unread).toBe(1);
-    // Starred should update
-    expect(getEntriesCount({ starredOnly: true })?.unread).toBe(3);
   });
 
   it("updates counts for uncached entry when counts are provided", () => {
@@ -1573,13 +1538,13 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-completely-unknown",
         read: true,
         starred: false,
-        counts: {
+        counts: createCounts({
           all: { unread: 17 },
           starred: { unread: 2 },
           saved: { unread: 1 },
           subscriptions: [{ id: "sub-1", unread: 4 }],
           tags: [{ id: "tag-1", unread: 14 }],
-        },
+        }),
       })
     );
 
@@ -1604,13 +1569,13 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-saved",
         read: true,
         starred: false,
-        counts: {
+        counts: createCounts({
           all: { unread: 17 },
           starred: { unread: 2 },
           saved: { unread: 0 },
           subscriptions: [],
           tags: [],
-        },
+        }),
       })
     );
 
@@ -1646,13 +1611,13 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-starred-orphan",
         read: true,
         starred: true,
-        counts: {
+        counts: createCounts({
           all: { unread: 17 },
           starred: { unread: 1 },
           saved: { unread: 1 },
           subscriptions: [],
           tags: [],
-        },
+        }),
       })
     );
 
@@ -1680,7 +1645,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
         entryId: "entry-multi-tag",
         read: true,
         starred: false,
-        counts: {
+        counts: createCounts({
           all: { unread: 17 },
           starred: { unread: 2 },
           saved: { unread: 1 },
@@ -1689,7 +1654,7 @@ describe("handleSyncEvent - cross-tab unread count sync (#796)", () => {
             { id: "tag-1", unread: 14 },
             { id: "tag-2", unread: 9 },
           ],
-        },
+        }),
       })
     );
 
@@ -1720,12 +1685,12 @@ describe("handleSyncEvent - event sequences", () => {
         subscriptionId: "sub-1",
         entryId: "new-entry-seq",
         feedType: "web",
-        counts: {
+        counts: createCounts({
           all: { unread: 19 },
           starred: { unread: 2 },
           subscriptions: [{ id: "sub-1", unread: 6 }],
           tags: [{ id: "tag-1", unread: 16 }],
-        },
+        }),
       })
     );
 
@@ -1741,13 +1706,13 @@ describe("handleSyncEvent - event sequences", () => {
         entryId: "new-entry-seq",
         read: true,
         starred: false,
-        counts: {
+        counts: createCounts({
           all: { unread: 18 },
           starred: { unread: 2 },
           saved: { unread: 1 },
           subscriptions: [{ id: "sub-1", unread: 5 }],
           tags: [{ id: "tag-1", unread: 15 }],
-        },
+        }),
       })
     );
 
@@ -1778,12 +1743,12 @@ describe("handleSyncEvent - event sequences", () => {
           description: null,
           siteUrl: null,
         },
-        counts: {
+        counts: createCounts({
           all: { unread: 20 },
           starred: { unread: 1 },
           subscriptions: [{ id: "sub-seq", unread: 2 }],
           tags: [{ id: "tag-2", unread: 12 }],
-        },
+        }),
       })
     );
 
@@ -1797,12 +1762,12 @@ describe("handleSyncEvent - event sequences", () => {
       createNewEntryEvent({
         subscriptionId: "sub-seq",
         feedType: "web",
-        counts: {
+        counts: createCounts({
           all: { unread: 21 },
           starred: { unread: 1 },
           subscriptions: [{ id: "sub-seq", unread: 3 }],
           tags: [{ id: "tag-2", unread: 13 }],
-        },
+        }),
       })
     );
 
@@ -1834,13 +1799,13 @@ describe("handleSyncEvent - event sequences", () => {
           description: null,
           siteUrl: null,
         },
-        counts: {
+        counts: createCounts({
           all: { unread: 23 },
           starred: { unread: 1 },
           subscriptions: [{ id: "sub-temp", unread: 5 }],
           tags: [],
           uncategorized: { unread: 8 },
-        },
+        }),
       })
     );
 
@@ -1851,13 +1816,13 @@ describe("handleSyncEvent - event sequences", () => {
       queryClient,
       createSubscriptionDeletedEvent({
         subscriptionId: "sub-temp",
-        counts: {
+        counts: createCounts({
           all: { unread: 18 },
           starred: { unread: 1 },
           subscriptions: [],
           tags: [],
           uncategorized: { unread: 3 },
-        },
+        }),
       })
     );
 

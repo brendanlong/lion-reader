@@ -15,19 +15,16 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import {
-  publishNewEntry,
-  publishUserNewEntry,
-  publishEntryStateChanged,
+  publishFeedEvent,
+  publishUserEvent,
   getFeedEventsChannel,
   getUserEventsChannel,
 } from "../../src/server/redis/pubsub";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
-import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entries";
+import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entry-state";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import {
-  getSavedSubscriptionId,
-  setSubscriptionTags,
-} from "../../src/server/services/subscriptions";
+import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
+import { setSubscriptionTags } from "../../src/server/services/subscription-updates";
 import { entries, tags, userEntries } from "../../src/server/db/schema";
 import { and, eq } from "drizzle-orm";
 import {
@@ -160,11 +157,12 @@ function sidebarLinks(page: Page, taggedFeed: TestFeed) {
 }
 
 /**
- * Builds the list-item payload publishNewEntry carries so clients can insert
- * the entry into cached lists (mirrors what the feed worker publishes).
+ * Builds the list-item payload a new_entry carries so clients can insert the
+ * entry into cached lists (mirrors what the feed worker publishes).
  */
 function newEntryListData(entry: TestEntry, feed: TestFeed) {
   return {
+    type: "web" as const,
     url: entry.url,
     title: entry.title,
     author: null,
@@ -213,12 +211,14 @@ test("new_entry event updates unread counts in all affected lists without refetc
     userId: user.id,
     title: "Realtime post",
   });
-  await publishNewEntry(
-    taggedFeed.feedId,
-    entry.id,
-    entry.updatedAt,
-    newEntryListData(entry, taggedFeed)
-  );
+  await publishFeedEvent({
+    type: "new_entry",
+    feedId: taggedFeed.feedId,
+    entryId: entry.id,
+    updatedAt: entry.updatedAt,
+    feedType: "web",
+    entry: newEntryListData(entry, taggedFeed),
+  });
 
   // Affected lists update from the event's server-computed absolute counts...
   await expect(links.allItems).toContainText("(4)");
@@ -246,12 +246,14 @@ test("new_entry event inserts the entry at the top of the open list without refe
     userId: user.id,
     title: "Realtime post",
   });
-  await publishNewEntry(
-    taggedFeed.feedId,
-    entry.id,
-    entry.updatedAt,
-    newEntryListData(entry, taggedFeed)
-  );
+  await publishFeedEvent({
+    type: "new_entry",
+    feedId: taggedFeed.feedId,
+    entryId: entry.id,
+    updatedAt: entry.updatedAt,
+    feedType: "web",
+    entry: newEntryListData(entry, taggedFeed),
+  });
 
   // The new entry appears in the open list, sorted first (it's the newest),
   // purely from the SSE event's list payload — no entries.list refetch.
@@ -289,12 +291,14 @@ test("new_entry event updates a collapsed tag's unread count", async ({ page, ba
     userId: user.id,
     title: "Realtime post",
   });
-  await publishNewEntry(
-    taggedFeed.feedId,
-    entry.id,
-    entry.updatedAt,
-    newEntryListData(entry, taggedFeed)
-  );
+  await publishFeedEvent({
+    type: "new_entry",
+    feedId: taggedFeed.feedId,
+    entryId: entry.id,
+    updatedAt: entry.updatedAt,
+    feedType: "web",
+    entry: newEntryListData(entry, taggedFeed),
+  });
 
   await expect(links.allItems).toContainText("(4)");
   // Intended behavior: the collapsed tag's badge should update too
@@ -325,16 +329,15 @@ test("a first save's new_entry inserts it, updates counts and learns the saved s
     userId: user.id,
     title: "Saved realtime post",
   });
-  await publishUserNewEntry(
-    {
-      userId: user.id,
-      subscriptionId: await getSavedSubscriptionId(db, user.id),
-      feedType: "saved",
-    },
-    entry.id,
-    entry.updatedAt,
-    { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }
-  );
+  await publishUserEvent({
+    type: "new_entry",
+    userId: user.id,
+    subscriptionId: await getSavedSubscriptionId(db, user.id),
+    feedType: "saved",
+    entryId: entry.id,
+    updatedAt: entry.updatedAt,
+    entry: { ...newEntryListData(entry, taggedFeed), type: "saved", feedTitle: "Saved Articles" },
+  });
 
   await expect(page.locator('[aria-label*="article: Saved realtime post"]')).toBeVisible();
   await expect(links.allItems).toContainText("(4)");
@@ -376,16 +379,15 @@ test("a saved article's new_entry joins the open Saved list by its membership wi
   trpcCalls.length = 0;
 
   const { entry } = await createSavedArticle(db, { userId: user.id, title: "Saved just now" });
-  await publishUserNewEntry(
-    {
-      userId: user.id,
-      subscriptionId: await getSavedSubscriptionId(db, user.id),
-      feedType: "saved",
-    },
-    entry.id,
-    entry.updatedAt,
-    { ...newEntryListData(entry, taggedFeed), feedTitle: "Saved Articles" }
-  );
+  await publishUserEvent({
+    type: "new_entry",
+    userId: user.id,
+    subscriptionId: await getSavedSubscriptionId(db, user.id),
+    feedType: "saved",
+    entryId: entry.id,
+    updatedAt: entry.updatedAt,
+    entry: { ...newEntryListData(entry, taggedFeed), type: "saved", feedTitle: "Saved Articles" },
+  });
 
   await expect(page.locator('[aria-label*="article: Saved just now"]')).toBeVisible();
   await expect(savedLink).toContainText("(2)");
@@ -398,7 +400,7 @@ test("entry_state_changed event syncs read state and counts across lists without
 }) => {
   // "Second post" is starred (still unread) so the Starred count is visible
   // and we can verify it's unaffected by marking a different entry read.
-  const { user, taggedFeed, tagId, taggedEntries, trpcCalls } = await seedAndOpenAll(
+  const { user, taggedFeed, taggedEntries, trpcCalls } = await seedAndOpenAll(
     page,
     baseURL!,
     ({ user }) => getUserEventsChannel(user.id),
@@ -421,12 +423,18 @@ test("entry_state_changed event syncs read state and counts across lists without
   // Simulate another device marking "First post" read (as entries.markRead
   // does): update the database, then publish the change with absolute counts.
   const updatedAt = await markEntryRead(db, user.id, firstPost.id);
-  await publishEntryStateChanged(user.id, firstPost.id, true, false, updatedAt, {
-    all: { unread: 2 },
-    starred: { unread: 1 },
-    subscriptions: [{ id: taggedFeed.subscriptionId, unread: 1 }],
-    tags: [{ id: tagId, unread: 1 }],
-    uncategorized: { unread: 1 },
+  const counts = await getBulkEntryRelatedCounts(db, user.id, [
+    { id: firstPost.id, subscriptionId: null },
+  ]);
+  await publishUserEvent({
+    type: "entry_state_changed",
+    userId: user.id,
+    entryId: firstPost.id,
+    read: true,
+    starred: false,
+    updatedAt,
+    counts,
+    subscriptionIds: [taggedFeed.subscriptionId],
   });
 
   // Read state and affected counts update from the event's absolute values...
@@ -536,9 +544,7 @@ test("mark_all_read event clears badges from its counts and refetches the unread
 // Regression test: when the LAST unread entry of a subscription is read, the
 // server-computed counts must still include the subscription and its tag
 // (with unread 0). The grouped count queries used to omit lists that dropped
-// to zero, so the sidebar badges stayed stale until a refresh. Unlike the
-// test above, the event counts here come from the real counts service (as
-// entries.markRead computes them), not a hand-written literal.
+// to zero, so the sidebar badges stayed stale until a refresh.
 test("entry_state_changed for the last unread entry clears subscription and tag badges", async ({
   page,
   baseURL,
@@ -569,7 +575,16 @@ test("entry_state_changed for the last unread entry clears subscription and tag 
     { subscriptionId: taggedFeed.subscriptionId },
   ]);
   const lastEntry = taggedEntries[taggedEntries.length - 1];
-  await publishEntryStateChanged(user.id, lastEntry.id, true, false, updatedAt, counts);
+  await publishUserEvent({
+    type: "entry_state_changed",
+    userId: user.id,
+    entryId: lastEntry.id,
+    read: true,
+    starred: false,
+    updatedAt,
+    counts,
+    subscriptionIds: [taggedFeed.subscriptionId],
+  });
 
   // The sidebar defaults to unread-only mode, so once the subscription's
   // count reaches zero the tag and subscription rows disappear entirely

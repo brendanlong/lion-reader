@@ -6,11 +6,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
-import {
-  publishNewEntry,
-  publishSubscriptionDeleted,
-  publishTagDeleted,
-} from "../../src/server/redis/pubsub";
+import { publishFeedEvent, publishUserEvent } from "../../src/server/redis/pubsub";
 import {
   getUserFeedSubscriptionMap,
   startSseConnection,
@@ -73,7 +69,12 @@ async function connect(userId: string): Promise<RecordedConnection> {
 /** Publishes a tag_deleted marker on the user's channel and waits for it to be sent. */
 async function sendMarker(userId: string, connection: RecordedConnection): Promise<string> {
   const marker = generateUuidv7();
-  await publishTagDeleted(userId, marker, new Date());
+  await publishUserEvent({
+    type: "tag_deleted",
+    userId: userId,
+    tagId: marker,
+    updatedAt: new Date(),
+  });
   await connection.waitFor((e) => e.event === "tag_deleted" && e.data.tagId === marker);
   return marker;
 }
@@ -88,10 +89,27 @@ describe("startSseConnection", () => {
     const connection = await connect(userId);
 
     try {
-      await publishNewEntry(feedId, firstEntryId, new Date(), undefined);
+      await publishFeedEvent({
+        type: "new_entry",
+        feedId: feedId,
+        entryId: firstEntryId,
+        updatedAt: new Date(),
+        feedType: "web",
+      });
       const firstTagId = generateUuidv7();
-      await publishTagDeleted(userId, firstTagId, new Date());
-      await publishNewEntry(feedId, secondEntryId, new Date(), undefined);
+      await publishUserEvent({
+        type: "tag_deleted",
+        userId: userId,
+        tagId: firstTagId,
+        updatedAt: new Date(),
+      });
+      await publishFeedEvent({
+        type: "new_entry",
+        feedId: feedId,
+        entryId: secondEntryId,
+        updatedAt: new Date(),
+        feedType: "web",
+      });
       const lastTagId = await sendMarker(userId, connection);
 
       expect(connection.sent.map(({ event, data }) => [event, data.entryId ?? data.tagId])).toEqual(
@@ -128,9 +146,21 @@ describe("startSseConnection", () => {
     const stayer = await connect(stayerId);
 
     try {
-      await publishSubscriptionDeleted(leaverId, feedId, leaverSubscriptionId, new Date());
+      await publishUserEvent({
+        type: "subscription_deleted",
+        userId: leaverId,
+        feedId: feedId,
+        subscriptionId: leaverSubscriptionId,
+        updatedAt: new Date(),
+      });
       await leaver.waitFor((e) => e.event === "subscription_deleted");
-      await publishNewEntry(feedId, entryId, new Date(), undefined);
+      await publishFeedEvent({
+        type: "new_entry",
+        feedId: feedId,
+        entryId: entryId,
+        updatedAt: new Date(),
+        feedType: "web",
+      });
 
       // Both connections share one Redis subscriber, so releasing the
       // leaver's listener must not unsubscribe the feed's channel.

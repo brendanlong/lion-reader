@@ -14,7 +14,7 @@ import { HttpFetchError } from "@/server/http/fetch";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
-import { getFullEntry, type FullEntry } from "./entries";
+import { type FullEntry, getFullEntry } from "./entry-reads";
 import { articleContentFromAcquired, processArticleContent } from "./article-content";
 
 /**

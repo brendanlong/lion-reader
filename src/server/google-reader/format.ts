@@ -8,7 +8,7 @@
 import { int64ToLongFormId, feedStreamId, type GreaderEntryIds } from "./id";
 import { stateStreamId, labelStreamId } from "./streams";
 import type { GreaderSubscription } from "./subscriptions";
-import type { EntryFull } from "@/server/services/entries";
+import type { EntryFull } from "@/server/services/entry-reads";
 
 // ============================================================================
 // Item (Entry) Formatting

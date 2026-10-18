@@ -13,7 +13,7 @@
  */
 
 import { z } from "zod";
-import { ENTRY_TYPES, SUBSCRIPTION_TYPES } from "@/lib/entry-types";
+import { ENTRY_TYPES, SUBSCRIPTION_TYPES, type EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Reusable Sub-Schemas
@@ -43,10 +43,9 @@ export const entryMetadataSchema = z.object({
  */
 export const newEntryListDataSchema = entryMetadataSchema.extend({
   // The entry's own type, for display only (a saved article shows its site
-  // name); list membership comes from `subscriptionIds` (#1846). Replaces the
-  // event's `feedType`, which #1846 phase 9 drops; absent from a previous
-  // release's events.
-  type: z.enum(ENTRY_TYPES).optional(),
+  // name); list membership comes from `subscriptionIds` (#1846). The web
+  // client reads this, not the event's `feedType`, which the Android app reads.
+  type: z.enum(ENTRY_TYPES),
   fetchedAt: z.string(),
   siteName: z.string().nullable(),
   feedTitle: z.string().nullable(),
@@ -70,6 +69,7 @@ export type NewEntryListData = z.infer<typeof newEntryListDataSchema>;
  * holds instead of hand-assembling it.
  */
 export interface NewEntryListDataSource {
+  type: EntryType;
   url?: string | null;
   title?: string | null;
   author?: string | null;
@@ -91,6 +91,7 @@ export function toNewEntryListData(
   state?: { read: boolean; starred: boolean; readChangedAt?: Date | null }
 ): NewEntryListData {
   return {
+    type: entry.type,
     url: entry.url ?? null,
     title: entry.title ?? null,
     author: entry.author ?? null,
@@ -130,7 +131,10 @@ export const syncTagSchema = z.object({
  */
 export const countsAsOfSchema = z.string();
 
-/** Orders two `countsAsOfSchema` stamps; an unstamped value (a previous release's) counts as newest. */
+/**
+ * Orders two `countsAsOfSchema` stamps; an unstamped value (a subscription row
+ * from an event, which carries no stamp) counts as newest.
+ */
 export function isCountsAsOfNewer(
   incoming: string | undefined,
   stored: string | undefined
@@ -148,15 +152,17 @@ export function isCountsAsOfNewer(
 export const unreadCountsSchema = z.object({
   all: z.object({ unread: z.number() }),
   starred: z.object({ unread: z.number() }),
-  saved: z.object({ unread: z.number() }).optional(),
-  // tagIds: absent from events a previous release published
+  saved: z.object({ unread: z.number() }),
+  // Only the affected subscriptions, each with its tags so a client can place
+  // one it hasn't loaded.
   subscriptions: z.array(
-    z.object({ id: z.string(), unread: z.number(), tagIds: z.array(z.string()).optional() })
+    z.object({ id: z.string(), unread: z.number(), tagIds: z.array(z.string()) })
   ),
+  // Only the affected tags.
   tags: z.array(z.object({ id: z.string(), unread: z.number() })),
+  // Present when an affected subscription has no tags.
   uncategorized: z.object({ unread: z.number() }).optional(),
-  // Absent from a previous release's events.
-  asOf: countsAsOfSchema.optional(),
+  asOf: countsAsOfSchema,
 });
 
 /**
@@ -177,7 +183,7 @@ export function legacyFeedId(subscriptionId: string | null): string {
 /**
  * Subscription data for subscription_created events.
  */
-export const subscriptionCreatedDataSchema = z.object({
+const subscriptionCreatedDataSchema = z.object({
   id: z.string(),
   feedId: legacyFeedIdSchema,
   customTitle: z.string().nullable(),
@@ -189,7 +195,7 @@ export const subscriptionCreatedDataSchema = z.object({
 /**
  * Feed data for subscription_created events.
  */
-export const feedCreatedDataSchema = z.object({
+const feedCreatedDataSchema = z.object({
   id: legacyFeedIdSchema,
   type: z.enum(SUBSCRIPTION_TYPES),
   url: z.string().nullable(),
@@ -225,9 +231,9 @@ const updatedAtWithFallback = z.string().optional();
 /**
  * Every active subscription holding the entry (#1846): its origin
  * (`subscriptionId`), its collections and, for a saved article, the saved
- * subscription. Absent from a previous release's events.
+ * subscription.
  */
-const subscriptionIdsSchema = z.array(z.string()).optional();
+const subscriptionIdsSchema = z.array(z.string());
 
 export const newEntryEventSchema = z.object({
   type: z.literal("new_entry"),
@@ -240,14 +246,13 @@ export const newEntryEventSchema = z.object({
   // Absolute unread counts from the server, computed per-user at emit time.
   // The client sets these directly rather than applying a +1 delta, so a
   // new_entry delivered by both the live SSE stream and a reconnect catch-up
-  // sync can't double-count. Optional only so events from servers predating
-  // this field (deploy window) still parse; when absent, counts are left
-  // untouched and self-heal on the next count-bearing event or refetch.
+  // sync can't double-count. Absent when the server failed to read them;
+  // counts are then left untouched and self-heal on the next count-bearing
+  // event or refetch.
   counts: unreadCountsSchema.optional(),
   // List-item data so the client can insert the entry into cached
-  // entries.list pages directly. Optional for the same deploy-window reason
-  // as counts; when absent, the entry appears on the next list refresh
-  // (navigation-triggered invalidation) instead of live.
+  // entries.list pages directly. Absent for spam, which the default
+  // entries.list filters out.
   entry: newEntryListDataSchema.optional(),
 });
 
@@ -280,8 +285,8 @@ export const entryStateChangedEventSchema = z.object({
   // so a client that doesn't have the entry in any cached list can insert it
   // into the lists it now belongs to — the same way new_entry payloads make
   // new entries appear live (issue #1237). Absent for entries becoming read
-  // (nothing to insert) and on events from servers predating this field; the
-  // client then falls back to restoring from another cached list's copy.
+  // (nothing to insert), from star/unstar, for spam, and when the publisher's
+  // lookup failed; the client then falls back to the stored row.
   subscriptionId: z.string().nullable().optional(),
   feedType: z.enum(ENTRY_TYPES).optional(),
   entry: newEntryListDataSchema.optional(),
@@ -301,8 +306,7 @@ export const markAllReadEventSchema = z.object({
   // catch-up while still admitting an unrelated entry written in the same
   // millisecond (#1102).
   entryId: z.string(),
-  // Absent from a previous release's events.
-  counts: unreadCountsSchema.optional(),
+  counts: unreadCountsSchema,
 });
 
 export const subscriptionCreatedEventSchema = z.object({
@@ -314,8 +318,9 @@ export const subscriptionCreatedEventSchema = z.object({
   feed: feedCreatedDataSchema,
   // Absolute unread counts for the lists the new (untagged) subscription
   // affects — All Articles, Uncategorized, and the subscription itself. The
-  // client sets these directly instead of adding deltas. Optional so events
-  // from servers predating this field still parse.
+  // client sets these directly instead of adding deltas. Absent when an email
+  // creates the subscription and from the sync.events catch-up; the client
+  // then invalidates the count caches.
   counts: unreadCountsSchema.optional(),
 });
 
@@ -337,7 +342,7 @@ export const subscriptionUpdatedEventSchema = z.object({
   subscriptionId: z.string(),
   tags: z.array(syncTagSchema),
   customTitle: z.string().nullable(),
-  // Absent when the publisher didn't read it, and from a previous release's events.
+  // Absent when the publisher didn't read it.
   fetchFullContent: z.boolean().optional(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),

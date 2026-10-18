@@ -7,7 +7,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { feeds, type Feed } from "../db/schema";
-import { migrateSubscriptionsToExistingFeed } from "../services/subscriptions";
+import { migrateSubscriptionsToExistingFeed } from "../services/subscribe";
 import { logger } from "@/lib/logger";
 import { isHttpToHttpsUpgrade, REDIRECT_WAIT_PERIOD_MS } from "./redirect-utils";
 

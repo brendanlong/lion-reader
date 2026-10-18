@@ -20,7 +20,7 @@ import {
 import { formatEntryResponse } from "@/server/wallabag/entry-response";
 import { addEntryTags } from "@/server/wallabag/tags";
 import { resolveWallabagEntry } from "@/server/wallabag/id";
-import * as entriesService from "@/server/services/entries";
+import * as entryStateService from "@/server/services/entry-state";
 import * as savedService from "@/server/services/saved";
 import { db } from "@/server/db";
 
@@ -62,13 +62,13 @@ export const PATCH = withClientErrors(async function (
   // Handle archive (read) state
   if (body.archive !== undefined) {
     const read = body.archive === "1";
-    await entriesService.markEntriesRead(db, auth.userId, [{ id: resolved.id }], read);
+    await entryStateService.markEntriesRead(db, auth.userId, [{ id: resolved.id }], read);
   }
 
   // Handle starred state
   if (body.starred !== undefined) {
     const starred = body.starred === "1";
-    await entriesService.updateEntryStarred(db, auth.userId, resolved.id, starred);
+    await entryStateService.updateEntryStarred(db, auth.userId, resolved.id, starred);
   }
 
   // Return the updated entry

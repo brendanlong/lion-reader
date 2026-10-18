@@ -20,6 +20,8 @@
  */
 
 import { eq, and, inArray, isNull, sql } from "drizzle-orm";
+import type { z } from "zod";
+import type { unreadCountsSchema } from "@/lib/events/schemas";
 import { isListedSubscription } from "./subscriptions";
 import type { Temporal } from "temporal-polyfill";
 import type { db as dbType } from "@/server/db";
@@ -156,24 +158,7 @@ async function getTagUnreadCounts(
  * Used by markRead, star/unstar, and new_entry events to return counts for all
  * affected lists.
  */
-export interface BulkUnreadCounts {
-  // Always present
-  all: { unread: number };
-  starred: { unread: number };
-  saved: { unread: number };
-
-  // Per-subscription counts (only subscriptions that were affected), with
-  // each one's tags so a client can place a subscription it hasn't loaded
-  subscriptions: Array<{ id: string; unread: number; tagIds: string[] }>;
-
-  // Per-tag counts (only tags that were affected)
-  tags: Array<{ id: string; unread: number }>;
-
-  // Uncategorized count (if any affected subscription has no tags)
-  uncategorized?: { unread: number };
-
-  asOf: string;
-}
+export type BulkUnreadCounts = z.infer<typeof unreadCountsSchema>;
 
 /**
  * Fetches unread counts for multiple entries' lists.

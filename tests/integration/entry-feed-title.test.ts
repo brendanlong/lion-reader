@@ -14,13 +14,17 @@ import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import * as entriesService from "../../src/server/services/entries";
+import * as entryStateService from "../../src/server/services/entry-state";
 import {
   getUserEventsChannel,
-  publishNewEntry,
-  publishSubscriptionCreated,
-  publishSubscriptionUpdated,
+  publishFeedEvent,
+  publishUserEvent,
 } from "../../src/server/redis/pubsub";
-import { toNewEntryListData } from "../../src/lib/events/schemas";
+import {
+  subscriptionCreatedEvent,
+  subscriptionUpdatedEvent,
+} from "../../src/server/services/subscription-sync-events";
+import { toNewEntryListData, type NewEntryListData } from "../../src/lib/events/schemas";
 import { subscribeAndDrain, waitForMessage } from "../utils/pubsub";
 import { openSseStream, publishUntil, type SseStream } from "../utils/sse";
 import {
@@ -33,6 +37,21 @@ import {
 
 const FEED_TITLE = "Original Feed Name";
 const CUSTOM_TITLE = "My Name For It";
+
+function publishNewEntry(
+  feedId: string,
+  entryId: string,
+  entry: NewEntryListData
+): Promise<number> {
+  return publishFeedEvent({
+    type: "new_entry",
+    feedId,
+    entryId,
+    updatedAt: new Date(),
+    feedType: "web",
+    entry: { ...entry, type: "web" },
+  });
+}
 
 let subscriber: Redis;
 
@@ -123,10 +142,10 @@ describe("entry feedTitle is the user's subscription title", () => {
       async (userId, entryId) => {
         const channel = getUserEventsChannel(userId);
         await subscribeAndDrain(subscriber, channel, () =>
-          entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
+          entryStateService.markEntriesRead(db, userId, [{ id: entryId }], true)
         );
         const message = waitForMessage(subscriber, channel);
-        await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
+        await entryStateService.markEntriesRead(db, userId, [{ id: entryId }], false);
         const event = JSON.parse(await message);
         await subscriber.unsubscribe(channel);
         return event.entry?.feedTitle;
@@ -143,7 +162,7 @@ describe("entry feedTitle is the user's subscription title", () => {
     const { feedId, renamer, other, subscriptionId, entryId } = await seed();
     // Feed channels are shared by every subscriber, so the publisher stamps
     // the feed's own title; each stream must swap in its user's.
-    const payload = toNewEntryListData({ fetchedAt: new Date() }, FEED_TITLE);
+    const payload = toNewEntryListData({ type: "web", fetchedAt: new Date() }, FEED_TITLE);
     const renamerStream = await openSseStream(renamer);
     const otherStream = await openSseStream(other);
     const titlesFor = (stream: SseStream, id: string) =>
@@ -154,7 +173,7 @@ describe("entry feedTitle is the user's subscription title", () => {
 
     try {
       await publishUntil(
-        () => publishNewEntry(feedId, entryId, new Date(), payload),
+        () => publishNewEntry(feedId, entryId, payload),
         () =>
           titlesFor(renamerStream, entryId).length > 0 && titlesFor(otherStream, entryId).length > 0
       );
@@ -167,29 +186,39 @@ describe("entry feedTitle is the user's subscription title", () => {
         customTitle: "Second Name",
       });
       const secondEntryId = await createTestEntry(secondFeedId, { userIds: [renamer] });
-      await publishSubscriptionCreated(
-        renamer,
-        secondFeedId,
-        secondSubscriptionId,
-        new Date(),
-        {
-          customTitle: "Second Name",
-          subscribedAt: new Date().toISOString(),
-          unreadCount: 1,
-          tags: [],
-        },
-        { type: "web", url: null, title: FEED_TITLE, description: null, siteUrl: null }
-      );
+      await publishUserEvent({
+        ...subscriptionCreatedEvent(
+          {
+            id: secondSubscriptionId,
+            type: "web",
+            customTitle: "Second Name",
+            subscribedAt: new Date(),
+            unreadCount: 1,
+          },
+          [],
+          { url: null, title: FEED_TITLE, description: null, siteUrl: null }
+        ),
+        userId: renamer,
+        feedId: secondFeedId,
+        updatedAt: new Date(),
+      });
       await publishUntil(
-        () => publishNewEntry(secondFeedId, secondEntryId, new Date(), payload),
+        () => publishNewEntry(secondFeedId, secondEntryId, payload),
         () => titlesFor(renamerStream, secondEntryId).length > 0
       );
       expect(new Set(titlesFor(renamerStream, secondEntryId))).toEqual(new Set(["Second Name"]));
 
       // Clearing the custom title falls back to the feed's.
-      await publishSubscriptionUpdated(renamer, subscriptionId, new Date(), [], null);
+      await publishUserEvent({
+        ...subscriptionUpdatedEvent(
+          { id: subscriptionId, customTitle: null, fetchFullContent: false },
+          []
+        ),
+        userId: renamer,
+        updatedAt: new Date(),
+      });
       const laterEntryId = await createTestEntry(feedId, { userIds: [renamer, other] });
-      await publishNewEntry(feedId, laterEntryId, new Date(), payload);
+      await publishNewEntry(feedId, laterEntryId, payload);
       await renamerStream.waitFor("new_entry", (event) => event.entryId === laterEntryId);
       expect(titlesFor(renamerStream, laterEntryId)).toEqual([FEED_TITLE]);
     } finally {

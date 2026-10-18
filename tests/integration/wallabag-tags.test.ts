@@ -11,7 +11,7 @@ import { entries, subscriptionEntries, subscriptions, users } from "../../src/se
 import { createTokens } from "../../src/server/oauth/service";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { unsubscribe } from "../../src/server/services/subscriptions";
+import { unsubscribe } from "../../src/server/services/subscription-updates";
 import { COLLECTION_NAME_MAX_LENGTH, MAX_SAVE_COLLECTIONS } from "../../src/lib/collections";
 import { GET as listTags } from "../../src/app/api/wallabag/api/tags/route";
 import { DELETE as deleteTag } from "../../src/app/api/wallabag/api/tags/[tag]/route";

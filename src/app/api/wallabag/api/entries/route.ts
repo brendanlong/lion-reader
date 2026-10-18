@@ -47,6 +47,8 @@ import {
   createPaginatedResponse,
 } from "@/server/wallabag/format";
 import * as entriesService from "@/server/services/entries";
+import * as entryReadsService from "@/server/services/entry-reads";
+import * as entryStateService from "@/server/services/entry-state";
 import * as savedService from "@/server/services/saved";
 import { entryIdsToWallabagIds } from "@/server/wallabag/id";
 import { addEntryTags, collectionIdGroupsForLabels, listEntryTags } from "@/server/wallabag/tags";
@@ -124,7 +126,7 @@ export const GET = withClientErrors(async function (request: Request): Promise<R
   // If detail is "full", fetch full content in a single bulk query
   const entryIds = result.items.map((e) => e.id);
   const [fullEntries, tagsByEntry, wallabagIds] = await Promise.all([
-    params.detail === "full" ? entriesService.getEntries(db, auth.userId, entryIds) : [],
+    params.detail === "full" ? entryReadsService.getEntries(db, auth.userId, entryIds) : [],
     listEntryTags(db, auth.userId, entryIds),
     entryIdsToWallabagIds(db, auth.userId, entryIds),
   ]);
@@ -169,10 +171,10 @@ export async function POST(request: Request): Promise<Response> {
 
     // Handle archive/starred flags if provided
     if (body.archive === "1" && !article.read) {
-      await entriesService.markEntriesRead(db, auth.userId, [{ id: article.id }], true);
+      await entryStateService.markEntriesRead(db, auth.userId, [{ id: article.id }], true);
     }
     if (body.starred === "1" && !article.starred) {
-      await entriesService.updateEntryStarred(db, auth.userId, article.id, true);
+      await entryStateService.updateEntryStarred(db, auth.userId, article.id, true);
     }
 
     return await savedArticleResponse(auth.userId, article, tagLabels);

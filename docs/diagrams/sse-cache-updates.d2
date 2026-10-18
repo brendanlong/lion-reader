@@ -16,40 +16,40 @@ event-sources: Event Sources {
     style.fill: "#dbeafe"
     tooltip: "src/server/feed/entry-processor.ts"
 
-    new-entry-web: publishNewEntry(feedId, entryId, "web")
-    entry-updated: publishEntryUpdated(feedId, entryId)
+    new-entry-web: publishFeedEvent(new_entry, "web")
+    entry-updated: publishFeedEvent(entry_updated)
   }
 
   email-processor: Email Inbound {
     style.fill: "#dbeafe"
     tooltip: "src/server/email/process-inbound.ts"
 
-    new-entry-email: publishUserNewEntry(userId, subscriptionId, entryId, "email")
+    new-entry-email: publishUserEvent(new_entry, "email")
   }
 
   saved-service: Saved Articles Service {
     style.fill: "#dbeafe"
     tooltip: "src/server/services/saved.ts + routers/saved.ts"
 
-    new-saved: publishUserNewEntry(userId, null, entryId, "saved")
-    saved-updated: publishUserEntryUpdated(userId, null, entry)
+    new-saved: publishUserEvent(new_entry, "saved")
+    saved-updated: publishUserEvent(entry_updated, "saved")
   }
 
   subscriptions-service: Subscriptions Service {
     style.fill: "#e0e7ff"
-    tooltip: "src/server/services/subscriptions.ts"
+    tooltip: "src/server/services/subscribe.ts + subscription-updates.ts"
 
-    sub-created: publishSubscriptionCreated(userId, feedId, subscriptionId, subscription, feed)
-    sub-deleted: publishSubscriptionDeleted(userId, feedId, subscriptionId)
+    sub-created: publishUserEvent(subscription_created)
+    sub-deleted: publishUserEvent(subscription_deleted)
   }
 
   job-handlers: Background Jobs {
     style.fill: "#e0e7ff"
     tooltip: "src/server/services/imports.ts"
 
-    import-sub-created: publishSubscriptionCreated(...) // OPML import
-    import-progress: publishImportProgress(userId, importId, feedUrl, status, counts)
-    import-completed: publishImportCompleted(userId, importId, counts)
+    import-sub-created: publishUserEvent(subscription_created) // OPML import
+    import-progress: publishUserEvent(import_progress)
+    import-completed: publishUserEvent(import_completed)
   }
 }
 

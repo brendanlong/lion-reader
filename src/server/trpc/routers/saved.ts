@@ -31,16 +31,9 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
-import { logger } from "@/lib/logger";
 import type { db as dbType } from "@/server/db";
 import { getGlobalUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
-import * as collectionsService from "@/server/services/collections";
-import {
-  convertUploadedFile,
-  detectFileType,
-  getSupportedTypesDescription,
-} from "@/server/file/process-upload";
 
 // Saved-article management is part of the MCP tool surface, which the app shares.
 const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
@@ -187,27 +180,14 @@ export const savedRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       assertMayChangeCollections(ctx, input.collectionIds);
-      await collectionsService.assertOwnedCollections(ctx.db, userId, input.collectionIds ?? []);
 
       const article = await savedService.saveArticle(ctx.db, userId, {
-        url: input.url,
-        html: input.html,
-        title: input.title,
-        author: input.author,
-        excerpt: input.excerpt,
-        refetch: input.refetch,
-        force: input.force,
+        ...input,
         // The web UI and the extension walk the user through Google sign-in /
         // consent, so they want the machine-readable NEEDS_* codes they match to
         // drive prompts; the app can't, so it gets the readable messages.
         userAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
-      await collectionsService.addEntryToCollections(
-        ctx.db,
-        userId,
-        article.id,
-        input.collectionIds ?? []
-      );
 
       return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
     }),
@@ -272,7 +252,7 @@ export const savedRouter = createTRPCRouter({
       z.object({
         // Base64 inflates by ~4/3; cap the encoded string so an oversized upload
         // is rejected by validation before we spend memory/CPU decoding it. The
-        // decoded byte length is enforced exactly below (base64 length is only an
+        // service enforces the decoded byte length exactly (base64 length is only an
         // upper bound on decoded size). Slack covers padding/newlines.
         content: z
           .string()
@@ -288,72 +268,7 @@ export const savedRouter = createTRPCRouter({
     )
     .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      await collectionsService.assertOwnedCollections(ctx.db, userId, input.collectionIds ?? []);
-
-      // Validate file type
-      const fileType = detectFileType(input.filename);
-      if (!fileType) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Unsupported file type. ${getSupportedTypesDescription()}`,
-        });
-      }
-
-      // Decode base64 content. Node's decoder never throws — it skips
-      // non-base64 characters — so content that isn't really base64 decodes to
-      // garbage bytes and is rejected by `convertUploadedFile` below.
-      const fileBuffer = Buffer.from(input.content, "base64");
-
-      // Enforce the size limit on the decoded bytes before any conversion
-      // (mammoth/Readability/Markdown), so a large upload can't burn memory/CPU.
-      if (fileBuffer.length > usageLimitsConfig.maxSavedArticleSizeBytes) {
-        throw errors.contentTooLarge("Uploaded file", usageLimitsConfig.maxSavedArticleSizeBytes);
-      }
-
-      // Convert the file to raw article content. Conversion failures are the
-      // user's problem (bad file) → BAD_REQUEST; the downstream save (Readability,
-      // metadata, insert) runs outside this catch so its errors surface as 500s.
-      let converted;
-      try {
-        converted = await convertUploadedFile(fileBuffer, input.filename);
-      } catch (error) {
-        logger.warn("Failed to convert uploaded file", {
-          filename: input.filename,
-          fileType,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // An error that already knows what it is keeps its own code and
-        // message — conversion can raise a typed one (a Markdown source or its
-        // rendered HTML busting its byte budget, #1431), and re-wrapping it
-        // would bury `CONTENT_TOO_LARGE` under a generic BAD_REQUEST.
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Failed to process file: ${error instanceof Error ? error.message : "Unknown error"}`,
-        });
-      }
-
-      // Save via the shared upload pipeline (title/author/excerpt/metadata
-      // derived identically to a URL save).
-      const article = await savedService.createSavedFromUpload(ctx.db, userId, {
-        converted,
-        title: input.title,
-      });
-
-      logger.info("Uploaded file saved", {
-        entryId: article.id,
-        filename: input.filename,
-        fileType: converted.fileType,
-        title: article.title,
-      });
-      await collectionsService.addEntryToCollections(
-        ctx.db,
-        userId,
-        article.id,
-        input.collectionIds ?? []
-      );
-
-      return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
+      const article = await savedService.uploadFile(ctx.db, ctx.session.user.id, input);
+      return { article, counts: await getSavedUnreadCounts(ctx.db, ctx.session.user.id) };
     }),
 });

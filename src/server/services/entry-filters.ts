@@ -127,6 +127,10 @@ export function entryOriginOn(
   return and(eq(subscriptions.id, memberships.originId), eq(subscriptions.userId, row.userId))!;
 }
 
+/** A `visible_entries` row and its {@link entryMemberships}, for the entry services' reads. */
+export const VISIBLE_ROW = { userId: visibleEntries.userId, entryId: visibleEntries.id };
+export const VISIBLE_MEMBERSHIPS = entryMemberships(VISIBLE_ROW);
+
 // ============================================================================
 // Helper Functions
 // ============================================================================

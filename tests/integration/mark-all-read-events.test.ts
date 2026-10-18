@@ -19,7 +19,7 @@ import { createCaller } from "../../src/server/trpc/root";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { expectNoMessage, subscribeAndDrain, waitForMessage } from "../utils/pubsub";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { setSubscriptionTags } from "../../src/server/services/subscriptions";
+import { setSubscriptionTags } from "../../src/server/services/subscription-updates";
 import {
   createAuthContext,
   createTestEntry,

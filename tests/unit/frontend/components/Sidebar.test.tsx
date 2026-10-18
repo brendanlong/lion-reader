@@ -31,6 +31,7 @@ import {
   stubMemoryLocalStorage,
   type ProcedureHandlers,
 } from "../../../utils/component-test-helpers";
+import { createCounts } from "../../../utils/cache-test-helpers";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -278,12 +279,16 @@ describe("Sidebar", () => {
 
     // An article in the (read, so unlisted) collection was marked unread.
     act(() =>
-      applyUnreadCounts(caches!.utils, caches!.queryClient, {
-        all: { unread: 19 },
-        starred: { unread: 2 },
-        subscriptions: [{ id: "sub-2", unread: 1, tagIds: [TECH_TAG.id] }],
-        tags: [{ id: TECH_TAG.id, unread: 6 }],
-      })
+      applyUnreadCounts(
+        caches!.utils,
+        caches!.queryClient,
+        createCounts({
+          all: { unread: 19 },
+          starred: { unread: 2 },
+          subscriptions: [{ id: "sub-2", unread: 1, tagIds: [TECH_TAG.id] }],
+          tags: [{ id: TECH_TAG.id, unread: 6 }],
+        })
+      )
     );
 
     expect(await screen.findByRole("link", { name: /^Picks/ })).toHaveTextContent("(1)");

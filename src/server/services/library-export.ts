@@ -16,7 +16,7 @@
 import type { db as dbType } from "@/server/db";
 import { ZipWriter } from "@/server/file/zip-writer";
 import { escapeHtml } from "@/server/http/html";
-import { listExportableEntries, type ExportableEntry } from "./entries";
+import { type ExportableEntry, listExportableEntries } from "./entry-reads";
 import { exportSubscriptionsOpml } from "./subscriptions";
 
 /** @testonly */

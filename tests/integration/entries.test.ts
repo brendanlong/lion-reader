@@ -7,14 +7,18 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  tags,
+  userEntries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import {
-  markAllEntriesRead,
-  markEntriesRead,
-  listEntries,
-} from "../../src/server/services/entries";
+import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entry-state";
+import { listEntries } from "../../src/server/services/entries";
 import {
   createAuthContext,
   createTestSubscription,
@@ -850,6 +854,40 @@ describe("Entries", () => {
         showSpam: false,
       });
       expect(ownMarked).toEqual([entryId]);
+    });
+
+    it("marks nothing through a deleted tag", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://deleted-tag-mark-all.com/rss");
+      const subscriptionId = await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { title: "Tagged entry" });
+      await createUserEntry(userId, entryId, { read: false });
+      const tagId = await createTestTag(userId, { subscriptionIds: [subscriptionId] });
+      await db.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
+
+      const { entryIds } = await markAllEntriesRead(db, { userId, tagId, showSpam: false });
+      expect(entryIds).toEqual([]);
+    });
+
+    // A starred article stays visible after its subscription is unsubscribed,
+    // and keeps its membership, so only the ownership check stops this.
+    it("marks nothing through an unsubscribed subscription", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://unsubscribed-mark-all.com/rss");
+      const subscriptionId = await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { title: "Starred leftover" });
+      await createUserEntry(userId, entryId, { read: false, starred: true });
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, subscriptionId));
+
+      const { entryIds } = await markAllEntriesRead(db, {
+        userId,
+        subscriptionId,
+        showSpam: false,
+      });
+      expect(entryIds).toEqual([]);
     });
 
     it("excludes hidden spam entries unless showSpam is set", async () => {

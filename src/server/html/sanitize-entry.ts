@@ -9,7 +9,7 @@
  * form) to run on every read, so we store only the raw columns and sanitize
  * here at read time. This is the single chokepoint every read path funnels
  * through — see `getFullEntry`/`getEntry` and their batch forms in
- * `@/server/services/entries` and the saved-article read paths.
+ * `@/server/services/entry-reads` and the saved-article read paths.
  *
  * A content "family" is an `(original, cleaned)` pair. The **content** family
  * serves both variants — the frontend has a user-facing original/cleaned toggle

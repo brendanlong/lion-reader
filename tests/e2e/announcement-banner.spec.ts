@@ -8,7 +8,7 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { publishAnnouncementChanged, getSiteStatusChannel } from "../../src/server/redis/pubsub";
+import { publishSiteStatusEvent, getSiteStatusChannel } from "../../src/server/redis/pubsub";
 import { setAnnouncement } from "../../src/server/services/site-status";
 import {
   getDb,
@@ -47,14 +47,17 @@ test("announcement_changed event shows and clears the banner live without refetc
   trpcCalls.length = 0;
 
   const message = "Known issue: feed refresh is delayed. We are on it.";
-  await publishAnnouncementChanged({ id: "e2e-ann-1", message, level: "warning" });
+  await publishSiteStatusEvent({
+    type: "announcement_changed",
+    announcement: { id: "e2e-ann-1", message, level: "warning" },
+  });
 
   // Banner appears live.
   const banner = page.getByRole("status").filter({ hasText: message });
   await expect(banner).toBeVisible();
 
   // A live "cleared" event hides it again.
-  await publishAnnouncementChanged(null);
+  await publishSiteStatusEvent({ type: "announcement_changed", announcement: null });
   await expect(banner).toBeHidden();
 
   // The banner is not a query — its push must never trigger a data refetch.

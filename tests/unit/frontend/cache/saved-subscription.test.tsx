@@ -15,7 +15,7 @@ import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
-import { createNewEntryEvent } from "../../../utils/cache-test-helpers";
+import { createCounts, createNewEntryEvent } from "../../../utils/cache-test-helpers";
 
 afterEach(() => {
   cleanup();
@@ -30,13 +30,7 @@ function savedEvent(entryId: string, day: number, read = false) {
     subscriptionId: "sub-saved",
     subscriptionIds: ["sub-saved"],
     feedType: "saved",
-    counts: {
-      all: { unread: 0 },
-      starred: { unread: 0 },
-      saved: { unread: 0 },
-      subscriptions: [],
-      tags: [],
-    },
+    counts: createCounts(),
     entry: {
       url: `https://example.com/${entryId}`,
       title: entryId,

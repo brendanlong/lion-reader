@@ -10,7 +10,6 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -20,12 +19,17 @@ import {
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { uuidSchema } from "../validation";
-import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
-import { verifySubscriptionOwnership } from "@/server/services/entry-filters";
+import * as entryReadsService from "@/server/services/entry-reads";
+import * as entryStateService from "@/server/services/entry-state";
 import { toServerTime } from "@/server/services/client-time";
-import { countsAsOfSchema, legacyFeedId, legacyFeedIdSchema } from "@/lib/events/schemas";
+import {
+  countsAsOfSchema,
+  legacyFeedId,
+  legacyFeedIdSchema,
+  unreadCountsSchema,
+} from "@/lib/events/schemas";
 import { ENTRY_TYPES } from "@/lib/entry-types";
 
 // Endpoints exposed via the MCP tool surface, plus the ones the native app needs.
@@ -62,8 +66,8 @@ const stateChangeEntriesSchema = z
   )
   .min(1, "At least one entry is required")
   .max(
-    entriesService.MAX_ENTRY_STATE_BATCH,
-    `Maximum ${entriesService.MAX_ENTRY_STATE_BATCH} entries per request`
+    entryStateService.MAX_ENTRY_STATE_BATCH,
+    `Maximum ${entryStateService.MAX_ENTRY_STATE_BATCH} entries per request`
   );
 
 /**
@@ -198,29 +202,6 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
- * Schema for unread counts returned from entry mutations (markRead, setStarred).
- * Contains absolute counts for all affected lists.
- */
-const bulkUnreadCountsSchema = z.object({
-  // Always present
-  all: z.object({ unread: z.number() }),
-  starred: z.object({ unread: z.number() }),
-  saved: z.object({ unread: z.number() }),
-
-  // Per-subscription counts (only subscriptions that were affected)
-  subscriptions: z.array(
-    z.object({ id: z.string(), unread: z.number(), tagIds: z.array(z.string()) })
-  ),
-
-  // Per-tag counts (only tags that were affected)
-  tags: z.array(z.object({ id: z.string(), unread: z.number() })),
-
-  // Uncategorized count (if any affected subscription has no tags)
-  uncategorized: z.object({ unread: z.number() }).optional(),
-  asOf: countsAsOfSchema,
-});
-
-/**
  * Result of a bulk read/star write: the final state of every requested entry the
  * user can still see (an id missing here no longer exists for them), for cache
  * updates and offline-outbox reconciliation.
@@ -243,7 +224,7 @@ const bulkStateChangeOutputSchema = z.object({
   // Absolute counts for all affected lists. Absent when no value actually
   // flipped (same-value re-assert) — the client's cached counts are already
   // correct (issue #1118).
-  counts: bulkUnreadCountsSchema.optional(),
+  counts: unreadCountsSchema.optional(),
 });
 
 /**
@@ -254,14 +235,14 @@ const setStarredOutputSchema = z.object({
   entry: entryMutationResultSchema,
   // Absent when the starred value didn't actually flip (same-value re-assert)
   // — the client's cached counts are already correct (issue #1118).
-  counts: bulkUnreadCountsSchema.optional(),
+  counts: unreadCountsSchema.optional(),
 });
 
 // ============================================================================
 // Router
 // ============================================================================
 //
-// Full-entry reads go through `entriesService.getFullEntry`, which sanitizes
+// Full-entry reads go through `entryReadsService.getFullEntry`, which sanitizes
 // the content (the read-path sanitization chokepoint lives in the services
 // layer so MCP, Google Reader, and Wallabag get the same guarantee).
 
@@ -390,7 +371,7 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      const { entry } = await entriesService.getFullEntry(ctx.db, userId, input.id);
+      const { entry } = await entryReadsService.getFullEntry(ctx.db, userId, input.id);
       return { entry: withLegacyFeedId(entry) };
     }),
 
@@ -416,9 +397,9 @@ export const entriesRouter = createTRPCRouter({
     .output(z.object({ entries: z.array(entryFullSchema) }))
     .query(async ({ ctx, input }) => {
       return {
-        entries: (await entriesService.getFullEntries(ctx.db, ctx.session.user.id, input.ids)).map(
-          withLegacyFeedId
-        ),
+        entries: (
+          await entryReadsService.getFullEntries(ctx.db, ctx.session.user.id, input.ids)
+        ).map(withLegacyFeedId),
       };
     }),
 
@@ -459,7 +440,7 @@ export const entriesRouter = createTRPCRouter({
       // entry_state_changed SSE events itself (so every caller — tRPC, MCP, and
       // the Google Reader/Wallabag compat routes — notifies other tabs).
       const now = new Date();
-      const { entries: entriesResult, counts } = await entriesService.markEntriesRead(
+      const { entries: entriesResult, counts } = await entryStateService.markEntriesRead(
         ctx.db,
         userId,
         input.entries.map((entry) => ({
@@ -509,40 +490,13 @@ export const entriesRouter = createTRPCRouter({
         clientSentAt: clientSentAtSchema,
       })
     )
-    .output(z.object({ count: z.number(), counts: bulkUnreadCountsSchema.optional() }))
+    .output(z.object({ count: z.number(), counts: unreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Validate tag belongs to user (and isn't soft-deleted) before passing to
-      // the service — a tombstoned tag is invisible in listTags and must not be
-      // markable.
-      if (input.tagId) {
-        const tagExists = await ctx.db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
-          .limit(1);
-
-        if (tagExists.length === 0) {
-          return { count: 0 };
-        }
-      }
-
-      // Validate subscription belongs to user before passing to service
-      if (input.subscriptionId) {
-        const owned = await verifySubscriptionOwnership(ctx.db, input.subscriptionId, userId);
-        if (!owned) {
-          return { count: 0 };
-        }
-      }
-
-      // markAllEntriesRead publishes the mark_all_read SSE signal itself (so the
-      // Google Reader mark-all-as-read route notifies other tabs too).
       const { clientSentAt, ...filters } = input;
-      const { entryIds, counts } = await entriesService.markAllEntriesRead(ctx.db, {
+      const { entryIds, counts } = await entryStateService.markAllEntriesRead(ctx.db, {
         ...filters,
         changedAt: toServerTime(input.changedAt, clientSentAt),
-        userId,
+        userId: ctx.session.user.id,
         showSpam: ctx.session.user.showSpam,
       });
 
@@ -581,7 +535,7 @@ export const entriesRouter = createTRPCRouter({
       // updateEntryStarred computes the absolute counts and publishes the
       // entry_state_changed SSE event itself (so every caller — tRPC, MCP, and
       // the Google Reader/Wallabag compat routes — notifies other tabs).
-      const { entry, counts } = await entriesService.updateEntryStarred(
+      const { entry, counts } = await entryStateService.updateEntryStarred(
         ctx.db,
         userId,
         input.id,
@@ -615,7 +569,7 @@ export const entriesRouter = createTRPCRouter({
     .output(bulkStateChangeOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const now = new Date();
-      const { entries, counts } = await entriesService.updateEntriesStarred(
+      const { entries, counts } = await entryStateService.updateEntriesStarred(
         ctx.db,
         ctx.session.user.id,
         input.entries.map((entry) => ({

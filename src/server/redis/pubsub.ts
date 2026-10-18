@@ -16,10 +16,6 @@ import { getRedisClient } from "@/server/redis";
 import {
   entryMetadataSchema,
   newEntryListDataSchema,
-  subscriptionCreatedDataSchema,
-  feedCreatedDataSchema,
-  legacyFeedId,
-  unreadCountsSchema,
   newEntryEventSchema,
   entryUpdatedEventSchema,
   entryStateChangedEventSchema,
@@ -34,12 +30,7 @@ import {
   importProgressEventBaseSchema,
   importCompletedEventBaseSchema,
   announcementChangedEventBaseSchema,
-  type NewEntryListData,
 } from "@/lib/events/schemas";
-import type { Announcement } from "@/server/services/site-status";
-import { toEntryMetadata } from "@/server/services/entry-sync-events";
-import type { BulkUnreadCounts } from "@/server/services/counts";
-import type { EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Event Schemas (single source of truth for both publishing and parsing)
@@ -58,9 +49,8 @@ const feedEventSchema = z.discriminatedUnion("type", [
     updatedAt: z.string(),
     feedType: z.literal("web"),
     // List-item data forwarded to clients so they can insert the entry into
-    // cached lists. Optional so events published by a previous release (no
-    // entry data) still parse during a deploy window.
-    entry: newEntryListDataSchema.optional(),
+    // cached lists; absent for spam.
+    entry: newEntryListDataSchema.extend({ type: z.literal("web") }).optional(),
   }),
   z.object({
     type: z.literal("entry_updated"),
@@ -84,19 +74,13 @@ const userEventSchema = z.discriminatedUnion("type", [
   // Entry events for sources with exactly one recipient (email, saved), which
   // go to that user's channel instead of a feed channel. They carry what the
   // SSE route adds to a web feed's events itself: the user's subscriptionId
-  // (null for saved articles).
-  newEntryEventSchema.extend({
+  // (null for saved articles). It derives a new entry's `subscriptionIds`.
+  newEntryEventSchema.omit({ subscriptionIds: true }).extend({
     userId: z.string(),
     ...serverTimestamp,
     feedType: z.enum(["email", "saved"]),
   }),
-  entryUpdatedEventSchema.extend({
-    userId: z.string(),
-    ...serverTimestamp,
-    // Unread, but the previous release's SSE servers require it: drop it the
-    // release after this one.
-    feedType: z.enum(["email", "saved"]).optional(),
-  }),
+  entryUpdatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
   subscriptionCreatedEventSchema.extend({
     userId: z.string(),
     ...serverTimestamp,
@@ -137,13 +121,7 @@ export type FeedEvent = z.infer<typeof feedEventSchema>;
 /** Union type for all user events. */
 export type UserEvent = z.infer<typeof userEventSchema>;
 
-// Sub-types derived from shared schemas
 export type EntryUpdatedMetadata = z.infer<typeof entryMetadataSchema>;
-type SubscriptionCreatedEventSubscription = Omit<
-  z.infer<typeof subscriptionCreatedDataSchema>,
-  "id" | "feedId"
->;
-type SubscriptionCreatedEventFeed = Omit<z.infer<typeof feedCreatedDataSchema>, "id">;
 
 /**
  * Returns the channel name for feed-specific events.
@@ -181,16 +159,31 @@ export function getSiteStatusChannel(): string {
 }
 
 /**
- * Publishes an event to a Redis channel. Every `publish*` function below funnels
- * through here: they own the typed signature and the event shape, this owns the
- * client lookup, serialization, and the failure handling.
+ * An event as its publisher supplies it: without the `timestamp`, which the
+ * publish stamps, and with a required `updatedAt` as the row's `Date`.
+ */
+type Published<E> = E extends { updatedAt: string }
+  ? Omit<E, "timestamp" | "updatedAt"> & { updatedAt: Date }
+  : Omit<E, "timestamp" | "updatedAt">;
+
+function stamp<E>(event: Published<E>): E {
+  const { updatedAt, ...rest } = event as { updatedAt?: Date };
+  return {
+    ...rest,
+    timestamp: new Date().toISOString(),
+    ...(updatedAt && { updatedAt: updatedAt.toISOString() }),
+  } as E;
+}
+
+/**
+ * Publishes an event to a Redis channel. Every publisher below funnels
+ * through here: this owns the client lookup, serialization, and the failure
+ * handling.
  *
  * Events are best-effort (clients catch up through sync), so this never
  * throws: a failed publish is logged here, and callers neither catch nor
  * await it unless they need the subscriber count.
  *
- * @param channel - The channel to publish on
- * @param event - The event to publish
  * @returns The number of subscribers that received the message (0 if Redis is
  *   unavailable or the publish failed)
  */
@@ -217,501 +210,22 @@ async function publishToChannel(
 // be published to a feed's channel (which every subscriber of that feed reads)
 // by passing the wrong channel name. See SECURITY.md on cross-user isolation.
 
-/** Publishes a feed event to its feed's channel. */
-async function publishFeedEvent(event: FeedEvent): Promise<number> {
-  return publishToChannel(getFeedEventsChannel(event.feedId), event);
+/**
+ * Publishes a web feed's entry event to the feed's channel. Email and saved
+ * entries have one recipient, so theirs go through publishUserEvent.
+ */
+export async function publishFeedEvent(event: Published<FeedEvent>): Promise<number> {
+  return publishToChannel(getFeedEventsChannel(event.feedId), stamp<FeedEvent>(event));
 }
 
 /** Publishes a user event to that user's channel. */
-async function publishUserEvent(event: UserEvent): Promise<number> {
-  return publishToChannel(getUserEventsChannel(event.userId), event);
+export async function publishUserEvent(event: Published<UserEvent>): Promise<number> {
+  return publishToChannel(getUserEventsChannel(event.userId), stamp<UserEvent>(event));
 }
 
 /** Publishes an event to the single global site-status channel. */
-async function publishSiteStatusEvent(event: SiteStatusEvent): Promise<number> {
-  return publishToChannel(getSiteStatusChannel(), event);
-}
-
-/**
- * Publishes a new_entry event for a web feed's entry on the feed's channel.
- * Email and saved entries use publishUserNewEntry.
- *
- * @param feedId - The ID of the feed containing the entry
- * @param entryId - The ID of the newly created entry
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param entry - List-item data so clients can insert the entry into cached
- *   lists. Pass undefined for entries the default entries.list would filter
- *   out (spam) so clients only update counts and never insert a ghost row.
- * @returns The number of subscribers that received the message
- */
-export async function publishNewEntry(
-  feedId: string,
-  entryId: string,
-  updatedAt: Date,
-  entry: NewEntryListData | undefined
-): Promise<number> {
-  return publishFeedEvent({
-    type: "new_entry",
-    feedId,
-    entryId,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-    feedType: "web",
-    ...(entry ? { entry: { ...entry, type: "web" as const } } : {}),
-  });
-}
-
-/** Where an email or saved entry's events go: its one recipient. */
-interface UserEntryTarget {
-  userId: string;
-  /** The email subscription's id, or the saved subscription's (null when not looked up). */
-  subscriptionId: string | null;
-  feedType: Exclude<EntryType, "web">;
-}
-
-/**
- * Publishes a new_entry event for an email or saved entry on its user's
- * channel (no other user can receive it, so no feed channel is needed).
- *
- * @param target - The entry's recipient and source
- * @param entryId - The ID of the newly created entry
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param entry - List-item data, as for publishNewEntry (undefined for spam)
- * @returns The number of the user's subscribers that received the message
- */
-export async function publishUserNewEntry(
-  target: UserEntryTarget,
-  entryId: string,
-  updatedAt: Date,
-  entry: NewEntryListData | undefined
-): Promise<number> {
-  return publishUserEvent({
-    type: "new_entry",
-    userId: target.userId,
-    subscriptionId: target.subscriptionId,
-    entryId,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-    feedType: target.feedType,
-    ...(entry ? { entry: { ...entry, type: target.feedType } } : {}),
-  });
-}
-
-/**
- * Publishes an entry_updated event for an email or saved entry on its user's
- * channel. See publishUserNewEntry.
- *
- * @param target - The entry's recipient and source
- * @param entry - The entry object (from database)
- * @returns The number of the user's subscribers that received the message
- */
-export async function publishUserEntryUpdated(
-  target: UserEntryTarget,
-  entry: EntryLike
-): Promise<number> {
-  return publishUserEvent({
-    type: "entry_updated",
-    userId: target.userId,
-    subscriptionId: target.subscriptionId,
-    entryId: entry.id,
-    timestamp: new Date().toISOString(),
-    updatedAt: entry.updatedAt.toISOString(),
-    feedType: target.feedType,
-    metadata: toEntryMetadata(entry),
-  });
-}
-
-/**
- * Publishes an entry_updated event when an entry content changes.
- *
- * @param feedId - The ID of the feed containing the entry
- * @param entryId - The ID of the updated entry
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param metadata - Entry metadata for direct cache updates
- * @returns The number of subscribers that received the message
- */
-async function publishEntryUpdated(
-  feedId: string,
-  entryId: string,
-  updatedAt: Date,
-  metadata: EntryUpdatedMetadata
-): Promise<number> {
-  return publishFeedEvent({
-    type: "entry_updated",
-    feedId,
-    entryId,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-    metadata,
-  });
-}
-
-/**
- * Entry-like object with fields needed for publishing update events.
- * Matches the Entry type from the database schema.
- */
-interface EntryLike {
-  id: string;
-  title: string | null;
-  author: string | null;
-  summary: string | null;
-  url: string | null;
-  publishedAt: Date | null;
-  updatedAt: Date;
-}
-
-/**
- * Convenience function to publish an entry_updated event from an Entry object.
- * Extracts metadata from the entry automatically.
- *
- * @param feedId - The ID of the feed containing the entry
- * @param entry - The entry object (from database)
- * @returns The number of subscribers that received the message
- */
-export async function publishEntryUpdatedFromEntry(
-  feedId: string,
-  entry: EntryLike
-): Promise<number> {
-  return publishEntryUpdated(feedId, entry.id, entry.updatedAt, toEntryMetadata(entry));
-}
-
-/**
- * Publishes a subscription_created event when a user subscribes to a feed.
- * This notifies all of the user's SSE connections to:
- * 1. Add the new feedId to their filter set (so they receive new_entry events for it)
- * 2. Update the subscriptions cache directly with the provided data
- *
- * @param userId - The ID of the user who subscribed
- * @param feedId - The ID of the feed they subscribed to (server-side routing only; null without a feed)
- * @param subscriptionId - The ID of the new subscription
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param subscription - Subscription data for optimistic cache update
- * @param feed - Feed data for optimistic cache update
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishSubscriptionCreated(
-  userId: string,
-  feedId: string | null,
-  subscriptionId: string,
-  updatedAt: Date,
-  subscription: SubscriptionCreatedEventSubscription,
-  feed: SubscriptionCreatedEventFeed,
-  counts?: z.infer<typeof unreadCountsSchema>
-): Promise<number> {
-  return publishUserEvent({
-    type: "subscription_created",
-    userId,
-    feedId,
-    subscriptionId,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-    subscription: { ...subscription, id: subscriptionId, feedId: legacyFeedId(subscriptionId) },
-    feed: { ...feed, id: legacyFeedId(subscriptionId) },
-    counts,
-  });
-}
-
-/**
- * Publishes a collection_entries_changed event after articles are added to or
- * removed from a collection, so the user's other tabs update its counts.
- */
-export async function publishCollectionEntriesChanged(
-  userId: string,
-  subscriptionId: string,
-  entryIds: string[],
-  added: boolean,
-  updatedAt: Date,
-  counts: z.infer<typeof unreadCountsSchema>
-): Promise<number> {
-  return publishUserEvent({
-    type: "collection_entries_changed",
-    userId,
-    subscriptionId,
-    entryIds,
-    added,
-    counts,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-  });
-}
-
-/**
- * Publishes a subscription_deleted event when a user unsubscribes from a feed.
- * This notifies all of the user's SSE connections to:
- * 1. Remove the feedId from their filter set (so they stop receiving new_entry events for it)
- * 2. Refresh the subscriptions list in the UI
- *
- * @param userId - The ID of the user who unsubscribed
- * @param feedId - The ID of the feed they unsubscribed from (null without a feed)
- * @param subscriptionId - The ID of the subscription that was deleted
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishSubscriptionDeleted(
-  userId: string,
-  feedId: string | null,
-  subscriptionId: string,
-  updatedAt: Date,
-  counts?: z.infer<typeof unreadCountsSchema>
-): Promise<number> {
-  return publishUserEvent({
-    type: "subscription_deleted",
-    userId,
-    feedId,
-    subscriptionId,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-    counts,
-  });
-}
-
-/**
- * Publishes a subscription_updated event when a subscription's properties change.
- * This notifies all of the user's SSE connections to update their subscription caches.
- *
- * @param userId - The ID of the user who owns the subscription
- * @param subscriptionId - The ID of the updated subscription
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param tags - The subscription's current tags
- * @param customTitle - The subscription's custom title (null for default)
- * @param fetchFullContent - The subscription's full-content setting, when the publisher has it
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishSubscriptionUpdated(
-  userId: string,
-  subscriptionId: string,
-  updatedAt: Date,
-  tags: Array<{ id: string; name: string; color: string | null }>,
-  customTitle: string | null,
-  fetchFullContent?: boolean
-): Promise<number> {
-  return publishUserEvent({
-    type: "subscription_updated",
-    userId,
-    subscriptionId,
-    tags,
-    customTitle,
-    fetchFullContent,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-  });
-}
-
-/**
- * Publishes an import_progress event when a feed in an OPML import is processed.
- * This notifies the user's SSE connections to update the import progress UI.
- *
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishImportProgress(
-  userId: string,
-  importId: string,
-  feedUrl: string,
-  feedStatus: "imported" | "skipped" | "failed",
-  counts: { imported: number; skipped: number; failed: number; total: number }
-): Promise<number> {
-  return publishUserEvent({
-    type: "import_progress",
-    userId,
-    importId,
-    feedUrl,
-    feedStatus,
-    imported: counts.imported,
-    skipped: counts.skipped,
-    failed: counts.failed,
-    total: counts.total,
-    timestamp: new Date().toISOString(),
-  });
-}
-
-/**
- * Publishes an import_completed event when an OPML import finishes.
- * This notifies the user's SSE connections that the import is done.
- *
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishImportCompleted(
-  userId: string,
-  importId: string,
-  counts: { imported: number; skipped: number; failed: number; total: number }
-): Promise<number> {
-  return publishUserEvent({
-    type: "import_completed",
-    userId,
-    importId,
-    imported: counts.imported,
-    skipped: counts.skipped,
-    failed: counts.failed,
-    total: counts.total,
-    timestamp: new Date().toISOString(),
-  });
-}
-
-/**
- * List-item context for an entry_state_changed event, attached when the entry
- * flipped to unread so clients can insert it into cached lists it's missing
- * from (issue #1237). See publishMarkReadStateChanges for where it's built.
- */
-export interface EntryStateListData {
-  subscriptionId: string | null;
-  feedType: EntryType;
-  entry: NewEntryListData;
-}
-
-/**
- * Publishes an entry_state_changed event when read/starred state changes.
- * This notifies all of the user's SSE connections for multi-tab/device sync.
- *
- * @param userId - The ID of the user whose entry state changed
- * @param entryId - The ID of the entry
- * @param read - Current read state
- * @param starred - Current starred state
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @param counts - Absolute unread counts for all affected lists
- * @param listData - List-item context, present when the entry flipped to unread
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishEntryStateChanged(
-  userId: string,
-  entryId: string,
-  read: boolean,
-  starred: boolean,
-  updatedAt: Date,
-  counts: z.infer<typeof unreadCountsSchema>,
-  listData?: EntryStateListData,
-  subscriptionIds?: string[]
-): Promise<number> {
-  return publishUserEvent({
-    type: "entry_state_changed",
-    userId,
-    entryId,
-    read,
-    starred,
-    counts,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-    ...(listData && { ...listData, entry: { ...listData.entry, type: listData.feedType } }),
-    ...(subscriptionIds ? { subscriptionIds } : {}),
-  });
-}
-
-/**
- * Publishes a mark_all_read signal after a bulk mark-all-read.
- *
- * Unlike markRead (which publishes one entry_state_changed per entry),
- * mark-all-read is unbounded, so a per-entry fan-out would storm every one of
- * the user's connections and shipping every affected id could mean a huge
- * payload. Instead this single signal carries the absolute counts and tells
- * each connection to invalidate its entry lists — the same thing the acting
- * tab does on success.
- *
- * @param userId - The ID of the user whose entries were marked read
- * @param updatedAt - The mark-all-read timestamp, used to advance the entries
- *   sync cursor so a reconnect catch-up doesn't re-deliver every marked entry
- * @param maxEntryId - The largest entry id among the marked rows; together with
- *   `updatedAt` it forms the exact keyset position past the marked rows, so the
- *   cursor doesn't also skip an unrelated entry written in the same
- *   millisecond (#1102)
- * @param counts - Absolute counts for every list the marked entries reached
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishMarkAllRead(
-  userId: string,
-  updatedAt: Date,
-  maxEntryId: string,
-  counts: BulkUnreadCounts
-): Promise<number> {
-  return publishUserEvent({
-    type: "mark_all_read",
-    userId,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-    entryId: maxEntryId,
-    counts,
-  });
-}
-
-/**
- * Publishes a tag_created event when a tag is created.
- *
- * @param userId - The ID of the user who created the tag
- * @param tag - The tag data
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishTagCreated(
-  userId: string,
-  tag: { id: string; name: string; color: string | null },
-  updatedAt: Date
-): Promise<number> {
-  return publishUserEvent({
-    type: "tag_created",
-    userId,
-    tag,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-  });
-}
-
-/**
- * Publishes a tag_updated event when a tag is updated.
- *
- * @param userId - The ID of the user who updated the tag
- * @param tag - The updated tag data
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishTagUpdated(
-  userId: string,
-  tag: { id: string; name: string; color: string | null },
-  updatedAt: Date
-): Promise<number> {
-  return publishUserEvent({
-    type: "tag_updated",
-    userId,
-    tag,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-  });
-}
-
-/**
- * Publishes a tag_deleted event when a tag is deleted.
- *
- * @param userId - The ID of the user who deleted the tag
- * @param tagId - The ID of the deleted tag
- * @param updatedAt - The database updated_at timestamp for cursor tracking
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishTagDeleted(
-  userId: string,
-  tagId: string,
-  updatedAt: Date
-): Promise<number> {
-  return publishUserEvent({
-    type: "tag_deleted",
-    userId,
-    tagId,
-    timestamp: new Date().toISOString(),
-    updatedAt: updatedAt.toISOString(),
-  });
-}
-
-/**
- * Publishes an announcement_changed event to the global site-status channel
- * when an admin changes the announcement banner. Pass the resolved announcement
- * (with its id) or null when it was disabled/cleared.
- *
- * @returns The number of subscribers that received the message (0 if Redis unavailable)
- */
-export async function publishAnnouncementChanged(
-  announcement: Announcement | null
-): Promise<number> {
-  return publishSiteStatusEvent({
-    type: "announcement_changed",
-    announcement,
-    timestamp: new Date().toISOString(),
-  });
+export async function publishSiteStatusEvent(event: Published<SiteStatusEvent>): Promise<number> {
+  return publishToChannel(getSiteStatusChannel(), stamp<SiteStatusEvent>(event));
 }
 
 // ============================================================================

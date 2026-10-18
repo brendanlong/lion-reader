@@ -32,6 +32,7 @@ import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-r
 import { isStreamError, resolveStreamListParams } from "@/server/google-reader/stream-filters";
 import { formatEntryAsItem } from "@/server/google-reader/format";
 import * as entriesService from "@/server/services/entries";
+import * as entryReadsService from "@/server/services/entry-reads";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ const handleStreamContents = withClientErrors(async function (
   // The page's serials, then its entries' content in one bulk read; an entry
   // deleted in between is left out.
   const result = await entriesService.listGreaderItemRefs(db, listParams);
-  const fullEntries = await entriesService.getEntries(
+  const fullEntries = await entryReadsService.getEntries(
     db,
     session.user.id,
     result.items.map((ref) => ref.id)

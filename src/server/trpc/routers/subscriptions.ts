@@ -18,6 +18,8 @@ import { errors } from "@/server/errors";
 import { feedUrlSchema, uuidSchema } from "../validation";
 import { OpmlParseError } from "@/server/feed/opml";
 import { logger } from "@/lib/logger";
+import * as subscribeService from "@/server/services/subscribe";
+import * as subscriptionUpdatesService from "@/server/services/subscription-updates";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { importOpml } from "@/server/services/imports";
 import { countsAsOfSchema, unreadCountsSchema } from "@/lib/events/schemas";
@@ -38,8 +40,8 @@ const customTitleSchema = z
   .string()
   .trim()
   .max(
-    subscriptionsService.CUSTOM_TITLE_MAX_LENGTH,
-    `Custom title must be at most ${subscriptionsService.CUSTOM_TITLE_MAX_LENGTH} characters`
+    subscriptionUpdatesService.CUSTOM_TITLE_MAX_LENGTH,
+    `Custom title must be at most ${subscriptionUpdatesService.CUSTOM_TITLE_MAX_LENGTH} characters`
   )
   .nullable();
 
@@ -91,7 +93,7 @@ const createSubscriptionOutputSchema = subscriptionOutputSchema.extend({
  * Format a CreateSubscriptionResult into the API response shape.
  */
 function formatSubscriptionResponse(
-  result: subscriptionsService.CreateSubscriptionResult
+  result: subscribeService.CreateSubscriptionResult
 ): z.infer<typeof createSubscriptionOutputSchema> {
   return {
     id: result.subscriptionId,
@@ -147,11 +149,7 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(createSubscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const result = await subscriptionsService.subscribeToUrl(
-        ctx.db,
-        ctx.session.user.id,
-        input.url
-      );
+      const result = await subscribeService.subscribeToUrl(ctx.db, ctx.session.user.id, input.url);
       return formatSubscriptionResponse(result);
     }),
 
@@ -261,7 +259,7 @@ export const subscriptionsRouter = createTRPCRouter({
     .output(subscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const { id, ...params } = input;
-      return subscriptionsService.updateSubscription(ctx.db, ctx.session.user.id, id, params);
+      return subscriptionUpdatesService.updateSubscription(ctx.db, ctx.session.user.id, id, params);
     }),
 
   /**
@@ -286,7 +284,11 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(z.object({ success: z.boolean(), counts: unreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
-      const result = await subscriptionsService.unsubscribe(ctx.db, ctx.session.user.id, input.id);
+      const result = await subscriptionUpdatesService.unsubscribe(
+        ctx.db,
+        ctx.session.user.id,
+        input.id
+      );
       if (!result) {
         throw errors.subscriptionNotFound();
       }
@@ -407,7 +409,7 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(subscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      await subscriptionsService.setSubscriptionTags(
+      await subscriptionUpdatesService.setSubscriptionTags(
         ctx.db,
         ctx.session.user.id,
         input.id,

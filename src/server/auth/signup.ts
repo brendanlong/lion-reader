@@ -183,7 +183,7 @@ async function subscribeToAnnouncementFeed(db: Database, userId: string): Promis
 
   try {
     // Dynamic import to avoid circular dependency (subscriptions imports db schema)
-    const { createSubscription } = await import("@/server/services/subscriptions");
+    const { createSubscription } = await import("@/server/services/subscribe");
     await createSubscription(db, userId, { url: feedUrl });
     logger.info("Auto-subscribed user to announcement feed", { userId, feedUrl });
   } catch (err) {

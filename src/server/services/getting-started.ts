@@ -19,7 +19,7 @@ import type { Database } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
 import { uploadArticle } from "@/server/services/saved";
-import { updateEntryStarred } from "@/server/services/entries";
+import { updateEntryStarred } from "@/server/services/entry-state";
 import {
   GETTING_STARTED_EXCERPT,
   GETTING_STARTED_MARKDOWN,

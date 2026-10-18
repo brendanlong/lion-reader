@@ -18,9 +18,8 @@ import {
 import {
   getFeedEventsChannel,
   getUserEventsChannel,
-  publishNewEntry,
-  publishTagDeleted,
-  publishUserEntryUpdated,
+  publishFeedEvent,
+  publishUserEvent,
 } from "../../src/server/redis/pubsub";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
@@ -78,7 +77,7 @@ async function waitForSubscribers(...channels: string[]): Promise<void> {
  */
 async function waitForMarker(userId: string, stream: SseStream): Promise<void> {
   const marker = generateUuidv7();
-  await publishTagDeleted(userId, marker, new Date());
+  await publishUserEvent({ type: "tag_deleted", userId, tagId: marker, updatedAt: new Date() });
   await stream.waitFor("tag_deleted", (data) => data.tagId === marker);
 }
 
@@ -134,20 +133,22 @@ describe("SSE entry events", () => {
       });
       expect(email.success).toBe(true);
       const saved = await uploadArticle(db, userId, { content: "Body", title: "Saved one" });
-      await publishUserEntryUpdated(
-        { userId, subscriptionId: null, feedType: "saved" },
-        {
-          id: saved.id,
-          title: "Renamed",
-          author: null,
-          summary: null,
-          url: null,
-          publishedAt: null,
-          updatedAt: new Date(),
-        }
-      );
+      await publishUserEvent({
+        type: "entry_updated",
+        userId,
+        subscriptionId: null,
+        entryId: saved.id,
+        updatedAt: new Date(),
+        metadata: { title: "Renamed", author: null, summary: null, url: null, publishedAt: null },
+      });
       // As the feed worker does after fanning out a fetched entry.
-      await publishNewEntry(webFeedId, webEntryId, new Date(), undefined);
+      await publishFeedEvent({
+        type: "new_entry",
+        feedId: webFeedId,
+        entryId: webEntryId,
+        updatedAt: new Date(),
+        feedType: "web",
+      });
 
       // Every publish above is fire-and-forget, so wait for all of them before
       // the marker, which then catches any duplicate.

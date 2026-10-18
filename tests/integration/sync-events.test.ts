@@ -992,6 +992,14 @@ describe("sync.events", () => {
           timestamp: t.toString(),
           updatedAt: t.toString(),
           entryId: maxMarkedId,
+          counts: {
+            all: { unread: 0 },
+            starred: { unread: 0 },
+            saved: { unread: 0 },
+            subscriptions: [],
+            tags: [],
+            asOf: t.toString(),
+          },
         }
       );
       const catchUp = await caller.sync.events({

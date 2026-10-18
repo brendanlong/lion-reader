@@ -44,9 +44,8 @@ export type EntryRow = {
   fetchedAt: Date;
   updatedAt: Date;
   /**
-   * When the entry's own fields last changed. Absent from a live new_entry
-   * (and a previous release's responses), whose metadata then counts as
-   * fresh as `updatedAt`.
+   * When the entry's own fields last changed. Absent from a live new_entry,
+   * whose metadata then counts as fresh as `updatedAt`.
    */
   entryUpdatedAt?: Date;
   read: boolean;

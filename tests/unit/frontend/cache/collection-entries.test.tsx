@@ -19,7 +19,7 @@ import type { EntryRow } from "@/lib/local-db/entries";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
-import { createRealTrpcUtils, storedCount } from "../../../utils/cache-test-helpers";
+import { createCounts, createRealTrpcUtils, storedCount } from "../../../utils/cache-test-helpers";
 
 function storedEntry(queryClient: QueryClient, id: string): EntryRow | undefined {
   return getLocalDb(queryClient).entries.getSynced(id);
@@ -62,13 +62,10 @@ function seedList(queryClient: QueryClient, input: object, items: EntryRow[]): v
   });
 }
 
-const COUNTS = {
+const COUNTS = createCounts({
   all: { unread: 3 },
-  starred: { unread: 0 },
-  saved: { unread: 0 },
   subscriptions: [{ id: COLLECTION, unread: 1 }],
-  tags: [],
-};
+});
 
 function setup(entries: { feed: EntryRow[]; collection: EntryRow[] }) {
   let openEntryId: string | null = null;

@@ -118,7 +118,7 @@ const LIST_COLUMNS = `ve.id, ve.greader_item_id, subscriptions.greader_stream_id
   ve.site_name, ${FEED_TITLE} AS feed_title`;
 
 /**
- * `entryReadSelectFields` + `fullContentBodyFields` (services/entries.ts): the
+ * `entryReadSelectFields` + `fullContentBodyFields` (services/entry-reads.ts): the
  * external APIs' reads (getEntry/getEntries) load full-content bodies only for
  * subscriptions that show them; the app's entry view (getFullEntry) loads all.
  */
@@ -192,7 +192,7 @@ ORDER BY ${sortColumn} DESC, ${idColumn} DESC
 LIMIT ${(o.limit ?? 10) + 1} OFFSET 0`;
 }
 
-/** `getEntries` (services/entries.ts). */
+/** `getEntries` (services/entry-reads.ts). */
 function getEntriesSql(userId: string, entryIds: string[]): string {
   return `SELECT ${fullColumns("shown")}
 ${FROM_VISIBLE}
@@ -357,7 +357,7 @@ const holdsRedirectTwinSql = (subscriptionId: string, entry: string): string => 
       AND e_prev.owner_feed_id <> ${entry}.owner_feed_id
   )`;
 
-/** `populateInitialUserEntries` (services/subscriptions.ts). */
+/** `populateInitialUserEntries` (services/subscribe.ts). */
 const populateSql = (userId: string, subscriptionId: string, feedId: string): Statement =>
   insertWithMembershipsSql(
     "populate",
@@ -385,7 +385,7 @@ ORDER BY user_entries.entry_id
 FOR NO KEY UPDATE OF user_entries`,
 });
 
-/** `unsubscribe` (services/subscriptions.ts), from its existence check to its counts. */
+/** `unsubscribe` (services/subscription-updates.ts), from its existence check to its counts. */
 async function unsubscribeStatements(
   db: ClientBase,
   userId: string,
@@ -905,7 +905,7 @@ ORDER BY unread_count DESC, id LIMIT 1`
   {
     name: "ssr.entries_get",
     kind: "read",
-    source: "services/entries.ts getFullEntry (entries.get)",
+    source: "services/entry-reads.ts getFullEntry (entries.get)",
     prepare: async (db) => {
       const { id } = await plainUnreadEntry(db);
       return {
@@ -1236,7 +1236,7 @@ WHERE feeds.id = ${q(feedId)}`,
   ];
 }
 
-/** `markEntriesRead` / `updateEntriesStarred` UPDATE (services/entries.ts). */
+/** `markEntriesRead` / `updateEntriesStarred` UPDATE (services/entry-state.ts). */
 function flagUpdateSql(userId: string, entryId: string, column: "read" | "starred"): Statement {
   const now = ts(nowIso());
   const guard =
@@ -1276,7 +1276,7 @@ const WRITES: Benchmark[] = [
   {
     name: "write.mark_read_one",
     kind: "write",
-    source: "services/entries.ts markEntriesRead (one entry, tagged feed)",
+    source: "services/entry-state.ts markEntriesRead (one entry, tagged feed)",
     prepare: async (db) => {
       const entry = await plainUnreadEntry(db);
       return {
@@ -1298,7 +1298,7 @@ WHERE ve.user_id = ${q(U0)} AND ve.id IN (${q(entry.id)})`,
   {
     name: "write.mark_all_read_feed",
     kind: "write",
-    source: "services/entries.ts markAllEntriesRead (subscription with 4,000 unread)",
+    source: "services/entry-state.ts markAllEntriesRead (subscription with 4,000 unread)",
     prepare: async (db) => {
       const filter = entriesInSubscriptions([subA], UE_COLUMNS);
       const changedAt = ts(nowIso());
@@ -1333,7 +1333,7 @@ RETURNING user_entries.entry_id`,
   {
     name: "write.star_one",
     kind: "write",
-    source: "services/entries.ts updateEntriesStarred (one entry)",
+    source: "services/entry-state.ts updateEntriesStarred (one entry)",
     prepare: async (db) => {
       const entry = await plainUnreadEntry(db);
       return {
@@ -1359,7 +1359,7 @@ WHERE user_entries.user_id = ${q(U0)} AND user_entries.entry_id IN (${q(entry.id
     name: "write.subscribe_with_history",
     kind: "write",
     source:
-      "services/subscriptions.ts createSubscription + populateInitialUserEntries (500 current entries)",
+      "services/subscribe.ts createSubscription + populateInitialUserEntries (500 current entries)",
     prepare: async () => {
       const feedId = webFeedId(WEB.history);
       const url = webFeedUrl(WEB.history);
@@ -1413,7 +1413,7 @@ WHERE subscription_tags.subscription_id IN (${q(newSub)})`,
   {
     name: "write.unsubscribe_large",
     kind: "write",
-    source: "services/subscriptions.ts unsubscribe (8,000-entry tagged feed)",
+    source: "services/subscription-updates.ts unsubscribe (8,000-entry tagged feed)",
     prepare: async (db) => ({ statements: await unsubscribeStatements(db, U0, subLarge) }),
   },
   {
@@ -1434,13 +1434,13 @@ WHERE subscription_tags.subscription_id IN (${q(newSub)})`,
   {
     name: "write.collection_delete",
     kind: "write",
-    source: "services/subscriptions.ts unsubscribe on a collection (40 members)",
+    source: "services/subscription-updates.ts unsubscribe on a collection (40 members)",
     prepare: async (db) => ({ statements: await unsubscribeStatements(db, U0, readingList) }),
   },
   {
     name: "write.collection_delete_1000",
     kind: "write",
-    source: "services/subscriptions.ts unsubscribe on a collection (1,000 members)",
+    source: "services/subscription-updates.ts unsubscribe on a collection (1,000 members)",
     prepare: async (db) => ({ statements: await unsubscribeStatements(db, userId(1), archive) }),
   },
   {
@@ -1564,7 +1564,7 @@ WHERE e.id = ${q(entryId)}`
     name: "write.redirect_merge",
     kind: "write",
     source:
-      "services/subscriptions.ts mergeSubscriptionIntoFeed (1,500-entry feed onto a fresh 300-entry feed)",
+      "services/subscribe.ts mergeSubscriptionIntoFeed (1,500-entry feed onto a fresh 300-entry feed)",
     prepare: async (db) => {
       const newFeed = webFeedId(WEB.mergeTarget);
       const survivor = benchUuid("bench:merge-survivor");

@@ -11,7 +11,7 @@ import { db } from "../../src/server/db";
 import { feeds, jobs, subscriptions, users } from "../../src/server/db/schema";
 import { createSession } from "../../src/server/auth/session";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
-import { unsubscribe } from "../../src/server/services/subscriptions";
+import { unsubscribe } from "../../src/server/services/subscription-updates";
 import { POST as quickadd } from "../../src/app/api/greader.php/reader/api/0/subscription/quickadd/route";
 import { createTestUser } from "./helpers";
 

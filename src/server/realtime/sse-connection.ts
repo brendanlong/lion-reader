@@ -234,9 +234,9 @@ export function startSseConnection({
           updatedAt: event.updatedAt,
           feedType: event.feedType,
           ...(counts ? { counts } : {}),
-          // List-item data (absent from events published by a previous
-          // release) lets the client insert the entry into cached lists.
-          // Saved articles have no subscription, so keep their own title.
+          // List-item data (absent for spam) lets the client insert the
+          // entry into cached lists. Saved articles have no subscription,
+          // so keep their own title.
           ...(event.entry
             ? {
                 entry: withCustomFeedTitle(

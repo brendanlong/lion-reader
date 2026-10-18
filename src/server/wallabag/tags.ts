@@ -17,7 +17,8 @@ import {
   createCollection,
   removeEntriesFromCollection,
 } from "@/server/services/collections";
-import { isCollectionSubscription, unsubscribe } from "@/server/services/subscriptions";
+import { isCollectionSubscription } from "@/server/services/subscriptions";
+import { unsubscribe } from "@/server/services/subscription-updates";
 import { COLLECTION_NAME_MAX_LENGTH, MAX_SAVE_COLLECTIONS } from "@/lib/collections";
 import { errors } from "@/server/errors";
 import { formatTag, type WallabagTag } from "./format";

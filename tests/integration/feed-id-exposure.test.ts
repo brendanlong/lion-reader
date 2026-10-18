@@ -8,11 +8,8 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
-import {
-  publishNewEntry,
-  publishSubscriptionCreated,
-  publishSubscriptionDeleted,
-} from "../../src/server/redis/pubsub";
+import { publishFeedEvent, publishUserEvent } from "../../src/server/redis/pubsub";
+import { subscriptionCreatedEvent } from "../../src/server/services/subscription-sync-events";
 import {
   createAuthContext,
   createTestEntry,
@@ -101,24 +98,44 @@ describe("feed IDs never reach clients", () => {
 
     try {
       await publishUntil(
-        () => publishNewEntry(feedId, entryId, new Date(), undefined),
+        () =>
+          publishFeedEvent({
+            type: "new_entry",
+            feedId,
+            entryId,
+            updatedAt: new Date(),
+            feedType: "web",
+          }),
         () => stream.events("new_entry").length > 0
       );
-      await publishSubscriptionCreated(
+      await publishUserEvent({
+        ...subscriptionCreatedEvent(
+          {
+            id: otherSubscriptionId,
+            type: "web",
+            customTitle: null,
+            subscribedAt: new Date(),
+            unreadCount: 0,
+          },
+          [],
+          {
+            url: "https://example.com/other.xml",
+            title: null,
+            description: null,
+            siteUrl: null,
+          }
+        ),
         userId,
-        otherFeedId,
-        otherSubscriptionId,
-        new Date(),
-        { customTitle: null, subscribedAt: new Date().toISOString(), unreadCount: 0, tags: [] },
-        {
-          type: "web",
-          url: "https://example.com/other.xml",
-          title: null,
-          description: null,
-          siteUrl: null,
-        }
-      );
-      await publishSubscriptionDeleted(userId, feedId, subscriptionId, new Date());
+        feedId: otherFeedId,
+        updatedAt: new Date(),
+      });
+      await publishUserEvent({
+        type: "subscription_deleted",
+        userId,
+        feedId,
+        subscriptionId,
+        updatedAt: new Date(),
+      });
       await stream.waitFor("subscription_deleted");
     } finally {
       await stream.close();

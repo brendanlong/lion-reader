@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { formatEntryAsItem, formatUnreadCounts } from "../../src/server/google-reader/format";
 import { stateStreamId } from "../../src/server/google-reader/streams";
-import type { EntryFull } from "../../src/server/services/entries";
+import type { EntryFull } from "../../src/server/services/entry-reads";
 
 // Feed stream serials, as Postgres hands them back (int8 → decimal string).
 const SUB_A = "42";

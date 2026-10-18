@@ -1,7 +1,7 @@
 /**
  * The rules for which entry events a change produces and what they carry,
- * shared by the live path (the publishers in `@/server/redis/pubsub` and their
- * callers) and the `sync` catch-up, so a client that reconnects ends up where
+ * shared by the live path (the callers of `@/server/redis/pubsub`'s publishers)
+ * and the `sync` catch-up, so a client that reconnects ends up where
  * one that stayed connected would. Pure: no DB, no Redis.
  */
 
@@ -14,7 +14,6 @@ import {
   type serverSyncEventSchema,
   type unreadCountsSchema,
 } from "@/lib/events/schemas";
-import type { EntryType } from "@/lib/entry-types";
 
 type ServerSyncEvent = z.infer<typeof serverSyncEventSchema>;
 type UnreadCounts = z.infer<typeof unreadCountsSchema>;
@@ -82,7 +81,6 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   subscriptionId: string | null;
   /** Every active subscription holding the entry (#1846). */
   subscriptionIds: string[];
-  feedType: EntryType;
   feedTitle: string | null;
   /** The entry's content changed (or it was created) since the catch-up's start. */
   metadataChanged: boolean;
@@ -122,8 +120,8 @@ export function entryRowToSyncEvents(
         subscriptionIds: row.subscriptionIds,
         entryId: row.id,
         ...stamps,
-        feedType: row.feedType,
-        ...(announcement.entry && { entry: { ...announcement.entry, type: row.feedType } }),
+        feedType: row.type,
+        ...announcement,
         ...(counts.newEntry && { counts: counts.newEntry }),
       });
     }
@@ -149,13 +147,11 @@ export function entryRowToSyncEvents(
       counts: counts.stateChanged,
       subscriptionIds: row.subscriptionIds,
       ...stamps,
-      ...(payload
-        ? {
-            subscriptionId: row.subscriptionId,
-            feedType: row.feedType,
-            entry: { ...payload, type: row.feedType },
-          }
-        : {}),
+      ...(payload && {
+        subscriptionId: row.subscriptionId,
+        feedType: row.type,
+        entry: payload,
+      }),
     });
   }
 

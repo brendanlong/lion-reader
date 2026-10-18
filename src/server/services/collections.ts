@@ -20,7 +20,8 @@ import {
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
-import { publishCollectionEntriesChanged, publishSubscriptionCreated } from "@/server/redis/pubsub";
+import { publishUserEvent } from "@/server/redis/pubsub";
+import { subscriptionCreatedEvent } from "@/server/services/subscription-sync-events";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
   getSubscription,
@@ -176,30 +177,25 @@ async function finishCreate(
   { subscriptionId, now }: { subscriptionId: string; now: Date }
 ): Promise<CreateCollectionResult> {
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
-  const feedData = {
-    type: "collection" as const,
-    url: null,
-    title: name,
-    description: null,
-    siteUrl: null,
-  };
 
-  // No feed channel to follow; clients still get `feedId`/`feed.id` (the
-  // subscription id, `legacyFeedId`).
-  publishSubscriptionCreated(
+  publishUserEvent({
+    ...subscriptionCreatedEvent(
+      {
+        id: subscriptionId,
+        type: "collection",
+        customTitle: name,
+        subscribedAt: now,
+        unreadCount: 0,
+      },
+      [],
+      null
+    ),
     userId,
-    null,
-    subscriptionId,
-    now,
-    {
-      customTitle: name,
-      subscribedAt: now.toISOString(),
-      unreadCount: 0,
-      tags: [],
-    },
-    feedData,
-    counts
-  );
+    // No feed channel to follow.
+    feedId: null,
+    updatedAt: now,
+    counts,
+  });
 
   return {
     subscription: {
@@ -411,7 +407,15 @@ export async function publishEntryLeftCollections(
     collectionIds.map((subscriptionId) => ({ subscriptionId }))
   );
   for (const subscriptionId of collectionIds) {
-    publishCollectionEntriesChanged(userId, subscriptionId, [entryId], false, new Date(), counts);
+    publishUserEvent({
+      type: "collection_entries_changed",
+      userId,
+      subscriptionId,
+      entryIds: [entryId],
+      added: false,
+      counts,
+      updatedAt: new Date(),
+    });
   }
 }
 
@@ -429,7 +433,15 @@ async function finishMembershipChange(
   // when an article's only route into view is a collection.
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
 
-  publishCollectionEntriesChanged(userId, subscriptionId, changedIds, added, new Date(), counts);
+  publishUserEvent({
+    type: "collection_entries_changed",
+    userId,
+    subscriptionId,
+    entryIds: changedIds,
+    added,
+    counts,
+    updatedAt: new Date(),
+  });
 
   return { entryIds: changedIds, counts };
 }

@@ -13,7 +13,7 @@ import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import * as entriesService from "../../src/server/services/entries";
+import * as entryReadsService from "../../src/server/services/entry-reads";
 import {
   createAuthContext,
   createTestEntry,
@@ -137,7 +137,7 @@ describe("entries.get sanitized content", () => {
         userIds: [userId],
       });
 
-      const entry = await entriesService.getEntry(db, userId, entryId);
+      const entry = await entryReadsService.getEntry(db, userId, entryId);
       expect(entry.contentCleaned).toContain("hello");
       expect(entry.contentCleaned).not.toContain("<script>");
       expect(entry.contentCleaned).not.toContain("onclick");
@@ -155,7 +155,7 @@ describe("entries.get sanitized content", () => {
         });
       }
 
-      const results = await entriesService.getEntries(db, userId, entryIds);
+      const results = await entryReadsService.getEntries(db, userId, entryIds);
       expect(results).toHaveLength(2);
       for (const [i, entry] of results.entries()) {
         expect(entry.id).toBe(entryIds[i]);
@@ -181,12 +181,12 @@ describe("entries.get sanitized content", () => {
         userIds: [enabledUserId, disabledUserId],
       });
 
-      const [entry] = await entriesService.getEntries(db, enabledUserId, [entryId]);
+      const [entry] = await entryReadsService.getEntries(db, enabledUserId, [entryId]);
       expect(entry.fullContent).toContain("full article");
       expect(entry.fullContent).not.toContain("<script>");
       expect(entry.fullContent).not.toContain("onclick");
 
-      const disabledEntry = await entriesService.getEntry(db, disabledUserId, entryId);
+      const disabledEntry = await entryReadsService.getEntry(db, disabledUserId, entryId);
       expect(disabledEntry.fullContent).toBeNull();
     });
   });

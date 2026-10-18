@@ -18,13 +18,13 @@ import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   createSubscription,
   migrateSubscriptionsToExistingFeed,
-} from "../../src/server/services/subscriptions";
+} from "../../src/server/services/subscribe";
+import { countEntries } from "../../src/server/services/entries";
 import {
-  countEntries,
-  markEntriesRead,
   markAllEntriesRead,
+  markEntriesRead,
   updateEntryStarred,
-} from "../../src/server/services/entries";
+} from "../../src/server/services/entry-state";
 import { uploadArticle, deleteSavedArticle } from "../../src/server/services/saved";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";

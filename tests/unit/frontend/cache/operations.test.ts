@@ -15,6 +15,7 @@ import {
   getUtilsData,
   setUtilsData,
   storedCount,
+  createCounts,
 } from "../../../utils/cache-test-helpers";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
@@ -102,14 +103,18 @@ describe("handleSubscriptionCreated", () => {
 
   it("sets absolute counts directly when the event provides them", () => {
     const subscription = createSubscription({ unreadCount: 3 });
-    handleSubscriptionCreated(utils, subscription, queryClient, {
-      all: { unread: 21 },
-      starred: { unread: 1 },
-      saved: { unread: 1 },
-      subscriptions: [{ id: "sub-1", unread: 3 }],
-      tags: [],
-      uncategorized: { unread: 6 },
-    });
+    handleSubscriptionCreated(
+      utils,
+      subscription,
+      queryClient,
+      createCounts({
+        all: { unread: 21 },
+        starred: { unread: 1 },
+        saved: { unread: 1 },
+        subscriptions: [{ id: "sub-1", unread: 3 }],
+        uncategorized: { unread: 6 },
+      })
+    );
 
     // Counts are set directly, not invalidated (the subscriptions.list refresh
     // is a separate structural concern).
@@ -201,14 +206,14 @@ describe("applyUnreadCounts", () => {
   const EARLIER = "2026-01-01T00:00:00.000001Z";
   const LATER = "2026-01-01T00:00:00.000002Z";
 
-  const counts = (all: number, asOf?: string) => ({
+  const counts = (all: number, asOf: string) => ({
     all: { unread: all },
     starred: { unread: 1 },
     saved: { unread: 2 },
-    subscriptions: [{ id: "sub-1", unread: all }],
+    subscriptions: [{ id: "sub-1", unread: all, tagIds: [] }],
     tags: [{ id: "tag-1", unread: all }],
     uncategorized: { unread: all },
-    ...(asOf && { asOf }),
+    asOf,
   });
 
   const shown = () => ({
@@ -236,20 +241,6 @@ describe("applyUnreadCounts", () => {
 
     expect(shown()).toEqual({ all: 4, tag: 4, uncategorized: 4, subscription: 4 });
   });
-
-  it("takes unstamped counts (a previous release's) over stamped ones", () => {
-    applyUnreadCounts(utils, queryClient, counts(5, LATER));
-    applyUnreadCounts(utils, queryClient, counts(9));
-
-    expect(storedCount(queryClient, {})).toEqual({ unread: 9 });
-  });
-
-  it("keeps the Saved count when the counts omit it, as a previous release's events do", () => {
-    applyUnreadCounts(utils, queryClient, counts(5, EARLIER));
-    applyUnreadCounts(utils, queryClient, { ...counts(5, LATER), saved: undefined });
-
-    expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 });
-  });
 });
 
 describe("applyUnreadCounts for subscriptions", () => {
@@ -257,12 +248,8 @@ describe("applyUnreadCounts for subscriptions", () => {
   let utils: TRPCClientUtils;
   let fetchedIds: () => string[];
 
-  const counts = (subscriptions: Array<{ id: string; unread: number; tagIds?: string[] }>) => ({
-    all: { unread: 1 },
-    starred: { unread: 0 },
-    subscriptions,
-    tags: [],
-  });
+  const counts = (subscriptions: Array<{ id: string; unread: number; tagIds: string[] }>) =>
+    createCounts({ all: { unread: 1 }, subscriptions });
 
   beforeEach(() => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -299,12 +286,10 @@ describe("applyUnreadCounts for subscriptions", () => {
         { id: "sub-in-loaded", unread: 1, tagIds: ["tag-1"] },
         { id: "sub-in-collapsed", unread: 1, tagIds: ["tag-2"] },
         { id: "sub-still-read", unread: 0, tagIds: ["tag-1"] },
-        // A previous release's event: its tags are unknown, so it may be listed.
-        { id: "sub-untold", unread: 1 },
       ])
     );
 
-    expect(fetchedIds()).toEqual(["sub-in-loaded", "sub-untold"]);
+    expect(fetchedIds()).toEqual(["sub-in-loaded"]);
   });
 });
 

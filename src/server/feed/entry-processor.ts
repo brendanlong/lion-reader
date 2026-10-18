@@ -11,9 +11,9 @@ import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
-import { publishNewEntry, publishEntryUpdatedFromEntry } from "../redis/pubsub";
+import { publishFeedEvent } from "../redis/pubsub";
 import type { NewEntryListDataSource } from "@/lib/events/schemas";
-import { newEntryAnnouncement } from "@/server/services/entry-sync-events";
+import { newEntryAnnouncement, toEntryMetadata } from "@/server/services/entry-sync-events";
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { canonicalGuid, guidMatchCandidates } from "./guid-identity";
@@ -332,6 +332,7 @@ export async function updateEntryContent(
  */
 function toNewEntryData(entry: Entry): NewEntryEventSource {
   return {
+    type: entry.type,
     url: entry.url,
     title: entry.title,
     author: entry.author,
@@ -420,7 +421,13 @@ async function processEntryWithCache(
     // Publish entry_updated event for real-time updates (safe to publish here:
     // subscribers' user_entries rows already exist for a previously-seen entry).
     // Fire and forget - we don't want publishing failures to affect entry processing
-    publishEntryUpdatedFromEntry(feedId, entry);
+    publishFeedEvent({
+      type: "entry_updated",
+      feedId,
+      entryId: entry.id,
+      updatedAt: entry.updatedAt,
+      metadata: toEntryMetadata(entry),
+    });
 
     return {
       id: entry.id,
@@ -776,7 +783,14 @@ export async function processEntries(
           ? newEntryAnnouncement(result.newEntryData, feedTitle ?? null)
           : null;
       if (announcement && result.updatedAt) {
-        publishNewEntry(feedId, result.id, result.updatedAt, announcement.entry);
+        publishFeedEvent({
+          type: "new_entry",
+          feedId,
+          entryId: result.id,
+          updatedAt: result.updatedAt,
+          feedType: "web",
+          ...(announcement.entry ? { entry: { ...announcement.entry, type: "web" } } : {}),
+        });
       }
     }
   }

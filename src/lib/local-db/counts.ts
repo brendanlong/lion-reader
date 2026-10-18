@@ -50,13 +50,13 @@ export function countedListOf(input: Record<string, unknown>): CountedList | und
 export function writeCounts(
   store: CountStore,
   counts: Array<{ list: CountedList; unread: number }>,
-  asOf: string | undefined
+  asOf: string
 ): void {
   const rows: CountRow[] = [];
   for (const { list, unread } of counts) {
     const key = countKey(list);
     if (!isCountsAsOfNewer(asOf, store.asOf.get(key))) continue;
-    if (asOf !== undefined) store.asOf.set(key, asOf);
+    store.asOf.set(key, asOf);
     if (store.rows.getSynced(key)?.unread !== unread) rows.push({ key, unread });
   }
   store.rows.upsert(rows);

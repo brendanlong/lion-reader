@@ -183,11 +183,7 @@ export function useEntryMutations(): UseEntryMutationsResult {
           });
           applyEntryStateChanges(utils, queryClient, {
             entries: [data.entry],
-            // A server from the previous release (canary/rollback window)
-            // returns the single-subscription counts shape, which lacks
-            // `subscriptions`; skip it and let the entry_state_changed event,
-            // which always carries the bulk shape, set the counts.
-            counts: Array.isArray(data.counts?.subscriptions) ? data.counts : undefined,
+            counts: data.counts,
           });
         }
       ).catch((error: unknown) => {
@@ -200,9 +196,9 @@ export function useEntryMutations(): UseEntryMutationsResult {
 
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
     onSuccess: (data) => {
-      // Nothing marked means no counts changed, but the list may still show
-      // entries read elsewhere.
-      if (data.count > 0) handleMarkAllRead(utils, queryClient, data.counts);
+      // Nothing marked (no counts) means no counts changed, but the list may
+      // still show entries read elsewhere.
+      if (data.counts) handleMarkAllRead(utils, queryClient, data.counts);
       else utils.entries.list.invalidate();
     },
     onError: () => {
