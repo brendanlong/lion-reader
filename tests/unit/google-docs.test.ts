@@ -1,38 +1,13 @@
 /**
- * Unit tests for Google Docs URL detection, document ID extraction,
+ * Unit tests for Google Docs document ID extraction
  * and title header stripping.
  */
 
 import { describe, it, expect } from "vitest";
-import { isGoogleDocsUrl, extractDocId } from "../../src/server/google/docs";
+import { extractDocId } from "../../src/server/google/docs";
 import { stripTitleHeader } from "../../src/server/html/strip-title-header";
 
 describe("Google Docs URL detection", () => {
-  describe("isGoogleDocsUrl", () => {
-    // Shares its pattern with extractDocId, which covers URL suffixes, ID
-    // characters, and the null cases.
-    it("returns true for Google Docs URLs over http or https", () => {
-      expect(isGoogleDocsUrl("https://docs.google.com/document/d/1a2b3c4d5e6f7g8h9i0j/edit")).toBe(
-        true
-      );
-      expect(isGoogleDocsUrl("http://docs.google.com/document/d/1a2b3c4d5e6f7g8h9i0j/edit")).toBe(
-        true
-      );
-    });
-
-    it("returns false for other Google apps and non-Google URLs", () => {
-      for (const url of [
-        "https://docs.google.com/spreadsheets/d/1a2b3c4d5e6f7g8h9i0j/edit",
-        "https://docs.google.com/presentation/d/1a2b3c4d5e6f7g8h9i0j/edit",
-        "https://docs.google.com/forms/d/1a2b3c4d5e6f7g8h9i0j/edit",
-        "https://drive.google.com/file/d/1a2b3c4d5e6f7g8h9i0j/view",
-        "https://example.com/document",
-      ]) {
-        expect(isGoogleDocsUrl(url)).toBe(false);
-      }
-    });
-  });
-
   describe("extractDocId", () => {
     it("extracts document ID from standard Google Docs URLs", () => {
       expect(extractDocId("https://docs.google.com/document/d/1a2b3c4d5e6f7g8h9i0j/edit")).toBe(

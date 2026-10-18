@@ -39,7 +39,7 @@ import {
   type GoogleDriveContent,
 } from "./drive";
 
-// Re-export the Drive scope for use in saved.ts (needed for OAuth)
+// Re-exported for the Google Docs OAuth consent and scope checks
 export { GOOGLE_DRIVE_SCOPE };
 
 // ============================================================================
@@ -87,13 +87,6 @@ const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
  * Document IDs are alphanumeric with hyphens and underscores.
  */
 const GOOGLE_DOCS_URL_PATTERN = /^https?:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/;
-
-/**
- * Checks if a URL is a Google Docs document URL.
- */
-export function isGoogleDocsUrl(url: string): boolean {
-  return GOOGLE_DOCS_URL_PATTERN.test(url);
-}
 
 /**
  * Extracts the document ID from a Google Docs URL.

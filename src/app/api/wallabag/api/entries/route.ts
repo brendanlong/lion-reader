@@ -164,7 +164,7 @@ export async function POST(request: Request): Promise<Response> {
       // Use the user's stored Google credentials for private Google Docs when
       // already linked/granted (no interactive consent possible from an API
       // client). Falls back to a clean 4xx pointing at the web app otherwise.
-      googleDocsAuth: "non-interactive",
+      userAuth: "non-interactive",
     });
 
     // Handle archive/starred flags if provided

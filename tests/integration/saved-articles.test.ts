@@ -1194,6 +1194,18 @@ describe("Saved Articles API", () => {
       expect(await savedArticleExistsByUrl(db, userId, "https://example.com/not-saved")).toBeNull();
     });
 
+    it("matches URLs its plugin's normalizeUrl canonicalizes alike", async () => {
+      const userId = await createTestUser();
+      const doc = "https://docs.google.com/document/d/1NoRmAlIzEdOcId/edit";
+      const saved = await saveArticle(db, userId, {
+        url: `${doc}?usp=sharing&tab=t.0#heading=h.abc`,
+        html: "<html><body><article><p>Doc body</p></article></body></html>",
+      });
+
+      expect(await savedArticleExistsByUrl(db, userId, `${doc}?tab=t.0&pli=1`)).toBe(saved.id);
+      expect(await savedArticleExistsByUrl(db, userId, `${doc}?tab=t.1`)).toBeNull();
+    });
+
     it("is scoped per user", async () => {
       const userId = await createTestUser();
       const otherId = await createTestUser({ emailPrefix: "other" });

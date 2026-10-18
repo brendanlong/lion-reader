@@ -480,7 +480,7 @@ function buildTools(): Tool[] {
           // when already linked/granted; otherwise throw a clear error telling
           // them to authorize Google Docs access in the web app (an MCP client
           // can't run the interactive consent flow).
-          googleDocsAuth: "non-interactive",
+          userAuth: "non-interactive",
         });
         await collectionsService.addEntryToCollections(
           db,

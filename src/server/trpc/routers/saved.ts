@@ -200,7 +200,7 @@ export const savedRouter = createTRPCRouter({
         // The web UI and the extension walk the user through Google sign-in /
         // consent, so they want the machine-readable NEEDS_* codes they match to
         // drive prompts; the app can't, so it gets the readable messages.
-        googleDocsAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
+        userAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
       await collectionsService.addEntryToCollections(
         ctx.db,
