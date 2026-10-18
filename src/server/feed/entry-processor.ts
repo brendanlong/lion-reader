@@ -789,7 +789,7 @@ export async function processEntries(
           entryId: result.id,
           updatedAt: result.updatedAt,
           feedType: "web",
-          ...announcement,
+          ...(announcement.entry ? { entry: { ...announcement.entry, type: "web" } } : {}),
         });
       }
     }

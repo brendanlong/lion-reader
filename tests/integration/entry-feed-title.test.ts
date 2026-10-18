@@ -48,7 +48,7 @@ function publishNewEntry(
     entryId,
     updatedAt: new Date(),
     feedType: "web",
-    entry,
+    entry: { ...entry, type: "web" },
   });
 }
 

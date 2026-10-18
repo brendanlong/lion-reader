@@ -13,9 +13,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import Redis from "ioredis";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { migrateSubscriptionsToExistingFeed } from "../../src/server/services/subscriptions";
+import { getUserEventsChannel } from "../../src/server/redis/pubsub";
+import { waitForMessages } from "../utils/pubsub";
 import {
   users,
   feeds,
@@ -502,6 +505,35 @@ describe("Feed Redirect Handling", () => {
         .where(eq(subscriptions.id, newSubId));
       expect(survivor.customTitle).toBe("New");
       expect(await getTagIds(newSubId)).toEqual([sharedTag, oldOnlyTag].sort());
+    });
+
+    it("announces an active survivor's full settings when its tags change", async () => {
+      const userId = await createTestUser();
+      const { oldFeedId, newFeedId } = await createFeedPair();
+      const oldSubId = await createTestSubscription(userId, oldFeedId);
+      const newSubId = await createTestSubscription(userId, newFeedId, {
+        fetchFullContent: true,
+      });
+      await createTestTag(userId, { subscriptionIds: [oldSubId] });
+
+      const subscriber = new Redis(process.env.REDIS_URL!);
+      try {
+        const channel = getUserEventsChannel(userId);
+        await subscriber.subscribe(channel);
+        // subscription_deleted for the old subscription, then the survivor's update.
+        const events = waitForMessages(subscriber, channel, 2);
+        await migrateSubscriptionsToExistingFeed(
+          db,
+          await getFeed(oldFeedId),
+          await getFeed(newFeedId)
+        );
+        const updated = (await events)
+          .map((message) => JSON.parse(message))
+          .find((event) => event.type === "subscription_updated");
+        expect(updated).toMatchObject({ subscriptionId: newSubId, fetchFullContent: true });
+      } finally {
+        subscriber.disconnect();
+      }
     });
   });
 

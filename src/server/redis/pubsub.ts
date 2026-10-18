@@ -51,7 +51,7 @@ const feedEventSchema = z.discriminatedUnion("type", [
     // List-item data forwarded to clients so they can insert the entry into
     // cached lists. Optional so events published by a previous release (no
     // entry data) still parse during a deploy window.
-    entry: newEntryListDataSchema.optional(),
+    entry: newEntryListDataSchema.extend({ type: z.literal("web") }).optional(),
   }),
   z.object({
     type: z.literal("entry_updated"),
