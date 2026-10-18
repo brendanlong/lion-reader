@@ -76,6 +76,11 @@ export type EntryWrite =
   | { kind: "state"; state: EntryStateWrite; updatedAt: Date }
   | { kind: "metadata"; metadata: EntryMetadata; updatedAt: Date };
 
+/**
+ * Just the list-item fields: what is written here often carries more (an
+ * `entries.get` result's content, `readChangedAt`, the stored watermarks),
+ * which the store must not keep.
+ */
 function toEntryRow(entry: EntryRow): EntryRow {
   return {
     id: entry.id,
