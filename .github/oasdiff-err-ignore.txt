@@ -13,3 +13,9 @@ GET /subscriptions removed the required property `savedSubscriptionId` from the 
 GET /sync/changes removed the required property `events/items/oneOf[subschema #1: new_entry]/feedType` from the response with the `200` status
 GET /subscriptions for the `query` request parameter `limit`, the `type` was changed from `number` to `integer`
 POST /subscriptions/{id}/tags the `tagIds` request property's maxItems was set to `100`
+POST /auth/link/apple api path removed without deprecation
+POST /auth/link/discord api path removed without deprecation
+POST /auth/link/google api path removed without deprecation
+POST /auth/oauth/apple/callback api path removed without deprecation
+POST /auth/oauth/discord/callback api path removed without deprecation
+POST /auth/oauth/google/callback api path removed without deprecation
