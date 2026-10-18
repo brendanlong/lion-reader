@@ -25,10 +25,14 @@ import {
 } from "@/server/http/fetch";
 import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
+import {
+  articleContentFromAcquired,
+  processArticleContent,
+  type ArticleContentBundle,
+} from "./article-content";
 import { titleFromFilename, type ConvertedUpload } from "@/server/file/process-upload";
 import { type SupportedFileType } from "@/lib/upload-file-types";
 import { usageLimitsConfig } from "@/server/config/env";
-import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { stripHtml } from "@/server/html/strip-html";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
@@ -37,20 +41,15 @@ import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishUserNewEntry, publishUserEntryUpdated } from "@/server/redis/pubsub";
 import { entryListPayload } from "@/server/services/entry-sync-events";
-import { errors, getAppErrorCode } from "@/server/errors";
+import { errors } from "@/server/errors";
 import { finishEntriesRead, writeEntriesRead } from "@/server/services/entries";
-import { acquireArticleContent, type AcquiredArticle, type PluginArticle } from "@/server/plugins";
 import {
-  isGoogleDocsUrl,
-  normalizeGoogleDocsUrl,
-  fetchPrivateGoogleDoc,
-  extractDocId,
-  extractTabId,
-  GOOGLE_DRIVE_SCOPE,
-  type GoogleDocsContent,
-} from "@/server/google/docs";
-import { getOAuthAccount, hasGoogleScope, getValidGoogleToken } from "@/server/google/tokens";
-import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
+  acquireArticleContent,
+  normalizeSavedArticleUrl,
+  UserFetchError,
+  type AcquiredArticle,
+  type UserAuthMode,
+} from "@/server/plugins";
 
 // ============================================================================
 // Types
@@ -89,24 +88,16 @@ export interface SaveArticleParams {
   /** With refetch, update even if the new content appears lower quality. */
   force?: boolean;
   /**
-   * Enable the private-Google-Docs auth flow: when a Google Docs URL can't be
-   * fetched publicly, fetch it with the user's stored Google OAuth token
-   * (requires a linked Google account with the Docs/Drive scopes granted). Both
-   * modes attempt exactly the same token fetch; they differ only in how they
-   * report "auth isn't set up yet":
+   * Let plugins fetch with the user's stored credentials for the source when
+   * the public fetch doesn't produce the article (a private Google Doc through
+   * the user's linked Google account). Both modes attempt exactly the same
+   * fetch; they differ only in how they report "auth isn't set up yet"
+   * ({@link UserAuthMode}).
    *
-   * - `"interactive"` (web UI): throw the machine-readable NEEDS_GOOGLE_SIGNIN /
-   *   NEEDS_DOCS_PERMISSION / NEEDS_GOOGLE_REAUTH errors the UI matches to drive
-   *   an in-page consent prompt.
-   * - `"non-interactive"` (Wallabag, MCP, and other API surfaces that can't run
-   *   an interactive consent dance): throw the same 4xx classification but with a
-   *   human-readable message pointing the user at the web app to complete the
-   *   one-time Google authorization.
-   *
-   * Leave undefined for callers that shouldn't attempt private docs at all; they
-   * fall back to a plain HTML fetch.
+   * Leave undefined for callers that shouldn't attempt it at all; they fall
+   * back to a plain HTML fetch.
    */
-  googleDocsAuth?: "interactive" | "non-interactive";
+  userAuth?: UserAuthMode;
 }
 
 /** How a saveArticle call resolved. */
@@ -132,6 +123,12 @@ export interface UploadArticleParams {
    * summary length like the other excerpt sources.
    */
   excerpt?: string;
+  /**
+   * Leaves relative URLs as written, so root-relative ones stay in-app links:
+   * only for content we wrote ourselves (the Getting Started article). Never
+   * caller-supplied: otherwise they resolve against a host that never resolves.
+   */
+  keepRelativeUrls?: boolean;
 }
 
 export interface SavedArticle {
@@ -264,41 +261,6 @@ function generateContentHash(title: string | null, content: string | null): stri
  */
 const UPLOAD_BASE_URL = "https://uploaded.invalid/";
 
-/**
- * A unit of acquired content, however it was obtained. `saveArticle` fills it by
- * fetching a URL; the upload paths fill it by converting a file/Markdown. This is
- * the seam the "save vs. upload" difference collapses to: only acquisition (and a
- * null URL for uploads) differs — everything downstream is shared.
- */
-interface ArticleContentBundle {
-  /** Raw content HTML (stored as content_original). */
-  html: string;
-  /** Base URL for metadata + relative-URL resolution; null for uploads (no origin). */
-  contentUrl: string | null;
-  /** Plugin-supplied content that bypasses normal metadata/Readability sources. */
-  pluginContent: {
-    html: string;
-    title?: string | null;
-    author?: string | null;
-    /** Plugin-supplied excerpt (e.g. arXiv abstract page); preferred over Readability's. */
-    excerpt?: string | null;
-    siteName?: string;
-    skipReadability?: boolean;
-  } | null;
-  /**
-   * Pre-cleaned content whose Readability is skipped because the source is
-   * already clean: Markdown (frontmatter title/summary/author) or a `.docx`
-   * (mammoth body + `docProps/core.xml` metadata). Null when Readability should
-   * run (URL/HTML).
-   */
-  preCleanedContent: {
-    html: string;
-    title: string | null;
-    summary: string | null;
-    author: string | null;
-  } | null;
-}
-
 /** Caller-supplied hints that outrank (title) or backstop (filename) extraction. */
 interface ArticleFieldHints {
   /** Explicit caller-provided title — highest precedence. */
@@ -344,36 +306,25 @@ async function buildArticleFields(
   hints: ArticleFieldHints = {},
   // Uploads are trusted user content, so they pass a lower minCleanedLength than
   // a web fetch (where a short extraction usually means a failed JS-heavy page).
-  cleanOptions: { minCleanedLength?: number } = {}
+  {
+    keepRelativeUrls = false,
+    ...cleanOptions
+  }: { minCleanedLength?: number; keepRelativeUrls?: boolean } = {}
 ): Promise<BuiltArticleFields> {
   const { html, contentUrl, pluginContent, preCleanedContent } = bundle;
   // Uploads have no origin; a guaranteed-broken base keeps relative URLs from
   // resolving against Lion Reader itself.
   const baseUrl = contentUrl ?? UPLOAD_BASE_URL;
 
-  // Extract metadata from Open Graph / meta tags.
   const metadata = extractMetadata(html, baseUrl);
-
-  // Run Readability unless a plugin opted out or the content is already clean
-  // (Markdown / docx). Extraction runs on the libuv thread pool so large pages
-  // don't block the event loop.
-  const shouldSkipReadability =
-    Boolean(pluginContent?.skipReadability) || preCleanedContent !== null;
-  const cleaned = shouldSkipReadability
-    ? null
-    : await cleanContentAsync(html, { url: baseUrl, ...cleanOptions });
-
-  // When Readability ran, its output already has absolutized URLs; when it was
-  // skipped for plugin/pre-cleaned content, absolutize here (neither the Markdown
-  // renderer nor the sanitizer resolves relative URLs, so nothing else will —
-  // and for an upload that means a relative link would otherwise point back into
-  // Lion Reader itself, which is what UPLOAD_BASE_URL exists to prevent). When
-  // neither produced anything (Readability failed on a plain page), store NULL
-  // rather than the raw full page — readers fall back to the sanitized original.
-  const contentCleaned =
-    (preCleanedContent ? absolutizeUrls(preCleanedContent.html, baseUrl) : null) ??
-    cleaned?.content ??
-    (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
+  const {
+    contentOriginal,
+    contentCleaned,
+    readability: cleaned,
+  } = await processArticleContent(bundle, keepRelativeUrls ? null : baseUrl, {
+    offload: true,
+    ...cleanOptions,
+  });
 
   // Precedence: explicit caller value → plugin / Markdown frontmatter / docx
   // core.xml → Readability → raw Open Graph/<title>/meta scrape → filename (title only).
@@ -430,7 +381,7 @@ async function buildArticleFields(
     title,
     author,
     siteName,
-    contentOriginal: html,
+    contentOriginal,
     contentCleaned,
     summary,
     imageUrl: metadata.imageUrl,
@@ -629,144 +580,6 @@ async function insertUploadedArticle(
 // ============================================================================
 
 /**
- * Human-readable messages for the `"non-interactive"` auth flow (Wallabag, MCP,
- * and other API surfaces that can't run an in-page consent dance). The
- * `"interactive"` flow instead throws the machine-readable NEEDS_* codes the web
- * UI matches — both share the same 4xx classification, so Wallabag's
- * `clientErrorResponse` and MCP surface either one cleanly.
- */
-const NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES = {
-  signin:
-    "This is a private Google Doc. To save private Google Docs from the API, first link your Google account and authorize Google Docs access in the Lion Reader web app (by saving a Google Doc there once).",
-  permission:
-    "This is a private Google Doc. To save it from the API, grant Google Docs access in the Lion Reader web app first (by saving a Google Doc there once).",
-  reauth:
-    "Your Google authorization has expired. Please reconnect your Google account in the Lion Reader web app, then try saving again.",
-} as const;
-
-/**
- * Fetch a private Google Doc with the user's stored OAuth credentials.
- *
- * When no Google account is linked or the required scopes aren't granted, throws
- * a 4xx error. The `mode` only controls the *message*:
- * - `"interactive"` throws the machine-readable NEEDS_GOOGLE_SIGNIN /
- *   NEEDS_DOCS_PERMISSION / NEEDS_GOOGLE_REAUTH codes the web UI turns into
- *   consent prompts.
- * - `"non-interactive"` throws the same UNAUTHORIZED/FORBIDDEN classification
- *   with a human-readable message telling API clients to complete the one-time
- *   authorization in the web app.
- *
- * Returns null (caller falls back to a plain HTML fetch) when the doc can't be
- * fetched for other reasons.
- */
-async function fetchPrivateGoogleDocWithAuth(
-  userId: string,
-  normalizedUrl: string,
-  mode: "interactive" | "non-interactive"
-): Promise<GoogleDocsContent | null> {
-  const docId = extractDocId(normalizedUrl);
-  if (!docId) {
-    return null;
-  }
-  const tabId = extractTabId(normalizedUrl);
-
-  const googleOAuth = await getOAuthAccount(userId, "google");
-  if (!googleOAuth) {
-    logger.debug("User needs to sign in with Google for private docs", {
-      userId,
-      url: normalizedUrl,
-      mode,
-    });
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message:
-        mode === "interactive"
-          ? "NEEDS_GOOGLE_SIGNIN"
-          : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.signin,
-      cause: {
-        code: "NEEDS_GOOGLE_SIGNIN",
-        details: {
-          url: normalizedUrl,
-        },
-      },
-    });
-  }
-
-  // Check if user has granted both required scopes:
-  // - documents.readonly for native Google Docs via Docs API
-  // - drive.readonly for uploaded .docx files via Drive API
-  const [hasDocsApiScope, hasDriveScope] = await Promise.all([
-    hasGoogleScope(userId, GOOGLE_DOCS_READONLY_SCOPE),
-    hasGoogleScope(userId, GOOGLE_DRIVE_SCOPE),
-  ]);
-
-  if (!hasDocsApiScope || !hasDriveScope) {
-    logger.debug("User needs to grant Google Docs permissions", {
-      userId,
-      url: normalizedUrl,
-      hasDocsApiScope,
-      hasDriveScope,
-      mode,
-    });
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message:
-        mode === "interactive"
-          ? "NEEDS_DOCS_PERMISSION"
-          : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.permission,
-      cause: {
-        code: "NEEDS_DOCS_PERMISSION",
-        details: {
-          url: normalizedUrl,
-          scopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
-        },
-      },
-    });
-  }
-
-  try {
-    logger.debug("Attempting private Google Docs fetch with user OAuth", { userId, docId });
-    const accessToken = await getValidGoogleToken(userId);
-    return await fetchPrivateGoogleDoc(docId, accessToken, tabId);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.message === "GOOGLE_TOKEN_INVALID" || error.message === "GOOGLE_NEEDS_REAUTH")
-    ) {
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message:
-          mode === "interactive"
-            ? "NEEDS_GOOGLE_REAUTH"
-            : NON_INTERACTIVE_GOOGLE_DOCS_MESSAGES.reauth,
-        cause: {
-          code: "NEEDS_GOOGLE_REAUTH",
-          details: {
-            url: normalizedUrl,
-          },
-        },
-      });
-    } else if (error instanceof Error && error.message === "GOOGLE_PERMISSION_DENIED") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "You don't have permission to access this Google Doc.",
-        cause: { code: "GOOGLE_PERMISSION_DENIED" },
-      });
-    }
-    if (getAppErrorCode(error) === "CONTENT_TOO_LARGE") {
-      throw error;
-    }
-    // Other errors - fall back to a plain fetch
-    logger.warn("Failed to fetch private Google Doc with OAuth", {
-      userId,
-      docId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
-
-/**
  * Content types that are unambiguously a feed. When a page fetch is rejected
  * with one of these, we can route to Subscribe without a second fetch.
  */
@@ -805,22 +618,14 @@ async function urlIsDirectFeed(url: string, contentType: string): Promise<boolea
 }
 
 /**
- * A fetched {@link ArticleContentBundle}: `contentUrl` is the URL the content was
- * actually fetched from (after redirects), used for resolving relative URLs.
- */
-type AcquiredArticleContent = Omit<ArticleContentBundle, "contentUrl"> & { contentUrl: string };
-
-/**
- * Acquire the article HTML for a save. Precedence: provided HTML > plugin
- * (incl. public Google Docs) > private Google Docs OAuth (when the caller
- * opts in via `googleDocsAuth`) > plain HTML fetch. Enforces
- * maxSavedArticleSizeBytes on every path.
+ * Acquire the article HTML for a save. Precedence: provided HTML > plugin >
+ * plugin with the user's credentials (when the caller opts in via `userAuth`) >
+ * plain HTML fetch. Enforces maxSavedArticleSizeBytes on every path.
  */
 async function acquireSavedArticleContent(
   userId: string,
-  params: SaveArticleParams,
-  normalizedUrl: string
-): Promise<AcquiredArticleContent> {
+  params: SaveArticleParams
+): Promise<ArticleContentBundle & { contentUrl: string }> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
 
   if (params.html) {
@@ -839,42 +644,6 @@ async function acquireSavedArticleContent(
     };
   }
 
-  // Private Google Docs: the public Google Docs plugin only fetches public
-  // docs. When the caller opts in, try the user's stored OAuth credentials.
-  // This needs no interactivity once the account is linked and the scopes are
-  // granted, so the compat surfaces (Wallabag/MCP) use "non-interactive" mode —
-  // the only difference is the message thrown when auth isn't set up yet.
-  // Its failures are already classified (consent prompts) or our bugs, so they
-  // skip the fetch-error mapping below.
-  const googleDocsAuth = params.googleDocsAuth;
-  let privateDocError: { error: unknown } | null = null;
-  const beforePageFetch =
-    googleDocsAuth && isGoogleDocsUrl(params.url)
-      ? async (): Promise<PluginArticle | null> => {
-          let doc: GoogleDocsContent | null;
-          try {
-            doc = await fetchPrivateGoogleDocWithAuth(userId, normalizedUrl, googleDocsAuth);
-          } catch (error) {
-            privateDocError = { error };
-            throw error;
-          }
-          if (!doc) return null;
-          logger.debug("Successfully fetched private Google Docs content", {
-            userId,
-            docId: doc.docId,
-            title: doc.title,
-          });
-          return {
-            kind: "plugin",
-            source: "google-docs-oauth",
-            content: { html: doc.html, title: doc.title },
-            siteName: "Google Docs",
-            skipReadability: true,
-            baseUrl: normalizedUrl,
-          };
-        }
-      : undefined;
-
   // Scope the try to the fetch itself. Every failure the fetch can raise — an
   // upstream error status, a network/DNS failure, a timeout, an SSRF block, an
   // unusable content type — is a problem with the user-provided URL, not a bug
@@ -882,17 +651,20 @@ async function acquireSavedArticleContent(
   // 4xx that isn't reported to Sentry). Post-fetch processing (Markdown
   // conversion, Readability upstream) is deliberately OUTSIDE this catch: a
   // failure there is our bug and must surface as a 500 → Sentry, not be masked
-  // as a "fetch error".
-  // For Google Docs use the normalized URL for consistent fetching.
-  const fetchUrl = isGoogleDocsUrl(params.url) ? normalizedUrl : params.url;
+  // as a "fetch error". A plugin's fetch with the user's credentials fails
+  // already classified (a consent prompt) or with our bug, so it skips the
+  // mapping too.
+  const fetchUrl = normalizeSavedArticleUrl(params.url);
   let acquired: AcquiredArticle;
   try {
-    acquired = await acquireArticleContent(params.url, {
-      pageUrl: fetchUrl,
-      beforePageFetch,
+    acquired = await acquireArticleContent(fetchUrl, {
+      asUser: params.userAuth ? { userId, authMode: params.userAuth } : undefined,
     });
   } catch (error) {
-    if (privateDocError !== null || error instanceof TRPCError) {
+    if (error instanceof UserFetchError) {
+      throw error.cause;
+    }
+    if (error instanceof TRPCError) {
       throw error;
     }
     logger.warn("Failed to fetch URL for saved article", {
@@ -924,66 +696,17 @@ async function acquireSavedArticleContent(
     );
   }
 
-  if (acquired.kind === "plugin") {
-    const { content } = acquired;
-    return {
-      html: content.html,
-      contentUrl: content.canonicalUrl ?? acquired.baseUrl,
-      pluginContent: {
-        html: content.html,
-        title: content.title,
-        author: content.author,
-        excerpt: content.excerpt,
-        siteName: acquired.siteName,
-        skipReadability: acquired.skipReadability,
-      },
-      preCleanedContent: null,
-    };
-  }
-
-  if (acquired.isMarkdown) {
-    logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
-      url: fetchUrl,
-    });
-    const markdownResult = await processMarkdown(acquired.content);
-    return {
-      html: markdownResult.html,
-      contentUrl: acquired.finalUrl,
-      pluginContent: null,
-      preCleanedContent: markdownResult,
-    };
-  }
-
-  return {
-    html: acquired.content,
-    contentUrl: acquired.finalUrl,
-    pluginContent: null,
-    preCleanedContent: null,
-  };
+  return articleContentFromAcquired(acquired, { offload: true });
 }
 
 /**
- * Save a URL for later reading.
- *
- * Fetches the URL (or uses caller-provided HTML), extracts metadata and clean
- * content via Readability, and stores it as a saved article. If the URL is
- * already saved, returns the existing article — or, with `refetch`, updates
- * it in place (guarded by a content-quality comparison unless `force`).
- *
- * Uses the plugin system for special URL handling (LessWrong, ArXiv, public
- * Google Docs, etc.); private Google Docs are supported via the
- * `googleDocsAuth` option (interactive for the web UI, non-interactive for the
- * Wallabag/MCP compat surfaces).
- */
-/**
  * Normalizes a URL exactly the way {@link saveArticle} does before storing it as
  * the entry `guid`: strip fragments (two URLs differing only by `#section` point
- * to the same article), and for Google Docs remove extraneous query params
- * except `tab`. Existence checks must use this so they match saved rows.
+ * to the same article), then apply its plugin's `normalizeUrl`. Existence
+ * checks must use this so they match saved rows.
  */
 function normalizeSavedUrl(url: string): string {
-  const normalized = normalizeUrl(url);
-  return isGoogleDocsUrl(normalized) ? normalizeGoogleDocsUrl(normalized) : normalized;
+  return normalizeSavedArticleUrl(normalizeUrl(url));
 }
 
 /**
@@ -1076,6 +799,18 @@ async function selectExistingSavedArticle(
   return row ? toExistingSavedArticle(row) : null;
 }
 
+/**
+ * Save a URL for later reading.
+ *
+ * Fetches the URL (or uses caller-provided HTML), extracts metadata and clean
+ * content via Readability, and stores it as a saved article. If the URL is
+ * already saved, returns the existing article — or, with `refetch`, updates
+ * it in place (guarded by a content-quality comparison unless `force`).
+ *
+ * Uses the plugin system for special URL handling (LessWrong, ArXiv, Google
+ * Docs, etc.); sources needing the user's own credentials (private Google
+ * Docs) are fetched via the `userAuth` option.
+ */
 export async function saveArticle(
   db: typeof dbType,
   userId: string,
@@ -1094,8 +829,7 @@ export async function saveArticle(
     return toExistingSavedArticle(existingEntry);
   }
 
-  const bundle = await acquireSavedArticleContent(userId, params, normalizedUrl);
-  const { html } = bundle;
+  const bundle = await acquireSavedArticleContent(userId, params);
 
   // Derive the stored fields from the acquired content. Shared with the upload
   // paths (buildArticleFields) so save and upload stay in lockstep.
@@ -1103,6 +837,7 @@ export async function saveArticle(
     title: finalTitle,
     author: finalAuthor,
     siteName: finalSiteName,
+    contentOriginal,
     contentCleaned: finalContentCleaned,
     summary: excerpt,
     imageUrl,
@@ -1164,7 +899,7 @@ export async function saveArticle(
     const update = {
       title: finalTitle,
       author: finalAuthor,
-      contentOriginal: html,
+      contentOriginal,
       contentCleaned: finalContentCleaned,
       summary: excerpt,
       siteName: finalSiteName,
@@ -1233,7 +968,7 @@ export async function saveArticle(
     url: normalizedUrl,
     title: finalTitle,
     author: finalAuthor,
-    contentOriginal: html,
+    contentOriginal,
     contentCleaned: finalContentCleaned,
     summary: excerpt,
     siteName: finalSiteName,
@@ -1454,7 +1189,8 @@ export async function uploadArticle(
       providedAuthor: params.author ?? null,
       providedExcerpt: params.excerpt ?? null,
       siteName: "Uploaded Article",
-    }
+    },
+    { keepRelativeUrls: params.keepRelativeUrls }
   );
   return insertUploadedArticle(db, userId, fields);
 }

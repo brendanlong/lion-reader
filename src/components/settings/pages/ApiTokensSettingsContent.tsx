@@ -38,6 +38,11 @@ export default function ApiTokensSettingsContent() {
   const [selectedScopes, setSelectedScopes] = useState<string[]>(["mcp"]);
   const [expiresInDays, setExpiresInDays] = useState<string>("");
   const [newlyCreatedToken, setNewlyCreatedToken] = useState<string | null>(null);
+  const [errors, setErrors] = useState<{
+    name?: string;
+    scopes?: string;
+    expiresInDays?: string;
+  }>({});
 
   const tokensQuery = trpc.apiTokens.list.useQuery();
   const utils = trpc.useUtils();
@@ -53,7 +58,7 @@ export default function ApiTokensSettingsContent() {
       toast.success("API token created");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to create token");
+      toast.error("Failed to create token", { description: error.message });
     },
   });
 
@@ -63,25 +68,24 @@ export default function ApiTokensSettingsContent() {
       toast.success("Token revoked");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to revoke token");
+      toast.error("Failed to revoke token", { description: error.message });
     },
   });
 
   const handleCreateToken = () => {
+    const expiresInDaysNum = expiresInDays ? parseInt(expiresInDays, 10) : undefined;
+    const newErrors: typeof errors = {};
     if (!tokenName.trim()) {
-      toast.error("Please enter a token name");
-      return;
+      newErrors.name = "Please enter a token name";
     }
     if (selectedScopes.length === 0) {
-      toast.error("Please select at least one scope");
-      return;
+      newErrors.scopes = "Please select at least one scope";
     }
-
-    const expiresInDaysNum = expiresInDays ? parseInt(expiresInDays, 10) : undefined;
-    if (expiresInDays && (isNaN(expiresInDaysNum!) || expiresInDaysNum! <= 0)) {
-      toast.error("Please enter a valid number of days");
-      return;
+    if (expiresInDaysNum !== undefined && (isNaN(expiresInDaysNum) || expiresInDaysNum <= 0)) {
+      newErrors.expiresInDays = "Please enter a valid number of days";
     }
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) return;
 
     createTokenMutation.mutate({
       name: tokenName,
@@ -181,6 +185,7 @@ export default function ApiTokensSettingsContent() {
                 label="Token Name"
                 value={tokenName}
                 onChange={(e) => setTokenName(e.target.value)}
+                error={errors.name}
                 placeholder="e.g., Claude Desktop, Browser Extension"
                 className="w-full"
               />
@@ -211,6 +216,7 @@ export default function ApiTokensSettingsContent() {
                   </label>
                 ))}
               </div>
+              {errors.scopes && <p className="ui-text-sm text-danger mt-1.5">{errors.scopes}</p>}
             </div>
 
             {/* Expiration (Optional) */}
@@ -221,6 +227,7 @@ export default function ApiTokensSettingsContent() {
                 type="number"
                 value={expiresInDays}
                 onChange={(e) => setExpiresInDays(e.target.value)}
+                error={errors.expiresInDays}
                 placeholder="Days until expiration (leave empty for no expiration)"
                 className="w-full"
                 min="1"
@@ -246,6 +253,7 @@ export default function ApiTokensSettingsContent() {
                   setTokenName("");
                   setSelectedScopes(["mcp"]);
                   setExpiresInDays("");
+                  setErrors({});
                 }}
                 disabled={createTokenMutation.isPending}
               >

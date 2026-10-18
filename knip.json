@@ -3,7 +3,7 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/fixup-standalone.mjs", "src/lib/narration/app-reader.ts"],
-      "ignore": ["extension/**", "kmp/**", "src/lib/stubs/**", "worker/index.ts"],
+      "ignore": ["extension/**", "kmp/**", "src/lib/stubs/**", "service-worker/index.ts"],
       "ignoreDependencies": ["mammoth"]
     },
     "native/sanitizer": {},

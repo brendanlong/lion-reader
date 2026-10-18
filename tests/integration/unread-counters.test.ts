@@ -15,8 +15,10 @@ import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
-import { createSubscription } from "../../src/server/services/subscriptions";
+import {
+  createSubscription,
+  migrateSubscriptionsToExistingFeed,
+} from "../../src/server/services/subscriptions";
 import {
   countEntries,
   markEntriesRead,
@@ -207,7 +209,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
     const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, oldFeedId));
     const [newFeed] = await db.select().from(feeds).where(eq(feeds.id, newFeedId));
-    await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
+    await migrateSubscriptionsToExistingFeed(db, oldFeed, newFeed);
 
     // The article joins the survivor and stays in the (now inactive) old
     // subscription, which still counts it (#1846).

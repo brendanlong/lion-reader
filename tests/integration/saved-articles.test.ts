@@ -947,6 +947,7 @@ describe("Saved Articles API", () => {
               <h1>Article Heading</h1>
               <p>This is the article content that should be extracted by Readability.</p>
               <p>It has multiple paragraphs to ensure proper extraction.</p>
+              <p><a href="/related">A related post</a></p>
             </article>
           </body>
         </html>
@@ -966,6 +967,9 @@ describe("Saved Articles API", () => {
       // Readability and sanitized) is served through the read path.
       const fetched = await caller.entries.get({ id: result.article.id });
       expect(fetched.entry.contentCleaned).toContain("article content");
+      // Both copies resolve relative links against the page, not Lion Reader.
+      expect(fetched.entry.contentOriginal).toContain('href="https://example.com/related"');
+      expect(fetched.entry.contentCleaned).toContain('href="https://example.com/related"');
     });
 
     it("uses provided title parameter over extracted metadata", async () => {
@@ -1192,6 +1196,31 @@ describe("Saved Articles API", () => {
       expect(await savedArticleExistsByUrl(db, userId, savedUrl)).toBe(articleId);
       expect(await savedArticleExistsByUrl(db, userId, `${savedUrl}#section`)).toBe(articleId);
       expect(await savedArticleExistsByUrl(db, userId, "https://example.com/not-saved")).toBeNull();
+    });
+
+    it("matches URLs its plugin's normalizeUrl canonicalizes alike", async () => {
+      const userId = await createTestUser();
+      const doc = "https://docs.google.com/document/d/1NoRmAlIzEdOcId/edit";
+      const saved = await saveArticle(db, userId, {
+        url: `${doc}?usp=sharing&tab=t.0#heading=h.abc`,
+        html: "<html><body><article><p>Doc body</p></article></body></html>",
+      });
+
+      expect(await savedArticleExistsByUrl(db, userId, `${doc}?tab=t.0&pli=1`)).toBe(saved.id);
+      expect(await savedArticleExistsByUrl(db, userId, `${doc}?tab=t.1`)).toBeNull();
+    });
+
+    // Only documents are the Docs plugin's: a sheet's gid picks its page.
+    it("keeps the query of Google URLs that aren't documents", async () => {
+      const userId = await createTestUser();
+      const sheet = "https://docs.google.com/spreadsheets/d/1ShEeTiD/edit";
+      const saved = await saveArticle(db, userId, {
+        url: `${sheet}?gid=1`,
+        html: "<html><body><article><p>Sheet</p></article></body></html>",
+      });
+
+      expect(await savedArticleExistsByUrl(db, userId, `${sheet}?gid=1`)).toBe(saved.id);
+      expect(await savedArticleExistsByUrl(db, userId, `${sheet}?gid=2`)).toBeNull();
     });
 
     it("is scoped per user", async () => {

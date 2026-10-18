@@ -19,7 +19,8 @@
 
 import { useHotkeys } from "react-hotkeys-hook";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
-import type { NarrationPhase } from "@/components/narration/useNarrationTypes";
+import { SHORTCUTS } from "@/components/keyboard/shortcuts";
+import type { NarrationPhase } from "./useNarrationTypes";
 
 // [ and ] need AltGr (or Option) on many non-US layouts, so modifiers are
 // ignored when matching the produced character, but a Ctrl/Cmd chord without
@@ -92,7 +93,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
 
   // p - Toggle play/pause
   useHotkeys(
-    "p",
+    SHORTCUTS.playPause.hotkey,
     (e) => {
       e.preventDefault();
       if (shouldPause) {
@@ -110,7 +111,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
 
   // ] - Skip to next paragraph
   useHotkeys(
-    "]",
+    SHORTCUTS.nextParagraph.hotkey,
     (e) => {
       if (isBracketChord(e)) return;
       e.preventDefault();
@@ -127,7 +128,7 @@ export function useNarrationKeyboardShortcuts(options: UseNarrationKeyboardShort
 
   // [ - Skip to previous paragraph
   useHotkeys(
-    "[",
+    SHORTCUTS.previousParagraph.hotkey,
     (e) => {
       if (isBracketChord(e)) return;
       e.preventDefault();

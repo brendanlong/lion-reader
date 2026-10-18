@@ -17,9 +17,7 @@ import {
   errorResponse,
   withClientErrors,
 } from "@/server/google-reader/parse";
-import { parseStreamId } from "@/server/google-reader/streams";
-import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
-import { resolveTagByName } from "@/server/google-reader/tags";
+import { isStreamError, resolveStreamFilter } from "@/server/google-reader/stream-filters";
 import { db } from "@/server/db";
 import { markAllEntriesRead } from "@/server/services/entries";
 
@@ -38,69 +36,26 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
     return errorResponse("Missing required parameter: s (stream ID)", 400);
   }
 
-  let parsedStream;
-  try {
-    parsedStream = parseStreamId(streamIdStr);
-  } catch {
-    return errorResponse(`Invalid stream ID: ${streamIdStr}`, 400);
+  const filter = await resolveStreamFilter(db, userId, streamIdStr);
+  if (isStreamError(filter)) {
+    // A stream that's already gone has nothing left to mark: an offline
+    // client replaying its queue mustn't be stuck on it.
+    return filter.status === 404
+      ? textResponse("OK")
+      : errorResponse(filter.message, filter.status);
   }
 
-  // Parse optional timestamp (microseconds since epoch)
-  const tsStr = params.get("ts");
-  const beforeDate = tsStr ? new Date(parseInt(tsStr, 10) / 1000) : undefined;
-
-  // Translate GReader stream into shared service params
-  switch (parsedStream.type) {
-    case "feed": {
-      const filter = await resolveFeedStreamFilter(db, userId, parsedStream.subscriptionInt64);
-      if (!filter) {
-        return textResponse("OK");
-      }
-
-      // `filter` is the Saved type filter or a real subscription id (issue
-      // #730), resolved identically to the stream/contents endpoints.
-      await markAllEntriesRead(db, { userId, ...filter, before: beforeDate, showSpam });
-      break;
-    }
-    case "state": {
-      switch (parsedStream.state) {
-        case "reading-list":
-          await markAllEntriesRead(db, {
-            userId,
-            before: beforeDate,
-            showSpam,
-          });
-          break;
-        case "starred":
-          await markAllEntriesRead(db, {
-            userId,
-            starredOnly: true,
-            before: beforeDate,
-            showSpam,
-          });
-          break;
-        default:
-          return errorResponse(
-            `Unsupported state for mark-all-as-read: ${parsedStream.state}`,
-            400
-          );
-      }
-      break;
-    }
-    case "label": {
-      const tag = await resolveTagByName(db, userId, parsedStream.name);
-      if (!tag) {
-        return textResponse("OK");
-      }
-
-      await markAllEntriesRead(db, {
-        userId,
-        tagId: tag.id,
-        before: beforeDate,
-        showSpam,
-      });
-      break;
-    }
+  // Every item in the read stream is read already.
+  const { readOnly, ...markFilter } = filter;
+  if (!readOnly) {
+    // `ts` is microseconds since the epoch.
+    const ts = parseInt(params.get("ts") ?? "", 10);
+    await markAllEntriesRead(db, {
+      userId,
+      showSpam,
+      ...markFilter,
+      before: isNaN(ts) ? undefined : new Date(ts / 1000),
+    });
   }
 
   return textResponse("OK");

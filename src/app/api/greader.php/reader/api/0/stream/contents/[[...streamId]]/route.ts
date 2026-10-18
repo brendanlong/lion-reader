@@ -18,24 +18,21 @@
  * 404 that request and break account setup.
  *
  * Query parameters:
- * - n: number of items (default 20, max 300) — capped lower than the ids stream
- *   because each item carries a full (potentially large, sanitized) article body
+ * - n: number of items (default 20, max 300)
  * - c: continuation token (cursor)
  * - ot: oldest timestamp (unix seconds) — exclude items older than this
  * - nt: newest timestamp (unix seconds) — exclude items newer than this
  * - r: sort order ("o" for oldest first, default newest first)
  * - xt: exclude stream ID (e.g., user/-/state/com.google/read to exclude read items)
+ * - it: include stream ID (e.g., user/-/state/com.google/read for only read items)
  */
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
-import { parseStreamId, type StreamId } from "@/server/google-reader/streams";
+import { isStreamError, resolveStreamListParams } from "@/server/google-reader/stream-filters";
 import { formatEntryAsItem } from "@/server/google-reader/format";
-import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
-import { resolveTagByName } from "@/server/google-reader/tags";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
-import { isState } from "@/server/google-reader/streams";
 
 export const dynamic = "force-dynamic";
 
@@ -56,94 +53,15 @@ const handleStreamContents = withClientErrors(async function (
   const streamIdStr =
     streamIdParts && streamIdParts.length > 0 ? streamIdParts.join("/") : DEFAULT_STREAM_ID;
 
-  let parsedStream: StreamId;
-  try {
-    parsedStream = parseStreamId(streamIdStr);
-  } catch {
-    return errorResponse(`Invalid stream ID: ${streamIdStr}`, 400);
-  }
-
-  // Parse query/form parameters
-  const url = new URL(request.url);
-  const searchParams = url.searchParams;
-
-  const count = Math.min(parseInt(searchParams.get("n") ?? "20", 10) || 20, 300);
-  const continuation = searchParams.get("c") ?? undefined;
-  const sortOrder = searchParams.get("r") === "o" ? "oldest" : "newest";
-  const excludeTarget = searchParams.get("xt");
-  const olderThan = searchParams.get("ot");
-  const newerThan = searchParams.get("nt");
-
-  // Build list entries params
-  const listParams: entriesService.ListEntriesParams = {
-    userId: session.user.id,
-    limit: count,
-    maxLimit: 300,
-    cursor: continuation,
-    sortOrder: sortOrder as "newest" | "oldest",
-    showSpam: session.user.showSpam,
-  };
-
-  // ot = "older than" timestamp — only return items newer than this (published after)
-  if (olderThan) {
-    const ts = parseInt(olderThan, 10);
-    if (!isNaN(ts)) {
-      listParams.publishedAfter = new Date(ts * 1000);
-    }
-  }
-
-  // nt = "newer than" timestamp — only return items older than this (published before)
-  if (newerThan) {
-    const ts = parseInt(newerThan, 10);
-    if (!isNaN(ts)) {
-      listParams.publishedBefore = new Date(ts * 1000);
-    }
-  }
-
-  // Resolve stream ID to filter params
-  switch (parsedStream.type) {
-    case "feed": {
-      const filter = await resolveFeedStreamFilter(
-        db,
-        session.user.id,
-        parsedStream.subscriptionInt64
-      );
-      if (!filter) {
-        return errorResponse("Subscription not found", 404);
-      }
-      Object.assign(listParams, filter);
-      break;
-    }
-    case "state": {
-      switch (parsedStream.state) {
-        case "reading-list":
-          // All entries — no additional filter
-          break;
-        case "starred":
-          listParams.starredOnly = true;
-          break;
-        case "read":
-          listParams.readOnly = true;
-          break;
-        default:
-          return errorResponse(`Unsupported state: ${parsedStream.state}`, 400);
-      }
-      break;
-    }
-    case "label": {
-      const tag = await resolveTagByName(db, session.user.id, parsedStream.name);
-      if (!tag) {
-        return errorResponse(`Tag not found: ${parsedStream.name}`, 404);
-      }
-      listParams.tagId = tag.id;
-      break;
-    }
-  }
-
-  // Handle exclude target (xt parameter)
-  if (excludeTarget && isState(excludeTarget, "read")) {
-    listParams.unreadOnly = true;
-  }
+  const listParams = await resolveStreamListParams(
+    db,
+    session.user,
+    streamIdStr,
+    new URL(request.url).searchParams,
+    // Capped lower than the ids stream: each item carries a full article body.
+    { defaultCount: 20, maxCount: 300 }
+  );
+  if (isStreamError(listParams)) return errorResponse(listParams.message, listParams.status);
 
   // The page's serials, then its entries' content in one bulk read; an entry
   // deleted in between is left out.

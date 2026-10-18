@@ -37,6 +37,7 @@ async function savedEntriesFor(userId: string) {
       title: entries.title,
       summary: entries.summary,
       contentOriginal: entries.contentOriginal,
+      contentCleaned: entries.contentCleaned,
       read: userEntries.read,
       starred: userEntries.starred,
     })
@@ -93,8 +94,10 @@ describe("createGettingStartedArticle", () => {
     expect(saved[0].title).toBe(GETTING_STARTED_TITLE);
     expect(saved[0].starred).toBe(true);
     expect(saved[0].read).toBe(false);
-    // Rendered through the Markdown pipeline, with its in-app links intact.
+    // Rendered through the Markdown pipeline, with its in-app links left
+    // relative (same-tab) rather than resolved against the upload host.
     expect(saved[0].contentOriginal).toContain('href="/subscribe"');
+    expect(saved[0].contentCleaned).toContain('href="/subscribe"');
     expect(saved[0].summary).toBeTruthy();
 
     expect(await gettingStartedAt(userId)).toBeInstanceOf(Date);

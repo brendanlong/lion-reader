@@ -32,14 +32,24 @@ const video: ParsedEntry = {
 describe("getFeedHooks", () => {
   it("passes the first entry author to the plugin's title transform", () => {
     const items: ParsedEntry[] = [{ title: "No author" }, { author: "Brendan Long" }];
-    expect(getFeedHooks(LESSWRONG_USER_FEED).transformFeedTitle("LessWrong", items)).toBe(
+    expect(getFeedHooks(LESSWRONG_USER_FEED).resolveFeedTitle({ title: "LessWrong", items })).toBe(
       "LessWrong - Brendan Long"
     );
   });
 
+  it("falls back to the stored title, then the transformed hostname", () => {
+    const hooks = getFeedHooks(LESSWRONG_USER_FEED);
+    const items: ParsedEntry[] = [{ author: "Brendan Long" }];
+    expect(hooks.resolveFeedTitle({ title: "", items }, "LessWrong - Brendan Long")).toBe(
+      "LessWrong - Brendan Long"
+    );
+    expect(hooks.resolveFeedTitle({ items }, null)).toBe("www.lesswrong.com - Brendan Long");
+    expect(getFeedHooks(null).resolveFeedTitle({ items })).toBeNull();
+  });
+
   it("is a no-op for a feed no plugin handles, or no URL", () => {
     for (const hooks of [getFeedHooks("https://example.com/feed.xml"), getFeedHooks(null)]) {
-      expect(hooks.transformFeedTitle("Title", [{ author: "A" }])).toBe("Title");
+      expect(hooks.resolveFeedTitle({ title: "Title", items: [{ author: "A" }] })).toBe("Title");
       expect(hooks.cleanEntryContent("<p>x</p>")).toBe("<p>x</p>");
       expect(hooks.buildEntryContent(video, video.link)).toBeNull();
     }
@@ -47,7 +57,7 @@ describe("getFeedHooks", () => {
 
   it("falls back to the unplugged result when the plugin throws", () => {
     const hooks = getFeedHooks(THROWING_FEED);
-    expect(hooks.transformFeedTitle("Title", [{ author: "A" }])).toBe("Title");
+    expect(hooks.resolveFeedTitle({ title: "Title", items: [{ author: "A" }] })).toBe("Title");
     expect(hooks.cleanEntryContent("<p>x</p>")).toBe("<p>x</p>");
     expect(hooks.buildEntryContent(video, video.link)).toBeNull();
   });

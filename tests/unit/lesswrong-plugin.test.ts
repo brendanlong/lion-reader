@@ -38,13 +38,24 @@ describe("lessWrongPlugin.matchUrl", () => {
 });
 
 describe("lessWrongPlugin feed.cleanEntryContent", () => {
-  it("strips the 'Published on' prefix", () => {
-    const html = "Published on January 7, 2026 2:39 AM GMT<br/><br/><p>Article body.</p>";
-    expect(feed.cleanEntryContent?.(html)).toBe("<p>Article body.</p>");
+  it.each([
+    ["GMT, self-closing <br/>", "Published on January 7, 2026 2:39 AM GMT<br/><br/>"],
+    ["another timezone", "Published on December 25, 2025 11:30 PM EST<br/><br/>"],
+    ["<br> without a slash", "Published on January 1, 2026 12:00 PM PST<br><br>"],
+    ["<br /> with a space", "Published on March 15, 2026 3:45 AM UTC<br /><br />"],
+    ["mixed <br> forms", "Published on June 30, 2025 6:00 PM GMT<br><br/>"],
+  ])("strips the 'Published on' prefix (%s)", (_label, prefix) => {
+    expect(feed.cleanEntryContent?.(`${prefix}<p>Article body.</p>`)).toBe("<p>Article body.</p>");
   });
 
-  it("leaves non-prefixed content unchanged", () => {
-    const html = "<p>No prefix here.</p>";
+  it.each([
+    ["no prefix", "<p>No prefix here.</p>"],
+    [
+      "the date mid-content",
+      "<p>Intro.</p>Published on January 7, 2026 2:39 AM GMT<br/><br/><p>More.</p>",
+    ],
+    ["a prefix missing the time", "Published on January 7, 2026<br/><br/><p>Missing time.</p>"],
+  ])("leaves content with %s unchanged", (_label, html) => {
     expect(feed.cleanEntryContent?.(html)).toBe(html);
   });
 });

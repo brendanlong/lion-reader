@@ -15,7 +15,7 @@
  * See src/server/jobs/CLAUDE.md for the overall architecture.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { jobs, type Job } from "../db/schema";
 import { isUniqueViolation } from "../db/errors";
@@ -75,15 +75,27 @@ const emptyPayload = z.object({});
  */
 type JobLane = "feed" | "singleton" | "one_time" | "full_content";
 
-interface JobDefinition {
-  payload: z.ZodType;
-  lane: JobLane;
-  /**
-   * A singleton that, under a backlog, reschedules itself near-immediately.
-   * Ordered last in {@link SINGLETON_JOB_TYPES} so it can't starve the others.
-   */
-  reschedulesFast?: true;
-}
+type JobDefinition =
+  | {
+      payload: z.ZodType;
+      lane: "singleton";
+      /**
+       * Under a backlog, reschedules itself near-immediately. Ordered last in
+       * {@link SINGLETON_JOB_TYPES} so it can't starve the others.
+       */
+      reschedulesFast?: true;
+      /**
+       * Runs every `intervalMs`, measured from each run's start. The worker
+       * schedules it, so its handler returns only metadata.
+       */
+      intervalMs?: number;
+    }
+  | {
+      payload: z.ZodType;
+      lane: Exclude<JobLane, "singleton">;
+      reschedulesFast?: never;
+      intervalMs?: never;
+    };
 
 /**
  * Every job type, its payload schema and its claim lane. The worker's handler
@@ -105,19 +117,26 @@ const JOB_DEFINITIONS = {
     payload: z.object({ feedId: z.string(), forceReprocessRequestedAt: z.string().optional() }),
     lane: "feed",
   },
-  // Renews all expiring WebSub subscriptions.
-  renew_websub: { payload: emptyPayload, lane: "singleton" },
+  // Renews all expiring WebSub subscriptions. Hourly: each run renews leases
+  // expiring within two intervals (handlers/renew-websub.ts), so a daily
+  // cadence would leave sub-day leases unrenewed for most of their life.
+  renew_websub: { payload: emptyPayload, lane: "singleton", intervalMs: 60 * 60 * 1000 },
   // Periodic feed fetch health check. Alert cadence and de-duplication are
   // owned by the external healthchecks.io monitor, so no state is carried
   // across runs.
-  monitor_feed_health: { payload: emptyPayload, lane: "singleton" },
+  monitor_feed_health: { payload: emptyPayload, lane: "singleton", intervalMs: 15 * 60 * 1000 },
   // Daily retention cleanup of expired/revoked credentials and parked
   // one-time jobs. See src/server/services/retention.ts.
-  cleanup: { payload: emptyPayload, lane: "singleton" },
+  cleanup: { payload: emptyPayload, lane: "singleton", intervalMs: 24 * 60 * 60 * 1000 },
   // Daily self-healing sweep of the denormalized unread counters (issue
-  // #1117), by the membership rules of #1846. See
+  // #1117), by the membership rules of #1846: the triggers should keep them
+  // exact, so this is a drift detector (any fix logs at error level). See
   // src/server/services/reconcile-counters.ts.
-  reconcile_membership_counters: { payload: emptyPayload, lane: "singleton" },
+  reconcile_membership_counters: {
+    payload: emptyPayload,
+    lane: "singleton",
+    intervalMs: 24 * 60 * 60 * 1000,
+  },
   // Fills the Getting Started article in for users who predate it, a batch per
   // run (issue #1397). Stateless — `users.getting_started_at` is the progress
   // marker. See src/server/services/getting-started.ts. While a backlog remains
@@ -145,6 +164,20 @@ export type JobPayloads = {
 };
 
 const ALL_JOB_TYPES = Object.keys(JOB_DEFINITIONS) as JobType[];
+
+/** The job types that declare an `intervalMs`. */
+export type FixedIntervalJobType = {
+  [K in JobType]: (typeof JOB_DEFINITIONS)[K] extends { intervalMs: number } ? K : never;
+}[JobType];
+
+export function isFixedIntervalJobType(type: JobType): type is FixedIntervalJobType {
+  const definition: JobDefinition = JOB_DEFINITIONS[type];
+  return definition.intervalMs !== undefined;
+}
+
+export function getJobIntervalMs(type: FixedIntervalJobType): number {
+  return JOB_DEFINITIONS[type].intervalMs;
+}
 
 function jobTypesInLanes(...lanes: JobLane[]): JobType[] {
   return ALL_JOB_TYPES.filter((type) => lanes.includes(JOB_DEFINITIONS[type].lane));
@@ -305,48 +338,57 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
 }
 
 /**
- * Claims a pending job for processing using row locking.
+ * Claims the earliest-due job of `types` (any type if omitted); see
+ * {@link leaseDueJob} for the lease. The worker passes
+ * {@link GENERIC_CLAIM_JOB_TYPES}: feed, singleton and full-content jobs have
+ * their own claims.
  *
- * Uses SELECT FOR UPDATE SKIP LOCKED to ensure only one worker
- * can claim a job at a time, without blocking other workers.
- *
- * Jobs are claimed if:
- * - next_run_at <= now
- * - running_since is NULL OR older than stale threshold (5 minutes)
- *
- * Note: This only claims non-feed jobs (the `ONE_TIME_JOB_TYPES`).
- * Feed jobs are claimed via claimFeedJob() which checks for active subscribers.
- *
- * @param options Claim options (optional type filter)
  * @returns The claimed job, or null if no jobs are available
  */
 export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | null> {
   const { types } = options;
-  const now = new Date();
-  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
-
-  // Build type filter if provided
   const typeFilter =
     types && types.length > 0
-      ? sql`AND type = ANY(ARRAY[${sql.join(
+      ? sql`j.type = ANY(ARRAY[${sql.join(
           types.map((t) => sql`${t}`),
           sql`, `
         )}]::text[])`
-      : sql``;
+      : sql`TRUE`;
+
+  return leaseDueJob(() => typeFilter);
+}
+
+/**
+ * Leases the earliest-due job (alias `j`) matching `eligible`: due, not held
+ * by a live worker (`running_since` unset or older than
+ * {@link STALE_JOB_THRESHOLD_MS}), and not row-locked by a concurrent claim.
+ * Stamps `running_since` (the lease token) and returns the job.
+ *
+ * @param eligible - The caller's extra predicate on `j`, given the claim time
+ *   and the stale cutoff
+ * @param extraSet - Further `SET` assignments on the claimed row
+ */
+async function leaseDueJob(
+  eligible: (claim: { now: Date; staleThreshold: Date }) => SQL,
+  extraSet: SQL = sql``
+): Promise<Job | null> {
+  const now = new Date();
+  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
 
   const result = await db.execute<RawJobRow>(sql`
-    UPDATE ${jobs}
+    UPDATE jobs
     SET
       running_since = ${now},
       updated_at = ${now}
+      ${extraSet}
     WHERE id = (
-      SELECT id FROM ${jobs}
-      WHERE next_run_at <= ${now}
-        AND (running_since IS NULL OR running_since < ${staleThreshold})
-        ${typeFilter}
-      ORDER BY next_run_at ASC
+      SELECT j.id FROM jobs j
+      WHERE j.next_run_at <= ${now}
+        AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
+        AND ${eligible({ now, staleThreshold })}
+      ORDER BY j.next_run_at ASC
       LIMIT 1
-      FOR UPDATE SKIP LOCKED
+      FOR UPDATE OF j SKIP LOCKED
     )
     RETURNING *
   `);
@@ -688,40 +730,24 @@ export async function enqueueFullContentFetch(
  * @returns The claimed job, or null if none is due or the cap is reached
  */
 export async function claimFullContentJob(): Promise<Job | null> {
-  const now = new Date();
-  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
-
   // A running job is still due (next_run_at is only advanced when it finishes),
   // so bounding the count by next_run_at <= now keeps it on idx_jobs_polling
   // instead of scanning the parked rows, and the inner LIMIT stops it at the cap.
-  const result = await db.execute<RawJobRow>(sql`
-    UPDATE jobs
-    SET
-      running_since = ${now},
-      payload = payload - 'pending',
-      updated_at = ${now}
-    WHERE id = (
-      SELECT j.id FROM jobs j
-      WHERE j.type = 'fetch_full_content'
-        AND j.next_run_at <= ${now}
-        AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
-        AND (
-          SELECT count(*) FROM (
-            SELECT 1 FROM jobs r
-            WHERE r.type = 'fetch_full_content'
-              AND r.next_run_at <= ${now}
-              AND r.running_since >= ${staleThreshold}
-            LIMIT ${MAX_RUNNING_FULL_CONTENT_JOBS}
-          ) running
-        ) < ${MAX_RUNNING_FULL_CONTENT_JOBS}
-      ORDER BY j.next_run_at ASC
-      LIMIT 1
-      FOR UPDATE OF j SKIP LOCKED
-    )
-    RETURNING *
-  `);
-
-  return firstJob(result);
+  return leaseDueJob(
+    ({ now, staleThreshold }) => sql`
+      j.type = 'fetch_full_content'
+      AND (
+        SELECT count(*) FROM (
+          SELECT 1 FROM jobs r
+          WHERE r.type = 'fetch_full_content'
+            AND r.next_run_at <= ${now}
+            AND r.running_since >= ${staleThreshold}
+          LIMIT ${MAX_RUNNING_FULL_CONTENT_JOBS}
+        ) running
+      ) < ${MAX_RUNNING_FULL_CONTENT_JOBS}
+    `,
+    sql`, payload = payload - 'pending'`
+  );
 }
 
 /**
@@ -755,26 +781,10 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
     throw new Error(`${type} is not a singleton job type`);
   }
 
-  const now = new Date();
-  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
-
-  // Claims the singleton row if it is due and not held by a live worker. Used
-  // both for the initial attempt and for the post-INSERT-race retry below, which
-  // must apply exactly the same predicate.
-  const tryClaim = () =>
-    db.execute<RawJobRow>(sql`
-      UPDATE ${jobs}
-      SET
-        running_since = ${now},
-        updated_at = ${now}
-      WHERE type = ${type}
-        AND next_run_at <= ${now}
-        AND (running_since IS NULL OR running_since < ${staleThreshold})
-      RETURNING *
-    `);
+  const tryClaim = () => leaseDueJob(() => sql`j.type = ${type}`);
 
   // First, try to claim an existing job
-  const claimed = firstJob(await tryClaim());
+  const claimed = await tryClaim();
   if (claimed) {
     return claimed;
   }
@@ -791,6 +801,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
   // The jobs_singleton_type_unique partial index makes this INSERT conflict if
   // another worker creates the row first (two workers both see no row), so the
   // catch below handles that race by claiming the row the winner created.
+  const now = new Date();
   try {
     const [newJob] = await db
       .insert(jobs)
@@ -814,11 +825,11 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
       throw error;
     }
 
-    // Another worker created the job first - try to claim it. The shared
-    // predicate keeps the next_run_at <= now check: if the winner already ran
+    // Another worker created the job first - try to claim it. The claim
+    // keeps the next_run_at <= now check: if the winner already ran
     // and rescheduled the job, we must not immediately re-run it.
     // Null if the job is running or already rescheduled - that's fine
-    return firstJob(await tryClaim());
+    return tryClaim();
   }
 }
 
@@ -835,32 +846,15 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
  * @returns The claimed job, or null if no eligible feed jobs
  */
 export async function claimFeedJob(): Promise<Job | null> {
-  const now = new Date();
-  const staleThreshold = new Date(now.getTime() - STALE_JOB_THRESHOLD_MS);
-
-  // Claim a feed job only if the feed has active subscribers
-  // We use EXISTS instead of JOIN + GROUP BY to allow FOR UPDATE
-  const result = await db.execute<RawJobRow>(sql`
-    UPDATE jobs
-    SET
-      running_since = ${now},
-      updated_at = ${now}
-    WHERE id = (
-      SELECT j.id FROM jobs j
-      WHERE j.type = 'fetch_feed'
-        AND j.next_run_at <= ${now}
-        AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
-        AND EXISTS (
-          SELECT 1 FROM subscriptions s
-          WHERE s.feed_id = (j.payload->>'feedId')::uuid
-            AND s.unsubscribed_at IS NULL
-        )
-      ORDER BY j.next_run_at ASC
-      LIMIT 1
-      FOR UPDATE OF j SKIP LOCKED
-    )
-    RETURNING *
-  `);
-
-  return firstJob(result);
+  // EXISTS rather than JOIN + GROUP BY, which FOR UPDATE can't lock through.
+  return leaseDueJob(
+    () => sql`
+      j.type = 'fetch_feed'
+      AND EXISTS (
+        SELECT 1 FROM subscriptions s
+        WHERE s.feed_id = (j.payload->>'feedId')::uuid
+          AND s.unsubscribed_at IS NULL
+      )
+    `
+  );
 }

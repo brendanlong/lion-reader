@@ -3,15 +3,12 @@
  *
  * This handles REST requests for the public API.
  * Routes are defined using the openapi meta on tRPC procedures.
- * Includes rate limit headers in all responses.
- * Tracks HTTP metrics when METRICS_ENABLED=true.
  */
 
 import { createOpenApiFetchHandler } from "trpc-to-openapi";
-import { TRPCError } from "@trpc/server";
 import { appRouter } from "@/server/trpc/root";
 import { createContext } from "@/server/trpc/context";
-import { startHttpTimer } from "@/server/metrics/metrics";
+import { serveTrpcHttp } from "@/server/trpc/http";
 
 /**
  * CORS headers for the /saved endpoint.
@@ -29,16 +26,6 @@ const SAVED_CORS_HEADERS = {
  */
 function needsCorsHeaders(url: URL): boolean {
   return url.pathname.endsWith("/saved");
-}
-
-/**
- * Extracts rate limit headers from a tRPC error (if present).
- */
-function extractRateLimitHeaders(error: TRPCError): Record<string, string> {
-  if (error.cause && typeof error.cause === "object" && "headers" in error.cause) {
-    return (error.cause as { headers: Record<string, string> }).headers;
-  }
-  return {};
 }
 
 /**
@@ -70,63 +57,24 @@ const optionsHandler = async (req: Request) => {
   return new Response(null, { status: 204 });
 };
 
-/**
- * Handle REST API requests with rate limit header handling.
- */
-const handler = async (req: Request) => {
-  let rateLimitHeaders: Record<string, string> = {};
-
-  // Start timing for metrics (no-op if metrics disabled)
+const handler = (req: Request): Promise<Response> => {
   const url = new URL(req.url);
-  const normalizedPath = normalizeRestPath(url);
-  const endTimer = startHttpTimer(req.method, normalizedPath);
-
-  const response = await createOpenApiFetchHandler({
-    endpoint: "/api/v1",
+  return serveTrpcHttp(
     req,
-    router: appRouter,
-    createContext,
-    onError:
-      process.env.NODE_ENV === "development"
-        ? ({ error, path }) => {
-            console.error(`❌ REST API failed on ${path ?? "<no-path>"}: ${error.message}`);
-
-            // Extract rate limit headers from error
-            if (error.code === "TOO_MANY_REQUESTS") {
-              rateLimitHeaders = extractRateLimitHeaders(error);
-            }
-          }
-        : ({ error }) => {
-            // Extract rate limit headers from error in production too
-            if (error.code === "TOO_MANY_REQUESTS") {
-              rateLimitHeaders = extractRateLimitHeaders(error);
-            }
-          },
-  });
-
-  // Record HTTP metrics
-  endTimer(response.status);
-
-  // Build extra headers (rate limit + CORS if needed)
-  const extraHeaders: Record<string, string> = {
-    ...rateLimitHeaders,
-    ...(needsCorsHeaders(url) ? SAVED_CORS_HEADERS : {}),
-  };
-
-  // Add extra headers to the response if any
-  if (Object.keys(extraHeaders).length > 0) {
-    const headers = new Headers(response.headers);
-    for (const [key, value] of Object.entries(extraHeaders)) {
-      headers.set(key, value);
-    }
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  }
-
-  return response;
+    {
+      label: "REST API",
+      metricsPath: normalizeRestPath(url),
+      extraHeaders: needsCorsHeaders(url) ? SAVED_CORS_HEADERS : undefined,
+    },
+    (onError) =>
+      createOpenApiFetchHandler({
+        endpoint: "/api/v1",
+        req,
+        router: appRouter,
+        createContext,
+        onError,
+      })
+  );
 };
 
 export {

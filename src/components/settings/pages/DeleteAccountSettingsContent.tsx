@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Alert } from "@/components/ui/alert";
 import {
   Dialog,
   DialogTitle,
@@ -24,7 +23,6 @@ import {
 export default function DeleteAccountSettingsContent() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   const deleteAccountMutation = trpc.users["me.deleteAccount"].useMutation({
@@ -34,8 +32,7 @@ export default function DeleteAccountSettingsContent() {
       window.location.href = "/login";
     },
     onError: (err) => {
-      setError(err.message || "Failed to delete account");
-      toast.error("Failed to delete account");
+      toast.error("Failed to delete account", { description: err.message });
     },
   });
 
@@ -48,7 +45,6 @@ export default function DeleteAccountSettingsContent() {
 
   const handleOpenDialog = () => {
     setConfirmation("");
-    setError(null);
     setIsDialogOpen(true);
   };
 
@@ -56,19 +52,14 @@ export default function DeleteAccountSettingsContent() {
     if (deleteAccountMutation.isPending) return;
     setIsDialogOpen(false);
     setConfirmation("");
-    setError(null);
-  };
-
-  const handleDelete = () => {
-    if (confirmation !== "delete") {
-      setError("Please type 'delete' to confirm");
-      return;
-    }
-    setError(null);
-    deleteAccountMutation.mutate({ confirmation });
   };
 
   const isConfirmed = confirmation === "delete";
+
+  const handleDelete = () => {
+    if (!isConfirmed) return;
+    deleteAccountMutation.mutate({ confirmation });
+  };
 
   return (
     <div className="space-y-8">
@@ -104,11 +95,6 @@ export default function DeleteAccountSettingsContent() {
         </DialogDescription>
 
         <DialogBody className="mt-4">
-          {error && (
-            <Alert variant="error" className="mb-4">
-              {error}
-            </Alert>
-          )}
           <label htmlFor="delete-confirmation" className="ui-text-sm text-body">
             Type <span className="font-semibold">delete</span> to confirm:
           </label>

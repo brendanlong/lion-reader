@@ -3,12 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  cleanContent,
-  absolutizeUrls,
-  extractBaseHref,
-  cleanLessWrongContent,
-} from "@/server/feed/content-cleaner";
+import { cleanContent, absolutizeUrls, extractBaseHref } from "@/server/feed/content-cleaner";
 
 describe("cleanContent", () => {
   describe("basic functionality", () => {
@@ -782,61 +777,5 @@ describe("extractBaseHref", () => {
     const started = performance.now();
     expect(extractBaseHref(hostile, "https://example.com")).toBe("https://example.com/real/");
     expect(performance.now() - started).toBeLessThan(200);
-  });
-});
-
-describe("cleanLessWrongContent", () => {
-  describe("removes published date prefix", () => {
-    it("should strip standard published on format with GMT", () => {
-      const content =
-        "Published on January 7, 2026 2:39 AM GMT<br/><br/><p>This is the article content.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe("<p>This is the article content.</p>");
-    });
-
-    it("should strip published on format with different timezone", () => {
-      const content = "Published on December 25, 2025 11:30 PM EST<br/><br/><p>Content here.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe("<p>Content here.</p>");
-    });
-
-    it("should handle <br> without self-closing slash", () => {
-      const content = "Published on January 1, 2026 12:00 PM PST<br><br><p>Article text.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe("<p>Article text.</p>");
-    });
-
-    it("should handle <br /> with space before slash", () => {
-      const content = "Published on March 15, 2026 3:45 AM UTC<br /><br /><p>More content.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe("<p>More content.</p>");
-    });
-
-    it("should handle mixed br tag formats", () => {
-      const content = "Published on June 30, 2025 6:00 PM GMT<br><br/><p>Mixed tags.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe("<p>Mixed tags.</p>");
-    });
-  });
-
-  describe("preserves content without published date prefix", () => {
-    it("should not modify content without the prefix", () => {
-      const content = "<p>This is normal article content without a date prefix.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe(content);
-    });
-
-    it("should not modify content with published date in the middle", () => {
-      const content =
-        "<p>Some intro.</p>Published on January 7, 2026 2:39 AM GMT<br/><br/><p>More content.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe(content);
-    });
-
-    it("should not modify content with partial match", () => {
-      const content = "Published on January 7, 2026<br/><br/><p>Missing time.</p>";
-      const result = cleanLessWrongContent(content);
-      expect(result).toBe(content);
-    });
   });
 });

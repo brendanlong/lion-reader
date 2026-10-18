@@ -47,6 +47,7 @@ export interface UrlPlugin {
 export interface PluginCapabilities {
   feed?: FeedCapability;
   savedArticle?: SavedArticleCapability;
+  emailLink?: EmailLinkCapability;
 }
 
 /** A plugin known to declare capability `K`. */
@@ -121,6 +122,23 @@ export interface SavedArticleCapability {
   fetchContent(url: URL): Promise<SavedArticleContent | null>;
 
   /**
+   * Fetch content with the saving user's own credentials for the source (e.g.
+   * a private Google Doc through their linked Google account). Tried when
+   * `fetchContent` doesn't produce the article and the caller passes a user.
+   * Throw a TRPCError when the user's credentials are missing or rejected,
+   * worded per `authMode`; whatever this throws reaches the caller unmapped.
+   * Return null to fall back to the generic fetch.
+   */
+  fetchContentAsUser?(url: URL, user: UserFetchContext): Promise<SavedArticleContent | null>;
+
+  /**
+   * The canonical form of a URL this plugin handles: a saved article's
+   * identity (two URLs normalizing alike are the same saved article) and the
+   * URL fetched for it.
+   */
+  normalizeUrl?(url: URL): URL;
+
+  /**
    * Claim a page the generic path has already fetched, for a source that can't
    * be recognized from its URL alone (a Notion page on a customer's domain).
    * Return null to keep the page as fetched. When it runs and what it may
@@ -139,6 +157,19 @@ export interface SavedArticleCapability {
    * Site name to use for this saved article.
    */
   siteName?: string;
+}
+
+/**
+ * How to report that the user's credentials for a source aren't set up:
+ * `"interactive"` callers (the web UI) get machine-readable codes they turn
+ * into an in-page consent prompt, `"non-interactive"` ones (API surfaces) a
+ * human-readable message pointing the user at the web app.
+ */
+export type UserAuthMode = "interactive" | "non-interactive";
+
+export interface UserFetchContext {
+  userId: string;
+  authMode: UserAuthMode;
 }
 
 /** A page the generic fetch retrieved, offered to `fetchContentFromPage`. */
@@ -173,4 +204,16 @@ export interface SavedArticleContent {
    * resolve them itself before returning (see `github.ts`).
    */
   canonicalUrl?: string;
+}
+
+// ============ Email Link Capability ============
+
+export interface EmailLinkCapability {
+  /**
+   * The web URL a link in a newsletter email leads to, for finding the post's
+   * canonical URL: a cleaner form of `url` (e.g. without tracking parameters),
+   * or null when it doesn't lead to web content (e.g. an app deep link).
+   * Synchronous and offline: it runs while parsing the email.
+   */
+  resolve(url: URL): URL | null;
 }

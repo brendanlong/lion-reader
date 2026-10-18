@@ -2,8 +2,11 @@
  * Wallabag API Request Parsing and Response Helpers
  */
 
-import type { TRPCError } from "@trpc/server";
-import { clientErrorStatus } from "@/server/errors";
+import {
+  clientErrorReply,
+  withClientErrors as withClientErrorsAs,
+  type ClientErrorReply,
+} from "@/server/errors";
 
 /**
  * Creates a JSON response.
@@ -24,12 +27,21 @@ export function errorResponse(error: string, description: string, status = 400):
   return jsonResponse({ error, error_description: description }, status);
 }
 
-/** A service's client error in the Wallabag envelope, or null (`clientErrorStatus`). */
+function clientErrorEnvelope(reply: ClientErrorReply): Response {
+  return errorResponse(reply.code, reply.message, reply.status);
+}
+
+/** A service's client error in the Wallabag envelope, or null (`clientErrorReply`). */
 export function clientErrorResponse(error: unknown): Response | null {
-  const status = clientErrorStatus(error);
-  return status === null
-    ? null
-    : errorResponse((error as TRPCError).code, (error as TRPCError).message, status);
+  const reply = clientErrorReply(error);
+  return reply && clientErrorEnvelope(reply);
+}
+
+/** `withClientErrors` (`@/server/errors`) answering in the Wallabag envelope. */
+export function withClientErrors<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return withClientErrorsAs(handler, clientErrorEnvelope);
 }
 
 /** Splits a Wallabag `tags` parameter ("a,b, c") into its labels. */

@@ -11,9 +11,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { usePreferenceMutation } from "@/lib/hooks/usePreferenceMutation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
@@ -74,7 +74,6 @@ export default function EmailSettingsContent() {
 function IngestAddressesSection() {
   const [isCreating, setIsCreating] = useState(false);
   const [newLabel, setNewLabel] = useState("");
-  const [createError, setCreateError] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
   const addressesQuery = trpc.ingestAddresses.list.useQuery();
@@ -83,25 +82,21 @@ function IngestAddressesSection() {
     onSuccess: () => {
       setIsCreating(false);
       setNewLabel("");
-      setCreateError(null);
       utils.ingestAddresses.list.invalidate();
       toast.success("Ingest address created");
     },
     onError: (error) => {
-      setCreateError(error.message);
-      toast.error("Failed to create ingest address");
+      toast.error("Failed to create ingest address", { description: error.message });
     },
   });
 
   const handleCreate = () => {
-    setCreateError(null);
     createMutation.mutate({ label: newLabel.trim() || undefined });
   };
 
   const handleCancelCreate = () => {
     setIsCreating(false);
     setNewLabel("");
-    setCreateError(null);
   };
 
   const addresses = addressesQuery.data?.items ?? [];
@@ -148,11 +143,6 @@ function IngestAddressesSection() {
             {/* Create Form */}
             {isCreating && (
               <div className="border-edge border-t p-4">
-                {createError && (
-                  <Alert variant="error" className="mb-4">
-                    {createError}
-                  </Alert>
-                )}
                 <div className="space-y-4">
                   <Input
                     id="new-address-label"
@@ -217,7 +207,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
       toast.success("Address updated");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to update address");
+      toast.error("Failed to update address", { description: error.message });
     },
   });
 
@@ -228,7 +218,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
       toast.success("Address deleted");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to delete address");
+      toast.error("Failed to delete address", { description: error.message });
     },
   });
 
@@ -384,45 +374,15 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
 
 function SpamPreferenceSection() {
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
-  const utils = trpc.useUtils();
+  const { update, isPending, pendingUpdate } = usePreferenceMutation();
 
-  const updateMutation = trpc.users["me.updatePreferences"].useMutation({
-    onMutate: async (newPrefs) => {
-      // Cancel outgoing queries
-      await utils.users["me.preferences"].cancel();
-
-      // Snapshot previous value
-      const previousPrefs = utils.users["me.preferences"].getData();
-
-      // Optimistically update
-      utils.users["me.preferences"].setData(undefined, (old) =>
-        old ? { ...old, showSpam: newPrefs.showSpam ?? old.showSpam } : undefined
-      );
-
-      return { previousPrefs };
-    },
-    onError: (_error, _newPrefs, context) => {
-      // Rollback on error
-      if (context?.previousPrefs) {
-        utils.users["me.preferences"].setData(undefined, context.previousPrefs);
-      }
-      toast.error("Failed to update preference");
-    },
-    onSuccess: () => {
-      toast.success("Preference updated");
-    },
-    onSettled: (_data, error) => {
-      // Only invalidate on error since optimistic update handles the success case
-      if (error) {
-        utils.users["me.preferences"].invalidate();
-      }
-    },
-  });
-
-  const showSpam = preferencesQuery.data?.showSpam ?? false;
+  const showSpam = pendingUpdate?.showSpam ?? preferencesQuery.data?.showSpam ?? false;
 
   const handleToggle = () => {
-    updateMutation.mutate({ showSpam: !showSpam });
+    void update(
+      { showSpam: !showSpam },
+      { success: "Preference updated", error: "Failed to update preference" }
+    );
   };
 
   return (
@@ -442,7 +402,7 @@ function SpamPreferenceSection() {
             checked={showSpam}
             onChange={handleToggle}
             labelledBy="show-spam-label"
-            disabled={preferencesQuery.isLoading || updateMutation.isPending}
+            disabled={preferencesQuery.isLoading || isPending}
           />
         </div>
       </Card>

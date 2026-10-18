@@ -1,5 +1,5 @@
 /**
- * Handler for `cleanup` jobs (singleton).
+ * Handler for `cleanup` jobs (fixed-interval singleton).
  *
  * See src/server/services/retention.ts for what gets deleted.
  */
@@ -7,14 +7,9 @@
 import { db } from "../../db";
 import { runRetentionCleanup } from "../../services/retention";
 import { logger } from "@/lib/logger";
-import type { JobHandlerResult } from "./types";
-
-/** How often the retention cleanup runs. */
-const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+import type { JobMetadata } from "./types";
 
 /**
- * Handler for cleanup jobs (singleton, runs daily).
- *
  * Deletes rows that expire but were never deleted anywhere (issue #953):
  * expired sessions, expired OAuth authorization codes / access tokens /
  * refresh tokens, long-revoked credentials, orphaned Dynamic Client
@@ -22,15 +17,10 @@ const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
  * subscriber-less fetch_feed jobs (issue #1085). See
  * src/server/services/retention.ts.
  */
-export async function handleCleanup(): Promise<JobHandlerResult> {
-  const now = new Date();
+export async function handleCleanup(): Promise<JobMetadata> {
   const deleted = await runRetentionCleanup(db);
 
   logger.info("Retention cleanup completed", { ...deleted });
 
-  return {
-    success: true,
-    nextRunAt: new Date(now.getTime() + CLEANUP_INTERVAL_MS),
-    metadata: { ...deleted },
-  };
+  return { ...deleted };
 }

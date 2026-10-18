@@ -5,7 +5,7 @@
  * formats expected by Google Reader clients.
  */
 
-import { clientErrorStatus } from "@/server/errors";
+import { withClientErrors as withClientErrorsAs } from "@/server/errors";
 import { parseItemId } from "./id";
 
 /**
@@ -113,26 +113,9 @@ export function errorResponse(message: string, status = 400): Response {
   });
 }
 
-/**
- * Wraps a route handler so a service's client error (`clientErrorStatus`),
- * such as an invalid tag name or the subscription cap, is answered as an
- * error response instead of an unhandled 500.
- */
+/** `withClientErrors` (`@/server/errors`) answering in plain text. */
 export function withClientErrors<Args extends unknown[]>(
   handler: (...args: Args) => Promise<Response>
 ): (...args: Args) => Promise<Response> {
-  return async (...args) => {
-    try {
-      return await handler(...args);
-    } catch (error) {
-      const status = clientErrorStatus(error);
-      if (status === null) throw error;
-      // An upstream failure's message carries the fetch error's detail (such
-      // as what an internal host resolved to), which mustn't reach the client
-      // (#1266).
-      return status >= 500
-        ? errorResponse("Failed to fetch the URL", 502)
-        : errorResponse((error as Error).message, status);
-    }
-  };
+  return withClientErrorsAs(handler, (reply) => errorResponse(reply.message, reply.status));
 }

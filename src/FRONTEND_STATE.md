@@ -187,6 +187,8 @@ Collection mutations (`useCollectionMembership`): `collections.addEntries` / `re
 
 Tag mutations (`tags.create/update/delete`, in `TagManagement`) apply their responses through `applyTagChange`/`applyTagDeleted`, as their events do.
 
+Preference changes (`users.me.updatePreferences`) all go through `usePreferenceMutation`: the response replaces `me.preferences`, and the hook invalidates the queries derived from what changed, so a panel names only its toasts.
+
 No-op re-saves publish no `subscription_updated` ("Row Written vs. Value Flipped" in `src/server/CLAUDE.md`); the acting tab still updates its own cache.
 
 ## Real-Time Updates
@@ -275,6 +277,10 @@ When the client can't build the row itself, apply the mutation response
 through the same function the corresponding SSE event uses
 (`handleSubscriptionCreated`), so the response and the event — which may arrive
 in either order — stay duplicate-safe.
+
+A control that must react at once (a switch) may render the mutation's pending
+variables until the response lands (`usePreferenceMutation`'s `pendingUpdate`):
+nothing is written to a cache, so a failure has nothing to roll back.
 
 ### Auto-mark-read (EntryContent)
 

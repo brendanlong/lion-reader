@@ -35,7 +35,7 @@ import {
  * as an article content bundle (with a null URL).
  */
 export interface ConvertedUpload {
-  /** Raw article HTML (stored as content_original; Readability runs on it downstream). */
+  /** Raw article HTML (content_original, absolutized; Readability runs on it downstream). */
   html: string;
   /**
    * Pre-cleaned content — set for .md/.txt (Markdown) and .docx (mammoth +
@@ -44,7 +44,6 @@ export interface ConvertedUpload {
    * title/summary/author (Markdown frontmatter, or docx `docProps/core.xml`).
    */
   preCleanedContent: {
-    html: string;
     title: string | null;
     summary: string | null;
     author: string | null;
@@ -114,7 +113,6 @@ async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedU
   return {
     html,
     preCleanedContent: {
-      html,
       title: coreProps.title,
       summary: coreProps.description,
       author: coreProps.author,
@@ -133,7 +131,7 @@ async function convertMarkdownFile(content: string, filename: string): Promise<C
   const { html, title, summary, author } = await convertMarkdown(content);
   return {
     html,
-    preCleanedContent: { html, title, summary, author },
+    preCleanedContent: { title, summary, author },
     fileType: "markdown",
     filename,
   };

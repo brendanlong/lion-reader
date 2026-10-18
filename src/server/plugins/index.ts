@@ -15,7 +15,8 @@ import { blueskyPlugin } from "./bluesky";
 import { linkedInPlugin } from "./linkedin";
 import { threadsPlugin } from "./threads";
 import { notionPlugin } from "./notion";
-import type { FetchedPage, PluginWith, SavedArticleContent } from "./types";
+import { substackPlugin } from "./substack";
+import type { FetchedPage, PluginWith, SavedArticleContent, UserFetchContext } from "./types";
 import type { ParsedEntry } from "@/server/feed/types";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -38,6 +39,7 @@ const plugins = [
   linkedInPlugin,
   threadsPlugin,
   notionPlugin,
+  substackPlugin,
 ];
 for (const plugin of plugins) pluginRegistry.register(plugin);
 logger.info("Plugins registered", {
@@ -71,8 +73,8 @@ export async function claimFetchedPage(
   return null;
 }
 
-/** Article content a plugin (or another source-specific fetcher) produced. */
-export interface PluginArticle {
+/** Article content a plugin produced. */
+interface PluginArticle {
   kind: "plugin";
   /** Plugin name, for logs. */
   source: string;
@@ -86,21 +88,33 @@ export interface PluginArticle {
 export type AcquiredArticle = PluginArticle | ({ kind: "page" } & FetchHtmlPageResult);
 
 export interface AcquireArticleOptions {
-  /** URL for the generic page fetch, when it differs from `url`. */
-  pageUrl?: string;
-  /** Tried after the hostname-matched plugin declines, before the generic fetch. */
-  beforePageFetch?: () => Promise<PluginArticle | null>;
+  /** The saving user, for plugins that can fetch with their credentials. */
+  asUser?: UserFetchContext;
+}
+
+/**
+ * Wraps whatever a plugin's `fetchContentAsUser` threw: a failure already
+ * worded for the user (a consent prompt) or our bug, never a problem with the
+ * URL, so callers rethrow `cause` instead of classifying it as a fetch error.
+ */
+export class UserFetchError extends Error {
+  constructor(override readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "UserFetchError";
+  }
 }
 
 /**
  * Fetches an article for a save or a full-content fetch: the hostname-matched
- * plugin, then `beforePageFetch`, then the generic page fetch, whose result is
- * offered to {@link claimFetchedPage} unless it is Markdown. Content is capped
- * at `maxSavedArticleSizeBytes` on every path.
+ * plugin, then (given `asUser`) its `fetchContentAsUser`, then the generic page
+ * fetch, whose result is offered to {@link claimFetchedPage} unless it is
+ * Markdown. Content is capped at `maxSavedArticleSizeBytes` on every path.
  *
  * A plugin failure falls back to the generic fetch, except a rate limit (the
  * same site would rate limit that too) and a size-limit breach, which are
- * rethrown. Generic fetch errors propagate for the caller to classify.
+ * rethrown, and a `fetchContentAsUser` failure, thrown as a
+ * {@link UserFetchError}. Generic fetch errors propagate for the caller to
+ * classify.
  */
 export async function acquireArticleContent(
   url: string,
@@ -138,12 +152,19 @@ export async function acquireArticleContent(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+
+    if (options.asUser && capability.fetchContentAsUser) {
+      let content: SavedArticleContent | null;
+      try {
+        content = await capability.fetchContentAsUser(parsed, options.asUser);
+      } catch (error) {
+        throw new UserFetchError(error);
+      }
+      if (content) return assertWithinLimit(pluginArticle(plugin, content, url));
+    }
   }
 
-  const fromSource = await options.beforePageFetch?.();
-  if (fromSource) return assertWithinLimit(fromSource);
-
-  const page = await fetchHtmlPage(options.pageUrl ?? url);
+  const page = await fetchHtmlPage(url);
   if (plugin || page.isMarkdown) return { kind: "page", ...page };
 
   const claimed = await claimFetchedPage({ html: page.content, url: new URL(page.finalUrl) });
@@ -167,6 +188,29 @@ function pluginArticle(
 ): PluginArticle {
   const { skipReadability, siteName } = plugin.capabilities.savedArticle;
   return { kind: "plugin", source: plugin.name, content, skipReadability, siteName, baseUrl };
+}
+
+/**
+ * `url` in the canonical form its saved-article plugin declares
+ * (`SavedArticleCapability.normalizeUrl`), or unchanged when none does.
+ */
+export function normalizeSavedArticleUrl(url: string): string {
+  const parsed = toUrl(url);
+  const plugin = parsed ? pluginRegistry.findWithCapability(parsed, "savedArticle") : null;
+  const normalize = plugin?.capabilities.savedArticle.normalizeUrl;
+  return parsed && normalize ? normalize(parsed).href : url;
+}
+
+/**
+ * The web URL a link in a newsletter email leads to, per its plugin
+ * (`EmailLinkCapability.resolve`): `href` unchanged when no plugin handles it,
+ * null when it leads to no web content.
+ */
+export function resolveEmailLink(href: string): string | null {
+  const parsed = toUrl(href);
+  const plugin = parsed ? pluginRegistry.findWithCapability(parsed, "emailLink") : null;
+  if (!parsed || !plugin) return href;
+  return plugin.capabilities.emailLink.resolve(parsed)?.href ?? null;
 }
 
 /** Parses a feed/page URL, or returns null if it's missing or invalid. */
@@ -198,8 +242,17 @@ export function getFeedPlugin(url: string | URL | null | undefined) {
  * matching plugin every hook is a no-op.
  */
 export interface FeedHooks {
-  /** `items` are the feed's parsed entries, which the plugin may draw on. */
-  transformFeedTitle(title: string, items: readonly ParsedEntry[]): string;
+  /**
+   * The title to store and show for the feed: its own title, else
+   * `previousTitle` (what we stored last time, already resolved), else the
+   * feed URL's hostname, with the plugin's transform applied (e.g. a LessWrong
+   * user feed gets its author appended, from the first entry with one). Null
+   * only when there's nothing at all to fall back to.
+   */
+  resolveFeedTitle(
+    feed: { title?: string; items: readonly ParsedEntry[] },
+    previousTitle?: string | null
+  ): string | null;
   /** Returns `html` unchanged when there's nothing to clean. */
   cleanEntryContent(html: string): string;
   buildEntryContent(entry: ParsedEntry, entryUrl: string | undefined): string | null;
@@ -231,18 +284,23 @@ export function getFeedHooks(feedUrl: string | URL | null | undefined): FeedHook
     };
   }
 
-  const transformFeedTitle = feed?.transformFeedTitle?.bind(feed);
+  const pluginTransformFeedTitle = feed?.transformFeedTitle?.bind(feed);
+  const transformFeedTitle = guarded(
+    "transformFeedTitle",
+    pluginTransformFeedTitle && parsed
+      ? (title: string, items: readonly ParsedEntry[]) =>
+          pluginTransformFeedTitle(title, parsed, {
+            firstAuthor: items.find((item) => item.author)?.author ?? null,
+          })
+      : undefined,
+    (title) => title
+  );
   return {
-    transformFeedTitle: guarded(
-      "transformFeedTitle",
-      transformFeedTitle && parsed
-        ? (title: string, items: readonly ParsedEntry[]) =>
-            transformFeedTitle(title, parsed, {
-              firstAuthor: items.find((item) => item.author)?.author ?? null,
-            })
-        : undefined,
-      (title) => title
-    ),
+    resolveFeedTitle(parsedFeed, previousTitle) {
+      if (parsedFeed.title) return transformFeedTitle(parsedFeed.title, parsedFeed.items);
+      if (previousTitle) return previousTitle;
+      return parsed?.hostname ? transformFeedTitle(parsed.hostname, parsedFeed.items) : null;
+    },
     cleanEntryContent: guarded(
       "cleanEntryContent",
       feed?.cleanEntryContent?.bind(feed),

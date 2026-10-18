@@ -3,25 +3,12 @@
  *
  * This is the main entry point for tRPC requests.
  * All tRPC procedures are accessible at /api/trpc/*
- * Includes rate limit headers in error responses.
- * Tracks HTTP metrics when METRICS_ENABLED=true.
  */
 
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { TRPCError } from "@trpc/server";
 import { appRouter } from "@/server/trpc/root";
 import { createContext } from "@/server/trpc/context";
-import { startHttpTimer } from "@/server/metrics/metrics";
-
-/**
- * Extracts rate limit headers from a tRPC error (if present).
- */
-function extractRateLimitHeaders(error: TRPCError): Record<string, string> {
-  if (error.cause && typeof error.cause === "object" && "headers" in error.cause) {
-    return (error.cause as { headers: Record<string, string> }).headers;
-  }
-  return {};
-}
+import { serveTrpcHttp } from "@/server/trpc/http";
 
 /**
  * Normalizes the tRPC path for metrics.
@@ -41,64 +28,12 @@ function normalizeTrpcPath(url: URL): string {
   return `/api/trpc/${firstProcedure}`;
 }
 
-/**
- * Handle tRPC requests for all HTTP methods with rate limit header handling.
- */
-const handler = async (req: Request) => {
-  let rateLimitHeaders: Record<string, string> = {};
-
-  // Start timing for metrics (no-op if metrics disabled)
-  const url = new URL(req.url);
-  const normalizedPath = normalizeTrpcPath(url);
-  const endTimer = startHttpTimer(req.method, normalizedPath);
-
-  const response = await fetchRequestHandler({
-    endpoint: "/api/trpc",
+const handler = (req: Request): Promise<Response> =>
+  serveTrpcHttp(
     req,
-    router: appRouter,
-    createContext,
-    onError:
-      process.env.NODE_ENV === "development"
-        ? ({ path, error }) => {
-            console.error(`❌ tRPC failed on ${path ?? "<no-path>"}: ${error.message}`);
-
-            // Extract rate limit headers from error
-            if (error.code === "TOO_MANY_REQUESTS") {
-              rateLimitHeaders = extractRateLimitHeaders(error);
-            }
-          }
-        : ({ error }) => {
-            // Extract rate limit headers from error in production too
-            if (error.code === "TOO_MANY_REQUESTS") {
-              rateLimitHeaders = extractRateLimitHeaders(error);
-            }
-          },
-  });
-
-  // Record HTTP metrics
-  endTimer(response.status);
-
-  const headers = new Headers(response.headers);
-
-  // tRPC uses GET for queries, and those responses carry per-request/per-user
-  // data (and change across deploys). Without an explicit Cache-Control, a
-  // shared cache in front of the app can store and replay them — a CDN that
-  // used to front the site served a stale pre-`euRestricted` auth.signupConfig
-  // on anonymous /register loads: the EU banner rendered in SSR, then vanished
-  // when the client's background refetch read the stale cached response. Mark
-  // every tRPC response uncacheable by shared caches.
-  headers.set("Cache-Control", "private, no-store");
-
-  // Add rate limit headers to the response
-  for (const [key, value] of Object.entries(rateLimitHeaders)) {
-    headers.set(key, value);
-  }
-
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-};
+    { label: "tRPC", metricsPath: normalizeTrpcPath(new URL(req.url)) },
+    (onError) =>
+      fetchRequestHandler({ endpoint: "/api/trpc", req, router: appRouter, createContext, onError })
+  );
 
 export { handler as GET, handler as POST };

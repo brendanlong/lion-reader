@@ -13,6 +13,7 @@
  */
 
 import { Parser } from "htmlparser2";
+import { resolveEmailLink } from "@/server/plugins";
 
 /**
  * Domains that host tracking redirects rather than actual content.
@@ -73,51 +74,6 @@ function isContentUrl(url: string): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-/**
- * Resolves Substack app-link URLs to their canonical form.
- *
- * Substack emails use URLs like:
- *   https://substack.com/app-link/post?publication_id=89120&post_id=182110210&...
- *
- * The "Read in app" links use the cleaner form:
- *   https://open.substack.com/pub/{publication}/p/{slug}
- *
- * Since we can't resolve the app-link to a clean URL without fetching it,
- * we pass through any URL that looks like it points to real content.
- *
- * @param url - The URL to check/resolve
- * @returns The URL if it's usable, or null if it should be skipped
- */
-function resolveSubstackUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-
-    // Skip substack.com/app-link URLs - they're deep links to the app,
-    // not web-accessible content
-    if (parsed.hostname === "substack.com" && parsed.pathname.startsWith("/app-link/")) {
-      return null;
-    }
-
-    // open.substack.com/pub/*/p/* URLs are clean canonical URLs
-    if (parsed.hostname === "open.substack.com") {
-      // Strip tracking parameters but keep the path
-      const clean = new URL(parsed.pathname, "https://open.substack.com");
-      return clean.href;
-    }
-
-    // *.substack.com URLs with /p/ paths are canonical post URLs
-    if (parsed.hostname.endsWith(".substack.com") && parsed.pathname.startsWith("/p/")) {
-      // Strip tracking parameters
-      const clean = new URL(parsed.pathname, `https://${parsed.hostname}`);
-      return clean.href;
-    }
-
-    return url;
-  } catch {
-    return url;
   }
 }
 
@@ -325,7 +281,7 @@ export function extractEmailUrl(html: string): string | null {
 
         if (tag === "a" && insideAnchor) {
           if (currentHref) {
-            const resolved = resolveSubstackUrl(currentHref);
+            const resolved = resolveEmailLink(currentHref);
 
             if (resolved) {
               // Strategy 1: "View online" text match

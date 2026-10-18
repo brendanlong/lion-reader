@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
+import { migrateSubscriptionsToExistingFeed } from "../../src/server/services/subscriptions";
 import {
   users,
   feeds,
@@ -38,7 +39,6 @@ import {
 } from "./helpers";
 import { ensureFeedJob } from "../../src/server/jobs/queue";
 import { runRetentionCleanup } from "../../src/server/services/retention";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 
 // ============================================================================
@@ -227,7 +227,11 @@ describe("Feed Redirect Handling", () => {
       await ensureFeedJob(oldFeedId);
 
       // Simulate the redirect migration
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Verify: User should have a subscription to the new feed, and the old
       // feed's entry should be re-stamped to it (merge-job attribution).
@@ -289,7 +293,11 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [oldEntry, newEntry]);
 
       // Simulate the redirect migration
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Verify: The old feed's entry is re-stamped to the surviving
       // subscription; the new feed's entry keeps its attribution.
@@ -346,7 +354,11 @@ describe("Feed Redirect Handling", () => {
         .where(eq(subscriptions.id, newSubId));
 
       // Simulate the redirect migration
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Verify: New feed subscription should be reactivated, with the old
       // feed's entry re-stamped to it
@@ -392,7 +404,7 @@ describe("Feed Redirect Handling", () => {
         fetchedAt: newFeed.lastEntriesUpdatedAt!,
       });
 
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), newFeed);
+      await migrateSubscriptionsToExistingFeed(db, await getFeed(oldFeedId), newFeed);
 
       const [survivor] = await db
         .select()
@@ -420,7 +432,7 @@ describe("Feed Redirect Handling", () => {
         fetchedAt: newFeed.lastEntriesUpdatedAt!,
       });
 
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), newFeed);
+      await migrateSubscriptionsToExistingFeed(db, await getFeed(oldFeedId), newFeed);
 
       const survivor = await getSubscription(userId, newFeedId);
       expect(await getActiveSourceSubscriptionId(userId, oldCopy)).toBe(survivor!.id);
@@ -445,7 +457,7 @@ describe("Feed Redirect Handling", () => {
         fetchedAt: newFeed.lastEntriesUpdatedAt!,
       });
 
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), newFeed);
+      await migrateSubscriptionsToExistingFeed(db, await getFeed(oldFeedId), newFeed);
 
       const survivor = await getSubscription(userId, newFeedId);
       expect(await getActiveSourceSubscriptionId(userId, otherCopy)).toBe(otherSubId);
@@ -461,7 +473,11 @@ describe("Feed Redirect Handling", () => {
       });
       await createTestTag(userId, { subscriptionIds: [newSubId] });
 
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       expect(await getTagIds(newSubId)).toEqual([]);
     });
@@ -474,7 +490,11 @@ describe("Feed Redirect Handling", () => {
       const sharedTag = await createTestTag(userId, { subscriptionIds: [oldSubId, newSubId] });
       const oldOnlyTag = await createTestTag(userId, { subscriptionIds: [oldSubId] });
 
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       const [survivor] = await db
         .select()
@@ -522,7 +542,11 @@ describe("Feed Redirect Handling", () => {
       await createTestSubscription(userId, oldFeedId);
       await ensureFeedJob(oldFeedId);
 
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // The user's only active subscription is now to the new feed, so the new
       // feed must have a job - without one it would never be fetched again.
@@ -551,7 +575,11 @@ describe("Feed Redirect Handling", () => {
       await ensureFeedJob(newFeedId, scheduledFor);
 
       await createTestSubscription(userId, oldFeedId);
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // ensureFeedJob is an idempotent upsert that keeps a non-null
       // next_run_at, so calling it unconditionally can't pull a backing-off
@@ -603,7 +631,11 @@ describe("Feed Redirect Handling", () => {
       await ensureFeedJob(oldFeedId);
 
       // Simulate the redirect migration
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Verify: Both users should have subscriptions to new feed
       const userANewSub = await getSubscription(userA, newFeedId);
@@ -693,7 +725,11 @@ describe("Feed Redirect Handling", () => {
       await ensureFeedJob(oldFeedId);
 
       // Perform the redirect migration
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Verify subscription was migrated correctly: the old feed's entries
       // are attributed to the new subscription
@@ -768,7 +804,11 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userB, [newEntry]);
 
       // Migrate User A
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Simulate new feed sync - creates user_entries for all subscribers (A and B)
       // User B already has user_entry from before, ON CONFLICT DO NOTHING handles this
@@ -839,7 +879,11 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [unreadEntry], { read: false });
 
       // Migrate to new feed
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Check that read state is preserved
       const userEntriesResult = await getUserEntries(userId);
@@ -900,7 +944,11 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [unstarredEntry], { starred: false });
 
       // Migrate to new feed
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // Check that starred state is preserved
       const userEntriesResult = await getUserEntries(userId);
@@ -955,7 +1003,11 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [oldSharedEntry]);
 
       // Migrate to new feed
-      await migrateSubscriptionsToExistingFeed(await getFeed(oldFeedId), await getFeed(newFeedId));
+      await migrateSubscriptionsToExistingFeed(
+        db,
+        await getFeed(oldFeedId),
+        await getFeed(newFeedId)
+      );
 
       // New feed has entry with same GUID plus a unique entry
       const newSharedEntry = await createTestEntry(newFeedId, {
@@ -1050,7 +1102,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [entryA]);
 
       // First redirect: A -> B
-      await migrateSubscriptionsToExistingFeed(await getFeed(feedAId), await getFeed(feedBId));
+      await migrateSubscriptionsToExistingFeed(db, await getFeed(feedAId), await getFeed(feedBId));
 
       // Verify intermediate state: entry A is attributed to the Feed B
       // subscription
@@ -1068,7 +1120,7 @@ describe("Feed Redirect Handling", () => {
       await createUserEntries(userId, [entryB]);
 
       // Second redirect: B -> C
-      await migrateSubscriptionsToExistingFeed(await getFeed(feedBId), await getFeed(feedCId));
+      await migrateSubscriptionsToExistingFeed(db, await getFeed(feedBId), await getFeed(feedCId));
 
       // Verify final state: both entries follow the chain — the B → C merge
       // re-stamps every row attributed to the Feed B subscription (including

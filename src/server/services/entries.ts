@@ -36,7 +36,7 @@ import { getSavedSubscriptionId } from "./subscriptions";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
-import { showsFullContent } from "@/lib/narration/select-content";
+import { showsFullContent } from "@/lib/entry-content";
 import { errors } from "@/server/errors";
 import { publishMarkAllRead } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";

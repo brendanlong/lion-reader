@@ -4,22 +4,6 @@
  */
 
 /**
- * Extracts the domain from a URL for use as a fallback feed title.
- * Returns just the hostname (e.g., "danluu.com" from "https://danluu.com/atom.xml").
- *
- * @param url - The feed URL
- * @returns The domain name, or undefined if the URL is invalid
- */
-export function getDomainFromUrl(url: string): string | undefined {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
  * Checks if a string is a valid HTTP(S) URL.
  */
 function isHttpUrl(value: string): boolean {

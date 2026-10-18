@@ -1,7 +1,7 @@
 /**
  * App errors, thrown by services and every API surface. They're TRPCErrors
  * because tRPC's envelope is our error format (docs/DESIGN.md, "API Design");
- * the compat APIs convert client errors to their own (`clientErrorResponse`).
+ * the compat APIs convert client errors to their own (`withClientErrors`).
  */
 
 import { TRPCError } from "@trpc/server";
@@ -309,9 +309,48 @@ export function isClientError(error: TRPCError): boolean {
  * everything else propagates, so a real bug still reaches Sentry instead of
  * the client's mistake becoming an unhandled 500.
  */
-export function clientErrorStatus(error: unknown): number | null {
+function clientErrorStatus(error: unknown): number | null {
   if (!(error instanceof TRPCError) || !isClientError(error)) return null;
   return getHTTPStatusCodeFromError(error);
+}
+
+/** A client error (`clientErrorStatus`) as a compat API answers it. */
+export interface ClientErrorReply {
+  status: number;
+  code: string;
+  message: string;
+}
+
+/** The reply to a service's client error, or null for anything else. */
+export function clientErrorReply(error: unknown): ClientErrorReply | null {
+  const status = clientErrorStatus(error);
+  if (status === null) return null;
+  // An upstream failure's message carries the fetch error's detail (such as
+  // what an internal host resolved to), which mustn't reach the client (#1266).
+  if (status >= 500)
+    return { status: 502, code: "BAD_GATEWAY", message: "Failed to fetch the URL" };
+  const { code, message } = error as TRPCError;
+  return { status, code, message };
+}
+
+/**
+ * Wraps a compat API route handler so a service's client error, such as an
+ * invalid tag name or the subscription cap, is answered in that API's format
+ * (`respond`) instead of an unhandled 500.
+ */
+export function withClientErrors<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>,
+  respond: (reply: ClientErrorReply) => Response
+): (...args: Args) => Promise<Response> {
+  return async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      const reply = clientErrorReply(error);
+      if (reply === null) throw error;
+      return respond(reply);
+    }
+  };
 }
 
 const reportedErrors = new WeakSet<TRPCError>();

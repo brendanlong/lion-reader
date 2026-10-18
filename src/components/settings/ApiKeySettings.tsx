@@ -8,11 +8,10 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
-import { toast } from "sonner";
+import { useCallback } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { usePreferenceMutation } from "@/lib/hooks/usePreferenceMutation";
 import { AlertIcon, CheckIcon } from "@/components/ui/icons";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TextLink } from "@/components/ui/text-link";
 import { InlineCode } from "@/components/ui/inline-code";
@@ -36,163 +35,73 @@ import {
   SUGGESTED_NARRATION_MODELS,
 } from "@/lib/narration/constants";
 import type { PickerModel } from "@/lib/ai/model-picker";
+import { EditablePreferenceField } from "./EditablePreferenceField";
 import { ModelPicker } from "./ModelPicker";
 import { SettingsSection } from "./SettingsSection";
-
-type UpdatePreferencesMutation = ReturnType<
-  (typeof trpc.users)["me.updatePreferences"]["useMutation"]
->;
-
-function updateWithToast(
-  mutation: UpdatePreferencesMutation,
-  input: Parameters<UpdatePreferencesMutation["mutate"]>[0],
-  successMessage: string,
-  errorMessage: string,
-  onSuccess?: () => void
-) {
-  mutation.mutate(input, {
-    onSuccess: () => {
-      toast.success(successMessage);
-      onSuccess?.();
-    },
-    onError: (error) => {
-      toast.error(errorMessage, { description: error.message });
-    },
-  });
-}
-
-function SaveCancelButtons({
-  onSave,
-  onCancel,
-  canSave,
-  isPending,
-}: {
-  onSave: () => void;
-  onCancel: () => void;
-  canSave: boolean;
-  isPending: boolean;
-}) {
-  return (
-    <div className="flex gap-2">
-      <Button onClick={onSave} loading={isPending} disabled={!canSave}>
-        Save
-      </Button>
-      <Button variant="secondary" onClick={onCancel} disabled={isPending}>
-        Cancel
-      </Button>
-    </div>
-  );
-}
 
 /**
  * Add/change/remove control for a single provider's API key.
  */
 function ProviderKeyRow({ provider }: { provider: AiProvider }) {
-  const utils = trpc.useUtils();
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
-  const updatePreferences = trpc.users["me.updatePreferences"].useMutation({
-    onSuccess: () => {
-      utils.users["me.preferences"].invalidate();
-      // A key change affects availability and every model and voice list
-      utils.summarization.invalidate();
-      utils.narration.invalidate();
-    },
-  });
-
-  const [apiKey, setApiKey] = useState("");
-  const [isEditing, setIsEditing] = useState(false);
+  const { update, isPending } = usePreferenceMutation();
 
   const { displayName: providerName, keyUrl, keyPlaceholder } = AI_PROVIDER_INFO[provider];
   const hasKey = preferencesQuery.data?.apiKeyProviders.includes(provider) ?? false;
   const isUnreadable = preferencesQuery.data?.unreadableApiKeyProviders.includes(provider) ?? false;
-  const inputId = `${provider}-api-key-input`;
-
-  const handleSave = useCallback(() => {
-    updateWithToast(
-      updatePreferences,
-      { apiKeys: { [provider]: apiKey } },
-      `${providerName} API key saved`,
-      "Failed to save API key",
-      () => {
-        setApiKey("");
-        setIsEditing(false);
-      }
-    );
-  }, [apiKey, provider, providerName, updatePreferences]);
-
-  const handleRemove = useCallback(() => {
-    updateWithToast(
-      updatePreferences,
-      { apiKeys: { [provider]: "" } },
-      `${providerName} API key removed`,
-      "Failed to remove API key",
-      () => setIsEditing(false)
-    );
-  }, [provider, providerName, updatePreferences]);
 
   return (
-    <div>
-      <label htmlFor={inputId} className="ui-text-sm text-body mb-1.5 block font-medium">
+    <EditablePreferenceField
+      id={`${provider}-api-key-input`}
+      label={
         <TextLink href={keyUrl} external>
           {providerName}
         </TextLink>
-      </label>
-      {isEditing ? (
-        <div className="space-y-3">
-          <Input
-            id={inputId}
-            type="password"
-            placeholder={keyPlaceholder}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            disabled={updatePreferences.isPending}
-            autoComplete="off"
-          />
-          <SaveCancelButtons
-            onSave={handleSave}
-            onCancel={() => {
-              setIsEditing(false);
-              setApiKey("");
-            }}
-            canSave={!!apiKey.trim()}
-            isPending={updatePreferences.isPending}
-          />
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          {hasKey ? (
-            <>
-              {isUnreadable ? (
-                <span className="ui-text-sm text-danger inline-flex items-center">
-                  <AlertIcon className="mr-1 h-4 w-4" />
-                  Saved key can&apos;t be read; enter it again
-                </span>
-              ) : (
-                <span className="ui-text-sm text-success inline-flex items-center">
-                  <CheckIcon className="mr-1 h-4 w-4" />
-                  API key configured
-                </span>
-              )}
-              <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
-                Change
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleRemove}
-                loading={updatePreferences.isPending}
-              >
-                Remove
-              </Button>
-            </>
-          ) : (
-            <Button variant="secondary" onClick={() => setIsEditing(true)}>
-              Add API key
-            </Button>
-          )}
-        </div>
+      }
+      status={
+        !hasKey ? null : isUnreadable ? (
+          <span className="ui-text-sm text-danger inline-flex items-center">
+            <AlertIcon className="mr-1 h-4 w-4" />
+            Saved key can&apos;t be read; enter it again
+          </span>
+        ) : (
+          <span className="ui-text-sm text-success inline-flex items-center">
+            <CheckIcon className="mr-1 h-4 w-4" />
+            API key configured
+          </span>
+        )
+      }
+      editLabel={hasKey ? "Change" : "Add API key"}
+      initialDraft=""
+      onSave={(apiKey) =>
+        update(
+          { apiKeys: { [provider]: apiKey } },
+          { success: `${providerName} API key saved`, error: "Failed to save API key" }
+        )
+      }
+      reset={
+        hasKey
+          ? {
+              label: "Remove",
+              onReset: () =>
+                void update(
+                  { apiKeys: { [provider]: "" } },
+                  { success: `${providerName} API key removed`, error: "Failed to remove API key" }
+                ),
+            }
+          : undefined
+      }
+      isPending={isPending}
+      renderInput={({ onChange, ...input }) => (
+        <Input
+          {...input}
+          type="password"
+          placeholder={keyPlaceholder}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete="off"
+        />
       )}
-    </div>
+    />
   );
 }
 
@@ -261,7 +170,6 @@ function FeatureModelPicker({
  * Summarization model, max words, and custom prompt settings.
  */
 export function SummarizationSettings() {
-  const utils = trpc.useUtils();
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const modelsQuery = trpc.summarization.listModels.useQuery(undefined, {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -269,17 +177,7 @@ export function SummarizationSettings() {
   const defaultPromptQuery = trpc.summarization.defaultPrompt.useQuery(undefined, {
     staleTime: 60 * 60 * 1000, // Cache for 1 hour (rarely changes)
   });
-  const updatePreferences = trpc.users["me.updatePreferences"].useMutation({
-    onSuccess: () => {
-      utils.users["me.preferences"].invalidate();
-      utils.summarization.isAvailable.invalidate();
-    },
-  });
-
-  const [maxWordsInput, setMaxWordsInput] = useState("");
-  const [isEditingMaxWords, setIsEditingMaxWords] = useState(false);
-  const [promptInput, setPromptInput] = useState("");
-  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+  const { update, isPending } = usePreferenceMutation();
 
   const currentModel = preferencesQuery.data?.summarizationModel ?? null;
   const currentMaxWords = preferencesQuery.data?.summarizationMaxWords ?? null;
@@ -290,66 +188,13 @@ export function SummarizationSettings() {
 
   const handleModelChange = useCallback(
     (value: string | null) => {
-      updateWithToast(
-        updatePreferences,
+      void update(
         { summarizationModel: value ?? "" },
-        "Model updated",
-        "Failed to update model"
+        { success: "Model updated", error: "Failed to update model" }
       );
     },
-    [updatePreferences]
+    [update]
   );
-
-  const handleMaxWordsSave = useCallback(() => {
-    const parsed = parseInt(maxWordsInput, 10);
-    if (isNaN(parsed) || parsed < 1) {
-      toast.error("Max words must be a positive number");
-      return;
-    }
-    updateWithToast(
-      updatePreferences,
-      { summarizationMaxWords: parsed },
-      "Max words updated",
-      "Failed to update max words",
-      () => setIsEditingMaxWords(false)
-    );
-  }, [maxWordsInput, updatePreferences]);
-
-  const handleMaxWordsReset = useCallback(() => {
-    updateWithToast(
-      updatePreferences,
-      { summarizationMaxWords: null },
-      "Max words reset to default",
-      "Failed to reset max words",
-      () => {
-        setMaxWordsInput("");
-        setIsEditingMaxWords(false);
-      }
-    );
-  }, [updatePreferences]);
-
-  const handlePromptSave = useCallback(() => {
-    updateWithToast(
-      updatePreferences,
-      { summarizationPrompt: promptInput || null },
-      "Custom prompt saved",
-      "Failed to save prompt",
-      () => setIsEditingPrompt(false)
-    );
-  }, [promptInput, updatePreferences]);
-
-  const handlePromptReset = useCallback(() => {
-    updateWithToast(
-      updatePreferences,
-      { summarizationPrompt: null },
-      "Prompt reset to default",
-      "Failed to reset prompt",
-      () => {
-        setPromptInput("");
-        setIsEditingPrompt(false);
-      }
-    );
-  }, [updatePreferences]);
 
   return (
     <SettingsSection
@@ -385,85 +230,91 @@ export function SummarizationSettings() {
           </p>
         </div>
 
-        {/* Max Words */}
-        <div>
-          <label
-            htmlFor="summarization-max-words"
-            className="ui-text-sm text-body mb-1.5 block font-medium"
-          >
-            Max words
-          </label>
-          {isEditingMaxWords ? (
-            <div className="space-y-3">
-              <Input
-                id="summarization-max-words"
-                type="number"
-                min={1}
-                max={10000}
-                placeholder={String(DEFAULT_SUMMARIZATION_MAX_WORDS)}
-                value={maxWordsInput}
-                onChange={(e) => setMaxWordsInput(e.target.value)}
-                disabled={updatePreferences.isPending}
-              />
-              <SaveCancelButtons
-                onSave={handleMaxWordsSave}
-                onCancel={() => {
-                  setIsEditingMaxWords(false);
-                  setMaxWordsInput(currentMaxWords?.toString() ?? "");
-                }}
-                canSave={!!maxWordsInput.trim()}
-                isPending={updatePreferences.isPending}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <span className="ui-text-sm text-muted">
-                {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setMaxWordsInput(currentMaxWords?.toString() ?? "");
-                  setIsEditingMaxWords(true);
-                }}
-              >
-                Change
-              </Button>
-              {currentMaxWords !== null && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleMaxWordsReset}
-                  loading={updatePreferences.isPending}
-                >
-                  Reset
-                </Button>
-              )}
-            </div>
+        <EditablePreferenceField
+          id="summarization-max-words"
+          label="Max words"
+          hint="Maximum number of words for generated summaries."
+          status={
+            <span className="ui-text-sm text-muted">
+              {currentMaxWords ?? `${DEFAULT_SUMMARIZATION_MAX_WORDS} (default)`}
+            </span>
+          }
+          editLabel="Change"
+          initialDraft={currentMaxWords?.toString() ?? ""}
+          validate={(draft) => {
+            const parsed = parseInt(draft, 10);
+            return isNaN(parsed) || parsed < 1 ? "Max words must be a positive number" : null;
+          }}
+          onSave={(draft) =>
+            update(
+              { summarizationMaxWords: parseInt(draft, 10) },
+              { success: "Max words updated", error: "Failed to update max words" }
+            )
+          }
+          reset={
+            currentMaxWords !== null
+              ? {
+                  label: "Reset",
+                  onReset: () =>
+                    void update(
+                      { summarizationMaxWords: null },
+                      { success: "Max words reset to default", error: "Failed to reset max words" }
+                    ),
+                }
+              : undefined
+          }
+          isPending={isPending}
+          renderInput={({ onChange, ...input }) => (
+            <Input
+              {...input}
+              type="number"
+              min={1}
+              max={10000}
+              placeholder={String(DEFAULT_SUMMARIZATION_MAX_WORDS)}
+              onChange={(e) => onChange(e.target.value)}
+            />
           )}
-          <p className="ui-text-xs text-muted mt-1.5">
-            Maximum number of words for generated summaries.
-          </p>
-        </div>
+        />
 
-        {/* Custom Prompt */}
-        <div>
-          <label
-            htmlFor="summarization-prompt"
-            className="ui-text-sm text-body mb-1.5 block font-medium"
-          >
-            Custom prompt
-          </label>
-          {isEditingPrompt ? (
-            <div className="space-y-3">
+        <EditablePreferenceField
+          id="summarization-prompt"
+          label="Custom prompt"
+          hint="Override the default prompt sent to the AI model when generating summaries."
+          status={
+            <span className="ui-text-sm text-muted">
+              {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
+            </span>
+          }
+          editLabel={currentPrompt ? "Edit" : "Customize"}
+          initialDraft={currentPrompt ?? ""}
+          onSave={(draft) =>
+            update(
+              { summarizationPrompt: draft },
+              { success: "Custom prompt saved", error: "Failed to save prompt" }
+            )
+          }
+          reset={
+            currentPrompt
+              ? {
+                  label: "Reset",
+                  onReset: () =>
+                    void update(
+                      { summarizationPrompt: null },
+                      { success: "Prompt reset to default", error: "Failed to reset prompt" }
+                    ),
+                }
+              : undefined
+          }
+          isPending={isPending}
+          renderInput={({ id, value, onChange, disabled }) => (
+            <>
               <textarea
-                id="summarization-prompt"
+                id={id}
                 rows={10}
                 placeholder={defaultPrompt}
-                value={promptInput}
-                onChange={(e) => setPromptInput(e.target.value)}
-                disabled={updatePreferences.isPending}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                disabled={disabled}
                 className="ui-text-sm bg-surface text-body border-edge-input block w-full rounded-md border px-3 py-2 font-mono disabled:cursor-not-allowed disabled:opacity-50"
               />
               <p className="ui-text-xs text-muted">
@@ -471,47 +322,9 @@ export function SummarizationSettings() {
                 <InlineCode>{"{{title}}"}</InlineCode>, <InlineCode>{"{{maxWords}}"}</InlineCode>.
                 The response should be wrapped in <InlineCode>{"<summary>"}</InlineCode> tags.
               </p>
-              <SaveCancelButtons
-                onSave={handlePromptSave}
-                onCancel={() => {
-                  setIsEditingPrompt(false);
-                  setPromptInput(currentPrompt ?? "");
-                }}
-                canSave={!!promptInput.trim()}
-                isPending={updatePreferences.isPending}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <span className="ui-text-sm text-muted">
-                {currentPrompt ? "Custom prompt configured" : "Using default prompt"}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setPromptInput(currentPrompt ?? "");
-                  setIsEditingPrompt(true);
-                }}
-              >
-                {currentPrompt ? "Edit" : "Customize"}
-              </Button>
-              {currentPrompt && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handlePromptReset}
-                  loading={updatePreferences.isPending}
-                >
-                  Reset
-                </Button>
-              )}
-            </div>
+            </>
           )}
-          <p className="ui-text-xs text-muted mt-1.5">
-            Override the default prompt sent to the AI model when generating summaries.
-          </p>
-        </div>
+        />
       </div>
     </SettingsSection>
   );
@@ -521,17 +334,11 @@ export function SummarizationSettings() {
  * Narration text processing model settings.
  */
 export function NarrationAiSettings() {
-  const utils = trpc.useUtils();
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const modelsQuery = trpc.narration.listModels.useQuery(undefined, {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
-  const updatePreferences = trpc.users["me.updatePreferences"].useMutation({
-    onSuccess: () => {
-      utils.users["me.preferences"].invalidate();
-      utils.narration.isAiTextProcessingAvailable.invalidate();
-    },
-  });
+  const { update } = usePreferenceMutation();
 
   const currentModel = preferencesQuery.data?.narrationModel ?? null;
   const models = modelsQuery.data?.models ?? [];
@@ -539,14 +346,12 @@ export function NarrationAiSettings() {
 
   const handleModelChange = useCallback(
     (value: string | null) => {
-      updateWithToast(
-        updatePreferences,
+      void update(
         { narrationModel: value ?? "" },
-        "Model updated",
-        "Failed to update model"
+        { success: "Model updated", error: "Failed to update model" }
       );
     },
-    [updatePreferences]
+    [update]
   );
 
   return (

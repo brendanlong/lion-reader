@@ -107,6 +107,7 @@ sse-endpoint: SSE Endpoint {
 
   subscriber: Shared Redis Subscriber {
     style.fill: "#bbf7d0"
+    tooltip: "src/server/redis/pubsub.ts, src/server/realtime/sse-connection.ts"
 
     description: |
       One Redis connection per process; channel
@@ -122,6 +123,7 @@ sse-endpoint: SSE Endpoint {
 
   message-handler: Message Handler {
     style.fill: "#bbf7d0"
+    tooltip: "src/server/realtime/sse-connection.ts"
 
     transform: |
       Entry Events (new_entry, entry_updated):

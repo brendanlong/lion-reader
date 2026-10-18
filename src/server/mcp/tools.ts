@@ -14,7 +14,9 @@
 import { z } from "zod";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
+import { users } from "@/server/db/schema";
 import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
 import { getAppErrorCode } from "@/server/errors";
 import * as entriesService from "@/server/services/entries";
@@ -352,14 +354,13 @@ const deleteTagArgs = z.object({
 // ============================================================================
 
 /**
- * Registers all available MCP tools.
- * Each tool wraps a service function with MCP-compatible interface.
+ * Returns every MCP tool, each wrapping a service function.
  *
  * The tool list is static (handlers take db/userId as parameters), so it is
  * built once per process — the stateless MCP HTTP route calls this on every
  * request, and rebuilding would re-run every z.toJSONSchema conversion.
  */
-export function registerTools(): Tool[] {
+export function getTools(): Tool[] {
   cachedTools ??= buildTools();
   return cachedTools;
 }
@@ -379,10 +380,14 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);
+        const [user] = await db
+          .select({ showSpam: users.showSpam })
+          .from(users)
+          .where(eq(users.id, userId));
         return entriesService.listEntries(db, {
           userId,
           ...params,
-          showSpam: false, // Default to hiding spam for MCP
+          showSpam: user?.showSpam ?? false,
         });
       },
     },
@@ -475,7 +480,7 @@ function buildTools(): Tool[] {
           // when already linked/granted; otherwise throw a clear error telling
           // them to authorize Google Docs access in the web app (an MCP client
           // can't run the interactive consent flow).
-          googleDocsAuth: "non-interactive",
+          userAuth: "non-interactive",
         });
         await collectionsService.addEntryToCollections(
           db,

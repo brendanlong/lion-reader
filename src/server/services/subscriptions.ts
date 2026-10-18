@@ -52,7 +52,6 @@ import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
-import { getDomainFromUrl } from "@/server/feed/types";
 
 // ============================================================================
 // Types
@@ -906,14 +905,9 @@ async function fetchAndResolveFeed(inputUrl: string): Promise<CreateSubscription
     throw errors.validation("Could not parse feed - make sure it's a valid RSS or Atom feed");
   }
 
-  let feedTitle = parsedFeed.title || getDomainFromUrl(finalFeedUrl);
-  if (feedTitle) {
-    feedTitle = getFeedHooks(finalFeedUrl).transformFeedTitle(feedTitle, parsedFeed.items);
-  }
-
   return {
     url: finalFeedUrl,
-    title: feedTitle ?? null,
+    title: getFeedHooks(finalFeedUrl).resolveFeedTitle(parsedFeed),
     description: parsedFeed.description || null,
     siteUrl: parsedFeed.siteUrl || null,
   };
@@ -1565,4 +1559,30 @@ export async function mergeSubscriptionIntoFeed(
   }
 
   return true;
+}
+
+/**
+ * Moves every active subscription on `oldFeed` onto `newFeed`, the existing
+ * feed at its permanent redirect target. The old feed's job stops being claimed
+ * once it has no active subscribers.
+ */
+export async function migrateSubscriptionsToExistingFeed(
+  db: typeof dbType,
+  oldFeed: Feed,
+  newFeed: Feed
+): Promise<void> {
+  const activeSubscriptions = await db
+    .select({ userId: subscriptions.userId, id: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.feedId, oldFeed.id), isNull(subscriptions.unsubscribedAt)));
+
+  logger.info("Migrating subscriptions to existing feed", {
+    oldFeedId: oldFeed.id,
+    newFeedId: newFeed.id,
+    subscriptionCount: activeSubscriptions.length,
+  });
+
+  for (const { userId, id } of activeSubscriptions) {
+    await mergeSubscriptionIntoFeed(db, userId, id, newFeed);
+  }
 }

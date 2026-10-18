@@ -6,7 +6,7 @@
  */
 
 import { requireAuth } from "@/server/wallabag/auth";
-import { errorResponse } from "@/server/wallabag/parse";
+import { errorResponse, withClientErrors } from "@/server/wallabag/parse";
 import { resolveWallabagEntry } from "@/server/wallabag/id";
 import { resolveWallabagTag } from "@/server/wallabag/tags";
 import { formatEntryResponse } from "@/server/wallabag/entry-response";
@@ -15,7 +15,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function DELETE(
+export const DELETE = withClientErrors(async function (
   request: Request,
   { params }: { params: Promise<{ entry: string; tag: string }> }
 ): Promise<Response> {
@@ -33,4 +33,4 @@ export async function DELETE(
   }
   await removeEntriesFromCollection(db, auth.userId, tag.subscriptionId, [resolved.id]);
   return formatEntryResponse(db, auth.userId, resolved);
-}
+});

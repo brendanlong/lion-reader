@@ -25,7 +25,7 @@
 "use client";
 
 import { getNarrationPhase, type UseNarrationReturn } from "./useNarrationTypes";
-import { useNarrationKeyboardShortcuts } from "@/lib/hooks/useNarrationKeyboardShortcuts";
+import { useNarrationKeyboardShortcuts } from "./useNarrationKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 import {
   PlayIcon,

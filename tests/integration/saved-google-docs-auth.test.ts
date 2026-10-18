@@ -1,6 +1,6 @@
 /**
  * Integration tests for saving PRIVATE Google Docs via the compat surfaces
- * (Wallabag / MCP), which use `googleDocsAuth: "non-interactive"`.
+ * (Wallabag / MCP), which use `userAuth: "non-interactive"`.
  *
  * The behavioral change (issue #1165): the non-interactive surfaces attempt the
  * user's stored Google OAuth credentials for a private doc, and — when auth
@@ -73,7 +73,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
     try {
       await saveArticle(db, userId, {
         url: PRIVATE_DOC_URL,
-        googleDocsAuth: "non-interactive",
+        userAuth: "non-interactive",
       });
     } catch (error) {
       thrown = error;
@@ -100,7 +100,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
     try {
       await saveArticle(db, userId, {
         url: PRIVATE_DOC_URL,
-        googleDocsAuth: "non-interactive",
+        userAuth: "non-interactive",
       });
     } catch (error) {
       thrown = error;
@@ -121,7 +121,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
     await expect(
       saveArticle(db, userId, {
         url: PRIVATE_DOC_URL,
-        googleDocsAuth: "interactive",
+        userAuth: "interactive",
       })
     ).rejects.toMatchObject({ message: "NEEDS_GOOGLE_SIGNIN" });
 
@@ -130,7 +130,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
     await expect(
       saveArticle(db, userId, {
         url: PRIVATE_DOC_URL,
-        googleDocsAuth: "interactive",
+        userAuth: "interactive",
       })
     ).rejects.toMatchObject({ message: "NEEDS_DOCS_PERMISSION" });
   });
@@ -146,7 +146,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
     await expect(
       saveArticle(db, userId, {
         url: PRIVATE_DOC_URL,
-        googleDocsAuth: "interactive",
+        userAuth: "interactive",
       })
     ).rejects.toMatchObject({ code: "UNAUTHORIZED", message: "NEEDS_GOOGLE_REAUTH" });
   });

@@ -10,6 +10,7 @@
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
+import { SHORTCUTS } from "./shortcuts";
 import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 
 /**
@@ -58,7 +59,7 @@ export function KeyboardShortcutsProvider({ children }: KeyboardShortcutsProvide
   }, []);
 
   useHotkeys(
-    "shift+?",
+    SHORTCUTS.showShortcuts.hotkey,
     (e) => {
       e.preventDefault();
       openShortcutsModal();

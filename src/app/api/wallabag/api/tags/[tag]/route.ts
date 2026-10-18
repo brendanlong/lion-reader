@@ -6,13 +6,13 @@
  */
 
 import { requireAuth } from "@/server/wallabag/auth";
-import { errorResponse, jsonResponse } from "@/server/wallabag/parse";
+import { errorResponse, jsonResponse, withClientErrors } from "@/server/wallabag/parse";
 import { deleteWallabagTag, resolveWallabagTag, toWallabagTag } from "@/server/wallabag/tags";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function DELETE(
+export const DELETE = withClientErrors(async function (
   request: Request,
   { params }: { params: Promise<{ tag: string }> }
 ): Promise<Response> {
@@ -26,4 +26,4 @@ export async function DELETE(
   }
   await deleteWallabagTag(db, auth.userId, tag);
   return jsonResponse(toWallabagTag(tag));
-}
+});

@@ -66,6 +66,7 @@ export async function createGettingStartedArticle(
       content: GETTING_STARTED_MARKDOWN,
       title: GETTING_STARTED_TITLE,
       excerpt: GETTING_STARTED_EXCERPT,
+      keepRelativeUrls: true,
     });
   } catch (err) {
     // Nothing was inserted, so hand the user back to the backfill.

@@ -2,7 +2,7 @@
  * SettingsSection Component
  *
  * A reusable wrapper for settings sections that provides consistent styling.
- * Handles loading, error, and success states with standard patterns.
+ * Handles loading and load-error states with standard patterns.
  */
 
 import { Alert } from "@/components/ui/alert";
@@ -40,11 +40,6 @@ interface SettingsSectionProps {
   error?: string | null;
 
   /**
-   * Success message to display. Shows success alert when provided.
-   */
-  success?: string | null;
-
-  /**
    * Number of skeleton rows to show when loading. Defaults to 2.
    */
   skeletonRows?: number;
@@ -60,7 +55,6 @@ export function SettingsSection({
   description,
   isLoading,
   error,
-  success,
   skeletonRows = 2,
 }: SettingsSectionProps) {
   if (isLoading) {
@@ -87,12 +81,6 @@ export function SettingsSection({
         {error && (
           <Alert variant="error" className="mb-4">
             {error}
-          </Alert>
-        )}
-
-        {success && (
-          <Alert variant="success" className="mb-4">
-            {success}
           </Alert>
         )}
 

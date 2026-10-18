@@ -19,11 +19,8 @@
 
 import { requireAuth } from "@/server/google-reader/auth";
 import { jsonResponse, errorResponse, withClientErrors } from "@/server/google-reader/parse";
-import { parseStreamId } from "@/server/google-reader/streams";
+import { isStreamError, resolveStreamListParams } from "@/server/google-reader/stream-filters";
 import { entryFeedStreamId } from "@/server/google-reader/format";
-import { resolveFeedStreamFilter } from "@/server/google-reader/subscriptions";
-import { resolveTagByName } from "@/server/google-reader/tags";
-import { isState } from "@/server/google-reader/streams";
 import * as entriesService from "@/server/services/entries";
 import { db } from "@/server/db";
 
@@ -41,106 +38,11 @@ export const GET = withClientErrors(async (request: Request): Promise<Response> 
     return errorResponse("Missing required parameter: s (stream ID)", 400);
   }
 
-  let parsedStream;
-  try {
-    parsedStream = parseStreamId(streamIdStr);
-  } catch {
-    return errorResponse(`Invalid stream ID: ${streamIdStr}`, 400);
-  }
-
-  const count = Math.min(parseInt(searchParams.get("n") ?? "1000", 10) || 1000, 10000);
-  const continuation = searchParams.get("c") ?? undefined;
-  const sortOrder = searchParams.get("r") === "o" ? "oldest" : "newest";
-  const excludeTarget = searchParams.get("xt");
-  const includeTarget = searchParams.get("it");
-  const olderThan = searchParams.get("ot");
-  const newerThan = searchParams.get("nt");
-
-  const listParams: entriesService.ListEntriesParams = {
-    userId: session.user.id,
-    limit: count,
-    maxLimit: 10000,
-    cursor: continuation,
-    sortOrder: sortOrder as "newest" | "oldest",
-    showSpam: session.user.showSpam,
-  };
-
-  // ot = "older than" timestamp — only return items newer than this (published after)
-  if (olderThan) {
-    const ts = parseInt(olderThan, 10);
-    if (!isNaN(ts)) {
-      listParams.publishedAfter = new Date(ts * 1000);
-    }
-  }
-
-  // nt = "newer than" timestamp — only return items older than this (published before)
-  if (newerThan) {
-    const ts = parseInt(newerThan, 10);
-    if (!isNaN(ts)) {
-      listParams.publishedBefore = new Date(ts * 1000);
-    }
-  }
-
-  switch (parsedStream.type) {
-    case "feed": {
-      const filter = await resolveFeedStreamFilter(
-        db,
-        session.user.id,
-        parsedStream.subscriptionInt64
-      );
-      if (!filter) {
-        return errorResponse("Subscription not found", 404);
-      }
-      Object.assign(listParams, filter);
-      break;
-    }
-    case "state": {
-      switch (parsedStream.state) {
-        case "reading-list":
-          break;
-        case "starred":
-          listParams.starredOnly = true;
-          break;
-        case "read":
-          listParams.readOnly = true;
-          break;
-        default:
-          return errorResponse(`Unsupported state: ${parsedStream.state}`, 400);
-      }
-      break;
-    }
-    case "label": {
-      const tag = await resolveTagByName(db, session.user.id, parsedStream.name);
-      if (!tag) {
-        return errorResponse(`Tag not found: ${parsedStream.name}`, 404);
-      }
-      listParams.tagId = tag.id;
-      break;
-    }
-  }
-
-  if (excludeTarget && isState(excludeTarget, "read")) {
-    listParams.unreadOnly = true;
-  }
-
-  // Handle include target (it parameter) — e.g., it=user/-/state/com.google/read
-  if (includeTarget) {
-    try {
-      const parsed = parseStreamId(includeTarget);
-      if (parsed.type === "state") {
-        switch (parsed.state) {
-          case "read":
-            listParams.readOnly = true;
-            break;
-          case "starred":
-            listParams.starredOnly = true;
-            break;
-        }
-      }
-    } catch {
-      // Ignore invalid stream IDs for the 'it' parameter
-    }
-  }
+  const listParams = await resolveStreamListParams(db, session.user, streamIdStr, searchParams, {
+    defaultCount: 1000,
+    maxCount: 10000,
+  });
+  if (isStreamError(listParams)) return errorResponse(listParams.message, listParams.status);
 
   const result = await entriesService.listGreaderItemRefs(db, listParams);
   const itemRefs = result.items.map((ref) => {

@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
-import { acquireArticleContent, pluginRegistry } from "../../src/server/plugins";
+import { acquireArticleContent, pluginRegistry, UserFetchError } from "../../src/server/plugins";
 import { ContentTooLargeError, HttpFetchError } from "../../src/server/http/fetch";
 import { usageLimitsConfig } from "../../src/server/config/env";
 
@@ -40,6 +40,18 @@ pluginRegistry.register({
             throw new HttpFetchError(429, "Too Many Requests", url.href);
           case "/plugin/broken":
             throw new Error("plugin bug");
+          default:
+            return null;
+        }
+      },
+      async fetchContentAsUser(url, user) {
+        switch (url.pathname) {
+          case "/plugin/as-user":
+            return { html: `<p>For ${user.userId}</p>` };
+          case "/plugin/as-user-huge":
+            return { html: tooLarge() };
+          case "/plugin/as-user-broken":
+            throw new Error("needs consent");
           default:
             return null;
         }
@@ -135,32 +147,37 @@ describe("acquireArticleContent: hostname plugin", () => {
   });
 });
 
-describe("acquireArticleContent: beforePageFetch", () => {
-  it("runs after the hostname plugin declines and before the page fetch", async () => {
-    const calls: string[] = [];
-    const acquired = await acquireArticleContent(`${baseUrl}/plugin/declines`, {
-      pageUrl: `${baseUrl}/page/other`,
-      beforePageFetch: async () => {
-        calls.push(`before, page requests: ${pageRequests.length}`);
-        return null;
-      },
+describe("acquireArticleContent: fetchContentAsUser", () => {
+  const asUser = { userId: "user-1", authMode: "interactive" } as const;
+
+  it("fetches as the user after fetchContent declines, without fetching the page", async () => {
+    const url = `${baseUrl}/plugin/as-user`;
+    const acquired = await acquireArticleContent(url, { asUser });
+    expect(acquired).toMatchObject({
+      kind: "plugin",
+      source: "fixture-hostname",
+      content: { html: "<p>For user-1</p>" },
+      baseUrl: url,
     });
-    expect(calls).toEqual(["before, page requests: 0"]);
-    expect(pageRequests).toEqual(["/page/other"]);
-    expect(acquired).toMatchObject({ kind: "page", finalUrl: `${baseUrl}/page/other` });
+    expect(pageRequests).toEqual([]);
+  });
+
+  it("is not tried without a user", async () => {
+    const acquired = await acquireArticleContent(`${baseUrl}/plugin/as-user`);
+    expect(acquired).toMatchObject({ kind: "page", content: PAGE_HTML });
   });
 
   it("is subject to the size cap", async () => {
     await expect(
-      acquireArticleContent(`${baseUrl}/plugin/declines`, {
-        beforePageFetch: async () => ({
-          kind: "plugin",
-          source: "test",
-          content: { html: tooLarge() },
-          baseUrl,
-        }),
-      })
+      acquireArticleContent(`${baseUrl}/plugin/as-user-huge`, { asUser })
     ).rejects.toThrow(ContentTooLargeError);
+    expect(pageRequests).toEqual([]);
+  });
+
+  it("throws its failure as a UserFetchError instead of fetching the page", async () => {
+    const failure = acquireArticleContent(`${baseUrl}/plugin/as-user-broken`, { asUser });
+    await expect(failure).rejects.toBeInstanceOf(UserFetchError);
+    await expect(failure).rejects.toMatchObject({ cause: { message: "needs consent" } });
     expect(pageRequests).toEqual([]);
   });
 });

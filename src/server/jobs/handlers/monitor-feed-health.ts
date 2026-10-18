@@ -1,5 +1,5 @@
 /**
- * Handler for `monitor_feed_health` jobs (singleton).
+ * Handler for `monitor_feed_health` jobs (fixed-interval singleton).
  *
  * See src/server/feed/health.ts for the invariant this checks.
  */
@@ -13,14 +13,9 @@ import { pingHealthcheck } from "../../notifications/healthchecks";
 import { feedHealthConfig } from "../../config/env";
 import { updateFeedHealthMetrics } from "../../metrics/metrics";
 import { logger } from "@/lib/logger";
-import type { JobHandlerResult } from "./types";
-
-/** How often the feed fetch health check runs. */
-const FEED_HEALTH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+import type { JobMetadata } from "./types";
 
 /**
- * Handler for monitor_feed_health jobs (singleton, runs every 15 minutes).
- *
  * Checks the invariant "at least one feed fetched successfully recently"
  * (see src/server/feed/health.ts) and:
  * - Pings the configured healthchecks.io check (FEED_HEALTH_HEARTBEAT_URL):
@@ -33,7 +28,7 @@ const FEED_HEALTH_CHECK_INTERVAL_MS = 15 * 60 * 1000;
  * No alert state is kept here: healthchecks.io de-duplicates notifications and
  * sends its own recovery ("up") email, so the job just reports status each run.
  */
-export async function handleMonitorFeedHealth(): Promise<JobHandlerResult> {
+export async function handleMonitorFeedHealth(): Promise<JobMetadata> {
   const now = new Date();
   const snapshot = await getFeedFetchHealthSnapshot();
   const evaluation = evaluateFeedFetchHealth(
@@ -65,14 +60,10 @@ export async function handleMonitorFeedHealth(): Promise<JobHandlerResult> {
   }
 
   return {
-    success: true,
-    nextRunAt: new Date(now.getTime() + FEED_HEALTH_CHECK_INTERVAL_MS),
-    metadata: {
-      status: evaluation.status,
-      reason: evaluation.reason,
-      lastSuccessAgeMs: evaluation.lastSuccessAgeMs ?? undefined,
-      failingFeedCount: snapshot.failingFeedCount,
-      pollableFeedCount: snapshot.pollableFeedCount,
-    },
+    status: evaluation.status,
+    reason: evaluation.reason,
+    lastSuccessAgeMs: evaluation.lastSuccessAgeMs ?? undefined,
+    failingFeedCount: snapshot.failingFeedCount,
+    pollableFeedCount: snapshot.pollableFeedCount,
   };
 }

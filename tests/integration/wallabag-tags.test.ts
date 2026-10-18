@@ -180,6 +180,15 @@ describe("entry tags", () => {
       );
       expect(res.status).toBe(400);
     }
+    const patched = await patchEntry(
+      formRequest(user, `entries/${entry}`, "PATCH", `tags=${tooMany}`),
+      params({ entry })
+    );
+    expect(patched.status).toBe(400);
+    expect(await patched.json()).toEqual({
+      error: "BAD_REQUEST",
+      error_description: expect.any(String),
+    });
     expect(await activeCollectionIds(user)).toEqual([]);
   });
 

@@ -88,7 +88,7 @@ async function appToken(userId: string): Promise<string> {
 
 async function rest(
   token: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
   body?: unknown
 ): Promise<Response> {
@@ -119,6 +119,18 @@ describe("app token authentication", () => {
     const userId = await createUser();
     const res = await rest(await appToken(userId), "GET", "/entries");
     expect(res.status).toBe(200);
+  });
+
+  // A 404/400 means the request got past the scope gate (a 403).
+  it("accepts the app's token on the MCP tools' saved-article endpoints", async () => {
+    const token = await appToken(await createUser());
+    expect((await rest(token, "DELETE", `/saved/${generateUuidv7()}`)).status).toBe(404);
+    const upload = await rest(token, "POST", "/saved/upload", {
+      content: Buffer.from("x").toString("base64"),
+      filename: "notes.unsupported",
+    });
+    expect(upload.status).toBe(400);
+    expect(JSON.stringify(await upload.json())).toContain("Unsupported file type");
   });
 
   it("rejects the app's token on session-only endpoints", async () => {
@@ -912,5 +924,21 @@ describe("streamed speech", () => {
       last = await speech(auth, { model: null, voice: null, text });
     expect(last?.status).toBe(429);
     expect(last?.headers.get("retry-after")).not.toBeNull();
+  });
+});
+
+describe("REST responses", () => {
+  it("are uncacheable and carry the limiter's headers when rate limited", async () => {
+    const token = await appToken(await createUser());
+    let last: Response | null = null;
+    for (let i = 0; i <= RATE_LIMIT_CONFIGS.expensive.capacity; i++) {
+      last = await rest(token, "POST", "/summarization/generate", {});
+    }
+    expect(last?.status).toBe(429);
+    expect(last?.headers.get("x-ratelimit-limit")).toBe(
+      String(RATE_LIMIT_CONFIGS.expensive.capacity)
+    );
+    expect(last?.headers.get("retry-after")).not.toBeNull();
+    expect(last?.headers.get("cache-control")).toBe("private, no-store");
   });
 });

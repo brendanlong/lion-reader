@@ -682,7 +682,7 @@ async function saveUrlsAndReact(
       // linked/granted (the failure just surfaces as the error reaction below).
       const saved = await saveArticle(db, resolved.userId, {
         url,
-        googleDocsAuth: "non-interactive",
+        userAuth: "non-interactive",
       });
       logger.info("Saved article via Discord", {
         userId: resolved.userId,

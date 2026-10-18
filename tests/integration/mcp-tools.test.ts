@@ -12,9 +12,16 @@ import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "../../src/server/db";
+import { eq } from "drizzle-orm";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
-import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
-import { registerTools, toMcpError } from "../../src/server/mcp/tools";
+import {
+  createTestEmailSubscription,
+  createTestEntry,
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
+import { getTools, toMcpError } from "../../src/server/mcp/tools";
 
 let userId: string;
 let otherUserId: string;
@@ -25,7 +32,7 @@ let pageUrl: string;
 let pageBody = "";
 
 function tool(name: string) {
-  const found = registerTools().find((t) => t.name === name);
+  const found = getTools().find((t) => t.name === name);
   if (!found) throw new Error(`Tool not registered: ${name}`);
   return found;
 }
@@ -63,7 +70,7 @@ afterAll(async () => {
 
 describe("MCP tool argument validation", () => {
   it("advertises an inputSchema generated from the Zod schema", () => {
-    for (const t of registerTools()) {
+    for (const t of getTools()) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.inputSchema.properties).toBeDefined();
     }
@@ -187,5 +194,26 @@ describe("MCP tool results", () => {
     })) as { id: string };
     expect(forced.id).toBe(original.id);
     expect(await content(original.id)).toContain("Revised.");
+  });
+});
+
+describe("MCP list_entries spam", () => {
+  it("follows the user's showSpam preference, like the other surfaces", async () => {
+    const spamUserId = await createTestUser({ emailPrefix: "mcp-tools" });
+    const subscriptionId = await createTestEmailSubscription(spamUserId);
+    await createTestEntry(subscriptionId, {
+      type: "email",
+      title: "Spam mail",
+      isSpam: true,
+      userIds: [spamUserId],
+    });
+    const listTitles = async () =>
+      (
+        (await tool("list_entries").handler(db, spamUserId, {})) as { items: { title: string }[] }
+      ).items.map((item) => item.title);
+
+    expect(await listTitles()).not.toContain("Spam mail");
+    await db.update(users).set({ showSpam: true }).where(eq(users.id, spamUserId));
+    expect(await listTitles()).toContain("Spam mail");
   });
 });
