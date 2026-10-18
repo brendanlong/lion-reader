@@ -1,27 +1,14 @@
 import { Registry, collectDefaultMetrics, Counter, Histogram, Gauge } from "prom-client";
 import type { TTSProviderId } from "@/lib/narration/types";
+import type { VoiceDownloadErrorType } from "@/lib/telemetry";
 
 /**
- * Prometheus Metrics Registry
+ * Prometheus metrics, and the helpers the app records them with. Metric names
+ * and labels are what the dashboards query, so don't rename them.
  *
- * Metrics are only collected when METRICS_ENABLED=true to avoid
- * any overhead when metrics are disabled.
- *
- * This module provides:
- * - A shared registry for all metrics
- * - Conditional initialization of default collectors
- * - HTTP request metrics (counter and histogram)
- * - tRPC per-procedure latency metrics
- * - Feed fetch metrics
- * - Job processing metrics
- * - SSE connection metrics
- * - Business metrics (users, subscriptions, entries)
- * - Helper functions for tracking metrics
- */
-
-/**
- * Whether metrics collection is enabled.
- * Metrics are disabled by default for self-hosters who don't need them.
+ * Collected only with METRICS_ENABLED=true (off by default, for self-hosters
+ * who don't need them): with it off every metric is null and every helper a
+ * no-op.
  */
 export const metricsEnabled = process.env.METRICS_ENABLED === "true";
 
@@ -82,29 +69,33 @@ function getOrCreate<C extends { name: string }, M>(
   );
 }
 
+/**
+ * Starts timing some work: the function returned, called when it ends, passes
+ * `record` its duration in seconds along with what it's called with.
+ */
+function startTimer<A extends unknown[]>(
+  record: (seconds: number, ...args: A) => void
+): (...args: A) => void {
+  if (!metricsEnabled) return () => {};
+  const startTime = performance.now();
+  return (...args) => record((performance.now() - startTime) / 1000, ...args);
+}
+
+/** A timer ({@link startTimer}) whose duration is all `histogram` records. */
+function histogramTimer(histogram: Histogram | null): () => () => void {
+  return () => startTimer((seconds) => histogram?.observe(seconds));
+}
+
 // ============================================================================
 // HTTP Metrics
 // ============================================================================
 
-/**
- * Counter for total HTTP requests.
- * Labels: method (GET, POST, etc.), path (normalized route), status (HTTP status code)
- */
 const httpRequestsTotal = getOrCreate(Counter, {
   name: "http_requests_total",
   help: "Total HTTP requests",
   labelNames: ["method", "path", "status"] as const,
 });
 
-/**
- * Histogram for HTTP request duration in seconds.
- * Labels: method (GET, POST, etc.), path (normalized route)
- *
- * Buckets are chosen to capture typical web latencies:
- * - 5ms, 10ms, 25ms: fast responses
- * - 50ms, 100ms, 250ms: typical responses
- * - 500ms, 1s, 2.5s, 5s, 10s: slow responses
- */
 const httpRequestDurationSeconds = getOrCreate(Histogram, {
   name: "http_request_duration_seconds",
   help: "HTTP request duration in seconds",
@@ -112,36 +103,19 @@ const httpRequestDurationSeconds = getOrCreate(Histogram, {
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
 });
 
-/**
- * Creates a timer for tracking HTTP request duration.
- * Returns a function to call when the request completes.
- * Returns a no-op function when metrics are disabled.
- *
- * @param method - HTTP method (GET, POST, etc.)
- * @param path - Normalized route path
- * @returns Function to call with status code when request completes
- */
+/** `path` is the normalized route; the timer is stopped with the response's status. */
 export function startHttpTimer(method: string, path: string): (status: number) => void {
-  if (!metricsEnabled) {
-    return () => {};
-  }
-
-  const startTime = performance.now();
-
-  return (status: number) => {
-    const durationSeconds = (performance.now() - startTime) / 1000;
+  return startTimer((seconds, status: number) => {
     httpRequestsTotal?.inc({ method, path, status: String(status) });
-    httpRequestDurationSeconds?.observe({ method, path }, durationSeconds);
-  };
+    httpRequestDurationSeconds?.observe({ method, path }, seconds);
+  });
 }
 
 // ============================================================================
 // tRPC Procedure Metrics
 // ============================================================================
 
-/**
- * tRPC procedure types (matches @trpc/server's ProcedureType).
- */
+/** Matches @trpc/server's ProcedureType. */
 export type TrpcProcedureType = "query" | "mutation" | "subscription";
 
 /**
@@ -165,14 +139,6 @@ const trpcProcedureDurationSeconds = getOrCreate(Histogram, {
   buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
 });
 
-/**
- * Tracks a single tRPC procedure execution.
- *
- * @param procedure - The tRPC procedure path (e.g. "entries.list")
- * @param type - The procedure type (query, mutation, subscription)
- * @param ok - Whether the procedure resolved successfully
- * @param durationMs - Execution duration in milliseconds
- */
 export function trackTrpcProcedure(
   procedure: string,
   type: TrpcProcedureType,
@@ -249,7 +215,6 @@ export function androidAppVersionLabel(userAgent: string | null, seen: Set<strin
   return version;
 }
 
-/** Counts a request authenticated with the Android app's token. */
 export function trackAndroidAppRequest(userAgent: string | null): void {
   if (!androidAppRequestsTotal) return;
   androidAppRequestsTotal.inc({ version: androidAppVersionLabel(userAgent, androidVersionsSeen) });
@@ -259,54 +224,27 @@ export function trackAndroidAppRequest(userAgent: string | null): void {
 // Feed Fetch Metrics
 // ============================================================================
 
-/**
- * Feed fetch status values.
- * - success: Feed fetched and parsed successfully
- * - not_modified: 304 response, feed content unchanged
- * - error: Any fetch error (network, parsing, HTTP error)
- */
+/** `error` is any failure: network, HTTP or parsing. */
 export type FeedFetchStatus = "success" | "not_modified" | "error";
 
-/**
- * Counter for total feed fetches.
- * Labels: status (success, not_modified, error)
- */
 const feedFetchTotal = getOrCreate(Counter, {
   name: "feed_fetch_total",
   help: "Total feed fetch attempts",
   labelNames: ["status"] as const,
 });
 
-/**
- * Histogram for feed fetch duration in seconds.
- * Tracks time from HTTP request start to response fully processed.
- *
- * Buckets cover typical fetch times from 50ms to 30s.
- */
+/** From the request's start until the response is fully processed. */
 const feedFetchDurationSeconds = getOrCreate(Histogram, {
   name: "feed_fetch_duration_seconds",
   help: "Feed fetch duration in seconds",
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
 });
 
-/**
- * Creates a timer for tracking feed fetch duration.
- * Returns a function to call when the fetch completes.
- * Returns a no-op function when metrics are disabled.
- *
- * @returns Function to call with status when fetch completes
- */
 export function startFeedFetchTimer(): (status: FeedFetchStatus) => void {
-  if (!metricsEnabled) {
-    return () => {};
-  }
-
-  const startTime = performance.now();
-
-  return (status: FeedFetchStatus) => {
+  return startTimer((seconds, status: FeedFetchStatus) => {
     feedFetchTotal?.inc({ status });
-    feedFetchDurationSeconds?.observe((performance.now() - startTime) / 1000);
-  };
+    feedFetchDurationSeconds?.observe(seconds);
+  });
 }
 
 // ============================================================================
@@ -324,125 +262,54 @@ const CONTENT_PROCESSING_BUCKETS = [
   0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5,
 ];
 
-/**
- * Histogram for feed parsing (RSS/Atom/JSON) duration in seconds.
- * Measures only the parse step, not the surrounding fetch or processing.
- */
-const feedParseDurationSeconds = getOrCreate(Histogram, {
-  name: "feed_parse_duration_seconds",
-  help: "Feed parsing (RSS/Atom/JSON) duration in seconds",
-  buckets: CONTENT_PROCESSING_BUCKETS,
-});
+// Each times only its own step, not the fetch or processing around it.
 
-/**
- * Histogram for readability (article extraction) duration in seconds.
- * Measures only the native extraction step.
- */
-const readabilityDurationSeconds = getOrCreate(Histogram, {
-  name: "readability_duration_seconds",
-  help: "Readability article extraction duration in seconds",
-  buckets: CONTENT_PROCESSING_BUCKETS,
-});
+export const startFeedParseTimer = histogramTimer(
+  getOrCreate(Histogram, {
+    name: "feed_parse_duration_seconds",
+    help: "Feed parsing (RSS/Atom/JSON) duration in seconds",
+    buckets: CONTENT_PROCESSING_BUCKETS,
+  })
+);
 
-/**
- * Histogram for Markdown rendering duration in seconds.
- * Measures only the native render (comrak + MathML), not frontmatter parsing.
- */
-const markdownRenderDurationSeconds = getOrCreate(Histogram, {
-  name: "markdown_render_duration_seconds",
-  help: "Markdown to HTML rendering duration in seconds",
-  buckets: CONTENT_PROCESSING_BUCKETS,
-});
+export const startReadabilityTimer = histogramTimer(
+  getOrCreate(Histogram, {
+    name: "readability_duration_seconds",
+    help: "Readability article extraction duration in seconds",
+    buckets: CONTENT_PROCESSING_BUCKETS,
+  })
+);
 
-/**
- * Histogram for HTML sanitization duration in seconds.
- * Measures only the native sanitizer pass.
- */
-const sanitizeDurationSeconds = getOrCreate(Histogram, {
-  name: "sanitize_duration_seconds",
-  help: "HTML sanitization duration in seconds",
-  buckets: CONTENT_PROCESSING_BUCKETS,
-});
+/** The native render (comrak + MathML), not frontmatter parsing. */
+export const startMarkdownRenderTimer = histogramTimer(
+  getOrCreate(Histogram, {
+    name: "markdown_render_duration_seconds",
+    help: "Markdown to HTML rendering duration in seconds",
+    buckets: CONTENT_PROCESSING_BUCKETS,
+  })
+);
 
-/**
- * Creates a timer for tracking feed parse duration.
- * Returns a function to call when parsing completes.
- * Returns a no-op function when metrics are disabled.
- */
-export function startFeedParseTimer(): () => void {
-  return startContentProcessingTimer(feedParseDurationSeconds);
-}
-
-/**
- * Creates a timer for tracking readability extraction duration.
- * Returns a function to call when extraction completes.
- * Returns a no-op function when metrics are disabled.
- */
-export function startReadabilityTimer(): () => void {
-  return startContentProcessingTimer(readabilityDurationSeconds);
-}
-
-/**
- * Creates a timer for tracking Markdown rendering duration.
- * Returns a function to call when rendering completes.
- * Returns a no-op function when metrics are disabled.
- */
-export function startMarkdownRenderTimer(): () => void {
-  return startContentProcessingTimer(markdownRenderDurationSeconds);
-}
-
-/**
- * Creates a timer for tracking HTML sanitization duration.
- * Returns a function to call when sanitization completes.
- * Returns a no-op function when metrics are disabled.
- */
-export function startSanitizeTimer(): () => void {
-  return startContentProcessingTimer(sanitizeDurationSeconds);
-}
-
-/**
- * Shared implementation for the content-processing timers. Returns a no-op
- * when metrics are disabled so callers have zero overhead.
- */
-function startContentProcessingTimer(histogram: Histogram | null): () => void {
-  if (!metricsEnabled || !histogram) {
-    return () => {};
-  }
-
-  const startTime = performance.now();
-
-  return () => {
-    histogram.observe((performance.now() - startTime) / 1000);
-  };
-}
+export const startSanitizeTimer = histogramTimer(
+  getOrCreate(Histogram, {
+    name: "sanitize_duration_seconds",
+    help: "HTML sanitization duration in seconds",
+    buckets: CONTENT_PROCESSING_BUCKETS,
+  })
+);
 
 // ============================================================================
 // Job Processing Metrics
 // ============================================================================
 
-/**
- * Job processing status values.
- * - success: Job completed successfully
- * - failure: Job failed (may be retried)
- */
+/** `failure` may still be retried. */
 export type JobStatus = "success" | "failure";
 
-/**
- * Counter for total jobs processed.
- * Labels: type (fetch_feed, cleanup, etc.), status (success, failure)
- */
 const jobProcessedTotal = getOrCreate(Counter, {
   name: "job_processed_total",
   help: "Total jobs processed",
   labelNames: ["type", "status"] as const,
 });
 
-/**
- * Histogram for job processing duration in seconds.
- * Labels: type (fetch_feed, cleanup, etc.)
- *
- * Buckets cover typical job durations from 10ms to 5 minutes.
- */
 const jobDurationSeconds = getOrCreate(Histogram, {
   name: "job_duration_seconds",
   help: "Job processing duration in seconds",
@@ -450,13 +317,6 @@ const jobDurationSeconds = getOrCreate(Histogram, {
   buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300],
 });
 
-/**
- * Tracks a job processing result.
- *
- * @param type - Job type (fetch_feed, cleanup, etc.)
- * @param status - Processing result status
- * @param durationMs - Processing duration in milliseconds
- */
 export function trackJobProcessed(type: string, status: JobStatus, durationMs: number): void {
   jobProcessedTotal?.inc({ type, status });
   jobDurationSeconds?.observe({ type }, durationMs / 1000);
@@ -466,44 +326,25 @@ export function trackJobProcessed(type: string, status: JobStatus, durationMs: n
 // SSE Connection Metrics
 // ============================================================================
 
-/**
- * Gauge for active SSE connections.
- * Incremented when a client connects, decremented on disconnect.
- */
 const sseConnectionsActive = getOrCreate(Gauge, {
   name: "sse_connections_active",
   help: "Number of active SSE connections",
 });
 
-/**
- * Counter for total SSE events sent.
- * Labels: type (new_entry, entry_updated, heartbeat)
- */
 const sseEventsSentTotal = getOrCreate(Counter, {
   name: "sse_events_sent_total",
   help: "Total SSE events sent to clients",
   labelNames: ["type"] as const,
 });
 
-/**
- * Increments the active SSE connections gauge.
- */
 export function incrementSSEConnections(): void {
   sseConnectionsActive?.inc();
 }
 
-/**
- * Decrements the active SSE connections gauge.
- */
 export function decrementSSEConnections(): void {
   sseConnectionsActive?.dec();
 }
 
-/**
- * Tracks an SSE event being sent.
- *
- * @param eventType - The type of event sent
- */
 export function trackSSEEventSent(eventType: string): void {
   sseEventsSentTotal?.inc({ type: eventType });
 }
@@ -512,33 +353,22 @@ export function trackSSEEventSent(eventType: string): void {
 // Database Pool Metrics
 // ============================================================================
 
-/**
- * Gauge for database connection pool total connections.
- */
 const dbPoolTotalConnections = getOrCreate(Gauge, {
   name: "db_pool_total_connections",
   help: "Total connections in the database pool",
 });
 
-/**
- * Gauge for database connection pool idle connections.
- */
 const dbPoolIdleConnections = getOrCreate(Gauge, {
   name: "db_pool_idle_connections",
   help: "Idle connections in the database pool",
 });
 
-/**
- * Gauge for database connection pool waiting requests.
- */
 const dbPoolWaitingRequests = getOrCreate(Gauge, {
   name: "db_pool_waiting_requests",
   help: "Requests waiting for a database connection",
 });
 
-/**
- * Updates database pool metrics from pg Pool stats.
- */
+/** From pg Pool stats. */
 export function updateDbPoolMetrics(stats: {
   totalCount: number;
   idleCount: number;
@@ -561,9 +391,6 @@ const dbPoolClientErrorsTotal = getOrCreate(Counter, {
   labelNames: ["reason"] as const,
 });
 
-/**
- * Tracks an error raised on an idle database pool connection.
- */
 export function trackDbPoolClientError(reason: "disconnect" | "unexpected"): void {
   dbPoolClientErrorsTotal?.inc({ reason });
 }
@@ -577,11 +404,6 @@ export function trackDbPoolClientError(reason: "disconnect" | "unexpected"): voi
 // update rather than at load: an unset gauge still scrapes as 0, which would
 // add a bogus zero series from every other process.
 
-/**
- * Updates all business metrics.
- *
- * @param counts - Object containing counts for each metric
- */
 export function updateBusinessMetrics(counts: {
   users: number;
   subscriptions: number;
@@ -606,11 +428,6 @@ export function updateBusinessMetrics(counts: {
   })?.set(counts.feeds);
 }
 
-/**
- * Updates job queue size metrics from database counts.
- *
- * @param counts - Job counts by type and status
- */
 export function updateJobQueueMetrics(
   counts: Array<{ type: string; status: string; count: number }>
 ): void {
@@ -630,37 +447,21 @@ export function updateJobQueueMetrics(
 // WebSub Metrics
 // ============================================================================
 
-/**
- * Counter for WebSub notifications received.
- * Tracks content push notifications from hubs.
- */
 const websubNotificationsReceivedTotal = getOrCreate(Counter, {
   name: "websub_notifications_received_total",
   help: "Total WebSub content notifications received",
 });
 
-/**
- * Counter for WebSub renewal attempts.
- * Labels: status (success, failure)
- */
 const websubRenewalsTotal = getOrCreate(Counter, {
   name: "websub_renewals_total",
   help: "Total WebSub subscription renewal attempts",
   labelNames: ["status"] as const,
 });
 
-/**
- * Tracks a WebSub notification received.
- */
 export function trackWebsubNotificationReceived(): void {
   websubNotificationsReceivedTotal?.inc();
 }
 
-/**
- * Tracks a WebSub renewal attempt.
- *
- * @param success - Whether the renewal was successful
- */
 export function trackWebsubRenewal(success: boolean): void {
   websubRenewalsTotal?.inc({ status: success ? "success" : "failure" });
 }
@@ -669,31 +470,22 @@ export function trackWebsubRenewal(success: boolean): void {
 // Feed Fetch Health Metrics
 // ============================================================================
 
+// Both set by the monitor_feed_health job.
+
 /**
- * Gauge for the age of the most recent successful feed fetch.
- * Updated by the monitor_feed_health job. Alert if this grows beyond the
- * expected fetch cadence (feeds are polled at least hourly in steady state).
+ * Alert if this grows beyond the expected fetch cadence (feeds are polled at
+ * least hourly in steady state).
  */
 const feedLastSuccessfulFetchAgeSeconds = getOrCreate(Gauge, {
   name: "feed_last_successful_fetch_age_seconds",
   help: "Seconds since the most recent successful feed fetch across all pollable feeds",
 });
 
-/**
- * Gauge for the number of pollable feeds currently failing (consecutive_failures > 0).
- * Updated by the monitor_feed_health job.
- */
 const feedsFailing = getOrCreate(Gauge, {
   name: "feeds_failing",
   help: "Number of pollable feeds with consecutive fetch failures",
 });
 
-/**
- * Updates feed fetch health gauges from a monitor_feed_health run.
- *
- * @param lastSuccessAgeSeconds - Age of the newest successful fetch, or null if none exists
- * @param failingFeedCount - Number of pollable feeds currently failing
- */
 export function updateFeedHealthMetrics(
   lastSuccessAgeSeconds: number | null,
   failingFeedCount: number
@@ -713,174 +505,86 @@ export function updateFeedHealthMetrics(
 // ============================================================================
 
 /**
- * Narration source values.
- * - llm: Generated by LLM (Groq)
- * - fallback: Plain text conversion fallback
+ * `llm`: preprocessed by the narration model (any of `NARRATION_PROVIDERS`);
+ * `fallback`: the plain-text conversion.
  */
 export type NarrationSource = "llm" | "fallback";
 
-/**
- * Narration error type values.
- * - api_error: Error from Groq API call
- * - empty_response: Groq returned empty response
- * - unknown: Unknown error type
- */
+/** `api_error`: the narration model's provider call failed; `empty_response`: it answered nothing. */
 export type NarrationErrorType = "api_error" | "empty_response" | "unknown";
 
-/**
- * Counter for total narration generations.
- * Labels:
- * - cached: "true" if served from cache, "false" if newly generated
- * - source: "llm" for LLM-generated, "fallback" for plain text conversion
- */
 const narrationGeneratedTotal = getOrCreate(Counter, {
   name: "narration_generated_total",
   help: "Total narration generations",
   labelNames: ["cached", "source"] as const,
 });
 
-/**
- * Histogram for narration generation duration in seconds.
- * Tracks time for LLM generation (not fallback or cached).
- *
- * Buckets cover typical LLM latencies from 100ms to 30s.
- */
-const narrationGenerationDurationSeconds = getOrCreate(Histogram, {
-  name: "narration_generation_duration_seconds",
-  help: "Narration generation duration in seconds",
-  buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30],
-});
-
-/**
- * Counter for narration generation errors.
- * Labels: error_type (api_error, empty_response, unknown)
- */
 const narrationGenerationErrorsTotal = getOrCreate(Counter, {
   name: "narration_generation_errors_total",
   help: "Total narration generation errors",
   labelNames: ["error_type"] as const,
 });
 
-/**
- * Tracks a narration generation result.
- *
- * @param cached - Whether narration was served from cache
- * @param source - The narration source (llm or fallback)
- */
 export function trackNarrationGenerated(cached: boolean, source: NarrationSource): void {
   narrationGeneratedTotal?.inc({ cached: String(cached), source });
 }
 
-/**
- * Tracks a narration generation error.
- *
- * @param errorType - The type of error that occurred
- */
 export function trackNarrationGenerationError(errorType: NarrationErrorType): void {
   narrationGenerationErrorsTotal?.inc({ error_type: errorType });
 }
 
-/**
- * Creates a timer for tracking narration generation duration.
- * Returns a function to call when generation completes.
- * Returns a no-op function when metrics are disabled.
- *
- * @returns Function to call when generation completes
- */
-export function startNarrationGenerationTimer(): () => void {
-  return startContentProcessingTimer(narrationGenerationDurationSeconds);
-}
+/** Times only the model's generation, not a fallback or a cache hit. */
+export const startNarrationGenerationTimer = histogramTimer(
+  getOrCreate(Histogram, {
+    name: "narration_generation_duration_seconds",
+    help: "Narration generation duration in seconds",
+    buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30],
+  })
+);
 
 // ============================================================================
-// Enhanced Voice Metrics
+// Enhanced Voice Metrics (browser events, through /api/v1/telemetry)
 // ============================================================================
 
-/**
- * Counter for enhanced voice selections.
- * Labels: voice_id (the selected voice identifier)
- */
 const enhancedVoiceSelectedTotal = getOrCreate(Counter, {
   name: "enhanced_voice_selected_total",
   help: "Total enhanced voice selections",
   labelNames: ["voice_id"] as const,
 });
 
-/**
- * Counter for enhanced voice download completions.
- * Labels: voice_id (the downloaded voice identifier)
- */
 const enhancedVoiceDownloadCompletedTotal = getOrCreate(Counter, {
   name: "enhanced_voice_download_completed_total",
   help: "Total enhanced voice downloads completed",
   labelNames: ["voice_id"] as const,
 });
 
-/**
- * Counter for enhanced voice download failures.
- * Labels:
- * - voice_id: The voice that failed to download
- * - error_type: Type of error (network, storage, unknown)
- */
 const enhancedVoiceDownloadFailedTotal = getOrCreate(Counter, {
   name: "enhanced_voice_download_failed_total",
   help: "Total enhanced voice download failures",
   labelNames: ["voice_id", "error_type"] as const,
 });
 
-/**
- * Counter for narration playback starts.
- * Labels: provider (browser or piper)
- */
 const narrationPlaybackStartedTotal = getOrCreate(Counter, {
   name: "narration_playback_started_total",
   help: "Total narration playbacks started",
   labelNames: ["provider"] as const,
 });
 
-/**
- * Enhanced voice download error types.
- * - network: Network or fetch error
- * - storage: origin private file system or quota error
- * - unknown: Unknown error type
- */
-export type EnhancedVoiceDownloadErrorType = "network" | "storage" | "unknown";
-
-/**
- * Tracks an enhanced voice selection.
- *
- * @param voiceId - The ID of the selected voice
- */
 export function trackEnhancedVoiceSelected(voiceId: string): void {
   enhancedVoiceSelectedTotal?.inc({ voice_id: voiceId });
 }
 
-/**
- * Tracks a successful enhanced voice download.
- *
- * @param voiceId - The ID of the downloaded voice
- */
 export function trackEnhancedVoiceDownloadCompleted(voiceId: string): void {
   enhancedVoiceDownloadCompletedTotal?.inc({ voice_id: voiceId });
 }
 
-/**
- * Tracks a failed enhanced voice download.
- *
- * @param voiceId - The ID of the voice that failed to download
- * @param errorType - The type of error that occurred
- */
 export function trackEnhancedVoiceDownloadFailed(
   voiceId: string,
-  errorType: EnhancedVoiceDownloadErrorType
+  errorType: VoiceDownloadErrorType
 ): void {
   enhancedVoiceDownloadFailedTotal?.inc({ voice_id: voiceId, error_type: errorType });
 }
 
-/**
- * Tracks a narration playback start.
- *
- * @param provider - The TTS provider used (browser or piper)
- */
 export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {
   narrationPlaybackStartedTotal?.inc({ provider });
 }
@@ -889,18 +593,12 @@ export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {
 // Narration Highlighting Metrics
 // ============================================================================
 
-/**
- * Counter for times fallback mapping was used for highlighting.
- * Incremented when positional mapping is used instead of LLM markers.
- */
+/** Highlighting fell back to positional mapping, without the model's markers. */
 const narrationHighlightFallbackTotal = getOrCreate(Counter, {
   name: "narration_highlight_fallback_total",
   help: "Total times fallback positional mapping was used for highlighting",
 });
 
-/**
- * Tracks when fallback positional mapping is used for highlighting.
- */
 export function trackNarrationHighlightFallback(): void {
   narrationHighlightFallbackTotal?.inc();
 }

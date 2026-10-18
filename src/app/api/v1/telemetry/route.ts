@@ -1,97 +1,20 @@
 /**
- * Telemetry API Endpoint
+ * POST /api/v1/telemetry
  *
- * Receives client-side metrics events and records them in Prometheus.
- * This allows tracking of browser-based events like voice downloads
- * and narration playback starts.
- *
- * Events:
- * - enhanced_voice_selected: User selected an enhanced voice
- * - enhanced_voice_download_completed: Voice download completed successfully
- * - enhanced_voice_download_failed: Voice download failed
- * - narration_playback_started: Narration playback started
+ * Records a browser event (`@/lib/telemetry`) in Prometheus. No
+ * authentication: events are anonymous.
  */
 
-import { z } from "zod";
-import { TTS_PROVIDER_IDS } from "@/lib/narration/types";
-import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
+import { telemetryEventSchema } from "@/lib/telemetry";
 import {
   metricsEnabled,
   trackEnhancedVoiceSelected,
   trackEnhancedVoiceDownloadCompleted,
   trackEnhancedVoiceDownloadFailed,
   trackNarrationPlaybackStarted,
-  type EnhancedVoiceDownloadErrorType,
 } from "@/server/metrics/metrics";
 
-// ============================================================================
-// Schemas
-// ============================================================================
-
-/**
- * voiceId becomes a Prometheus label on an unauthenticated endpoint, so only
- * known voices are accepted — a free-form string would let anyone grow label
- * cardinality (and server memory) without bound.
- */
-const voiceIdSchema = z.string().refine(isEnhancedVoice, { message: "Unknown voice" });
-
-/**
- * Schema for enhanced voice selected event.
- */
-const enhancedVoiceSelectedSchema = z.object({
-  event: z.literal("enhanced_voice_selected"),
-  voiceId: voiceIdSchema,
-});
-
-/**
- * Schema for enhanced voice download completed event.
- */
-const enhancedVoiceDownloadCompletedSchema = z.object({
-  event: z.literal("enhanced_voice_download_completed"),
-  voiceId: voiceIdSchema,
-});
-
-/**
- * Schema for enhanced voice download failed event.
- */
-const enhancedVoiceDownloadFailedSchema = z.object({
-  event: z.literal("enhanced_voice_download_failed"),
-  voiceId: voiceIdSchema,
-  errorType: z.enum(["network", "storage", "unknown"]),
-});
-
-/**
- * Schema for narration playback started event.
- */
-const narrationPlaybackStartedSchema = z.object({
-  event: z.literal("narration_playback_started"),
-  provider: z.enum(TTS_PROVIDER_IDS),
-});
-
-/**
- * Union schema for all telemetry events.
- */
-const telemetryEventSchema = z.discriminatedUnion("event", [
-  enhancedVoiceSelectedSchema,
-  enhancedVoiceDownloadCompletedSchema,
-  enhancedVoiceDownloadFailedSchema,
-  narrationPlaybackStartedSchema,
-]);
-
-type TelemetryEvent = z.infer<typeof telemetryEventSchema>;
-
-// ============================================================================
-// Route Handler
-// ============================================================================
-
-/**
- * POST /api/v1/telemetry
- *
- * Records a client-side metrics event.
- * No authentication required - events are anonymous.
- */
 export async function POST(req: Request): Promise<Response> {
-  // Parse and validate the request body
   let body: unknown;
   try {
     body = await req.json();
@@ -127,36 +50,22 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const event: TelemetryEvent = result.data;
-
-  // If metrics are disabled, accept but do nothing
-  if (!metricsEnabled) {
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  // Record the metric based on event type
-  switch (event.event) {
-    case "enhanced_voice_selected":
-      trackEnhancedVoiceSelected(event.voiceId);
-      break;
-
-    case "enhanced_voice_download_completed":
-      trackEnhancedVoiceDownloadCompleted(event.voiceId);
-      break;
-
-    case "enhanced_voice_download_failed":
-      trackEnhancedVoiceDownloadFailed(
-        event.voiceId,
-        event.errorType as EnhancedVoiceDownloadErrorType
-      );
-      break;
-
-    case "narration_playback_started":
-      trackNarrationPlaybackStarted(event.provider);
-      break;
+  const event = result.data;
+  if (metricsEnabled) {
+    switch (event.event) {
+      case "enhanced_voice_selected":
+        trackEnhancedVoiceSelected(event.voiceId);
+        break;
+      case "enhanced_voice_download_completed":
+        trackEnhancedVoiceDownloadCompleted(event.voiceId);
+        break;
+      case "enhanced_voice_download_failed":
+        trackEnhancedVoiceDownloadFailed(event.voiceId, event.errorType);
+        break;
+      case "narration_playback_started":
+        trackNarrationPlaybackStarted(event.provider);
+        break;
+    }
   }
 
   return new Response(JSON.stringify({ ok: true }), {
