@@ -43,7 +43,10 @@ const RAW_CREDENTIAL_VALIDATORS = [
   ["auth/api-token", "validateApiToken"],
   ["auth/session", "validateSession"],
 ].map(([module, importName]) => ({
-  group: [`@/server/${module}`, `**/${module}`],
+  group: [`@/server/${module}`, `**/${module}`, `./${module.split("/")[1]}`].flatMap((path) => [
+    path,
+    `${path}.js`,
+  ]),
   importNames: [importName],
   message: RAW_CREDENTIAL_MESSAGE,
 }));
