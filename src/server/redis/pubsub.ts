@@ -74,7 +74,10 @@ const userEventSchema = z.discriminatedUnion("type", [
   // Entry events for sources with exactly one recipient (email, saved), which
   // go to that user's channel instead of a feed channel. They carry what the
   // SSE route adds to a web feed's events itself: the user's subscriptionId
-  // (null for saved articles). It derives a new entry's `subscriptionIds`.
+  // (for saved articles, the saved subscription's). It derives a new entry's
+  // `subscriptionIds`.
+  // Like `feedId`, `feedType` is server-side only: the SSE route counts by
+  // it, and clients get the payload's `type`.
   newEntryEventSchema.omit({ subscriptionIds: true }).extend({
     userId: z.string(),
     ...serverTimestamp,

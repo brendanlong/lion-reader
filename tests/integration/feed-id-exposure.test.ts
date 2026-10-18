@@ -77,14 +77,6 @@ describe("feed IDs never reach clients", () => {
     for (const [name, response] of Object.entries(responses)) {
       expect(JSON.stringify(response), name).not.toContain(feedId);
     }
-
-    // Released Android builds require these keys; they carry the subscription id.
-    expect(list.items[0].feedId).toBe(subscriptionId);
-    const created = responses.sync.events.find((event) => event.type === "subscription_created");
-    expect(created).toMatchObject({
-      subscription: { feedId: subscriptionId },
-      feed: { id: subscriptionId },
-    });
   });
 
   it("the SSE stream carries only subscription IDs", async () => {
@@ -144,8 +136,7 @@ describe("feed IDs never reach clients", () => {
     expect(stream.text).not.toContain(feedId);
     expect(stream.text).not.toContain(otherFeedId);
     expect(stream.events("subscription_created")[0]).toMatchObject({
-      subscription: { feedId: otherSubscriptionId },
-      feed: { id: otherSubscriptionId },
+      subscriptionId: otherSubscriptionId,
     });
   });
 });

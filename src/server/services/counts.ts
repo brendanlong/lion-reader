@@ -22,7 +22,7 @@
 import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { unreadCountsSchema } from "@/lib/events/schemas";
-import { isListedSubscription } from "./subscriptions";
+import { isUserManagedSubscription } from "./subscriptions";
 import type { Temporal } from "temporal-polyfill";
 import type { db as dbType } from "@/server/db";
 import { parseTimestamptz } from "@/server/db/temporal";
@@ -166,7 +166,7 @@ export type BulkUnreadCounts = z.infer<typeof unreadCountsSchema>;
  *
  * @param db - Database instance
  * @param userId - User ID
- * @param entries - Entries (by id: every listed subscription holding them),
+ * @param entries - Entries (by id: every subscription but Saved holding them),
  *   or subscriptions (by subscriptionId, for an entry-less change)
  * @returns Aggregated unread counts for all affected lists
  */
@@ -176,8 +176,8 @@ export async function getBulkEntryRelatedCounts(
   entries: Array<{ id?: string; subscriptionId: string | null }>
 ): Promise<BulkUnreadCounts> {
   const entryIds = entries.map((e) => e.id).filter((id) => id !== undefined);
-  // The active listed subscriptions holding the entries (#1846): the saved
-  // subscription isn't a list clients show.
+  // The active subscriptions holding the entries (#1846) but Saved, whose
+  // count is `saved`, and which is in no tag or Uncategorized.
   const memberOf =
     entryIds.length > 0
       ? (
@@ -189,7 +189,7 @@ export async function getBulkEntryRelatedCounts(
               and(
                 eq(subscriptionEntries.userId, userId),
                 isNull(subscriptions.unsubscribedAt),
-                isListedSubscription(),
+                isUserManagedSubscription(),
                 // One array parameter: a mark-all-read can pass more ids than a
                 // statement takes parameters.
                 sql`${subscriptionEntries.entryId} = ANY(${`{${entryIds.join(",")}}`}::uuid[])`

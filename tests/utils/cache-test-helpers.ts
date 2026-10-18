@@ -11,6 +11,7 @@ import { createTRPCClient, httpLink } from "@trpc/client";
 import { createTRPCQueryUtils } from "@trpc/react-query";
 import superjson from "superjson";
 import type { SyncEvent } from "@/lib/events/schemas";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import type { UnreadCounts } from "@/lib/cache/operations";
 import type { AppRouter } from "@/server/trpc/root";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
@@ -155,6 +156,23 @@ const DEFAULT_UNCATEGORIZED = { feedCount: 1, unreadCount: 3 };
 
 /** The seeded user's saved subscription: the saved article's origin and membership. */
 export const SEEDED_SAVED_SUBSCRIPTION_ID = "sub-saved";
+
+/** A saved subscription as `subscriptions.list` lists it. */
+export function savedSubscriptionRow(id: string): SeededSubscription {
+  return {
+    id,
+    type: "saved",
+    url: null,
+    title: "Saved",
+    originalTitle: "Saved",
+    description: null,
+    siteUrl: null,
+    subscribedAt: new Date("2024-01-01"),
+    unreadCount: 0,
+    tags: [],
+    fetchFullContent: false,
+  };
+}
 
 export const DEFAULT_ENTRIES: SeededEntry[] = [
   {
@@ -404,9 +422,7 @@ export function seedCacheState(
     (utils.subscriptions.list as unknown as { setInfiniteData: SetInfiniteData }).setInfiniteData(
       { ...input, limit: 50 },
       {
-        pages: [
-          { items, nextCursor: undefined, savedSubscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID },
-        ],
+        pages: [{ items, nextCursor: undefined }],
         pageParams: [undefined],
       }
     );
@@ -420,6 +436,10 @@ export function seedCacheState(
     { uncategorized: true },
     subs.filter((sub) => sub.tags.length === 0)
   );
+  // The layout's prefetch, which lists the saved subscription
+  setUtilsData(utils.subscriptions.list, SAVED_SUBSCRIPTION_LIST_INPUT, {
+    items: [savedSubscriptionRow(SEEDED_SAVED_SUBSCRIPTION_ID)],
+  });
 
   // Seed tags.list
   setUtilsData(utils.tags.list, undefined, {
@@ -481,7 +501,6 @@ export function createNewEntryEvent(
     entryId: "new-entry-1",
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
-    feedType: "web",
     ...overrides,
   };
 }
@@ -545,14 +564,12 @@ export function createSubscriptionCreatedEvent(
     updatedAt: defaultTimestamp,
     subscription: {
       id: "sub-new",
-      feedId: "sub-new",
       customTitle: null,
       subscribedAt: defaultTimestamp,
       unreadCount: 7,
       tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
     },
     feed: {
-      id: "sub-new",
       type: "web",
       url: "https://example.com/new-feed.xml",
       title: "New Feed",

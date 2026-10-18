@@ -28,7 +28,7 @@ import {
   userEntries,
   visibleEntries,
 } from "@/server/db/schema";
-import { isListedSubscription } from "@/server/services/subscriptions";
+import { isUserManagedSubscription } from "@/server/services/subscriptions";
 import { SAVED_ARTICLES_TITLE, type EntryType } from "@/lib/entry-types";
 
 // ============================================================================
@@ -136,17 +136,16 @@ export const VISIBLE_MEMBERSHIPS = entryMemberships(VISIBLE_ROW);
 // ============================================================================
 
 /**
- * The `subscriptions` row a `subscriptionId` filter accepts: the user's,
- * active and listed (the saved subscription isn't a filter: Saved is
- * `type: "saved"`). The list (`verifySubscriptionOwnership`) and its badge
+ * The `subscriptions` row a `subscriptionId` filter accepts: the user's and
+ * active. The saved subscription is one too: filtering by it lists Saved,
+ * like `type: "saved"`. The list (`verifySubscriptionOwnership`) and its badge
  * (`countEntries`) both use it, so they accept the same subscriptions.
  */
 export function filterableSubscriptionWhere(userId: string, subscriptionId: string): SQL {
   return and(
     eq(subscriptions.id, subscriptionId),
     eq(subscriptions.userId, userId),
-    isNull(subscriptions.unsubscribedAt),
-    isListedSubscription()
+    isNull(subscriptions.unsubscribedAt)
   )!;
 }
 
@@ -217,7 +216,8 @@ export function buildUncategorizedSubscriptionIdsSubquery(db: typeof dbType, use
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        isListedSubscription(),
+        // Saved is never uncategorized, though it has no tags.
+        isUserManagedSubscription(),
         isNull(subscriptionTags.subscriptionId)
       )
     );

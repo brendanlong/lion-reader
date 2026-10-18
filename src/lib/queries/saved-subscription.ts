@@ -5,11 +5,8 @@
  *
  * Saved is a membership like a collection: an entry is in the Saved list when
  * its `subscriptionIds` hold the saved subscription's id, whatever its `type`.
- * Every `subscriptions.list` result names that id (the local store keeps the
- * latest, `LocalDb.saved`), but the sidebar's own lists aren't
- * loaded while their sections are collapsed. This one lists the user's
- * saved-type subscriptions: none, since the server keeps the saved
- * subscription out of lists until #1846 phase 9, but the result still names
- * it.
+ * No sidebar section lists the saved subscription (it's in no tag or
+ * Uncategorized), so this lists it alone: empty until the first save creates
+ * it. The local store keeps its id as `LocalDb.saved`.
  */
 export const SAVED_SUBSCRIPTION_LIST_INPUT = { type: "saved", limit: 1 } as const;

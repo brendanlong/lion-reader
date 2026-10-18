@@ -22,6 +22,7 @@ import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/l
 import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
+import { savedSubscriptionRow } from "../../../utils/cache-test-helpers";
 
 afterEach(() => {
   cleanup();
@@ -73,11 +74,11 @@ function makeEntry(id: string, publishedAt: string, overrides: Partial<EntryRow>
 
 type ListInput = Record<string, unknown>;
 
-/** Lands the `subscriptions.list` result that names the saved subscription. */
+/** Lands the `subscriptions.list` result that lists the saved subscription (none: null). */
 function seedSavedSubscription(queryClient: QueryClient, id: string | null): void {
   queryClient.setQueryData(
     [["subscriptions", "list"], { input: SAVED_SUBSCRIPTION_LIST_INPUT, type: "query" }],
-    { items: [], savedSubscriptionId: id }
+    { items: id === null ? [] : [savedSubscriptionRow(id)] }
   );
 }
 

@@ -598,13 +598,13 @@ export interface CountEntriesParams {
 
 /**
  * Counts the unread articles of one list (All, Starred, Saved, Uncategorized,
- * a tag or a subscription of any listed type) by reading its counter
+ * a tag or a subscription of any type) by reading its counter
  * (`services/counts.ts`), never by scanning. Spam is never counted (#1117),
  * whatever the list's showSpam.
  *
  * Returns 0 where the list shows nothing: a subscription or tag that isn't
- * the user's, is unsubscribed or deleted, or is the saved subscription (whose
- * list is Saved). Combining scopes has no counter, so it's rejected.
+ * the user's, or is unsubscribed or deleted. Combining scopes has no counter,
+ * so it's rejected.
  */
 export async function countEntries(
   db: typeof dbType,

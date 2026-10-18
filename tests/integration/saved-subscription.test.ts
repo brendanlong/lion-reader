@@ -1,9 +1,9 @@
 /**
- * The database is about to give each user a saved subscription (type `saved`,
- * no feed) to hold the Saved list's memberships (#1846 phase 4). Until the apps
- * move to memberships it stays invisible and inert: no surface lists, counts or
- * syncs it, and it can't be tagged, renamed or unsubscribed. These tests insert
- * one the way the database will and check each surface ignores it.
+ * Each user's saved subscription (type `saved`, no feed) holds the Saved
+ * list's memberships (#1846). Subscription lists show it, but it can't be
+ * tagged, renamed or unsubscribed, and it isn't in Uncategorized, the
+ * subscription cap, OPML or sync's subscription deltas. These tests insert one
+ * the way the database does and check each surface.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
@@ -21,6 +21,7 @@ import {
 } from "../../src/server/db/schema";
 import { usageLimitsConfig } from "../../src/server/config/env";
 import { createSubscription } from "../../src/server/services/subscribe";
+import { exportSubscriptionsOpml } from "../../src/server/services/subscriptions";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import {
   getGreaderUnreadCounts,
@@ -86,28 +87,44 @@ describe("the saved subscription (#1846)", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
-  it("is left out of subscriptions.list, subscriptions.get and MCP", async () => {
+  it("is listed by subscriptions.list, subscriptions.get and MCP, but never as uncategorized", async () => {
     const { userId, webId, subscriptionId } = await setup();
     const caller = createCaller(await createAuthContext(userId));
+    const saved = {
+      id: subscriptionId,
+      type: "saved",
+      url: null,
+      title: "Saved",
+      unreadCount: 1,
+      tags: [],
+    };
 
-    for (const input of [{}, { uncategorized: true }, { type: "saved" as const }]) {
-      expect((await caller.subscriptions.list(input)).items.map((s) => s.id)).toEqual(
-        input.type ? [] : [webId]
-      );
-    }
-    await expect(caller.subscriptions.get({ id: subscriptionId })).rejects.toMatchObject({
-      code: "NOT_FOUND",
-    });
+    expect((await caller.subscriptions.list()).items).toMatchObject([saved, { id: webId }]);
+    expect((await caller.subscriptions.list({ type: "saved" })).items).toMatchObject([saved]);
+    expect(
+      (await caller.subscriptions.list({ uncategorized: true })).items.map((s) => s.id)
+    ).toEqual([webId]);
+    expect(await caller.subscriptions.get({ id: subscriptionId })).toMatchObject(saved);
     const listed = (await callTool("list_subscriptions", userId, {})) as {
       subscriptions: Array<{ id: string }>;
     };
-    expect(listed.subscriptions.map((s) => s.id)).toEqual([webId]);
+    expect(listed.subscriptions.map((s) => s.id)).toEqual([subscriptionId, webId]);
+    const savedOnly = (await callTool("list_subscriptions", userId, { type: "saved" })) as {
+      subscriptions: Array<{ id: string }>;
+    };
+    expect(savedOnly.subscriptions.map((s) => s.id)).toEqual([subscriptionId]);
   });
 
-  it("isn't a subscription filter, nor part of Uncategorized", async () => {
+  it("filters to Saved as a subscription, but isn't part of Uncategorized", async () => {
     const { userId, webId, subscriptionId } = await setup();
+    const caller = createCaller(await createAuthContext(userId));
 
-    expect(await verifySubscriptionOwnership(db, subscriptionId, userId)).toBe(false);
+    expect(await verifySubscriptionOwnership(db, subscriptionId, userId)).toBe(true);
+    const bySubscription = await caller.entries.list({ subscriptionId });
+    const saved = await caller.entries.list({ type: "saved" });
+    expect(bySubscription.items.map((e) => e.id)).toEqual(saved.items.map((e) => e.id));
+    expect(saved.items).toHaveLength(1);
+    expect(await caller.entries.count({ subscriptionId })).toMatchObject({ unread: 1 });
     expect(
       (await buildUncategorizedSubscriptionIdsSubquery(db, userId)).map((r) => r.subscriptionId)
     ).toEqual([webId]);
@@ -145,11 +162,12 @@ describe("the saved subscription (#1846)", () => {
     ).toEqual([]);
   });
 
-  it("doesn't count as a feed in Uncategorized or toward the subscription cap", async () => {
+  it("doesn't count as a feed in Uncategorized or toward the subscription cap, nor export", async () => {
     const { userId } = await setup();
     const caller = createCaller(await createAuthContext(userId));
 
     expect((await caller.tags.list()).uncategorized.feedCount).toBe(1);
+    expect((await exportSubscriptionsOpml(db, userId)).feedCount).toBe(1);
 
     const cap = usageLimitsConfig.maxSubscriptionsPerUser;
     usageLimitsConfig.maxSubscriptionsPerUser = 2;

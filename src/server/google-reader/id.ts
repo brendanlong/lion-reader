@@ -29,7 +29,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { entryMemberships, entryOriginOn } from "@/server/services/entry-filters";
-import { isListedSubscription } from "@/server/services/subscriptions";
+import { isUserManagedSubscription } from "@/server/services/subscriptions";
 import type { db as dbType } from "@/server/db";
 import { subscriptions, visibleEntries } from "@/server/db/schema";
 
@@ -184,7 +184,7 @@ export function feedStreamId(streamId: bigint): string {
  * Looks up a subscription UUID from a Google Reader feed stream int64 ID — a
  * single unique-index seek on `subscriptions.greader_stream_id`, scoped to the
  * user. Returns null when nothing matches (unknown id, another user's
- * subscription, the hidden saved subscription, or an id outside the bigint
+ * subscription, the saved subscription, or an id outside the bigint
  * range — a client can send an arbitrarily large `feed/{n}`, which would
  * otherwise poison the query).
  */
@@ -202,7 +202,7 @@ export async function feedStreamIdToSubscriptionUuid(
       and(
         eq(subscriptions.userId, userId),
         eq(subscriptions.greaderStreamId, streamId),
-        isListedSubscription()
+        isUserManagedSubscription()
       )
     )
     .limit(1);

@@ -7,7 +7,7 @@
  */
 
 import type { z } from "zod";
-import { legacyFeedId, type serverSyncEventSchema, type syncTagSchema } from "@/lib/events/schemas";
+import { type serverSyncEventSchema, type syncTagSchema } from "@/lib/events/schemas";
 import type { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
 
 type ServerSyncEvent = z.infer<typeof serverSyncEventSchema>;
@@ -48,14 +48,12 @@ export function subscriptionCreatedEvent(
     subscriptionId: subscription.id,
     subscription: {
       id: subscription.id,
-      feedId: legacyFeedId(subscription.id),
       customTitle: subscription.customTitle,
       subscribedAt: subscription.subscribedAt.toISOString(),
       unreadCount: subscription.unreadCount,
       tags: tags.map(toSyncTag),
     },
     feed: {
-      id: legacyFeedId(subscription.id),
       type: subscription.type,
       url: feed?.url ?? null,
       title: feed?.title ?? subscription.customTitle,

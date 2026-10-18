@@ -8,7 +8,11 @@ import { useCollectionMembership } from "@/lib/hooks/useCollectionMembership";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { upsertServerEntries } from "@/lib/local-db/entries";
-import { createSubscriptionRow, DEFAULT_ENTRIES } from "../../../utils/cache-test-helpers";
+import {
+  createSubscriptionRow,
+  DEFAULT_ENTRIES,
+  savedSubscriptionRow,
+} from "../../../utils/cache-test-helpers";
 import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
@@ -32,7 +36,7 @@ describe("useCollectionMembership.collectionIds", () => {
   it("is the stored entry's memberships other than its origin, Saved and other feeds", async () => {
     const { result, queryClient } = renderHookWithTrpc(() => useCollectionMembership("entry-1"), {
       handlers: {
-        "subscriptions.list": () => ({ items: [], savedSubscriptionId: "saved-sub" }),
+        "subscriptions.list": () => ({ items: [savedSubscriptionRow("saved-sub")] }),
       },
     });
     expect(result.current.collectionIds).toBeUndefined();

@@ -93,14 +93,14 @@ export function isWebSubscription(): SQL {
 }
 
 /**
- * Matches the subscriptions users and clients can see and manage: every type
- * but `saved`. The database gives each user one saved subscription to hold the
- * Saved list's memberships (#1846). It stays hidden, can't be tagged and can't
- * be unsubscribed, so installed apps never list Saved as a feed; the Saved list
- * is reached through `type: "saved"` filters instead. Pass `user_feeds.type`
- * when querying the view.
+ * Matches the subscriptions users manage themselves: every type but `saved`.
+ * Each user's one saved subscription holds the Saved list's memberships
+ * (#1846); a first save creates it. Subscription lists show it, but it can't
+ * be tagged, renamed or unsubscribed (those treat it as not found), and it
+ * isn't in Uncategorized, the subscription cap or sync's subscription deltas.
+ * Pass `user_feeds.type` when querying the view.
  */
-export function isListedSubscription(
+export function isUserManagedSubscription(
   type: typeof subscriptions.type | typeof userFeeds.type = subscriptions.type
 ): SQL {
   return ne(type, "saved");
@@ -108,8 +108,7 @@ export function isListedSubscription(
 
 /**
  * Builds the base query for fetching subscriptions using the user_feeds view,
- * limited to `where` and to listed subscriptions (`isListedSubscription`).
- * Includes unread counts and tags.
+ * limited to `where`. Includes unread counts and tags.
  *
  * The unread count is the trigger-maintained `subscriptions.unread_count`
  * counter (migration 0092, exposed through the view in migration 0093) — a
@@ -152,7 +151,7 @@ export function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undef
     .$dynamic()
     .leftJoin(subscriptionTags, eq(subscriptionTags.subscriptionId, userFeeds.id))
     .leftJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .where(and(where, isListedSubscription(userFeeds.type)))
+    .where(where)
     .groupBy(
       userFeeds.id,
       userFeeds.subscribedAt,
@@ -206,7 +205,7 @@ export async function getSavedSubscriptionId(db: DbOrTx, userId: string): Promis
 }
 
 /**
- * Counts the user's active subscriptions (collections included, the hidden
+ * Counts the user's active subscriptions (collections included, the
  * saved one not) for the cap check, first taking a transaction-scoped lock that serializes concurrent
  * subscription creation for the user, so two callers can't both pass the
  * check and both insert past the limit (issue #952).
@@ -220,7 +219,7 @@ export async function lockAndCountActiveSubscriptions(tx: DbOrTx, userId: string
       and(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        isListedSubscription()
+        isUserManagedSubscription()
       )
     );
   return activeCount;
@@ -317,8 +316,9 @@ export async function listSubscriptions(
     conditions.push(eq(userFeeds.type, type));
   }
 
-  // Uncategorized filter (subscriptions with no tags)
+  // Uncategorized filter (subscriptions with no tags; never Saved)
   if (uncategorized) {
+    conditions.push(isUserManagedSubscription(userFeeds.type));
     conditions.push(sql`NOT EXISTS (
       SELECT 1 FROM ${subscriptionTags}
       WHERE ${subscriptionTags.subscriptionId} = ${userFeeds.id}

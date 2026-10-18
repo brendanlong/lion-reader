@@ -10,7 +10,7 @@ import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema
 import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { isListedSubscription } from "@/server/services/subscriptions";
+import { isUserManagedSubscription } from "@/server/services/subscriptions";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { toSyncTag } from "@/server/services/subscription-sync-events";
 import {
@@ -91,7 +91,7 @@ export async function listTags(db: typeof dbType, userId: string): Promise<ListT
         and(
           eq(subscriptions.userId, userId),
           isNull(subscriptions.unsubscribedAt),
-          isListedSubscription(),
+          isUserManagedSubscription(),
           sql`NOT EXISTS (
             SELECT 1 FROM ${subscriptionTags}
             WHERE ${subscriptionTags.subscriptionId} = ${subscriptions.id}

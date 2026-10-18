@@ -120,8 +120,8 @@ data class EntryState(
 const val COLLECTION_TYPE = "collection"
 
 /**
- * [Subscription.type] of the user's Saved subscription, which the server doesn't list (yet): the
- * app learns its id from [SubscriptionPage.savedSubscriptionId].
+ * [Subscription.type] of the user's Saved subscription, which the server lists once the first save
+ * creates it: the app learns its id from that row.
  */
 const val SAVED_TYPE = "saved"
 
@@ -142,10 +142,7 @@ data class Subscription(
 data class SubscriptionPage(
     val items: List<Subscription>,
     val nextCursor: String? = null,
-    /**
-     * The user's Saved subscription, which [items] doesn't list; null until the first save creates
-     * it, and from a server that predates it.
-     */
+    /** The user's Saved subscription, from a server that named it here instead of listing it. */
     val savedSubscriptionId: String? = null,
 )
 
