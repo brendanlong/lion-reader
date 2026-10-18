@@ -15,7 +15,7 @@ import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcu
 import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { createDemoStore } from "@/app/(public)/demo/store";
+import { createDemoStore } from "@/lib/demo/store";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({
