@@ -5,7 +5,7 @@ import { withSentryConfig } from "@sentry/nextjs/config";
 // PWA configuration - wraps the Next.js config to add the service worker.
 //
 // Precaching is deliberately DISABLED (see `exclude` / `publicExcludes` below).
-// The service worker earns its keep only for the Share Target API (worker/index.ts
+// The service worker earns its keep only for the Share Target API (service-worker/index.ts
 // handles POSTs to /api/share) and PWA installability — NOT for offline, which
 // doesn't work anyway: navigations aren't intercepted and no HTML/data is cached,
 // so a precached JS/asset shell is unreachable offline. Precaching every
@@ -25,7 +25,7 @@ const withPWAConfig = withPWA({
   // workbox-window either way, so `register: false` would save nothing).
   register: true,
   // Custom worker source for share target handling
-  customWorkerSrc: "worker",
+  customWorkerSrc: "service-worker",
   // Don't cache or intercept the start URL ("/"): navigations are deliberately
   // never SW-intercepted (streaming SSR), and with no other caching an offline
   // start page is unreachable anyway. Both
@@ -51,7 +51,7 @@ const withPWAConfig = withPWA({
     exclude: [/.*/],
     // No runtime caching (specifying runtimeCaching also suppresses next-pwa's
     // large default list). The SW exists solely for the Share Target handler
-    // (worker/index.ts) and PWA installability:
+    // (service-worker/index.ts) and PWA installability:
     // - Fonts are self-hosted by next/font at build time, so the Google Fonts
     //   routes previously listed here could never match a request.
     // - Images are deliberately not SW-cached: serving a remounted <img> via
