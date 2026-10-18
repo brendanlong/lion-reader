@@ -12,7 +12,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { CheckCircleIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { isDialogOpen } from "@/components/ui/dialog";
-import { SHORTCUTS } from "@/components/keyboard/shortcuts";
+import { formatHotkey, SHORTCUTS } from "@/components/keyboard/shortcuts";
 
 interface MarkAllReadButtonProps {
   /** Description of what will be marked as read (e.g., "this feed", "all items") */
@@ -50,7 +50,7 @@ export function MarkAllReadButton({
         type="button"
         onClick={() => setShowDialog(true)}
         className="control-outline text-muted hover:bg-surface-muted hover:text-body inline-flex items-center justify-center rounded-md p-2 transition-colors"
-        title="Mark all as read (Shift+A)"
+        title={`Mark all as read (${formatHotkey(SHORTCUTS.markAllRead.hotkey)})`}
         aria-label="Mark all as read"
       >
         <CheckCircleIcon className="h-5 w-5" />

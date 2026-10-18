@@ -17,6 +17,7 @@ import {
   type KeyboardEntryData,
   type UseKeyboardShortcutsOptions,
 } from "@/lib/hooks/useKeyboardShortcuts";
+import { SIDEBAR_FEEDS_ATTRIBUTE } from "@/components/layout/sidebar-feed-navigation";
 
 const ENTRIES: KeyboardEntryData[] = [
   { id: "a", url: "https://example.com/a", read: false, starred: false, type: "web" },
@@ -71,6 +72,31 @@ describe("useKeyboardShortcuts", () => {
     expect(options.onToggleStar).toHaveBeenCalledWith("a", false);
     press("o");
     expect(options.onOpenEntry).toHaveBeenCalledWith("a");
+  });
+
+  // The dispatcher matches the key names react-hotkeys-hook reports, which
+  // for modified and named keys differ from the plain-letter case.
+  it("dispatches Enter and Shift-modified alternatives", () => {
+    const { options } = setup();
+    const sidebar = document.createElement("nav");
+    sidebar.setAttribute(SIDEBAR_FEEDS_ATTRIBUTE, "");
+    const link = document.createElement("a");
+    link.href = "/subscription/1";
+    const onFeedClick = vi.fn((e: Event) => e.preventDefault());
+    link.addEventListener("click", onFeedClick);
+    link.scrollIntoView = vi.fn();
+    sidebar.append(link);
+    document.body.append(sidebar);
+    try {
+      press("j");
+      fireEvent.keyDown(document.body, { key: "Enter", code: "Enter" });
+      expect(options.onOpenEntry).toHaveBeenCalledWith("a");
+
+      press("N", { shiftKey: true, code: "KeyN" });
+      expect(onFeedClick).toHaveBeenCalledOnce();
+    } finally {
+      sidebar.remove();
+    }
   });
 
   it("ignores selection shortcuts with nothing selected", () => {

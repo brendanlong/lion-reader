@@ -1,7 +1,7 @@
 /**
  * Every keyboard shortcut in the app. Bindings pass `hotkey` straight to
- * `useHotkeys` and the help modal renders this table, so the modal can only
- * list keys that are actually bound.
+ * `useHotkeys` and the help modal renders this table, so both use the same key
+ * strings.
  */
 
 export const SHORTCUT_SECTIONS = ["Navigation", "Actions", "Narration", "Help"] as const;
