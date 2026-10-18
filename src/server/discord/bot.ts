@@ -23,6 +23,7 @@ import {
   Routes,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
+  type ClientEvents,
   type GatewayMessageCreateDispatchData,
   type Message,
   type User,
@@ -142,8 +143,36 @@ let client: Client | null = null;
 
 /** A logged-in bot. */
 interface DiscordBot {
-  /** Disconnects from the gateway, so no further events arrive. */
+  /** Stops handling events, waits for the running handlers, then disconnects. */
   stop: () => Promise<void>;
+}
+
+/**
+ * The bot's running event handlers, so a stopping bot can let them finish
+ * instead of having the process close the DB pool under a save.
+ */
+export interface HandlerTracker {
+  /** Runs `handler` and tracks it until it settles; does nothing once draining. */
+  run: (handler: () => Promise<void>) => void;
+  /** Stops accepting handlers and resolves once the running ones settle. */
+  drain: () => Promise<void>;
+}
+
+export function createHandlerTracker(): HandlerTracker {
+  const running = new Set<Promise<void>>();
+  let draining = false;
+  return {
+    run: (handler) => {
+      if (draining) return;
+      const work = handler();
+      running.add(work);
+      void work.finally(() => running.delete(work));
+    },
+    drain: async () => {
+      draining = true;
+      await Promise.allSettled(running);
+    },
+  };
 }
 
 /**
@@ -212,11 +241,22 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
   // Register slash commands
   await registerCommands();
 
+  // Listeners that do work (DB, replies) register through `on`, so stop() can
+  // wait for them.
+  const handlers = createHandlerTracker();
+  const eventClient = client;
+  const on = <E extends keyof ClientEvents>(
+    event: E,
+    handler: (...args: ClientEvents[E]) => Promise<void>
+  ): void => {
+    eventClient.on(event, (...args) => handlers.run(() => handler(...args)));
+  };
+
   // Handle slash commands.
   // A rejection from an async event listener is an unhandled promise rejection,
   // which kills the whole process (Sentry's global handler captures then exits)
   // — so one failed reply or DB hiccup must not take the bot down.
-  client.on("interactionCreate", async (interaction) => {
+  on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName, user } = interaction;
@@ -243,7 +283,7 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
   });
 
   // Handle reactions
-  client.on("messageReactionAdd", async (reaction, user) => {
+  on("messageReactionAdd", async (reaction, user) => {
     if (user.bot) return;
 
     // Users can't react with application emojis (they're only usable by the
@@ -272,7 +312,7 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
 
   // Handle direct messages: a URL sent (or forwarded) to the bot in a DM is
   // saved just like a save-emoji reaction, and the DM is reacted to the same way.
-  client.on("messageCreate", async (message) => {
+  on("messageCreate", async (message) => {
     if (message.author?.bot) return;
     // Only DMs — guild messages are handled via the save-emoji reaction, not by
     // treating every posted link as a save.
@@ -318,7 +358,7 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
       // a cache miss here reliably means messageCreate was (or will be) dropped.
       if (dmRecoveryClient.channels.cache.has(data.channel_id)) return;
 
-      void recoverUncachedDirectMessage(dmRecoveryClient, data);
+      handlers.run(() => recoverUncachedDirectMessage(dmRecoveryClient, data));
     }
   );
 
@@ -370,9 +410,11 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
 
   const loggedIn = client;
   return {
-    stop: () => {
+    stop: async () => {
       clearTimeout(readyWatchdog);
-      return loggedIn.destroy();
+      // Drain first: destroy() clears the REST token the handlers reply with.
+      await handlers.drain();
+      await loggedIn.destroy();
     },
   };
 }

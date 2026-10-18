@@ -23,3 +23,26 @@ describe("startDiscordBot", () => {
     await expect(startWithEnv({ DISCORD_BOT_TOKEN: "token" })).rejects.toThrow("DISCORD_CLIENT_ID");
   });
 });
+
+// stop() drains before the process closes the DB pool, so a save in progress
+// must finish first.
+describe("createHandlerTracker", () => {
+  it("drains only once running handlers settle, and runs none after", async () => {
+    const { createHandlerTracker } = await import("@/server/discord/bot");
+    const handlers = createHandlerTracker();
+    let finish = (): void => {};
+    handlers.run(() => new Promise<void>((resolve) => (finish = resolve)));
+
+    let drained = false;
+    const drain = handlers.drain().then(() => (drained = true));
+    const late = vi.fn(async () => {});
+    handlers.run(late);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(drained).toBe(false);
+
+    finish();
+    await drain;
+    expect(drained).toBe(true);
+    expect(late).not.toHaveBeenCalled();
+  });
+});
