@@ -157,7 +157,7 @@ function BrokenFeedRow({ feed, onUnsubscribe, onFileIssue }: BrokenFeedRowProps)
       toast.success("Feed fetch scheduled");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to retry fetch");
+      toast.error("Failed to retry fetch", { description: error.message });
     },
   });
 

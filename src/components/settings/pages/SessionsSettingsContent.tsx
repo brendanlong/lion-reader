@@ -7,11 +7,9 @@
 
 "use client";
 
-import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
-import { Alert } from "@/components/ui/alert";
 import { SettingsListContainer } from "@/components/settings/SettingsListContainer";
 import { MobileIcon, DesktopIcon } from "@/components/ui/icons";
 import { formatRelativeTime } from "@/lib/format";
@@ -57,28 +55,20 @@ function parseUserAgent(userAgent: string | null): { browser: string; platform: 
 }
 
 export default function SessionsSettingsContent() {
-  const [revokeError, setRevokeError] = useState<string | null>(null);
-  const [revokeSuccess, setRevokeSuccess] = useState<string | null>(null);
-
   const sessionsQuery = trpc.users["me.sessions"].useQuery();
   const utils = trpc.useUtils();
 
   const revokeSessionMutation = trpc.users["me.revokeSession"].useMutation({
     onSuccess: () => {
-      setRevokeSuccess("Session revoked successfully");
-      setRevokeError(null);
+      toast.success("Session revoked successfully");
       utils.users["me.sessions"].invalidate();
     },
     onError: (error) => {
-      setRevokeError(error.message || "Failed to revoke session");
-      setRevokeSuccess(null);
-      toast.error("Failed to revoke session");
+      toast.error("Failed to revoke session", { description: error.message });
     },
   });
 
   const handleRevokeSession = (sessionId: string) => {
-    setRevokeError(null);
-    setRevokeSuccess(null);
     revokeSessionMutation.mutate({ sessionId });
   };
 
@@ -95,18 +85,6 @@ export default function SessionsSettingsContent() {
         These are the devices that are currently logged into your account. You can revoke any
         session that you do not recognize.
       </p>
-
-      {revokeSuccess && (
-        <Alert variant="success" className="mb-4">
-          {revokeSuccess}
-        </Alert>
-      )}
-
-      {revokeError && (
-        <Alert variant="error" className="mb-4">
-          {revokeError}
-        </Alert>
-      )}
 
       <SettingsListContainer
         items={sessionsQuery.data?.sessions}

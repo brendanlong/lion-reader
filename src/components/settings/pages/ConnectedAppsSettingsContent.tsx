@@ -34,7 +34,7 @@ export default function ConnectedAppsSettingsContent() {
       toast.success("Access revoked");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to revoke access");
+      toast.error("Failed to revoke access", { description: error.message });
     },
   });
 

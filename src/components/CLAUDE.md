@@ -4,7 +4,8 @@
 
 - **Check `src/components/ui/` before creating a primitive** (list it; don't assume one is missing) and `@/components/ui/icons` before adding an inline SVG. Import from the source file (`@/components/ui/button`). Extract a component once a pattern appears three times.
 - Keep an icon local only when it needs `suppressHydrationWarning` (it depends on localStorage state) or is a one-off illustration.
-- Settings pages use `SettingsSection` (or `SettingsSectionHeading` + `Card`), not a hand-rolled section/card shell.
+- Settings pages use `SettingsSection` (or `SettingsSectionHeading` + `Card`), not a hand-rolled section/card shell, and `EditablePreferenceField` for a stored value edited with Change/Save/Cancel.
+- **Messages**: an action's outcome is a toast, a failure as `toast.error("Failed to …", { description: error.message })`; a problem with what the user entered shows at the input (`Input`'s `error`); an inline `Alert` is only for what must stay on screen (a new token, import results, a load error, an OAuth redirect's result). Never both for one event.
 - `StatusCard`, `Alert` and the `Input` error state are already themed; reuse them rather than building a colored box.
 - Shared UI components meet the 44px touch-target minimum; keep it that way.
 

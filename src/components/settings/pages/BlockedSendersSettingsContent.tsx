@@ -106,7 +106,7 @@ function BlockedSenderRow({ sender }: BlockedSenderRowProps) {
       toast.success("Sender unblocked");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to unblock sender");
+      toast.error("Failed to unblock sender", { description: error.message });
     },
   });
 

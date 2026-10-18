@@ -34,7 +34,7 @@ export function WallabagApiSettings() {
       toast.success("Signed out all Wallabag apps");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to sign out Wallabag apps");
+      toast.error("Failed to sign out Wallabag apps", { description: error.message });
     },
   });
 

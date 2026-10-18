@@ -164,30 +164,26 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
     currentPassword?: string;
     newPassword?: string;
     confirmPassword?: string;
-    form?: string;
   }>({});
-  const [successMessage, setSuccessMessage] = useState("");
 
   const isSetMode = mode === "set";
 
   const setPasswordMutation = trpc.users["me.setPassword"].useMutation({
     onSuccess: () => {
-      setSuccessMessage("Password set successfully");
+      toast.success("Password set successfully");
       setNewPassword("");
       setConfirmPassword("");
       setErrors({});
       onSuccess();
     },
     onError: (error) => {
-      setErrors({ form: error.message || "Failed to set password" });
-      setSuccessMessage("");
-      toast.error("Failed to set password");
+      toast.error("Failed to set password", { description: error.message });
     },
   });
 
   const changePasswordMutation = trpc.users["me.changePassword"].useMutation({
     onSuccess: () => {
-      setSuccessMessage("Password changed successfully");
+      toast.success("Password changed successfully");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -197,10 +193,8 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
       if (error.message.includes("Current password is incorrect")) {
         setErrors({ currentPassword: "Current password is incorrect" });
       } else {
-        setErrors({ form: error.message || "Failed to change password" });
+        toast.error("Failed to change password", { description: error.message });
       }
-      setSuccessMessage("");
-      toast.error("Failed to change password");
     },
   });
 
@@ -231,7 +225,6 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSuccessMessage("");
 
     if (!validateForm()) {
       return;
@@ -253,18 +246,6 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
           : undefined
       }
     >
-      {successMessage && (
-        <Alert variant="success" className="mb-4">
-          {successMessage}
-        </Alert>
-      )}
-
-      {errors.form && (
-        <Alert variant="error" className="mb-4">
-          {errors.form}
-        </Alert>
-      )}
-
       <form onSubmit={handleSubmit} className="space-y-4">
         {!isSetMode && (
           <Input

@@ -98,7 +98,7 @@ describe("LinkedAccounts", () => {
     expect(callsFor("auth.googleAuthUrl")).toHaveLength(0);
   });
 
-  it("shows the error and stays put when the link flow can't be started", async () => {
+  it("reports the error and stays put when the link flow can't be started", async () => {
     renderWithTrpc(<LinkedAccounts />, {
       handlers: linkableHandlers({
         "auth.linkAuthUrl": () => {
@@ -109,7 +109,11 @@ describe("LinkedAccounts", () => {
 
     fireEvent.click(await screen.findByTitle("Link Discord"));
 
-    expect(await screen.findByText(/Discord OAuth is not configured/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Failed to start Discord linking", {
+        description: "Discord OAuth is not configured",
+      })
+    );
     expect(window.location.href).toBe("");
   });
 
@@ -138,10 +142,12 @@ describe("LinkedAccounts", () => {
 
     await clickUnlink();
 
-    // The user is told what actually happened and where to finish the job...
-    expect(await screen.findByText(REVOKE_FAILED_MESSAGE)).toBeInTheDocument();
-    expect(toast.error).toHaveBeenCalledWith(REVOKE_FAILED_MESSAGE);
-    expect(toast.error).not.toHaveBeenCalledWith("Failed to unlink account");
+    // The user is told what actually happened and where to finish the job,
+    // until they dismiss it...
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(REVOKE_FAILED_MESSAGE, { duration: Infinity })
+    );
+    expect(toast.error).toHaveBeenCalledTimes(1);
     // ...and the list is refetched, because the unlink itself landed.
     await waitFor(() => expect(callsFor("users.me.linkedAccounts").length).toBeGreaterThan(1));
   });
@@ -157,7 +163,11 @@ describe("LinkedAccounts", () => {
 
     await clickUnlink();
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to unlink account"));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Failed to unlink account", {
+        description: "Something else went wrong",
+      })
+    );
   });
 
   it("refuses to unlink the only auth method without calling the server", async () => {

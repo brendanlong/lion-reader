@@ -55,7 +55,7 @@ export function IntegrationsSettings() {
       toast.success("MCP token created");
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to create token");
+      toast.error("Failed to create token", { description: error.message });
     },
   });
 

@@ -15,7 +15,6 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { useFormMessages } from "@/lib/hooks/useFormMessages";
 import { Button } from "@/components/ui/button";
 import { NoteBox } from "@/components/ui/note-box";
 import { type OAuthProvider, providerNames, ProviderIcon } from "@/components/auth/oauth-helpers";
@@ -35,7 +34,6 @@ interface LinkedAccount {
 // ============================================================================
 
 export function LinkedAccounts() {
-  const { error, success, showError, showSuccess, clearMessages } = useFormMessages();
   const [linkingProvider, setLinkingProvider] = useState<OAuthProvider | null>(null);
   const [unlinkingProvider, setUnlinkingProvider] = useState<OAuthProvider | null>(null);
 
@@ -60,18 +58,21 @@ export function LinkedAccounts() {
   const unlinkMutation = trpc.auth.unlinkProvider.useMutation({
     onSuccess: (_, variables) => {
       const name = providerNames[variables.provider as OAuthProvider];
-      showSuccess(`${name} account unlinked successfully`);
+      toast.success(`${name} account unlinked successfully`);
       setUnlinkingProvider(null);
       utils.users["me.linkedAccounts"].invalidate();
     },
     onError: (err) => {
       // `SESSION_REVOKE_FAILED` means the unlink landed and only signing the
       // user's other devices out failed, so don't claim it failed — the error
-      // message says what to do next. Either way the list may have changed.
-      const unlinked = err.data?.appErrorCode === "SESSION_REVOKE_FAILED";
-      showError(err.message || "Failed to unlink account");
+      // message says what to do next, so it stays until dismissed. Either way
+      // the list may have changed.
+      if (err.data?.appErrorCode === "SESSION_REVOKE_FAILED") {
+        toast.error(err.message, { duration: Infinity });
+      } else {
+        toast.error("Failed to unlink account", { description: err.message });
+      }
       setUnlinkingProvider(null);
-      toast.error(unlinked ? err.message : "Failed to unlink account");
       utils.users["me.linkedAccounts"].invalidate();
     },
   });
@@ -89,37 +90,30 @@ export function LinkedAccounts() {
   const handleLinkProvider = useCallback(
     async (provider: OAuthProvider) => {
       setLinkingProvider(provider);
-      clearMessages();
 
       try {
         const { url } = await linkAuthUrlMutation.mutateAsync({ provider });
         // Leaving the app for the provider: a full navigation, not a soft one.
         window.location.href = url;
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : `Failed to start ${provider} linking`;
-        showError(errorMessage);
+        toast.error(`Failed to start ${providerNames[provider]} linking`, {
+          description: err instanceof Error ? err.message : undefined,
+        });
         setLinkingProvider(null);
       }
     },
-    [linkAuthUrlMutation, clearMessages, showError]
+    [linkAuthUrlMutation]
   );
 
   const handleUnlinkProvider = useCallback(
     (provider: OAuthProvider) => {
-      if (!canUnlink) {
-        showError(
-          "Cannot unlink this account because it is your only authentication method. Add a password first."
-        );
-        return;
-      }
+      // The button is disabled then too; its title says why.
+      if (!canUnlink) return;
 
       setUnlinkingProvider(provider);
-      clearMessages();
-
       unlinkMutation.mutate({ provider });
     },
-    [canUnlink, unlinkMutation, clearMessages, showError]
+    [canUnlink, unlinkMutation]
   );
 
   if (queryError) {
@@ -135,8 +129,6 @@ export function LinkedAccounts() {
       title="Linked Accounts"
       description="Connect your account with third-party providers for easy sign-in."
       isLoading={isLoading}
-      error={error}
-      success={success}
     >
       <div className="space-y-3">
         {/* Show linked accounts */}

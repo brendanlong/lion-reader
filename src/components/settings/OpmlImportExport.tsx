@@ -153,9 +153,8 @@ function ImportSection() {
       }
     },
     onError: (err) => {
-      setError(err.message || "Failed to import feeds");
       setBaseState({ type: "idle" });
-      toast.error("Failed to import feeds");
+      toast.error("Failed to import feeds", { description: err.message });
     },
   });
 
@@ -501,14 +500,10 @@ function ImportResults({ imported, skipped, failed, results, onReset }: ImportRe
 
 function ExportSection() {
   const [isExporting, setIsExporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   const utils = trpc.useUtils();
 
   const handleExport = useCallback(async () => {
-    setError(null);
-    setSuccess(false);
     setIsExporting(true);
 
     try {
@@ -525,10 +520,11 @@ function ExportSection() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      toast.success("Subscriptions exported");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to export subscriptions");
+      toast.error("Failed to export subscriptions", {
+        description: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setIsExporting(false);
     }
@@ -540,18 +536,6 @@ function ExportSection() {
       <p className="ui-text-sm text-muted mb-4">
         Download your subscriptions as an OPML file to import into another RSS reader.
       </p>
-
-      {error && (
-        <Alert variant="error" className="mb-4">
-          {error}
-        </Alert>
-      )}
-
-      {success && (
-        <Alert variant="success" className="mb-4">
-          Subscriptions exported successfully!
-        </Alert>
-      )}
 
       <Button onClick={handleExport} loading={isExporting} variant="secondary">
         <DownloadIcon className="mr-2 h-4 w-4" />

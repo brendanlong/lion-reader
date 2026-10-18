@@ -17,7 +17,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc/client";
 import { applyTagChange, applyTagDeleted } from "@/lib/cache/operations";
 import { useLocalTags } from "@/lib/hooks/useLocalTags";
-import { useFormMessages } from "@/lib/hooks/useFormMessages";
 import { type Tag, TAG_COLORS, DEFAULT_TAG_COLOR } from "@/lib/types/tag";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,8 +42,6 @@ interface EditingTag {
 // ============================================================================
 
 function TagManagementContent() {
-  const { error, success, showError, showSuccess } = useFormMessages();
-
   // Use useSuspenseQuery to match the server-prefetched tags.list query,
   // preventing hydration mismatches between loading/loaded states
   trpc.tags.list.useSuspenseQuery();
@@ -54,11 +51,9 @@ function TagManagementContent() {
     <SettingsSection
       title="Tags"
       description="Create and manage tags to organize your feed subscriptions."
-      error={error}
-      success={success}
     >
       {/* Create new tag form */}
-      <CreateTagForm onSuccess={showSuccess} onError={showError} />
+      <CreateTagForm />
 
       {/* Tag list */}
       <CardSection>
@@ -67,7 +62,7 @@ function TagManagementContent() {
         ) : (
           <div className="space-y-3">
             {tags.map((tag) => (
-              <TagItem key={tag.id} tag={tag} onSuccess={showSuccess} onError={showError} />
+              <TagItem key={tag.id} tag={tag} />
             ))}
           </div>
         )}
@@ -106,13 +101,9 @@ export function TagManagement() {
 // CreateTagForm Component
 // ============================================================================
 
-interface CreateTagFormProps {
-  onSuccess: (message: string) => void;
-  onError: (message: string) => void;
-}
-
-function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
+function CreateTagForm() {
   const [name, setName] = useState("");
+  const [nameError, setNameError] = useState<string | undefined>();
   const [color, setColor] = useState<string | null>(DEFAULT_TAG_COLOR);
   const [showColorPicker, setShowColorPicker] = useState(false);
 
@@ -120,15 +111,16 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
 
   const createMutation = trpc.tags.create.useMutation({
     onSuccess: ({ tag, created }) => {
-      onSuccess(created ? "Tag created successfully" : `A tag named "${tag.name}" already exists`);
+      toast.success(
+        created ? "Tag created successfully" : `A tag named "${tag.name}" already exists`
+      );
       setName("");
       setColor(DEFAULT_TAG_COLOR);
       setShowColorPicker(false);
       applyTagChange(queryClient, tag);
     },
     onError: (err) => {
-      onError(err.message || "Failed to create tag");
-      toast.error("Failed to create tag");
+      toast.error("Failed to create tag", { description: err.message });
     },
   });
 
@@ -136,7 +128,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
     e.preventDefault();
 
     if (!name.trim()) {
-      onError("Tag name is required");
+      setNameError("Tag name is required");
       return;
     }
 
@@ -151,7 +143,11 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
           label="New tag"
           placeholder="Enter tag name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value);
+            setNameError(undefined);
+          }}
+          error={nameError}
           disabled={createMutation.isPending}
         />
       </div>
@@ -194,13 +190,7 @@ function CreateTagForm({ onSuccess, onError }: CreateTagFormProps) {
 // TagItem Component
 // ============================================================================
 
-interface TagItemProps {
-  tag: Tag;
-  onSuccess: (message: string) => void;
-  onError: (message: string) => void;
-}
-
-function TagItem({ tag, onSuccess, onError }: TagItemProps) {
+function TagItem({ tag }: { tag: Tag }) {
   // `editingValues !== null` *is* the editing state; no separate flag to keep in sync.
   const [editingValues, setEditingValues] = useState<EditingTag | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -211,26 +201,24 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
 
   const updateMutation = trpc.tags.update.useMutation({
     onSuccess: (data) => {
-      onSuccess("Tag updated successfully");
+      toast.success("Tag updated successfully");
       setEditingValues(null);
       setShowColorPicker(false);
       applyTagChange(queryClient, data.tag);
     },
     onError: (err) => {
-      onError(err.message || "Failed to update tag");
-      toast.error("Failed to update tag");
+      toast.error("Failed to update tag", { description: err.message });
     },
   });
 
   const deleteMutation = trpc.tags.delete.useMutation({
     onSuccess: (_data, variables) => {
-      onSuccess("Tag deleted successfully");
+      toast.success("Tag deleted successfully");
       setShowDeleteConfirm(false);
       applyTagDeleted(utils, queryClient, variables.id);
     },
     onError: (err) => {
-      onError(err.message || "Failed to delete tag");
-      toast.error("Failed to delete tag");
+      toast.error("Failed to delete tag", { description: err.message });
     },
   });
 
@@ -248,12 +236,7 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
   };
 
   const saveEditing = () => {
-    if (!editingValues) return;
-
-    if (!editingValues.name.trim()) {
-      onError("Tag name is required");
-      return;
-    }
+    if (!editingValues?.name.trim()) return;
 
     updateMutation.mutate({
       id: editingValues.id,
@@ -343,7 +326,12 @@ function TagItem({ tag, onSuccess, onError }: TagItemProps) {
           >
             Cancel
           </Button>
-          <Button size="sm" onClick={saveEditing} loading={updateMutation.isPending}>
+          <Button
+            size="sm"
+            onClick={saveEditing}
+            loading={updateMutation.isPending}
+            disabled={!editingValues.name.trim()}
+          >
             Save
           </Button>
         </div>
