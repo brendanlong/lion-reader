@@ -45,7 +45,7 @@ async function createUser(): Promise<string> {
   return userId;
 }
 
-async function linkGoogleAccount(userId: string, scopes: string[]): Promise<void> {
+async function linkGoogleAccount(userId: string, scopes: readonly string[]): Promise<void> {
   await db.insert(oauthAccounts).values({
     id: generateUuidv7(),
     userId,
@@ -54,7 +54,7 @@ async function linkGoogleAccount(userId: string, scopes: string[]): Promise<void
     accessToken: "test-access-token",
     refreshToken: "test-refresh-token",
     expiresAt: new Date(Date.now() + 3600_000),
-    scopes,
+    scopes: [...scopes],
   });
 }
 

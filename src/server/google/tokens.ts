@@ -22,7 +22,7 @@ type GoogleOAuthAccount = typeof oauthAccounts.$inferSelect;
  * docs (Docs API) and drive.readonly for uploaded .docx files (Drive API).
  * Every consent request and grant check uses this one list.
  */
-export const GOOGLE_DOCS_SCOPES = [GOOGLE_DOCS_SCOPE, GOOGLE_DRIVE_SCOPE];
+export const GOOGLE_DOCS_SCOPES: readonly string[] = [GOOGLE_DOCS_SCOPE, GOOGLE_DRIVE_SCOPE];
 
 type GoogleDocsGrant =
   | { status: "unlinked" }
