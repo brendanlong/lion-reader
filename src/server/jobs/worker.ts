@@ -90,13 +90,18 @@ const LEASE_HARD_CAP_MULTIPLIER = 6;
  */
 const LEASE_HARD_CAP_MIN_MS = 3 * JOB_LEASE_HEARTBEAT_MS;
 
+export const DEFAULT_POLL_INTERVAL_MS = 5000;
+
+/** Production sets `WORKER_CONCURRENCY` in fly.toml; this is the local default. */
+export const DEFAULT_CONCURRENCY = 3;
+
 /**
  * Worker configuration options.
  */
 export interface WorkerConfig {
-  /** Polling interval in milliseconds (default: 5000) */
+  /** Polling interval in milliseconds (default: {@link DEFAULT_POLL_INTERVAL_MS}) */
   pollIntervalMs?: number;
-  /** Maximum concurrent jobs to process (default: 5) */
+  /** Maximum concurrent jobs to process (default: {@link DEFAULT_CONCURRENCY}) */
   concurrency?: number;
   /** Maximum time a single job can run before being timed out (default: 5 minutes) */
   jobTimeoutMs?: number;
@@ -412,8 +417,8 @@ const defaultLogger: WorkerLogger = {
  */
 function createWorker(config: WorkerConfig = {}): Worker {
   const {
-    pollIntervalMs = 5000,
-    concurrency = 5,
+    pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+    concurrency = DEFAULT_CONCURRENCY,
     jobTimeoutMs = DEFAULT_JOB_TIMEOUT_MS,
     logger = defaultLogger,
     onLoopExit,

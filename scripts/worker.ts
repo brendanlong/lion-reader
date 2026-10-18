@@ -10,12 +10,18 @@
  *   nice -n 10 pnpm worker
  *
  * Environment variables:
- *   WORKER_POLL_INTERVAL_MS - Polling interval in ms (default: 5000)
- *   WORKER_CONCURRENCY - Max concurrent jobs (default: 3)
+ *   WORKER_POLL_INTERVAL_MS - Polling interval in ms (default: DEFAULT_POLL_INTERVAL_MS)
+ *   WORKER_CONCURRENCY - Max concurrent jobs (default: DEFAULT_CONCURRENCY)
  */
 
 import { isMainThread, threadId } from "node:worker_threads";
-import { startWorkerWithSignalHandling } from "../src/server/jobs/worker";
+import {
+  DEFAULT_CONCURRENCY,
+  DEFAULT_POLL_INTERVAL_MS,
+  startWorkerWithSignalHandling,
+  type Worker,
+} from "../src/server/jobs/worker";
+import type { WorkerStats } from "../src/server/jobs/worker-core";
 import { startMetricsServer, setHealthChecker } from "../src/server/metrics/server";
 import { startHeartbeat } from "../src/server/notifications/healthchecks";
 import { initSentry } from "../src/server/sentry";
@@ -26,8 +32,11 @@ import { logger } from "../src/lib/logger";
 // calls are silent no-ops in this process.
 initSentry();
 
-const pollIntervalMs = parseInt(process.env.WORKER_POLL_INTERVAL_MS ?? "5000", 10);
-const concurrency = parseInt(process.env.WORKER_CONCURRENCY ?? "3", 10);
+const pollIntervalMs = parseInt(
+  process.env.WORKER_POLL_INTERVAL_MS ?? String(DEFAULT_POLL_INTERVAL_MS),
+  10
+);
+const concurrency = parseInt(process.env.WORKER_CONCURRENCY ?? String(DEFAULT_CONCURRENCY), 10);
 
 /**
  * How long the worker loop can be inactive before the health check reports unhealthy.
@@ -41,6 +50,20 @@ const WORKER_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 /** Optional healthchecks.io check for the worker process's loop liveness. */
 const workerHeartbeatUrl = process.env.WORKER_HEARTBEAT_URL;
+
+/**
+ * The worker loop's liveness, shared by the Fly health check and the
+ * healthchecks.io heartbeat so both judge staleness the same way.
+ */
+function checkLoopLiveness(worker: Worker): {
+  stale: boolean;
+  staleDurationMs: number;
+  stats: WorkerStats;
+} {
+  const stats = worker.getStats();
+  const staleDurationMs = Date.now() - stats.lastActivityAt.getTime();
+  return { stale: staleDurationMs > LIVENESS_THRESHOLD_MS, staleDurationMs, stats };
+}
 
 logger.info("Starting standalone worker", {
   pollIntervalMs,
@@ -71,10 +94,9 @@ startWorkerWithSignalHandling({
     // Register liveness health checker now that the worker is running.
     // Fly.io will restart the machine if /health returns 503.
     setHealthChecker(() => {
-      const stats = worker.getStats();
-      const staleDurationMs = Date.now() - stats.lastActivityAt.getTime();
+      const { stale, staleDurationMs, stats } = checkLoopLiveness(worker);
 
-      if (staleDurationMs > LIVENESS_THRESHOLD_MS) {
+      if (stale) {
         return {
           status: "unhealthy",
           details: {
@@ -101,12 +123,11 @@ startWorkerWithSignalHandling({
     // "worker process is alive and its loop is running" is a distinct signal
     // from "feeds are fetching successfully": a stuck/dead worker shows here even
     // when there's no feed-fetch regression. Reports /fail if the loop wedges
-    // (same staleness threshold as the Fly health check) instead of going silent.
+    // instead of going silent.
     if (workerHeartbeatUrl) {
       startHeartbeat(workerHeartbeatUrl, WORKER_HEARTBEAT_INTERVAL_MS, () => {
-        const stats = worker.getStats();
-        const staleDurationMs = Date.now() - stats.lastActivityAt.getTime();
-        if (staleDurationMs > LIVENESS_THRESHOLD_MS) {
+        const { stale, staleDurationMs, stats } = checkLoopLiveness(worker);
+        if (stale) {
           return {
             signal: "fail",
             body: `Worker loop stale for ${Math.round(staleDurationMs / 1000)}s (threshold ${LIVENESS_THRESHOLD_MS / 1000}s); activeJobs=${stats.activeJobs}`,
