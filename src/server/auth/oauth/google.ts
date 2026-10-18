@@ -130,7 +130,7 @@ interface PkceData {
 
 export interface CreateGoogleAuthUrlOptions {
   /** Extra scopes to request on top of the sign-in ones (incremental auth) */
-  additionalScopes?: string[];
+  additionalScopes?: readonly string[];
   /** What the callback should do with the result (defaults to "login") */
   mode?: OAuthMode;
   /** Link this Google account to the given account instead of signing in */
