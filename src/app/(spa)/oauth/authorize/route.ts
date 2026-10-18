@@ -9,12 +9,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateSession } from "@/server/auth/session";
-import {
-  resolveClient,
-  hasConsent,
-  createAuthorizationCode,
-  recordConsent,
-} from "@/server/oauth/service";
+import { resolveClient } from "@/server/oauth/clients";
+import { hasConsent, recordConsent } from "@/server/oauth/grants";
+import { createAuthorizationCode } from "@/server/oauth/service";
 import {
   isValidCodeChallenge,
   validateRedirectUri,

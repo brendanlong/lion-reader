@@ -9,7 +9,7 @@
  * metadata" connector option is this mechanism, with
  * `https://claude.ai/oauth/mcp-oauth-client-metadata` as the client_id.
  *
- * The network fetch lives in service.ts (`fetchClientMetadata`, SSRF-protected);
+ * The network fetch lives in clients.ts (`fetchClientMetadata`, SSRF-protected);
  * everything here is unit-testable without I/O (tests/unit/oauth-cimd.test.ts).
  */
 

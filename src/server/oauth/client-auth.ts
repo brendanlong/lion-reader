@@ -10,7 +10,7 @@
 
 import crypto from "node:crypto";
 import { hashToken, OAUTH_ERRORS, createOAuthError, type OAuthErrorResponse } from "./utils";
-import type { ResolvedClient } from "./service";
+import type { ResolvedClient } from "./clients";
 
 export interface ClientCredentials {
   clientId?: string;

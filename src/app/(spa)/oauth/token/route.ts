@@ -11,13 +11,12 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
+import { resolveClient, type ResolvedClient } from "@/server/oauth/clients";
+import { hasConsent } from "@/server/oauth/grants";
 import {
-  resolveClient,
   validateAndConsumeAuthCode,
   createTokens,
-  hasConsent,
   rotateRefreshToken,
-  type ResolvedClient,
 } from "@/server/oauth/service";
 import {
   extractClientCredentials,

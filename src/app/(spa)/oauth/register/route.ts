@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { registerClient, type ClientRegistrationRequest } from "@/server/oauth/service";
+import { registerClient, type ClientRegistrationRequest } from "@/server/oauth/registration";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
