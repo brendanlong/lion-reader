@@ -12798,6 +12798,9 @@
                                       ],
                                       "additionalProperties": false
                                     }
+                                  },
+                                  "fetchFullContent": {
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": [

@@ -374,7 +374,7 @@ export async function createSubscription(
   // 8. Publish SSE event for new/reactivated subscriptions
   publishUserEvent({
     ...subscriptionCreatedEvent(
-      { id: subscriptionId, type: "web", customTitle, subscribedAt, unreadCount },
+      { id: subscriptionId, type: "web", customTitle, subscribedAt, unreadCount, fetchFullContent },
       [],
       feedRecord
     ),

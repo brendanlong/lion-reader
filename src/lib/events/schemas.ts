@@ -173,6 +173,8 @@ const subscriptionCreatedDataSchema = z.object({
   subscribedAt: z.string(),
   unreadCount: z.number(),
   tags: z.array(syncTagSchema),
+  // Absent from a previous release's events, which means off.
+  fetchFullContent: z.boolean().optional(),
 });
 
 /**

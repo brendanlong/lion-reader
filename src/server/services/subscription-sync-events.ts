@@ -34,6 +34,7 @@ export function subscriptionCreatedEvent(
     customTitle: string | null;
     subscribedAt: Date;
     unreadCount: number;
+    fetchFullContent: boolean;
   },
   tags: SyncTag[],
   feed: {
@@ -52,6 +53,7 @@ export function subscriptionCreatedEvent(
       subscribedAt: subscription.subscribedAt.toISOString(),
       unreadCount: subscription.unreadCount,
       tags: tags.map(toSyncTag),
+      fetchFullContent: subscription.fetchFullContent,
     },
     feed: {
       type: subscription.type,

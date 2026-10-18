@@ -194,6 +194,7 @@ describe("entry feedTitle is the user's subscription title", () => {
             customTitle: "Second Name",
             subscribedAt: new Date(),
             unreadCount: 1,
+            fetchFullContent: false,
           },
           [],
           { url: null, title: FEED_TITLE, description: null, siteUrl: null }
