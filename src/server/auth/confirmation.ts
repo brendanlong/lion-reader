@@ -5,8 +5,8 @@
  * of Service and Privacy Policy and — on EU-restricted instances — certified
  * they are not in the EU. The tRPC surface enforces this via
  * `confirmedMiddleware`; every other credential surface that mints its own
- * tokens (MCP, Wallabag, Google Reader) must apply the same gate so those APIs
- * can't be used to bypass confirmation.
+ * tokens (MCP, Wallabag, Google Reader), and the Discord bot, must apply the
+ * same gate so those surfaces can't be used to bypass confirmation.
  */
 
 import type { User } from "@/server/db/schema";

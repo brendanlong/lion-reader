@@ -178,14 +178,15 @@ fetches user-influenced URLs and must never be usable to reach internal services
   or model (`narrationFailureScope`, #1755) — and **a user-picked model's output is
   cached under a key bound to that user and model** (`narrationContentHash`).
 
-## 8. Companion APIs (Wallabag, Google Reader, MCP, save extensions)
+## 8. Companion APIs (Wallabag, Google Reader, MCP, save extensions, Discord bot)
 
 **Docs:** `src/server/CLAUDE.md` (Compat API Integer IDs) · **Code:**
 `src/app/api/wallabag/`, `src/app/api/greader.php/`, `src/server/wallabag/`,
-`src/server/google-reader/`, `src/server/mcp/`
+`src/server/google-reader/`, `src/server/mcp/`, `src/server/discord/`
 
 - These require `reader:full-access` (or MCP scope) plus signup confirmation, and
-  authenticate by hashed-token lookup. Each Wallabag and Google Reader handler
+  authenticate by hashed-token lookup. The Discord bot saves through the service
+  layer for a linked user, so it checks confirmation itself (`resolveDiscordUser`). Each Wallabag and Google Reader handler
   authenticates itself, so `compat-route-auth.test.ts` sends every one a request
   without credentials; a handler that is public by design is listed there.
 - **The secretless Wallabag token endpoint is pinned to the `wallabag` client_id**
