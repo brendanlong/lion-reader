@@ -3,9 +3,7 @@
  * local, synchronous matcher over it. The index is small enough that scoring
  * every entry on each keystroke is instant, so there's no server round-trip.
  *
- * When you add a settings section, add it here (and to the section components
- * in SettingsSearchResults) or search won't find it. Keywords should cover the
- * individual controls in the section and the words a user might reach for
+ * Keywords should cover the individual controls in the section and the words a user might reach for
  * instead of ours ("dark mode" for Theme).
  */
 
