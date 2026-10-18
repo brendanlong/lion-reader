@@ -319,17 +319,23 @@ export function DocumentIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
+/** A login provider's logo, which `muted` dims. */
+interface MutedIconProps extends IconProps {
+  muted?: boolean;
+}
+
+function mutedClassName(className: string, muted: boolean): string {
+  return muted ? `${className} opacity-40` : className;
+}
+
 /** Google logo icon */
-export function GoogleIcon({
-  className = "h-6 w-6",
-  muted = false,
-}: IconProps & { muted?: boolean }) {
+export function GoogleIcon({ className = "h-6 w-6", muted = false }: MutedIconProps) {
   return (
     <svg
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
-      className={`${className} ${muted ? "opacity-40" : ""}`}
+      className={mutedClassName(className, muted)}
     >
       <path
         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -352,16 +358,13 @@ export function GoogleIcon({
 }
 
 /** Apple logo icon */
-export function AppleIcon({
-  className = "h-6 w-6",
-  muted = false,
-}: IconProps & { muted?: boolean }) {
+export function AppleIcon({ className = "h-6 w-6", muted = false }: MutedIconProps) {
   return (
     <svg
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
-      className={`${className} ${muted ? "opacity-40" : ""}`}
+      className={mutedClassName(className, muted)}
     >
       <path
         d="M17.569 12.6254C17.597 15.6529 20.2179 16.6664 20.25 16.6804C20.2269 16.7524 19.8318 18.1419 18.8424 19.5749C17.9814 20.8234 17.0879 22.0654 15.6889 22.0924C14.3144 22.1189 13.8759 21.2894 12.3019 21.2894C10.7284 21.2894 10.2394 22.0654 8.93942 22.1189C7.58992 22.1724 6.55792 20.7694 5.68992 19.5274C3.91792 17.0004 2.55692 12.3654 4.37192 9.26839C5.27192 7.73289 6.87892 6.76039 8.61792 6.73389C9.94292 6.70739 11.1934 7.61239 12.0089 7.61239C12.8239 7.61239 14.3369 6.52239 15.9404 6.68489C16.6284 6.71439 18.4849 6.95989 19.6939 8.68489C19.5999 8.74239 17.5469 9.94739 17.569 12.6254ZM14.9069 4.63539C15.6219 3.77889 16.1079 2.58939 15.9729 1.40039C14.9484 1.44239 13.7029 2.09039 12.9634 2.94639C12.3014 3.70689 11.7134 4.92339 11.8724 6.08439C13.0109 6.17239 14.1919 5.49239 14.9069 4.63539Z"
@@ -373,16 +376,13 @@ export function AppleIcon({
 }
 
 /** Discord logo icon (from Simple Icons) */
-export function DiscordIcon({
-  className = "h-6 w-6",
-  muted = false,
-}: IconProps & { muted?: boolean }) {
+export function DiscordIcon({ className = "h-6 w-6", muted = false }: MutedIconProps) {
   return (
     <svg
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
-      className={`${className} ${muted ? "opacity-40" : ""}`}
+      className={mutedClassName(className, muted)}
     >
       <path
         d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"
