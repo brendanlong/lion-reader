@@ -152,12 +152,16 @@ export function chatCompletionText(status: number, body: unknown): string {
   return parsed.choices?.[0]?.message?.content ?? "";
 }
 
+/**
+ * @param timeoutMs how long the chat request itself may take; the clock starts
+ *   once the catalog lookup is done, so a cold catalog fetch doesn't eat it
+ */
 export async function openRouterChatCompletion(
   apiKey: string,
   model: string,
   options: ChatCompletionOptions,
   priceCaps: TokenPriceCaps | null,
-  signal: AbortSignal
+  timeoutMs: number
 ): Promise<string> {
   // Without the catalog, fall back to sending no optional parameters.
   const catalog = await listOpenRouterModels("text").catch(() => []);
@@ -165,7 +169,7 @@ export async function openRouterChatCompletion(
   const response = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
-    signal,
+    signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify(
       buildChatCompletionBody(model, options, catalogEntry?.supported_parameters ?? [], priceCaps)
     ),
