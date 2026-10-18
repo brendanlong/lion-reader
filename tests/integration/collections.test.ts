@@ -491,9 +491,16 @@ describe("collections", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
       expect(await savedEntryCount(userId)).toBe(0);
 
-      const { article: uploaded } = await uploadFile(db, userId, {
+      const caller = createCaller(await createAuthContext(userId));
+      const { article: uploaded, counts } = await caller.saved.uploadFile({
         ...file,
         collectionIds: [collectionId],
+      });
+      // The counts cover the collections it joined, not just the global lists.
+      expect(counts).toMatchObject({
+        all: { unread: 3 },
+        saved: { unread: 1 },
+        subscriptions: [{ id: collectionId, unread: 1 }],
       });
       const written = await uploadArticle(db, userId, {
         ...markdown,
