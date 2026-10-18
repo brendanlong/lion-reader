@@ -4,6 +4,6 @@ This file governs the Postgres-based background job queue and its handlers. See 
 
 ## Handler layout
 
-`handlers/` holds **one file per job type**, named after the job type (`fetch_feed` ⇒ `handlers/fetch-feed.ts`); `handlers/types.ts` holds the shared `JobHandlerResult`. Adding a job type means adding a file plus its `JOB_DEFINITIONS` (`queue.ts`) and `JOB_HANDLERS` (`worker.ts`) entries — never appending to an existing handler's file.
+`handlers/` holds **one file per job type**, named after the job type (`fetch_feed` ⇒ `handlers/fetch-feed.ts`); `handlers/types.ts` holds the shared `JobHandlerResult`. Adding a job type means adding a file plus its `JOB_DEFINITIONS` (`queue.ts`) entry and a handler in `worker.ts` (`JOB_HANDLERS`, or `FIXED_INTERVAL_JOB_HANDLERS` for one with `intervalMs`) — never appending to an existing handler's file.
 
 A handler is **scheduling glue, not business logic**: it decides `nextRunAt` and maps an outcome to a `JobHandlerResult` (a singleton on a fixed cadence declares `intervalMs` instead and returns only metadata). The work itself belongs in `src/server/services/` so tRPC/MCP/compat callers can reuse it (e.g. `process_opml_import` ⇒ `services/imports.ts`). `fetch-feed.ts` is the exception — the feed-fetch pipeline has no non-worker caller.

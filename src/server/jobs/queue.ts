@@ -75,20 +75,27 @@ const emptyPayload = z.object({});
  */
 type JobLane = "feed" | "singleton" | "one_time" | "full_content";
 
-interface JobDefinition {
-  payload: z.ZodType;
-  lane: JobLane;
-  /**
-   * A singleton that, under a backlog, reschedules itself near-immediately.
-   * Ordered last in {@link SINGLETON_JOB_TYPES} so it can't starve the others.
-   */
-  reschedulesFast?: true;
-  /**
-   * A singleton that runs every `intervalMs`, measured from each run's start.
-   * The worker schedules it, so its handler returns only metadata.
-   */
-  intervalMs?: number;
-}
+type JobDefinition =
+  | {
+      payload: z.ZodType;
+      lane: "singleton";
+      /**
+       * Under a backlog, reschedules itself near-immediately. Ordered last in
+       * {@link SINGLETON_JOB_TYPES} so it can't starve the others.
+       */
+      reschedulesFast?: true;
+      /**
+       * Runs every `intervalMs`, measured from each run's start. The worker
+       * schedules it, so its handler returns only metadata.
+       */
+      intervalMs?: number;
+    }
+  | {
+      payload: z.ZodType;
+      lane: Exclude<JobLane, "singleton">;
+      reschedulesFast?: never;
+      intervalMs?: never;
+    };
 
 /**
  * Every job type, its payload schema and its claim lane. The worker's handler

@@ -40,7 +40,7 @@ export async function clearRedirectTracking(feedId: string, now: Date): Promise<
  * Handles a permanent redirect by either:
  * - Applying it immediately (HTTP->HTTPS upgrade or wait period exceeded)
  * - Starting/updating tracking (new redirect or within wait period)
- * - Returns true if the redirect was applied and the feed URL was changed
+ * - Returns whether it was applied and the feed URL changed (`RedirectOutcome`)
  *
  * @param feed - The feed record
  * @param redirectUrl - The permanent redirect URL
