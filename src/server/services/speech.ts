@@ -171,8 +171,11 @@ export async function listSpeechModels(
 
 /** How long a picked voice's lookup is trusted, found or not. */
 const KEPT_VOICE_TTL_MS = 5 * 60 * 1000;
-/** How long a lookup that failed is, before asking again. */
-const KEPT_VOICE_FAILURE_TTL_MS = 30 * 1000;
+/**
+ * How long a lookup that failed is, before asking again.
+ * @testonly
+ */
+export const KEPT_VOICE_FAILURE_TTL_MS = 30 * 1000;
 const MAX_KEPT_VOICES = 1000;
 
 /**
@@ -409,8 +412,11 @@ function retryAfter(seconds: number): Record<string, string> {
   return { "Retry-After": String(Math.ceil(seconds)) };
 }
 
-/** When to ask a busy provider again, if it didn't say. */
-const BUSY_RETRY_AFTER_SECONDS = 5;
+/**
+ * When to ask a busy provider again, if it didn't say.
+ * @testonly
+ */
+export const BUSY_RETRY_AFTER_SECONDS = 5;
 
 /**
  * The answer to a failed {@link streamSpeech}, logged. Clients act on the
