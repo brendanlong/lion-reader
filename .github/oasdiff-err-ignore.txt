@@ -11,3 +11,5 @@ GET /sync/changes removed the required property `events/items/oneOf[subschema #4
 GET /sync/changes removed the required property `events/items/oneOf[subschema #4: subscription_created]/subscription/feedId` from the response with the `200` status
 GET /subscriptions removed the required property `savedSubscriptionId` from the response with the `200` status
 GET /sync/changes removed the required property `events/items/oneOf[subschema #1: new_entry]/feedType` from the response with the `200` status
+GET /subscriptions for the `query` request parameter `limit`, the `type` was changed from `number` to `integer`
+POST /subscriptions/{id}/tags the `tagIds` request property's maxItems was set to `100`

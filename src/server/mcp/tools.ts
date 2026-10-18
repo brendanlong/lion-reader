@@ -17,7 +17,19 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { users } from "@/server/db/schema";
-import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
+import {
+  collectionEntryIdsSchema,
+  collectionNameSchema,
+  entryCountInputSchema,
+  entryListInputSchema,
+  savedArticleUrlSchema,
+  saveCollectionIdsSchema,
+  subscriptionListInputSchema,
+  subscriptionTagIdsSchema,
+  tagColorSchema,
+  tagNameSchema,
+  uuidSchema,
+} from "@/server/trpc/validation";
 import { getAppErrorCode } from "@/server/errors";
 import * as entriesService from "@/server/services/entries";
 import * as entryReadsService from "@/server/services/entry-reads";
@@ -27,12 +39,6 @@ import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
 import * as collectionsService from "@/server/services/collections";
-import {
-  COLLECTION_NAME_MAX_LENGTH,
-  MAX_COLLECTION_BATCH,
-  MAX_SAVE_COLLECTIONS,
-} from "@/lib/collections";
-import { ENTRY_TYPES } from "@/lib/entry-types";
 
 // ============================================================================
 // Types
@@ -127,30 +133,26 @@ function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
 // Argument Schemas
 // ============================================================================
 
-const listEntriesArgs = z.object({
-  query: z
-    .string()
-    .optional()
-    .describe("Full-text search query over entry title and content (relevance-ranked)"),
-  subscriptionId: uuidSchema
-    .optional()
-    .describe("Filter by subscription ID (a feed, a collection or Saved)"),
-  tagId: uuidSchema.optional().describe("Filter by tag ID"),
-  uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
-  type: z.enum(ENTRY_TYPES).optional().describe("Filter by entry type"),
-  unreadOnly: z.boolean().optional().describe("Show only unread entries"),
+const entryList = entryListInputSchema().shape;
+const listEntriesArgs = entryListInputSchema().extend({
+  query: entryList.query.describe(
+    "Full-text search query over entry title and content (relevance-ranked)"
+  ),
+  subscriptionId: entryList.subscriptionId.describe(
+    "Filter by subscription ID (a feed, a collection or Saved)"
+  ),
+  tagId: entryList.tagId.describe("Filter by tag ID"),
+  uncategorized: entryList.uncategorized.describe("Show only uncategorized entries"),
+  type: entryList.type.describe("Filter by entry type"),
+  unreadOnly: entryList.unreadOnly.describe("Show only unread entries"),
   readOnly: z.boolean().optional().describe("Show only read entries"),
-  starredOnly: z.boolean().optional().describe("Show only starred entries"),
+  starredOnly: entryList.starredOnly.describe("Show only starred entries"),
   unstarredOnly: z.boolean().optional().describe("Show only unstarred entries"),
-  sortOrder: z.enum(["newest", "oldest"]).optional().describe("Sort order (default: newest)"),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(entriesService.MAX_ENTRIES_PAGE_SIZE)
-    .optional()
-    .describe(`Number of entries per page (max ${entriesService.MAX_ENTRIES_PAGE_SIZE})`),
-  cursor: z.string().optional().describe("Pagination cursor from previous response"),
+  sortOrder: entryList.sortOrder.describe("Sort order (default: newest)"),
+  limit: entryList.limit.describe(
+    `Number of entries per page (max ${entriesService.MAX_ENTRIES_PAGE_SIZE})`
+  ),
+  cursor: entryList.cursor.describe("Pagination cursor from previous response"),
 });
 
 const getEntryArgs = z.object({
@@ -171,24 +173,25 @@ const starEntriesArgs = z.object({
   starred: z.boolean().describe("Star (true) or unstar (false)"),
 });
 
-const countEntriesArgs = z.strictObject({
-  subscriptionId: uuidSchema
-    .optional()
-    .describe("Count a subscription's unread entries (a feed, a collection or Saved)"),
-  tagId: uuidSchema.optional().describe("Count a tag's unread entries"),
-  uncategorized: z.boolean().optional().describe("Count unread entries in untagged subscriptions"),
-  type: z.enum(["saved"]).optional().describe("Count unread saved articles"),
-  starredOnly: z.boolean().optional().describe("Count unread starred entries"),
+const entryCount = entryCountInputSchema().shape;
+const countEntriesArgs = entryCountInputSchema().extend({
+  subscriptionId: entryCount.subscriptionId.describe(
+    "Count a subscription's unread entries (a feed, a collection or Saved)"
+  ),
+  tagId: entryCount.tagId.describe("Count a tag's unread entries"),
+  uncategorized: entryCount.uncategorized.describe(
+    "Count unread entries in untagged subscriptions"
+  ),
+  type: entryCount.type.describe("Count unread saved articles"),
+  starredOnly: entryCount.starredOnly.describe("Count unread starred entries"),
 });
 
-const saveCollectionIdsArg = z
-  .array(uuidSchema)
-  .max(MAX_SAVE_COLLECTIONS)
-  .optional()
-  .describe("Optional collection IDs to also add the article to (see create_collection)");
+const saveCollectionIdsArg = saveCollectionIdsSchema.describe(
+  "Optional collection IDs to also add the article to (see create_collection)"
+);
 
 const saveArticleArgs = z.object({
-  url: z.url().describe("The URL to save"),
+  url: savedArticleUrlSchema.describe("The URL to save"),
   title: z
     .string()
     .optional()
@@ -272,24 +275,21 @@ const uploadArticleArgs = z.object({
   collectionIds: saveCollectionIdsArg,
 });
 
-const listSubscriptionsArgs = z.object({
-  query: z.string().optional().describe("Case-insensitive title search (substring matching)"),
-  tagId: uuidSchema.optional().describe("Filter by tag ID"),
-  unreadOnly: z.boolean().optional().describe("Only show feeds with unread items"),
+const subscriptionList = subscriptionListInputSchema().shape;
+const listSubscriptionsArgs = subscriptionListInputSchema().extend({
+  query: subscriptionList.query.describe("Case-insensitive title search (substring matching)"),
+  tagId: subscriptionList.tagId.describe("Filter by tag ID"),
+  uncategorized: subscriptionList.uncategorized.describe("Only show subscriptions with no tags"),
+  unreadOnly: subscriptionList.unreadOnly.describe("Only show feeds with unread items"),
+  // The saved subscription is never listed, so `saved` would match nothing.
   type: z
     .enum(["web", "email", "collection", "saved"])
     .optional()
     .describe("Only show this kind: web feeds, newsletters, collections, or Saved"),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE)
-    .optional()
-    .describe(
-      `Number of subscriptions per page (max ${subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE})`
-    ),
-  cursor: z.string().optional().describe("Pagination cursor from previous response"),
+  limit: subscriptionList.limit.describe(
+    `Number of subscriptions per page (max ${subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE})`
+  ),
+  cursor: subscriptionList.cursor.describe("Pagination cursor from previous response"),
 });
 
 const getSubscriptionArgs = z.object({
@@ -298,38 +298,28 @@ const getSubscriptionArgs = z.object({
 
 const setSubscriptionTagsArgs = z.object({
   subscriptionId: uuidSchema.describe("Subscription ID (a feed or a collection)"),
-  tagIds: z
-    .array(uuidSchema)
-    .max(100)
-    .describe("The complete set of tag IDs it should have; an empty array removes all tags"),
+  tagIds: subscriptionTagIdsSchema.describe(
+    "The complete set of tag IDs it should have; an empty array removes all tags"
+  ),
 });
 
 const createCollectionArgs = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(COLLECTION_NAME_MAX_LENGTH)
-    .describe("Collection name (unique per user ignoring case)"),
+  name: collectionNameSchema.describe("Collection name (unique per user ignoring case)"),
 });
 
 const collectionEntriesArgs = z.object({
   collectionId: uuidSchema.describe(
     "The collection's subscription ID (list_subscriptions shows collections with type 'collection')"
   ),
-  entryIds: z.array(uuidSchema).min(1).max(MAX_COLLECTION_BATCH).describe("Entry IDs"),
+  entryIds: collectionEntryIdsSchema.describe("Entry IDs"),
 });
 
 const listTagsArgs = z.object({});
 
 const createTagArgs = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(tagsService.TAG_NAME_MAX_LENGTH)
-    .describe(
-      `Tag name (max ${tagsService.TAG_NAME_MAX_LENGTH} characters, unique per user ignoring case)`
-    ),
+  name: tagNameSchema.describe(
+    `Tag name (max ${tagsService.TAG_NAME_MAX_LENGTH} characters, unique per user ignoring case)`
+  ),
   color: tagColorSchema
     .optional()
     .describe("Optional hex color (e.g., #ff6b6b). Null to remove color."),
@@ -337,10 +327,7 @@ const createTagArgs = z.object({
 
 const updateTagArgs = z.object({
   tagId: uuidSchema.describe("Tag ID"),
-  name: z
-    .string()
-    .min(1)
-    .max(tagsService.TAG_NAME_MAX_LENGTH)
+  name: tagNameSchema
     .optional()
     .describe(
       `New tag name (max ${tagsService.TAG_NAME_MAX_LENGTH} characters, unique per user ignoring case)`

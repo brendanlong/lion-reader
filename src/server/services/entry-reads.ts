@@ -4,6 +4,7 @@
  * read sanitizes the content it returns except `getOwnedEntryRawContent`.
  */
 
+import { z } from "zod";
 import { eq, and, asc, inArray, gt, sql, or, type SQL } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, feeds, subscriptions, userEntries, visibleEntries } from "@/server/db/schema";
@@ -18,42 +19,48 @@ import {
   VISIBLE_ROW,
 } from "./entry-filters";
 import type { EntryType } from "@/lib/entry-types";
+import { entryListItemSchema } from "./entries";
 
 /**
- * Full entry with content. `contentOriginal`/`contentCleaned` are the
- * sanitized versions of the stored content — raw feed HTML never leaves the
+ * The app's full-entry view (`entries.get`). Every content field is the
+ * sanitized version of the stored content: raw feed HTML never leaves the
  * service layer.
  */
-export interface EntryFull {
-  id: string;
-  /** See EntryListItem (`entries.ts`). */
-  subscriptionId: string | null;
-  subscriptionIds: string[];
-  type: EntryType;
-  url: string | null;
-  title: string | null;
-  author: string | null;
-  contentOriginal: string | null;
-  contentCleaned: string | null;
+export const fullEntrySchema = entryListItemSchema.extend({
+  contentOriginal: z.string().nullable(),
+  contentCleaned: z.string().nullable(),
+  feedUrl: z.string().nullable(),
+  /** The unsubscribe link from an email's HTML. */
+  unsubscribeUrl: z.string().nullable(),
+  fullContentOriginal: z.string().nullable(),
+  fullContentCleaned: z.string().nullable(),
+  fullContentFetchedAt: z.date().nullable(),
+  fullContentError: z.string().nullable(),
+  /** The subscription's setting, so the entry view needs no `subscriptions.get`. */
+  fetchFullContent: z.boolean(),
+});
+
+export type FullEntry = z.infer<typeof fullEntrySchema>;
+
+/**
+ * The external APIs' full entry (MCP, Google Reader, Wallabag): the app's,
+ * with only the full content the entry view shows.
+ */
+export type EntryFull = Omit<
+  FullEntry,
+  | "fullContentOriginal"
+  | "fullContentCleaned"
+  | "fullContentFetchedAt"
+  | "fullContentError"
+  | "fetchFullContent"
+> & {
   /**
    * The sanitized fetched full article when the entry view shows it instead of
    * the feed content (`showsFullContent`), else null. External clients serve
    * this first so they match the web app.
    */
   fullContent: string | null;
-  summary: string | null;
-  publishedAt: Date | null;
-  fetchedAt: Date;
-  updatedAt: Date;
-  /** See EntryListItem (`entries.ts`). */
-  entryUpdatedAt: Date;
-  read: boolean;
-  starred: boolean;
-  feedTitle: string | null;
-  feedUrl: string | null;
-  siteName: string | null;
-  unsubscribeUrl: string | null;
-}
+};
 
 /**
  * Every full-entry read selects these and maps them to its output shape
@@ -267,10 +274,9 @@ async function sanitizeFullEntryContent(row: {
 
 /**
  * The app's full-entry view of a row: both content families sanitized (the
- * view can toggle back to feed content) and the subscription's
- * fetchFullContent setting.
+ * view can toggle back to feed content).
  */
-async function toFullEntry(row: EntryRow) {
+async function toFullEntry(row: EntryRow): Promise<FullEntry> {
   const {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     contentHash,
@@ -297,8 +303,6 @@ async function toFullEntry(row: EntryRow) {
     fetchFullContent: row.fetchFullContent ?? false,
   };
 }
-
-export type FullEntry = Awaited<ReturnType<typeof toFullEntry>>;
 
 /**
  * One entry in the app's full-entry view (`entries.get`), plus its content
@@ -509,6 +513,7 @@ async function toEntryFull(row: EntryRow): Promise<EntryFull> {
     entryUpdatedAt: row.entryUpdatedAt,
     read: row.read,
     starred: row.starred,
+    readChangedAt: row.readChangedAt,
     feedTitle: row.feedTitle,
     feedUrl: row.feedUrl,
     siteName: row.siteName,

@@ -1,11 +1,28 @@
 /**
  * Shared Zod Validation Schemas
  *
- * Common validation schemas used across multiple tRPC routers.
+ * Input schemas used across tRPC routers, and by the MCP tools over the same
+ * services so the two surfaces enforce the same limits. MCP adds
+ * `.describe()`s.
+ *
+ * trpc-to-openapi sets `coerce` in place on the top-level number and boolean
+ * schemas of a REST procedure's input, so a plain `z.boolean()` there reads
+ * "false" as true: REST procedures swap each boolean for `booleanQueryParam`.
+ * Input objects with such fields are factories, so a schema instance REST has
+ * coerced is never one an MCP tool also validates with.
  */
 
 import { z } from "zod";
 import { TEXT_AI_PROVIDERS } from "@/lib/ai/providers";
+import {
+  COLLECTION_NAME_MAX_LENGTH,
+  MAX_COLLECTION_BATCH,
+  MAX_SAVE_COLLECTIONS,
+} from "@/lib/collections";
+import { ENTRY_TYPES } from "@/lib/entry-types";
+import { MAX_ENTRIES_PAGE_SIZE } from "@/server/services/entries";
+import { MAX_SUBSCRIPTIONS_PAGE_SIZE } from "@/server/services/subscriptions";
+import { TAG_NAME_MAX_LENGTH } from "@/server/services/tags";
 
 // ============================================================================
 // ID Schemas
@@ -16,20 +33,119 @@ import { TEXT_AI_PROVIDERS } from "@/lib/ai/providers";
  */
 export const uuidSchema = z.string().uuid("Invalid ID");
 
+/**
+ * A boolean that also takes the strings "true" and "false", as a REST query
+ * string carries it.
+ */
+export const booleanQueryParam = z
+  .union([z.boolean(), z.enum(["true", "false"])])
+  .optional()
+  .transform((val) => {
+    if (val === "true") return true;
+    if (val === "false") return false;
+    return val;
+  });
+
+// ============================================================================
+// Entry Schemas
+// ============================================================================
+
+/** Filters and paging of an entry list (`listEntries`). */
+export const entryListInputSchema = () =>
+  z.object({
+    query: z.string().optional(),
+    subscriptionId: uuidSchema.optional(),
+    tagId: uuidSchema.optional(),
+    uncategorized: z.boolean().optional(),
+    type: z.enum(ENTRY_TYPES).optional(),
+    unreadOnly: z.boolean().optional(),
+    starredOnly: z.boolean().optional(),
+    sortOrder: z.enum(["newest", "oldest"]).optional(),
+    cursor: z.string().optional(),
+    limit: z.number().int().min(1).max(MAX_ENTRIES_PAGE_SIZE).optional(),
+  });
+
+/**
+ * The one list `countEntries` counts. Strict, so a filter it has no counter
+ * for (excludeTypes, readOnly, ...) fails instead of being dropped into a
+ * different list's count.
+ */
+export const entryCountInputSchema = () =>
+  z.strictObject({
+    subscriptionId: uuidSchema.optional(),
+    tagId: uuidSchema.optional(),
+    uncategorized: z.boolean().optional(),
+    type: z.enum(["saved"]).optional(),
+    starredOnly: z.boolean().optional(),
+  });
+
+// ============================================================================
+// Subscription Schemas
+// ============================================================================
+
+/** Filters and paging of the subscription list (`listSubscriptions`). */
+export const subscriptionListInputSchema = () =>
+  z.object({
+    /** Case-insensitive substring of the title. */
+    query: z.string().optional(),
+    tagId: uuidSchema.optional(),
+    uncategorized: z.boolean().optional(),
+    unreadOnly: z.boolean().optional(),
+    cursor: z.string().optional(),
+    limit: z.number().int().min(1).max(MAX_SUBSCRIPTIONS_PAGE_SIZE).optional(),
+  });
+
+/** Most tags one call may set on a subscription. */
+const MAX_SUBSCRIPTION_TAGS = 100;
+
+/** A subscription's complete set of tags. */
+export const subscriptionTagIdsSchema = z.array(uuidSchema).max(MAX_SUBSCRIPTION_TAGS);
+
 // ============================================================================
 // Tag Schemas
 // ============================================================================
 
+/** Trimmed first, like the tags service, so padding doesn't count. */
+export const tagNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Tag name is required")
+  .max(TAG_NAME_MAX_LENGTH, `Tag name must be at most ${TAG_NAME_MAX_LENGTH} characters`);
+
 /**
  * Tag color validation schema.
- * Accepts hex colors like #ff6b6b or null. Shared between the tRPC tags
- * router and the MCP create_tag/update_tag tools so the two surfaces enforce
- * the same invariant (tag colors are rendered into inline styles).
+ * Accepts hex colors like #ff6b6b or null (tag colors are rendered into
+ * inline styles).
  */
 export const tagColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "Color must be a valid hex color (e.g., #ff6b6b)")
   .nullable();
+
+// ============================================================================
+// Collection Schemas
+// ============================================================================
+
+export const collectionNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Collection name is required")
+  .max(
+    COLLECTION_NAME_MAX_LENGTH,
+    `Collection name must be at most ${COLLECTION_NAME_MAX_LENGTH} characters`
+  );
+
+/** The entries one add-to or remove-from-collection call names. */
+export const collectionEntryIdsSchema = z.array(uuidSchema).min(1).max(MAX_COLLECTION_BATCH);
+
+// ============================================================================
+// Saved Article Schemas
+// ============================================================================
+
+export const savedArticleUrlSchema = z.url("Invalid URL");
+
+/** Collections to put a newly saved article in; checked before saving. */
+export const saveCollectionIdsSchema = z.array(uuidSchema).max(MAX_SAVE_COLLECTIONS).optional();
 
 // ============================================================================
 // URL Schemas

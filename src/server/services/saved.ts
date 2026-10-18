@@ -6,6 +6,7 @@
  * and deriving its stored fields is in `saved-content.ts`.
  */
 
+import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import type { db as dbType } from "@/server/db";
@@ -128,25 +129,33 @@ export interface UploadArticleParams extends CollectionsParam {
   keepRelativeUrls?: boolean;
 }
 
-export interface SavedArticle {
-  id: string;
-  /** URL of the article (null for uploaded content) */
-  url: string | null;
-  title: string | null;
-  siteName: string | null;
-  author: string | null;
-  imageUrl: string | null;
+/**
+ * A saved article's metadata: what the app's save and upload endpoints return.
+ * They omit the body because every render goes through `entries.get`, so
+ * echoing it would only invite a caller to render it directly (#927).
+ */
+export const savedArticleMetadataSchema = z.object({
+  id: z.string(),
+  /** Null for uploaded content. */
+  url: z.string().nullable(),
+  title: z.string().nullable(),
+  siteName: z.string().nullable(),
+  author: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+  excerpt: z.string().nullable(),
+  read: z.boolean(),
+  starred: z.boolean(),
+  savedAt: z.date(),
+});
+
+export type SavedArticle = z.infer<typeof savedArticleMetadataSchema> & {
   /**
    * Sanitized article body. The Wallabag POST response sends it to clients as
    * `content` (via `formatSavedArticle`), so raw fetched HTML must never appear
    * here.
    */
   contentCleaned: string | null;
-  excerpt: string | null;
-  read: boolean;
-  starred: boolean;
-  savedAt: Date;
-}
+};
 
 // ============================================================================
 // Shared Insert Helper

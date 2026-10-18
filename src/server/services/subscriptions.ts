@@ -23,32 +23,37 @@ import { countsAsOfColumn, formatCountsAsOf } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import { errors } from "@/server/errors";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
+import { countsAsOfSchema } from "@/lib/events/schemas";
+import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface Tag {
-  id: string;
-  name: string;
-  color: string | null;
-}
+/**
+ * A subscription merged with its feed's metadata. Its id is the subscription's:
+ * clients never see feed ids.
+ */
+export const subscriptionSchema = z.object({
+  id: z.string(),
+  type: z.enum(SUBSCRIPTION_TYPES),
+  url: z.string().nullable(),
+  /** The custom title if set, else the feed's. */
+  title: z.string().nullable(),
+  /** The feed's own title, for the rename UI. */
+  originalTitle: z.string().nullable(),
+  description: z.string().nullable(),
+  siteUrl: z.string().nullable(),
+  subscribedAt: z.date(),
+  unreadCount: z.number(),
+  /** When `unreadCount` was read. */
+  unreadCountAsOf: countsAsOfSchema,
+  tags: z.array(z.object({ id: z.string(), name: z.string(), color: z.string().nullable() })),
+  /** Whether to fetch each entry's full article from its URL. */
+  fetchFullContent: z.boolean(),
+});
 
-export interface Subscription {
-  id: string;
-  type: FeedType;
-  url: string | null;
-  title: string | null;
-  originalTitle: string | null;
-  description: string | null;
-  siteUrl: string | null;
-  subscribedAt: Date;
-  unreadCount: number;
-  /** When `unreadCount` was read (`countsAsOfSchema`). */
-  unreadCountAsOf: string;
-  tags: Tag[];
-  fetchFullContent: boolean;
-}
+export type Subscription = z.infer<typeof subscriptionSchema>;
 
 // ============================================================================
 // Helper Functions

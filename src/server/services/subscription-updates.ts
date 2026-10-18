@@ -28,7 +28,6 @@ import {
   isUserManagedSubscription,
   lockSubscriptionMembers,
   type Subscription,
-  type Tag,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
@@ -60,7 +59,7 @@ async function lockSubscriptionRow(
   return row;
 }
 
-function selectSubscriptionTags(db: DbOrTx, subscriptionId: string): Promise<Tag[]> {
+function selectSubscriptionTags(db: DbOrTx, subscriptionId: string): Promise<Subscription["tags"]> {
   return db
     .select({ id: tags.id, name: tags.name, color: tags.color })
     .from(subscriptionTags)

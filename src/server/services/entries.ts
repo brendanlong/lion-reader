@@ -30,7 +30,7 @@ import {
   VISIBLE_MEMBERSHIPS,
   VISIBLE_ROW,
 } from "./entry-filters";
-import type { EntryType } from "@/lib/entry-types";
+import { ENTRY_TYPES, type EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Types
@@ -90,32 +90,45 @@ export interface SearchEntriesParams {
   showSpam: boolean;
 }
 
-export interface EntryListItem {
-  id: string;
-  /** The entry's origin subscription (`entryMemberships`). */
-  subscriptionId: string | null;
-  /** Every active subscription holding the entry (`entryMemberships`). */
-  subscriptionIds: string[];
-  type: EntryType;
-  url: string | null;
-  title: string | null;
-  author: string | null;
-  summary: string | null;
-  publishedAt: Date | null;
-  fetchedAt: Date;
-  updatedAt: Date;
+/**
+ * An entry without its content: the item of every surface's lists, and the
+ * base of the full entry (`fullEntrySchema`, `entry-reads.ts`).
+ */
+export const entryListItemSchema = z.object({
+  id: z.string(),
+  /**
+   * The entry's origin (#1846): its membership in a web, email or saved
+   * subscription, an active one first (`entryMemberships`).
+   */
+  subscriptionId: z.string().nullable(),
+  /**
+   * Every active subscription holding the entry: its origin, its collections,
+   * and for a saved article the saved subscription (`entryMemberships`).
+   */
+  subscriptionIds: z.array(z.string()),
+  type: z.enum(ENTRY_TYPES),
+  url: z.string().nullable(),
+  title: z.string().nullable(),
+  author: z.string().nullable(),
+  summary: z.string().nullable(),
+  publishedAt: z.date().nullable(),
+  fetchedAt: z.date(),
+  read: z.boolean(),
+  starred: z.boolean(),
+  /** When read state last changed (Recently Read's order); null if it never has. */
+  readChangedAt: z.date().nullable(),
+  /** The later of the entry's and the user's state's updated_at, for cache freshness. */
+  updatedAt: z.date(),
   /**
    * When the entry's own fields last changed (`entries.updated_at`), without
    * the user's state: how fresh its metadata is (#1759).
    */
-  entryUpdatedAt: Date;
-  read: boolean;
-  starred: boolean;
-  /** When read state last changed (Recently Read's order); null if it never has. */
-  readChangedAt: Date | null;
-  feedTitle: string | null;
-  siteName: string | null;
-}
+  entryUpdatedAt: z.date(),
+  feedTitle: z.string().nullable(),
+  siteName: z.string().nullable(),
+});
+
+export type EntryListItem = z.infer<typeof entryListItemSchema>;
 
 // ============================================================================
 // Constants

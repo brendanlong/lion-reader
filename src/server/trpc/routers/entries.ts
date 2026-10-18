@@ -18,7 +18,12 @@ import {
 } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
-import { uuidSchema } from "../validation";
+import {
+  booleanQueryParam,
+  entryCountInputSchema,
+  entryListInputSchema,
+  uuidSchema,
+} from "../validation";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import * as entryReadsService from "@/server/services/entry-reads";
@@ -41,11 +46,6 @@ const appProcedure = scopedProtectedProcedure(OAUTH_SCOPES.READER_FULL_ACCESS);
 // ============================================================================
 
 /**
- * Cursor validation schema (base64-encoded entry ID).
- */
-const cursorSchema = z.string().optional();
-
-/**
  * The client's clock when it sent a state write; per-entry `changedAt`s are
  * shifted by its offset from the server clock (see toServerTime).
  */
@@ -65,109 +65,18 @@ const stateChangeEntriesSchema = z
     `Maximum ${entryStateService.MAX_ENTRY_STATE_BATCH} entries per request`
   );
 
-/**
- * Limit validation schema.
- */
-const limitSchema = z.number().int().min(1).max(entriesService.MAX_ENTRIES_PAGE_SIZE).optional();
-
-/**
- * Sort order validation schema.
- */
-const sortOrderSchema = z.enum(["newest", "oldest"]).optional();
-
-/**
- * Sort by validation schema for choosing which timestamp to sort entries by.
- */
+/** Which timestamp to sort entries by. */
 const sortBySchema = z.enum(["published", "readChanged"]).optional();
 
-/**
- * Feed type validation schema for filtering entries by type.
- */
 const feedTypeSchema = z.enum(ENTRY_TYPES);
-
-/**
- * Boolean query parameter schema that handles string coercion.
- * Query parameters come as strings from HTTP requests, so we need to
- * handle both boolean and string inputs ("true"/"false").
- */
-const booleanQueryParam = z
-  .union([z.boolean(), z.enum(["true", "false"])])
-  .optional()
-  .transform((val) => {
-    if (val === "true") return true;
-    if (val === "false") return false;
-    return val;
-  });
 
 // ============================================================================
 // Output Schemas
 // ============================================================================
 
-/**
- * Lightweight entry output schema for list view (no full content).
- */
-const entryListItemSchema = z.object({
-  id: z.string(),
-  // The entry's origin (#1846): its membership in a web, email or saved
-  // subscription, an active one first.
-  subscriptionId: z.string().nullable(),
-  // Every active subscription holding the entry: its origin, its collections,
-  // and for a saved article the saved subscription (#1846).
-  subscriptionIds: z.array(z.string()),
-  type: feedTypeSchema,
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  author: z.string().nullable(),
-  summary: z.string().nullable(),
-  publishedAt: z.date().nullable(),
-  fetchedAt: z.date(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  readChangedAt: z.date().nullable(), // When read state last changed (Recently Read's order)
-  updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
-  entryUpdatedAt: z.date(), // The entry's own updated_at - for metadata freshness
-  feedTitle: z.string().nullable(),
-  siteName: z.string().nullable(),
-});
+const entryListItemSchema = entriesService.entryListItemSchema;
 
-/**
- * Full entry output schema for single entry view (includes content).
- */
-const entryFullSchema = z.object({
-  id: z.string(),
-  // The entry's origin (#1846): its membership in a web, email or saved
-  // subscription, an active one first.
-  subscriptionId: z.string().nullable(),
-  // Every active subscription holding the entry: its origin, its collections,
-  // and for a saved article the saved subscription (#1846).
-  subscriptionIds: z.array(z.string()),
-  type: feedTypeSchema,
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  author: z.string().nullable(),
-  contentOriginal: z.string().nullable(),
-  contentCleaned: z.string().nullable(),
-  summary: z.string().nullable(),
-  publishedAt: z.date().nullable(),
-  fetchedAt: z.date(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  readChangedAt: z.date().nullable(), // When read state last changed (Recently Read's order)
-  updatedAt: z.date(), // Max of entry and user state updated_at - for cache freshness
-  entryUpdatedAt: z.date(), // The entry's own updated_at - for metadata freshness
-  feedTitle: z.string().nullable(),
-  feedUrl: z.string().nullable(),
-  siteName: z.string().nullable(),
-  // Unsubscribe link from email HTML (for email entries)
-  unsubscribeUrl: z.string().nullable(),
-  // Full content fields
-  fullContentOriginal: z.string().nullable(),
-  fullContentCleaned: z.string().nullable(),
-  fullContentFetchedAt: z.date().nullable(),
-  fullContentError: z.string().nullable(),
-  // Subscription field - included to avoid separate subscriptions.get query
-  fetchFullContent: z.boolean(), // subscription setting for auto-fetching full content
-});
+const entryFullSchema = entryReadsService.fullEntrySchema;
 
 /**
  * Paginated entries list output schema.
@@ -178,17 +87,6 @@ const entriesListOutputSchema = z.object({
 });
 
 /**
- * Schema for entries returned from mutation operations.
- * Contains minimal fields needed for optimistic updates plus updatedAt for cache freshness.
- */
-const entryMutationResultSchema = z.object({
-  id: z.string(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  updatedAt: z.date(), // For comparing with cached data to determine winner
-});
-
-/**
  * Result of a bulk read/star write: the final state of every requested entry the
  * user can still see (an id missing here no longer exists for them), for cache
  * updates and offline-outbox reconciliation.
@@ -196,18 +94,7 @@ const entryMutationResultSchema = z.object({
 const bulkStateChangeOutputSchema = z.object({
   success: z.boolean(),
   count: z.number(),
-  entries: z.array(
-    z.object({
-      id: z.string(),
-      subscriptionId: z.string().nullable(),
-      subscriptionIds: z.array(z.string()),
-      read: z.boolean(), // Actual read state after update
-      starred: z.boolean(), // For updating starred unread count
-      type: feedTypeSchema, // For updating saved/email counts
-      updatedAt: z.date(), // For cache freshness comparison
-      readChangedAt: z.date().nullable(), // The read time the server kept
-    })
-  ),
+  entries: z.array(entryStateService.markReadEntryStateSchema),
   // Absolute counts for all affected lists. Absent when no value actually
   // flipped (same-value re-assert) — the client's cached counts are already
   // correct (issue #1118).
@@ -219,7 +106,7 @@ const bulkStateChangeOutputSchema = z.object({
  * Returns the updated entry with new starred state and counts.
  */
 const setStarredOutputSchema = z.object({
-  entry: entryMutationResultSchema,
+  entry: entryStateService.entryStateSchema,
   // Absent when the starred value didn't actually flip (same-value re-assert)
   // — the client's cached counts are already correct (issue #1118).
   counts: unreadCountsSchema.optional(),
@@ -264,19 +151,12 @@ export const entriesRouter = createTRPCRouter({
       },
     })
     .input(
-      z.object({
-        query: z.string().optional(),
-        subscriptionId: uuidSchema.optional(),
-        tagId: uuidSchema.optional(),
+      entryListInputSchema().extend({
         uncategorized: booleanQueryParam,
-        type: feedTypeSchema.optional(),
-        excludeTypes: z.array(feedTypeSchema).optional(),
         unreadOnly: booleanQueryParam,
         starredOnly: booleanQueryParam,
-        sortOrder: sortOrderSchema,
+        excludeTypes: z.array(feedTypeSchema).optional(),
         sortBy: sortBySchema,
-        cursor: cursorSchema,
-        limit: limitSchema,
       })
     )
     .output(entriesListOutputSchema)
@@ -306,16 +186,8 @@ export const entriesRouter = createTRPCRouter({
       },
     })
     .input(
-      // Strict: a removed filter (excludeTypes, readOnly, ...) must fail, not
-      // be stripped into a different list's count.
-      z
-        .strictObject({
-          subscriptionId: uuidSchema.optional(),
-          tagId: uuidSchema.optional(),
-          uncategorized: booleanQueryParam,
-          type: z.enum(["saved"]).optional(),
-          starredOnly: booleanQueryParam,
-        })
+      entryCountInputSchema()
+        .extend({ uncategorized: booleanQueryParam, starredOnly: booleanQueryParam })
         .optional()
     )
     .output(

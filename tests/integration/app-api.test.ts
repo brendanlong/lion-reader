@@ -610,6 +610,18 @@ describe("GET /entries/count", () => {
   });
 });
 
+describe("GET /subscriptions", () => {
+  // A plain z.boolean() in a REST input reads every query-string value as true.
+  it("reads unreadOnly=false as false", async () => {
+    const userId = await createUser();
+    const subscriptionId = await createTestSubscription(userId, await createTestFeed());
+    const res = await rest(await appToken(userId), "GET", "/subscriptions?unreadOnly=false");
+    expect(res.status).toBe(200);
+    const { items } = (await res.json()) as { items: { id: string }[] };
+    expect(items.map((item) => item.id)).toEqual([subscriptionId]);
+  });
+});
+
 describe("entries.getMany", () => {
   it("returns full entries in request order, omitting ids the user can't see", async () => {
     const userId = await createUser();
