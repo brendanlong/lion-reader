@@ -18,7 +18,7 @@ class EntryDecodingTest {
                 GetManyResponse.serializer(),
                 """{"entries": [{"id": "b", "feedId": null, "subscriptionIds": [], "type": "web",
                     "fetchedAt": "2026-09-29T12:00:00Z", "read": true, "starred": false,
-                    "fetchFullContent": false}]}""",
+                    "content": null}]}""",
             )
 
         assertEquals("a", page.items.single().id)

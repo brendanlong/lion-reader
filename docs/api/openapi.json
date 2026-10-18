@@ -6133,6 +6133,12 @@
                           },
                           "fetchFullContent": {
                             "type": "boolean"
+                          },
+                          "content": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -6161,7 +6167,8 @@
                           "fullContentCleaned",
                           "fullContentFetchedAt",
                           "fullContentError",
-                          "fetchFullContent"
+                          "fetchFullContent",
+                          "content"
                         ],
                         "additionalProperties": false
                       }

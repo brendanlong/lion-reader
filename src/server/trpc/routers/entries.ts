@@ -235,9 +235,9 @@ export const entriesRouter = createTRPCRouter({
     }),
 
   /**
-   * Get many full entries at once, in `entries.get`'s shape. Ids the user can't
-   * see are omitted. Used by the native app to download entries for offline
-   * reading.
+   * Get many full entries at once, in `entries.get`'s shape plus the `content`
+   * each shows by default. Ids the user can't see are omitted. Used by the
+   * native app to download entries for offline reading.
    */
   getMany: appProcedure
     .meta({
@@ -253,7 +253,7 @@ export const entriesRouter = createTRPCRouter({
         ids: z.array(uuidSchema).min(1).max(entriesService.MAX_ENTRIES_PAGE_SIZE),
       })
     )
-    .output(z.object({ entries: z.array(entryFullSchema) }))
+    .output(z.object({ entries: z.array(entryReadsService.offlineEntrySchema) }))
     .query(async ({ ctx, input }) => {
       return {
         entries: await entryReadsService.getFullEntries(ctx.db, ctx.session.user.id, input.ids),

@@ -62,8 +62,7 @@ class SyncEngineTest {
             fetchedAt = Instant.fromEpochMilliseconds(NOW - ageDays * DAY).toString(),
             read = read,
             starred = starred,
-            contentCleaned = "<p>Body $id</p>",
-            fetchFullContent = false,
+            content = "<p>Body $id</p>",
         )
 
     /** A saved article, as the server sends it: its subscription is Saved. */
@@ -293,7 +292,7 @@ class SyncEngineTest {
     fun anEditLeavesTheOldBodyInPlace() = runTest {
         serve(entry("a"))
         engine.sync()
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -309,7 +308,7 @@ class SyncEngineTest {
         engine.sync()
         // Full, with the one body (and its search text).
         policy = RetentionPolicy(contentBudgetBytes = ("<p>Body a</p>" + "Body a").length.toLong())
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Body A</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Body A</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -325,7 +324,7 @@ class SyncEngineTest {
         serve(entry("a", read = true))
         engine.sync()
         engine.ensureContent("a")
-        server.entries["a"] = entry("a", read = true).copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a", read = true).copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -414,7 +413,7 @@ class SyncEngineTest {
         // which time it may have been edited (#1680).
         serve(entry("a"))
         engine.sync()
-        serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+        serve(entry("a").copy(content = "<p>Edited</p>"))
         server.queueChanges(
             events =
                 listOf(
@@ -453,7 +452,7 @@ class SyncEngineTest {
         assertTrue(engine.ensureContent("a"))
         assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
 
-        serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+        serve(entry("a").copy(content = "<p>Edited</p>"))
         engine.sync()
         assertEquals("<p>Edited</p>", reader.entry("a").first()?.content)
     }
@@ -803,7 +802,7 @@ class SyncEngineTest {
         engine.sync()
         assertEquals("<p>Short version</p>", reader.entry("a").first()?.summary)
 
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -816,7 +815,7 @@ class SyncEngineTest {
         server.subscriptions += subscription("sub-1")
         serve(entry("a"))
         engine.sync()
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )

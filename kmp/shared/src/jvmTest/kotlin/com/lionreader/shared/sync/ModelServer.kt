@@ -494,8 +494,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             fetchedAt = time(published),
             read = read,
             starred = starred,
-            contentCleaned = content,
-            fetchFullContent = false,
+            content = content,
             readChangedAt = readChangedAt?.let { time(it) },
         )
 

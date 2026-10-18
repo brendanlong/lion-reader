@@ -319,7 +319,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
 
     /** Each body's [searchText], worked out before the write transaction to keep it short. */
     private fun searchTexts(entries: List<FullEntry>): Map<String, String> = entries.associate {
-        it.id to searchText(it.displayContent ?: "")
+        it.id to searchText(it.content ?: "")
     }
 
     private fun storeBodiesInTransaction(
@@ -332,7 +332,7 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         var stored = 0L
         for (entry in fetched) {
             val version = versions[entry.id] ?: continue
-            val content = entry.displayContent ?: ""
+            val content = entry.content ?: ""
             val text = texts.getValue(entry.id)
             // The search index's copy of the text counts against the budget too.
             val size = (content.length + text.length).toLong()

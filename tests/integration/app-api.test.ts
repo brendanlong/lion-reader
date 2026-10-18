@@ -632,6 +632,43 @@ describe("entries.getMany", () => {
     const body = await res.json();
     expect(body.entries.map((e: { id: string }) => e.id)).toEqual([b, a]);
   });
+
+  // The app shows `content` as is, so it must be what the web's entry view shows by default.
+  it.each([
+    {
+      shows: "fetched full content",
+      entry: { fullContentCleaned: "<p>Full</p>", fullContentFetchedAt: new Date() },
+      content: "<p>Full</p>",
+    },
+    {
+      shows: "the feed content when the latest full-content fetch failed",
+      entry: {
+        fullContentCleaned: "<p>Full</p>",
+        fullContentFetchedAt: new Date(),
+        fullContentError: "HTTP 500",
+      },
+      content: "<p>Feed</p>",
+    },
+    {
+      shows: "the summary as text when the shown variant is empty",
+      entry: { contentCleaned: "", summary: "a <b> c" },
+      content: "<p>a &lt;b&gt; c</p>",
+    },
+  ])("returns the content the entry view shows: $shows", async ({ entry, content }) => {
+    const userId = await createUser();
+    const token = await appToken(userId);
+    const feedId = await createTestFeed();
+    await createTestSubscription(userId, feedId, { fetchFullContent: true });
+    const id = await createTestEntry(feedId, {
+      userIds: [userId],
+      contentCleaned: "<p>Feed</p>",
+      ...entry,
+    });
+
+    const body = await (await rest(token, "POST", "/entries/batch", { ids: [id] })).json();
+
+    expect(body.entries[0].content).toBe(content);
+  });
 });
 
 describe("entries.setStarredMany", () => {
