@@ -15,18 +15,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { validateSession } from "@/server/auth/session";
 import { createApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
-import { createGoogleAuthUrl, GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
-import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
+import { createGoogleAuthUrl } from "@/server/auth/oauth/google";
+import { getGoogleDocsGrant, GOOGLE_DOCS_SCOPES } from "@/server/google/tokens";
 import { db } from "@/server/db";
-import { oauthAccounts } from "@/server/db/schema";
-import { eq, and } from "drizzle-orm";
 import { createCaller } from "@/server/trpc/root";
 import { ExtensionSaveClient } from "./client";
-
-// Both scopes are needed for full Google Docs support:
-// - documents.readonly for native Google Docs via Docs API
-// - drive.readonly for uploaded .docx files via Drive API
-const GOOGLE_DOCS_SCOPES = [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE];
 
 interface PageProps {
   searchParams: Promise<{
@@ -73,23 +66,10 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
   // Check if this is a Google Doc and we need OAuth
   const isGoogleDoc = url.includes("docs.google.com");
-  if (isGoogleDoc) {
-    // Check if user has Google OAuth with both required scopes
-    const googleAccount = await db
-      .select()
-      .from(oauthAccounts)
-      .where(and(eq(oauthAccounts.userId, session.user.id), eq(oauthAccounts.provider, "google")))
-      .limit(1);
-
-    // The Google callback only adds scopes to an already-linked account, so
-    // without one, just try the save (public docs need no auth)
-    const userScopes = googleAccount[0]?.scopes ?? [];
-    const hasAllScopes = GOOGLE_DOCS_SCOPES.every((scope) => userScopes.includes(scope));
-
-    if (googleAccount.length > 0 && !hasAllScopes) {
-      // Need to request Google Docs scopes; redirect to Google with return to this page
-      await redirectToGoogleDocsAuth();
-    }
+  // The Google callback only adds scopes to an already-linked account, so
+  // without one, just try the save (public docs need no auth)
+  if (isGoogleDoc && (await getGoogleDocsGrant(session.user.id)).status === "missing-scopes") {
+    await redirectToGoogleDocsAuth();
   }
 
   // All auth is complete - save the article

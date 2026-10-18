@@ -5,12 +5,14 @@ import {
   extractTabId,
   fetchGoogleDocsFromUrl,
   fetchPrivateGoogleDoc,
-  GOOGLE_DRIVE_SCOPE,
   normalizeGoogleDocsUrl,
   type GoogleDocsContent,
 } from "@/server/google/docs";
-import { getOAuthAccount, getValidGoogleToken, hasGoogleScope } from "@/server/google/tokens";
-import { GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
+import {
+  getGoogleDocsGrant,
+  getValidGoogleToken,
+  GOOGLE_DOCS_SCOPES,
+} from "@/server/google/tokens";
 import { getAppErrorCode } from "@/server/errors";
 import { logger } from "@/lib/logger";
 
@@ -141,8 +143,8 @@ async function fetchPrivateGoogleDocWithAuth(
   }
   const tabId = extractTabId(normalizedUrl);
 
-  const googleOAuth = await getOAuthAccount(userId, "google");
-  if (!googleOAuth) {
+  const grant = await getGoogleDocsGrant(userId);
+  if (grant.status === "unlinked") {
     logger.debug("User needs to sign in with Google for private docs", {
       userId,
       url: normalizedUrl,
@@ -163,20 +165,10 @@ async function fetchPrivateGoogleDocWithAuth(
     });
   }
 
-  // Check if user has granted both required scopes:
-  // - documents.readonly for native Google Docs via Docs API
-  // - drive.readonly for uploaded .docx files via Drive API
-  const [hasDocsApiScope, hasDriveScope] = await Promise.all([
-    hasGoogleScope(userId, GOOGLE_DOCS_READONLY_SCOPE),
-    hasGoogleScope(userId, GOOGLE_DRIVE_SCOPE),
-  ]);
-
-  if (!hasDocsApiScope || !hasDriveScope) {
+  if (grant.status === "missing-scopes") {
     logger.debug("User needs to grant Google Docs permissions", {
       userId,
       url: normalizedUrl,
-      hasDocsApiScope,
-      hasDriveScope,
       mode,
     });
     throw new TRPCError({
@@ -189,7 +181,7 @@ async function fetchPrivateGoogleDocWithAuth(
         code: "NEEDS_DOCS_PERMISSION",
         details: {
           url: normalizedUrl,
-          scopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
+          scopes: GOOGLE_DOCS_SCOPES,
         },
       },
     });
@@ -197,7 +189,7 @@ async function fetchPrivateGoogleDocWithAuth(
 
   try {
     logger.debug("Attempting private Google Docs fetch with user OAuth", { userId, docId });
-    const accessToken = await getValidGoogleToken(userId);
+    const accessToken = await getValidGoogleToken(grant.account);
     return await fetchPrivateGoogleDoc(docId, accessToken, tabId);
   } catch (error) {
     if (

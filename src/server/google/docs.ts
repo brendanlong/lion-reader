@@ -35,12 +35,8 @@ import {
   fetchDocxFileWithToken,
   fetchPublicDocxFile,
   getServiceAccountAccessToken,
-  GOOGLE_DRIVE_SCOPE,
   type GoogleDriveContent,
 } from "./drive";
-
-// Re-exported for the Google Docs OAuth consent and scope checks
-export { GOOGLE_DRIVE_SCOPE };
 
 // ============================================================================
 // Constants
@@ -70,7 +66,7 @@ const DOCS_API_ERROR_BODY_MAX_BYTES = 64 * 1024;
 /**
  * OAuth2 scope required for reading Google Docs.
  */
-const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
+export const GOOGLE_DOCS_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
 
 // ============================================================================
 // URL Parsing

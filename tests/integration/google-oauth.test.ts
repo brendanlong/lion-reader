@@ -186,17 +186,18 @@ describe("Google OAuth", () => {
     });
 
     it("reports the scopes Google granted, not just the ones requested (#1803)", async () => {
-      const { createGoogleAuthUrl, validateGoogleCallback, GOOGLE_DOCS_READONLY_SCOPE } =
+      const { createGoogleAuthUrl, validateGoogleCallback } =
         await import("../../src/server/auth/oauth/google");
+      const { GOOGLE_DOCS_SCOPE } = await import("../../src/server/google/docs");
 
       const originalScope = mockTokenResponse.scope;
-      mockTokenResponse.scope = `${GOOGLE_GRANTED_SIGN_IN_SCOPE} ${GOOGLE_DOCS_READONLY_SCOPE}`;
+      mockTokenResponse.scope = `${GOOGLE_GRANTED_SIGN_IN_SCOPE} ${GOOGLE_DOCS_SCOPE}`;
       try {
         const { state } = await createGoogleAuthUrl();
         const result = await validateGoogleCallback("mock-auth-code", state);
         expect(result.scopes).toEqual([
           ...GOOGLE_GRANTED_SIGN_IN_SCOPE.split(" "),
-          GOOGLE_DOCS_READONLY_SCOPE,
+          GOOGLE_DOCS_SCOPE,
         ]);
       } finally {
         mockTokenResponse.scope = originalScope;
@@ -262,8 +263,8 @@ describe("Google OAuth", () => {
 
   describe("save-mode callback", () => {
     it("keeps the stored refresh token when Google sends none (#1803)", async () => {
-      const { createGoogleAuthUrl, GOOGLE_DOCS_READONLY_SCOPE } =
-        await import("../../src/server/auth/oauth/google");
+      const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
+      const { GOOGLE_DOCS_SCOPE } = await import("../../src/server/google/docs");
       const { GET } = await import("../../src/app/api/v1/auth/oauth/google/callback/route");
 
       const userId = await createTestUser();
@@ -279,11 +280,11 @@ describe("Google OAuth", () => {
 
       const { state } = await createGoogleAuthUrl({
         mode: "save",
-        additionalScopes: [GOOGLE_DOCS_READONLY_SCOPE],
+        additionalScopes: [GOOGLE_DOCS_SCOPE],
       });
       const original = { ...mockTokenResponse };
       delete mockTokenResponse.refresh_token;
-      mockTokenResponse.scope = `${GOOGLE_GRANTED_SIGN_IN_SCOPE} ${GOOGLE_DOCS_READONLY_SCOPE}`;
+      mockTokenResponse.scope = `${GOOGLE_GRANTED_SIGN_IN_SCOPE} ${GOOGLE_DOCS_SCOPE}`;
       try {
         const response = await GET(
           new NextRequest(
@@ -302,7 +303,7 @@ describe("Google OAuth", () => {
         .where(eq(oauthAccounts.userId, userId));
       expect(account.accessToken).toBe("mock-access-token");
       expect(account.refreshToken).toBe("stored-refresh-token");
-      expect(account.scopes).toContain(GOOGLE_DOCS_READONLY_SCOPE);
+      expect(account.scopes).toContain(GOOGLE_DOCS_SCOPE);
     });
   });
 

@@ -35,11 +35,6 @@ const PKCE_VERIFIER_PREFIX = "oauth:pkce:";
  */
 const GOOGLE_SCOPES = ["openid", "email", "profile"];
 
-/**
- * Google Docs readonly scope (for incremental authorization)
- */
-export const GOOGLE_DOCS_READONLY_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
-
 // ============================================================================
 // Types
 // ============================================================================
