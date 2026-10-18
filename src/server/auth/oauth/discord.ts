@@ -11,7 +11,7 @@
 import * as client from "openid-client";
 import { getDiscordConfig, getRedirectUri } from "./config";
 import {
-  consumeOAuthState,
+  beginOAuthCallback,
   exchangeAuthorizationCode,
   fetchUserInfo,
   signInOrLinkFlow,
@@ -88,16 +88,14 @@ export async function createDiscordAuthUrl(options: SignInOrLinkState = {}): Pro
 }
 
 /**
- * Consumes a Discord callback's state.
+ * Reads a Discord callback's state.
  *
  * @throws OAuthStateError if the state is unknown, expired or already used
  */
 export async function beginDiscordCallback(state: string): Promise<PendingOAuthCallback> {
-  const stateData = await consumeOAuthState<SignInOrLinkState>(STATE_PREFIX + state);
-
-  return {
+  return beginOAuthCallback<SignInOrLinkState>(STATE_PREFIX + state, (stateData) => ({
     flow: signInOrLinkFlow(stateData),
-    async complete(code) {
+    async exchange(code) {
       const config = getDiscordConfig();
       if (!config) {
         throw new Error("Discord OAuth is not configured");
@@ -116,7 +114,7 @@ export async function beginDiscordCallback(state: string): Promise<PendingOAuthC
         ...tokensFromResponse(tokens),
       };
     },
-  };
+  }));
 }
 
 /**

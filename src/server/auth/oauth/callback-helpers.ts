@@ -90,8 +90,8 @@ async function readCallbackParams(
 }
 
 /**
- * Handle a provider's redirect back to us: consume the state, check it is bound to
- * this browser, exchange the code, then do what the flow says. Every failure is a
+ * Handle a provider's redirect back to us: read the state, check it is bound to this
+ * browser, consume it and exchange the code, then do what the flow says. Every failure is a
  * redirect: to the login page, or for a link or re-authorization to where that
  * flow returns.
  */
@@ -117,8 +117,9 @@ export async function handleOAuthCallback(
     const { flow } = pending;
 
     // Bind the callback to the browser that started the flow (login CSRF, #1263).
-    // Checked after consuming the state only because that is where the one exempt
-    // flow is recorded (`OAuthFlow`), and before the code exchange.
+    // Checked after reading the state, which is where the one exempt flow is recorded
+    // (`OAuthFlow`), but before consuming it, so a request without the cookie can't
+    // burn the owner's state, and before any token request.
     const browserBound = flow.kind !== "reauthorize" || flow.browserBound;
     if (browserBound && !oauthStateCookieMatches(readOAuthStateCookie(request), state)) {
       return loginError("invalid_state");

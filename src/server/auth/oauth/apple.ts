@@ -25,7 +25,7 @@ import {
   getRedirectUri,
 } from "./config";
 import {
-  consumeOAuthState,
+  beginOAuthCallback,
   exchangeAuthorizationCode,
   signInOrLinkFlow,
   storeOAuthState,
@@ -168,7 +168,7 @@ export async function createAppleAuthUrl(options: SignInOrLinkState = {}): Promi
 }
 
 /**
- * Consumes an Apple callback's state.
+ * Reads an Apple callback's state.
  *
  * The identity comes **only** from the signature-verified id_token. Apple also posts
  * a `user` form value with a name and email on first authorization, but the client
@@ -179,11 +179,9 @@ export async function createAppleAuthUrl(options: SignInOrLinkState = {}): Promi
  * @throws OAuthStateError if the state is unknown, expired or already used
  */
 export async function beginAppleCallback(state: string): Promise<PendingOAuthCallback> {
-  const stateData = await consumeOAuthState<SignInOrLinkState>(STATE_PREFIX + state);
-
-  return {
+  return beginOAuthCallback<SignInOrLinkState>(STATE_PREFIX + state, (stateData) => ({
     flow: signInOrLinkFlow(stateData),
-    async complete(code) {
+    async exchange(code) {
       const config = await getAppleTokenConfig();
       if (!config) {
         throw new Error("Apple OAuth is not configured");
@@ -208,5 +206,5 @@ export async function beginAppleCallback(state: string): Promise<PendingOAuthCal
         ...tokensFromResponse(tokens),
       };
     },
-  };
+  }));
 }

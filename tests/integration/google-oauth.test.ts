@@ -291,6 +291,23 @@ describe("Google OAuth", () => {
       expect(await db.select().from(users)).toHaveLength(0);
     });
 
+    it("doesn't let a callback without the cookie burn the state for its owner", async () => {
+      const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
+
+      const userId = await createTestUser();
+      await createTestOAuthLink(userId, "google", { providerAccountId: mockGoogleUserInfo.sub });
+      const { state } = await createGoogleAuthUrl();
+
+      const attack = await callback(state, { withStateCookie: false });
+      expect(locationOf(attack)).toBe("/login?error=invalid_state");
+
+      const response = await callback(state);
+      expect(locationOf(response)).toBe(
+        `/auth/oauth/complete?redirect=${encodeURIComponent("/all")}`
+      );
+      expect(response.headers.get("set-cookie") ?? "").toMatch(/(^|[ ,])session=/);
+    });
+
     it("lets extension-save through without one, since its page can't set it", async () => {
       const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
 
