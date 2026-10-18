@@ -10,6 +10,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { appUrl } from "@/server/config/env";
 import { validateDiscordCallback, isDiscordOAuthEnabled } from "@/server/auth/oauth/discord";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
@@ -28,8 +29,6 @@ import { readOAuthStateCookie, oauthStateCookieMatches } from "@/server/auth/oau
  * - state: CSRF protection state
  */
 export async function GET(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
   try {
     // Check if Discord OAuth is enabled
     if (!isDiscordOAuthEnabled()) {
