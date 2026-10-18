@@ -298,14 +298,16 @@ export function handleSubscriptionDeleted(
 /**
  * Applies a mark-all-read, from its mutation response or its event: the
  * absolute counts it carries, and a refetch of the entry lists, whose read
- * state it changed for possibly thousands of entries.
+ * state it changed for possibly thousands of entries. A response that marked
+ * nothing has no counts (none changed), but the lists still refetch: they may
+ * show entries read elsewhere.
  */
 export function handleMarkAllRead(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  counts: UnreadCounts
+  counts?: UnreadCounts
 ): void {
-  applyUnreadCounts(utils, queryClient, counts);
+  if (counts) applyUnreadCounts(utils, queryClient, counts);
   utils.entries.list.invalidate();
 }
 

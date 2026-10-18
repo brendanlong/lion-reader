@@ -1,7 +1,7 @@
 /**
  * useEntryMutations Hook
  *
- * Entry mutations (markRead, star/unstar, markAllRead). Read/starred changes
+ * Entry mutations (markRead, setStarred, markAllRead). Read/starred changes
  * are TanStack DB transactions on the local entry store: the intended state
  * shows immediately as an optimistic overlay, the server response is written
  * to the synced layer (newest `updatedAt` wins), and when the transaction
@@ -70,39 +70,16 @@ export interface MarkAllReadOptions {
  * Result of the useEntryMutations hook.
  */
 export interface UseEntryMutationsResult {
-  /**
-   * Mark one or more entries as read or unread.
-   */
+  /** Mark one or more entries as read or unread. */
   markRead: (ids: string[], read: boolean) => void;
 
-  /**
-   * Toggle the read status of an entry.
-   */
-  toggleRead: (entryId: string, currentlyRead: boolean) => void;
+  /** Star or unstar an entry. */
+  setStarred: (entryId: string, starred: boolean) => void;
 
-  /**
-   * Mark all entries as read with optional filters.
-   */
+  /** Mark all entries as read with optional filters. */
   markAllRead: (options?: MarkAllReadOptions) => void;
 
-  /**
-   * Star an entry.
-   */
-  star: (entryId: string) => void;
-
-  /**
-   * Unstar an entry.
-   */
-  unstar: (entryId: string) => void;
-
-  /**
-   * Toggle the starred status of an entry.
-   */
-  toggleStar: (entryId: string, currentlyStarred: boolean) => void;
-
-  /**
-   * Whether the markAllRead mutation is pending.
-   */
+  /** Whether the markAllRead mutation is pending. */
   isMarkAllReadPending: boolean;
 }
 
@@ -112,12 +89,12 @@ export interface UseEntryMutationsResult {
  * @example
  * ```tsx
  * function EntryList() {
- *   const { toggleRead, toggleStar } = useEntryMutations();
+ *   const { markRead, setStarred } = useEntryMutations();
  *
  *   return (
  *     <Entry
- *       onToggleRead={(id, read) => toggleRead(id, read)}
- *       onToggleStar={(id, starred) => toggleStar(id, starred)}
+ *       onToggleRead={(id, read) => markRead([id], !read)}
+ *       onToggleStar={(id, starred) => setStarred(id, !starred)}
  *     />
  *   );
  * }
@@ -195,21 +172,11 @@ export function useEntryMutations(): UseEntryMutationsResult {
   );
 
   const markAllReadMutation = trpc.entries.markAllRead.useMutation({
-    onSuccess: (data) => {
-      // Nothing marked (no counts) means no counts changed, but the list may
-      // still show entries read elsewhere.
-      if (data.counts) handleMarkAllRead(utils, queryClient, data.counts);
-      else utils.entries.list.invalidate();
-    },
+    onSuccess: (data) => handleMarkAllRead(utils, queryClient, data.counts),
     onError: () => {
       toast.error("Failed to mark all as read");
     },
   });
-
-  const toggleRead = useCallback(
-    (entryId: string, currentlyRead: boolean) => markRead([entryId], !currentlyRead),
-    [markRead]
-  );
 
   const markAllRead = useCallback(
     (options?: MarkAllReadOptions) => {
@@ -218,23 +185,13 @@ export function useEntryMutations(): UseEntryMutationsResult {
     [markAllReadMutation]
   );
 
-  const star = useCallback((entryId: string) => setStarred(entryId, true), [setStarred]);
-  const unstar = useCallback((entryId: string) => setStarred(entryId, false), [setStarred]);
-  const toggleStar = useCallback(
-    (entryId: string, currentlyStarred: boolean) => setStarred(entryId, !currentlyStarred),
-    [setStarred]
-  );
-
   return useMemo(
     () => ({
       markRead,
-      toggleRead,
+      setStarred,
       markAllRead,
-      star,
-      unstar,
-      toggleStar,
       isMarkAllReadPending: markAllReadMutation.isPending,
     }),
-    [markRead, toggleRead, markAllRead, star, unstar, toggleStar, markAllReadMutation.isPending]
+    [markRead, setStarred, markAllRead, markAllReadMutation.isPending]
   );
 }

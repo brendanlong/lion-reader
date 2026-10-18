@@ -177,40 +177,6 @@ describe("useEntryMutations markRead", () => {
     );
   });
 
-  it("toggleRead sends the negation of the current read status for a single entry", async () => {
-    const { result, callsFor } = renderHookWithTrpc(
-      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
-      {
-        handlers: {
-          "entries.markRead": (input) => {
-            const typed = input as { entries: { id: string }[]; read: boolean };
-            return {
-              entries: typed.entries.map((e) => ({
-                id: e.id,
-                read: typed.read,
-                starred: false,
-                updatedAt: fixedDate,
-              })),
-              counts: createCounts(),
-            };
-          },
-        },
-      }
-    );
-
-    act(() => {
-      result.current.mutations.toggleRead("e1", false);
-    });
-
-    await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
-    const input = callsFor("entries.markRead")[0].input as {
-      entries: { id: string }[];
-      read: boolean;
-    };
-    expect(input.read).toBe(true);
-    expect(input.entries).toEqual([expect.objectContaining({ id: "e1" })]);
-  });
-
   it("shows a toast when the mutation fails", async () => {
     const { result } = renderHookWithTrpc(() => useEntryMutations(), {
       handlers: {
@@ -296,8 +262,8 @@ describe("useEntryMutations markAllRead", () => {
   });
 });
 
-describe("useEntryMutations star/unstar", () => {
-  it("star calls entries.setStarred with starred: true and applies counts on success", async () => {
+describe("useEntryMutations setStarred", () => {
+  it("sends entries.setStarred and applies the counts on success", async () => {
     const { result, queryClient, callsFor } = renderHookWithTrpc(
       () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
       {
@@ -314,7 +280,7 @@ describe("useEntryMutations star/unstar", () => {
     );
 
     act(() => {
-      result.current.mutations.star("e1");
+      result.current.mutations.setStarred("e1", true);
     });
 
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
@@ -336,28 +302,6 @@ describe("useEntryMutations star/unstar", () => {
     expect(storedCount(queryClient, {})).toEqual({ unread: 4 });
   });
 
-  it("toggleStar unstars an entry that is currently starred", async () => {
-    const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
-      handlers: {
-        "entries.setStarred": (input) => {
-          const typed = input as { id: string; starred: boolean };
-          return {
-            entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
-            counts: createCounts(),
-          };
-        },
-      },
-    });
-
-    act(() => {
-      result.current.toggleStar("e1", true);
-    });
-
-    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
-    const input = callsFor("entries.setStarred")[0].input as { starred: boolean };
-    expect(input.starred).toBe(false);
-  });
-
   it("shows a star-specific toast when the mutation fails", async () => {
     const { result } = renderHookWithTrpc(() => useEntryMutations(), {
       handlers: {
@@ -368,7 +312,7 @@ describe("useEntryMutations star/unstar", () => {
     });
 
     act(() => {
-      result.current.star("e1");
+      result.current.setStarred("e1", true);
     });
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to star entry"));
@@ -414,7 +358,7 @@ describe("useEntryMutations concurrent mutations", () => {
 
     act(() => {
       result.current.reader.markRead(["e1"], true);
-      result.current.list.toggleRead("e1", true);
+      result.current.list.markRead(["e1"], false);
     });
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
     expect(entry()?.read).toBe(false);
@@ -440,7 +384,7 @@ describe("useEntryMutations concurrent mutations", () => {
 
     act(() => {
       result.current.reader.markRead(["e1"], true);
-      result.current.list.toggleRead("e1", true);
+      result.current.list.markRead(["e1"], false);
     });
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(2));
 
@@ -467,8 +411,8 @@ describe("useEntryMutations concurrent mutations", () => {
     seedEntry(queryClient, { read: true, starred: true });
 
     act(() => {
-      result.current.list.toggleRead("e1", true);
-      result.current.reader.unstar("e1");
+      result.current.list.markRead(["e1"], false);
+      result.current.reader.setStarred("e1", false);
     });
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
     expect(entry()).toMatchObject({ read: false, starred: false });
@@ -493,7 +437,7 @@ describe("useEntryMutations concurrent mutations", () => {
     });
 
     act(() => {
-      result.current.reader.star("e1");
+      result.current.reader.setStarred("e1", true);
     });
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
 
@@ -524,7 +468,7 @@ describe("useEntryMutations concurrent mutations", () => {
 
     act(() => {
       result.current.reader.markRead(["e1"], true);
-      result.current.list.toggleStar("e1", false);
+      result.current.list.setStarred("e1", true);
     });
     await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
