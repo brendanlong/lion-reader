@@ -3,9 +3,11 @@
  * local, synchronous matcher over it. The index is small enough that scoring
  * every entry on each keystroke is instant, so there's no server round-trip.
  *
- * Keywords should cover the individual controls in the section and the words a user might reach for
- * instead of ours ("dark mode" for Theme).
+ * Keywords should cover the individual controls in the section and the words
+ * a user might reach for instead of ours ("dark mode" for Theme).
  */
+
+import { AI_PROVIDER_INFO } from "@/lib/ai/providers";
 
 export const SETTINGS_PAGES = [
   { href: "/settings", label: "Account" },
@@ -38,7 +40,7 @@ export const SETTINGS_SEARCH_INDEX = [
     page: "/settings",
     title: "Account Information",
     description: "Your email address, when you joined, and whether your email is verified.",
-    keywords: ["email address", "member since", "verified", "profile", "user"],
+    keywords: ["email address", "member since", "verified", "user"],
   },
   {
     id: "linked-accounts",
@@ -73,7 +75,7 @@ export const SETTINGS_SEARCH_INDEX = [
     page: "/settings",
     title: "About",
     description: "Who made Lion Reader, the source code, and how to get in touch.",
-    keywords: ["contact", "feedback", "support", "github", "source code", "help", "version"],
+    keywords: ["contact", "feedback", "support", "github", "source code", "help"],
   },
   {
     id: "theme",
@@ -167,14 +169,8 @@ export const SETTINGS_SEARCH_INDEX = [
     description:
       "Add an API key for an AI provider to enable summaries, narration processing, and cloud voices.",
     keywords: [
-      "anthropic",
-      "claude",
-      "openai",
-      "gpt",
-      "google",
-      "gemini",
-      "groq",
-      "cerebras",
+      ...Object.values(AI_PROVIDER_INFO).map((p) => p.displayName),
+      "api key",
       "llm",
       "byok",
     ],
@@ -224,7 +220,6 @@ export const SETTINGS_SEARCH_INDEX = [
       "pitch",
       "highlight paragraph",
       "auto-scroll",
-      "podcast",
     ],
   },
   {
@@ -267,7 +262,16 @@ export const SETTINGS_SEARCH_INDEX = [
     page: "/settings/integrations",
     title: "Wallabag API (Save Articles)",
     description: "Save articles from your phone with a Wallabag app.",
-    keywords: ["wallabag", "read later", "mobile app", "android", "ios", "qr code", "share"],
+    keywords: [
+      "wallabag",
+      "read later",
+      "mobile app",
+      "android",
+      "ios",
+      "qr code",
+      "share",
+      "sign out apps",
+    ],
   },
   {
     id: "ai-integrations",
@@ -369,6 +373,12 @@ const PHRASE_BONUS = 6;
  */
 const MIN_RELATIVE_SCORE = 0.25;
 
+/**
+ * A query shorter than this prefix-matches most of the index, which would
+ * mount (and start the queries of) nearly every section at once.
+ */
+export const MIN_QUERY_LENGTH = 2;
+
 /** Shorter words are too easy to hit by accident with a typo or a substring. */
 const MIN_SUBSTRING_LENGTH = 3;
 const MIN_TYPO_LENGTH = 4;
@@ -385,6 +395,10 @@ function normalize(text: string): string {
 function words(text: string): string[] {
   const normalized = normalize(text);
   return normalized === "" ? [] : normalized.split(" ");
+}
+
+function meaningfulWords(text: string): string[] {
+  return words(text).filter((w) => !STOP_WORDS.has(w));
 }
 
 /** True when `a` and `b` differ by at most one insertion, deletion, substitution or adjacent swap. */
@@ -429,17 +443,19 @@ interface IndexedEntry {
   phrases: string[];
 }
 
-const PAGE_LABELS = new Map<string, string>(SETTINGS_PAGES.map((p) => [p.href, p.label]));
+export const SETTINGS_PAGE_LABELS = new Map<string, string>(
+  SETTINGS_PAGES.map((p) => [p.href, p.label])
+);
 
 const INDEXED: IndexedEntry[] = SETTINGS_SEARCH_INDEX.map((entry) => ({
   entry,
   fields: [
     { weight: TITLE_WEIGHT, words: words(entry.title) },
     { weight: KEYWORD_WEIGHT, words: entry.keywords.flatMap(words) },
-    { weight: PAGE_WEIGHT, words: words(PAGE_LABELS.get(entry.page) ?? "") },
-    { weight: DESCRIPTION_WEIGHT, words: words(entry.description) },
+    { weight: PAGE_WEIGHT, words: words(SETTINGS_PAGE_LABELS.get(entry.page) ?? "") },
+    { weight: DESCRIPTION_WEIGHT, words: meaningfulWords(entry.description) },
   ],
-  phrases: [entry.title, ...entry.keywords].map(normalize),
+  phrases: [entry.title, ...entry.keywords].map((p) => meaningfulWords(p).join(" ")),
 }));
 
 function scoreEntry(indexed: IndexedEntry, queryWords: string[], phrase: string): number {
@@ -469,10 +485,8 @@ export function searchSettings(
   query: string,
   options: { canConfigureApiKeys: boolean }
 ): SettingsSearchResult[] {
-  const allWords = words(query);
-  const meaningful = allWords.filter((w) => !STOP_WORDS.has(w));
-  // A query of only stop words ("how", "my") still has to search for something.
-  const queryWords = meaningful.length > 0 ? meaningful : allWords;
+  if (normalize(query).length < MIN_QUERY_LENGTH) return [];
+  const queryWords = meaningfulWords(query);
   if (queryWords.length === 0) return [];
   const phrase = queryWords.join(" ");
 

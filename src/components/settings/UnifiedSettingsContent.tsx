@@ -16,7 +16,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { ClientLink } from "@/components/ui/client-link";
@@ -76,16 +76,18 @@ function SettingsSearchBar({
   query: string;
   onChange: (query: string) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="relative w-full md:max-w-xs" role="search">
       <SearchIcon className="text-faint pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
       <input
+        ref={inputRef}
         type="search"
         enterKeyHint="search"
         value={query}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Escape") {
+          if (e.key === "Escape" && query !== "") {
             e.preventDefault();
             onChange("");
           }
@@ -97,7 +99,10 @@ function SettingsSearchBar({
       {query !== "" && (
         <button
           type="button"
-          onClick={() => onChange("")}
+          onClick={() => {
+            onChange("");
+            inputRef.current?.focus();
+          }}
           aria-label="Clear search"
           title="Clear search"
           className="text-muted hover:text-body absolute top-1/2 right-1 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md transition-colors"
@@ -214,7 +219,7 @@ export function UnifiedSettingsContent() {
 
         {/* Main Content */}
         <div className="min-w-0 flex-1">
-          <ErrorBoundary message="Failed to load settings">
+          <ErrorBoundary key={isSearching ? "search" : pathname} message="Failed to load settings">
             {isSearching ? (
               <SettingsSearchResults query={query} onNavigate={() => setQuery("")} />
             ) : (

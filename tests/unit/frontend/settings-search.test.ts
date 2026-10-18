@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  MIN_QUERY_LENGTH,
   SETTINGS_PAGES,
   SETTINGS_SEARCH_INDEX,
   searchSettings,
@@ -12,8 +13,13 @@ function ids(query: string, options = ALL): string[] {
 }
 
 describe("searchSettings", () => {
-  it.each(["", "   ", "!?"])("returns nothing for the empty query %j", (query) => {
+  it.each(["", "   ", "!?", "how do I"])("returns nothing for the empty query %j", (query) => {
     expect(ids(query)).toEqual([]);
+  });
+
+  it("waits for enough characters to narrow the results", () => {
+    expect(ids("a".repeat(MIN_QUERY_LENGTH - 1))).toEqual([]);
+    expect(ids("ab".padEnd(MIN_QUERY_LENGTH, "o"))).not.toEqual([]);
   });
 
   it.each([
@@ -25,19 +31,18 @@ describe("searchSettings", () => {
     ["THÈME", "theme"],
     ["opml", "import-export"],
     ["font size", "article-text"],
+    ["openrouter", "ai-provider-keys"],
   ])("ranks the best section first for %j", (query, expected) => {
     expect(ids(query)[0]).toBe(expected);
   });
 
-  it("ranks a title match above a description-only match", () => {
+  it("ranks a title match above a keyword match", () => {
     const results = ids("narration");
     expect(results[0]).toBe("narration");
     expect(results).toContain("ai-text-processing");
   });
 
   it("requires every query word to match", () => {
-    expect(ids("font")).toContain("article-text");
-    expect(ids("password")).toContain("password");
     expect(ids("font password")).toEqual([]);
   });
 

@@ -2,20 +2,22 @@
  * SettingsSearchResults Component
  *
  * The "Search results" settings tab: the live sections matching the query,
- * best match first, each labeled with the page it lives on. Each section is
- * its own chunk, so only the matching sections' code is downloaded.
+ * best match first, each labeled with the page it lives on. Sections load
+ * lazily, so only the matching sections' modules are downloaded.
  */
 
 "use client";
 
-import { useMemo, type ComponentType } from "react";
+import { useDeferredValue, useMemo, type ComponentType } from "react";
 import dynamic from "next/dynamic";
 import { trpc } from "@/lib/trpc/client";
 import { ClientLink } from "@/components/ui/client-link";
 import { ChevronRightIcon } from "@/components/ui/icons";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { SettingsListSkeleton } from "./SettingsListSkeleton";
 import {
-  SETTINGS_PAGES,
+  MIN_QUERY_LENGTH,
+  SETTINGS_PAGE_LABELS,
   searchSettings,
   type SettingsSearchResult,
   type SettingsSectionId,
@@ -124,8 +126,6 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType> = {
   }),
 };
 
-const PAGE_LABELS = new Map<string, string>(SETTINGS_PAGES.map((p) => [p.href, p.label]));
-
 function SearchResult({
   result,
   onNavigate,
@@ -134,17 +134,21 @@ function SearchResult({
   onNavigate: () => void;
 }) {
   const Section = SECTION_COMPONENTS[result.id];
+  const pageLabel = SETTINGS_PAGE_LABELS.get(result.page);
   return (
     <div>
       <ClientLink
         href={result.page}
         onNavigate={onNavigate}
-        className="ui-text-xs text-muted hover:text-body mb-1 inline-flex items-center gap-0.5"
+        aria-label={`Open ${pageLabel} settings`}
+        className="ui-text-sm text-muted hover:text-body mb-1 inline-flex min-h-11 items-center gap-0.5"
       >
-        {PAGE_LABELS.get(result.page)}
-        <ChevronRightIcon className="h-3 w-3" />
+        {pageLabel}
+        <ChevronRightIcon className="h-3.5 w-3.5" />
       </ClientLink>
-      <Section />
+      <ErrorBoundary message={`Failed to load ${result.title}`}>
+        <Section />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -159,24 +163,34 @@ export function SettingsSearchResults({ query, onNavigate }: SettingsSearchResul
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const canConfigureApiKeys = preferencesQuery.data?.canConfigureApiKeys ?? false;
 
+  // Typing stays responsive while a new set of sections mounts.
+  const deferredQuery = useDeferredValue(query);
   const results = useMemo(
-    () => searchSettings(query, { canConfigureApiKeys }),
-    [query, canConfigureApiKeys]
+    () => searchSettings(deferredQuery, { canConfigureApiKeys }),
+    [deferredQuery, canConfigureApiKeys]
   );
 
-  if (results.length === 0) {
-    return (
-      <p className="ui-text-sm text-muted py-8 text-center">
-        No settings match &ldquo;{query.trim()}&rdquo;.
-      </p>
-    );
-  }
+  const trimmed = deferredQuery.trim();
+  const status =
+    trimmed.length < MIN_QUERY_LENGTH
+      ? "Keep typing to search settings."
+      : results.length === 0
+        ? `No settings match \u201c${trimmed}\u201d.`
+        : `${results.length} ${results.length === 1 ? "setting" : "settings"} found`;
 
   return (
-    <div className="space-y-8">
-      {results.map((result) => (
-        <SearchResult key={result.id} result={result} onNavigate={onNavigate} />
-      ))}
+    <div>
+      <p
+        role="status"
+        className={results.length === 0 ? "ui-text-sm text-muted py-8 text-center" : "sr-only"}
+      >
+        {status}
+      </p>
+      <div className="space-y-8">
+        {results.map((result) => (
+          <SearchResult key={result.id} result={result} onNavigate={onNavigate} />
+        ))}
+      </div>
     </div>
   );
 }
