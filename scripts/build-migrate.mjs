@@ -14,7 +14,4 @@ await buildBundle({
   label: "Migration",
   entryPoint: "scripts/migrate.ts",
   outfile: "dist/migrate.js",
-
-  // No external dependencies needed - pg and ioredis can be bundled
-  external: [],
 });

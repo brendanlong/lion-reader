@@ -4,12 +4,7 @@
  * Used by every server-side process:
  * - Next.js app server: via sentry.server.config.ts / sentry.edge.config.ts,
  *   loaded from src/instrumentation.ts
- * - Background worker: scripts/worker.ts
- * - Discord bot: scripts/discord-bot.ts
- *
- * The worker and bot must call this themselves — Next.js instrumentation only
- * runs in the app server, so without an explicit init their
- * `Sentry.captureException` calls are silent no-ops.
+ * - Background worker and Discord bot: runProcess (src/server/process.ts)
  */
 
 import * as Sentry from "@sentry/nextjs";

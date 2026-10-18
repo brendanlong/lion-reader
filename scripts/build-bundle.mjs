@@ -1,7 +1,7 @@
 /**
  * Shared esbuild driver for the deployable bundles (server, worker, Discord bot,
- * migrate). Each `build-*.mjs` is just an entry point + outfile + its own
- * `external` list; everything else — path-alias resolution, esbuild options,
+ * migrate). Each `build-*.mjs` is just an entry point + outfile (+ any extra
+ * externals); everything else — path-alias resolution, esbuild options, externals,
  * the CommonJS marker, error handling — lives here so the four can't drift.
  *
  * Bundles are emitted as CommonJS on purpose; see the "Module System (ESM)"
@@ -39,13 +39,30 @@ function formatSize(bytes) {
 }
 
 /**
+ * Packages every bundle leaves as runtime requires, because bundling breaks
+ * them: native addons (argon2's node-gyp binding and our own `native/` crates,
+ * whose loaders resolve the binary relative to themselves) and
+ * html-rewriter-wasm (WASM files and internal requires).
+ */
+const NATIVE_EXTERNALS = [
+  "argon2",
+  "html-rewriter-wasm",
+  "@lion-reader/sanitizer",
+  "@lion-reader/readability",
+  "@lion-reader/feed-parser",
+  "@lion-reader/markdown",
+  "@lion-reader/speech-encoder",
+];
+
+/**
  * Bundle one entry point and exit non-zero if esbuild fails.
  *
  * @param {object} options
  * @param {string} options.label Human-readable name used in the build logs.
  * @param {string} options.entryPoint Entry file, relative to the repo root.
  * @param {string} options.outfile Output file, relative to the repo root.
- * @param {string[]} [options.external] Packages to leave as runtime requires.
+ * @param {string[]} [options.external] Packages to leave as runtime requires,
+ *   on top of NATIVE_EXTERNALS.
  */
 export async function buildBundle({ label, entryPoint, outfile, external = [] }) {
   console.log(`Building ${label} bundle...`);
@@ -67,7 +84,7 @@ export async function buildBundle({ label, entryPoint, outfile, external = [] })
       // Resolve TypeScript path aliases
       alias: tsconfigAliases(),
 
-      external,
+      external: [...NATIVE_EXTERNALS, ...external],
 
       // Source maps for debugging production issues
       sourcemap: true,

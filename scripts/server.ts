@@ -25,7 +25,13 @@ import {
   renderMaintenanceHtml,
   maintenanceJsonBody,
 } from "../src/server/maintenance/server-gate";
-import { getResourceCleanup } from "../src/server/shutdown";
+import {
+  createShutdown,
+  getResourceCleanup,
+  handleProcessSignals,
+  DRAIN_TIMEOUT_MS,
+  SHUTDOWN_DEADLINE_MS,
+} from "../src/server/shutdown";
 import { logger } from "../src/lib/logger";
 
 const dev = process.env.NODE_ENV !== "production";
@@ -80,13 +86,6 @@ async function revalidatePublicPages(): Promise<void> {
     }
   }
 }
-
-// How long in-flight requests and SSE streams get to finish before their
-// connections are severed. Must fit inside fly.toml's kill_timeout (with room
-// for the resource cleanup that follows). Short in dev so Ctrl+C is snappy.
-const DRAIN_TIMEOUT_MS = dev ? 1_000 : 15_000;
-// Hard deadline for the whole shutdown (drain + pool/Redis cleanup).
-const FORCE_EXIT_TIMEOUT_MS = DRAIN_TIMEOUT_MS + 10_000;
 
 // In production we run against Next's `output: "standalone"` build, whose
 // traced node_modules deliberately omits the runtime config-loading machinery
@@ -187,52 +186,31 @@ app.prepare().then(() => {
   // drain, sever long-lived connections (SSE streams never end on their own —
   // destroying their sockets aborts the requests, which unsubscribes them
   // from Redis), and only then close shared resources.
-  let shuttingDown = false;
-  const shutdown = (signal: string): void => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    logger.info(`Received ${signal}, shutting down server...`, {
-      drainTimeoutMs: DRAIN_TIMEOUT_MS,
-    });
-
-    // Hard deadline in case a connection or pool refuses to close.
-    setTimeout(() => {
-      logger.error("Shutdown did not complete in time, forcing exit");
-      process.exit(1);
-    }, FORCE_EXIT_TIMEOUT_MS).unref();
-
-    // Stop accepting new connections. The callback fires once every existing
-    // connection has closed.
-    server.close(() => {
-      void (async () => {
-        try {
-          // Close DB pool / Redis / metrics server, all registered by
-          // instrumentation.ts in the Next.js runtime module graph (a separate
-          // copy from this bundle's modules in production). The metrics server
-          // (port 9091) is started AND stopped there so it shares the registry
-          // the route handlers write to — see src/instrumentation.ts.
-          const cleanup = getResourceCleanup();
-          if (cleanup) {
-            await cleanup();
-          }
-          logger.info("Graceful shutdown complete");
-          process.exit(0);
-        } catch (error) {
-          logger.error("Error during shutdown", { error });
-          process.exit(1);
-        }
-      })();
-    });
-
-    // Idle keep-alive connections would otherwise hold the server open until
-    // their sockets time out.
-    server.closeIdleConnections();
-
-    // Sever whatever is still open (SSE, slow requests) after the drain
-    // period.
-    setTimeout(() => server.closeAllConnections(), DRAIN_TIMEOUT_MS).unref();
-  };
-
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  const shutdown = createShutdown({
+    drainTimeoutMs: DRAIN_TIMEOUT_MS,
+    deadlineMs: SHUTDOWN_DEADLINE_MS,
+    exit: (code) => process.exit(code),
+    drain: (timeout) =>
+      new Promise<void>((resolve) => {
+        // Stop accepting new connections. The callback fires once every
+        // existing connection has closed.
+        server.close(() => resolve());
+        // Idle keep-alive connections would otherwise hold the server open
+        // until their sockets time out.
+        server.closeIdleConnections();
+        // Sever whatever is still open (SSE, slow requests) after the drain
+        // period.
+        timeout.addEventListener("abort", () => server.closeAllConnections(), { once: true });
+      }),
+    // Close DB pool / Redis / metrics server, all registered by
+    // instrumentation.ts in the Next.js runtime module graph (a separate copy
+    // from this bundle's modules in production). The metrics server (port 9091)
+    // is started AND stopped there so it shares the registry the route handlers
+    // write to — see src/instrumentation.ts. Every connection is closed by now,
+    // drained or severed, so nothing is left using them.
+    cleanup: async () => {
+      await getResourceCleanup()?.();
+    },
+  });
+  handleProcessSignals(shutdown);
 });
