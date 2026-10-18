@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   BUSY_FIRST_WAIT_MS,
+  BUSY_RETRY_AFTER_SECONDS,
+  KEPT_VOICE_FAILURE_TTL_MS,
   speakWhenFree,
   speechErrorAnswer,
   SpeechRejectedError,
@@ -201,13 +203,15 @@ describe("speechErrorAnswer", () => {
       status: 503,
       headers: { "Retry-After": "3" },
     });
-    const unknownWait = speechErrorAnswer(new ProviderBusyError("busy", null), {});
-    expect(unknownWait.status).toBe(503);
-    expect(Number(unknownWait.headers["Retry-After"])).toBeGreaterThan(0);
-
-    const unavailable = speechErrorAnswer(new SpeechUnavailableError("try again shortly"), {});
-    expect(unavailable).toMatchObject({ status: 503, message: "try again shortly" });
-    expect(Number(unavailable.headers["Retry-After"])).toBeGreaterThan(0);
+    expect(speechErrorAnswer(new ProviderBusyError("busy", null), {})).toMatchObject({
+      status: 503,
+      headers: { "Retry-After": String(Math.ceil(BUSY_RETRY_AFTER_SECONDS)) },
+    });
+    expect(speechErrorAnswer(new SpeechUnavailableError("try again shortly"), {})).toMatchObject({
+      status: 503,
+      message: "try again shortly",
+      headers: { "Retry-After": String(Math.ceil(KEPT_VOICE_FAILURE_TTL_MS / 1000)) },
+    });
   });
 
   it("ends narration with the message a refusal is written to show", () => {
