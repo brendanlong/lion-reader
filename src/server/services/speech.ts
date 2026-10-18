@@ -11,7 +11,13 @@ import {
   SPEECH_PROVIDERS,
   type SpeechProvider,
 } from "@/lib/ai/providers";
-import { DEFAULT_CLOUD_VOICE_MODELS, DEFAULT_CLOUD_VOICES } from "@/lib/narration/constants";
+import { z } from "zod";
+import {
+  DEFAULT_CLOUD_VOICE_MODELS,
+  DEFAULT_CLOUD_VOICES,
+  MAX_CLOUD_SPEECH_CHARS,
+  MAX_CLOUD_SPEECH_PAUSE_SECONDS,
+} from "@/lib/narration/constants";
 import { jittered } from "@/lib/jitter";
 import { logger } from "@/lib/logger";
 import {
@@ -526,6 +532,20 @@ export function resolveSpeechModel(
     requestedVoice && hasVoice(model, requestedVoice) ? requestedVoice : defaultVoiceFor(model);
   return { model, voice };
 }
+
+/**
+ * A `POST /api/v1/narration/speech` body, {@link streamSpeech}'s request:
+ * here rather than in the route so the OpenAPI document describes it too.
+ */
+export const speechRequestSchema = z.object({
+  /** `provider:model` ref; null means the default model. */
+  model: z.string().max(200).nullable(),
+  /** Null means the model's default voice. */
+  voice: z.string().max(200).nullable(),
+  text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
+  /** Silence after the speech, so chunks played back to back pause like sentences do. */
+  pauseSeconds: z.number().min(0).max(MAX_CLOUD_SPEECH_PAUSE_SECONDS).default(0),
+});
 
 /** Longest a provider gets to finish a chunk. */
 const SPEECH_TIMEOUT_MS = 120_000;

@@ -40,17 +40,18 @@ class doing it.
   launcher entries are aliases and only one is enabled (`LauncherIcon.kt`).
   From adb: `adb shell monkey -p <package> -c android.intent.category.LAUNCHER 1`
   (`am start -n` on `MainActivity` is refused).
-- When the server's sync behavior changes, change `ModelServer` to match; keep
-  `ServerLimits` (which it and `FakeServer` enforce) current too, or a fake
-  hides a request the server would refuse.
+- When the server's sync behavior changes, change `ModelServer` to match.
+- A server constant the app must agree with (a request limit, a setting's
+  range) goes in the generated `ServerConstants.kt`, never a copied literal.
 - Anything looked up by name (reflection, serializers found at run time) needs
   a keep rule in `androidApp/proguard-rules.pro`: release builds use R8, and a
   missing rule only fails at run time.
 - Generated files are regenerated, never edited:
   `assets/reader/narration.js` (`pnpm app:narration`, from
-  `src/lib/narration/app-reader.ts`) and `assets/reader/appearance.json`
-  (`pnpm app:appearance`, from `src/lib/appearance/config.ts`), both checked
-  by unit tests; the fonts (`scripts/subset-fonts.py`) and launcher icon layers
+  `src/lib/narration/app-reader.ts`), `assets/reader/appearance.json`
+  (`pnpm app:appearance`, from `src/lib/appearance/config.ts`) and
+  `ServerConstants.kt` (`pnpm app:server-constants`), all checked by unit
+  tests; the fonts (`scripts/subset-fonts.py`) and launcher icon layers
   (`scripts/app-icon.py`, from `public/logo.svg`), whose headers say how.
 
 ## Commands

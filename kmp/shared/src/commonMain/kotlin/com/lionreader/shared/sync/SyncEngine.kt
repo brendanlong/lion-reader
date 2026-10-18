@@ -6,6 +6,7 @@ import com.lionreader.shared.api.COLLECTION_TYPE
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.ListFilter
 import com.lionreader.shared.api.MarkReadRequest
+import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.api.Subscription
@@ -21,9 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private const val FLUSH_BATCH = 1000
 private const val CONTENT_BATCH = 50
-private const val RECENTLY_READ_PAGE = 100
 private const val RECENTLY_READ_REFRESH = 20
 
 /**
@@ -137,7 +136,7 @@ class SyncEngine(
         val ops = outboxQueries.selectStates().executeAsList()
         for ((key, group) in ops.groupBy { it.field_ to (it.value_ == 1L) }) {
             val (field, value) = key
-            for (batch in group.chunked(FLUSH_BATCH)) {
+            for (batch in group.chunked(ServerLimits.STATE_WRITE_ENTRIES)) {
                 val changes = batch.map { StateChange(it.entry_id, formatMillis(it.changed_at)) }
                 val response = sendOrReject {
                     if (field == "read") {
@@ -245,7 +244,7 @@ class SyncEngine(
         var fetched = 0
         var cursor: String? = null
         do {
-            val limit = if (fetched == 0) RECENTLY_READ_REFRESH else RECENTLY_READ_PAGE
+            val limit = if (fetched == 0) RECENTLY_READ_REFRESH else ServerLimits.ENTRIES_PAGE_SIZE
             val page = api.listRecentlyRead(cursor, limit)
             val times = page.items.mapNotNull { it.readChangedAt?.let(::parseMillis) }
             writer.saveRecentlyRead(page.items, windowStart)

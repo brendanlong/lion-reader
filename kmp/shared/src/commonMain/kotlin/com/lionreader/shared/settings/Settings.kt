@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.lionreader.shared.api.CloudSpeechPause
 import com.lionreader.shared.sync.RetentionPolicy
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -91,7 +92,7 @@ data class AppSettings(
     val cloudVoiceModel: String? = null,
     val cloudVoice: String? = null,
     /** Silence after each chunk of cloud speech. */
-    val cloudVoicePauseSeconds: Float = 0.6f,
+    val cloudVoicePauseSeconds: Float = CloudSpeechPause.DEFAULT_SECONDS,
 ) {
     val retention: RetentionPolicy
         get() = RetentionPolicy(windowDays = retentionDays)

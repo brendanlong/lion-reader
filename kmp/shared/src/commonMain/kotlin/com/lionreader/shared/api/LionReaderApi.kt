@@ -31,9 +31,6 @@ private const val SPEECH_TIMEOUT_MILLIS = 180_000L
 /** Longest the speech stream may go quiet, before the first audio or between parts. */
 private const val SPEECH_STALL_MILLIS = 60_000L
 
-/** The server's limit on ids per `/entries/batch` request. */
-private const val MAX_BATCH_IDS = 100
-
 /**
  * A non-2xx response, or no response at all when signed out (status 0); [failure] says what it
  * means. [serverMessage] is the server's own explanation, when it sent one; [appErrorCode] its
@@ -60,7 +57,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         filter: ListFilter,
         cursor: String?,
         subscriptionId: String? = null,
-        limit: Int = 100,
+        limit: Int = ServerLimits.ENTRIES_PAGE_SIZE,
     ): EntryListPage =
         get(EntryListPage.serializer(), "/entries") {
             when (filter) {
@@ -74,7 +71,10 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         }
 
     /** The server's Recently Read: entries whose read state changed, latest first. */
-    suspend fun listRecentlyRead(cursor: String?, limit: Int = 100): EntryListPage =
+    suspend fun listRecentlyRead(
+        cursor: String?,
+        limit: Int = ServerLimits.ENTRIES_PAGE_SIZE,
+    ): EntryListPage =
         get(EntryListPage.serializer(), "/entries") {
             parameter("sortBy", "readChanged")
             parameter("limit", limit)
@@ -83,7 +83,7 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
 
     /** In as many requests as the server's limit on ids per request needs. */
     suspend fun getEntries(ids: List<String>): List<FullEntry> =
-        ids.chunked(MAX_BATCH_IDS).flatMap {
+        ids.chunked(ServerLimits.ENTRIES_PAGE_SIZE).flatMap {
             post(
                     GetManyResponse.serializer(),
                     "/entries/batch",
@@ -131,9 +131,9 @@ class LionReaderApi(private val http: HttpClient, private val auth: AppAuth) {
         }
 
     /**
-     * Speaks [text] (at most [MAX_CLOUD_SPEECH_CHARS]) with a cloud voice, handing [onAudio] the
-     * audio (AAC in fragmented MP4) as the server streams it. Throws [ApiException] for an error
-     * answer; a failure once audio has started throws from reading it.
+     * Speaks [text] (at most [ServerLimits.CLOUD_SPEECH_CHARS]) with a cloud voice, handing
+     * [onAudio] the audio (AAC in fragmented MP4) as the server streams it. Throws [ApiException]
+     * for an error answer; a failure once audio has started throws from reading it.
      */
     suspend fun streamSpeech(
         model: String,
