@@ -234,20 +234,24 @@ sealed interface SyncEvent {
         val subscription: EventSubscription? = null,
         val feed: EventFeed? = null,
     ) : SyncEvent {
-        /** [row], or else what an older server sent in its place. */
-        val subscriptionRow: Subscription
+        /**
+         * [row], or else what an older server (only the previous release, mid-deploy) sent in its
+         * place. Null with neither, since the subscription's type is unknown: the sync lists
+         * subscriptions instead.
+         */
+        val subscriptionRow: Subscription?
             get() =
                 row
-                    ?: Subscription(
-                        subscriptionId,
-                        // A server without [row] (only the previous release, mid-deploy)
-                        // always sent the feed's type.
-                        type = feed?.type ?: "web",
-                        url = feed?.url,
-                        title = subscription?.customTitle ?: feed?.title,
-                        originalTitle = feed?.title,
-                        tags = subscription?.tags.orEmpty(),
-                    )
+                    ?: feed?.let {
+                        Subscription(
+                            subscriptionId,
+                            type = it.type,
+                            url = it.url,
+                            title = subscription?.customTitle ?: it.title,
+                            originalTitle = it.title,
+                            tags = subscription?.tags.orEmpty(),
+                        )
+                    }
     }
 
     @Serializable
