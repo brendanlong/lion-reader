@@ -641,6 +641,11 @@ describe("entries.getMany", () => {
       content: "<p>Full</p>",
     },
     {
+      shows: "the feed content when full content was never fetched successfully",
+      entry: { fullContentCleaned: "<p>Full</p>" },
+      content: "<p>Feed</p>",
+    },
+    {
       shows: "the feed content when the latest full-content fetch failed",
       entry: {
         fullContentCleaned: "<p>Full</p>",
