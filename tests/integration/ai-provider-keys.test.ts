@@ -10,7 +10,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { userApiKeys } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
-import { getUserApiKeys } from "../../src/server/auth/session";
+import { getUserApiKeys } from "../../src/server/services/user-api-keys";
 import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { UNREADABLE_API_KEY } from "../../src/server/services/unreadable-api-key";
 import { createAuthContext, createTestUser } from "./helpers";

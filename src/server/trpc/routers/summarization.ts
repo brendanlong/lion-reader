@@ -37,7 +37,7 @@ import {
   UnreadableApiKeyError,
 } from "@/server/services/ai-providers";
 import { normalizeModelRef } from "@/lib/ai/model-ref";
-import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
+import { getApiKeyProviders, getUserApiKeys } from "@/server/services/user-api-keys";
 import { aiProviderName } from "@/lib/ai/providers";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
