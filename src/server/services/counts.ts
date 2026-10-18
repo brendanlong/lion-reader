@@ -146,8 +146,6 @@ async function getTagUnreadCounts(
 
 /**
  * Counts for multiple entries, with subscription and tag counts aggregated.
- * Used by markRead, star/unstar, and new_entry events to return counts for all
- * affected lists.
  */
 export type BulkUnreadCounts = z.infer<typeof unreadCountsSchema>;
 
