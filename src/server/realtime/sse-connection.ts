@@ -81,8 +81,16 @@ async function getUserCustomTitles(userId: string): Promise<Map<string, string |
   return new Map(rows.map((row) => [row.id, row.customTitle]));
 }
 
-/** An event row's custom title: its title, unless that's just the feed's own. */
-function customTitleOf(row: SyncSubscription): string | null {
+/**
+ * A subscription event's custom title: its row's title, unless that's just the
+ * feed's own. A previous release's events (during a deploy) have no row, and
+ * their deprecated `customTitle` is the raw custom title.
+ */
+function eventCustomTitle(
+  row: SyncSubscription | undefined,
+  deprecated: { customTitle: string | null }
+): string | null {
+  if (!row) return deprecated.customTitle;
   return row.title === row.originalTitle ? null : row.title;
 }
 
@@ -306,11 +314,11 @@ export function startSseConnection({
       // behind pending count queries.)
       if (event.type === "subscription_created") {
         // Email entries need the title too, though they come on this channel.
-        if (event.row) setCustomTitle(event.subscriptionId, customTitleOf(event.row));
+        setCustomTitle(event.subscriptionId, eventCustomTitle(event.row, event.subscription));
         // Only a web subscription has a feed channel.
         if (event.feedId !== null) subscribeToFeed(event.feedId, event.subscriptionId);
       } else if (event.type === "subscription_updated") {
-        if (event.row) setCustomTitle(event.subscriptionId, customTitleOf(event.row));
+        setCustomTitle(event.subscriptionId, eventCustomTitle(event.row, event));
       } else if (event.type === "subscription_deleted") {
         setCustomTitle(event.subscriptionId, null);
         if (event.feedId !== null) unsubscribeFromFeed(event.feedId);
