@@ -14,6 +14,8 @@ import { db } from "../../src/server/db";
 import { jobs, feeds, subscriptions, users } from "../../src/server/db/schema";
 import { getFeedFetchHealthSnapshot } from "../../src/server/feed/health";
 import { handleMonitorFeedHealth } from "../../src/server/jobs/handlers/monitor-feed-health";
+import { claimSingletonJob, getJobIntervalMs } from "../../src/server/jobs/queue";
+import { runJobHandler } from "../../src/server/jobs/worker";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 async function cleanup() {
@@ -97,15 +99,13 @@ describe("handleMonitorFeedHealth", () => {
   beforeEach(cleanup);
   afterAll(cleanup);
 
-  it("reports healthy and schedules the next run ~15 minutes out", async () => {
+  it("reports healthy", async () => {
     const userId = await createTestUser({ emailPrefix: "feed-health" });
     await createSubscribedFeed(userId, { lastFetchedAt: minutesAgo(5) });
 
     const result = await handleMonitorFeedHealth();
 
-    expect(result.success).toBe(true);
-    expect(result.nextRunAt.getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
-    expect(result.metadata?.status).toBe("healthy");
+    expect(result.status).toBe("healthy");
   });
 
   it("reports unhealthy when the newest success is older than the threshold", async () => {
@@ -119,13 +119,24 @@ describe("handleMonitorFeedHealth", () => {
 
     const result = await handleMonitorFeedHealth();
 
+    expect(result.status).toBe("unhealthy");
+    expect(result.failingFeedCount).toBe(1);
+  });
+
+  it("is rescheduled by the worker one interval after the run started", async () => {
+    const job = await claimSingletonJob("monitor_feed_health");
+    expect(job).not.toBeNull();
+    const startedAt = Date.now() - 1000;
+
+    const result = await runJobHandler(job!, "monitor_feed_health", startedAt);
+
     expect(result.success).toBe(true);
-    expect(result.metadata?.status).toBe("unhealthy");
-    expect(result.metadata?.failingFeedCount).toBe(1);
+    expect(result.nextRunAt.getTime()).toBe(startedAt + getJobIntervalMs("monitor_feed_health"));
+    expect(result.metadata?.status).toBe("healthy");
   });
 
   it("treats an instance with no pollable feeds as healthy", async () => {
     const result = await handleMonitorFeedHealth();
-    expect(result.metadata?.status).toBe("healthy");
+    expect(result.status).toBe("healthy");
   });
 });

@@ -1,32 +1,16 @@
 /**
- * Handler for `reconcile_membership_counters` jobs (singleton).
+ * Handler for `reconcile_membership_counters` jobs (fixed-interval singleton).
  *
  * See src/server/services/reconcile-counters.ts for the reconciliation itself.
  */
 
 import { db } from "../../db";
 import { countUnheldUserEntries, reconcileCounters } from "../../services/reconcile-counters";
-import type { JobHandlerResult } from "./types";
+import type { JobMetadata } from "./types";
 
-/**
- * How often the denormalized unread counters are reconciled against ground
- * truth. Daily: the counter triggers should keep them exact, so this is a
- * drift detector (any fix logs at error level) that doubles as self-healing.
- */
-const RECONCILE_COUNTERS_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Handler for reconcile_membership_counters jobs (singleton, stateless, runs daily).
- * See src/server/services/reconcile-counters.ts.
- */
-export async function handleReconcileCounters(): Promise<JobHandlerResult> {
-  const now = new Date();
+export async function handleReconcileCounters(): Promise<JobMetadata> {
   const result = await reconcileCounters(db);
   const unheldUserEntries = await countUnheldUserEntries(db);
 
-  return {
-    success: true,
-    nextRunAt: new Date(now.getTime() + RECONCILE_COUNTERS_INTERVAL_MS),
-    metadata: { ...result, unheldUserEntries },
-  };
+  return { ...result, unheldUserEntries };
 }

@@ -83,6 +83,11 @@ interface JobDefinition {
    * Ordered last in {@link SINGLETON_JOB_TYPES} so it can't starve the others.
    */
   reschedulesFast?: true;
+  /**
+   * A singleton that runs every `intervalMs`, measured from each run's start.
+   * The worker schedules it, so its handler returns only metadata.
+   */
+  intervalMs?: number;
 }
 
 /**
@@ -105,19 +110,27 @@ const JOB_DEFINITIONS = {
     payload: z.object({ feedId: z.string(), forceReprocessRequestedAt: z.string().optional() }),
     lane: "feed",
   },
-  // Renews all expiring WebSub subscriptions.
-  renew_websub: { payload: emptyPayload, lane: "singleton" },
+  // Renews all expiring WebSub subscriptions. Hourly: a lease can only be
+  // renewed on a run inside its renewal window (WEBSUB_RENEWAL_THRESHOLD_HOURS
+  // in handlers/renew-websub.ts, kept just above this), so a daily cadence
+  // would let sub-24h leases lapse.
+  renew_websub: { payload: emptyPayload, lane: "singleton", intervalMs: 60 * 60 * 1000 },
   // Periodic feed fetch health check. Alert cadence and de-duplication are
   // owned by the external healthchecks.io monitor, so no state is carried
   // across runs.
-  monitor_feed_health: { payload: emptyPayload, lane: "singleton" },
+  monitor_feed_health: { payload: emptyPayload, lane: "singleton", intervalMs: 15 * 60 * 1000 },
   // Daily retention cleanup of expired/revoked credentials and parked
   // one-time jobs. See src/server/services/retention.ts.
-  cleanup: { payload: emptyPayload, lane: "singleton" },
+  cleanup: { payload: emptyPayload, lane: "singleton", intervalMs: 24 * 60 * 60 * 1000 },
   // Daily self-healing sweep of the denormalized unread counters (issue
-  // #1117), by the membership rules of #1846. See
+  // #1117), by the membership rules of #1846: the triggers should keep them
+  // exact, so this is a drift detector (any fix logs at error level). See
   // src/server/services/reconcile-counters.ts.
-  reconcile_membership_counters: { payload: emptyPayload, lane: "singleton" },
+  reconcile_membership_counters: {
+    payload: emptyPayload,
+    lane: "singleton",
+    intervalMs: 24 * 60 * 60 * 1000,
+  },
   // Fills the Getting Started article in for users who predate it, a batch per
   // run (issue #1397). Stateless — `users.getting_started_at` is the progress
   // marker. See src/server/services/getting-started.ts. While a backlog remains
@@ -145,6 +158,20 @@ export type JobPayloads = {
 };
 
 const ALL_JOB_TYPES = Object.keys(JOB_DEFINITIONS) as JobType[];
+
+/** The job types that declare an `intervalMs`. */
+export type FixedIntervalJobType = {
+  [K in JobType]: (typeof JOB_DEFINITIONS)[K] extends { intervalMs: number } ? K : never;
+}[JobType];
+
+export function isFixedIntervalJobType(type: JobType): type is FixedIntervalJobType {
+  const definition: JobDefinition = JOB_DEFINITIONS[type];
+  return definition.intervalMs !== undefined;
+}
+
+export function getJobIntervalMs(type: FixedIntervalJobType): number {
+  return JOB_DEFINITIONS[type].intervalMs;
+}
 
 function jobTypesInLanes(...lanes: JobLane[]): JobType[] {
   return ALL_JOB_TYPES.filter((type) => lanes.includes(JOB_DEFINITIONS[type].lane));

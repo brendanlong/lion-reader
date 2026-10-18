@@ -19,13 +19,16 @@ import {
   claimFeedJob,
   claimFullContentJob,
   finishJob,
+  getJobIntervalMs,
   getJobPayload,
+  isFixedIntervalJobType,
   isJobType,
   renewJobLease,
   JOB_LEASE_HEARTBEAT_MS,
   GENERIC_CLAIM_JOB_TYPES,
   SINGLETON_JOB_TYPES,
   type FinishJobOptions,
+  type FixedIntervalJobType,
   type JobPayloads,
   type JobType,
 } from "./queue";
@@ -37,7 +40,7 @@ import { handleMonitorFeedHealth } from "./handlers/monitor-feed-health";
 import { handleCleanup } from "./handlers/cleanup";
 import { handleReconcileCounters } from "./handlers/reconcile-counters";
 import { handleBackfillGettingStarted } from "./handlers/backfill-getting-started";
-import type { JobHandlerResult } from "./handlers/types";
+import type { JobHandlerResult, JobMetadata } from "./handlers/types";
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
@@ -338,9 +341,14 @@ const UNKNOWN_JOB_TYPE_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 type WorkerJobResult = JobHandlerResult & Pick<FinishJobOptions, "consumeForceReprocess">;
 
-/** Runs each job type. Exhaustive, so a new `JobType` without a handler doesn't compile. */
+type SelfSchedulingJobType = Exclude<JobType, FixedIntervalJobType>;
+
+/**
+ * Runs each job type. Together with {@link FIXED_INTERVAL_JOB_HANDLERS},
+ * exhaustive, so a new `JobType` without a handler doesn't compile.
+ */
 const JOB_HANDLERS: {
-  [K in JobType]: (payload: JobPayloads[K], job: Job) => Promise<WorkerJobResult>;
+  [K in SelfSchedulingJobType]: (payload: JobPayloads[K], job: Job) => Promise<WorkerJobResult>;
 } = {
   fetch_feed: async (payload) => {
     // The one-shot forceReprocess token observed at claim (null for an
@@ -350,16 +358,40 @@ const JOB_HANDLERS: {
     const result = await handleFetchFeed(payload, { forceReprocess: claimedAt !== null });
     return { ...result, consumeForceReprocess: { claimedAt } };
   },
-  renew_websub: handleRenewWebsub,
-  monitor_feed_health: handleMonitorFeedHealth,
-  cleanup: handleCleanup,
-  reconcile_membership_counters: handleReconcileCounters,
   backfill_getting_started: handleBackfillGettingStarted,
   process_opml_import: handleProcessOpmlImport,
   fetch_full_content: (payload, job) => handleFetchFullContent(payload, job.consecutiveFailures),
 };
 
-function runJobHandler<K extends JobType>(job: Job, type: K): Promise<WorkerJobResult> {
+/** Handlers of the jobs the worker schedules (`intervalMs` in queue.ts). */
+const FIXED_INTERVAL_JOB_HANDLERS: { [K in FixedIntervalJobType]: () => Promise<JobMetadata> } = {
+  renew_websub: handleRenewWebsub,
+  monitor_feed_health: handleMonitorFeedHealth,
+  cleanup: handleCleanup,
+  reconcile_membership_counters: handleReconcileCounters,
+};
+
+/**
+ * Runs `job`'s handler and resolves when to run it next.
+ *
+ * @testonly
+ */
+export async function runJobHandler(
+  job: Job,
+  type: JobType,
+  startedAt: number
+): Promise<WorkerJobResult> {
+  if (isFixedIntervalJobType(type)) {
+    const metadata = await FIXED_INTERVAL_JOB_HANDLERS[type]();
+    return { success: true, nextRunAt: new Date(startedAt + getJobIntervalMs(type)), metadata };
+  }
+  return runSelfSchedulingHandler(job, type);
+}
+
+function runSelfSchedulingHandler<K extends SelfSchedulingJobType>(
+  job: Job,
+  type: K
+): Promise<WorkerJobResult> {
   return JOB_HANDLERS[type](getJobPayload(job, type), job);
 }
 
@@ -474,7 +506,7 @@ function createWorker(config: WorkerConfig = {}): Worker {
       });
 
       const result: WorkerJobResult = isJobType(job.type)
-        ? await runJobHandler(job, job.type)
+        ? await runJobHandler(job, job.type, startTime)
         : {
             // Possibly enqueued by a newer release during a rolling deploy:
             // leave it for a worker that knows the type.
