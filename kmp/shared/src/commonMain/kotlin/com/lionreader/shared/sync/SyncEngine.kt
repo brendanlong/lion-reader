@@ -311,7 +311,7 @@ class SyncEngine(
                     }
                 }
                 .toSet()
-        // A new-entry event with its data and type is complete for an entry
+        // A new-entry event with its data is complete for an entry
         // the device lacks. One it already has was listed by a bootstrap that
         // began before the entry was created, and may have been edited since
         // its body was downloaded (#1680), so it's fetched whole.
@@ -320,7 +320,7 @@ class SyncEngine(
             events
                 .filterIsInstance<SyncEvent.NewEntry>()
                 .filter {
-                    it.entry != null && it.entryType != null && !writer.entryExists(it.entryId)
+                    it.entry != null && !writer.entryExists(it.entryId)
                 }
                 .map { it.entryId }
         val ids =
@@ -340,13 +340,13 @@ class SyncEngine(
             val memberships =
                 events.flatMap {
                     when (it) {
-                        is SyncEvent.NewEntry -> it.subscriptionIds.orEmpty()
-                        is SyncEvent.EntryStateChanged -> it.subscriptionIds.orEmpty()
+                        is SyncEvent.NewEntry -> it.subscriptionIds
+                        is SyncEvent.EntryStateChanged -> it.subscriptionIds
                         else -> emptyList()
                     }
                 } +
-                    fetched.flatMap { it.subscriptionIds.orEmpty() } +
-                    resubscribed.flatMap { it.subscriptionIds.orEmpty() }
+                    fetched.flatMap { it.subscriptionIds } +
+                    resubscribed.flatMap { it.subscriptionIds }
             val known = writer.subscriptionIds() + created.map { it.subscriptionId }
             val unknown = memberships.toSet() - known
             if ((unknown - listedForUnknown).isNotEmpty()) {
@@ -357,7 +357,6 @@ class SyncEngine(
         return PulledPage(
             events = events,
             deletedIds = changes.deletions.map { it.entryId },
-            collectionMemberships = changes.collectionMemberships,
             cursors = changes.cursors,
             hasMore = changes.hasMore,
             catchUpStart = start,

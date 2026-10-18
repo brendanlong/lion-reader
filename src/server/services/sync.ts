@@ -256,6 +256,9 @@ async function databaseNow(db: Database): Promise<Temporal.Instant> {
  * Each entry's (active) collections, empty for one in none. Membership is per-user
  * entry state (changing it moves `user_entries.updated_at`), so an offline
  * store replaces an entry's memberships whenever its state is re-delivered.
+ * Only Android builds android-v0.6.0 through v0.8.0 read it (later ones use
+ * the events' `subscriptionIds`): without it they stop seeing articles join
+ * and leave collections, so it stays while those builds are installed.
  */
 async function listCollectionMemberships(
   db: Database,

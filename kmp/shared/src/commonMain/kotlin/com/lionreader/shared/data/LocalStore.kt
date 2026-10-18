@@ -18,8 +18,8 @@ private const val SAVED_SERVER_ID_KEY = "saved_subscription_id"
 
 /**
  * The id the device keeps the user's Saved subscription under (in `subscription_entry`), whatever
- * its server id: memberships synced before that id was known (from a server that predates it, or
- * saved before this app version) are Saved too.
+ * its server id, which it learns only from listing subscriptions: memberships synced under that id
+ * before then move here ([LocalStore.learnSavedSubscription]).
  */
 internal const val SAVED_SUBSCRIPTION_ID = "saved"
 
@@ -98,8 +98,8 @@ internal class LocalStore(val db: LionReaderDatabase) {
          * Null if read state never changed (the server never clears it, so a stored time stays).
          */
         readChangedAt: String?,
-        /** The entry's memberships; null from a server that predates them. */
-        subscriptionIds: List<String>?,
+        /** The entry's memberships. */
+        subscriptionIds: List<String>,
     ) {
         val published = publishedAt?.let(::parseMillis)
         val fetched = parseMillis(fetchedAt)
@@ -128,14 +128,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
             `value` = readChangedAt?.let(::parseMillis),
             id = id,
         )
-        if (subscriptionIds != null) {
-            setMemberships(id, subscriptionIds)
-        } else {
-            // A server older than subscriptionIds (#1846): what this one says is added to what
-            // the device knew, as the server had it then (its type was what made it saved).
-            subscriptionId?.let { memberships.insertIgnore(localSubscriptionId(it), id) }
-            if (type == SAVED_TYPE) memberships.insertIgnore(SAVED_SUBSCRIPTION_ID, id)
-        }
+        setMemberships(id, subscriptionIds)
     }
 
     fun upsertEntry(item: EntryListItem) =
@@ -173,7 +166,7 @@ internal class LocalStore(val db: LionReaderDatabase) {
         title: String?,
         originalTitle: String?,
         url: String?,
-        type: String?,
+        type: String,
         tags: List<TagRef>,
     ) {
         if (type == SAVED_TYPE) learnSavedSubscription(id)
@@ -225,23 +218,6 @@ internal class LocalStore(val db: LionReaderDatabase) {
         for (id in subscriptionIds) {
             memberships.insertIgnore(if (id == savedId) SAVED_SUBSCRIPTION_ID else id, entryId)
         }
-    }
-
-    /**
-     * Replaces an entry's collections with [collectionIds], from a server that sends an entry's
-     * collections but not its `subscriptionIds`: its feed and Saved stay as they were.
-     */
-    fun setCollections(entryId: String, collectionIds: List<String>) {
-        val kept = buildList {
-            entries.selectOrigin(entryId).executeAsOneOrNull()?.subscription_id?.let {
-                add(localSubscriptionId(it))
-            }
-            if (memberships.contains(SAVED_SUBSCRIPTION_ID, entryId).executeAsOne() > 0) {
-                add(SAVED_SUBSCRIPTION_ID)
-            }
-        }
-        memberships.deleteForEntry(entryId)
-        (kept + collectionIds).forEach { memberships.insertIgnore(it, entryId) }
     }
 
     /**

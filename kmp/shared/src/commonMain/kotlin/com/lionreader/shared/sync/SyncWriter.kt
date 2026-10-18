@@ -1,7 +1,6 @@
 package com.lionreader.shared.sync
 
 import com.lionreader.shared.api.BulkStateResponse
-import com.lionreader.shared.api.CollectionMembership
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.FullEntry
 import com.lionreader.shared.api.SubscriptionPage
@@ -18,8 +17,6 @@ import com.lionreader.shared.db.Outbox_state
 internal class PulledPage(
     val events: List<SyncEvent>,
     val deletedIds: List<String>,
-    /** Only from a server that predates entries' `subscriptionIds` (see [SyncWriter]). */
-    val collectionMemberships: List<CollectionMembership>,
     val cursors: SyncCursors,
     val hasMore: Boolean,
     /** The cursors the catch-up this page is part of started from. */
@@ -66,7 +63,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     }
 
     fun saveSubscriptions(page: SubscriptionPage) = db.transaction {
-        page.savedSubscriptionId?.let(store::learnSavedSubscription)
         page.items.forEach(store::upsertSubscription)
         db.entryQueries.refreshFeedTitles()
     }
@@ -138,16 +134,9 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
     private fun commitPageInTransaction(page: PulledPage, texts: Map<String, String>, now: Long) {
         page.deletedIds.forEach(store::deleteEntry)
         // Memberships before the events, as the server has them now: an unsubscribe in the same
-        // page keeps what's still in another subscription. A server that predates entries'
-        // subscriptionIds sends only their collections.
-        val reported = page.events.reportedMemberships()
-        for ((entryId, ids) in reported) {
+        // page keeps what's still in another subscription.
+        for ((entryId, ids) in page.events.reportedMemberships()) {
             if (store.entryExists(entryId)) store.setMemberships(entryId, ids)
-        }
-        for (membership in page.collectionMemberships) {
-            if (membership.entryId !in reported) {
-                store.setCollections(membership.entryId, membership.subscriptionIds)
-            }
         }
         page.events.forEach(::apply)
         for (entry in page.fetchedEntries) {
@@ -183,13 +172,11 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
         when (event) {
             is SyncEvent.NewEntry -> {
                 val entry = event.entry
-                val type = event.entryType
-                // Without its type, SyncEngine fetches the entry whole instead.
-                if (entry != null && type != null) {
+                if (entry != null) {
                     store.upsertEntry(
                         event.entryId,
                         event.subscriptionId,
-                        type,
+                        entry.type,
                         entry.url,
                         entry.title,
                         entry.author,
@@ -224,7 +211,6 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 }
             is SyncEvent.EntryStateChanged -> {
                 val entry = event.entry
-                val type = event.entryType
                 when {
                     store.entryExists(event.entryId) ->
                         db.entryQueries.updateServerState(
@@ -233,11 +219,11 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                             event.readChangedAt?.let(::parseMillis),
                             event.entryId,
                         )
-                    entry != null && type != null ->
+                    entry != null ->
                         store.upsertEntry(
                             event.entryId,
                             event.subscriptionId,
-                            type,
+                            entry.type,
                             entry.url,
                             entry.title,
                             entry.author,
@@ -429,8 +415,8 @@ private const val RECENTLY_OPENED_MILLIS = 24L * 60 * 60 * 1000
 private fun List<SyncEvent>.reportedMemberships(): Map<String, List<String>> = buildMap {
     for (event in this@reportedMemberships) {
         when (event) {
-            is SyncEvent.NewEntry -> event.subscriptionIds?.let { put(event.entryId, it) }
-            is SyncEvent.EntryStateChanged -> event.subscriptionIds?.let { put(event.entryId, it) }
+            is SyncEvent.NewEntry -> put(event.entryId, event.subscriptionIds)
+            is SyncEvent.EntryStateChanged -> put(event.entryId, event.subscriptionIds)
             else -> {}
         }
     }

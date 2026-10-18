@@ -23,9 +23,6 @@ WHERE subscription_id NOT IN (SELECT id FROM subscription WHERE type IS NOT 'col
 insertIgnore:
 INSERT OR IGNORE INTO subscription_entry(subscription_id, entry_id) VALUES (?, ?);
 
-contains:
-SELECT count(*) FROM subscription_entry WHERE subscription_id = ? AND entry_id = ?;
-
 deleteForEntry:
 DELETE FROM subscription_entry WHERE entry_id = ?;
 

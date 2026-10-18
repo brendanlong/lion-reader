@@ -3,7 +3,6 @@ package com.lionreader.shared.sync
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.BulkStateResponse
 import com.lionreader.shared.api.COLLECTION_TYPE
-import com.lionreader.shared.api.CollectionMembership
 import com.lionreader.shared.api.Deletion
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.EntryListPage
@@ -255,6 +254,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                             subscriptions.map { sub ->
                                 Subscription(
                                     sub,
+                                    type = "web",
                                     title = sub,
                                     originalTitle = sub,
                                     tags = emptyList(),
@@ -352,15 +352,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val events = page.flatMap { e ->
             buildList {
                 if (e.createdSeq > since) {
-                    add(
-                        SyncEvent.NewEntry(
-                            e.id,
-                            e.origin,
-                            e.type,
-                            e.eventEntry(),
-                            e.memberships,
-                        )
-                    )
+                    add(SyncEvent.NewEntry(e.id, e.origin, e.memberships, e.eventEntry()))
                 } else {
                     if (e.metadataSeq > since) {
                         add(
@@ -377,10 +369,9 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.read,
                                 e.starred,
                                 e.readChangedAt?.let { e.time(it) },
-                                e.origin,
-                                e.type,
-                                if (e.read) null else e.eventEntry(),
                                 e.memberships,
+                                e.origin,
+                                if (e.read) null else e.eventEntry(),
                             )
                         )
                     }
@@ -404,10 +395,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                     ),
                 deletions = deleted.map { Deletion(it.id, "${it.deletedSeq}") },
                 resyncRequired = false,
-                collectionMemberships =
-                    page
-                        .filter { it.stateSeq > since }
-                        .map { CollectionMembership(it.id, it.collections.sorted()) },
             ),
         )
     }
@@ -458,7 +445,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .map {
                     EntryState(
                         it.id,
-                        it.origin,
                         it.read,
                         it.starred,
                         it.readChangedAt?.let { t -> it.time(t) },
@@ -474,6 +460,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
 
     private fun Entry.eventEntry() =
         EventEntry(
+            type = type,
             title = id,
             publishedAt = time(published),
             fetchedAt = time(published),
