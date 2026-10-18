@@ -110,10 +110,9 @@ const JOB_DEFINITIONS = {
     payload: z.object({ feedId: z.string(), forceReprocessRequestedAt: z.string().optional() }),
     lane: "feed",
   },
-  // Renews all expiring WebSub subscriptions. Hourly: a lease can only be
-  // renewed on a run inside its renewal window (WEBSUB_RENEWAL_THRESHOLD_HOURS
-  // in handlers/renew-websub.ts, kept just above this), so a daily cadence
-  // would let sub-24h leases lapse.
+  // Renews all expiring WebSub subscriptions. Hourly: each run renews leases
+  // expiring within two intervals (handlers/renew-websub.ts), so a daily
+  // cadence would leave sub-day leases unrenewed for most of their life.
   renew_websub: { payload: emptyPayload, lane: "singleton", intervalMs: 60 * 60 * 1000 },
   // Periodic feed fetch health check. Alert cadence and de-duplication are
   // owned by the external healthchecks.io monitor, so no state is carried

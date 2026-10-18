@@ -7,17 +7,17 @@
 import { renewExpiringSubscriptions } from "../../feed/websub";
 import { trackWebsubRenewal } from "../../metrics/metrics";
 import { logger } from "@/lib/logger";
+import { getJobIntervalMs } from "../queue";
 import type { JobMetadata } from "./types";
 
+const HOUR_MS = 60 * 60 * 1000;
+
 /**
- * How far ahead of expiry we renew, in hours.
- *
- * Kept just above the run interval (`renew_websub`'s `intervalMs` in queue.ts)
- * so every lease is renewed on the run before it would expire, while long
- * leases are left untouched until near their own expiry (no per-run
- * re-subscribe spam).
+ * How far ahead of expiry we renew: two runs, so every lease is renewed on the
+ * run before it would expire, while long leases are left untouched until near
+ * their own expiry (no per-run re-subscribe spam).
  */
-const WEBSUB_RENEWAL_THRESHOLD_HOURS = 2;
+const WEBSUB_RENEWAL_THRESHOLD_HOURS = (2 * getJobIntervalMs("renew_websub")) / HOUR_MS;
 
 /** Renews active WebSub subscriptions expiring within WEBSUB_RENEWAL_THRESHOLD_HOURS. */
 export async function handleRenewWebsub(): Promise<JobMetadata> {
