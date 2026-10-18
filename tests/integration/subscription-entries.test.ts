@@ -31,7 +31,7 @@ import {
 import { createSubscription, mergeSubscriptionIntoFeed } from "../../src/server/services/subscribe";
 import { unsubscribe } from "../../src/server/services/subscription-updates";
 import { uploadArticle } from "../../src/server/services/saved";
-import { getGlobalUnreadCounts } from "../../src/server/services/counts";
+import { getUserUnreadCounts } from "../../src/server/services/counts";
 import {
   countUnheldUserEntries,
   reconcileCounters,
@@ -220,7 +220,7 @@ describe("membership write paths (#1846)", () => {
     expect(await membershipsOf(userId)).toEqual(
       pairs([saved[0].id, first.id], [saved[0].id, second.id])
     );
-    expect(await getGlobalUnreadCounts(db, userId)).toMatchObject({ savedUnread: 2, allUnread: 2 });
+    expect(await getUserUnreadCounts(db, userId)).toMatchObject({ savedUnread: 2, allUnread: 2 });
   });
 
   it("creates one saved subscription when two first saves race", async () => {

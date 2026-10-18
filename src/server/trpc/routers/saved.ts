@@ -30,42 +30,12 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { savedArticleUrlSchema, saveCollectionIdsSchema, uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
-import type { db as dbType } from "@/server/db";
-import { getGlobalUnreadCounts } from "@/server/services/counts";
+import { unreadCountsSchema } from "@/lib/events/schemas";
+import { getBulkEntryRelatedCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
 
 // Saved-article management is part of the MCP tool surface, which the app shares.
 const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
-
-// ============================================================================
-// Output Schemas
-// ============================================================================
-
-/**
- * Schema for unread counts returned from saved article mutations.
- * Saved articles only affect all, starred, and saved counts (no subscription/tags).
- */
-const savedUnreadCountsSchema = z.object({
-  all: z.object({ unread: z.number() }),
-  starred: z.object({ unread: z.number() }),
-  saved: z.object({ unread: z.number() }),
-});
-
-/**
- * The absolute counts a saved-article mutation affects: saved articles have no
- * subscription or tags, so only the global counters move.
- */
-async function getSavedUnreadCounts(
-  db: typeof dbType,
-  userId: string
-): Promise<z.infer<typeof savedUnreadCountsSchema>> {
-  const counts = await getGlobalUnreadCounts(db, userId);
-  return {
-    all: { unread: counts.allUnread },
-    starred: { unread: counts.starredUnread },
-    saved: { unread: counts.savedUnread },
-  };
-}
 
 /**
  * Changing collections needs a reader scope; the save-only `saved:write`
@@ -143,7 +113,7 @@ export const savedRouter = createTRPCRouter({
     .output(
       z.object({
         article: savedService.savedArticleMetadataSchema,
-        counts: savedUnreadCountsSchema,
+        counts: unreadCountsSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -158,7 +128,12 @@ export const savedRouter = createTRPCRouter({
         userAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
 
-      return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
+      return {
+        article,
+        counts: await getBulkEntryRelatedCounts(ctx.db, userId, [
+          { id: article.id, subscriptionId: null },
+        ]),
+      };
     }),
 
   /**
@@ -238,11 +213,17 @@ export const savedRouter = createTRPCRouter({
     .output(
       z.object({
         article: savedService.savedArticleMetadataSchema,
-        counts: savedUnreadCountsSchema,
+        counts: unreadCountsSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const article = await savedService.uploadFile(ctx.db, ctx.session.user.id, input);
-      return { article, counts: await getSavedUnreadCounts(ctx.db, ctx.session.user.id) };
+      const userId = ctx.session.user.id;
+      const article = await savedService.uploadFile(ctx.db, userId, input);
+      return {
+        article,
+        counts: await getBulkEntryRelatedCounts(ctx.db, userId, [
+          { id: article.id, subscriptionId: null },
+        ]),
+      };
     }),
 });

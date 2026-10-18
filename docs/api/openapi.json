@@ -9422,12 +9422,75 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread",
+                              "tagIds"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "all",
                         "starred",
-                        "saved"
+                        "saved",
+                        "subscriptions",
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -9736,12 +9799,75 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread",
+                              "tagIds"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "all",
                         "starred",
-                        "saved"
+                        "saved",
+                        "subscriptions",
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }

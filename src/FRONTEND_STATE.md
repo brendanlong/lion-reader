@@ -190,6 +190,8 @@ Collection mutations (`useCollectionMembership`): `collections.addEntries` / `re
 
 Tag mutations (`tags.create/update/delete`, in `TagManagement`) apply their responses through `applyTagChange`/`applyTagDeleted`, as their events do.
 
+`saved.uploadFile` (`FileUploadButton`) applies the response's counts through `applyUnreadCounts`; the article joins the loaded lists through its `new_entry` event, like any new entry.
+
 Preference changes (`users.me.updatePreferences`) all go through `usePreferenceMutation`: the response replaces `me.preferences`, and the hook invalidates the queries derived from what changed, so a panel names only its toasts.
 
 No-op re-saves publish no `subscription_updated` ("Row Written vs. Value Flipped" in `src/server/CLAUDE.md`); the acting tab still updates its own cache.

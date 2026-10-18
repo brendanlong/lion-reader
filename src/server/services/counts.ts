@@ -122,15 +122,6 @@ export async function getUserUnreadCounts(db: CountsDb, userId: string): Promise
   );
 }
 
-/** Global unread counts (all + starred + saved) for a user. */
-export async function getGlobalUnreadCounts(
-  db: CountsDb,
-  userId: string
-): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
-  const { allUnread, starredUnread, savedUnread } = await getUserUnreadCounts(db, userId);
-  return { allUnread, starredUnread, savedUnread };
-}
-
 /**
  * Per-tag unread counts. Every requested tag is returned, zero-filled: the
  * client sets these counts absolutely, so an omitted tag would keep its stale
