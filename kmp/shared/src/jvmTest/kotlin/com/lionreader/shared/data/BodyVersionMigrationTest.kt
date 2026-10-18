@@ -35,7 +35,8 @@ class BodyVersionMigrationTest {
             driver.execute(null, sql, 0)
         }
 
-        AppSchema.migrate(driver, 4, AppSchema.version)
+        // Only to 5: 9.sqm makes every body out of date.
+        AppSchema.migrate(driver, 4, 5)
 
         val db = LionReaderDatabase(driver)
         assertEquals(emptyList(), db.entryQueries.selectOutdatedBodies(10).executeAsList())
