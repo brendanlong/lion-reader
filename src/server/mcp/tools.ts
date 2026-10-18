@@ -134,7 +134,7 @@ const listEntriesArgs = z.object({
     .describe("Full-text search query over entry title and content (relevance-ranked)"),
   subscriptionId: uuidSchema
     .optional()
-    .describe("Filter by subscription ID (a feed or a collection)"),
+    .describe("Filter by subscription ID (a feed, a collection or Saved)"),
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   uncategorized: z.boolean().optional().describe("Show only uncategorized entries"),
   type: z.enum(ENTRY_TYPES).optional().describe("Filter by entry type"),
@@ -174,7 +174,7 @@ const starEntriesArgs = z.object({
 const countEntriesArgs = z.strictObject({
   subscriptionId: uuidSchema
     .optional()
-    .describe("Count a subscription's unread entries (a feed or a collection)"),
+    .describe("Count a subscription's unread entries (a feed, a collection or Saved)"),
   tagId: uuidSchema.optional().describe("Count a tag's unread entries"),
   uncategorized: z.boolean().optional().describe("Count unread entries in untagged subscriptions"),
   type: z.enum(["saved"]).optional().describe("Count unread saved articles"),
@@ -277,9 +277,9 @@ const listSubscriptionsArgs = z.object({
   tagId: uuidSchema.optional().describe("Filter by tag ID"),
   unreadOnly: z.boolean().optional().describe("Only show feeds with unread items"),
   type: z
-    .enum(["web", "email", "collection"])
+    .enum(["web", "email", "collection", "saved"])
     .optional()
-    .describe("Only show this kind: web feeds, newsletters, or collections"),
+    .describe("Only show this kind: web feeds, newsletters, collections, or Saved"),
   limit: z
     .number()
     .int()
@@ -525,7 +525,7 @@ function buildTools(): Tool[] {
     {
       name: "list_subscriptions",
       description:
-        "List active subscriptions — feeds, newsletters and collections (type 'collection') — with optional filtering and pagination. Supports case-insensitive title search, tag, type and unread-only filtering, and cursor-based pagination.",
+        "List active subscriptions — feeds, newsletters, collections (type 'collection') and, once the user has saved an article, their Saved subscription (type 'saved', which can't be tagged, renamed or removed) — with optional filtering and pagination. Supports case-insensitive title search, tag, type and unread-only filtering, and cursor-based pagination.",
       inputSchema: toInputSchema(listSubscriptionsArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listSubscriptionsArgs, args);

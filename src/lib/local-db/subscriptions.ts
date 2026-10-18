@@ -49,11 +49,7 @@ export interface SubscriptionListInput {
 }
 
 export interface SubscriptionPages {
-  pages: Array<{
-    items: FetchedSubscriptionRow[];
-    nextCursor?: string;
-    savedSubscriptionId?: string | null;
-  }>;
+  pages: Array<{ items: FetchedSubscriptionRow[]; nextCursor?: string }>;
 }
 
 /** A row and, when its source has one, its count's stamp. */

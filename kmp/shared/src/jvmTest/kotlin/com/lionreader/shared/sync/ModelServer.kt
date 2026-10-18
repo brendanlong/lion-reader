@@ -14,6 +14,7 @@ import com.lionreader.shared.api.GetManyRequest
 import com.lionreader.shared.api.GetManyResponse
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MarkReadRequest
+import com.lionreader.shared.api.SAVED_TYPE
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.api.Subscription
@@ -264,8 +265,18 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                     type = COLLECTION_TYPE,
                                     title = collection,
                                     tags = emptyList(),
-                                ),
-                            savedSubscriptionId = savedSubscriptionId,
+                                ) +
+                                // Listed like any subscription once the first save creates it.
+                                listOfNotNull(
+                                    savedSubscriptionId?.let {
+                                        Subscription(
+                                            it,
+                                            type = SAVED_TYPE,
+                                            title = "Saved",
+                                            tags = emptyList(),
+                                        )
+                                    }
+                                )
                         ),
                     )
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))

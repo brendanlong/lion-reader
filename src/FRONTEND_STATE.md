@@ -42,12 +42,15 @@ travel with the read/starred state (a membership change moves the server's
 `user_entries.updated_at`), and they decide which lists a live insert reaches
 (`insertEntryIntoLists`): a subscription or collection list by membership, tag
 and Uncategorized lists through the stored subscriptions among them (never the
-saved one), and Saved by membership in the saved subscription. Its id is
-`LocalDb.saved`, taken from every `subscriptions.list` result (a known id is
-never replaced by null); the layout prefetches `SAVED_SUBSCRIPTION_LIST_INPUT`
-so it's always known, and a saved article's `new_entry` while it's still null
-(the user's first save) refetches it once per page load. Until it's known,
-nothing is in Saved. An entry's `type` is otherwise for display only (a saved
+saved one), and Saved by membership in the saved subscription. The server lists
+the saved subscription, but the subscription store never holds it (so no
+sidebar section shows it; Saved has its own nav item): its id is
+`LocalDb.saved`, taken from its row in any `subscriptions.list`/`get` result
+(null from an empty `{ type: "saved" }` list; a known id is never replaced by
+null). The layout prefetches `SAVED_SUBSCRIPTION_LIST_INPUT` so it's always
+known, and a saved article's `new_entry` while it's still null (the user's
+first save) refetches it once per page load. Until it's known, nothing is in
+Saved. An entry's `type` is otherwise for display only (a saved
 article shows its site name) and the plain `web`/`email` filters; never infer
 list membership from it, and never use a feed id (clients don't get one).
 

@@ -61,7 +61,6 @@ describe("entryRowToSyncEvents", () => {
       entryId: "entry-1",
       timestamp: updatedAt,
       updatedAt,
-      feedType: "web",
       entry: {
         type: "web",
         title: "A post",
@@ -103,7 +102,6 @@ describe("entryRowToSyncEvents", () => {
       type: "entry_state_changed",
       subscriptionId: "sub-1",
       subscriptionIds: ["sub-1"],
-      feedType: "web",
       entry: { title: "A post", type: "web" },
     });
     const read = entryRowToSyncEvents(
@@ -111,7 +109,7 @@ describe("entryRowToSyncEvents", () => {
       allCounts
     );
     expect(read[0]).not.toHaveProperty("entry");
-    expect(read[0]).not.toHaveProperty("feedType");
+    expect(read[0]).not.toHaveProperty("subscriptionId");
   });
 
   it("reports the entry's edit as entry_updated metadata", () => {

@@ -7,7 +7,7 @@
 
 import { db } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
-import { isListedSubscription, isWebSubscription } from "@/server/services/subscriptions";
+import { isUserManagedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
   createPubSubSubscription,
@@ -70,7 +70,7 @@ async function getUserCustomTitles(userId: string): Promise<Map<string, string |
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
         // Saved articles show "Saved Articles", not the saved subscription's name.
-        isListedSubscription()
+        isUserManagedSubscription()
       )
     );
   return new Map(rows.map((row) => [row.id, row.customTitle]));
@@ -99,7 +99,6 @@ interface ClientEntryEvent {
   entryId: string;
   timestamp: string;
   updatedAt: string;
-  feedType: EntryType;
 }
 
 /** A user event's `feedId` only routes feed channels here: clients only ever see subscription IDs. */
@@ -192,7 +191,10 @@ export function startSseConnection({
    * Sends a new_entry event, whether it came from a web feed's channel or
    * (email, saved) the user's channel.
    */
-  function sendNewEntry(event: ClientEntryEvent & { entry?: NewEntryListData }): void {
+  function sendNewEntry(
+    // `feedType` only decides the counts; clients get the payload's `type`.
+    event: ClientEntryEvent & { feedType: EntryType; entry?: NewEntryListData }
+  ): void {
     // Compute this user's absolute unread counts and send them with the
     // event so the client sets counts directly instead of applying a +1
     // delta. That makes new_entry idempotent: a reconnect catch-up sync
@@ -207,7 +209,7 @@ export function startSseConnection({
       await customTitlesLoaded;
       let counts: BulkUnreadCounts | undefined;
       try {
-        // The saved subscription has no list of its own; Saved is a global count.
+        // Saved's count is the global `saved` one (it's in no tag or Uncategorized).
         counts = await getBulkEntryRelatedCounts(
           db,
           userId,
@@ -232,11 +234,10 @@ export function startSseConnection({
           entryId: event.entryId,
           timestamp: event.timestamp,
           updatedAt: event.updatedAt,
-          feedType: event.feedType,
           ...(counts ? { counts } : {}),
           // List-item data (absent for spam) lets the client insert the
-          // entry into cached lists. Saved articles have no subscription,
-          // so keep their own title.
+          // entry into cached lists. Saved articles keep their own title
+          // ("Saved Articles"): the saved subscription isn't in customTitles.
           ...(event.entry
             ? {
                 entry: withCustomFeedTitle(
@@ -252,9 +253,7 @@ export function startSseConnection({
   }
 
   /** Sends an entry_updated event, with metadata so the client can update caches directly. */
-  function sendEntryUpdated(
-    event: Omit<ClientEntryEvent, "feedType"> & { metadata: EntryUpdatedMetadata }
-  ): void {
+  function sendEntryUpdated(event: ClientEntryEvent & { metadata: EntryUpdatedMetadata }): void {
     enqueueSend(() => {
       const cursor = new Date().toISOString();
       send(
