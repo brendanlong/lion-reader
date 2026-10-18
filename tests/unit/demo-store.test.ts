@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { createDemoStore } from "@/app/(public)/demo/store";
+import { createDemoStore } from "@/lib/demo/store";
 import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS } from "@/lib/demo/data";
 
 const TOTAL = DEMO_ENTRIES.length;

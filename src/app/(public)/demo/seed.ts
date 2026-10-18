@@ -26,7 +26,7 @@ import {
   getDefaultViewPreferences,
   getFiltersFromPathname,
 } from "@/lib/queries/entries-list-input";
-import type { DemoStore } from "./store";
+import type { DemoStore } from "@/lib/demo/store";
 
 export function buildDemoDehydratedState(store: DemoStore, location: AppLocation): DehydratedState {
   const { procedures } = store;
