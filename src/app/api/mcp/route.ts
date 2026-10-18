@@ -15,15 +15,9 @@ import { NextRequest } from "next/server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createMcpServer } from "@/server/mcp/server";
 import { extractBearerToken } from "@/server/auth/bearer";
-import { isSignupConfirmed } from "@/server/auth/confirmation";
-import { validateApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
-import { validateAccessToken } from "@/server/oauth/service";
-import {
-  OAUTH_SCOPES,
-  isOAuthAccessTokenFormat,
-  isResourceForThisServer,
-} from "@/server/oauth/utils";
-import { getProtectedResourceMetadataUrl, getResourceIdentifier } from "@/server/oauth/config";
+import { authenticateCredential } from "@/server/auth/credential";
+import { OAUTH_SCOPES } from "@/server/oauth/utils";
+import { getProtectedResourceMetadataUrl } from "@/server/oauth/config";
 import { withMcpCorsHeaders, mcpCorsPreflight } from "@/server/http/cors";
 import { logger } from "@/lib/logger";
 
@@ -36,8 +30,7 @@ type AuthFailure = { success: false; reason: string; status?: 401 | 403 };
 type AuthResult = AuthSuccess | AuthFailure;
 
 /**
- * Extract and validate token from request headers.
- * Supports both OAuth 2.1 access tokens and legacy API tokens.
+ * Accepts an `mcp`-scoped API token or an MCP client's OAuth token.
  * Returns userId if valid, or a reason string for failure.
  */
 async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
@@ -50,62 +43,31 @@ async function authenticateRequest(request: NextRequest): Promise<AuthResult> {
     return { success: false, reason: "invalid_authorization_scheme" };
   }
 
-  if (!isOAuthAccessTokenFormat(token)) {
-    const apiTokenData = await validateApiToken(token);
-    if (apiTokenData) {
-      // Check if token has MCP scope
-      if (!apiTokenData.token.scopes.includes(API_TOKEN_SCOPES.MCP)) {
-        logger.warn("MCP auth: API token missing MCP scope", {
-          userId: apiTokenData.user.id,
-          scopes: apiTokenData.token.scopes,
-        });
-        return { success: false, reason: "api_token_missing_mcp_scope" };
-      }
-      if (!isSignupConfirmed(apiTokenData.user)) {
-        logger.warn("MCP auth: user has not completed signup confirmation", {
-          userId: apiTokenData.user.id,
-        });
-        return { success: false, reason: "signup_confirmation_required", status: 403 };
-      }
-      return { success: true, userId: apiTokenData.user.id };
-    }
+  const auth = await authenticateCredential(token, {
+    accept: ["api_token", "mcp_token"],
+    requiredScopes: [OAUTH_SCOPES.MCP],
+    requireConfirmed: true,
+  });
+  if (auth.ok) {
+    return { success: true, userId: auth.credential.user.id };
   }
-
-  // Unprefixed OAuth access tokens are still accepted until #1955, so an
-  // unprefixed token falls through to this check.
-  const oauthToken = await validateAccessToken(token);
-  if (oauthToken) {
-    // Check if OAuth token has MCP scope
-    if (!oauthToken.scopes.includes(OAUTH_SCOPES.MCP)) {
-      logger.warn("MCP auth: OAuth token missing MCP scope", {
-        userId: oauthToken.userId,
-        scopes: oauthToken.scopes,
-      });
-      return { success: false, reason: "oauth_token_missing_mcp_scope" };
-    }
-    // Enforce RFC 8707 audience binding: a token minted for a different resource
-    // must not be accepted here. Newly issued tokens always carry a resource
-    // (bound at authorization time); only legacy tokens issued before audience
-    // binding may have a null resource, which we still accept.
-    const expectedResource = getResourceIdentifier();
-    if (oauthToken.resource && !isResourceForThisServer(oauthToken.resource, expectedResource)) {
-      logger.warn("MCP auth: OAuth token resource/audience mismatch", {
-        userId: oauthToken.userId,
-        tokenResource: oauthToken.resource,
-        expectedResource,
-      });
-      return { success: false, reason: "oauth_token_audience_mismatch" };
-    }
-    if (!isSignupConfirmed(oauthToken.user)) {
-      logger.warn("MCP auth: user has not completed signup confirmation", {
-        userId: oauthToken.userId,
-      });
-      return { success: false, reason: "signup_confirmation_required", status: 403 };
-    }
-    return { success: true, userId: oauthToken.userId };
+  if (auth.reason === "unauthenticated") {
+    // Includes another resource's OAuth token (the app's, Wallabag's).
+    return { success: false, reason: "token_invalid_expired_revoked_or_other_audience" };
   }
-
-  return { success: false, reason: "token_invalid_expired_or_revoked" };
+  const { kind, user, scopes } = auth.credential;
+  logger.warn("MCP auth: credential rejected", {
+    reason: auth.reason,
+    kind,
+    userId: user.id,
+    scopes,
+  });
+  return {
+    success: false,
+    reason: `${kind}_${auth.reason}`,
+    // An unscoped token gets a 401 like a missing one, so the client re-authorizes.
+    status: auth.reason === "unconfirmed" ? 403 : 401,
+  };
 }
 
 /**

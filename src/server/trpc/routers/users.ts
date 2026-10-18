@@ -28,7 +28,7 @@ import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
 import { revokeUserClientTokens } from "@/server/oauth/service";
-import { WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
+import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
 
 // ============================================================================
 // Schemas

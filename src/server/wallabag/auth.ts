@@ -7,10 +7,8 @@
  *   grant_type=password, client_id, client_secret, username, password
  *
  * We reuse the existing OAuth 2.1 token infrastructure, but support the
- * password grant type which Wallabag requires. Every Wallabag credential is
- * minted under the single public client_id "wallabag" (the setup UI and the
- * scraped developer page both hand out wallabag/wallabag), and the token
- * endpoint accepts no other — see SECURITY.md §8 for why.
+ * password grant type which Wallabag requires, minting every credential under
+ * `WALLABAG_CLIENT_ID`.
  */
 
 import { eq } from "drizzle-orm";
@@ -18,19 +16,17 @@ import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
+import { authenticateCredential } from "@/server/auth/credential";
 import {
-  validateAccessToken,
   createTokens,
   lockUserAgainstCredentialChange,
   revokeUserClientTokens,
   rotateRefreshToken,
 } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
-import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { logger } from "@/lib/logger";
 import { errorResponse } from "./parse";
-
-export const WALLABAG_CLIENT_ID = "wallabag";
+import { WALLABAG_CLIENT_ID } from "./client";
 
 /**
  * Wallabag OAuth token response
@@ -166,14 +162,13 @@ export async function refreshTokenGrant(
 /**
  * Validates a Wallabag API request and returns the user data.
  *
- * Every Wallabag endpoint exposes the full reader surface (list/read/mutate/
- * delete entries + tags), so all of them require the `reader:full-access`
- * scope. A token that authenticates but lacks the scope (e.g. a `saved:write`
- * save-only credential) is rejected with 403 — this is what prevents a narrow
- * scope from being replayed for full library access.
+ * Only tokens from the Wallabag password grant are accepted, never another
+ * OAuth client's, whatever their scopes. Every Wallabag endpoint exposes the
+ * full reader surface (list/read/mutate/delete entries + tags), so all of them
+ * also require the `reader:full-access` scope.
  *
- * Returns a `Response` (401 unauthenticated / 403 insufficient scope) that
- * callers must forward, e.g.
+ * Returns a `Response` (401 unauthenticated / 403 insufficient scope or
+ * unconfirmed signup) that callers must forward, e.g.
  * `const auth = await requireAuth(request); if (auth instanceof Response) return auth;`.
  * (We return rather than throw because Next.js App Router route handlers don't
  * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
@@ -182,38 +177,40 @@ export async function requireAuth(
   request: Request
 ): Promise<{ userId: string; email: string } | Response> {
   const token = extractBearerToken(request.headers.get("authorization"));
-  const auth = token ? await validateAccessToken(token) : null;
-  if (!auth) {
-    // Distinguish a client that sent no Bearer at all (misconfigured) from one
-    // that sent a token we rejected (expired — normal churn as clients lazily
-    // refresh — or revoked, e.g. by reuse detection). Logged at info because an
-    // expired-token 401 is expected traffic, not an error.
-    logger.info("Wallabag request unauthenticated", {
-      component: "wallabag",
-      reason: token ? "invalid_token" : "missing_bearer",
-    });
-    return errorResponse("invalid_grant", "Unauthorized", 401);
+  const auth = await authenticateCredential(token, {
+    accept: ["wallabag_token"],
+    requiredScopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    requireConfirmed: true,
+  });
+  if (auth.ok) return { userId: auth.credential.user.id, email: auth.credential.user.email };
+
+  switch (auth.reason) {
+    case "unauthenticated":
+      // Distinguish a client that sent no Bearer at all (misconfigured) from one
+      // that sent a token we rejected (expired — normal churn as clients lazily
+      // refresh — revoked, e.g. by reuse detection, or another client's).
+      // Logged at info because an expired-token 401 is expected traffic.
+      logger.info("Wallabag request unauthenticated", {
+        component: "wallabag",
+        reason: token ? "invalid_token" : "missing_bearer",
+      });
+      return errorResponse("invalid_grant", "Unauthorized", 401);
+    case "insufficient_scope":
+      logger.warn("Wallabag request rejected: insufficient scope", {
+        component: "wallabag",
+        userId: auth.credential.user.id,
+        scopes: auth.credential.scopes,
+      });
+      return errorResponse(
+        "insufficient_scope",
+        `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
+        403
+      );
+    case "unconfirmed":
+      logger.warn("Wallabag request rejected: signup not confirmed", {
+        component: "wallabag",
+        userId: auth.credential.user.id,
+      });
+      return errorResponse("access_denied", "Signup confirmation required", 403);
   }
-  if (!auth.scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
-    logger.warn("Wallabag request rejected: insufficient scope", {
-      component: "wallabag",
-      userId: auth.userId,
-      scopes: auth.scopes,
-    });
-    return errorResponse(
-      "insufficient_scope",
-      `This endpoint requires the ${OAUTH_SCOPES.READER_FULL_ACCESS} scope`,
-      403
-    );
-  }
-  // Mirror confirmedProtectedProcedure / the MCP endpoint: a user who hasn't
-  // completed signup confirmation (ToS, Privacy, EU check) can't use the API.
-  if (!isSignupConfirmed(auth.user)) {
-    logger.warn("Wallabag request rejected: signup not confirmed", {
-      component: "wallabag",
-      userId: auth.userId,
-    });
-    return errorResponse("access_denied", "Signup confirmation required", 403);
-  }
-  return { userId: auth.userId, email: auth.user.email };
 }
