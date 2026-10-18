@@ -35,7 +35,7 @@ import {
  * as an article content bundle (with a null URL).
  */
 export interface ConvertedUpload {
-  /** Raw article HTML (stored as content_original; Readability runs on it downstream). */
+  /** Raw article HTML (content_original, absolutized; Readability runs on it downstream). */
   html: string;
   /**
    * Pre-cleaned content — set for .md/.txt (Markdown) and .docx (mammoth +

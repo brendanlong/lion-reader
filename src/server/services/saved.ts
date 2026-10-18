@@ -25,10 +25,14 @@ import {
 } from "@/server/http/fetch";
 import { parseFeed } from "@/server/feed/parser";
 import { processMarkdown } from "@/server/markdown";
+import {
+  articleContentFromAcquired,
+  processArticleContent,
+  type ArticleContentBundle,
+} from "./article-content";
 import { titleFromFilename, type ConvertedUpload } from "@/server/file/process-upload";
 import { type SupportedFileType } from "@/lib/upload-file-types";
 import { usageLimitsConfig } from "@/server/config/env";
-import { absolutizeUrls, cleanContentAsync } from "@/server/feed/content-cleaner";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { stripHtml } from "@/server/html/strip-html";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
@@ -119,6 +123,12 @@ export interface UploadArticleParams {
    * summary length like the other excerpt sources.
    */
   excerpt?: string;
+  /**
+   * Resolves the content's relative URLs, for content we wrote ourselves (the
+   * Getting Started article's in-app links). Never caller-supplied: without
+   * it they resolve against a host that never resolves.
+   */
+  baseUrl?: string;
 }
 
 export interface SavedArticle {
@@ -251,41 +261,6 @@ function generateContentHash(title: string | null, content: string | null): stri
  */
 const UPLOAD_BASE_URL = "https://uploaded.invalid/";
 
-/**
- * A unit of acquired content, however it was obtained. `saveArticle` fills it by
- * fetching a URL; the upload paths fill it by converting a file/Markdown. This is
- * the seam the "save vs. upload" difference collapses to: only acquisition (and a
- * null URL for uploads) differs — everything downstream is shared.
- */
-interface ArticleContentBundle {
-  /** Raw content HTML (stored as content_original). */
-  html: string;
-  /** Base URL for metadata + relative-URL resolution; null for uploads (no origin). */
-  contentUrl: string | null;
-  /** Plugin-supplied content that bypasses normal metadata/Readability sources. */
-  pluginContent: {
-    html: string;
-    title?: string | null;
-    author?: string | null;
-    /** Plugin-supplied excerpt (e.g. arXiv abstract page); preferred over Readability's. */
-    excerpt?: string | null;
-    siteName?: string;
-    skipReadability?: boolean;
-  } | null;
-  /**
-   * Pre-cleaned content whose Readability is skipped because the source is
-   * already clean: Markdown (frontmatter title/summary/author) or a `.docx`
-   * (mammoth body + `docProps/core.xml` metadata). Null when Readability should
-   * run (URL/HTML).
-   */
-  preCleanedContent: {
-    html: string;
-    title: string | null;
-    summary: string | null;
-    author: string | null;
-  } | null;
-}
-
 /** Caller-supplied hints that outrank (title) or backstop (filename) extraction. */
 interface ArticleFieldHints {
   /** Explicit caller-provided title — highest precedence. */
@@ -338,29 +313,12 @@ async function buildArticleFields(
   // resolving against Lion Reader itself.
   const baseUrl = contentUrl ?? UPLOAD_BASE_URL;
 
-  // Extract metadata from Open Graph / meta tags.
   const metadata = extractMetadata(html, baseUrl);
-
-  // Run Readability unless a plugin opted out or the content is already clean
-  // (Markdown / docx). Extraction runs on the libuv thread pool so large pages
-  // don't block the event loop.
-  const shouldSkipReadability =
-    Boolean(pluginContent?.skipReadability) || preCleanedContent !== null;
-  const cleaned = shouldSkipReadability
-    ? null
-    : await cleanContentAsync(html, { url: baseUrl, ...cleanOptions });
-
-  // When Readability ran, its output already has absolutized URLs; when it was
-  // skipped for plugin/pre-cleaned content, absolutize here (neither the Markdown
-  // renderer nor the sanitizer resolves relative URLs, so nothing else will —
-  // and for an upload that means a relative link would otherwise point back into
-  // Lion Reader itself, which is what UPLOAD_BASE_URL exists to prevent). When
-  // neither produced anything (Readability failed on a plain page), store NULL
-  // rather than the raw full page — readers fall back to the sanitized original.
-  const contentCleaned =
-    (preCleanedContent ? absolutizeUrls(preCleanedContent.html, baseUrl) : null) ??
-    cleaned?.content ??
-    (pluginContent ? absolutizeUrls(pluginContent.html, baseUrl) : null);
+  const {
+    contentOriginal,
+    contentCleaned,
+    readability: cleaned,
+  } = await processArticleContent(bundle, baseUrl, { offload: true, ...cleanOptions });
 
   // Precedence: explicit caller value → plugin / Markdown frontmatter / docx
   // core.xml → Readability → raw Open Graph/<title>/meta scrape → filename (title only).
@@ -417,7 +375,7 @@ async function buildArticleFields(
     title,
     author,
     siteName,
-    contentOriginal: html,
+    contentOriginal,
     contentCleaned,
     summary,
     imageUrl: metadata.imageUrl,
@@ -654,12 +612,6 @@ async function urlIsDirectFeed(url: string, contentType: string): Promise<boolea
 }
 
 /**
- * A fetched {@link ArticleContentBundle}: `contentUrl` is the URL the content was
- * actually fetched from (after redirects), used for resolving relative URLs.
- */
-type AcquiredArticleContent = Omit<ArticleContentBundle, "contentUrl"> & { contentUrl: string };
-
-/**
  * Acquire the article HTML for a save. Precedence: provided HTML > plugin >
  * plugin with the user's credentials (when the caller opts in via `userAuth`) >
  * plain HTML fetch. Enforces maxSavedArticleSizeBytes on every path.
@@ -667,7 +619,7 @@ type AcquiredArticleContent = Omit<ArticleContentBundle, "contentUrl"> & { conte
 async function acquireSavedArticleContent(
   userId: string,
   params: SaveArticleParams
-): Promise<AcquiredArticleContent> {
+): Promise<ArticleContentBundle & { contentUrl: string }> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
 
   if (params.html) {
@@ -738,42 +690,7 @@ async function acquireSavedArticleContent(
     );
   }
 
-  if (acquired.kind === "plugin") {
-    const { content } = acquired;
-    return {
-      html: content.html,
-      contentUrl: content.canonicalUrl ?? acquired.baseUrl,
-      pluginContent: {
-        html: content.html,
-        title: content.title,
-        author: content.author,
-        excerpt: content.excerpt,
-        siteName: acquired.siteName,
-        skipReadability: acquired.skipReadability,
-      },
-      preCleanedContent: null,
-    };
-  }
-
-  if (acquired.isMarkdown) {
-    logger.debug("Converting Markdown to HTML for saved article (will skip Readability)", {
-      url: fetchUrl,
-    });
-    const markdownResult = await processMarkdown(acquired.content);
-    return {
-      html: markdownResult.html,
-      contentUrl: acquired.finalUrl,
-      pluginContent: null,
-      preCleanedContent: markdownResult,
-    };
-  }
-
-  return {
-    html: acquired.content,
-    contentUrl: acquired.finalUrl,
-    pluginContent: null,
-    preCleanedContent: null,
-  };
+  return articleContentFromAcquired(acquired, { offload: true });
 }
 
 /**
@@ -907,7 +824,6 @@ export async function saveArticle(
   }
 
   const bundle = await acquireSavedArticleContent(userId, params);
-  const { html } = bundle;
 
   // Derive the stored fields from the acquired content. Shared with the upload
   // paths (buildArticleFields) so save and upload stay in lockstep.
@@ -915,6 +831,7 @@ export async function saveArticle(
     title: finalTitle,
     author: finalAuthor,
     siteName: finalSiteName,
+    contentOriginal,
     contentCleaned: finalContentCleaned,
     summary: excerpt,
     imageUrl,
@@ -976,7 +893,7 @@ export async function saveArticle(
     const update = {
       title: finalTitle,
       author: finalAuthor,
-      contentOriginal: html,
+      contentOriginal,
       contentCleaned: finalContentCleaned,
       summary: excerpt,
       siteName: finalSiteName,
@@ -1045,7 +962,7 @@ export async function saveArticle(
     url: normalizedUrl,
     title: finalTitle,
     author: finalAuthor,
-    contentOriginal: html,
+    contentOriginal,
     contentCleaned: finalContentCleaned,
     summary: excerpt,
     siteName: finalSiteName,
@@ -1257,7 +1174,7 @@ export async function uploadArticle(
   const fields = await buildArticleFields(
     {
       html: markdownResult.html,
-      contentUrl: null,
+      contentUrl: params.baseUrl ?? null,
       pluginContent: null,
       preCleanedContent: markdownResult,
     },

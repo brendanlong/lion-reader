@@ -18,6 +18,7 @@ import * as Sentry from "@sentry/nextjs";
 import type { Database } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { logger } from "@/lib/logger";
+import { appUrl } from "@/server/config/env";
 import { uploadArticle } from "@/server/services/saved";
 import { updateEntryStarred } from "@/server/services/entries";
 import {
@@ -66,6 +67,7 @@ export async function createGettingStartedArticle(
       content: GETTING_STARTED_MARKDOWN,
       title: GETTING_STARTED_TITLE,
       excerpt: GETTING_STARTED_EXCERPT,
+      baseUrl: appUrl,
     });
   } catch (err) {
     // Nothing was inserted, so hand the user back to the backfill.

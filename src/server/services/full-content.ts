@@ -11,12 +11,11 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { entries, narrationContent, subscriptions } from "@/server/db/schema";
 import { HttpFetchError } from "@/server/http/fetch";
-import { cleanContent, cleanContentAsync, absolutizeUrls } from "@/server/feed/content-cleaner";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { acquireArticleContent } from "@/server/plugins";
 import { logger } from "@/lib/logger";
-import { processMarkdown } from "@/server/markdown";
 import { getFullEntry, type FullEntry } from "./entries";
+import { articleContentFromAcquired, processArticleContent } from "./article-content";
 
 /**
  * Result of fetching full article content.
@@ -53,74 +52,26 @@ export async function fetchFullContent(
   options: { offloadClean?: boolean } = {}
 ): Promise<FetchFullContentResult> {
   const { offloadClean = true } = options;
-  // Run extraction either on the libuv thread pool or inline, per offloadClean.
-  const runClean = (html: string, resolveUrl: string): Promise<{ content: string } | null> =>
-    offloadClean
-      ? cleanContentAsync(html, { url: resolveUrl })
-      : Promise.resolve(cleanContent(html, { url: resolveUrl }));
 
   try {
     const acquired = await acquireArticleContent(url);
+    const bundle = await articleContentFromAcquired(acquired, { offload: offloadClean });
+    const { contentOriginal, contentCleaned } = await processArticleContent(
+      bundle,
+      bundle.contentUrl,
+      { offload: offloadClean }
+    );
 
-    // Plugin content is already the article: store it as the original and run
-    // Readability only if the plugin didn't declare it clean.
-    if (acquired.kind === "plugin") {
-      const { html, canonicalUrl } = acquired.content;
-      const resolveUrl = canonicalUrl || acquired.baseUrl;
-      const contentOriginal = absolutizeUrls(html, resolveUrl);
-      if (acquired.skipReadability) {
-        return { success: true, contentOriginal };
-      }
-      const cleaned = await runClean(html, resolveUrl);
-      return { success: true, contentOriginal, contentCleaned: cleaned?.content };
-    }
-
-    const resolveUrl = acquired.finalUrl;
-
-    // We request HTML, not Markdown (#1280), so this is a fallback: a server
-    // returned Markdown anyway (e.g. a raw `.md` URL). Convert it to HTML and
-    // skip Readability — a markdown-only endpoint's body is the content itself,
-    // and once flattened to markdown the DOM structure Readability needs to
-    // separate chrome from content is already gone.
-    if (acquired.isMarkdown) {
-      logger.debug("Converting Markdown to HTML (skipping Readability)", { url });
-      const { html } = await processMarkdown(acquired.content, {
-        offload: offloadClean,
-      });
-
-      // Readability is what absolutizes on the other branches, and it didn't
-      // run here — neither the Markdown renderer nor the sanitizer resolves
-      // relative URLs, so do it once and store the same copy in both fields.
-      // Markdown has no "original" HTML distinct from the rendered output, and
-      // the cleaned copy is the one that gets displayed.
-      const content = absolutizeUrls(html, resolveUrl);
-
-      return {
-        success: true,
-        contentOriginal: content,
-        contentCleaned: content,
-      };
-    }
-
-    // For HTML, absolutize URLs in the original
-    const html = acquired.content;
-    const contentOriginal = absolutizeUrls(html, resolveUrl);
-
-    // Clean the content using Readability
-    const cleaned = await runClean(html, resolveUrl);
-
-    if (!cleaned) {
+    // Readability failed on a generic page. Storing the whole page would show
+    // it in place of the feed's own content, so record the failure instead.
+    if (contentCleaned === null) {
       return {
         success: false,
         error: "Could not extract article content from page",
       };
     }
 
-    return {
-      success: true,
-      contentOriginal,
-      contentCleaned: cleaned.content,
-    };
+    return { success: true, contentOriginal, contentCleaned };
   } catch (error) {
     const errorMessage = getErrorMessage(error);
     logger.warn("Failed to fetch full content", { url, error: errorMessage });

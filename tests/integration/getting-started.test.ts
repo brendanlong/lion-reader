@@ -18,6 +18,7 @@ import {
 import { GETTING_STARTED_TITLE } from "../../src/server/services/getting-started-content";
 import { deleteSavedArticle } from "../../src/server/services/saved";
 import { createTestUser } from "./helpers";
+import { appUrl } from "../../src/server/config/env";
 import { getGlobalUnreadCounts } from "../../src/server/services/counts";
 
 const createdUserIds: string[] = [];
@@ -36,7 +37,7 @@ async function savedEntriesFor(userId: string) {
       id: entries.id,
       title: entries.title,
       summary: entries.summary,
-      contentOriginal: entries.contentOriginal,
+      contentCleaned: entries.contentCleaned,
       read: userEntries.read,
       starred: userEntries.starred,
     })
@@ -93,8 +94,9 @@ describe("createGettingStartedArticle", () => {
     expect(saved[0].title).toBe(GETTING_STARTED_TITLE);
     expect(saved[0].starred).toBe(true);
     expect(saved[0].read).toBe(false);
-    // Rendered through the Markdown pipeline, with its in-app links intact.
-    expect(saved[0].contentOriginal).toContain('href="/subscribe"');
+    // Rendered through the Markdown pipeline, with its in-app links pointing
+    // at the app rather than at the unresolvable host uploads otherwise get.
+    expect(saved[0].contentCleaned).toContain(`href="${appUrl}/subscribe"`);
     expect(saved[0].summary).toBeTruthy();
 
     expect(await gettingStartedAt(userId)).toBeInstanceOf(Date);
