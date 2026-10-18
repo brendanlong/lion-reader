@@ -38,6 +38,8 @@ import { logger } from "@/lib/logger";
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
+  /** Row id of the refresh token, which rotation links its predecessor to. */
+  refreshTokenId: string;
   tokenType: "Bearer";
   expiresIn: number;
   scope: string;
@@ -218,6 +220,7 @@ export async function createTokens(
   return {
     accessToken,
     refreshToken,
+    refreshTokenId,
     tokenType: "Bearer",
     expiresIn: Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000),
     scope: params.scopes.join(" "),
@@ -434,19 +437,10 @@ export async function rotateRefreshToken(
     );
 
     // Link the rotation chain on the old token
-    const newRefreshTokenHash = hashToken(created.refreshToken);
-    const [newRefreshToken] = await tx
-      .select({ id: oauthRefreshTokens.id })
-      .from(oauthRefreshTokens)
-      .where(eq(oauthRefreshTokens.tokenHash, newRefreshTokenHash))
-      .limit(1);
-
-    if (newRefreshToken) {
-      await tx
-        .update(oauthRefreshTokens)
-        .set({ replacedById: newRefreshToken.id })
-        .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
-    }
+    await tx
+      .update(oauthRefreshTokens)
+      .set({ replacedById: created.refreshTokenId })
+      .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
 
     return { tokens: created };
   });
