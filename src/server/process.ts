@@ -44,7 +44,7 @@ export async function closeSharedResources(): Promise<void> {
 }
 
 /** What a started process hands back to {@link runProcess}. */
-export interface RunningService {
+interface RunningService {
   /** Stops taking new work and resolves once current work is done. */
   stop: () => Promise<void>;
   /** Backs the metrics server's /health (Fly restarts the machine on a 503). */
