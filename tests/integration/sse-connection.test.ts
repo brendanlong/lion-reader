@@ -13,6 +13,7 @@ import {
   type SseConnection,
 } from "../../src/server/realtime/sse-connection";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { toNewEntryListData } from "../../src/lib/events/schemas";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 async function clean(): Promise<void> {
@@ -173,6 +174,70 @@ describe("startSseConnection", () => {
     } finally {
       leaver.close();
       stayer.close();
+    }
+  });
+
+  // During a deploy, a previous release's servers publish subscription events
+  // without `row`; their deprecated `customTitle` is the raw custom title.
+  it.each([
+    [
+      "subscription_created",
+      (userId: string, feedId: string, subscriptionId: string, customTitle: string) =>
+        publishUserEvent({
+          type: "subscription_created",
+          userId,
+          feedId,
+          subscriptionId,
+          updatedAt: new Date(),
+          subscription: {
+            id: subscriptionId,
+            customTitle,
+            subscribedAt: new Date().toISOString(),
+            unreadCount: 1,
+            tags: [],
+          },
+          feed: { type: "web", url: null, title: "Feed", description: null, siteUrl: null },
+        }),
+    ],
+    [
+      "subscription_updated",
+      (userId: string, _feedId: string, subscriptionId: string, customTitle: string) =>
+        publishUserEvent({
+          type: "subscription_updated",
+          userId,
+          subscriptionId,
+          updatedAt: new Date(),
+          tags: [],
+          customTitle,
+        }),
+    ],
+  ])("applies a row-less %s's custom title to new_entry", async (_name, publishOldEvent) => {
+    const userId = await createTestUser({ emailPrefix: "sse-old-release" });
+    const feedId = await createTestFeed({ title: "Feed" });
+    const subscriptionId = await createTestSubscription(userId, feedId);
+    const entryId = await createTestEntry(feedId, { userIds: [userId] });
+    const connection = await connect(userId);
+
+    try {
+      await publishOldEvent(userId, feedId, subscriptionId, "Old Server Name");
+      await connection.waitFor((e) => e.data.subscriptionId === subscriptionId);
+      await publishFeedEvent({
+        type: "new_entry",
+        feedId,
+        entryId,
+        updatedAt: new Date(),
+        feedType: "web",
+        entry: {
+          ...toNewEntryListData({ type: "web", fetchedAt: new Date() }, "Feed"),
+          type: "web",
+        },
+      });
+      await connection.waitFor((e) => e.event === "new_entry");
+      expect(connection.sent.find((e) => e.event === "new_entry")?.data.entry).toMatchObject({
+        feedTitle: "Old Server Name",
+      });
+    } finally {
+      connection.close();
     }
   });
 });
