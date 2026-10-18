@@ -31,7 +31,7 @@ import { errors } from "@/server/errors";
 import { savedArticleUrlSchema, saveCollectionIdsSchema, uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
 import { newEntryListItemSchema, unreadCountsSchema } from "@/lib/events/schemas";
-import { getBulkEntryRelatedCounts } from "@/server/services/counts";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
 
 // Saved-article management is part of the MCP tool surface, which the app shares.
@@ -52,6 +52,15 @@ function assertMayChangeCollections(
       message: "Adding to collections requires the 'mcp' or 'reader:full-access' scope",
     });
   }
+}
+
+/** The counts of the lists a saved article is in: the global ones and its collections. */
+function savedArticleCounts(
+  db: Parameters<typeof getBulkEntryRelatedCounts>[0],
+  userId: string,
+  articleId: string
+): Promise<BulkUnreadCounts> {
+  return getBulkEntryRelatedCounts(db, userId, [{ id: articleId, subscriptionId: null }]);
 }
 
 // ============================================================================
@@ -128,12 +137,7 @@ export const savedRouter = createTRPCRouter({
         userAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
 
-      return {
-        article,
-        counts: await getBulkEntryRelatedCounts(ctx.db, userId, [
-          { id: article.id, subscriptionId: null },
-        ]),
-      };
+      return { article, counts: await savedArticleCounts(ctx.db, userId, article.id) };
     }),
 
   /**
@@ -224,9 +228,7 @@ export const savedRouter = createTRPCRouter({
       return {
         article,
         listItem,
-        counts: await getBulkEntryRelatedCounts(ctx.db, userId, [
-          { id: article.id, subscriptionId: null },
-        ]),
+        counts: await savedArticleCounts(ctx.db, userId, article.id),
       };
     }),
 });
