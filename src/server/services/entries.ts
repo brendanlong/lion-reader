@@ -1436,7 +1436,8 @@ export async function markAllEntriesRead(
     conditions.push(buildEntriesInSubscriptionsCondition([params.subscriptionId], columns));
   }
 
-  // Filter by tag (ownership enforced by the shared subquery's tags.userId join)
+  // Filter by tag: a foreign or deleted tag matches nothing (the shared
+  // subquery joins only the user's live tags).
   if (params.tagId) {
     conditions.push(
       buildEntriesInSubscriptionsCondition(

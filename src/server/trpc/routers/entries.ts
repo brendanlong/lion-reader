@@ -10,7 +10,6 @@
  */
 
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
 
 import {
   createTRPCRouter,
@@ -20,10 +19,8 @@ import {
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { uuidSchema } from "../validation";
-import { tags } from "@/server/db/schema";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
-import { verifySubscriptionOwnership } from "@/server/services/entry-filters";
 import { toServerTime } from "@/server/services/client-time";
 import {
   countsAsOfSchema,
@@ -493,38 +490,11 @@ export const entriesRouter = createTRPCRouter({
     )
     .output(z.object({ count: z.number(), counts: unreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      // Validate tag belongs to user (and isn't soft-deleted) before passing to
-      // the service — a tombstoned tag is invisible in listTags and must not be
-      // markable.
-      if (input.tagId) {
-        const tagExists = await ctx.db
-          .select({ id: tags.id })
-          .from(tags)
-          .where(and(eq(tags.id, input.tagId), eq(tags.userId, userId), isNull(tags.deletedAt)))
-          .limit(1);
-
-        if (tagExists.length === 0) {
-          return { count: 0 };
-        }
-      }
-
-      // Validate subscription belongs to user before passing to service
-      if (input.subscriptionId) {
-        const owned = await verifySubscriptionOwnership(ctx.db, input.subscriptionId, userId);
-        if (!owned) {
-          return { count: 0 };
-        }
-      }
-
-      // markAllEntriesRead publishes the mark_all_read SSE signal itself (so the
-      // Google Reader mark-all-as-read route notifies other tabs too).
       const { clientSentAt, ...filters } = input;
       const { entryIds, counts } = await entriesService.markAllEntriesRead(ctx.db, {
         ...filters,
         changedAt: toServerTime(input.changedAt, clientSentAt),
-        userId,
+        userId: ctx.session.user.id,
         showSpam: ctx.session.user.showSpam,
       });
 

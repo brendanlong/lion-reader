@@ -7,7 +7,14 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
+import {
+  users,
+  feeds,
+  entries,
+  subscriptions,
+  tags,
+  userEntries,
+} from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
 import {
@@ -850,6 +857,24 @@ describe("Entries", () => {
         showSpam: false,
       });
       expect(ownMarked).toEqual([entryId]);
+    });
+
+    it("marks nothing through a deleted tag or another user's subscription", async () => {
+      const userId = await createTestUser();
+      const otherId = await createTestUser({ emailPrefix: "other" });
+      const feedId = await createTestFeed("https://shared-mark-all.com/rss");
+      const subscriptionId = await createTestSubscription(userId, feedId);
+      const otherSubscriptionId = await createTestSubscription(otherId, feedId);
+      const entryId = await createTestEntry(feedId, { title: "Shared entry" });
+      await createUserEntry(userId, entryId, { read: false });
+      await createUserEntry(otherId, entryId, { read: false });
+      const tagId = await createTestTag(userId, { subscriptionIds: [subscriptionId] });
+      await db.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
+
+      for (const filter of [{ tagId }, { subscriptionId: otherSubscriptionId }]) {
+        const { entryIds } = await markAllEntriesRead(db, { userId, ...filter, showSpam: false });
+        expect(entryIds).toEqual([]);
+      }
     });
 
     it("excludes hidden spam entries unless showSpam is set", async () => {
