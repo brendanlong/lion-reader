@@ -53,6 +53,22 @@ const RAW_CREDENTIAL_VALIDATORS = [
 // The request-auth code outside API_SURFACES.
 const REQUEST_AUTH = ["src/server/trpc/context.ts", "src/server/auth/route-auth.ts"];
 
+// Narration's UI has three entry points: the next/dynamic wrappers in
+// index.tsx (which keep the engine out of the main chunk), the reader's
+// useEntryNarration hook and the settings panel. Reaching past them couples
+// the caller to narration's internals and can pull the engine into an eager
+// chunk.
+const NARRATION_INTERNALS = {
+  group: [
+    "**/components/narration/*",
+    "!**/components/narration/index",
+    "!**/components/narration/useEntryNarration",
+    "!**/components/narration/NarrationSettings",
+  ],
+  message:
+    "Outside src/components/narration, import @/components/narration, useEntryNarration or NarrationSettings, not narration internals.",
+};
+
 function restrictImports(paths, patterns = []) {
   return { "no-restricted-imports": ["error", { paths, patterns }] };
 }
@@ -122,27 +138,37 @@ const eslintConfig = defineConfig([
   // for the same files replaces an earlier one's paths instead of merging.
   {
     files: ["src/**/*.{ts,tsx}"],
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [NARRATION_INTERNALS]),
+  },
+  {
+    files: ["src/components/narration/**/*.{ts,tsx}"],
     rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN]),
   },
   {
     files: ["src/server/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER]),
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, NARRATION_INTERNALS]),
   },
   {
     files: ["src/components/ui/page-link.tsx"],
-    rules: restrictImports([NATIVE_MARKDOWN]),
+    rules: restrictImports([NATIVE_MARKDOWN], [NARRATION_INTERNALS]),
   },
   {
     files: ["src/server/markdown/index.ts"],
-    rules: restrictImports([NEXT_LINK], [APP_LAYER]),
+    rules: restrictImports([NEXT_LINK], [APP_LAYER, NARRATION_INTERNALS]),
   },
   {
     files: API_SURFACES.filter((glob) => glob.startsWith("src/app/")),
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], RAW_CREDENTIAL_VALIDATORS),
+    rules: restrictImports(
+      [NEXT_LINK, NATIVE_MARKDOWN],
+      [NARRATION_INTERNALS, ...RAW_CREDENTIAL_VALIDATORS]
+    ),
   },
   {
     files: [...API_SURFACES.filter((glob) => glob.startsWith("src/server/")), ...REQUEST_AUTH],
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, ...RAW_CREDENTIAL_VALIDATORS]),
+    rules: restrictImports(
+      [NEXT_LINK, NATIVE_MARKDOWN],
+      [APP_LAYER, NARRATION_INTERNALS, ...RAW_CREDENTIAL_VALIDATORS]
+    ),
   },
   // A later block setting no-restricted-syntax for a subset of src/ replaces
   // these selectors there (flat config doesn't merge them): include them.

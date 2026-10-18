@@ -7,29 +7,19 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { SpinnerIcon, SparklesIcon, AlertIcon } from "@/components/ui/icons";
 import { StarButton, ReadToggleButton } from "@/components/entries/EntryStateButtons";
 import { CollectionsButton } from "@/components/entries/CollectionsButton";
 import { SummaryCard } from "@/components/summarization/SummaryCard";
-import { NarrationControls, NarrationEngine } from "@/components/narration";
-import { FloatingNarrationControls } from "@/components/narration/FloatingNarrationControls";
-import { NarrationHighlightStyles } from "@/components/narration/NarrationHighlightStyles";
-import {
-  DEFAULT_NARRATION_STATE,
-  getNarrationPhase,
-  type NarrationEngineView,
-} from "@/components/narration/useNarrationTypes";
-import { useNarrationHighlight } from "@/components/narration/useNarrationHighlight";
-import { selectDisplayedContent, showsFullContent } from "@/lib/narration/select-content";
-import { useNarrationSettings } from "@/lib/narration/settings";
+import { useEntryNarration } from "@/components/narration/useEntryNarration";
+import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
 import { ENTRY_ACTION_BAR_CLASSES, EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
-import { seekTargetElement } from "@/lib/narration/seek-target";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
 
 /**
@@ -195,93 +185,22 @@ export function EntryContentBody({
     { showFullContent, showOriginal }
   );
 
-  const [narrationSettings] = useNarrationSettings();
-  const showNarration = narrationSettings.enabled;
-
-  // The engine loads lazily and reports its state here. It's only mounted while
-  // narration is enabled, so disabling narration mid-playback stops it.
-  const [narrationEngine, setNarrationEngine] = useState<NarrationEngineView | null>(null);
-  const narration = showNarration ? narrationEngine : null;
-  const narrationState = narration?.state ?? DEFAULT_NARRATION_STATE;
-  const isNarrationActive = getNarrationPhase(narrationState).isActive;
-
-  const { highlightedParagraphIds } = useNarrationHighlight({
-    currentParagraphIndex: narrationState.currentParagraph,
-    isActive: isNarrationActive,
+  const narration = useEntryNarration({
+    contentRef,
+    articleId,
+    title,
+    feedTitle: source,
+    content: contentToDisplay,
+    showFullContent,
+    showOriginal,
+    prerecordedVoice: prerecordedNarration,
   });
-
-  // While narration is active, clicking a paragraph narrates from there (a
-  // paused narration moves there and stays paused). Clicks
-  // that mean something else — following a link, finishing a text selection —
-  // are left alone.
-  const playFromElement = narration?.playFromElement;
-  // The press that dismisses a selection collapses it before `click` fires, so
-  // whether one existed has to be captured on the way down.
-  const hadSelectionAtPointerDownRef = useRef(false);
-  useEffect(() => {
-    if (!showNarration || !isNarrationActive) return;
-    const recordSelection = () => {
-      hadSelectionAtPointerDownRef.current = window.getSelection()?.isCollapsed === false;
-    };
-    document.addEventListener("pointerdown", recordSelection, true);
-    return () => document.removeEventListener("pointerdown", recordSelection, true);
-  }, [showNarration, isNarrationActive]);
-
-  const handleContentClick = useCallback(
-    (event: React.MouseEvent) => {
-      if (!playFromElement || !isNarrationActive) return;
-      const elementIndex = seekTargetElement(event, hadSelectionAtPointerDownRef.current);
-      if (elementIndex !== null) playFromElement(elementIndex);
-    },
-    [isNarrationActive, playFromElement]
-  );
 
   // Get text appearance settings
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
-  const shouldProcessForHighlighting = narration?.isHighlighting ?? false;
-  const highlightHtml =
-    narration?.highlightSource === contentToDisplay ? narration.highlightHtml : null;
-  const contentHtml = contentToDisplay ? (highlightHtml ?? contentToDisplay) : null;
-
   // Image prefetching is owned by EntryContentRenderer (shared with the demo
   // reader); contentRef is still forwarded there for narration highlighting.
-
-  // Auto-scroll to highlighted paragraph when playing
-  // Note: Highlighting is now handled via CSS by NarrationHighlightStyles component
-  useEffect(() => {
-    if (!contentRef.current || !shouldProcessForHighlighting) return;
-    if (!narrationSettings.autoScrollEnabled) return;
-    if (narrationState.status !== "playing") return;
-    if (highlightedParagraphIds.size === 0) return;
-
-    // Find the first highlighted element for scrolling
-    const container = contentRef.current;
-    const firstIndex = Math.min(...highlightedParagraphIds);
-    const element = container.querySelector(
-      `[data-para-id="para-${firstIndex}"]`
-    ) as HTMLElement | null;
-
-    if (!element) return;
-
-    // Check if element is already in viewport
-    const rect = element.getBoundingClientRect();
-    // Account for the header (scroll-margin-top is 100px in CSS)
-    const headerHeight = 100;
-    const isInViewport = rect.top >= headerHeight && rect.bottom <= window.innerHeight;
-
-    if (!isInViewport) {
-      element.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
-  }, [
-    highlightedParagraphIds,
-    shouldProcessForHighlighting,
-    narrationSettings.autoScrollEnabled,
-    narrationState.status,
-  ]);
 
   const {
     onTouchStart: handleTouchStart,
@@ -321,21 +240,7 @@ export function EntryContentBody({
 
   return (
     <>
-      {showNarration && (
-        // Pass the current view state so the server narrates (and maps
-        // highlights against) exactly the variant on screen, not a fixed
-        // full/cleaned/original priority.
-        <NarrationEngine
-          id={articleId}
-          title={title}
-          feedTitle={source}
-          content={contentToDisplay}
-          showFullContent={showFullContent}
-          showOriginal={showOriginal}
-          prerecordedVoice={prerecordedNarration}
-          onChange={setNarrationEngine}
-        />
-      )}
+      {narration.engine}
       <EntryArticle
         title={title}
         url={url}
@@ -344,14 +249,14 @@ export function EntryContentBody({
         date={date}
         dateTimeZone={dateTimeZone}
         datePrefix={datePrefix}
-        contentHtml={contentHtml}
+        contentHtml={narration.contentHtml}
         fallbackContent={fallbackContent}
         textSizeClass={textSizeClass}
         textStyle={textStyle}
         footerLinkDomain={footerLinkDomain}
         unsubscribeUrl={unsubscribeUrl}
         contentRef={contentRef}
-        onContentClick={handleContentClick}
+        onContentClick={narration.onContentClick}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchCancel}
@@ -412,8 +317,7 @@ export function EntryContentBody({
               </Button>
             )}
 
-            {/* Narration controls - pass narration state for controlled mode */}
-            {showNarration && <NarrationControls narration={narration} />}
+            {narration.controls}
 
             {/* Summarize button */}
             {isSummarizationAvailable && onSummarize && (
@@ -461,14 +365,7 @@ export function EntryContentBody({
               />
             )}
 
-            {/* Dynamic highlight styles - CSS-based approach instead of DOM manipulation */}
-            {showNarration && shouldProcessForHighlighting && (
-              <NarrationHighlightStyles
-                highlightedParagraphIds={highlightedParagraphIds}
-                enabled={narrationSettings.highlightEnabled}
-                seekable={isNarrationActive}
-              />
-            )}
+            {narration.highlightStyles}
 
             {beforeContent}
           </>
@@ -481,9 +378,7 @@ export function EntryContentBody({
             read={read}
             onToggleStar={onToggleStar}
             onToggleRead={onToggleRead}
-            extraControls={
-              narration ? <FloatingNarrationControls narration={narration} /> : undefined
-            }
+            extraControls={narration.floatingControls}
           />
         }
       />

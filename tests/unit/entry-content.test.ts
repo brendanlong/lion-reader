@@ -1,5 +1,5 @@
 /**
- * Unit tests for the narration content-variant selector.
+ * Unit tests for the entry content-variant selector.
  *
  * This is the single source of truth for "which content is on screen" shared by
  * the renderer and the narration router, so narration reads (and highlights
@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { selectDisplayedContent } from "../../src/lib/narration/select-content";
+import { selectDisplayedContent } from "@/lib/entry-content";
 
 const fields = {
   fullContentCleaned: "<p>full cleaned</p>",

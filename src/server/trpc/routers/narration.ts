@@ -35,7 +35,7 @@ import { formatModelRef } from "@/lib/ai/model-ref";
 import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
 import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { defaultSpeechModelId, defaultVoiceFor, listSpeechModels } from "@/server/services/speech";
-import { selectDisplayedContent } from "@/lib/narration/select-content";
+import { selectDisplayedContent } from "@/lib/entry-content";
 import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";

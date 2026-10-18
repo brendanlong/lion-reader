@@ -19,7 +19,7 @@
 
 import { useHotkeys } from "react-hotkeys-hook";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
-import type { NarrationPhase } from "@/components/narration/useNarrationTypes";
+import type { NarrationPhase } from "./useNarrationTypes";
 
 // [ and ] need AltGr (or Option) on many non-US layouts, so modifiers are
 // ignored when matching the produced character, but a Ctrl/Cmd chord without

@@ -12,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { applySubscriptionUpdate } from "@/lib/cache/operations";
-import { showsFullContent } from "@/lib/narration/select-content";
+import { showsFullContent } from "@/lib/entry-content";
 import { useLocalSubscription } from "@/lib/hooks/useLocalSubscriptions";
 
 interface FullContentEntry {
