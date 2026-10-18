@@ -373,27 +373,4 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
     expect(links[0].providerAccountId).toBe(APPLE_SUB);
     expect(await strayAccounts()).toHaveLength(0);
   });
-
-  it("rejects a link state presented to the tRPC sign-in callback", async () => {
-    const { link } = await signedInUser();
-    providerMock.googleSub = "google-link-sub-trpc";
-    const state = await startGoogleLink(link);
-
-    const { createCaller } = await import("../../src/server/trpc/root");
-    const caller = createCaller({
-      db,
-      session: null,
-      apiToken: null,
-      authType: null,
-      scopes: [],
-      sessionToken: null,
-      headers: new Headers(),
-      resHeaders: undefined,
-    });
-
-    await expect(caller.auth.googleCallback({ code: "auth-code", state })).rejects.toThrow(
-      /link an account/
-    );
-    expect(await strayAccounts()).toHaveLength(0);
-  });
 });

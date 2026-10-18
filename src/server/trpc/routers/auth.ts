@@ -33,27 +33,16 @@ import {
   getEnabledProviders,
   isProviderEnabled,
   PROVIDER_LABELS,
-  type OAuthLinkTarget,
 } from "@/server/auth/oauth/config";
 import {
   createGoogleAuthUrl,
-  validateGoogleCallback,
   isGoogleOAuthEnabled,
   GOOGLE_DOCS_READONLY_SCOPE,
 } from "@/server/auth/oauth/google";
-import {
-  createAppleAuthUrl,
-  validateAppleCallback,
-  isAppleOAuthEnabled,
-} from "@/server/auth/oauth/apple";
-import {
-  createDiscordAuthUrl,
-  validateDiscordCallback,
-  isDiscordOAuthEnabled,
-} from "@/server/auth/oauth/discord";
+import { createAppleAuthUrl, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
+import { createDiscordAuthUrl, isDiscordOAuthEnabled } from "@/server/auth/oauth/discord";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
-import { processOAuthCallback } from "@/server/auth/oauth/callback";
-import { linkOAuthAccount, unlinkOAuthAccount } from "@/server/services/oauth-accounts";
+import { unlinkOAuthAccount } from "@/server/services/oauth-accounts";
 import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
 import {
   DISCORD_BOT_ENABLED,
@@ -117,107 +106,9 @@ const sessionOutputSchema = z.object({
   sessionToken: z.string(),
 });
 
-const oauthSessionOutputSchema = sessionOutputSchema.extend({ isNewUser: z.boolean() });
-
 const authUrlInputSchema = z.object({ inviteToken: z.string().optional() }).optional();
 
 const authUrlOutputSchema = z.object({ url: z.string(), state: z.string() });
-
-const oauthCodeInputSchema = z.object({
-  code: z.string().min(1, "Authorization code is required"),
-  state: z.string().min(1, "State parameter is required"),
-});
-
-const appleCallbackInputSchema = oauthCodeInputSchema.extend({
-  // Apple sends user data only on first authorization - can be JSON string or object
-  user: z
-    .union([
-      z.string(),
-      z.object({
-        name: z
-          .object({
-            firstName: z.string().optional(),
-            lastName: z.string().optional(),
-          })
-          .optional(),
-        email: z.string().optional(),
-      }),
-    ])
-    .optional(),
-});
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * Wrap an OAuth validation function with shared error handling.
- * Catches errors and rethrows as appropriate tRPC errors.
- *
- * A state minted for a **link** is rejected here: these procedures either sign a
- * user in or link by their own rules, and only the browser callback routes know
- * how to honour a link target (`OAuthLinkTarget`). Redeeming one here would pick
- * the account by the provider's email — the bug in #1603.
- */
-async function validateOAuthCallback<T extends { link?: OAuthLinkTarget }>(
-  validateFn: () => Promise<T>
-): Promise<T> {
-  try {
-    const result = await validateFn();
-    if (result.link) {
-      throw errors.oauthCallbackFailed("This authorization was started to link an account");
-    }
-    return result;
-  } catch (error) {
-    if (error instanceof TRPCError) {
-      throw error;
-    }
-    if (error instanceof Error) {
-      if (error.message.includes("Invalid or expired OAuth state")) {
-        throw errors.oauthStateInvalid();
-      }
-      throw errors.oauthCallbackFailed(error.message);
-    }
-    throw errors.oauthCallbackFailed("Unknown error");
-  }
-}
-
-/**
- * Handle the common post-validation OAuth callback flow:
- * create a session and return the standard response.
- */
-async function handleOAuthCallback(
-  db: Parameters<typeof createSession>[0],
-  headers: Headers,
-  resHeaders: Headers | undefined,
-  oauthResult: { userId: string; email: string; createdAt: Date; isNewUser: boolean }
-): Promise<{
-  user: { id: string; email: string; createdAt: Date };
-  sessionToken: string;
-  isNewUser: boolean;
-}> {
-  const { userAgent, ipAddress } = extractClientInfo(headers);
-
-  const { token } = await createSession(db, {
-    userId: oauthResult.userId,
-    userAgent,
-    ipAddress,
-  });
-
-  // Set the httpOnly session cookie for the browser (the returned sessionToken
-  // stays in the body for REST/OpenAPI clients that read it directly).
-  setSessionCookie(resHeaders, token);
-
-  return {
-    user: {
-      id: oauthResult.userId,
-      email: oauthResult.email,
-      createdAt: oauthResult.createdAt,
-    },
-    sessionToken: token,
-    isNewUser: oauthResult.isNewUser,
-  };
-}
 
 // ============================================================================
 // Router
@@ -404,15 +295,15 @@ export const authRouter = createTRPCRouter({
   /**
    * Generate Google OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Google OAuth login, for the
-   * REST/OpenAPI surface — browsers are redirected to the route handler in
-   * `src/app/api/v1/auth/oauth/google/callback` instead.
+   * Returns a URL to redirect the user to for Google OAuth login. Google
+   * redirects back to the route handler in
+   * `src/app/api/v1/auth/oauth/google/callback`, which finishes sign-in.
    *
    * Flow:
    * 1. Client calls this endpoint
    * 2. Client redirects user to the URL
    * 3. After Google auth, user is redirected to callback URL
-   * 4. Client sends code and state to googleCallback endpoint
+   * 4. The callback route handler finishes sign-in
    *
    * The returned `state` needs no client-side storage: the browser is bound to
    * it by the httpOnly cookie set below (#1263).
@@ -443,69 +334,17 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
-   * Handle Google OAuth callback.
-   *
-   * Exchanges the authorization code for tokens, retrieves user info,
-   * and creates or links a user account.
-   *
-   * Account Linking Logic:
-   * 1. If OAuth account exists: log in as that user
-   * 2. If email matches existing user: link OAuth to that account
-   * 3. Otherwise: create new user and OAuth account
-   *
-   * @param code - The authorization code from Google
-   * @param state - The state parameter (must match the one from googleAuthUrl)
-   * @returns The user and session token
-   */
-  googleCallback: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/oauth/google/callback",
-        tags: ["Auth"],
-        summary: "Handle Google OAuth callback",
-      },
-    })
-    .input(oauthCodeInputSchema)
-    .output(oauthSessionOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { code, state } = input;
-
-      if (!isGoogleOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Google");
-      }
-
-      const googleResult = await validateOAuthCallback(() => validateGoogleCallback(code, state));
-
-      const { userInfo, tokens, scopes, inviteToken } = googleResult;
-
-      const oauthResult = await processOAuthCallback({
-        provider: "google",
-        providerAccountId: userInfo.sub,
-        email: userInfo.email,
-        emailVerified: userInfo.email_verified === true,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        scopes,
-        inviteToken,
-      });
-
-      return handleOAuthCallback(ctx.db, ctx.headers, ctx.resHeaders, oauthResult);
-    }),
-
-  /**
    * Generate Apple OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Apple OAuth login, for the
-   * REST/OpenAPI surface — browsers are redirected to the route handler in
-   * `src/app/api/v1/auth/oauth/apple/callback` instead.
+   * Returns a URL to redirect the user to for Apple OAuth login. Apple
+   * redirects back to the route handler in
+   * `src/app/api/v1/auth/oauth/apple/callback`, which finishes sign-in.
    *
    * Flow:
    * 1. Client calls this endpoint
    * 2. Client redirects user to the URL
    * 3. After Apple auth, user is redirected to callback URL
-   * 4. Client sends code, state, and user data to appleCallback endpoint
+   * 4. The callback route handler finishes sign-in
    *
    * The returned `state` needs no client-side storage: the browser is bound to
    * it by the httpOnly cookie set below (#1263).
@@ -538,84 +377,17 @@ export const authRouter = createTRPCRouter({
     }),
 
   /**
-   * Handle Apple OAuth callback.
-   *
-   * Exchanges the authorization code for tokens, retrieves user info from JWT,
-   * and creates or links a user account.
-   *
-   * Important Apple-specific behavior:
-   * - Apple only sends user info (name, email) on FIRST authorization
-   * - The `user` parameter contains this first-auth data
-   * - Users may use Apple's private relay email (randomized@privaterelay.appleid.com)
-   * - We store the email regardless - relay emails are fully functional
-   *
-   * Account Linking Logic:
-   * 1. If OAuth account exists: log in as that user
-   * 2. If email matches existing user: link OAuth to that account
-   * 3. Otherwise: create new user and OAuth account
-   *
-   * @param code - The authorization code from Apple
-   * @param state - The state parameter (must match the one from appleAuthUrl)
-   * @param user - Optional user data (only sent on first authorization, JSON string or object)
-   * @returns The user and session token
-   */
-  appleCallback: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/oauth/apple/callback",
-        tags: ["Auth"],
-        summary: "Handle Apple OAuth callback",
-      },
-    })
-    .input(appleCallbackInputSchema)
-    .output(oauthSessionOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { code, state, user: userDataInput } = input;
-
-      if (!isAppleOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Apple");
-      }
-
-      const appleResult = await validateOAuthCallback(() =>
-        validateAppleCallback(code, state, userDataInput)
-      );
-
-      const { userInfo, tokens, inviteToken } = appleResult;
-
-      // The linking/creation email must come ONLY from the signature-verified
-      // id_token (userInfo), never `firstAuthData.email` — that is part of
-      // Apple's client-posted `user` value and is attacker-controllable. See the
-      // browser callback route for the full rationale. Returning users (no email
-      // on re-auth) are matched by providerAccountId (sub).
-      const email = userInfo.email;
-
-      const oauthResult = await processOAuthCallback({
-        provider: "apple",
-        providerAccountId: userInfo.sub,
-        email,
-        emailVerified: userInfo.emailVerified === true,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        inviteToken,
-      });
-
-      return handleOAuthCallback(ctx.db, ctx.headers, ctx.resHeaders, oauthResult);
-    }),
-
-  /**
    * Generate Discord OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Discord OAuth login, for the
-   * REST/OpenAPI surface — browsers are redirected to the route handler in
-   * `src/app/api/v1/auth/oauth/discord/callback` instead.
+   * Returns a URL to redirect the user to for Discord OAuth login. Discord
+   * redirects back to the route handler in
+   * `src/app/api/v1/auth/oauth/discord/callback`, which finishes sign-in.
    *
    * Flow:
    * 1. Client calls this endpoint
    * 2. Client redirects user to the URL
    * 3. After Discord auth, user is redirected to callback URL
-   * 4. Client sends code and state to discordCallback endpoint
+   * 4. The callback route handler finishes sign-in
    *
    * The returned `state` needs no client-side storage: the browser is bound to
    * it by the httpOnly cookie set below (#1263).
@@ -643,57 +415,6 @@ export const authRouter = createTRPCRouter({
       setOAuthStateCookie(ctx.resHeaders, result.state);
 
       return result;
-    }),
-
-  /**
-   * Handle Discord OAuth callback.
-   *
-   * Exchanges the authorization code for tokens, retrieves user info,
-   * and creates or links a user account.
-   *
-   * Account Linking Logic:
-   * 1. If OAuth account exists: log in as that user
-   * 2. If email matches existing user: link OAuth to that account
-   * 3. Otherwise: create new user and OAuth account
-   *
-   * @param code - The authorization code from Discord
-   * @param state - The state parameter (must match the one from discordAuthUrl)
-   * @returns The user and session token
-   */
-  discordCallback: expensivePublicProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/oauth/discord/callback",
-        tags: ["Auth"],
-        summary: "Handle Discord OAuth callback",
-      },
-    })
-    .input(oauthCodeInputSchema)
-    .output(oauthSessionOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { code, state } = input;
-
-      if (!isDiscordOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Discord");
-      }
-
-      const discordResult = await validateOAuthCallback(() => validateDiscordCallback(code, state));
-
-      const { userInfo, tokens, inviteToken } = discordResult;
-
-      const oauthResult = await processOAuthCallback({
-        provider: "discord",
-        providerAccountId: userInfo.id,
-        email: userInfo.email,
-        emailVerified: userInfo.verified === true,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        inviteToken,
-      });
-
-      return handleOAuthCallback(ctx.db, ctx.headers, ctx.resHeaders, oauthResult);
     }),
 
   /**
@@ -943,154 +664,6 @@ export const authRouter = createTRPCRouter({
       setOAuthStateCookie(ctx.resHeaders, result.state, provider === "apple" ? "none" : "lax");
 
       return result;
-    }),
-
-  /**
-   * Link Google OAuth to existing account.
-   *
-   * Similar to googleCallback but requires the user to be authenticated
-   * and links the OAuth account to the current user rather than creating
-   * a new account or finding an existing one.
-   *
-   * @param code - The authorization code from Google
-   * @param state - The state parameter (must match the one from googleAuthUrl)
-   * @returns Success status
-   */
-  linkGoogle: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/link/google",
-        tags: ["Auth"],
-        summary: "Link Google OAuth to existing account",
-      },
-    })
-    .input(oauthCodeInputSchema)
-    .output(z.object({ success: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      const { code, state } = input;
-      const userId = ctx.session.user.id;
-
-      if (!isGoogleOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Google");
-      }
-
-      // Validate the OAuth callback first (need userInfo to check account match)
-      const googleResult = await validateOAuthCallback(() => validateGoogleCallback(code, state));
-
-      const { userInfo, tokens, scopes } = googleResult;
-
-      // Re-linking the same Google account updates the stored tokens/scopes,
-      // which is how incremental authorization (adding the Docs scope) lands.
-      await linkOAuthAccount(ctx.db, {
-        userId,
-        currentSessionId: ctx.session.session.id,
-        provider: "google",
-        providerAccountId: userInfo.sub,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        scopes,
-      });
-
-      return { success: true };
-    }),
-
-  /**
-   * Link Apple OAuth to existing account.
-   *
-   * Similar to appleCallback but requires the user to be authenticated
-   * and links the OAuth account to the current user rather than creating
-   * a new account or finding an existing one.
-   *
-   * @param code - The authorization code from Apple
-   * @param state - The state parameter (must match the one from appleAuthUrl)
-   * @param user - Optional user data (only sent on first authorization)
-   * @returns Success status
-   */
-  linkApple: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/link/apple",
-        tags: ["Auth"],
-        summary: "Link Apple OAuth to existing account",
-      },
-    })
-    .input(appleCallbackInputSchema)
-    .output(z.object({ success: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      const { code, state, user: userDataInput } = input;
-      const userId = ctx.session.user.id;
-
-      if (!isAppleOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Apple");
-      }
-
-      const appleResult = await validateOAuthCallback(() =>
-        validateAppleCallback(code, state, userDataInput)
-      );
-
-      const { userInfo, tokens } = appleResult;
-
-      await linkOAuthAccount(ctx.db, {
-        userId,
-        currentSessionId: ctx.session.session.id,
-        provider: "apple",
-        providerAccountId: userInfo.sub,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-      });
-
-      return { success: true };
-    }),
-
-  /**
-   * Link Discord OAuth to existing account.
-   *
-   * Similar to discordCallback but requires the user to be authenticated
-   * and links the OAuth account to the current user rather than creating
-   * a new account or finding an existing one.
-   *
-   * @param code - The authorization code from Discord
-   * @param state - The state parameter (must match the one from discordAuthUrl)
-   * @returns Success status
-   */
-  linkDiscord: expensiveProtectedProcedure
-    .meta({
-      openapi: {
-        method: "POST",
-        path: "/auth/link/discord",
-        tags: ["Auth"],
-        summary: "Link Discord OAuth to existing account",
-      },
-    })
-    .input(oauthCodeInputSchema)
-    .output(z.object({ success: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      const { code, state } = input;
-      const userId = ctx.session.user.id;
-
-      if (!isDiscordOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Discord");
-      }
-
-      const discordResult = await validateOAuthCallback(() => validateDiscordCallback(code, state));
-
-      const { userInfo, tokens } = discordResult;
-
-      await linkOAuthAccount(ctx.db, {
-        userId,
-        currentSessionId: ctx.session.session.id,
-        provider: "discord",
-        providerAccountId: userInfo.id,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-      });
-
-      return { success: true };
     }),
 
   /**

@@ -54,9 +54,8 @@ export async function fetchUserInfo<T>(
  * `openid-client` reads the authorization response out of the callback URL (and derives
  * the `redirect_uri` it sends to the token endpoint from that URL) rather than taking
  * `code`/`state` as plain arguments. Our callbacks don't all arrive as a URL — Apple
- * uses a cross-site form POST, and the tRPC callback mutations carry the pair as JSON —
- * so we rebuild the canonical callback URL from the registered redirect URI plus the
- * values we were handed.
+ * uses a cross-site form POST — so we rebuild the canonical callback URL from the
+ * registered redirect URI plus the values we were handed.
  *
  * `expectedState` is therefore compared against a `state` we just wrote ourselves and
  * can't fail; it's passed because omitting it makes the client *reject* a response that

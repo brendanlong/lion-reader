@@ -203,7 +203,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       expect(storedState).toBeNull();
     });
 
-    it("parses first-auth user data when provided as JSON string", async () => {
+    it("parses first-auth user data from its JSON form value", async () => {
       const { createAppleAuthUrl, validateAppleCallback } =
         await import("../../src/server/auth/oauth/apple");
 
@@ -223,27 +223,6 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       expect(result.firstAuthData?.name?.firstName).toBe("John");
       expect(result.firstAuthData?.name?.lastName).toBe("Doe");
       expect(result.firstAuthData?.email).toBe("john@example.com");
-    });
-
-    it("parses first-auth user data when provided as object", async () => {
-      const { createAppleAuthUrl, validateAppleCallback } =
-        await import("../../src/server/auth/oauth/apple");
-
-      const { state } = await createAppleAuthUrl();
-
-      const firstAuthData = {
-        name: {
-          firstName: "Jane",
-          lastName: "Smith",
-        },
-        email: "jane@example.com",
-      };
-
-      const result = await validateAppleCallback("mock-auth-code", state, firstAuthData);
-
-      expect(result.firstAuthData).toBeDefined();
-      expect(result.firstAuthData?.name?.firstName).toBe("Jane");
-      expect(result.firstAuthData?.name?.lastName).toBe("Smith");
     });
 
     it("fails with invalid state (not found)", async () => {
