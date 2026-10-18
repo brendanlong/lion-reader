@@ -5,7 +5,6 @@
  */
 
 import { z } from "zod";
-import * as argon2 from "argon2";
 import { eq, and, isNull, gt, desc } from "drizzle-orm";
 
 import {
@@ -13,6 +12,7 @@ import {
   confirmedProtectedProcedure as protectedProcedure,
   expensiveProtectedProcedure,
   expensiveConfirmedProtectedProcedure,
+  consumePasswordAttempt,
 } from "../trpc";
 import { errors } from "@/server/errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
@@ -22,7 +22,7 @@ import {
   invalidateUserSessionCaches,
 } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
-import { hashPassword, passwordSchema } from "@/server/auth/password";
+import { hashPassword, passwordSchema, verifyUserPassword } from "@/server/auth/password";
 import { isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
@@ -246,20 +246,14 @@ export const usersRouter = createTRPCRouter({
       const currentSessionId = ctx.session.session.id;
       const { currentPassword, newPassword } = input;
 
-      // Get the user's current password hash
-      const user = await ctx.db
-        .select({ passwordHash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (user.length === 0 || !user[0].passwordHash) {
+      // A password check, so it spends the account's password bucket like a
+      // login (SECURITY.md §4), and verifies through the shared helper.
+      await consumePasswordAttempt(ctx.session.user.email);
+      const current = await verifyUserPassword(ctx.db, userId, currentPassword);
+      if (!current.hasPassword) {
         throw errors.validation("Cannot change password for this account");
       }
-
-      // Verify current password
-      const isValidPassword = await argon2.verify(user[0].passwordHash, currentPassword);
-      if (!isValidPassword) {
+      if (!current.valid) {
         throw errors.validation("Current password is incorrect");
       }
 

@@ -25,4 +25,4 @@ Scopes are `mcp`, `saved:write`, and `reader:full-access` (OAuth/session only: t
 
 ## Rate limiting
 
-Ordinary limits fail open when Redis is down. The **per-account password bucket** (shared by tRPC login, Google Reader `ClientLogin`, and the Wallabag password grant, keyed by normalized email and consumed before the user lookup) falls back to a bounded in-memory bucket instead, since brute-force protection must not vanish while degraded. `/oauth/token` takes no password and uses the `oauth` bucket.
+Ordinary limits fail open when Redis is down. The **per-account password bucket** (shared by every password check: tRPC login and change-password, Google Reader `ClientLogin`, and the Wallabag password grant; keyed by normalized email and consumed before the user lookup) falls back to a bounded in-memory bucket instead, since brute-force protection must not vanish while degraded. `/oauth/token` takes no password and uses the `oauth` bucket.

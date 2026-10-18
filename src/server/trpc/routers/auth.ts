@@ -9,7 +9,6 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 
-import { checkAccountRateLimit } from "@/server/rate-limit";
 import { hashPassword, passwordSchema, verifyEmailPassword } from "@/server/auth/password";
 
 import {
@@ -19,6 +18,7 @@ import {
   expensivePublicProcedure,
   expensiveProtectedProcedure,
   scopedUnconfirmedProcedure,
+  consumePasswordAttempt,
 } from "../trpc";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
@@ -228,13 +228,7 @@ export const authRouter = createTRPCRouter({
       // single account. Shared with the Google Reader and Wallabag password
       // paths. Checked before the user lookup so attempts against non-existent
       // accounts are throttled identically (no enumeration side channel).
-      const accountLimit = await checkAccountRateLimit(email);
-      if (!accountLimit.allowed) {
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: `Rate limit exceeded. Please retry after ${accountLimit.retryAfterSeconds} seconds.`,
-        });
-      }
+      await consumePasswordAttempt(email);
 
       // Same error for a missing user, a passwordless one and a wrong password,
       // and the same argon2 cost for each (no enumeration oracle, #1267).
