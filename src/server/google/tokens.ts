@@ -10,7 +10,7 @@ import * as client from "openid-client";
 import { db } from "@/server/db";
 import { oauthAccounts } from "@/server/db/schema";
 import { getGoogleConfig } from "@/server/auth/oauth/config";
-import { accessTokenExpiresAt } from "@/server/auth/oauth/token-exchange";
+import { accessTokenExpiresAt, oauthTokenColumns } from "@/server/auth/oauth/token-exchange";
 import { logger } from "@/lib/logger";
 import { GOOGLE_DOCS_SCOPE } from "./docs";
 import { GOOGLE_DRIVE_SCOPE } from "./drive";
@@ -108,14 +108,14 @@ async function refreshGoogleToken(oauthAccountId: string, refreshToken: string):
     // Update stored tokens in database
     await db
       .update(oauthAccounts)
-      .set({
-        accessToken: tokens.access_token,
-        // `?? null` matters: Drizzle drops `undefined` from `set()`, which would leave
-        // the old (already past) expiry next to a fresh token and re-refresh forever.
-        expiresAt: expiresAt ?? null,
-        // Some providers rotate refresh tokens - update if provided
-        ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
-      })
+      .set(
+        // Not `tokensFromResponse`: the refreshed token's scope list isn't recorded
+        oauthTokenColumns({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt,
+        })
+      )
       .where(eq(oauthAccounts.id, oauthAccountId));
 
     logger.info("Successfully refreshed Google access token", {

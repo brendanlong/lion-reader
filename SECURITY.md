@@ -116,7 +116,7 @@ fetches user-influenced URLs and must never be usable to reach internal services
 - **OAuth `state` is bound to the initiating browser** by an `HttpOnly` cookie the
   callback routes require (`oauth/state-cookie.ts`, fail-closed; #1263). The Redis
   state alone doesn't tie the callback to a browser. Google's `extension-save` mode
-  is the one exemption (the callback route says why).
+  is the one exemption (`oauth/google.ts` says why).
 
 ## 5. Token scopes & tRPC authorization
 

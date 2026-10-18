@@ -33,13 +33,13 @@ import {
   getEnabledProviders,
   isProviderEnabled,
   PROVIDER_LABELS,
+  type OAuthProviderName,
 } from "@/server/auth/oauth/config";
-import { createGoogleAuthUrl, isGoogleOAuthEnabled } from "@/server/auth/oauth/google";
-import { createAppleAuthUrl, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
-import { createDiscordAuthUrl, isDiscordOAuthEnabled } from "@/server/auth/oauth/discord";
+import { createGoogleAuthUrl } from "@/server/auth/oauth/google";
+import { startOAuthFlow } from "@/server/auth/oauth/providers";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { unlinkOAuthAccount } from "@/server/services/oauth-accounts";
-import { getGoogleDocsGrant, GOOGLE_DOCS_SCOPES } from "@/server/google/tokens";
+import { getGoogleDocsGrant } from "@/server/google/tokens";
 import {
   DISCORD_BOT_ENABLED,
   DISCORD_BOT_INVITE_URL,
@@ -105,6 +105,28 @@ const sessionOutputSchema = z.object({
 const authUrlInputSchema = z.object({ inviteToken: z.string().optional() }).optional();
 
 const authUrlOutputSchema = z.object({ url: z.string(), state: z.string() });
+
+/**
+ * Start a social sign-in: returns the URL to send the browser to. The provider
+ * redirects back to its route handler in `src/app/api/v1/auth/oauth/{provider}/callback`,
+ * which finishes sign-in.
+ */
+function authUrlProcedure(provider: OAuthProviderName) {
+  return publicProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: `/auth/oauth/${provider}`,
+        tags: ["Auth"],
+        summary: `Get ${PROVIDER_LABELS[provider]} OAuth authorization URL`,
+      },
+    })
+    .input(authUrlInputSchema)
+    .output(authUrlOutputSchema)
+    .query(({ ctx, input }) =>
+      startOAuthFlow(ctx.resHeaders, provider, { inviteToken: input?.inviteToken })
+    );
+}
 
 // ============================================================================
 // Router
@@ -288,130 +310,9 @@ export const authRouter = createTRPCRouter({
       };
     }),
 
-  /**
-   * Generate Google OAuth authorization URL.
-   *
-   * Returns a URL to redirect the user to for Google OAuth login. Google
-   * redirects back to the route handler in
-   * `src/app/api/v1/auth/oauth/google/callback`, which finishes sign-in.
-   *
-   * Flow:
-   * 1. Client calls this endpoint
-   * 2. Client redirects user to the URL
-   * 3. After Google auth, user is redirected to callback URL
-   * 4. The callback route handler finishes sign-in
-   *
-   * The returned `state` needs no client-side storage: the browser is bound to
-   * it by the httpOnly cookie set below (#1263).
-   */
-  googleAuthUrl: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/oauth/google",
-        tags: ["Auth"],
-        summary: "Get Google OAuth authorization URL",
-      },
-    })
-    .input(authUrlInputSchema)
-    .output(authUrlOutputSchema)
-    .query(async ({ ctx, input }) => {
-      if (!isGoogleOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Google");
-      }
-
-      const result = await createGoogleAuthUrl({ inviteToken: input?.inviteToken });
-
-      // Bind the state to this browser so the callback can't be replayed against
-      // another user (login CSRF, issue #1263).
-      setOAuthStateCookie(ctx.resHeaders, result.state);
-
-      return result;
-    }),
-
-  /**
-   * Generate Apple OAuth authorization URL.
-   *
-   * Returns a URL to redirect the user to for Apple OAuth login. Apple
-   * redirects back to the route handler in
-   * `src/app/api/v1/auth/oauth/apple/callback`, which finishes sign-in.
-   *
-   * Flow:
-   * 1. Client calls this endpoint
-   * 2. Client redirects user to the URL
-   * 3. After Apple auth, user is redirected to callback URL
-   * 4. The callback route handler finishes sign-in
-   *
-   * The returned `state` needs no client-side storage: the browser is bound to
-   * it by the httpOnly cookie set below (#1263).
-   *
-   * Note: Apple uses form_post response mode, so the callback comes as a POST
-   */
-  appleAuthUrl: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/oauth/apple",
-        tags: ["Auth"],
-        summary: "Get Apple OAuth authorization URL",
-      },
-    })
-    .input(authUrlInputSchema)
-    .output(authUrlOutputSchema)
-    .query(async ({ ctx, input }) => {
-      if (!isAppleOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Apple");
-      }
-
-      const result = await createAppleAuthUrl({ inviteToken: input?.inviteToken });
-
-      // Bind the state to this browser (login CSRF, issue #1263). Apple's callback is a
-      // cross-site POST (form_post), so the cookie must be SameSite=None to be sent.
-      setOAuthStateCookie(ctx.resHeaders, result.state, "none");
-
-      return result;
-    }),
-
-  /**
-   * Generate Discord OAuth authorization URL.
-   *
-   * Returns a URL to redirect the user to for Discord OAuth login. Discord
-   * redirects back to the route handler in
-   * `src/app/api/v1/auth/oauth/discord/callback`, which finishes sign-in.
-   *
-   * Flow:
-   * 1. Client calls this endpoint
-   * 2. Client redirects user to the URL
-   * 3. After Discord auth, user is redirected to callback URL
-   * 4. The callback route handler finishes sign-in
-   *
-   * The returned `state` needs no client-side storage: the browser is bound to
-   * it by the httpOnly cookie set below (#1263).
-   */
-  discordAuthUrl: publicProcedure
-    .meta({
-      openapi: {
-        method: "GET",
-        path: "/auth/oauth/discord",
-        tags: ["Auth"],
-        summary: "Get Discord OAuth authorization URL",
-      },
-    })
-    .input(authUrlInputSchema)
-    .output(authUrlOutputSchema)
-    .query(async ({ ctx, input }) => {
-      if (!isDiscordOAuthEnabled()) {
-        throw errors.oauthProviderNotConfigured("Discord");
-      }
-
-      const result = await createDiscordAuthUrl({ inviteToken: input?.inviteToken });
-
-      // Bind the state to this browser so the callback can't be replayed against
-      // another user (login CSRF, issue #1263).
-      setOAuthStateCookie(ctx.resHeaders, result.state);
-
-      return result;
-    }),
+  googleAuthUrl: authUrlProcedure("google"),
+  appleAuthUrl: authUrlProcedure("apple"),
+  discordAuthUrl: authUrlProcedure("discord"),
 
   /**
    * Get Discord bot configuration.
@@ -639,27 +540,10 @@ export const authRouter = createTRPCRouter({
   linkAuthUrl: protectedProcedure
     .input(z.object({ provider: z.enum(["google", "apple", "discord"]) }))
     .output(authUrlOutputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { provider } = input;
-
-      if (!isProviderEnabled(provider)) {
-        throw errors.oauthProviderNotConfigured(PROVIDER_LABELS[provider]);
-      }
-
-      const link = { userId: ctx.session.user.id, sessionId: ctx.session.session.id };
-
-      const result =
-        provider === "google"
-          ? await createGoogleAuthUrl({ link })
-          : provider === "apple"
-            ? await createAppleAuthUrl({ link })
-            : await createDiscordAuthUrl({ link });
-
-      // Bind the state to this browser (login CSRF, issue #1263). Apple's callback
-      // is a cross-site POST (form_post), so its cookie must be SameSite=None.
-      setOAuthStateCookie(ctx.resHeaders, result.state, provider === "apple" ? "none" : "lax");
-
-      return result;
+    .mutation(({ ctx, input }) => {
+      return startOAuthFlow(ctx.resHeaders, input.provider, {
+        link: { userId: ctx.session.user.id, sessionId: ctx.session.session.id },
+      });
     }),
 
   /**
@@ -727,7 +611,7 @@ export const authRouter = createTRPCRouter({
     .input(z.object({}).optional())
     .output(authUrlOutputSchema)
     .mutation(async ({ ctx }) => {
-      if (!isGoogleOAuthEnabled()) {
+      if (!isProviderEnabled("google")) {
         throw errors.oauthProviderNotConfigured("Google");
       }
 
@@ -735,10 +619,8 @@ export const authRouter = createTRPCRouter({
         throw errors.validation("You must link your Google account before requesting Docs access");
       }
 
-      // Pass mode: "save" so the callback knows to redirect back to /save
       const result = await createGoogleAuthUrl({
-        additionalScopes: GOOGLE_DOCS_SCOPES,
-        mode: "save",
+        docsAccess: { userId: ctx.session.user.id, mode: "save" },
       });
 
       // Bind the state to this browser so the callback can't be replayed against

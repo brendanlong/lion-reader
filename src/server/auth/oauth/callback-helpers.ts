@@ -1,42 +1,40 @@
 /**
- * OAuth Callback Helpers
+ * The social-login callback, shared by every provider's route handler.
  *
- * Shared utilities for OAuth callback routes to reduce duplication across providers.
- * These helpers handle common tasks like:
- * - Extracting client info from requests
- * - Handling invite-related errors
- * - Creating sessions and setting cookies
- * - Linking a provider to the account its flow was started from
+ * What the callback does with the provider identity is the flow's (`OAuthFlow`,
+ * from the Redis state blob): sign in, link to the account that started the flow,
+ * or re-authorize an existing link.
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
+import { appUrl } from "@/server/config/env";
 import { createSession, isSessionActive } from "@/server/auth/session";
 import { db } from "@/server/db";
+import { getAppErrorCode } from "@/server/errors";
 import { extractClientInfo } from "@/server/http/client-ip";
-import { clearOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
+import {
+  clearOAuthStateCookie,
+  oauthStateCookieMatches,
+  readOAuthStateCookie,
+} from "@/server/auth/oauth/state-cookie";
 import { SESSION_MAX_AGE_SECONDS } from "@/server/auth/session-cookie";
-import { linkOAuthAccount } from "@/server/services/oauth-accounts";
-import type { OAuthLinkTarget, OAuthProviderName } from "@/server/auth/oauth/config";
+import { linkOAuthAccount, reauthorizeOAuthAccount } from "@/server/services/oauth-accounts";
+import { processOAuthCallback } from "@/server/auth/oauth/callback";
+import {
+  isProviderEnabled,
+  type OAuthLinkTarget,
+  type OAuthProviderName,
+} from "@/server/auth/oauth/config";
+import { SOCIAL_LOGIN_PROVIDERS, stateCookieSameSite } from "@/server/auth/oauth/providers";
+import {
+  OAuthStateError,
+  type OAuthFlow,
+  type ProviderIdentity,
+} from "@/server/auth/oauth/token-exchange";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Error codes from processOAuthCallback that should redirect to login with an error.
- * Includes invite errors and signup provider restriction errors.
- */
-type SignupErrorCode =
-  | "INVITE_REQUIRED"
-  | "INVITE_INVALID"
-  | "INVITE_EXPIRED"
-  | "INVITE_ALREADY_USED"
-  | "SIGNUP_PROVIDER_NOT_ALLOWED";
-
-/**
- * Map of signup error codes to URL error parameters
- */
-const SIGNUP_ERROR_MAP: Record<SignupErrorCode, string> = {
+/** The `?error=` the login page shows for each signup error a sign-in can raise. */
+const SIGNUP_ERROR_PARAMS: Partial<Record<string, string>> = {
   INVITE_REQUIRED: "invite_required",
   INVITE_INVALID: "invite_invalid",
   INVITE_EXPIRED: "invite_expired",
@@ -44,146 +42,12 @@ const SIGNUP_ERROR_MAP: Record<SignupErrorCode, string> = {
   SIGNUP_PROVIDER_NOT_ALLOWED: "signup_provider_not_allowed",
 };
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Extracts the error code from an error's cause, if present.
- * Used to detect signup-related errors from processOAuthCallback.
- *
- * @param error - The error to extract the code from
- * @returns The error code, or undefined if not found
- */
-function getErrorCode(error: unknown): string | undefined {
-  if (error instanceof Error && "cause" in error) {
-    const cause = error.cause as { code?: string } | undefined;
-    return cause?.code;
-  }
-  return undefined;
-}
-
-/**
- * Checks if an error is a signup-related error (invite or provider restriction)
- * and returns the appropriate redirect.
- * Returns null if the error is not a recognized signup error.
- *
- * @param error - The error to check
- * @param appUrl - The base app URL for redirects
- * @param redirectStatus - HTTP status for redirect (default 302, use 303 for POST->GET)
- * @returns A redirect response if signup error, null otherwise
- */
-export function handleSignupError(
-  error: unknown,
-  appUrl: string,
-  redirectStatus?: number
-): NextResponse | null {
-  const errorCode = getErrorCode(error);
-
-  if (errorCode && errorCode in SIGNUP_ERROR_MAP) {
-    const urlError = SIGNUP_ERROR_MAP[errorCode as SignupErrorCode];
-    return NextResponse.redirect(`${appUrl}/login?error=${urlError}`, redirectStatus);
-  }
-
-  return null;
-}
-
-/**
- * Creates a session for the user and returns a redirect response with the session cookie.
- * Used after successful OAuth authentication.
- *
- * @param userId - The authenticated user's ID
- * @param request - The incoming request (for client info extraction)
- * @param appUrl - The base app URL for redirects
- * @param options - Optional configuration
- * @param options.redirectStatus - HTTP status for redirect (default 302, use 303 for POST->GET)
- * @param options.isNewUser - Whether this is a new user (redirects to complete-signup)
- * @returns A redirect response with the session cookie set
- */
-export async function createSessionResponse(
-  userId: string,
-  request: NextRequest,
-  appUrl: string,
-  options?: { redirectStatus?: number; isNewUser?: boolean }
-): Promise<NextResponse> {
-  const { userAgent, ipAddress } = extractClientInfo(request.headers);
-
-  // Create session
-  const { token } = await createSession(db, {
-    userId,
-    userAgent,
-    ipAddress,
-  });
-
-  // New users need to complete signup confirmation first
-  const redirectTo = options?.isNewUser ? "/complete-signup" : "/all";
-
-  // Redirect through OAuth completion page to broadcast success for PWAs
-  const response = NextResponse.redirect(
-    `${appUrl}/auth/oauth/complete?redirect=${encodeURIComponent(redirectTo)}`,
-    options?.redirectStatus
-  );
-
-  // Set session cookie. The token is `httpOnly` so it is never exposed
-  // to JS (issue #1088); `secure` in production. See "Sessions" in
-  // src/server/auth/CLAUDE.md.
-  response.cookies.set("session", token, {
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    sameSite: "lax",
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-  });
-
-  // The one-time state binding cookie has served its purpose (issue #1263).
-  clearOAuthStateCookie(response);
-
-  return response;
-}
-
-/**
- * Creates an error redirect response for OAuth callback failures.
- *
- * @param appUrl - The base app URL for redirects
- * @param errorParam - The error parameter to add to the URL (default: "callback_failed")
- * @param redirectStatus - HTTP status for redirect (default 302, use 303 for POST->GET)
- * @returns A redirect response to the login page with the error parameter
- */
-export function createErrorRedirect(
-  appUrl: string,
-  errorParam: string = "callback_failed",
-  redirectStatus?: number
-): NextResponse {
-  const response = NextResponse.redirect(`${appUrl}/login?error=${errorParam}`, redirectStatus);
-  // Clear any state binding cookie so a failed attempt leaves nothing behind (#1263).
-  clearOAuthStateCookie(response);
-  return response;
-}
-
-// ============================================================================
-// Linking a provider to the signed-in account
-// ============================================================================
-
-/**
- * The provider identity a link callback just verified.
- */
-export interface OAuthLinkParams {
-  provider: OAuthProviderName;
-  /** The provider's stable id for the account (`sub` / Discord user id). */
-  providerAccountId: string;
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt?: Date;
-  /** Granted scopes, where the provider reports them (Google). */
-  scopes?: string[];
-}
-
 /**
  * Which `?link_error=` the settings page should show. `linkOAuthAccount` is the
  * only thing that raises these, so each code has exactly one meaning here.
  */
 function linkErrorParam(error: unknown): string {
-  switch (getErrorCode(error)) {
+  switch (getAppErrorCode(error)) {
     case "OAUTH_ALREADY_LINKED":
       return "provider_already_linked";
     case "OAUTH_CALLBACK_FAILED":
@@ -195,44 +59,129 @@ function linkErrorParam(error: unknown): string {
   }
 }
 
+type Redirect = (path: string) => NextResponse;
+
+/** Every response clears the one-time state binding cookie (#1263), success or not. */
+function redirector(provider: OAuthProviderName, appUrl: string): Redirect {
+  const { responseMode } = SOCIAL_LOGIN_PROVIDERS[provider];
+  const status = responseMode === "form_post" ? 303 : undefined;
+  return (path) => {
+    const response = NextResponse.redirect(`${appUrl}${path}`, status);
+    clearOAuthStateCookie(response, stateCookieSameSite(provider));
+    return response;
+  };
+}
+
+async function readCallbackParams(
+  request: NextRequest,
+  responseMode: "query" | "form_post"
+): Promise<{ code: string | null; state: string | null }> {
+  if (responseMode === "query") {
+    const params = request.nextUrl.searchParams;
+    return { code: params.get("code"), state: params.get("state") };
+  }
+  const form = await request.formData();
+  const value = (name: string) => {
+    const entry = form.get(name);
+    return typeof entry === "string" ? entry : null;
+  };
+  return { code: value("code"), state: value("state") };
+}
+
 /**
- * Attach the provider account to the `target` its authorization URL was minted
- * for, and redirect back to settings (`OAuthLinkTarget` says why the account
- * comes from there rather than from the request).
+ * Handle a provider's redirect back to us: consume the state, check it is bound to
+ * this browser, exchange the code, then do what the flow says. Every failure is a
+ * redirect: to the login page, or for a link or re-authorization to where that
+ * flow returns.
+ */
+export async function handleOAuthCallback(
+  request: NextRequest,
+  provider: OAuthProviderName
+): Promise<NextResponse> {
+  const redirect = redirector(provider, appUrl);
+  const loginError = (error: string) => redirect(`/login?error=${error}`);
+
+  try {
+    if (!isProviderEnabled(provider)) {
+      return loginError("provider_not_configured");
+    }
+
+    const { responseMode, beginCallback } = SOCIAL_LOGIN_PROVIDERS[provider];
+    const { code, state } = await readCallbackParams(request, responseMode);
+    if (!code || !state) {
+      return loginError("callback_failed");
+    }
+
+    const pending = await beginCallback(state);
+    const { flow } = pending;
+
+    // Bind the callback to the browser that started the flow (login CSRF, #1263).
+    // Checked after consuming the state only because that is where the one exempt
+    // flow is recorded (`OAuthFlow`), and before the code exchange.
+    const browserBound = flow.kind !== "reauthorize" || flow.browserBound;
+    if (browserBound && !oauthStateCookieMatches(readOAuthStateCookie(request), state)) {
+      return loginError("invalid_state");
+    }
+
+    const identity = await pending.complete(code);
+
+    switch (flow.kind) {
+      case "link":
+        return await completeLink(redirect, flow.target, provider, identity);
+      case "reauthorize":
+        return await completeReauthorize(redirect, appUrl, flow, provider, identity);
+      case "sign-in":
+        return await completeSignIn(redirect, request, flow.inviteToken, provider, identity);
+    }
+  } catch (error) {
+    if (error instanceof OAuthStateError) {
+      return loginError("invalid_state");
+    }
+    const signupError = SIGNUP_ERROR_PARAMS[getAppErrorCode(error) ?? ""];
+    if (signupError) {
+      return loginError(signupError);
+    }
+    logger.warn("OAuth callback failed", {
+      provider,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return loginError("callback_failed");
+  }
+}
+
+/**
+ * Attach the provider account to the `target` its authorization URL was minted for
+ * (`OAuthLinkTarget` says why the account comes from there rather than from the
+ * request), and return to settings. Never falls through to a sign-in (#1603).
  *
  * The target's session must still be live: adding a way to sign in is a
  * credential change, so a flow whose session was logged out or revoked in the
  * meantime is refused rather than applied.
  */
-export async function createLinkResponse(
-  appUrl: string,
+async function completeLink(
+  redirect: Redirect,
   target: OAuthLinkTarget,
-  params: OAuthLinkParams,
-  options?: { redirectStatus?: number }
+  provider: OAuthProviderName,
+  identity: ProviderIdentity
 ): Promise<NextResponse> {
-  const { provider, ...link } = params;
-
-  const redirect = (path: string) => {
-    const response = NextResponse.redirect(`${appUrl}${path}`, options?.redirectStatus);
-    clearOAuthStateCookie(response);
-    return response;
-  };
-
   if (!(await isSessionActive(target.sessionId))) {
     return redirect("/login?error=link_requires_login");
   }
 
   try {
     await linkOAuthAccount(db, {
+      ...identity,
       userId: target.userId,
       currentSessionId: target.sessionId,
       provider,
-      ...link,
     });
   } catch (error) {
     const errorParam = linkErrorParam(error);
     if (errorParam === "callback_failed") {
-      console.error(`Failed to link ${provider} account:`, error);
+      logger.warn("Failed to link OAuth account", {
+        provider,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     if (errorParam === "session_revoke_failed") {
       // The link itself landed; only signing the other devices out failed.
@@ -242,4 +191,61 @@ export async function createLinkResponse(
   }
 
   return redirect(`/settings?linked=${provider}`);
+}
+
+/** Store the new tokens on the flow user's existing link; no session changes. */
+async function completeReauthorize(
+  redirect: Redirect,
+  appUrl: string,
+  flow: Extract<OAuthFlow, { kind: "reauthorize" }>,
+  provider: OAuthProviderName,
+  identity: ProviderIdentity
+): Promise<NextResponse> {
+  const updated = await reauthorizeOAuthAccount(db, { ...identity, userId: flow.userId, provider });
+  if (updated) {
+    return redirect(flow.returnPath);
+  }
+
+  // The browser came back with a provider account the flow user hasn't linked.
+  logger.warn("OAuth re-authorization for an account the user hasn't linked", {
+    provider,
+    userId: flow.userId,
+  });
+  const url = new URL(flow.returnPath, appUrl);
+  url.searchParams.set("error", "callback_failed");
+  return redirect(url.pathname + url.search);
+}
+
+/** Sign in (or sign up) the account the identity picks, and set the session cookie. */
+async function completeSignIn(
+  redirect: Redirect,
+  request: NextRequest,
+  inviteToken: string | undefined,
+  provider: OAuthProviderName,
+  identity: ProviderIdentity
+): Promise<NextResponse> {
+  const { userId, isNewUser } = await processOAuthCallback({
+    ...identity,
+    provider,
+    inviteToken,
+  });
+
+  const { userAgent, ipAddress } = extractClientInfo(request.headers);
+  const { token } = await createSession(db, { userId, userAgent, ipAddress });
+
+  // New users need to complete signup confirmation first. The completion page
+  // broadcasts the success for PWAs.
+  const redirectTo = isNewUser ? "/complete-signup" : "/all";
+  const response = redirect(`/auth/oauth/complete?redirect=${encodeURIComponent(redirectTo)}`);
+
+  // See "Sessions" in src/server/auth/CLAUDE.md.
+  response.cookies.set("session", token, {
+    path: "/",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    sameSite: "lax",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  });
+
+  return response;
 }
