@@ -106,8 +106,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
 - **A long-lived authenticated connection re-checks its credential periodically**
   and closes once it's revoked or expired, as the SSE stream does on every heartbeat
   (`src/app/api/v1/events/route.ts`).
-- **Password endpoints are rate-limited per IP and per account**, and verify through
-  `verifyEmailPassword`, which pays the argon2 cost even for a missing user (#1267).
+- **Password endpoints are rate-limited per IP and per account** (change-password
+  included), and verify through `verifyEmailPassword` / `verifyUserPassword`
+  (`auth/password.ts`), which pay the argon2 cost even for a missing user (#1267).
   **Never add an early return that skips argon2.**
 - **OAuth sign-in is the only email-verification path**, so `processOAuthCallback`
   **refuses to link or create an account from an unverified provider email**.
