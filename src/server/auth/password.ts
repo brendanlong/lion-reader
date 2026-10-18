@@ -1,5 +1,5 @@
 /**
- * Password verification with constant-timing.
+ * Password hashing and verification, with constant timing.
  *
  * All three password-accepting surfaces (tRPC `auth.login`, Google Reader
  * `ClientLogin`, and the Wallabag password grant) must not leak — via response
@@ -16,6 +16,13 @@
 
 import * as argon2 from "argon2";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  passwordTooLongMessage,
+  passwordTooShortMessage,
+} from "@/lib/password";
 import type { Database } from "@/server/db";
 import { users, type User } from "@/server/db/schema";
 
@@ -68,4 +75,36 @@ export async function verifyEmailPassword(
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   const valid = await verifyPassword(user?.passwordHash, password);
   return valid && user ? { valid: true, user } : { valid: false, user };
+}
+
+/** A new password (or a login attempt), as every input schema accepts it. */
+export function passwordSchema(label = "Password") {
+  return z
+    .string()
+    .min(PASSWORD_MIN_LENGTH, passwordTooShortMessage(label))
+    .max(PASSWORD_MAX_LENGTH, passwordTooLongMessage(label));
+}
+
+/** Hashes a password for storage. */
+export function hashPassword(password: string): Promise<string> {
+  return argon2.hash(password);
+}
+
+/**
+ * Verifies an authenticated user's current password (re-authentication before a
+ * credential change). `hasPassword` is false for an OAuth-only account, which
+ * still pays the argon2 cost.
+ */
+export async function verifyUserPassword(
+  db: Database,
+  userId: string,
+  password: string
+): Promise<{ hasPassword: boolean; valid: boolean }> {
+  const [user] = await db
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const valid = await verifyPassword(user?.passwordHash, password);
+  return { hasPassword: !!user?.passwordHash, valid };
 }
