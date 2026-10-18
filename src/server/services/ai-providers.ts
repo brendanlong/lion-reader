@@ -440,7 +440,7 @@ const TEXT_PROVIDER_ADAPTERS: Record<TextAiProvider, TextProviderAdapter> = {
         model,
         options,
         onUserKey ? null : serverKeyTokenPriceCaps(formatModelRef("openrouter", model)),
-        AbortSignal.timeout(TEXT_REQUEST_BUDGET_MS)
+        TEXT_REQUEST_BUDGET_MS
       ),
     listModels: async (_call, requirements) =>
       (await listOpenRouterModels("text"))
