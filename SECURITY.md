@@ -200,7 +200,8 @@ fetches user-influenced URLs and must never be usable to reach internal services
 
 ## 9. Webhooks & admin
 
-**Code:** `src/app/api/webhooks/email/mailgun/`, `src/app/(spa)/admin/`
+**Code:** `src/server/email/mailgun.ts`, `src/app/api/webhooks/email/mailgun/`,
+`src/app/(spa)/admin/`
 
 - Mailgun webhook: HMAC-SHA256 signature + timestamp freshness + Redis nonce replay
   protection. Keep all three.
