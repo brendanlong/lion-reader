@@ -32,11 +32,8 @@ import { GET as eventsGet } from "../../src/app/api/v1/events/route";
 import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route";
 import { MAX_CLOUD_SPEECH_CHARS } from "../../src/lib/narration/constants";
 import { createSession, revokeUserSession } from "../../src/server/auth/session";
-import {
-  createTokens,
-  recordConsent,
-  revokeUserClientTokens,
-} from "../../src/server/oauth/service";
+import { recordConsent, revokeUserClientTokens } from "../../src/server/oauth/grants";
+import { createTokens } from "../../src/server/oauth/service";
 import {
   APP_CLIENT_ID,
   getAppRedirectUri,

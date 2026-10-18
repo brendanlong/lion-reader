@@ -13,7 +13,7 @@
 import { describe, it, expect } from "vitest";
 import { extractClientCredentials, clientSecretError } from "../../src/server/oauth/client-auth";
 import { hashToken } from "../../src/server/oauth/utils";
-import type { ResolvedClient } from "../../src/server/oauth/service";
+import type { ResolvedClient } from "../../src/server/oauth/clients";
 
 function basicHeader(clientId: string, clientSecret: string): string {
   // RFC 6749 §2.3.1: form-urlencode each part, then base64 the joined pair

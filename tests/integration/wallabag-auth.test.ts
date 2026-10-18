@@ -16,9 +16,9 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { oauthClients, oauthRefreshTokens, users } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
+import { revokeUserClientTokens } from "../../src/server/oauth/grants";
 import {
   createTokens,
-  revokeUserClientTokens,
   rotateRefreshToken,
   validateAccessToken,
 } from "../../src/server/oauth/service";

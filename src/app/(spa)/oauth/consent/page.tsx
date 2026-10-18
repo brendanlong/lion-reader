@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 import { WarningTriangleIcon } from "@/components/ui/icons";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
 import { validateSession } from "@/server/auth/session";
-import { resolveClient } from "@/server/oauth/service";
+import { resolveClient } from "@/server/oauth/clients";
 import { cimdClientHost } from "@/server/oauth/cimd";
 import {
   validateRedirectUri,

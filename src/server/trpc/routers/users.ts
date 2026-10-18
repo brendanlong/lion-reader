@@ -30,7 +30,7 @@ import {
   getUnreadableApiKeyProviders,
   setUserApiKeys,
 } from "@/server/services/user-api-keys";
-import { revokeUserClientTokens } from "@/server/oauth/service";
+import { revokeUserClientTokens } from "@/server/oauth/grants";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
 
 // ============================================================================

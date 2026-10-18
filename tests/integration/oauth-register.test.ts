@@ -10,7 +10,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { inArray } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { oauthClients } from "../../src/server/db/schema";
-import { registerClient } from "../../src/server/oauth/service";
+import { registerClient } from "../../src/server/oauth/registration";
 
 const registeredClientIds: string[] = [];
 

@@ -21,11 +21,10 @@ import {
 } from "../../src/server/db/schema";
 import { createTestUser, createTestOAuthClient, createAuthContext } from "./helpers";
 import { createCaller } from "../../src/server/trpc/root";
+import { hasConsent, recordConsent } from "../../src/server/oauth/grants";
 import {
   createAuthorizationCode,
   createTokens,
-  hasConsent,
-  recordConsent,
   rotateRefreshToken,
   validateAccessToken,
   validateAndConsumeAuthCode,

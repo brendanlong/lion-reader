@@ -11,7 +11,8 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
-import { resolveClient, revokeClientToken } from "@/server/oauth/service";
+import { resolveClient } from "@/server/oauth/clients";
+import { revokeClientToken } from "@/server/oauth/service";
 import { extractClientCredentials, clientSecretError } from "@/server/oauth/client-auth";
 import { OAUTH_ERRORS, createOAuthError } from "@/server/oauth/utils";
 import { checkRouteRateLimit } from "@/server/rate-limit";
