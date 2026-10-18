@@ -15,18 +15,21 @@ import {
   expensiveConfirmedProtectedProcedure,
 } from "../trpc";
 import { errors } from "@/server/errors";
-import { sessions, users, oauthAccounts, userApiKeys } from "@/server/db/schema";
+import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import {
-  getApiKeyProviders,
-  getUnreadableApiKeyProviders,
-  revokeSession,
+  revokeUserSession,
   revokeOtherUserSessionsOrReport,
   invalidateUserSessionCaches,
 } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
-import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
+import { isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
+import {
+  getApiKeyProviders,
+  getUnreadableApiKeyProviders,
+  setUserApiKeys,
+} from "@/server/services/user-api-keys";
 import { revokeUserClientTokens } from "@/server/oauth/service";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
 
@@ -153,21 +156,9 @@ export const usersRouter = createTRPCRouter({
         throw errors.validation("Cannot revoke current session. Use logout instead.");
       }
 
-      // Verify the session belongs to the current user
-      const sessionResult = await ctx.db
-        .select({ id: sessions.id, userId: sessions.userId })
-        .from(sessions)
-        .where(
-          and(eq(sessions.id, sessionId), eq(sessions.userId, userId), isNull(sessions.revokedAt))
-        )
-        .limit(1);
-
-      if (sessionResult.length === 0) {
+      if (!(await revokeUserSession(userId, sessionId))) {
         throw errors.notFound("Session");
       }
-
-      // Revoke the session
-      await revokeSession(sessionId);
 
       return { success: true };
     }),
@@ -417,15 +408,9 @@ export const usersRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Reject API key storage if encryption is not configured
       const apiKeys = Object.entries(input.apiKeys ?? {}).filter(
         (entry): entry is [AiProvider, string] => entry[1] !== undefined
       );
-      if (apiKeys.some(([, key]) => key !== "") && !isEncryptionConfigured()) {
-        throw errors.validation(
-          "API key encryption is not configured on this server. Contact your administrator."
-        );
-      }
 
       // Build update object with only provided fields
       const updateData: {
@@ -461,22 +446,7 @@ export const usersRouter = createTRPCRouter({
 
       await ctx.db.transaction(async (tx) => {
         await tx.update(users).set(updateData).where(eq(users.id, userId));
-        for (const [provider, key] of apiKeys) {
-          if (key) {
-            const encryptedKey = encryptApiKey(key);
-            await tx
-              .insert(userApiKeys)
-              .values({ userId, provider, encryptedKey })
-              .onConflictDoUpdate({
-                target: [userApiKeys.userId, userApiKeys.provider],
-                set: { encryptedKey, updatedAt: new Date() },
-              });
-          } else {
-            await tx
-              .delete(userApiKeys)
-              .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.provider, provider)));
-          }
-        }
+        await setUserApiKeys(tx, userId, apiKeys);
       });
 
       // Invalidate all session caches for this user so they get fresh data

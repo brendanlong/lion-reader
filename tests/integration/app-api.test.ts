@@ -31,7 +31,7 @@ import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
 import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route";
 import { MAX_CLOUD_SPEECH_CHARS } from "../../src/lib/narration/constants";
-import { createSession, revokeSession } from "../../src/server/auth/session";
+import { createSession, revokeUserSession } from "../../src/server/auth/session";
 import {
   createTokens,
   recordConsent,
@@ -270,7 +270,7 @@ describe("SSE credential re-check", () => {
     );
     expect(res.status).toBe(200);
     const ended = await streamEndsAfterHeartbeats(res.body!, async () => {
-      await revokeSession(sessionId);
+      await revokeUserSession(userId, sessionId);
     });
     expect(ended).toBe(true);
   });

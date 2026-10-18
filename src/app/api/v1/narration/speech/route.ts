@@ -25,7 +25,7 @@ import {
   ContentTooLargeError,
   readRequestBufferWithSizeLimit,
 } from "@/server/http/fetch";
-import { getUserApiKeys } from "@/server/auth/session";
+import { getUserApiKeys } from "@/server/services/user-api-keys";
 import { speechErrorAnswer, streamSpeech } from "@/server/services/speech";
 import {
   checkRateLimit,

@@ -19,7 +19,7 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
-import { createSession, revokeSession } from "../../src/server/auth/session";
+import { createSession, revokeUserSession } from "../../src/server/auth/session";
 import { OAUTH_STATE_COOKIE_NAME } from "../../src/server/auth/oauth/state-cookie";
 import type { OAuthLinkTarget } from "../../src/server/auth/oauth/config";
 import { createTestUser } from "./helpers";
@@ -296,7 +296,7 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
     const { userId, sessionId, link, token } = await signedInUser();
     providerMock.googleSub = "google-link-sub-logged-out";
     const state = await startGoogleLink(link);
-    await revokeSession(sessionId);
+    await revokeUserSession(userId, sessionId);
 
     const response = await googleCallback(state, { session: token, oauthState: state });
 

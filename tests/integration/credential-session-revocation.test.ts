@@ -304,3 +304,33 @@ describe("password changes sign out Wallabag apps", () => {
     expect(await validateAccessToken(bystander.accessToken)).not.toBeNull();
   });
 });
+
+describe("me.revokeSession", () => {
+  it("revokes one of the caller's other sessions, including its cached copy", async () => {
+    const userId = await createUser();
+    const current = await createSession(db, { userId });
+    const other = await createSession(db, { userId });
+    expect(await validateSession(other.token)).not.toBeNull();
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await expect(caller.users["me.revokeSession"]({ sessionId: other.sessionId })).resolves.toEqual(
+      { success: true }
+    );
+
+    expect(await validateSession(other.token)).toBeNull();
+    expect(await validateSession(current.token)).not.toBeNull();
+  });
+
+  it("refuses another user's session and leaves it alive", async () => {
+    const userId = await createUser();
+    const current = await createSession(db, { userId });
+    const victim = await createSession(db, { userId: await createUser() });
+
+    const caller = createCaller(await createSessionContext(userId, current.sessionId));
+    await expect(
+      caller.users["me.revokeSession"]({ sessionId: victim.sessionId })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    expect(await validateSession(victim.token)).not.toBeNull();
+  });
+});
