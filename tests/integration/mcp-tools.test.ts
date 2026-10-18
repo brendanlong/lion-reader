@@ -14,7 +14,7 @@ import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
-import { registerTools, toMcpError } from "../../src/server/mcp/tools";
+import { getTools, toMcpError } from "../../src/server/mcp/tools";
 
 let userId: string;
 let otherUserId: string;
@@ -25,7 +25,7 @@ let pageUrl: string;
 let pageBody = "";
 
 function tool(name: string) {
-  const found = registerTools().find((t) => t.name === name);
+  const found = getTools().find((t) => t.name === name);
   if (!found) throw new Error(`Tool not registered: ${name}`);
   return found;
 }
@@ -63,7 +63,7 @@ afterAll(async () => {
 
 describe("MCP tool argument validation", () => {
   it("advertises an inputSchema generated from the Zod schema", () => {
-    for (const t of registerTools()) {
+    for (const t of getTools()) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.inputSchema.properties).toBeDefined();
     }

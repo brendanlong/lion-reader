@@ -15,7 +15,7 @@ import {
   ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
 import { db } from "@/server/db";
-import { registerTools, toMcpError } from "@/server/mcp/tools";
+import { getTools, toMcpError } from "@/server/mcp/tools";
 import { logger } from "@/lib/logger";
 
 /**
@@ -42,13 +42,13 @@ export function createMcpServer(userId: string): Server {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const tools = registerTools();
+    const tools = getTools();
     return { tools };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    const tools = registerTools();
+    const tools = getTools();
     const tool = tools.find((t) => t.name === name);
 
     if (!tool) {

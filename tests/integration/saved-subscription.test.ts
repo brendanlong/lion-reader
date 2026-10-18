@@ -32,7 +32,7 @@ import {
   buildUncategorizedSubscriptionIdsSubquery,
   verifySubscriptionOwnership,
 } from "../../src/server/services/entry-filters";
-import { registerTools } from "../../src/server/mcp/tools";
+import { getTools } from "../../src/server/mcp/tools";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -77,7 +77,7 @@ async function setup() {
 }
 
 function callTool(name: string, userId: string, args: unknown) {
-  const tool = registerTools().find((t) => t.name === name);
+  const tool = getTools().find((t) => t.name === name);
   if (!tool) throw new Error(`Tool not registered: ${name}`);
   return tool.handler(db, userId, args);
 }

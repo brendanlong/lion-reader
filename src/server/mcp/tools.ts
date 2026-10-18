@@ -352,14 +352,13 @@ const deleteTagArgs = z.object({
 // ============================================================================
 
 /**
- * Registers all available MCP tools.
- * Each tool wraps a service function with MCP-compatible interface.
+ * Returns every MCP tool, each wrapping a service function.
  *
  * The tool list is static (handlers take db/userId as parameters), so it is
  * built once per process — the stateless MCP HTTP route calls this on every
  * request, and rebuilding would re-run every z.toJSONSchema conversion.
  */
-export function registerTools(): Tool[] {
+export function getTools(): Tool[] {
   cachedTools ??= buildTools();
   return cachedTools;
 }
