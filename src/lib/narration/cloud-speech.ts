@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { jittered } from "@/lib/jitter";
 import { MAX_CLOUD_SPEECH_CHARS } from "./constants";
 import {
   AAC_MIME_TYPE,
@@ -68,13 +69,14 @@ const BUSY_MAX_WAIT_MS = 10_000;
 
 /**
  * `request`'s response, asked again while the server says the voice is busy
- * ({@link isBusyStatus}), waiting as long as it asks within reason. The
- * server has already waited out a busy provider for up to 15 s of each
- * request, and then the player pauses without asking again. Other transient
- * failures (no connection, a 5xx) are one request each, which the player tries
- * three more times after waits of 17 s in all. So a chunk costs at most six
- * requests (three failures, then a busy round), each lasting at most the
- * server's speech timeout (`SPEECH_TIMEOUT_MS`, 2 min), plus 37 s of waits.
+ * ({@link isBusyStatus}), waiting as long as it asks within reason, jittered
+ * like the server's own retries. The server has already waited out a busy
+ * provider for up to 15 s of each request, and then the player pauses without
+ * asking again. Other transient failures (no connection, a 5xx) are one
+ * request each, which the player tries three more times after waits of 17 s
+ * in all. So a chunk costs at most six requests (three failures, then a busy
+ * round), each lasting at most the server's speech timeout
+ * (`SPEECH_TIMEOUT_MS`, 2 min), plus 41 s of waits.
  */
 export async function fetchWhenFree(
   request: () => Promise<Response>,
@@ -90,7 +92,7 @@ export async function fetchWhenFree(
     const asked = Number(response.headers.get("Retry-After")) * 1000;
     await response.body?.cancel().catch(() => {});
     await wait(
-      Math.min(Number.isFinite(asked) && asked > 0 ? asked : backoff, BUSY_MAX_WAIT_MS),
+      jittered(Math.min(Number.isFinite(asked) && asked > 0 ? asked : backoff, BUSY_MAX_WAIT_MS)),
       signal
     );
     backoff = Math.min(backoff * 2, BUSY_MAX_WAIT_MS);

@@ -18,7 +18,6 @@
  */
 
 import { z } from "zod";
-import { logger } from "@/lib/logger";
 import { MAX_CLOUD_SPEECH_CHARS, MAX_CLOUD_SPEECH_PAUSE_SECONDS } from "@/lib/narration/constants";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import {
@@ -27,13 +26,7 @@ import {
   readRequestBufferWithSizeLimit,
 } from "@/server/http/fetch";
 import { getUserApiKeys } from "@/server/auth/session";
-import {
-  SpeechRejectedError,
-  SpeechRequestError,
-  SpeechUnavailableError,
-  streamSpeech,
-} from "@/server/services/speech";
-import { ProviderBusyError } from "@/server/services/provider-errors";
+import { speechErrorAnswer, streamSpeech } from "@/server/services/speech";
 import {
   checkRateLimit,
   getClientIdentifier,
@@ -133,35 +126,10 @@ export async function POST(req: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    if (error instanceof ProviderBusyError) {
-      logger.warn("Speech provider busy", { model: input.model, error: error.message });
-      return errorResponse(
-        503,
-        "SERVICE_UNAVAILABLE",
-        "The cloud voice is busy; try again shortly",
-        {
-          ...limitHeaders,
-          "Retry-After": String(Math.ceil(error.retryAfterSeconds ?? 5)),
-        }
-      );
-    }
-    if (error instanceof SpeechRequestError) {
-      return errorResponse(400, "BAD_REQUEST", error.message, limitHeaders);
-    }
-    if (error instanceof SpeechRejectedError) {
-      return errorResponse(422, "UNPROCESSABLE_CONTENT", error.message, limitHeaders);
-    }
-    if (error instanceof SpeechUnavailableError) {
-      logger.warn("Speech models unavailable", { model: input.model, error: error.message });
-      return errorResponse(503, "SERVICE_UNAVAILABLE", error.message, {
-        ...limitHeaders,
-        "Retry-After": "30",
-      });
-    }
-    logger.error("Speech synthesis failed", {
-      model: input.model,
-      error: error instanceof Error ? error.message : String(error),
+    const answer = speechErrorAnswer(error, { model: input.model });
+    return errorResponse(answer.status, answer.code, answer.message, {
+      ...limitHeaders,
+      ...answer.headers,
     });
-    return errorResponse(500, "INTERNAL_SERVER_ERROR", "Speech synthesis failed", limitHeaders);
   }
 }

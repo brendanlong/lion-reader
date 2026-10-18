@@ -12,6 +12,7 @@ import {
   type SpeechProvider,
 } from "@/lib/ai/providers";
 import { DEFAULT_CLOUD_VOICE_MODELS, DEFAULT_CLOUD_VOICES } from "@/lib/narration/constants";
+import { jittered } from "@/lib/jitter";
 import { logger } from "@/lib/logger";
 import {
   getProviderApiKey,
@@ -393,6 +394,69 @@ export class SpeechRejectedError extends Error {}
 /** A provider's catalog couldn't be fetched: likely to pass, so worth trying again. */
 export class SpeechUnavailableError extends Error {}
 
+/** How a failed {@link streamSpeech} is answered over HTTP. */
+export interface SpeechErrorAnswer {
+  status: number;
+  /** tRPC's name for the status, which the REST API's errors carry. */
+  code: string;
+  /** For showing the user. */
+  message: string;
+  /** With a 503, `Retry-After`: when to ask again. */
+  headers: Record<string, string>;
+}
+
+function retryAfter(seconds: number): Record<string, string> {
+  return { "Retry-After": String(Math.ceil(seconds)) };
+}
+
+/** When to ask a busy provider again, if it didn't say. */
+const BUSY_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * The answer to a failed {@link streamSpeech}, logged. Clients act on the
+ * status: a 503 is asked again after `Retry-After`, another 5xx retried as
+ * trouble that may pass, and a 4xx ends narration with the message. Both
+ * speech routes answer this way, so a client handles them alike.
+ */
+export function speechErrorAnswer(
+  error: unknown,
+  logContext: Record<string, unknown>
+): SpeechErrorAnswer {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof ProviderBusyError) {
+    logger.warn("Speech provider busy", { ...logContext, error: message });
+    return {
+      status: 503,
+      code: "SERVICE_UNAVAILABLE",
+      message: "The cloud voice is busy; try again shortly",
+      headers: retryAfter(error.retryAfterSeconds ?? BUSY_RETRY_AFTER_SECONDS),
+    };
+  }
+  if (error instanceof SpeechUnavailableError) {
+    logger.warn("Speech models unavailable", { ...logContext, error: message });
+    // About as long as the failed catalog or voice lookup is remembered.
+    return {
+      status: 503,
+      code: "SERVICE_UNAVAILABLE",
+      message,
+      headers: retryAfter(KEPT_VOICE_FAILURE_TTL_MS / 1000),
+    };
+  }
+  if (error instanceof SpeechRequestError || error instanceof SpeechRejectedError) {
+    logger.warn("Speech request refused", { ...logContext, error: message });
+    return error instanceof SpeechRequestError
+      ? { status: 400, code: "BAD_REQUEST", message, headers: {} }
+      : { status: 422, code: "UNPROCESSABLE_CONTENT", message, headers: {} };
+  }
+  logger.error("Speech synthesis failed", { ...logContext, error: message });
+  return {
+    status: 500,
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Speech synthesis failed",
+    headers: {},
+  };
+}
+
 /**
  * What to tell the user about a provider refusing: on their own key, what the
  * provider said (a bad key, no credit), which they can act on; on the
@@ -552,10 +616,7 @@ export async function speakWhenFree<T>(
       if (classifyProviderError(error) !== "busy") throw error;
       const askedSeconds = error instanceof ProviderBusyError ? error.retryAfterSeconds : null;
       const asked = askedSeconds === null ? wait : askedSeconds * 1000;
-      // Jittered, so listeners turned away together don't all come back together.
-      const delay =
-        Math.min(Math.max(asked, BUSY_FIRST_WAIT_MS), BUSY_MAX_WAIT_MS) *
-        (0.8 + 0.4 * Math.random());
+      const delay = jittered(Math.min(Math.max(asked, BUSY_FIRST_WAIT_MS), BUSY_MAX_WAIT_MS));
       if (Date.now() + delay > deadline) throw error;
       await setTimeout(delay, undefined, { signal });
       wait = Math.min(wait * 2, BUSY_MAX_WAIT_MS);
