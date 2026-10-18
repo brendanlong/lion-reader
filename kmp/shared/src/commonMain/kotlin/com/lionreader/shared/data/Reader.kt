@@ -4,6 +4,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import com.lionreader.shared.api.SAVED_TYPE
 import com.lionreader.shared.db.LionReaderDatabase
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CancellationException
@@ -176,6 +177,7 @@ class Reader(
         title: String?,
         author: String?,
         summary: String?,
+        type: String,
         siteName: String?,
         feedTitle: String?,
         sortAt: Long,
@@ -186,7 +188,7 @@ class Reader(
             id = id,
             title = title,
             summary = summary,
-            source = feedTitle ?: siteName,
+            source = entrySource(type, siteName, feedTitle),
             author = author,
             url = url,
             sortAtMillis = sortAt,
@@ -214,7 +216,7 @@ class Reader(
                     id = it.id,
                     title = it.title,
                     author = it.author,
-                    source = it.feed_title ?: it.site_name,
+                    source = entrySource(it.type, it.site_name, it.feed_title),
                     url = it.url,
                     sortAtMillis = it.sort_at,
                     read = it.effective_read == 1L,
@@ -232,32 +234,7 @@ class Reader(
      */
     fun search(text: String, limit: Long): Flow<List<TimelineItem>> {
         val query = searchQuery(text) ?: return flowOf(emptyList())
-        return db.searchQueries
-            .search(query, limit) {
-                id,
-                url,
-                title,
-                author,
-                summary,
-                siteName,
-                feedTitle,
-                sortAt,
-                read,
-                starred ->
-                TimelineItem(
-                    id = id,
-                    title = title,
-                    summary = summary,
-                    source = feedTitle ?: siteName,
-                    author = author,
-                    url = url,
-                    sortAtMillis = sortAt,
-                    read = read == 1L,
-                    starred = starred == 1L,
-                )
-            }
-            .asFlow()
-            .mapToList(context)
+        return db.searchQueries.search(query, limit, ::timelineItem).asFlow().mapToList(context)
     }
 
     /**
@@ -340,6 +317,13 @@ class Reader(
             .executeAsList()
     }
 }
+
+/**
+ * The source shown for an entry, as on the web: a saved article's site, since its feed title is
+ * always "Saved Articles"; anything else's feed (its subscription's title).
+ */
+internal fun entrySource(type: String, siteName: String?, feedTitle: String?): String? =
+    if (type == SAVED_TYPE) siteName ?: feedTitle else feedTitle ?: siteName
 
 /** A list's filter arguments to the queries over one list (`selectTimeline` and the rest). */
 private class ScopeFilter(scope: ListScope) {

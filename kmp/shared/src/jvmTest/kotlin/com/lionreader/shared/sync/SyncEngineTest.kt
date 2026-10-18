@@ -1017,6 +1017,25 @@ class SyncEngineTest {
         assertEquals(1, reader.navigation().first().savedUnread)
     }
 
+    /** The server's feed title for every saved article is "Saved Articles". */
+    @Test
+    fun aSavedArticlesSourceIsItsSiteAndAFeedEntrysIsItsFeed() = runTest {
+        serve(
+            saved("saved").copy(feedTitle = "Saved Articles", siteName = "Example"),
+            saved("no-site").copy(feedTitle = "Saved Articles"),
+            entry("web").copy(feedTitle = "Rust Weekly", siteName = "rust.example"),
+        )
+
+        engine.sync()
+
+        val sources = reader.timeline(ListScope.All, false, false, emptySet(), 10).first()
+        assertEquals(
+            mapOf("saved" to "Example", "no-site" to "Saved Articles", "web" to "Rust Weekly"),
+            sources.associate { it.id to it.source },
+        )
+        assertEquals("Example", reader.entry("saved").first()?.source)
+    }
+
     @Test
     fun savedIsTheSavedSubscriptionsArticlesWhateverTheirType() = runTest {
         serve(
