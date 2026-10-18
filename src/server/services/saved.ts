@@ -32,7 +32,8 @@ import { escapeHtml } from "@/server/http/html";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
 import { publishUserEvent } from "@/server/redis/pubsub";
-import { entryListPayload, toEntryMetadata } from "@/server/services/entry-sync-events";
+import { toEntryMetadata } from "@/server/services/entry-sync-events";
+import { toNewEntryListData, type NewEntryListItem } from "@/lib/events/schemas";
 import { errors } from "@/server/errors";
 import { finishEntriesRead, writeEntriesRead } from "@/server/services/entry-state";
 import { normalizeSavedArticleUrl, type UserAuthMode } from "@/server/plugins";
@@ -157,6 +158,15 @@ export type SavedArticle = z.infer<typeof savedArticleMetadataSchema> & {
   contentCleaned: string | null;
 };
 
+/**
+ * A newly inserted saved article, with the list item its `new_entry` event
+ * carries, for a caller that places it in its own lists.
+ */
+export interface InsertedSavedArticle {
+  article: SavedArticle;
+  listItem: NewEntryListItem;
+}
+
 // ============================================================================
 // Shared Insert Helper
 // ============================================================================
@@ -197,7 +207,7 @@ async function insertSavedEntry(
   db: typeof dbType,
   userId: string,
   params: InsertSavedEntryParams
-): Promise<SavedArticle | null> {
+): Promise<InsertedSavedArticle | null> {
   const now = new Date();
   const entryId = generateUuidv7();
 
@@ -263,6 +273,14 @@ async function insertSavedEntry(
     return null;
   }
 
+  const listItem: NewEntryListItem = {
+    entryId,
+    subscriptionId: inserted.savedSubscriptionId,
+    // A new entry's one membership is its origin (#1846).
+    subscriptionIds: [inserted.savedSubscriptionId],
+    updatedAt: now.toISOString(),
+    entry: toNewEntryListData(values, SAVED_ARTICLES_TITLE),
+  };
   // Fire-and-forget: SSE is best-effort and must never fail the save response
   // (the entry transaction has already committed). See entry-events.ts.
   publishUserEvent({
@@ -272,7 +290,7 @@ async function insertSavedEntry(
     feedType: "saved",
     entryId,
     updatedAt: now,
-    entry: entryListPayload(values, SAVED_ARTICLES_TITLE),
+    entry: listItem.entry,
   });
 
   // Sanitize the body for the returned SavedArticle: callers like the Wallabag
@@ -281,17 +299,20 @@ async function insertSavedEntry(
   const contentCleaned = await sanitizeEntryHtmlAsync(params.contentCleaned);
 
   return {
-    id: entryId,
-    url: params.url,
-    title: params.title,
-    siteName: params.siteName,
-    author: params.author,
-    imageUrl: params.imageUrl,
-    contentCleaned,
-    excerpt: params.summary,
-    read: false,
-    starred: false,
-    savedAt: now,
+    article: {
+      id: entryId,
+      url: params.url,
+      title: params.title,
+      siteName: params.siteName,
+      author: params.author,
+      imageUrl: params.imageUrl,
+      contentCleaned,
+      excerpt: params.summary,
+      read: false,
+      starred: false,
+      savedAt: now,
+    },
+    listItem,
   };
 }
 
@@ -317,7 +338,7 @@ async function insertUploadedArticle(
   db: typeof dbType,
   userId: string,
   fields: UploadedArticleFields
-): Promise<SavedArticle> {
+): Promise<InsertedSavedArticle> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
   if (Buffer.byteLength(fields.contentOriginal, "utf8") > maxSize) {
     throw errors.contentTooLarge("Uploaded article", maxSize);
@@ -337,7 +358,7 @@ async function insertUploadedArticle(
   }
 
   logger.info("Created uploaded article", {
-    entryId: saved.id,
+    entryId: saved.article.id,
     title: fields.title,
     siteName: fields.siteName,
   });
@@ -477,16 +498,17 @@ export async function saveArticle(
  * re-checks ownership under lock, adding only an article the user can see
  * (`addEntryToCollections`), so a collection never grants access.
  */
-async function withCollections<T extends SavedArticle>(
+async function withCollections<T extends SavedArticle | InsertedSavedArticle>(
   db: typeof dbType,
   userId: string,
   collectionIds: string[] = [],
   save: () => Promise<T>
 ): Promise<T> {
   await assertOwnedCollections(db, userId, collectionIds);
-  const article = await save();
-  await addEntryToCollections(db, userId, article.id, collectionIds);
-  return article;
+  const saved = await save();
+  const articleId = "article" in saved ? saved.article.id : saved.id;
+  await addEntryToCollections(db, userId, articleId, collectionIds);
+  return saved;
 }
 
 async function saveArticleContent(
@@ -669,12 +691,12 @@ async function saveArticleContent(
   }
 
   logger.info("Saved article", {
-    entryId: saved.id,
+    entryId: saved.article.id,
     url: normalizedUrl,
     title: finalTitle,
   });
 
-  return { ...saved, outcome: "created" };
+  return { ...saved.article, outcome: "created" };
 }
 
 /**
@@ -736,10 +758,10 @@ export async function savePlaceholderArticle(
 
   if (saved) {
     logger.info("Saved placeholder for failed article save", {
-      entryId: saved.id,
+      entryId: saved.article.id,
       url: normalizedUrl,
     });
-    return { ...saved, outcome: "created" };
+    return { ...saved.article, outcome: "created" };
   }
 
   // The (owner_user_id, guid) already exists: this URL was previously saved (a real
@@ -835,7 +857,7 @@ export async function uploadFile(
   db: typeof dbType,
   userId: string,
   params: UploadFileParams
-): Promise<SavedArticle> {
+): Promise<InsertedSavedArticle> {
   const { filename } = params;
   const fileType = detectFileType(filename);
   if (!fileType) {
@@ -900,6 +922,6 @@ export async function uploadArticle(
       },
       { keepRelativeUrls: params.keepRelativeUrls }
     );
-    return insertUploadedArticle(db, userId, fields);
+    return (await insertUploadedArticle(db, userId, fields)).article;
   });
 }

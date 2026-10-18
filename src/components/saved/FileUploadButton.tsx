@@ -11,7 +11,7 @@ import { useState, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
-import { applyUnreadCounts } from "@/lib/cache/operations";
+import { applyNewEntry } from "@/lib/cache/operations";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
@@ -71,10 +71,9 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
   const uploadMutation = trpc.saved.uploadFile.useMutation({
-    // The article reaches the Saved list through its new_entry event.
     onSuccess: (data) => {
       toast.success("File uploaded successfully");
-      applyUnreadCounts(utils, queryClient, data.counts);
+      applyNewEntry(utils, queryClient, data.listItem, data.counts);
       onSuccess?.();
       handleClose();
     },

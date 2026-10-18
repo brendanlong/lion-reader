@@ -272,6 +272,17 @@ export const newEntryEventSchema = z.object({
   entry: newEntryListDataSchema.optional(),
 });
 
+/**
+ * What a client places a new entry in its lists from: a new_entry event's
+ * list fields. The mutation that created the entry returns it too, so the
+ * acting tab needn't wait for the event.
+ */
+export const newEntryListItemSchema = newEntryEventSchema
+  .pick({ entryId: true, subscriptionId: true, subscriptionIds: true, updatedAt: true })
+  .extend({ entry: newEntryListDataSchema });
+
+export type NewEntryListItem = z.infer<typeof newEntryListItemSchema>;
+
 export const entryUpdatedEventSchema = z.object({
   type: z.literal("entry_updated"),
   subscriptionId: z.string().nullable(),

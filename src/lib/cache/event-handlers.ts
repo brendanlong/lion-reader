@@ -11,6 +11,7 @@ import type { TRPCClientUtils } from "@/lib/trpc/client";
 import {
   applyCollectionEntriesChange,
   applyEntryStateChanges,
+  applyNewEntry,
   applySubscriptionUpdate,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
@@ -18,19 +19,14 @@ import {
   applyTagChange,
   applyTagDeleted,
   applyUnreadCounts,
+  toEntryRow,
 } from "./operations";
-import { patchServerEntryMetadata, type EntryRow } from "@/lib/local-db/entries";
-import {
-  addServerEntryToLists,
-  getLocalDb,
-  insertEntryIntoLists,
-  type LocalDb,
-} from "@/lib/local-db/local-db";
-import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
+import { patchServerEntryMetadata } from "@/lib/local-db/entries";
+import { getLocalDb } from "@/lib/local-db/local-db";
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
-import type { NewEntryListData, SyncEvent, SyncSubscription } from "@/lib/events/schemas";
+import type { SyncEvent, SyncSubscription } from "@/lib/events/schemas";
 import type { StampedSubscriptionRow } from "@/lib/local-db/subscriptions";
 export type { SyncEvent } from "@/lib/events/schemas";
 
@@ -46,60 +42,6 @@ function fetchSubscription(utils: TRPCClientUtils, id: string): void {
   utils.subscriptions.get.fetch({ id }, { staleTime: 0 }).catch(() => {
     // Gone already, or offline: the next list refresh settles it.
   });
-}
-
-/** Builds the entry row for an event's list-item payload. */
-function toEntryRow(
-  event: {
-    entryId: string;
-    subscriptionId?: string | null;
-    subscriptionIds: string[];
-    updatedAt: string;
-  },
-  entry: NewEntryListData,
-  state: { read: boolean; starred: boolean }
-): EntryRow {
-  return {
-    id: event.entryId,
-    subscriptionId: event.subscriptionId ?? null,
-    subscriptionIds: event.subscriptionIds,
-    type: entry.type,
-    url: entry.url,
-    title: entry.title,
-    author: entry.author,
-    summary: entry.summary,
-    publishedAt: entry.publishedAt ? new Date(entry.publishedAt) : null,
-    fetchedAt: new Date(entry.fetchedAt),
-    updatedAt: new Date(event.updatedAt),
-    ...(entry.entryUpdatedAt && { entryUpdatedAt: new Date(entry.entryUpdatedAt) }),
-    read: state.read,
-    starred: state.starred,
-    feedTitle: entry.feedTitle,
-    siteName: entry.siteName,
-  };
-}
-
-/**
- * A saved article arrived while the client knows of no saved subscription:
- * this save created it (the user's first), so look its id up, then place the
- * entry. Keyed on the entry's type, the one thing a first save's event surely
- * says (it may be read already, so its counts needn't show it), and done at
- * most once per page load, so a server answering null can't make every save
- * refetch.
- */
-function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: EntryRow): void {
-  if (entry.type !== "saved" || db.saved.id !== null || db.saved.lookedUp) return;
-  db.saved.lookedUp = true;
-  // The cached null is still fresh by the staleTime, but out of date now.
-  void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT, { staleTime: 0 }).then(
-    () => {
-      const stored = db.entries.getSynced(entry.id);
-      if (stored) insertEntryIntoLists(db, stored);
-    },
-    () => {
-      // Lists pick the entry up on their next refresh.
-    }
-  );
 }
 
 // ============================================================================
@@ -129,24 +71,13 @@ export function handleSyncEvent(
       // re-delivered by a reconnect catch-up sync can't double-count). The
       // server omits them when it failed to read them; they self-heal on the
       // next count-bearing event or refetch.
-      if (event.counts) {
-        applyUnreadCounts(utils, queryClient, event.counts);
-      }
-
-      // Insert the entry into loaded lists so it appears live (deduped, so
-      // SSE + catch-up double delivery is safe). Spam has no payload: the
-      // default entries.list filters it out. read/starred are set only
-      // by the catch-up sync path (the entry may have changed state on
-      // another device while this client was offline); the live path omits
-      // them because a brand-new entry is always unread/unstarred.
-      if (event.entry) {
-        const row = toEntryRow(event, event.entry, {
-          read: event.entry.read ?? false,
-          starred: event.entry.starred ?? false,
-        });
-        addServerEntryToLists(db, row);
-        learnNewSavedSubscription(utils, db, row);
-      }
+      // Spam has no payload: the default entries.list filters it out.
+      applyNewEntry(
+        utils,
+        queryClient,
+        event.entry && { ...event, entry: event.entry },
+        event.counts
+      );
       break;
 
     case "entry_updated":
