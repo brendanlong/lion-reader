@@ -35,6 +35,7 @@ class SearchTest {
             FullEntry(
                 id = id,
                 subscriptionId = "sub-1",
+                subscriptionIds = listOf("sub-1"),
                 type = "web",
                 title = title,
                 author = "Ada Lovelace",
@@ -151,6 +152,7 @@ class SearchTest {
         server.subscriptions +=
             Subscription(
                 "sub-1",
+                type = "web",
                 title = "Rust Weekly",
                 originalTitle = "Rust Weekly",
                 tags = emptyList(),

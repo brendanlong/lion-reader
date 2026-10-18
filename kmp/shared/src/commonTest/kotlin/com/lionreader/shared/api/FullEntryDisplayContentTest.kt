@@ -8,7 +8,7 @@ class FullEntryDisplayContentTest {
     private fun entry(fullContentError: String?): FullEntry =
         ApiJson.decodeFromString(
                 GetManyResponse.serializer(),
-                """{"entries": [{"id": "a", "type": "web", "fetchedAt": "2026-09-29T12:00:00Z",
+                """{"entries": [{"id": "a", "subscriptionIds": [], "type": "web", "fetchedAt": "2026-09-29T12:00:00Z",
                 "read": false, "starred": false, "fetchFullContent": true,
                 "contentCleaned": "feed", "fullContentCleaned": "full",
                 "fullContentError": ${fullContentError?.let { "\"$it\"" } ?: "null"}}]}""",

@@ -5,8 +5,7 @@ CREATE TABLE entry (
   id TEXT NOT NULL PRIMARY KEY,
   -- The server's origin subscription (its `subscriptionId`), as it sent it.
   -- Lists go by subscription_entry; this says whose title feed_title follows
-  -- (refreshFeedTitles), and what a server that predates `subscriptionIds`
-  -- adds the entry to.
+  -- (refreshFeedTitles).
   subscription_id TEXT,
   -- The server's entry type ('web', 'email', 'saved'…), as it sent it. Only
   -- the shown and searched source go by it (Reader's entrySource,
@@ -118,9 +117,6 @@ DELETE FROM entry
 WHERE id IN (SELECT entry_id FROM subscription_entry WHERE subscription_id = :subscriptionId)
   AND id NOT IN (SELECT entry_id FROM subscription_entry WHERE subscription_id != :subscriptionId)
   AND id NOT IN (SELECT id FROM entry_view WHERE effective_starred = 1);
-
-selectOrigin:
-SELECT subscription_id FROM entry WHERE id = ?;
 
 selectById:
 SELECT v.*, b.content, s.html AS ai_summary
