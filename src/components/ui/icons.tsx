@@ -5,28 +5,46 @@
  * reuse an existing icon instead of pasting another SVG — check the exports
  * here before adding one. Some icons stay local to their feature; see
  * "Reuse before building" in `src/components/CLAUDE.md`.
+ *
+ * Every icon is `aria-hidden`: put the accessible name on the control or text
+ * the icon sits beside, never on the icon.
  */
 
 interface IconProps {
   className?: string;
 }
 
-interface PathIconProps {
+/**
+ * Outline icon on the 24x24 grid, drawn in round-capped `currentColor` strokes.
+ * Pass `strokeWidth={1.5}` for Heroicons v2 paths, which are drawn for it.
+ */
+function StrokeIcon({
+  className,
+  d,
+  strokeWidth = 2,
+  filled = false,
+}: {
   className: string;
   d: string | readonly string[];
-}
-
-/** Outline icon on the 24x24 grid, drawn in round-capped `currentColor` strokes. */
-function StrokeIcon({ className, d, filled = false }: PathIconProps & { filled?: boolean }) {
+  strokeWidth?: number;
+  filled?: boolean;
+}) {
   return (
     <svg
       className={className}
       fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
       viewBox="0 0 24 24"
+      aria-hidden="true"
     >
       {(typeof d === "string" ? [d] : d).map((path) => (
-        <path key={path} strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={path} />
+        <path
+          key={path}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={strokeWidth}
+          d={path}
+        />
       ))}
     </svg>
   );
@@ -35,22 +53,18 @@ function StrokeIcon({ className, d, filled = false }: PathIconProps & { filled?:
 /** Solid icon on the 24x24 grid, filled with `currentColor`. */
 function FillIcon({ className, d }: { className: string; d: string }) {
   return (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
       <path d={d} />
     </svg>
   );
 }
 
-/**
- * Close/X icon
- */
+/** Close/X icon */
 export function CloseIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M6 18L18 6M6 6l12 12" />;
 }
 
-/**
- * Search/magnifying-glass icon
- */
+/** Search/magnifying-glass icon */
 export function SearchIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -60,9 +74,7 @@ export function SearchIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Edit/pencil icon
- */
+/** Edit/pencil icon */
 export function EditIcon({ className = "h-3.5 w-3.5" }: IconProps) {
   return (
     <StrokeIcon
@@ -72,30 +84,22 @@ export function EditIcon({ className = "h-3.5 w-3.5" }: IconProps) {
   );
 }
 
-/**
- * Chevron down icon
- */
+/** Chevron down icon */
 export function ChevronDownIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M19 9l-7 7-7-7" />;
 }
 
-/**
- * Chevron right icon
- */
+/** Chevron right icon */
 export function ChevronRightIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M9 5l7 7-7 7" />;
 }
 
-/**
- * Check/checkmark icon
- */
+/** Check/checkmark icon */
 export function CheckIcon({ className = "h-3.5 w-3.5" }: IconProps) {
   return <StrokeIcon className={className} d="M5 13l4 4L19 7" />;
 }
 
-/**
- * Arrow left icon (for back navigation)
- */
+/** Arrow left icon (for back navigation) */
 export function ArrowLeftIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M10 19l-7-7m0 0l7-7m-7 7h18" />;
 }
@@ -103,26 +107,20 @@ export function ArrowLeftIcon({ className = "h-4 w-4" }: IconProps) {
 const STAR_PATH =
   "M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z";
 
-/**
- * Star icon (outline)
- */
+/** Star icon (outline) */
 export function StarIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d={STAR_PATH} />;
 }
 
-/**
- * Star icon (filled)
- */
+/** Star icon (filled) */
 export function StarFilledIcon({ className = "h-4 w-4" }: IconProps) {
   return <FillIcon className={className} d={STAR_PATH} />;
 }
 
-/**
- * Loading spinner icon (animated)
- */
+/** Loading spinner icon (animated) */
 export function SpinnerIcon({ className = "h-4 w-4" }: IconProps) {
   return (
-    <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
+    <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24" aria-hidden="true">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path
         className="opacity-75"
@@ -133,9 +131,7 @@ export function SpinnerIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * External link icon
- */
+/** External link icon */
 export function ExternalLinkIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -145,9 +141,7 @@ export function ExternalLinkIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Trash/delete icon
- */
+/** Trash/delete icon */
 export function TrashIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -157,9 +151,7 @@ export function TrashIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Alert/warning triangle icon
- */
+/** Alert/warning triangle icon */
 export function AlertIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -186,9 +178,7 @@ export function SparklesIcon({
   );
 }
 
-/**
- * Eye icon (visible/show)
- */
+/** Eye icon (visible/show) */
 export function EyeIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -201,9 +191,7 @@ export function EyeIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Eye slash icon (hidden)
- */
+/** Eye slash icon (hidden) */
 export function EyeSlashIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -213,9 +201,7 @@ export function EyeSlashIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Upload icon
- */
+/** Upload icon */
 export function UploadIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -225,9 +211,7 @@ export function UploadIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Download icon
- */
+/** Download icon */
 export function DownloadIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -237,177 +221,105 @@ export function DownloadIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Play icon
- */
+/** Play icon */
 export function PlayIcon({ className = "h-4 w-4" }: IconProps) {
   return <FillIcon className={className} d="M8 5v14l11-7z" />;
 }
 
-/**
- * Pause icon
- */
+/** Pause icon */
 export function PauseIcon({ className = "h-4 w-4" }: IconProps) {
   return <FillIcon className={className} d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />;
 }
 
-/**
- * Circle icon (for read/unread status)
- */
+/** Circle icon (for read/unread status) */
 export function CircleIcon({ className = "h-4 w-4" }: IconProps) {
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="12" r="10" strokeWidth={2} />
     </svg>
   );
 }
 
-/**
- * Circle filled icon
- */
+/** Circle filled icon */
 export function CircleFilledIcon({ className = "h-4 w-4" }: IconProps) {
   return (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="10" />
     </svg>
   );
 }
 
-/**
- * Sort descending icon (newest first) - bars from tall to short
- */
+/** Sort descending icon (newest first) - bars from tall to short */
 export function SortDescendingIcon({ className = "h-5 w-5" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
       strokeWidth={1.5}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M3 4.5h14.25M3 9h9.75M3 13.5h9.75m4.5-4.5v12m0 0l-3.75-3.75M17.25 21L21 17.25"
-      />
-    </svg>
+      d="M3 4.5h14.25M3 9h9.75M3 13.5h9.75m4.5-4.5v12m0 0l-3.75-3.75M17.25 21L21 17.25"
+    />
   );
 }
 
-/**
- * Sort ascending icon (oldest first) - bars from short to tall
- */
+/** Sort ascending icon (oldest first) - bars from short to tall */
 export function SortAscendingIcon({ className = "h-5 w-5" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
       strokeWidth={1.5}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M3 4.5h14.25M3 9h9.75M3 13.5h5.25m5.25-.75L17.25 9m0 0L21 12.75M17.25 9v12"
-      />
-    </svg>
+      d="M3 4.5h14.25M3 9h9.75M3 13.5h5.25m5.25-.75L17.25 9m0 0L21 12.75M17.25 9v12"
+    />
   );
 }
 
-/**
- * Default empty state icon (newspaper/document)
- */
+/** Default empty state icon (newspaper/document) */
 export function DefaultEmptyIcon({ className = "h-12 w-12" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"
-      />
-    </svg>
+      strokeWidth={1.5}
+      d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"
+    />
   );
 }
 
-/**
- * Skip backward icon (media player control)
- */
+/** Skip backward icon (media player control) */
 export function SkipBackwardIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" />
-    </svg>
-  );
+  return <FillIcon className={className} d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" />;
 }
 
-/**
- * Skip forward icon (media player control)
- */
+/** Skip forward icon (media player control) */
 export function SkipForwardIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M16 6h2v12h-2V6zm-10 0l8.5 6L6 18V6z" />
-    </svg>
-  );
+  return <FillIcon className={className} d="M16 6h2v12h-2V6zm-10 0l8.5 6L6 18V6z" />;
 }
 
-/**
- * Narration/audio icon (speaker with sound waves)
- */
+/** Narration/audio icon (speaker with sound waves) */
 export function NarrationIcon({ className = "h-4 w-4" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-      />
-    </svg>
+      d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+    />
   );
 }
 
-/**
- * Document icon (for file uploads)
- */
+/** Document icon (for file uploads) */
 export function DocumentIcon({ className = "h-4 w-4" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
       strokeWidth={1.5}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-      />
-    </svg>
+      d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+    />
   );
 }
 
-/**
- * Google logo icon
- */
+/** Google logo icon */
 export function GoogleIcon({
   className = "h-6 w-6",
   muted = false,
@@ -416,6 +328,7 @@ export function GoogleIcon({
     <svg
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
       className={`${className} ${muted ? "opacity-40" : ""}`}
     >
       <path
@@ -438,9 +351,7 @@ export function GoogleIcon({
   );
 }
 
-/**
- * Apple logo icon
- */
+/** Apple logo icon */
 export function AppleIcon({
   className = "h-6 w-6",
   muted = false,
@@ -449,6 +360,7 @@ export function AppleIcon({
     <svg
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
       className={`${className} ${muted ? "opacity-40" : ""}`}
     >
       <path
@@ -460,18 +372,16 @@ export function AppleIcon({
   );
 }
 
-/**
- * Discord logo icon (from Simple Icons)
- */
+/** Discord logo icon (from Simple Icons) */
 export function DiscordIcon({
   className = "h-6 w-6",
   muted = false,
 }: IconProps & { muted?: boolean }) {
   return (
     <svg
-      role="img"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
       className={`${className} ${muted ? "opacity-40" : ""}`}
     >
       <path
@@ -482,15 +392,13 @@ export function DiscordIcon({
   );
 }
 
-/**
- * Google Chrome logo icon (from Simple Icons)
- */
+/** Google Chrome logo icon (from Simple Icons) */
 export function ChromeIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <svg
-      role="img"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
       className={className}
       fill="currentColor"
     >
@@ -499,15 +407,13 @@ export function ChromeIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Firefox Browser logo icon (from Simple Icons)
- */
+/** Firefox Browser logo icon (from Simple Icons) */
 export function FirefoxIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <svg
-      role="img"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
       className={className}
       fill="currentColor"
     >
@@ -516,81 +422,47 @@ export function FirefoxIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * WiFi off icon (for offline status)
- */
+/** WiFi off icon (for offline status) */
 export function WifiOffIcon({ className = "h-4 w-4" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414"
-      />
-    </svg>
+      d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414"
+    />
   );
 }
 
-/**
- * WiFi on icon (for online/reconnected status)
- */
+/** WiFi on icon (for online/reconnected status) */
 export function WifiOnIcon({ className = "h-4 w-4" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={2}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
-      />
-    </svg>
+      d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
+    />
   );
 }
 
-/**
- * Plus icon
- */
+/** Plus icon */
 export function PlusIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M12 4v16m8-8H4" />;
 }
 
-/**
- * Chevron up icon
- */
+/** Chevron up icon */
 export function ChevronUpIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M5 15l7-7 7 7" />;
 }
 
-/**
- * Chevron left icon
- */
+/** Chevron left icon */
 export function ChevronLeftIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M15 19l-7-7 7-7" />;
 }
 
-/**
- * Menu/hamburger icon
- */
+/** Menu/hamburger icon */
 export function MenuIcon({ className = "h-5 w-5" }: IconProps) {
   return <StrokeIcon className={className} d="M4 6h16M4 12h16M4 18h16" />;
 }
 
-/**
- * User/person icon
- */
+/** User/person icon */
 export function UserIcon({ className = "h-5 w-5" }: IconProps) {
   return (
     <StrokeIcon
@@ -600,9 +472,7 @@ export function UserIcon({ className = "h-5 w-5" }: IconProps) {
   );
 }
 
-/**
- * Copy/clipboard icon
- */
+/** Copy/clipboard icon */
 export function CopyIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -612,9 +482,7 @@ export function CopyIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Lock icon
- */
+/** Lock icon */
 export function LockIcon({ className = "h-5 w-5" }: IconProps) {
   return (
     <StrokeIcon
@@ -624,9 +492,7 @@ export function LockIcon({ className = "h-5 w-5" }: IconProps) {
   );
 }
 
-/**
- * Info circle icon
- */
+/** Info circle icon */
 export function InfoCircleIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -636,9 +502,7 @@ export function InfoCircleIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Refresh/retry arrows icon
- */
+/** Refresh/retry arrows icon */
 export function RefreshIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -648,23 +512,17 @@ export function RefreshIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Alert circle icon (exclamation in circle)
- */
+/** Alert circle icon (exclamation in circle) */
 export function AlertCircleIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />;
 }
 
-/**
- * Check circle icon (checkmark in circle)
- */
+/** Check circle icon (checkmark in circle) */
 export function CheckCircleIcon({ className = "h-5 w-5" }: IconProps) {
   return <StrokeIcon className={className} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />;
 }
 
-/**
- * Key icon (for API tokens)
- */
+/** Key icon (for API tokens) */
 export function KeyIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -674,30 +532,12 @@ export function KeyIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Bookmark icon
- */
+/** Bookmark icon */
 export function BookmarkIcon({ className = "h-4 w-4" }: IconProps) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      strokeWidth={2}
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-      />
-    </svg>
-  );
+  return <StrokeIcon className={className} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />;
 }
 
-/**
- * Mobile phone icon
- */
+/** Mobile phone icon */
 export function MobileIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -707,9 +547,7 @@ export function MobileIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Desktop monitor icon
- */
+/** Desktop monitor icon */
 export function DesktopIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -719,9 +557,7 @@ export function DesktopIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * RSS/signal icon
- */
+/** RSS/signal icon */
 export function RssIcon({ className = "h-6 w-6" }: IconProps) {
   return (
     <StrokeIcon
@@ -731,16 +567,12 @@ export function RssIcon({ className = "h-6 w-6" }: IconProps) {
   );
 }
 
-/**
- * Clock icon
- */
+/** Clock icon */
 export function ClockIcon({ className = "h-4 w-4" }: IconProps) {
   return <StrokeIcon className={className} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />;
 }
 
-/**
- * Calendar icon
- */
+/** Calendar icon */
 export function CalendarIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -750,30 +582,18 @@ export function CalendarIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Shield check icon (for authorization/security)
- */
+/** Shield check icon (for authorization/security) */
 export function ShieldCheckIcon({ className = "h-8 w-8" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
       strokeWidth={1.5}
-      stroke="currentColor"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
-      />
-    </svg>
+      d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
+    />
   );
 }
 
-/**
- * Stop icon (circle with inner square)
- */
+/** Stop icon (circle with inner square) */
 export function StopIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -786,9 +606,7 @@ export function StopIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Question circle icon (help)
- */
+/** Question circle icon (help) */
 export function QuestionCircleIcon({ className = "h-4 w-4" }: IconProps) {
   return (
     <StrokeIcon
@@ -798,9 +616,7 @@ export function QuestionCircleIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-/**
- * Prohibition/ban icon (circle with diagonal line)
- */
+/** Prohibition/ban icon (circle with diagonal line) */
 export function ProhibitionIcon({ className = "h-6 w-6" }: IconProps) {
   return (
     <StrokeIcon
@@ -810,23 +626,13 @@ export function ProhibitionIcon({ className = "h-6 w-6" }: IconProps) {
   );
 }
 
-/**
- * Warning triangle icon (Heroicons v2 style, strokeWidth 1.5)
- */
+/** Warning triangle icon (Heroicons v2 style) */
 export function WarningTriangleIcon({ className = "h-6 w-6" }: IconProps) {
   return (
-    <svg
+    <StrokeIcon
       className={className}
-      fill="none"
-      viewBox="0 0 24 24"
       strokeWidth={1.5}
-      stroke="currentColor"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-      />
-    </svg>
+      d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+    />
   );
 }
