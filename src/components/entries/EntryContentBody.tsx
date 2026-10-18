@@ -18,6 +18,8 @@ import { useEntryNarration } from "@/components/narration/useEntryNarration";
 import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
 import { useEntryTextStyles } from "@/lib/appearance/AppearanceProvider";
 import { useSwipeGesture } from "@/lib/hooks/useSwipeGesture";
+import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { SHORTCUTS } from "@/components/keyboard/shortcuts";
 import { ENTRY_ACTION_BAR_CLASSES, EntryArticle } from "./EntryArticle";
 import { StickyEntryControls } from "./StickyEntryControls";
 import type { PrerecordedVoice } from "@/lib/narration/prerecorded-speech";
@@ -164,6 +166,7 @@ export function EntryContentBody({
   afterContent,
 }: EntryContentBodyProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const { enabled: keyboardShortcutsEnabled } = useKeyboardShortcutsContext();
   const actionButtonsRef = useRef<HTMLDivElement>(null);
 
   const showFullContent = showsFullContent({
@@ -212,29 +215,23 @@ export function EntryContentBody({
     enabled: Boolean(onSwipeNext || onSwipePrevious),
   });
 
-  // Keyboard shortcut: m to toggle read/unread
+  // The open entry's half of `m`/`s`; useKeyboardShortcuts handles them in the list.
   useHotkeys(
-    "m",
+    SHORTCUTS.toggleRead.hotkey,
     (e) => {
       e.preventDefault();
       onToggleRead();
     },
-    {
-      enableOnFormTags: false,
-    },
+    { enabled: keyboardShortcutsEnabled, enableOnFormTags: false },
     [onToggleRead]
   );
-
-  // Keyboard shortcut: s to toggle star (parity with `m`, and with the list view)
   useHotkeys(
-    "s",
+    SHORTCUTS.toggleStar.hotkey,
     (e) => {
       e.preventDefault();
       onToggleStar();
     },
-    {
-      enableOnFormTags: false,
-    },
+    { enabled: keyboardShortcutsEnabled, enableOnFormTags: false },
     [onToggleStar]
   );
 

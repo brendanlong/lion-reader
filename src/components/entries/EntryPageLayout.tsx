@@ -18,6 +18,7 @@ import { useUrlViewPreferences } from "@/lib/hooks/useUrlViewPreferences";
 import { useEntryUrlState } from "@/lib/hooks/useEntryUrlState";
 import { useAppPathname } from "@/lib/hooks/useAppLocation";
 import { useKeyboardShortcutsContext } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { SHORTCUTS } from "@/components/keyboard/shortcuts";
 import { SearchIcon } from "@/components/ui/icons";
 import { SkeletonText } from "@/components/ui/skeleton";
 import { StateToggleButton } from "@/components/ui/state-toggle-button";
@@ -114,7 +115,7 @@ export function EntryPageLayout({
   // convention of other readers. enableOnFormTags stays false so typing "/"
   // inside the input itself is unaffected.
   useHotkeys(
-    "/",
+    SHORTCUTS.search.hotkey,
     (e) => {
       e.preventDefault();
       if (searchInputRef.current) {

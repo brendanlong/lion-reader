@@ -13,13 +13,14 @@
  *   - a query error surfaces via the ErrorBoundary.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
+import { act, fireEvent, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { patchServerEntryMetadata } from "@/lib/local-db/entries";
 import { EntryContent } from "@/components/entries/EntryContent";
 import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
+import { useKeyboardShortcutsEnabled } from "@/lib/hooks/useKeyboardShortcutsEnabled";
 import {
   renderWithTrpc,
   stubMemoryLocalStorage,
@@ -156,6 +157,23 @@ describe("EntryContent", () => {
 
     await screen.findByRole("link", { name: "The Great Article" });
     await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+  });
+
+  it.each([
+    { enabled: true, markReadCalls: 2 },
+    { enabled: false, markReadCalls: 1 },
+  ])("m toggles read only while shortcuts are enabled ($enabled)", async (c) => {
+    const { result: shortcutsSetting } = renderHook(() => useKeyboardShortcutsEnabled());
+    act(() => shortcutsSetting.current.setEnabled(c.enabled));
+    onTestFinished(() => shortcutsSetting.current.setEnabled(true));
+    const { callsFor } = renderEntryContent(<EntryContent entryId="entry-1" />, baseHandlers());
+    await screen.findByRole("link", { name: "The Great Article" });
+    await vi.waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
+
+    fireEvent.keyDown(document.body, { key: "m", code: "KeyM" });
+
+    await act(async () => {});
+    expect(callsFor("entries.markRead")).toHaveLength(c.markReadCalls);
   });
 
   it("renders metadata from the local entry store, so a live rename shows in the open entry", async () => {

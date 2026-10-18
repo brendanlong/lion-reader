@@ -1,33 +1,70 @@
 /**
  * useKeyboardShortcuts Hook
  *
- * Provides keyboard navigation for entry lists.
- * Uses react-hotkeys-hook for keyboard event handling.
- *
- * Features:
- * - j/k navigation (next/previous entry in list, or navigate between entries when viewing)
- * - Shift+J/Shift+K (or Shift+N/Shift+P) to go to the next/previous sidebar tag or subscription
- * - o/Enter to open selected entry
- * - Escape to close entry or deselect
- * - m to toggle read/unread
- * - s to toggle star
- * - v to open original URL in new tab
- * - r to refresh current view
- * - u to toggle unread-only filter
- * - g+a to navigate to All items
- * - g+s to navigate to Starred items
- * - g+l to navigate to Saved/Later items
- * - Selected entry state management
+ * Binds the entry-list shortcuts from the shared table
+ * (`@/components/keyboard/shortcuts`) and manages the keyboard selection.
  */
 
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { clientPush } from "@/lib/navigation";
 import { useAppHref } from "./useAppLocation";
 import { goToSidebarFeed } from "@/components/layout/sidebar-feed-navigation";
+import {
+  SHORTCUTS,
+  hotkeyAlternatives,
+  type ShortcutDefinition,
+  type ShortcutId,
+} from "@/components/keyboard/shortcuts";
 import type { EntryType } from "@/lib/entry-types";
+
+/**
+ * How long a prefix key ("g") waits for the second key of its chord.
+ * @testonly
+ */
+export const PREFIX_TIMEOUT_MS = 1500;
+
+/** The table shortcuts this hook binds. */
+const LIST_SHORTCUT_IDS = [
+  "nextEntry",
+  "previousEntry",
+  "openEntry",
+  "closeEntry",
+  "nextFeed",
+  "previousFeed",
+  "goToAll",
+  "goToStarred",
+  "goToSaved",
+  "toggleRead",
+  "toggleStar",
+  "toggleUnreadOnly",
+  "openOriginal",
+  "refresh",
+] as const satisfies readonly ShortcutId[];
+
+type ListShortcutId = (typeof LIST_SHORTCUT_IDS)[number];
+
+const LIST_SHORTCUTS: [ListShortcutId, ShortcutDefinition][] = LIST_SHORTCUT_IDS.map((id) => [
+  id,
+  SHORTCUTS[id],
+]);
+
+/** Every key the hook listens for: each shortcut's alternatives plus the prefix keys. */
+const LIST_HOTKEYS = [
+  ...new Set(
+    LIST_SHORTCUTS.flatMap(([, shortcut]) => [
+      ...hotkeyAlternatives(shortcut.hotkey),
+      ...(shortcut.prefix ? [shortcut.prefix] : []),
+    ])
+  ),
+].join(",");
+
+interface ShortcutAction {
+  enabled: boolean;
+  run: () => void;
+}
 
 /**
  * Entry data needed for keyboard actions.
@@ -193,40 +230,11 @@ export function useKeyboardShortcuts(
     setInternalSelectedEntryId(id);
   }, []);
 
-  // Track "g" prefix for navigation shortcuts (g+a, g+s)
-  const gPrefixTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [gPrefixActive, setGPrefixActive] = useState(false);
+  // The prefix key pressed and when its chord expires. A ref, not state: only
+  // the next keydown reads it.
+  const pendingPrefixRef = useRef<{ key: string; expiresAt: number } | null>(null);
 
-  // Clear g prefix after timeout
-  const clearGPrefix = useCallback(() => {
-    if (gPrefixTimeoutRef.current) {
-      clearTimeout(gPrefixTimeoutRef.current);
-      gPrefixTimeoutRef.current = null;
-    }
-    setGPrefixActive(false);
-  }, []);
-
-  // Activate g prefix with timeout
-  const activateGPrefix = useCallback(() => {
-    clearGPrefix();
-    setGPrefixActive(true);
-    gPrefixTimeoutRef.current = setTimeout(() => {
-      setGPrefixActive(false);
-    }, 1500); // 1.5 second timeout for the second key
-  }, [clearGPrefix]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (gPrefixTimeoutRef.current) {
-        clearTimeout(gPrefixTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Get entry IDs from entries - memoized to prevent useHotkeys from
-  // re-registering handlers on every render
-  const entryIds = useMemo(() => entries.map((e) => e.id), [entries]);
+  const entryIds = entries.map((e) => e.id);
 
   // Move browser focus onto a list row. Selection is shown by the shared
   // `:focus-visible` outline (the selected row is the focused row), so j/k must
@@ -235,74 +243,35 @@ export function useKeyboardShortcuts(
   // DOM (the list isn't virtualized), so this resolves synchronously; focusing
   // also scrolls it into view. `onFocus` on the row keeps selectedEntryId in
   // sync, so this and setSelectedEntryId agree.
-  const focusEntryRow = useCallback((id: string) => {
+  const focusEntryRow = (id: string) => {
     if (typeof document === "undefined") return;
     document.querySelector<HTMLElement>(`[data-entry-id="${id}"]`)?.focus();
-  }, []);
+  };
 
-  // Get the current index of the selected entry
-  const getSelectedIndex = useCallback((): number => {
-    if (!selectedEntryId) return -1;
-    return entryIds.indexOf(selectedEntryId);
-  }, [selectedEntryId, entryIds]);
-
-  // Get the selected entry data
-  const getSelectedEntry = useCallback((): KeyboardEntryData | null => {
+  const getSelectedEntry = (): KeyboardEntryData | null => {
     if (!selectedEntryId) return null;
     return entries.find((e) => e.id === selectedEntryId) ?? null;
-  }, [selectedEntryId, entries]);
+  };
 
-  // Move selection to the next entry
-  const selectNext = useCallback(() => {
-    if (entryIds.length === 0) return;
-
-    const currentIndex = getSelectedIndex();
-
-    let nextId: string | undefined;
-    if (currentIndex === -1) {
-      // Nothing selected, select the first entry
-      nextId = entryIds[0];
-    } else if (currentIndex < entryIds.length - 1) {
-      // Move to next entry
-      nextId = entryIds[currentIndex + 1];
+  // With nothing selected, moving forward selects the first entry and moving
+  // back the last; at either end of the list it stays put.
+  const moveSelection = (direction: 1 | -1) => {
+    const currentIndex = selectedEntryId ? entryIds.indexOf(selectedEntryId) : -1;
+    const targetId =
+      currentIndex === -1
+        ? entryIds[direction === 1 ? 0 : entryIds.length - 1]
+        : entryIds[currentIndex + direction];
+    if (targetId) {
+      setSelectedEntryId(targetId);
+      focusEntryRow(targetId);
     }
-    // If already at the last entry, nextId stays undefined and we do nothing
-    if (nextId) {
-      setSelectedEntryId(nextId);
-      focusEntryRow(nextId);
-    }
-  }, [entryIds, getSelectedIndex, setSelectedEntryId, focusEntryRow]);
+  };
 
-  // Move selection to the previous entry
-  const selectPrevious = useCallback(() => {
-    if (entryIds.length === 0) return;
+  const openSelected = () => {
+    if (selectedEntryId) onOpenEntry(selectedEntryId);
+  };
 
-    const currentIndex = getSelectedIndex();
-
-    let prevId: string | undefined;
-    if (currentIndex === -1) {
-      // Nothing selected, select the last entry
-      prevId = entryIds[entryIds.length - 1];
-    } else if (currentIndex > 0) {
-      // Move to previous entry
-      prevId = entryIds[currentIndex - 1];
-    }
-    // If already at the first entry, prevId stays undefined and we do nothing
-    if (prevId) {
-      setSelectedEntryId(prevId);
-      focusEntryRow(prevId);
-    }
-  }, [entryIds, getSelectedIndex, setSelectedEntryId, focusEntryRow]);
-
-  // Open the currently selected entry
-  const openSelected = useCallback(() => {
-    if (selectedEntryId) {
-      onOpenEntry(selectedEntryId);
-    }
-  }, [selectedEntryId, onOpenEntry]);
-
-  // Clear selection
-  const clearSelection = useCallback(() => {
+  const clearSelection = () => {
     setSelectedEntryId(null);
     // Selection is shown by the focused row's outline, so clearing it (Escape)
     // must also drop focus from that row — otherwise the outline would linger
@@ -313,243 +282,95 @@ export function useKeyboardShortcuts(
         active.blur();
       }
     }
-  }, [setSelectedEntryId]);
+  };
 
   // Compute whether the selected entry is still in the list
   // If not, we use null instead. This avoids setting state in an effect.
   const isSelectedEntryValid = selectedEntryId === null || entryIds.includes(selectedEntryId);
   const effectiveSelectedEntryId = isSelectedEntryValid ? selectedEntryId : null;
 
-  // Keyboard shortcuts
-  // j - next entry (select in list, or navigate to next when viewing)
-  useHotkeys(
-    "j",
-    (e) => {
-      e.preventDefault();
-      if (isEntryOpen) {
-        onNavigateNext();
-      } else {
-        selectNext();
-      }
-    },
-    {
-      enabled: enabled,
-      enableOnFormTags: false,
-    },
-    [selectNext, onNavigateNext, isEntryOpen, enabled]
-  );
-
-  // k - previous entry (select in list, or navigate to previous when viewing)
-  useHotkeys(
-    "k",
-    (e) => {
-      e.preventDefault();
-      if (isEntryOpen) {
-        onNavigatePrevious();
-      } else {
-        selectPrevious();
-      }
-    },
-    {
-      enabled: enabled,
-      enableOnFormTags: false,
-    },
-    [selectPrevious, onNavigatePrevious, isEntryOpen, enabled]
-  );
-
-  // Shift+J / Shift+K - next/previous tag or subscription. Shift+N / Shift+P
-  // are Google Reader's keys for the same thing.
-  useHotkeys(
-    "shift+j, shift+n",
-    (e) => {
-      e.preventDefault();
-      goToSidebarFeed(1);
-    },
-    { enabled, enableOnFormTags: false },
-    [enabled]
-  );
-  useHotkeys(
-    "shift+k, shift+p",
-    (e) => {
-      e.preventDefault();
-      goToSidebarFeed(-1);
-    },
-    { enabled, enableOnFormTags: false },
-    [enabled]
-  );
-
-  // o / Enter - open selected entry (only when entry is not open)
-  useHotkeys(
-    "o, enter",
-    (e) => {
-      e.preventDefault();
-      openSelected();
-    },
-    {
-      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId,
-      enableOnFormTags: false,
-    },
-    [openSelected, isEntryOpen, effectiveSelectedEntryId, enabled]
-  );
-
-  // Escape - close entry or deselect
-  useHotkeys(
-    "escape",
-    (e) => {
-      e.preventDefault();
-      if (isEntryOpen) {
-        onClose();
-      } else if (effectiveSelectedEntryId) {
-        clearSelection();
-      }
-    },
-    {
-      enabled: enabled && (isEntryOpen || !!effectiveSelectedEntryId),
-      enableOnFormTags: false,
-    },
-    [isEntryOpen, onClose, effectiveSelectedEntryId, clearSelection, enabled]
-  );
-
-  // m - toggle read/unread (when entry is selected and not open)
-  useHotkeys(
-    "m",
-    (e) => {
-      e.preventDefault();
+  const hasSelection = !!effectiveSelectedEntryId;
+  const onSelectedEntry = (run: (entry: KeyboardEntryData) => void): ShortcutAction => ({
+    enabled: !isEntryOpen && hasSelection,
+    run: () => {
       const entry = getSelectedEntry();
-      if (entry) {
-        onToggleRead(entry.id, entry.read);
-      }
+      if (entry) run(entry);
     },
-    {
-      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId,
-      enableOnFormTags: false,
-    },
-    [getSelectedEntry, onToggleRead, isEntryOpen, effectiveSelectedEntryId, enabled]
-  );
+  });
+  const goTo = (path: string): ShortcutAction => ({
+    enabled: !isEntryOpen,
+    run: () => clientPush(appHref(path)),
+  });
 
-  // s - toggle star (when entry is selected, not open, and g prefix NOT active)
+  const actions: Record<ListShortcutId, ShortcutAction> = {
+    nextEntry: { enabled: true, run: isEntryOpen ? onNavigateNext : () => moveSelection(1) },
+    previousEntry: {
+      enabled: true,
+      run: isEntryOpen ? onNavigatePrevious : () => moveSelection(-1),
+    },
+    openEntry: { enabled: !isEntryOpen && hasSelection, run: openSelected },
+    closeEntry: {
+      enabled: isEntryOpen || hasSelection,
+      run: isEntryOpen ? onClose : clearSelection,
+    },
+    nextFeed: { enabled: true, run: () => goToSidebarFeed(1) },
+    previousFeed: { enabled: true, run: () => goToSidebarFeed(-1) },
+    goToAll: goTo("/all"),
+    goToStarred: goTo("/starred"),
+    goToSaved: goTo("/saved"),
+    toggleRead: onSelectedEntry((entry) => onToggleRead(entry.id, entry.read)),
+    toggleStar: onSelectedEntry((entry) => onToggleStar(entry.id, entry.starred)),
+    openOriginal: onSelectedEntry((entry) => {
+      if (entry.url) window.open(entry.url, "_blank", "noopener,noreferrer");
+    }),
+    refresh: { enabled: !isEntryOpen, run: onRefresh },
+    toggleUnreadOnly: { enabled: !isEntryOpen, run: onToggleUnreadOnly },
+  };
+
+  const findAction = (hotkey: string, prefix: string | undefined): ShortcutAction | undefined => {
+    const match = LIST_SHORTCUTS.find(
+      ([id, shortcut]) =>
+        shortcut.prefix === prefix &&
+        hotkeyAlternatives(shortcut.hotkey).includes(hotkey) &&
+        actions[id].enabled
+    );
+    return match && actions[match[0]];
+  };
+
+  // One binding for the whole table, dispatched on the alternative that
+  // matched. No deps array: react-hotkeys-hook then calls the latest callback.
   useHotkeys(
-    "s",
-    (e) => {
-      // If g prefix is active, this should trigger navigation instead
-      if (gPrefixActive) {
+    LIST_HOTKEYS,
+    (e, { hotkey }) => {
+      const pending = pendingPrefixRef.current;
+      const prefix = pending && Date.now() < pending.expiresAt ? pending.key : undefined;
+
+      // The second key of a chord wins over its own binding (g then s goes to
+      // Starred rather than starring).
+      const chord = prefix === undefined ? undefined : findAction(hotkey, prefix);
+      if (chord) {
         e.preventDefault();
-        clearGPrefix();
-        clientPush(appHref("/starred"));
+        pendingPrefixRef.current = null;
+        chord.run();
         return;
       }
 
-      e.preventDefault();
-      const entry = getSelectedEntry();
-      if (entry) {
-        onToggleStar(entry.id, entry.starred);
+      const startsChord = LIST_SHORTCUTS.some(
+        ([id, shortcut]) => shortcut.prefix === hotkey && actions[id].enabled
+      );
+      if (startsChord) {
+        e.preventDefault();
+        pendingPrefixRef.current = { key: hotkey, expiresAt: Date.now() + PREFIX_TIMEOUT_MS };
+        return;
+      }
+
+      const action = findAction(hotkey, undefined);
+      if (action) {
+        e.preventDefault();
+        action.run();
       }
     },
-    {
-      enabled: enabled && !isEntryOpen && (!!effectiveSelectedEntryId || gPrefixActive),
-      enableOnFormTags: false,
-    },
-    [
-      getSelectedEntry,
-      onToggleStar,
-      isEntryOpen,
-      effectiveSelectedEntryId,
-      enabled,
-      gPrefixActive,
-      clearGPrefix,
-      appHref,
-    ]
-  );
-
-  // v - open original URL in new tab (when entry is selected)
-  useHotkeys(
-    "v",
-    (e) => {
-      e.preventDefault();
-      const entry = getSelectedEntry();
-      if (entry?.url) {
-        window.open(entry.url, "_blank", "noopener,noreferrer");
-      }
-    },
-    {
-      enabled: enabled && !isEntryOpen && !!effectiveSelectedEntryId,
-      enableOnFormTags: false,
-    },
-    [getSelectedEntry, isEntryOpen, effectiveSelectedEntryId, enabled]
-  );
-
-  // r - refresh current view
-  useHotkeys(
-    "r",
-    (e) => {
-      e.preventDefault();
-      onRefresh();
-    },
-    {
-      enabled: enabled && !isEntryOpen,
-      enableOnFormTags: false,
-    },
-    [onRefresh, isEntryOpen, enabled]
-  );
-
-  // u - toggle unread-only filter
-  useHotkeys(
-    "u",
-    (e) => {
-      e.preventDefault();
-      onToggleUnreadOnly();
-    },
-    {
-      enabled: enabled && !isEntryOpen,
-      enableOnFormTags: false,
-    },
-    [onToggleUnreadOnly, isEntryOpen, enabled]
-  );
-
-  // g - activate g prefix for navigation shortcuts
-  useHotkeys(
-    "g",
-    (e) => {
-      e.preventDefault();
-      activateGPrefix();
-    },
-    {
-      enabled: enabled && !isEntryOpen,
-      enableOnFormTags: false,
-    },
-    [activateGPrefix, isEntryOpen, enabled]
-  );
-
-  // a - go to All (when g prefix is active)
-  useHotkeys(
-    "a",
-    (e) => {
-      if (!gPrefixActive) return;
-      e.preventDefault();
-      clearGPrefix();
-      clientPush(appHref("/all"));
-    },
-    {
-      enabled: enabled && !isEntryOpen && gPrefixActive,
-      enableOnFormTags: false,
-    },
-    [gPrefixActive, clearGPrefix, isEntryOpen, enabled, appHref]
-  );
-
-  // l - go to Saved/Later (when g prefix is active)
-  useHotkeys(
-    "l",
-    (e) => {
-      if (!gPrefixActive) return;
-      e.preventDefault();
-      clearGPrefix();
-      clientPush(appHref("/saved"));
-    },
-    {
-      enabled: enabled && !isEntryOpen && gPrefixActive,
-      enableOnFormTags: false,
-    },
-    [gPrefixActive, clearGPrefix, isEntryOpen, enabled, appHref]
+    { enabled, enableOnFormTags: false }
   );
 
   return {
