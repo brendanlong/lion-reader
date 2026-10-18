@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
+import Redis from "ioredis";
 import { db } from "../../src/server/db";
 import {
   users,
@@ -19,6 +20,8 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processInboundEmail, type InboundEmail } from "../../src/server/email/process-inbound";
 import { createTestEmailSubscription, createTestUser } from "./helpers";
+import { getUserEventsChannel } from "../../src/server/redis/pubsub";
+import { waitForMessages } from "../utils/pubsub";
 
 // ============================================================================
 // Test Helpers
@@ -161,5 +164,36 @@ describe("Email subscriptions", () => {
       feedId: null,
       unsubscribedAt: null,
     });
+  });
+
+  // The new subscription's real row, not a guessed count: its first entry,
+  // announced next, brings the count with it.
+  it("announces the new subscription's row before its first entry", async () => {
+    const userId = await createTestUser();
+    const { token } = await createTestIngestAddress(userId);
+    const subscriber = new Redis(process.env.REDIS_URL!);
+    try {
+      const channel = getUserEventsChannel(userId);
+      await subscriber.subscribe(channel);
+      const messages = waitForMessages(subscriber, channel, 2);
+
+      const result = await processInboundEmail(createTestEmail(token, "news@example.com"));
+
+      const [created, newEntry] = (await messages).map((message) => JSON.parse(message));
+      expect(created).toMatchObject({
+        type: "subscription_created",
+        subscriptionId: result.subscriptionId,
+        row: {
+          id: result.subscriptionId,
+          type: "email",
+          title: "Test Sender",
+          unreadCount: 0,
+          tags: [],
+        },
+      });
+      expect(newEntry).toMatchObject({ type: "new_entry", subscriptionId: result.subscriptionId });
+    } finally {
+      await subscriber.quit();
+    }
   });
 });

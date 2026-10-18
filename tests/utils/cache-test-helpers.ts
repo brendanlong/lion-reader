@@ -10,7 +10,7 @@ import { vi, type MockInstance } from "vitest";
 import { createTRPCClient, httpLink } from "@trpc/client";
 import { createTRPCQueryUtils } from "@trpc/react-query";
 import superjson from "superjson";
-import type { SyncEvent } from "@/lib/events/schemas";
+import type { SyncEvent, SyncSubscription } from "@/lib/events/schemas";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import type { UnreadCounts } from "@/lib/cache/operations";
 import type { AppRouter } from "@/server/trpc/root";
@@ -554,27 +554,51 @@ export function createMarkAllReadEvent(
   };
 }
 
+/** A subscription as subscription events carry it: by default, the seeded `sub-1`. */
+function createSyncSubscription(overrides: Partial<SyncSubscription> = {}): SyncSubscription {
+  const { subscribedAt, ...seeded } = DEFAULT_SUBSCRIPTIONS[0];
+  return {
+    ...seeded,
+    subscribedAt: subscribedAt.toISOString(),
+    unreadCountAsOf: defaultCountsAsOf,
+    ...overrides,
+  };
+}
+
+/** A subscription_created event for a new subscription (`sub-new` by default). */
 export function createSubscriptionCreatedEvent(
+  subscription: Partial<SyncSubscription> = {},
   overrides: Partial<Extract<SyncEvent, { type: "subscription_created" }>> = {}
 ): Extract<SyncEvent, { type: "subscription_created" }> {
+  const row = createSyncSubscription({
+    id: "sub-new",
+    url: "https://example.com/new-feed.xml",
+    title: "New Feed",
+    originalTitle: "New Feed",
+    subscribedAt: defaultTimestamp,
+    unreadCount: 7,
+    ...subscription,
+  });
   return {
     type: "subscription_created",
-    subscriptionId: "sub-new",
+    subscriptionId: row.id,
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
+    row,
     subscription: {
-      id: "sub-new",
-      customTitle: null,
-      subscribedAt: defaultTimestamp,
-      unreadCount: 7,
-      tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
+      id: row.id,
+      customTitle: row.title,
+      subscribedAt: row.subscribedAt,
+      unreadCount: row.unreadCount,
+      tags: row.tags,
+      fetchFullContent: row.fetchFullContent,
     },
     feed: {
-      type: "web",
-      url: "https://example.com/new-feed.xml",
-      title: "New Feed",
-      description: "A new feed",
-      siteUrl: "https://example.com",
+      type: row.type,
+      url: row.url,
+      title: row.originalTitle,
+      description: row.description,
+      siteUrl: row.siteUrl,
     },
     ...overrides,
   };
@@ -599,17 +623,23 @@ export function createSubscriptionRow(overrides: Partial<SubscriptionRow> = {}):
   };
 }
 
+/** A subscription_updated event for the seeded `sub-1` by default. */
 export function createSubscriptionUpdatedEvent(
-  overrides: Partial<Extract<SyncEvent, { type: "subscription_updated" }>> = {}
+  subscription: Partial<SyncSubscription> = {}
 ): Extract<SyncEvent, { type: "subscription_updated" }> {
+  const row = createSyncSubscription({
+    tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }],
+    ...subscription,
+  });
   return {
     type: "subscription_updated",
-    subscriptionId: "sub-1",
-    tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }],
-    customTitle: null,
+    subscriptionId: row.id,
+    row,
+    tags: row.tags,
+    customTitle: row.title,
+    fetchFullContent: row.fetchFullContent,
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
-    ...overrides,
   };
 }
 

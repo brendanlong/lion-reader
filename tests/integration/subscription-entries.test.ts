@@ -125,7 +125,9 @@ describe("membership write paths (#1846)", () => {
     const userId = await createTestUser();
     const { feedId, entryIds } = await currentFeed(2);
 
-    const { subscriptionId } = await createSubscription(db, userId, {
+    const {
+      subscription: { id: subscriptionId },
+    } = await createSubscription(db, userId, {
       url: (await feedRow(feedId)).url!,
     });
 

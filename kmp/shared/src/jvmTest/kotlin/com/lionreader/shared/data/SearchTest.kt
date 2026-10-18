@@ -168,7 +168,10 @@ class SearchTest {
         assertEquals(emptyList(), search("weekly"))
 
         server.queueChanges(
-            events = listOf(SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = null))
+            events =
+                listOf(
+                    SyncEvent.SubscriptionUpdated("sub-1", tags = emptyList(), customTitle = null)
+                )
         )
         engine.sync()
         assertEquals("Rust Weekly", source())

@@ -103,7 +103,7 @@ export async function createCollection(
   // The collection found can be deleted or renamed before it's read back;
   // then the next attempt creates one.
   for (let attempt = 0; attempt < 2; attempt++) {
-    let outcome: { existingId: string } | { subscriptionId: string; now: Date };
+    let outcome: { existingId: string } | { created: Subscription };
     try {
       outcome = await db.transaction(async (tx) => {
         // The creation lock serializes the lookup and insert with the user's
@@ -115,7 +115,7 @@ export async function createCollection(
         if (activeCount >= maxSubs) {
           throw errors.maxSubscriptionsReached(maxSubs);
         }
-        return insertCollection(tx, userId, name);
+        return { created: await insertCollection(tx, userId, name) };
       });
     } catch (err) {
       // A rename doesn't take the creation lock, so it can take the name
@@ -126,8 +126,8 @@ export async function createCollection(
       outcome = { existingId };
     }
 
-    if (!("existingId" in outcome)) {
-      return finishCreate(db, userId, name, outcome);
+    if ("created" in outcome) {
+      return finishCreate(db, userId, outcome.created);
     }
     const existing = await getActiveCollection(db, userId, outcome.existingId);
     if (existing) {
@@ -155,7 +155,7 @@ async function insertCollection(
   tx: Transaction,
   userId: string,
   name: string
-): Promise<{ subscriptionId: string; now: Date }> {
+): Promise<Subscription> {
   const subscriptionId = generateUuidv7();
   const now = new Date();
   await tx.insert(subscriptions).values({
@@ -167,55 +167,26 @@ async function insertCollection(
     createdAt: now,
     updatedAt: now,
   });
-  return { subscriptionId, now };
+  return getSubscription(tx, userId, subscriptionId);
 }
 
 async function finishCreate(
   db: typeof dbType,
   userId: string,
-  name: string,
-  { subscriptionId, now }: { subscriptionId: string; now: Date }
+  subscription: Subscription
 ): Promise<CreateCollectionResult> {
-  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
+  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subscription.id }]);
 
   publishUserEvent({
-    ...subscriptionCreatedEvent(
-      {
-        id: subscriptionId,
-        type: "collection",
-        customTitle: name,
-        subscribedAt: now,
-        unreadCount: 0,
-        fetchFullContent: false,
-      },
-      [],
-      null
-    ),
+    ...subscriptionCreatedEvent(subscription),
     userId,
     // No feed channel to follow.
     feedId: null,
-    updatedAt: now,
+    updatedAt: subscription.subscribedAt,
     counts,
   });
 
-  return {
-    subscription: {
-      id: subscriptionId,
-      type: "collection",
-      url: null,
-      title: name,
-      originalTitle: name,
-      description: null,
-      siteUrl: null,
-      subscribedAt: now,
-      unreadCount: 0,
-      unreadCountAsOf: counts.asOf,
-      tags: [],
-      fetchFullContent: false,
-    },
-    counts,
-    created: true,
-  };
+  return { subscription, counts, created: true };
 }
 
 /**

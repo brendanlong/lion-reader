@@ -7,15 +7,7 @@
 
 import { eq, and, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
-import {
-  feeds,
-  subscriptions,
-  tags,
-  subscriptionTags,
-  userFeeds,
-  type Feed,
-  type FeedType,
-} from "@/server/db/schema";
+import { feeds, subscriptions, subscriptionTags, type Feed } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -27,21 +19,16 @@ import {
   subscriptionCreatedEvent,
   subscriptionUpdatedEvent,
 } from "@/server/services/subscription-sync-events";
-import {
-  countsAsOfNow,
-  formatCountsAsOf,
-  getBulkEntryRelatedCounts,
-  getUserUnreadCounts,
-  type BulkUnreadCounts,
-} from "@/server/services/counts";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
   holdsRedirectTwin,
   insertUserEntriesWithMemberships,
 } from "@/server/services/subscription-entries";
 import {
-  buildSubscriptionBaseQuery,
+  getSubscription,
   lockAndCountActiveSubscriptions,
   lockSubscriptionMembers,
+  type Subscription,
 } from "@/server/services/subscriptions";
 import { errors } from "@/server/errors";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
@@ -121,28 +108,9 @@ export interface CreateSubscriptionFeedInput {
  * Result of creating a subscription.
  */
 export interface CreateSubscriptionResult {
-  /** Subscription ID */
-  subscriptionId: string;
-  /** When the subscription was created */
-  subscribedAt: Date;
-  /** Unread count for the subscription (trigger-maintained counter, spam excluded) */
-  unreadCount: number;
-  /** When `unreadCount` was read (`countsAsOfSchema`) */
-  unreadCountAsOf: string;
+  subscription: Subscription;
   /** True if the subscription already existed and was active (idempotent return) */
   alreadyActive: boolean;
-  /** User's custom title for this subscription (null = use feed title) */
-  customTitle: string | null;
-  /** Whether to fetch full article content from URL */
-  fetchFullContent: boolean;
-  /** Feed data (from existing or newly created feed) */
-  feed: {
-    type: FeedType;
-    url: string | null;
-    title: string | null;
-    description: string | null;
-    siteUrl: string | null;
-  };
   /**
    * Absolute unread counts for the lists affected by this subscription (All
    * Articles, Uncategorized, and the subscription itself). Present only when a
@@ -204,19 +172,16 @@ export async function createSubscription(
     })
     .onConflictDoNothing({ target: feeds.url });
 
-  const [feedRecord] = await db.select().from(feeds).where(eq(feeds.url, feed.url)).limit(1);
+  const [feedRecord] = await db
+    .select({ id: feeds.id })
+    .from(feeds)
+    .where(eq(feeds.url, feed.url))
+    .limit(1);
   if (!feedRecord) {
     throw new Error(`Feed disappeared after upsert: ${feed.url}`);
   }
 
   const feedId = feedRecord.id;
-  const feedData = {
-    type: "web" as const,
-    url: feedRecord.url,
-    title: feedRecord.title,
-    description: feedRecord.description,
-    siteUrl: feedRecord.siteUrl,
-  };
 
   // 2. Ensure background fetch job exists
   await ensureFeedJob(feedId);
@@ -234,20 +199,12 @@ export async function createSubscription(
   interface TxResult {
     kind: "alreadyActive" | "created";
     subscriptionId: string;
-    subscribedAt: Date;
-    customTitle: string | null;
-    fetchFullContent: boolean;
   }
 
   const txResult: TxResult = await db.transaction(async (tx) => {
     const selectActiveSubscription = () =>
       tx
-        .select({
-          subscriptionId: subscriptions.id,
-          subscribedAt: subscriptions.subscribedAt,
-          customTitle: subscriptions.customTitle,
-          fetchFullContent: subscriptions.fetchFullContent,
-        })
+        .select({ subscriptionId: subscriptions.id })
         .from(subscriptions)
         .where(
           and(
@@ -284,12 +241,7 @@ export async function createSubscription(
     const newSubscriptionId = generateUuidv7();
     const subscribedAt = new Date();
 
-    const upsertResult = await tx.execute<{
-      id: string;
-      subscribed_at: string;
-      custom_title: string | null;
-      fetch_full_content: boolean;
-    }>(sql`
+    const upsertResult = await tx.execute<{ id: string }>(sql`
       INSERT INTO subscriptions (id, user_id, feed_id, type, subscribed_at, created_at, updated_at, fetch_full_content)
       VALUES (${newSubscriptionId}, ${userId}, ${feedId}, 'web', ${subscribedAt}, ${subscribedAt}, ${subscribedAt}, ${defaultFullContent})
       ON CONFLICT (user_id, feed_id) DO UPDATE SET
@@ -297,12 +249,12 @@ export async function createSubscription(
         subscribed_at = ${subscribedAt},
         updated_at = ${subscribedAt}
       WHERE subscriptions.unsubscribed_at IS NOT NULL
-      RETURNING id, subscribed_at, custom_title, fetch_full_content
+      RETURNING id
     `);
 
     if (upsertResult.rows.length === 0) {
-      // Subscription was already active — idempotent return (unread computed
-      // below). The ON CONFLICT row lock keeps it active for this transaction.
+      // Subscription was already active — idempotent return. The ON CONFLICT
+      // row lock keeps it active for this transaction.
       const [sub] = await selectActiveSubscription();
       if (!sub) {
         throw new Error("Active subscription vanished after upsert conflict");
@@ -310,10 +262,7 @@ export async function createSubscription(
       return { kind: "alreadyActive", ...sub };
     }
 
-    const upsertedRow = upsertResult.rows[0];
-    const subscriptionId = upsertedRow.id;
-    const customTitle = upsertedRow.custom_title;
-    const fetchFullContent = upsertedRow.fetch_full_content;
+    const subscriptionId = upsertResult.rows[0].id;
 
     // 5. Populate user_entries (skipped for a stale feed; see
     //    CreateSubscriptionOptions).
@@ -321,80 +270,36 @@ export async function createSubscription(
       await populateInitialUserEntries(tx, userId, subscriptionId, feedId);
     }
 
-    return {
-      kind: "created",
-      subscriptionId,
-      subscribedAt,
-      customTitle,
-      fetchFullContent,
-    };
+    return { kind: "created", subscriptionId };
   });
 
-  // Idempotent already-active return: compute the real unread count from the
-  // view now that the transaction has committed.
+  const { subscriptionId } = txResult;
   if (txResult.kind === "alreadyActive") {
-    const viewResults = await buildSubscriptionBaseQuery(
-      db,
-      and(eq(userFeeds.id, txResult.subscriptionId), eq(userFeeds.userId, userId))
-    ).limit(1);
-
-    return {
-      subscriptionId: txResult.subscriptionId,
-      subscribedAt: txResult.subscribedAt,
-      unreadCount: viewResults.length > 0 ? viewResults[0].unreadCount : 0,
-      unreadCountAsOf: formatCountsAsOf(
-        viewResults.length > 0 ? viewResults[0].unreadCountAsOf : await countsAsOfNow(db)
-      ),
-      alreadyActive: true,
-      customTitle: txResult.customTitle,
-      fetchFullContent: txResult.fetchFullContent,
-      feed: feedData,
-    };
+    return { subscription: await getSubscription(db, userId, subscriptionId), alreadyActive: true };
   }
 
-  const { subscriptionId, subscribedAt, customTitle, fetchFullContent } = txResult;
-
-  // 7. Compute absolute unread counts for the affected lists. A newly created
-  // or reactivated subscription is untagged, so it only moves All Articles and
-  // Uncategorized (plus its own count). The client sets these directly.
+  // 7. Compute absolute unread counts for the affected lists: All Articles,
+  // Uncategorized (unsubscribing cleared a reactivated subscription's tags)
+  // and its own. The client sets these directly.
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
-
-  // The subscription's own badge is the trigger-maintained counter this bulk
-  // read already returned (spam excluded), never a scan — see "Unread Counts"
-  // in `src/server/CLAUDE.md`. `getBulkEntryRelatedCounts` zero-fills every
-  // requested subscription, so the entry for ours is always present.
-  const unreadCount = counts.subscriptions.find((s) => s.id === subscriptionId)?.unread ?? 0;
+  const subscription = await getSubscription(db, userId, subscriptionId);
 
   logger.debug("Populated initial user entries via lastSeenAt", {
     userId,
     feedId,
-    entryCount: unreadCount,
+    entryCount: subscription.unreadCount,
   });
 
   // 8. Publish SSE event for new/reactivated subscriptions
   publishUserEvent({
-    ...subscriptionCreatedEvent(
-      { id: subscriptionId, type: "web", customTitle, subscribedAt, unreadCount, fetchFullContent },
-      [],
-      feedRecord
-    ),
+    ...subscriptionCreatedEvent(subscription),
     userId,
     feedId,
-    updatedAt: subscribedAt,
+    updatedAt: subscription.subscribedAt,
     counts,
   });
 
-  return {
-    subscriptionId,
-    subscribedAt,
-    unreadCount,
-    unreadCountAsOf: counts.asOf,
-    alreadyActive: false,
-    customTitle,
-    fetchFullContent,
-    feed: feedData,
-    counts,
-  };
+  return { subscription, alreadyActive: false, counts };
 }
 
 /**
@@ -559,12 +464,7 @@ export async function mergeSubscriptionIntoFeed(
     `);
     const survivorWasActive = upserted.rows.length === 0;
     const [survivor] = await tx
-      .select({
-        id: subscriptions.id,
-        subscribedAt: subscriptions.subscribedAt,
-        customTitle: subscriptions.customTitle,
-        fetchFullContent: subscriptions.fetchFullContent,
-      })
+      .select({ id: subscriptions.id })
       .from(subscriptions)
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeed.id)));
 
@@ -613,26 +513,19 @@ export async function mergeSubscriptionIntoFeed(
       .set({ unsubscribedAt: now, updatedAt: now })
       .where(eq(subscriptions.id, oldSubscriptionId));
 
-    const survivorTags = await tx
-      .select({ id: tags.id, name: tags.name, color: tags.color })
-      .from(subscriptionTags)
-      .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
-      .where(eq(subscriptionTags.subscriptionId, survivor.id));
-
     return {
       oldFeedId: old.feedId,
-      oldWasUncategorized: movedTags.length === 0,
-      survivor,
+      movedTagIds: movedTags.map(({ tagId }) => tagId),
+      survivor: await getSubscription(tx, userId, survivor.id),
       survivorWasActive,
       survivorTagsChanged: addedTags.length > 0,
-      survivorTags,
     };
   });
 
   if (!merged) {
     return false;
   }
-  const { oldFeedId, oldWasUncategorized, survivor, survivorWasActive, survivorTags } = merged;
+  const { oldFeedId, movedTagIds, survivor, survivorWasActive } = merged;
 
   // Unconditional, not just for a new survivor: retention deletes the job of a
   // feed with no active subscriber, so a merge can be what brings the feed back.
@@ -642,12 +535,9 @@ export async function mergeSubscriptionIntoFeed(
     await ensureFeedJob(newFeed.id);
   }
 
-  // The survivor's tags include the old subscription's, so its counts cover
-  // every list the merge moved except Uncategorized when only the old one was.
-  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: survivor.id }]);
-  if (oldWasUncategorized && !counts.uncategorized) {
-    counts.uncategorized = { unread: (await getUserUnreadCounts(db, userId)).uncategorizedUnread };
-  }
+  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: survivor.id }], {
+    removedSubscriptionTagIds: movedTagIds,
+  });
   publishUserEvent({
     type: "subscription_deleted",
     userId,
@@ -657,9 +547,8 @@ export async function mergeSubscriptionIntoFeed(
     counts,
   });
   if (!survivorWasActive) {
-    const unreadCount = counts.subscriptions.find((s) => s.id === survivor.id)?.unread ?? 0;
     publishUserEvent({
-      ...subscriptionCreatedEvent({ ...survivor, type: "web", unreadCount }, survivorTags, newFeed),
+      ...subscriptionCreatedEvent(survivor),
       userId,
       feedId: newFeed.id,
       updatedAt: now,
@@ -667,7 +556,7 @@ export async function mergeSubscriptionIntoFeed(
     });
   } else if (merged.survivorTagsChanged) {
     publishUserEvent({
-      ...subscriptionUpdatedEvent(survivor, survivorTags),
+      ...subscriptionUpdatedEvent(survivor),
       userId,
       updatedAt: now,
     });

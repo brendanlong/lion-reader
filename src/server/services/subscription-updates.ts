@@ -21,7 +21,7 @@ import { logger } from "@/lib/logger";
 import { publishUserEvent } from "@/server/redis/pubsub";
 import { subscriptionUpdatedEvent } from "@/server/services/subscription-sync-events";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
-import { getSubscriptionDeletionCounts, type BulkUnreadCounts } from "@/server/services/counts";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
   clearedCustomTitle,
   getSubscription,
@@ -35,36 +35,23 @@ import { isUniqueViolation } from "@/server/db/errors";
 /**
  * Locks one of the user's subscription rows for the rest of the transaction,
  * so a change to its tags or state takes locks in the order `src/server/CLAUDE.md`
- * requires, returning the locked row's fields a subscription_updated event
- * carries. Unsubscribing moves its members'
- * user_entries rows, so `members` locks those first.
+ * requires. Unsubscribing moves its members' user_entries rows, so `members`
+ * locks those first.
  */
 async function lockSubscriptionRow(
   tx: DbOrTx,
   userId: string,
   subscriptionId: string,
   { members = false }: { members?: boolean } = {}
-): Promise<{ customTitle: string | null; fetchFullContent: boolean } | undefined> {
+): Promise<void> {
   if (members) {
     await lockSubscriptionMembers(tx, userId, eq(subscriptions.id, subscriptionId));
   }
-  const [row] = await tx
-    .select({
-      customTitle: subscriptions.customTitle,
-      fetchFullContent: subscriptions.fetchFullContent,
-    })
+  await tx
+    .select({ id: subscriptions.id })
     .from(subscriptions)
     .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)))
     .for("update");
-  return row;
-}
-
-function selectSubscriptionTags(db: DbOrTx, subscriptionId: string): Promise<Subscription["tags"]> {
-  return db
-    .select({ id: tags.id, name: tags.name, color: tags.color })
-    .from(subscriptionTags)
-    .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .where(eq(subscriptionTags.subscriptionId, subscriptionId));
 }
 
 export const CUSTOM_TITLE_MAX_LENGTH = 255;
@@ -146,11 +133,7 @@ export async function updateSubscription(
         isUserManagedSubscription()
       )
     )
-    .returning({
-      customTitle: subscriptions.customTitle,
-      fetchFullContent: subscriptions.fetchFullContent,
-      changed: sql<boolean>`${meaningfulChange}`,
-    })
+    .returning({ changed: sql<boolean>`${meaningfulChange}` })
     .catch((err: unknown) => {
       // Only custom_title can collide: with another active collection's name.
       throw isUniqueViolation(err) ? errors.collectionNameTaken() : err;
@@ -160,16 +143,11 @@ export async function updateSubscription(
     throw errors.subscriptionNotFound();
   }
 
+  const subscription = await getSubscription(db, userId, subscriptionId);
   if (updated.changed) {
-    const currentTags = await selectSubscriptionTags(db, subscriptionId);
-    publishUserEvent({
-      ...subscriptionUpdatedEvent({ id: subscriptionId, ...updated }, currentTags),
-      userId,
-      updatedAt: now,
-    });
+    publishUserEvent({ ...subscriptionUpdatedEvent(subscription), userId, updatedAt: now });
   }
-
-  return getSubscription(db, userId, subscriptionId);
+  return subscription;
 }
 
 /**
@@ -181,8 +159,8 @@ export async function setSubscriptionTags(
   userId: string,
   subscriptionId: string,
   tagIds: string[]
-): Promise<void> {
-  await changeSubscriptionTags(db, userId, subscriptionId, { set: tagIds });
+): Promise<Subscription> {
+  return changeSubscriptionTags(db, userId, subscriptionId, { set: tagIds });
 }
 
 /**
@@ -204,7 +182,7 @@ async function changeSubscriptionTags(
   userId: string,
   subscriptionId: string,
   change: { set: string[] } | { add: string[]; remove: string[] }
-): Promise<void> {
+): Promise<Subscription> {
   const addedTagIds = [...new Set("set" in change ? change.set : change.add)];
   // The saved subscription can't be tagged (#1846), so it's not found.
   const [existingSubscription] = await db
@@ -245,10 +223,10 @@ async function changeSubscriptionTags(
   // insert could leave a partial tag set (#952).
   const after = await db.transaction(async (tx) => {
     // Subscription row first: the counter triggers lock subscriptions, then
-    // users, then tags, and the tag changes below reach users and tags. Its
-    // title is read under the lock, so the event can't revert a concurrent
+    // users, then tags, and the tag changes below reach users and tags. The
+    // row is read under the lock, so the event can't revert a concurrent
     // rename.
-    const locked = await lockSubscriptionRow(tx, userId, subscriptionId);
+    await lockSubscriptionRow(tx, userId, subscriptionId);
 
     let changed: boolean;
     if ("set" in change) {
@@ -292,28 +270,20 @@ async function changeSubscriptionTags(
       changed = deleted.length > 0 || inserted.length > 0;
     }
 
-    if (!changed) {
-      return null;
+    if (changed) {
+      // updated_at drives the subscription delta-sync cursor.
+      await tx
+        .update(subscriptions)
+        .set({ updatedAt: now })
+        .where(eq(subscriptions.id, subscriptionId));
     }
-    // updated_at drives the subscription delta-sync cursor.
-    await tx
-      .update(subscriptions)
-      .set({ updatedAt: now })
-      .where(eq(subscriptions.id, subscriptionId));
-    return {
-      tags: await selectSubscriptionTags(tx, subscriptionId),
-      customTitle: locked?.customTitle ?? null,
-      fetchFullContent: locked?.fetchFullContent,
-    };
+    return { changed, subscription: await getSubscription(tx, userId, subscriptionId) };
   });
 
-  if (after) {
-    publishUserEvent({
-      ...subscriptionUpdatedEvent({ id: subscriptionId, ...after }, after.tags),
-      userId,
-      updatedAt: now,
-    });
+  if (after.changed) {
+    publishUserEvent({ ...subscriptionUpdatedEvent(after.subscription), userId, updatedAt: now });
   }
+  return after.subscription;
 }
 
 /**
@@ -454,7 +424,9 @@ export async function unsubscribe(
   // Computed after the soft-delete so they reflect the removal. The client sets
   // these directly (the sync.events catch-up path can't recompute the former
   // tags, so it omits counts and the client invalidates instead).
-  const counts = await getSubscriptionDeletionCounts(db, userId, formerTagIds);
+  const counts = await getBulkEntryRelatedCounts(db, userId, [], {
+    removedSubscriptionTagIds: formerTagIds,
+  });
 
   publishUserEvent({
     type: "subscription_deleted",

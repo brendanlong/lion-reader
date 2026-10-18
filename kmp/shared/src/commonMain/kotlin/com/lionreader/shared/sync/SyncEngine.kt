@@ -330,7 +330,7 @@ class SyncEngine(
         val created = events.filterIsInstance<SyncEvent.SubscriptionCreated>()
         val fetched = api.getEntries(ids)
         val resubscribed = created.flatMap {
-            api.listEntries(ListFilter.ALL, null, it.subscription.id).items
+            api.listEntries(ListFilter.ALL, null, it.subscriptionId).items
         }
         // A subscription the device doesn't know is the Saved subscription created since it last
         // listed them (by the first save): listing them again tells its id, so the page's saved
@@ -347,7 +347,7 @@ class SyncEngine(
                 } +
                     fetched.flatMap { it.subscriptionIds.orEmpty() } +
                     resubscribed.flatMap { it.subscriptionIds.orEmpty() }
-            val known = writer.subscriptionIds() + created.map { it.subscription.id }
+            val known = writer.subscriptionIds() + created.map { it.subscriptionId }
             val unknown = memberships.toSet() - known
             if ((unknown - listedForUnknown).isNotEmpty()) {
                 listSubscriptions()

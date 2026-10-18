@@ -385,6 +385,23 @@ ORDER BY user_entries.entry_id
 FOR NO KEY UPDATE OF user_entries`,
 });
 
+/** `getSubscriptionsByIds` (services/subscriptions.ts). */
+function subscriptionRowsSql(userId: string, subscriptionIds: string[]): string {
+  return `SELECT user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
+  user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
+  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id, statement_timestamp(),
+  COALESCE(json_agg(json_build_object('id', tags.id, 'name', tags.name, 'color', tags.color)
+                    ORDER BY tags.name, tags.id)
+           FILTER (WHERE tags.id IS NOT NULL), '[]'::json) AS tags
+FROM user_feeds
+LEFT JOIN subscription_tags ON subscription_tags.subscription_id = user_feeds.id
+LEFT JOIN tags ON tags.id = subscription_tags.tag_id
+WHERE user_feeds.id IN (${list(subscriptionIds)}) AND user_feeds.user_id = ${q(userId)}
+GROUP BY user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
+  user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
+  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id`;
+}
+
 /** `unsubscribe` (services/subscription-updates.ts), from its existence check to its counts. */
 async function unsubscribeStatements(
   db: ClientBase,
@@ -438,7 +455,7 @@ WHERE user_entries.user_id = ${q(userId)} AND user_entries.entry_id IN (
 WHERE subscription_tags.subscription_id IN (SELECT subscriptions.id FROM subscriptions WHERE ${sub})
 RETURNING subscription_tags.tag_id`,
     },
-    // getSubscriptionDeletionCounts
+    // getBulkEntryRelatedCounts with the former tags
     userCountsSql(userId),
     ...(formerTags.length > 0 ? [tagCountsSql(userId, formerTags)] : []),
   ];
@@ -629,8 +646,9 @@ LIMIT 501`;
       is_new: boolean;
     }>(db, entriesSql)
   ).filter((r) => r.visible);
-  const subsSql = `SELECT subscriptions.*, feeds.*, subscriptions.updated_at AS updated_at_instant
-FROM subscriptions LEFT JOIN feeds ON subscriptions.feed_id = feeds.id
+  const subsSql = `SELECT subscriptions.id, subscriptions.subscribed_at, subscriptions.unsubscribed_at,
+  subscriptions.updated_at AS updated_at_instant
+FROM subscriptions
 WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.updated_at > ${ts(subCursor.ts)}
 ORDER BY subscriptions.updated_at`;
   const activeSubs = (
@@ -662,10 +680,11 @@ ORDER BY subscriptions.updated_at`;
     ...(activeSubs.length > 0
       ? [
           {
-            label: "subscription_tags",
-            sql: `SELECT subscription_tags.subscription_id, tags.id, tags.name, tags.color
-FROM subscription_tags INNER JOIN tags ON tags.id = subscription_tags.tag_id
-WHERE subscription_tags.subscription_id IN (${list(activeSubs.map((s) => s.id))})`,
+            label: "subscription_rows",
+            sql: subscriptionRowsSql(
+              U0,
+              activeSubs.map((s) => s.id)
+            ),
           },
         ]
       : []),
@@ -926,24 +945,7 @@ LIMIT 1`,
     kind: "read",
     source: "services/subscriptions.ts getSubscription",
     prepare: async () => ({
-      statements: [
-        {
-          label: "get",
-          sql: `SELECT user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
-  user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
-  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id,
-  COALESCE(json_agg(json_build_object('id', tags.id, 'name', tags.name, 'color', tags.color))
-           FILTER (WHERE tags.id IS NOT NULL), '[]'::json) AS tags
-FROM user_feeds
-LEFT JOIN subscription_tags ON subscription_tags.subscription_id = user_feeds.id
-LEFT JOIN tags ON tags.id = subscription_tags.tag_id
-WHERE user_feeds.id = ${q(subLarge)} AND user_feeds.user_id = ${q(U0)}
-GROUP BY user_feeds.id, user_feeds.subscribed_at, user_feeds.feed_id, user_feeds.fetch_full_content,
-  user_feeds.type, user_feeds.url, user_feeds.title, user_feeds.original_title, user_feeds.description,
-  user_feeds.site_url, user_feeds.unread_count, user_feeds.greader_stream_id
-LIMIT 1`,
-        },
-      ],
+      statements: [{ label: "get", sql: subscriptionRowsSql(U0, [subLarge]) }],
     }),
   },
   {

@@ -206,6 +206,9 @@ data class EntryMetadata(
     val publishedAt: String? = null,
 )
 
+/**
+ * What `subscription_created` carried before its `row`: a server that predates it sends only this.
+ */
 @Serializable
 data class EventSubscription(
     val id: String,
@@ -213,6 +216,7 @@ data class EventSubscription(
     val tags: List<TagRef>,
 )
 
+/** As [EventSubscription]. */
 @Serializable
 data class EventFeed(
     val url: String? = null,
@@ -269,15 +273,33 @@ sealed interface SyncEvent {
     @Serializable
     @SerialName("subscription_created")
     data class SubscriptionCreated(
-        val subscription: EventSubscription,
-        val feed: EventFeed,
-    ) : SyncEvent
+        val subscriptionId: String,
+        /** The subscription as the server lists it; null from a server that predates it. */
+        val row: Subscription? = null,
+        val subscription: EventSubscription? = null,
+        val feed: EventFeed? = null,
+    ) : SyncEvent {
+        /** [row], or else what an older server sent in its place. */
+        val subscriptionRow: Subscription
+            get() =
+                row
+                    ?: Subscription(
+                        subscriptionId,
+                        type = feed?.type,
+                        url = feed?.url,
+                        title = subscription?.customTitle ?: feed?.title,
+                        originalTitle = feed?.title,
+                        tags = subscription?.tags.orEmpty(),
+                    )
+    }
 
     @Serializable
     @SerialName("subscription_updated")
     data class SubscriptionUpdated(
         val subscriptionId: String,
-        val tags: List<TagRef>,
+        /** As [SubscriptionCreated.row]; without it, [tags] and [customTitle] say what changed. */
+        val row: Subscription? = null,
+        val tags: List<TagRef> = emptyList(),
         val customTitle: String? = null,
     ) : SyncEvent
 

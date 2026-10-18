@@ -28,6 +28,7 @@ import {
   writeSubscriptionCount,
   sidebarSectionOf,
   type SubscriptionListInput,
+  type StampedSubscriptionRow,
   type SubscriptionRow,
 } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
@@ -89,7 +90,7 @@ function applySubscriptionCounts(
  */
 export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
-  subscription: SubscriptionRow,
+  subscription: StampedSubscriptionRow,
   queryClient: QueryClient,
   counts?: UnreadCounts
 ): void {
@@ -109,64 +110,31 @@ export function handleSubscriptionCreated(
 }
 
 /**
- * A subscription's new settings: the whole row from an update/setTags
- * response, or what a subscription_updated event carries. An undefined field
- * is unknown and left as it is.
- */
-type SubscriptionUpdate = Pick<SubscriptionRow, "id" | "tags"> &
-  Partial<Pick<SubscriptionRow, "title" | "fetchFullContent">>;
-
-/**
- * Applies a subscription's new tags, title and settings, from its mutation
- * response or its event. Idempotent, so the acting tab can apply both.
+ * Applies a subscription's new row (tags, title and settings), from its
+ * mutation response or its event. Idempotent, so the acting tab can apply both.
  */
 export function applySubscriptionUpdate(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  update: SubscriptionUpdate
+  row: StampedSubscriptionRow
 ): void {
-  const { id, tags, title, fetchFullContent } = update;
   const db = getLocalDb(queryClient);
-  const stored = db.subscriptions.rows.getSynced(id);
+  const stored = db.subscriptions.rows.getSynced(row.id);
   // Its entries show the same title (the server sends it as their
   // feedTitle), so a rename carries over to the ones already loaded.
-  if (title !== undefined) setSubscriptionEntriesFeedTitle(db.entries, id, title);
-  // The reader reads the setting from the stored subscription, else from the
-  // entry's copy, which only a refetch updates.
-  if (!stored && fetchFullContent !== undefined && !isFullSubscriptionRow(update)) {
-    void utils.entries.get.invalidate();
-  }
+  setSubscriptionEntriesFeedTitle(db.entries, row.id, row.title);
   // The stored row moves between sidebar sections with its tags.
-  if (stored) {
-    patchLiveSubscription(db.subscriptions, id, {
-      tags,
-      ...(title !== undefined && { title }),
-      ...(fetchFullContent !== undefined && { fetchFullContent }),
-    });
-  } else if (isFullSubscriptionRow(update)) {
-    writeLiveSubscriptions(db.subscriptions, [update]);
-  } else {
-    loadSubscriptionForSidebar(
-      utils,
-      queryClient,
-      id,
-      tags.map((tag) => tag.id)
-    );
-  }
-  const tagIds = (row: Pick<SubscriptionRow, "tags">) =>
-    row.tags
+  writeLiveSubscriptions(db.subscriptions, [row]);
+  const tagIds = (subscription: Pick<SubscriptionRow, "tags">) =>
+    subscription.tags
       .map((tag) => tag.id)
       .sort()
       .join();
   // Tag feed counts change with the tags, and the collection picker searches by title.
-  if (!stored || tagIds(stored) !== tagIds(update)) utils.tags.list.invalidate();
-  if (!stored || (title !== undefined && title !== stored.title)) {
+  if (!stored || tagIds(stored) !== tagIds(row)) utils.tags.list.invalidate();
+  if (!stored || row.title !== stored.title) {
     void utils.subscriptions.list.invalidate({ type: "collection" });
   }
-}
-
-function isFullSubscriptionRow(update: SubscriptionUpdate): update is SubscriptionRow {
-  return "originalTitle" in update;
 }
 
 /**

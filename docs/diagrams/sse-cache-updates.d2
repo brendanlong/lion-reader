@@ -86,8 +86,8 @@ redis: Redis Pub/Sub {
       - new_entry for email and saved entries, entry_updated
         for saved (subscriptionId; feedType, server-side
         only; no feedId)
-      - subscription_created (full subscription + feed data + counts)
-      - subscription_updated (tags, customTitle)
+      - subscription_created (the subscription row + counts)
+      - subscription_updated (the subscription row)
       - subscription_deleted (subscriptionId + counts, live path only)
       - entry_state_changed (read/starred + unread counts)
       - tag_created / tag_updated / tag_deleted

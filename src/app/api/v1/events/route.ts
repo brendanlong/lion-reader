@@ -11,7 +11,7 @@
  * - entry_state_changed: Entry read/starred state changed
  * - mark_all_read: A mark-all-read happened, with the absolute counts; clients refetch lists
  * - subscription_created: User subscribed to a new feed
- * - subscription_updated: Subscription properties changed (tags, custom title)
+ * - subscription_updated: Subscription properties changed (tags, title, settings)
  * - subscription_deleted: User unsubscribed from a feed
  * - tag_created: User created a new tag
  * - tag_updated: User updated a tag
