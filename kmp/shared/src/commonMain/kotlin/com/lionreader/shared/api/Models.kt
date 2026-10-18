@@ -121,7 +121,7 @@ const val COLLECTION_TYPE = "collection"
 
 /**
  * [Subscription.type] of the user's Saved subscription, which the server lists once the first save
- * creates it: the app learns its id from that row.
+ * creates it: the app learns its id from that row. Also [EntryListItem.type] of a saved article.
  */
 const val SAVED_TYPE = "saved"
 

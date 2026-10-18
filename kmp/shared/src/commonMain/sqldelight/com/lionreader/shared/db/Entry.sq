@@ -8,8 +8,9 @@ CREATE TABLE entry (
   -- (refreshFeedTitles), and what a server that predates `subscriptionIds`
   -- adds the entry to.
   subscription_id TEXT,
-  -- The server's entry type ('web', 'email', 'saved'…), as it sent it. Nothing
-  -- goes by it: Saved is a subscription like the others.
+  -- The server's entry type ('web', 'email', 'saved'…), as it sent it. Only
+  -- the shown source goes by it (Reader's entrySource); lists don't: Saved is
+  -- a subscription like the others.
   type TEXT NOT NULL,
   url TEXT,
   title TEXT,
@@ -133,7 +134,7 @@ WHERE v.id = ?;
 -- subscriptions' members (subscription_entry). Uncategorized is the untagged
 -- subscriptions on the device, all of them active.
 selectTimeline:
-SELECT id, url, title, author, summary, site_name, feed_title,
+SELECT id, url, title, author, summary, type, site_name, feed_title,
   sort_at, effective_read, effective_starred
 FROM entry_view
 WHERE (:subscriptionId IS NULL
@@ -152,7 +153,7 @@ LIMIT :limit;
 -- one query with a CASE in its ORDER BY: that can't use entry_timeline, so it
 -- sorts every matching entry instead of reading the first page off the index.
 selectTimelineOldestFirst:
-SELECT id, url, title, author, summary, site_name, feed_title,
+SELECT id, url, title, author, summary, type, site_name, feed_title,
   sort_at, effective_read, effective_starred
 FROM entry_view
 WHERE (:subscriptionId IS NULL
@@ -190,7 +191,7 @@ bumpBodyVersion {
 -- Recently Read: entries whose read state changed, latest change first (the
 -- web's order), whichever side made it.
 selectRecentlyRead:
-SELECT id, url, title, author, summary, site_name, feed_title,
+SELECT id, url, title, author, summary, type, site_name, feed_title,
   sort_at, effective_read, effective_starred
 FROM entry_view
 WHERE effective_read_changed_at IS NOT NULL
@@ -198,7 +199,7 @@ ORDER BY effective_read_changed_at DESC, id DESC
 LIMIT :limit;
 
 selectRecentlyReadOldestFirst:
-SELECT id, url, title, author, summary, site_name, feed_title,
+SELECT id, url, title, author, summary, type, site_name, feed_title,
   sort_at, effective_read, effective_starred
 FROM entry_view
 WHERE effective_read_changed_at IS NOT NULL
