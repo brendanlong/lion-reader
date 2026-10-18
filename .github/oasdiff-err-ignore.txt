@@ -9,3 +9,5 @@ GET /entries/{id} removed the required property `entry/feedId` from the response
 POST /entries/{id}/fetch-full-content removed the required property `entry/feedId` from the response with the `200` status
 GET /sync/changes removed the required property `events/items/oneOf[subschema #4: subscription_created]/feed/id` from the response with the `200` status
 GET /sync/changes removed the required property `events/items/oneOf[subschema #4: subscription_created]/subscription/feedId` from the response with the `200` status
+GET /subscriptions removed the required property `savedSubscriptionId` from the response with the `200` status
+GET /sync/changes removed the required property `events/items/oneOf[subschema #1: new_entry]/feedType` from the response with the `200` status

@@ -88,9 +88,7 @@ function entryEvents(stream: SseStream) {
       event,
       entryId: data.entryId,
       subscriptionId: data.subscriptionId,
-      feedType: data.feedType,
       feedTitle: (data.entry as { feedTitle?: string } | undefined)?.feedTitle,
-      // The entry's own type, which replaces feedType in #1846 phase 9.
       type: (data.entry as { type?: string } | undefined)?.type,
     }))
   );
@@ -166,7 +164,6 @@ describe("SSE entry events", () => {
             event: "new_entry",
             entryId: email.entryId,
             subscriptionId: emailSubscriptionId,
-            feedType: "email",
             feedTitle: "My Newsletter",
             type: "email",
           },
@@ -175,7 +172,6 @@ describe("SSE entry events", () => {
             event: "new_entry",
             entryId: saved.id,
             subscriptionId: await getSavedSubscriptionId(db, userId),
-            feedType: "saved",
             feedTitle: "Saved Articles",
             type: "saved",
           },
@@ -183,7 +179,6 @@ describe("SSE entry events", () => {
             event: "entry_updated",
             entryId: saved.id,
             subscriptionId: null,
-            feedType: undefined,
             feedTitle: undefined,
             type: undefined,
           },
@@ -191,13 +186,14 @@ describe("SSE entry events", () => {
             event: "new_entry",
             entryId: webEntryId,
             subscriptionId: webSubscriptionId,
-            feedType: "web",
             feedTitle: undefined,
             type: undefined,
           },
         ])
       );
       expect(stream.events("entry_updated")[0].metadata).toMatchObject({ title: "Renamed" });
+      // Clients read the entry's own type; events name no feed (#1846).
+      expect(stream.text).not.toContain("feedType");
 
       await waitForMarker(otherUserId, otherStream);
       expect(entryEvents(otherStream)).toEqual([]);

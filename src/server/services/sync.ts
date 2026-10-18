@@ -38,7 +38,10 @@ import {
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
-import { isCollectionSubscription, isListedSubscription } from "@/server/services/subscriptions";
+import {
+  isCollectionSubscription,
+  isUserManagedSubscription,
+} from "@/server/services/subscriptions";
 
 // ============================================================================
 // Helpers
@@ -243,14 +246,15 @@ export async function currentSyncCursors(
       LIMIT 1
     `),
 
-    // Subscriptions: max(updated_at) from ALL listed subscriptions (active and
-    // removed); updated_at is set when unsubscribing, so this covers both cases
+    // Subscriptions: max(updated_at) from ALL subscriptions (active and
+    // removed) but Saved; updated_at is set when unsubscribing, so this covers
+    // both cases
     db
       .select({
         max: sql`MAX(${subscriptions.updatedAt})`.mapWith(parseTimestamptzOrNull),
       })
       .from(subscriptions)
-      .where(and(eq(subscriptions.userId, userId), isListedSubscription())),
+      .where(and(eq(subscriptions.userId, userId), isUserManagedSubscription())),
 
     // Tags: max(updated_at) - captures creates, updates, and soft deletes
     db
@@ -697,7 +701,9 @@ export async function collectSyncEvents(
       .where(
         and(
           eq(subscriptions.userId, userId),
-          isListedSubscription(),
+          // Saved is never announced, live or here: a first save creates it,
+          // and clients learn it from subscriptions.list.
+          isUserManagedSubscription(),
           sql`${subscriptions.updatedAt} > ${subscriptionsCursor}::timestamptz`
         )
       )

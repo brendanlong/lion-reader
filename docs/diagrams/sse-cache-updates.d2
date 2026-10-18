@@ -69,7 +69,7 @@ redis: Redis Pub/Sub {
 
       Events:
       - new_entry (feedId, entryId, feedType,
-        entry list payload: title/author/summary/url/
+        entry list payload: type/title/author/summary/url/
         publishedAt/fetchedAt/siteName/feedTitle)
       - entry_updated (feedId, entryId, metadata)
     |
@@ -84,8 +84,8 @@ redis: Redis Pub/Sub {
 
       Events:
       - new_entry for email and saved entries, entry_updated
-        for saved (subscriptionId, null for saved; feedType;
-        no feedId)
+        for saved (subscriptionId; feedType, server-side
+        only; no feedId)
       - subscription_created (full subscription + feed data + counts)
       - subscription_updated (tags, customTitle)
       - subscription_deleted (subscriptionId + counts, live path only)
@@ -135,6 +135,7 @@ sse-endpoint: SSE Endpoint {
       - new_entry: subscriptionIds = [subscriptionId]
         (a new entry's one membership); the entry payload
         carries its type (display only)
+      - feedId and feedType stay server-side: neither is sent
 
       Other User Events:
       - Forward directly
@@ -359,7 +360,7 @@ frontend.event-source -> frontend.handle-event: Named events {
 # CONNECTIONS - Frontend to Cache Operations
 # ==============================================================================
 
-frontend.handle-event -> cache-ops.new-entry-handler: new_entry + feedType {
+frontend.handle-event -> cache-ops.new-entry-handler: new_entry {
   style.stroke: "#ea580c"
 }
 frontend.handle-event -> cache-ops.entry-updated-handler: entry_updated {

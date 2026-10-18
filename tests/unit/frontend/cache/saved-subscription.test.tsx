@@ -15,7 +15,11 @@ import { handleSyncEvent } from "@/lib/cache/event-handlers";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderHookWithTrpc } from "../../../utils/component-test-helpers";
-import { createCounts, createNewEntryEvent } from "../../../utils/cache-test-helpers";
+import {
+  createCounts,
+  createNewEntryEvent,
+  savedSubscriptionRow,
+} from "../../../utils/cache-test-helpers";
 
 afterEach(() => {
   cleanup();
@@ -29,7 +33,6 @@ function savedEvent(entryId: string, day: number, read = false) {
     entryId,
     subscriptionId: "sub-saved",
     subscriptionIds: ["sub-saved"],
-    feedType: "saved",
     counts: createCounts(),
     entry: {
       url: `https://example.com/${entryId}`,
@@ -48,7 +51,8 @@ function savedEvent(entryId: string, day: number, read = false) {
 
 /**
  * The app as it starts before the user has saved anything, with the Saved list
- * loaded (empty). `server.savedSubscriptionId` is what the server answers.
+ * loaded (empty). `server.savedSubscriptionId` is the saved subscription the
+ * server lists.
  */
 async function setup() {
   const server: { savedSubscriptionId: string | null } = { savedSubscriptionId: null };
@@ -57,8 +61,10 @@ async function setup() {
     {
       handlers: {
         "subscriptions.list": () => ({
-          items: [],
-          savedSubscriptionId: server.savedSubscriptionId,
+          items:
+            server.savedSubscriptionId === null
+              ? []
+              : [savedSubscriptionRow(server.savedSubscriptionId)],
         }),
       },
     }
@@ -117,14 +123,11 @@ describe("the saved subscription", () => {
     deliver(savedEvent("first", 1));
     await waitFor(() => expect(ids()).toEqual(["first"]));
 
-    // A sidebar section's page whose fetch predates the save.
+    // A listing of saved subscriptions whose fetch predates the save.
     act(() => {
       queryClient.setQueryData(
-        [
-          ["subscriptions", "list"],
-          { input: { uncategorized: true, limit: 50 }, type: "infinite" },
-        ],
-        { pages: [{ items: [], savedSubscriptionId: null }], pageParams: [undefined] }
+        [["subscriptions", "list"], { input: SAVED_SUBSCRIPTION_LIST_INPUT, type: "query" }],
+        { items: [] }
       );
     });
     deliver(savedEvent("second", 2));

@@ -24,7 +24,6 @@ import {
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
 import type { MarkReadEntryState } from "@/server/services/entry-state";
-import type { EntryType } from "@/lib/entry-types";
 import type { NewEntryListData } from "@/lib/events/schemas";
 
 const VISIBLE_MEMBERSHIPS = entryMemberships({
@@ -39,7 +38,6 @@ const VISIBLE_MEMBERSHIPS = entryMemberships({
  */
 interface EntryStateListData {
   subscriptionId: string | null;
-  feedType: EntryType;
   entry: NewEntryListData;
 }
 
@@ -79,11 +77,7 @@ async function fetchUnreadListData(
   for (const row of rows) {
     const entry = entryListPayload(row, row.feedTitle);
     if (!entry) continue;
-    result.set(row.id, {
-      subscriptionId: row.subscriptionId,
-      feedType: row.type,
-      entry,
-    });
+    result.set(row.id, { subscriptionId: row.subscriptionId, entry });
   }
   return result;
 }

@@ -32,7 +32,7 @@ export const entryMetadataSchema = z.object({
 
 /**
  * Entry list-item data for new_entry events. Carries everything (beyond the
- * event's own entryId/subscriptionId/feedType/updatedAt) needed to
+ * event's own entryId/subscriptionId/updatedAt) needed to
  * insert the entry into cached entries.list pages without a refetch. Extends
  * entryMetadataSchema (the entry_updated payload) with the extra list fields.
  *
@@ -43,8 +43,7 @@ export const entryMetadataSchema = z.object({
  */
 export const newEntryListDataSchema = entryMetadataSchema.extend({
   // The entry's own type, for display only (a saved article shows its site
-  // name); list membership comes from `subscriptionIds` (#1846). The web
-  // client reads this, not the event's `feedType`, which the Android app reads.
+  // name); list membership comes from `subscriptionIds` (#1846).
   type: z.enum(ENTRY_TYPES),
   fetchedAt: z.string(),
   siteName: z.string().nullable(),
@@ -225,7 +224,6 @@ export const newEntryEventSchema = z.object({
   entryId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
-  feedType: z.enum(ENTRY_TYPES),
   // Absolute unread counts from the server, computed per-user at emit time.
   // The client sets these directly rather than applying a +1 delta, so a
   // new_entry delivered by both the live SSE stream and a reconnect catch-up
@@ -271,7 +269,6 @@ export const entryStateChangedEventSchema = z.object({
   // (nothing to insert), from star/unstar, for spam, and when the publisher's
   // lookup failed; the client then falls back to the stored row.
   subscriptionId: z.string().nullable().optional(),
-  feedType: z.enum(ENTRY_TYPES).optional(),
   entry: newEntryListDataSchema.optional(),
   subscriptionIds: subscriptionIdsSchema,
 });

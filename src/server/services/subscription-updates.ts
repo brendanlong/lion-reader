@@ -25,7 +25,7 @@ import { getSubscriptionDeletionCounts, type BulkUnreadCounts } from "@/server/s
 import {
   clearedCustomTitle,
   getSubscription,
-  isListedSubscription,
+  isUserManagedSubscription,
   lockSubscriptionMembers,
   type Subscription,
   type Tag,
@@ -81,7 +81,7 @@ export interface UpdateSubscriptionParams {
 }
 
 /**
- * Updates one of the user's listed subscriptions. A collection's name is
+ * Updates one of the user's subscriptions, never Saved. A collection's name is
  * unique among the user's active collections ignoring case
  * (COLLECTION_NAME_TAKEN otherwise). Bumps `updated_at` and publishes
  * subscription_updated only when a value actually changes (#1160).
@@ -143,7 +143,8 @@ export async function updateSubscription(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        isListedSubscription()
+        // The saved subscription can't be renamed (#1846): not found.
+        isUserManagedSubscription()
       )
     )
     .returning({
@@ -206,8 +207,7 @@ async function changeSubscriptionTags(
   change: { set: string[] } | { add: string[]; remove: string[] }
 ): Promise<void> {
   const addedTagIds = [...new Set("set" in change ? change.set : change.add)];
-  // The saved subscription can't be tagged (#1846): like any subscription the
-  // user can't see, it's not found.
+  // The saved subscription can't be tagged (#1846), so it's not found.
   const [existingSubscription] = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
@@ -216,7 +216,7 @@ async function changeSubscriptionTags(
         eq(subscriptions.id, subscriptionId),
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
-        isListedSubscription()
+        isUserManagedSubscription()
       )
     )
     .limit(1);
@@ -343,7 +343,7 @@ export async function unsubscribe(
         eq(subscriptions.userId, userId),
         isNull(subscriptions.unsubscribedAt),
         // The saved subscription can't be unsubscribed (#1846).
-        isListedSubscription()
+        isUserManagedSubscription()
       )
     )
     .limit(1);

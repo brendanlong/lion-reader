@@ -4813,17 +4813,10 @@
                     },
                     "nextCursor": {
                       "type": "string"
-                    },
-                    "savedSubscriptionId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
                     }
                   },
                   "required": [
-                    "items",
-                    "savedSubscriptionId"
+                    "items"
                   ],
                   "additionalProperties": false
                 }
@@ -12892,14 +12885,6 @@
                               "updatedAt": {
                                 "type": "string"
                               },
-                              "feedType": {
-                                "type": "string",
-                                "enum": [
-                                  "web",
-                                  "email",
-                                  "saved"
-                                ]
-                              },
                               "counts": {
                                 "type": "object",
                                 "properties": {
@@ -13102,8 +13087,7 @@
                               "subscriptionIds",
                               "entryId",
                               "timestamp",
-                              "updatedAt",
-                              "feedType"
+                              "updatedAt"
                             ],
                             "additionalProperties": false,
                             "title": "new_entry"
@@ -13330,14 +13314,6 @@
                                 "type": [
                                   "string",
                                   "null"
-                                ]
-                              },
-                              "feedType": {
-                                "type": "string",
-                                "enum": [
-                                  "web",
-                                  "email",
-                                  "saved"
                                 ]
                               },
                               "entry": {

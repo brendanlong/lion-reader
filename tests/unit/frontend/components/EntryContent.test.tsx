@@ -26,7 +26,7 @@ import {
   stubMemoryLocalStorage,
   type ProcedureHandlers,
 } from "../../../utils/component-test-helpers";
-import { createSubscriptionRow } from "../../../utils/cache-test-helpers";
+import { createSubscriptionRow, savedSubscriptionRow } from "../../../utils/cache-test-helpers";
 import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
 vi.mock("sonner", () => ({
@@ -82,7 +82,7 @@ function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
     "entries.get": (input) => ({ entry: createEntry({ id: (input as { id: string }).id }) }),
     "summarization.isAvailable": () => ({ available: false }),
-    "subscriptions.list": () => ({ items: [], savedSubscriptionId: "saved-sub" }),
+    "subscriptions.list": () => ({ items: [savedSubscriptionRow("saved-sub")] }),
     "entries.markRead": (input) => {
       const entries = (input as { entries: { id: string }[] }).entries;
       return {

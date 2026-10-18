@@ -92,7 +92,8 @@ export async function listGreaderSubscriptions(
     subscriptionsService.listAllSubscriptionsWithStreamIds(db, userId),
     getSavedSubscription(db, userId),
   ]);
-  const listed = all.filter((sub) => sub.type !== "collection");
+  // The saved subscription is appended below as "Saved Articles".
+  const listed = all.filter((sub) => sub.type !== "collection" && sub.type !== "saved");
   return saved ? [...listed, saved] : listed;
 }
 
