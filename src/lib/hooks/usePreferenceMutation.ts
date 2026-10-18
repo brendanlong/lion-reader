@@ -40,6 +40,10 @@ function invalidateDependents(utils: TRPCClientUtils, update: PreferencesUpdate)
   if (update.narrationModel !== undefined) {
     void utils.narration.isAiTextProcessingAvailable.invalidate();
   }
+  if (update.showSpam !== undefined) {
+    // The server filters lists by it; counts exclude spam either way.
+    void utils.entries.list.invalidate();
+  }
 }
 
 export interface UsePreferenceMutationResult {

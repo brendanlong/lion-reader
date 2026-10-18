@@ -33,6 +33,7 @@ function handlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
     "summarization.listModels": () => ({ models: [], defaultModelId: "m" }),
     "narration.isAiTextProcessingAvailable": () => ({ available: false }),
     "narration.listModels": () => ({ models: [], defaultModelId: "m" }),
+    "entries.list": () => ({ items: [] }),
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ function useHookWithDependents() {
   trpc.summarization.listModels.useQuery();
   trpc.narration.isAiTextProcessingAvailable.useQuery();
   trpc.narration.listModels.useQuery();
+  trpc.entries.list.useQuery({});
   return { preferences: preferences.data, mutation: usePreferenceMutation() };
 }
 
@@ -90,7 +92,7 @@ describe("usePreferenceMutation", () => {
       { narrationModel: "anthropic:claude" },
       ["narration.isAiTextProcessingAvailable"],
     ],
-    ["the spam preference refetches nothing", { showSpam: true }, []],
+    ["the spam preference refetches entry lists", { showSpam: true }, ["entries.list"]],
   ])("%s", async (_name, update, refetched) => {
     const { result, callsFor } = renderHookWithTrpc(useHookWithDependents, {
       handlers: handlers(),
@@ -100,6 +102,7 @@ describe("usePreferenceMutation", () => {
       "summarization.listModels",
       "narration.isAiTextProcessingAvailable",
       "narration.listModels",
+      "entries.list",
     ];
     await waitFor(() => {
       for (const path of dependents) expect(callsFor(path)).toHaveLength(1);
