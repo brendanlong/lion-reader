@@ -20,6 +20,7 @@ import {
 } from "@/lib/events/sync-session";
 import type { SyncCursors } from "@/lib/events/cursors";
 import type { SyncEvent } from "@/lib/events/schemas";
+import { createEntryStateChangedEvent } from "../../../utils/cache-test-helpers";
 
 const INITIAL_CURSORS: SyncCursors = {
   entries: "2026-01-01T00:00:00Z",
@@ -33,20 +34,11 @@ let entryCounter = 0;
 /** An entry_state_changed event at `updatedAt` (entry ids sort in creation order). */
 function entryEvent(updatedAt: string): SyncEvent {
   entryCounter += 1;
-  return {
-    type: "entry_state_changed",
+  return createEntryStateChangedEvent({
     entryId: `00000000-0000-7000-8000-${String(entryCounter).padStart(12, "0")}`,
-    read: true,
-    starred: false,
     timestamp: updatedAt,
     updatedAt,
-    counts: {
-      all: { unread: 0 },
-      starred: { unread: 0 },
-      subscriptions: [],
-      tags: [],
-    },
-  };
+  });
 }
 
 /** Feeds events through the reducer, as the hook does. */

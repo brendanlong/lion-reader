@@ -10,8 +10,10 @@ import {
 const counts = {
   all: { unread: 3 },
   starred: { unread: 0 },
-  subscriptions: [{ id: "sub-1", unread: 3 }],
+  saved: { unread: 0 },
+  subscriptions: [{ id: "sub-1", unread: 3, tagIds: [] }],
   tags: [],
+  asOf: "2026-10-01T12:00:00.123456Z",
 };
 
 const updatedAt = "2026-10-01T12:00:00.123456Z";

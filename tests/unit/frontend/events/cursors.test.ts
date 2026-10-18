@@ -5,6 +5,10 @@
 import { describe, it, expect } from "vitest";
 import { advanceCursors, cursorTypeForEvent, type SyncCursors } from "@/lib/events/cursors";
 import type { SyncEvent } from "@/lib/events/schemas";
+import {
+  createEntryStateChangedEvent,
+  createMarkAllReadEvent,
+} from "../../../utils/cache-test-helpers";
 
 const EMPTY_CURSORS: SyncCursors = {
   entries: null,
@@ -14,15 +18,7 @@ const EMPTY_CURSORS: SyncCursors = {
 };
 
 function entryEvent(updatedAt: string, entryId = "entry-1"): SyncEvent {
-  return {
-    type: "entry_state_changed",
-    entryId,
-    read: true,
-    starred: false,
-    counts: { all: { unread: 0 }, starred: { unread: 0 }, subscriptions: [], tags: [] },
-    timestamp: updatedAt,
-    updatedAt,
-  };
+  return createEntryStateChangedEvent({ entryId, timestamp: updatedAt, updatedAt });
 }
 
 function subscriptionEvent(updatedAt: string): SyncEvent {
@@ -44,12 +40,7 @@ function tagEvent(updatedAt: string): SyncEvent {
 }
 
 function markAllReadEvent(updatedAt: string, entryId = "entry-1"): SyncEvent {
-  return {
-    type: "mark_all_read",
-    timestamp: updatedAt,
-    updatedAt,
-    entryId,
-  };
+  return createMarkAllReadEvent({ timestamp: updatedAt, updatedAt, entryId });
 }
 
 function importEvent(): SyncEvent {

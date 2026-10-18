@@ -53,13 +53,6 @@ describe("parseUserEvent", () => {
     expect(parseUserEvent(JSON.stringify(event))).toMatchObject({ type: event.type });
   });
 
-  it("keeps the feedType the previous release's SSE servers require on entry_updated", () => {
-    const event = { ...base, type: "entry_updated", subscriptionId: null, entryId: "e", metadata };
-    expect(parseUserEvent(JSON.stringify({ ...event, feedType: "email" }))).toMatchObject({
-      feedType: "email",
-    });
-  });
-
   it("rejects an event without a timestamp", () => {
     const event = { userId: "user-1", updatedAt: base.updatedAt, type: "tag_deleted", tagId: "t" };
     expect(parseUserEvent(JSON.stringify(event))).toBeNull();

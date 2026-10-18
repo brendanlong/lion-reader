@@ -330,22 +330,14 @@ export function handleSubscriptionDeleted(
 /**
  * Applies a mark-all-read, from its mutation response or its event: the
  * absolute counts it carries, and a refetch of the entry lists, whose read
- * state it changed for possibly thousands of entries. A previous release sent
- * no counts; then the count caches are refetched instead.
+ * state it changed for possibly thousands of entries.
  */
 export function handleMarkAllRead(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  counts: UnreadCounts | undefined
+  counts: UnreadCounts
 ): void {
-  if (counts) {
-    applyUnreadCounts(utils, queryClient, counts);
-  } else {
-    utils.entries.count.invalidate();
-    utils.tags.list.invalidate();
-    utils.subscriptions.list.invalidate();
-    utils.subscriptions.get.invalidate();
-  }
+  applyUnreadCounts(utils, queryClient, counts);
   utils.entries.list.invalidate();
 }
 
@@ -390,8 +382,7 @@ export function applyUnreadCounts(
     [
       { list: { all: true }, unread: counts.all.unread },
       { list: { starred: true }, unread: counts.starred.unread },
-      // A previous release's web/email events omit Saved.
-      ...(counts.saved ? [{ list: { saved: true } as const, unread: counts.saved.unread }] : []),
+      { list: { saved: true }, unread: counts.saved.unread },
       ...counts.tags.map((tag) => ({ list: { tagId: tag.id }, unread: tag.unread })),
       ...(counts.uncategorized
         ? [{ list: { uncategorized: true } as const, unread: counts.uncategorized.unread }]
@@ -407,16 +398,16 @@ export function applyUnreadCounts(
 
 /**
  * Fetches a subscription the store lacks into it, when a loaded sidebar
- * section may list it: one with these tags (unknown tags count as maybe).
- * One that only collapsed tags would list isn't fetched; expanding them loads it.
+ * section may list it: one with these tags. One that only collapsed tags
+ * would list isn't fetched; expanding them loads it.
  */
 function loadSubscriptionForSidebar(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
   id: string,
-  tagIds: string[] | undefined
+  tagIds: string[]
 ): void {
-  if (tagIds && !isSidebarSectionLoaded(queryClient, tagIds)) return;
+  if (!isSidebarSectionLoaded(queryClient, tagIds)) return;
   utils.subscriptions.get.fetch({ id }, { staleTime: 0 }).catch(() => {
     // Gone already, or offline: nothing to list.
   });

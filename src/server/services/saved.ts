@@ -940,7 +940,6 @@ export async function saveArticle(
       type: "entry_updated",
       userId,
       subscriptionId: null,
-      feedType: "saved",
       entryId: oldEntry.id,
       updatedAt: now,
       metadata: toEntryMetadata({

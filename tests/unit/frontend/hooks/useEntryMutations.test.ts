@@ -21,7 +21,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
 import { useEntryMutations } from "@/lib/hooks/useEntryMutations";
-import type { UnreadCounts } from "@/lib/cache/operations";
 import { getLocalDb } from "@/lib/local-db/local-db";
 import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
 import { setServerEntryState, upsertServerEntries, type EntryRow } from "@/lib/local-db/entries";
@@ -30,6 +29,7 @@ import {
   type RenderWithTrpcOptions,
 } from "../../../utils/component-test-helpers";
 import {
+  createCounts,
   invalidatedProcedures,
   spyOnInvalidate,
   storedCount,
@@ -44,24 +44,13 @@ afterEach(() => {
 
 const fixedDate = new Date("2026-07-05T00:00:00.000Z");
 
-function bulkCounts(overrides: Partial<UnreadCounts> = {}): UnreadCounts {
-  return {
-    all: { unread: 0 },
-    starred: { unread: 0 },
-    saved: { unread: 0 },
-    subscriptions: [],
-    tags: [],
-    ...overrides,
-  };
-}
-
 const t1 = new Date("2026-07-05T00:00:01.000Z");
 const t2 = new Date("2026-07-05T00:00:02.000Z");
 
 function markReadResponse(id: string, state: { read: boolean; starred: boolean }, updatedAt: Date) {
   return {
     entries: [{ id, subscriptionId: "sub-1", type: "web" as const, ...state, updatedAt }],
-    counts: bulkCounts(),
+    counts: createCounts(),
   };
 }
 
@@ -103,7 +92,7 @@ describe("useEntryMutations markRead", () => {
         starred: false,
         updatedAt: fixedDate,
       })),
-      counts: bulkCounts(),
+      counts: createCounts(),
     }));
 
     const { result, callsFor } = renderHookWithTrpc(
@@ -129,7 +118,7 @@ describe("useEntryMutations markRead", () => {
   it("applies the server's absolute counts to the cache on success", async () => {
     // Distinctive non-zero counts so a no-op/broken onSuccess (React Query
     // swallows onSuccess throws) can't pass — the cache would stay undefined.
-    const counts = bulkCounts({
+    const counts = createCounts({
       all: { unread: 5 },
       starred: { unread: 3 },
       saved: { unread: 2 },
@@ -202,7 +191,7 @@ describe("useEntryMutations markRead", () => {
                 starred: false,
                 updatedAt: fixedDate,
               })),
-              counts: bulkCounts(),
+              counts: createCounts(),
             };
           },
         },
@@ -265,7 +254,7 @@ describe("useEntryMutations markAllRead", () => {
       () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
       {
         handlers: {
-          "entries.markAllRead": () => ({ count: 2, counts: bulkCounts({ all: { unread: 5 } }) }),
+          "entries.markAllRead": () => ({ count: 2, counts: createCounts({ all: { unread: 5 } }) }),
         },
       }
     );
@@ -317,7 +306,7 @@ describe("useEntryMutations star/unstar", () => {
             const typed = input as { id: string; starred: boolean };
             return {
               entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
-              counts: bulkCounts({ all: { unread: 4 }, starred: { unread: 7 } }),
+              counts: createCounts({ all: { unread: 4 }, starred: { unread: 7 } }),
             };
           },
         },
@@ -347,42 +336,6 @@ describe("useEntryMutations star/unstar", () => {
     expect(storedCount(queryClient, {})).toEqual({ unread: 4 });
   });
 
-  it("skips a previous-release single-subscription counts shape without failing", async () => {
-    // During a canary/rollback window the server may still return the old
-    // setStarred counts shape (no `subscriptions` array). The hook must skip it
-    // (the entry_state_changed event sets the counts) rather than throw.
-    const { result, queryClient, callsFor } = renderHookWithTrpc(
-      () => ({ mutations: useEntryMutations(), utils: trpc.useUtils() }),
-      {
-        handlers: {
-          "entries.setStarred": (input) => {
-            const typed = input as { id: string; starred: boolean };
-            return {
-              entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
-              counts: {
-                all: { unread: 4 },
-                starred: { unread: 7 },
-                subscription: { id: "sub-1", unread: 2 },
-              } as never,
-            };
-          },
-        },
-      }
-    );
-
-    act(() => {
-      result.current.mutations.star("e1");
-    });
-
-    await waitFor(() => expect(callsFor("entries.setStarred")).toHaveLength(1));
-    // The mutation settled successfully...
-    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
-    // ...without an error toast or any counts written from the old shape.
-    expect(toast.error).not.toHaveBeenCalled();
-    expect(storedCount(queryClient, { starredOnly: true })).toBeUndefined();
-    expect(storedCount(queryClient, {})).toBeUndefined();
-  });
-
   it("toggleStar unstars an entry that is currently starred", async () => {
     const { result, callsFor } = renderHookWithTrpc(() => useEntryMutations(), {
       handlers: {
@@ -390,7 +343,7 @@ describe("useEntryMutations star/unstar", () => {
           const typed = input as { id: string; starred: boolean };
           return {
             entry: { id: typed.id, read: false, starred: typed.starred, updatedAt: fixedDate },
-            counts: bulkCounts(),
+            counts: createCounts(),
           };
         },
       },
@@ -565,7 +518,7 @@ describe("useEntryMutations concurrent mutations", () => {
       "entries.markRead": markRead.handler,
       "entries.setStarred": (input: { id: string }) => ({
         entry: { id: input.id, read: false, starred: true, updatedAt: t1 },
-        counts: bulkCounts(),
+        counts: createCounts(),
       }),
     });
 

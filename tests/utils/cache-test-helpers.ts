@@ -11,6 +11,7 @@ import { createTRPCClient, httpLink } from "@trpc/client";
 import { createTRPCQueryUtils } from "@trpc/react-query";
 import superjson from "superjson";
 import type { SyncEvent } from "@/lib/events/schemas";
+import type { UnreadCounts } from "@/lib/cache/operations";
 import type { AppRouter } from "@/server/trpc/root";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import type { EntryType } from "@/lib/entry-types";
@@ -446,12 +447,37 @@ export function seedCacheState(
 
 const defaultTimestamp = "2024-07-01T00:00:00.000Z";
 
+/** The `countsAsOfSchema` stamp of every count the factories build. */
+const defaultCountsAsOf = "2024-07-01T00:00:00.000000Z";
+
+type CountsOverrides = Partial<Omit<UnreadCounts, "subscriptions">> & {
+  subscriptions?: Array<{ id: string; unread: number; tagIds?: string[] }>;
+};
+
+/** Absolute counts as the server sends them; a subscription without `tagIds` is untagged. */
+export function createCounts({
+  subscriptions = [],
+  ...overrides
+}: CountsOverrides = {}): UnreadCounts {
+  return {
+    all: { unread: 0 },
+    starred: { unread: 0 },
+    saved: { unread: 0 },
+    tags: [],
+    asOf: defaultCountsAsOf,
+    ...overrides,
+    subscriptions: subscriptions.map(({ tagIds = [], ...sub }) => ({ ...sub, tagIds })),
+  };
+}
+
 export function createNewEntryEvent(
   overrides: Partial<Extract<SyncEvent, { type: "new_entry" }>> = {}
 ): Extract<SyncEvent, { type: "new_entry" }> {
   return {
     type: "new_entry",
     subscriptionId: "sub-1",
+    // A new entry's one membership is its origin.
+    subscriptionIds: overrides.subscriptionId === null ? [] : [overrides.subscriptionId ?? "sub-1"],
     entryId: "new-entry-1",
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
@@ -488,12 +514,8 @@ export function createEntryStateChangedEvent(
     entryId: "entry-1",
     read: true,
     starred: true,
-    counts: {
-      all: { unread: 0 },
-      starred: { unread: 0 },
-      subscriptions: [],
-      tags: [],
-    },
+    counts: createCounts(),
+    subscriptionIds: ["sub-1"],
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
     ...overrides,
@@ -508,6 +530,7 @@ export function createMarkAllReadEvent(
     timestamp: defaultTimestamp,
     updatedAt: defaultTimestamp,
     entryId: "entry-1",
+    counts: createCounts(),
     ...overrides,
   };
 }

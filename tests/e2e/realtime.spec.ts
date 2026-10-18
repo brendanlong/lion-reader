@@ -402,7 +402,7 @@ test("entry_state_changed event syncs read state and counts across lists without
 }) => {
   // "Second post" is starred (still unread) so the Starred count is visible
   // and we can verify it's unaffected by marking a different entry read.
-  const { user, taggedFeed, tagId, taggedEntries, trpcCalls } = await seedAndOpenAll(
+  const { user, taggedFeed, taggedEntries, trpcCalls } = await seedAndOpenAll(
     page,
     baseURL!,
     ({ user }) => getUserEventsChannel(user.id),
@@ -425,6 +425,9 @@ test("entry_state_changed event syncs read state and counts across lists without
   // Simulate another device marking "First post" read (as entries.markRead
   // does): update the database, then publish the change with absolute counts.
   const updatedAt = await markEntryRead(db, user.id, firstPost.id);
+  const counts = await getBulkEntryRelatedCounts(db, user.id, [
+    { id: firstPost.id, subscriptionId: null },
+  ]);
   await publishUserEvent({
     type: "entry_state_changed",
     userId: user.id,
@@ -432,13 +435,8 @@ test("entry_state_changed event syncs read state and counts across lists without
     read: true,
     starred: false,
     updatedAt,
-    counts: {
-      all: { unread: 2 },
-      starred: { unread: 1 },
-      subscriptions: [{ id: taggedFeed.subscriptionId, unread: 1 }],
-      tags: [{ id: tagId, unread: 1 }],
-      uncategorized: { unread: 1 },
-    },
+    counts,
+    subscriptionIds: [taggedFeed.subscriptionId],
   });
 
   // Read state and affected counts update from the event's absolute values...
@@ -548,9 +546,7 @@ test("mark_all_read event clears badges from its counts and refetches the unread
 // Regression test: when the LAST unread entry of a subscription is read, the
 // server-computed counts must still include the subscription and its tag
 // (with unread 0). The grouped count queries used to omit lists that dropped
-// to zero, so the sidebar badges stayed stale until a refresh. Unlike the
-// test above, the event counts here come from the real counts service (as
-// entries.markRead computes them), not a hand-written literal.
+// to zero, so the sidebar badges stayed stale until a refresh.
 test("entry_state_changed for the last unread entry clears subscription and tag badges", async ({
   page,
   baseURL,
@@ -589,6 +585,7 @@ test("entry_state_changed for the last unread entry clears subscription and tag 
     starred: false,
     updatedAt,
     counts,
+    subscriptionIds: [taggedFeed.subscriptionId],
   });
 
   // The sidebar defaults to unread-only mode, so once the subscription's

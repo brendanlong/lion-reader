@@ -25,7 +25,12 @@ import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
 import { verifySubscriptionOwnership } from "@/server/services/entry-filters";
 import { toServerTime } from "@/server/services/client-time";
-import { countsAsOfSchema, legacyFeedId, legacyFeedIdSchema } from "@/lib/events/schemas";
+import {
+  countsAsOfSchema,
+  legacyFeedId,
+  legacyFeedIdSchema,
+  unreadCountsSchema,
+} from "@/lib/events/schemas";
 import { ENTRY_TYPES } from "@/lib/entry-types";
 
 // Endpoints exposed via the MCP tool surface, plus the ones the native app needs.
@@ -198,29 +203,6 @@ const entryMutationResultSchema = z.object({
 });
 
 /**
- * Schema for unread counts returned from entry mutations (markRead, setStarred).
- * Contains absolute counts for all affected lists.
- */
-const bulkUnreadCountsSchema = z.object({
-  // Always present
-  all: z.object({ unread: z.number() }),
-  starred: z.object({ unread: z.number() }),
-  saved: z.object({ unread: z.number() }),
-
-  // Per-subscription counts (only subscriptions that were affected)
-  subscriptions: z.array(
-    z.object({ id: z.string(), unread: z.number(), tagIds: z.array(z.string()) })
-  ),
-
-  // Per-tag counts (only tags that were affected)
-  tags: z.array(z.object({ id: z.string(), unread: z.number() })),
-
-  // Uncategorized count (if any affected subscription has no tags)
-  uncategorized: z.object({ unread: z.number() }).optional(),
-  asOf: countsAsOfSchema,
-});
-
-/**
  * Result of a bulk read/star write: the final state of every requested entry the
  * user can still see (an id missing here no longer exists for them), for cache
  * updates and offline-outbox reconciliation.
@@ -243,7 +225,7 @@ const bulkStateChangeOutputSchema = z.object({
   // Absolute counts for all affected lists. Absent when no value actually
   // flipped (same-value re-assert) — the client's cached counts are already
   // correct (issue #1118).
-  counts: bulkUnreadCountsSchema.optional(),
+  counts: unreadCountsSchema.optional(),
 });
 
 /**
@@ -254,7 +236,7 @@ const setStarredOutputSchema = z.object({
   entry: entryMutationResultSchema,
   // Absent when the starred value didn't actually flip (same-value re-assert)
   // — the client's cached counts are already correct (issue #1118).
-  counts: bulkUnreadCountsSchema.optional(),
+  counts: unreadCountsSchema.optional(),
 });
 
 // ============================================================================
@@ -509,7 +491,7 @@ export const entriesRouter = createTRPCRouter({
         clientSentAt: clientSentAtSchema,
       })
     )
-    .output(z.object({ count: z.number(), counts: bulkUnreadCountsSchema.optional() }))
+    .output(z.object({ count: z.number(), counts: unreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 

@@ -33,28 +33,22 @@ import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 import type { NewEntryListData, SyncEvent } from "@/lib/events/schemas";
 export type { SyncEvent } from "@/lib/events/schemas";
 
-/**
- * Builds the entry row for an event's list-item payload. A previous release's
- * events carry no `subscriptionIds` (a new entry's one membership is then its
- * origin) and no payload `type` (the event's `feedType` stands in).
- */
+/** Builds the entry row for an event's list-item payload. */
 function toEntryRow(
   event: {
     entryId: string;
     subscriptionId?: string | null;
-    subscriptionIds?: string[];
-    feedType: EntryRow["type"];
+    subscriptionIds: string[];
     updatedAt: string;
   },
   entry: NewEntryListData,
   state: { read: boolean; starred: boolean }
 ): EntryRow {
-  const subscriptionId = event.subscriptionId ?? null;
   return {
     id: event.entryId,
-    subscriptionId,
-    subscriptionIds: event.subscriptionIds ?? (subscriptionId ? [subscriptionId] : []),
-    type: entry.type ?? event.feedType,
+    subscriptionId: event.subscriptionId ?? null,
+    subscriptionIds: event.subscriptionIds,
+    type: entry.type,
     url: entry.url,
     title: entry.title,
     author: entry.author,
@@ -117,17 +111,16 @@ export function handleSyncEvent(
   switch (event.type) {
     case "new_entry":
       // Set absolute unread counts from the server (idempotent — a new_entry
-      // re-delivered by a reconnect catch-up sync can't double-count). Older
-      // servers may omit counts during a deploy; skip the update then and let
-      // it self-heal on the next count-bearing event or refetch.
+      // re-delivered by a reconnect catch-up sync can't double-count). The
+      // server omits them when it failed to read them; they self-heal on the
+      // next count-bearing event or refetch.
       if (event.counts) {
         applyUnreadCounts(utils, queryClient, event.counts);
       }
 
       // Insert the entry into loaded lists so it appears live (deduped, so
-      // SSE + catch-up double delivery is safe). Older servers omit the entry
-      // payload during a deploy; the entry then appears on the next
-      // navigation-triggered list refresh instead. read/starred are set only
+      // SSE + catch-up double delivery is safe). Spam has no payload: the
+      // default entries.list filters it out. read/starred are set only
       // by the catch-up sync path (the entry may have changed state on
       // another device while this client was offline); the live path omits
       // them because a brand-new entry is always unread/unstarred.
@@ -154,7 +147,6 @@ export function handleSyncEvent(
       break;
 
     case "entry_state_changed": {
-      const feedType = event.entry?.type ?? event.feedType;
       const state = { read: event.read, starred: event.starred };
       applyEntryStateChanges(utils, queryClient, {
         entries: [
@@ -163,12 +155,9 @@ export function handleSyncEvent(
             ...state,
             subscriptionIds: event.subscriptionIds,
             updatedAt: new Date(event.updatedAt),
-            // Sent with an unread flip; older servers and star/unstar of an
-            // unread entry fall back to the stored row.
-            ...(event.entry &&
-              feedType && {
-                listItem: toEntryRow({ ...event, feedType }, event.entry, state),
-              }),
+            // Sent with an unread flip; star/unstar of an unread entry falls
+            // back to the stored row.
+            ...(event.entry && { listItem: toEntryRow(event, event.entry, state) }),
           },
         ],
         counts: event.counts,

@@ -4515,7 +4515,8 @@
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -4558,8 +4559,10 @@
                       "required": [
                         "all",
                         "starred",
+                        "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -5366,7 +5369,8 @@
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -5409,8 +5413,10 @@
                       "required": [
                         "all",
                         "starred",
+                        "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -9291,7 +9297,8 @@
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -9334,8 +9341,10 @@
                       "required": [
                         "all",
                         "starred",
+                        "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     },
@@ -9618,7 +9627,8 @@
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -9661,8 +9671,10 @@
                       "required": [
                         "all",
                         "starred",
+                        "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -9840,7 +9852,8 @@
                             },
                             "required": [
                               "id",
-                              "unread"
+                              "unread",
+                              "tagIds"
                             ],
                             "additionalProperties": false
                           }
@@ -9883,8 +9896,10 @@
                       "required": [
                         "all",
                         "starred",
+                        "saved",
                         "subscriptions",
-                        "tags"
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -12968,7 +12983,8 @@
                                       },
                                       "required": [
                                         "id",
-                                        "unread"
+                                        "unread",
+                                        "tagIds"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -13011,8 +13027,10 @@
                                 "required": [
                                   "all",
                                   "starred",
+                                  "saved",
                                   "subscriptions",
-                                  "tags"
+                                  "tags",
+                                  "asOf"
                                 ],
                                 "additionalProperties": false
                               },
@@ -13094,6 +13112,7 @@
                                   "summary",
                                   "url",
                                   "publishedAt",
+                                  "type",
                                   "fetchedAt",
                                   "siteName",
                                   "feedTitle"
@@ -13104,6 +13123,7 @@
                             "required": [
                               "type",
                               "subscriptionId",
+                              "subscriptionIds",
                               "entryId",
                               "timestamp",
                               "updatedAt",
@@ -13273,7 +13293,8 @@
                                       },
                                       "required": [
                                         "id",
-                                        "unread"
+                                        "unread",
+                                        "tagIds"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -13316,8 +13337,10 @@
                                 "required": [
                                   "all",
                                   "starred",
+                                  "saved",
                                   "subscriptions",
-                                  "tags"
+                                  "tags",
+                                  "asOf"
                                 ],
                                 "additionalProperties": false
                               },
@@ -13419,6 +13442,7 @@
                                   "summary",
                                   "url",
                                   "publishedAt",
+                                  "type",
                                   "fetchedAt",
                                   "siteName",
                                   "feedTitle"
@@ -13439,7 +13463,8 @@
                               "starred",
                               "counts",
                               "timestamp",
-                              "updatedAt"
+                              "updatedAt",
+                              "subscriptionIds"
                             ],
                             "additionalProperties": false,
                             "title": "entry_state_changed"
@@ -13631,7 +13656,8 @@
                                       },
                                       "required": [
                                         "id",
-                                        "unread"
+                                        "unread",
+                                        "tagIds"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -13674,8 +13700,10 @@
                                 "required": [
                                   "all",
                                   "starred",
+                                  "saved",
                                   "subscriptions",
-                                  "tags"
+                                  "tags",
+                                  "asOf"
                                 ],
                                 "additionalProperties": false
                               }
@@ -13766,7 +13794,8 @@
                                       },
                                       "required": [
                                         "id",
-                                        "unread"
+                                        "unread",
+                                        "tagIds"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -13809,8 +13838,10 @@
                                 "required": [
                                   "all",
                                   "starred",
+                                  "saved",
                                   "subscriptions",
-                                  "tags"
+                                  "tags",
+                                  "asOf"
                                 ],
                                 "additionalProperties": false
                               }

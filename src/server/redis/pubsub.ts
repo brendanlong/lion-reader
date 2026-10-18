@@ -49,8 +49,7 @@ const feedEventSchema = z.discriminatedUnion("type", [
     updatedAt: z.string(),
     feedType: z.literal("web"),
     // List-item data forwarded to clients so they can insert the entry into
-    // cached lists. Optional so events published by a previous release (no
-    // entry data) still parse during a deploy window.
+    // cached lists; absent for spam.
     entry: newEntryListDataSchema.extend({ type: z.literal("web") }).optional(),
   }),
   z.object({
@@ -75,19 +74,13 @@ const userEventSchema = z.discriminatedUnion("type", [
   // Entry events for sources with exactly one recipient (email, saved), which
   // go to that user's channel instead of a feed channel. They carry what the
   // SSE route adds to a web feed's events itself: the user's subscriptionId
-  // (null for saved articles).
-  newEntryEventSchema.extend({
+  // (null for saved articles). It derives a new entry's `subscriptionIds`.
+  newEntryEventSchema.omit({ subscriptionIds: true }).extend({
     userId: z.string(),
     ...serverTimestamp,
     feedType: z.enum(["email", "saved"]),
   }),
-  entryUpdatedEventSchema.extend({
-    userId: z.string(),
-    ...serverTimestamp,
-    // Unread, but the previous release's SSE servers require it: drop it the
-    // release after this one.
-    feedType: z.enum(["email", "saved"]).optional(),
-  }),
+  entryUpdatedEventSchema.extend({ userId: z.string(), ...serverTimestamp }),
   subscriptionCreatedEventSchema.extend({
     userId: z.string(),
     ...serverTimestamp,

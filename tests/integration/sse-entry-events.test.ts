@@ -137,7 +137,6 @@ describe("SSE entry events", () => {
         type: "entry_updated",
         userId,
         subscriptionId: null,
-        feedType: "saved",
         entryId: saved.id,
         updatedAt: new Date(),
         metadata: { title: "Renamed", author: null, summary: null, url: null, publishedAt: null },

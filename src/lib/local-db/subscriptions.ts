@@ -102,12 +102,12 @@ export function writeSubscriptionCount(
   store: SubscriptionStore,
   id: string,
   unread: number,
-  asOf: string | undefined
+  asOf: string
 ): boolean {
   const row = store.rows.getSynced(id);
   if (!row) return false;
   if (!isCountsAsOfNewer(asOf, store.countAsOf.get(id))) return true;
-  if (asOf !== undefined) store.countAsOf.set(id, asOf);
+  store.countAsOf.set(id, asOf);
   if (row.unreadCount !== unread) store.rows.upsert([{ ...row, unreadCount: unread }]);
   return true;
 }
