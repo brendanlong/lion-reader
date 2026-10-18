@@ -3,10 +3,10 @@
  * data (query results, mutation responses, SSE events), with user mutations
  * layered on top as optimistic transactions.
  *
- * Writes use `begin({ immediate: true })` so server data lands even while an
- * optimistic transaction for the same row is in flight — the overlay keeps
- * showing the user's intent, and when the transaction settles (or fails) the
- * row falls back to the newest server state rather than a stale snapshot.
+ * Server writes made while an optimistic transaction is persisting are held by
+ * TanStack DB and applied when it settles, so the overlay keeps showing the
+ * user's intent and the row then falls back to the newest server state rather
+ * than a stale snapshot. `getSynced` reflects held writes immediately.
  */
 
 import { createCollection, type Collection, type SyncConfig } from "@tanstack/db";
@@ -58,7 +58,7 @@ export function createSyncedCollection<T extends object>(options: {
     upsert: (rows) => {
       if (rows.length === 0) return;
       const { begin, write, commit } = getParams();
-      begin({ immediate: true });
+      begin();
       for (const row of rows) {
         const key = options.getKey(row);
         write({ type: synced.has(key) ? "update" : "insert", value: row });
@@ -70,7 +70,7 @@ export function createSyncedCollection<T extends object>(options: {
       const present = keys.filter((key) => synced.has(key));
       if (present.length === 0) return;
       const { begin, write, commit } = getParams();
-      begin({ immediate: true });
+      begin();
       for (const key of present) {
         write({ type: "delete", key });
         synced.delete(key);
