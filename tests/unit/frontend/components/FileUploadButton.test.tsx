@@ -3,7 +3,8 @@
  */
 
 /**
- * Accessibility tests for FileUploadButton's drop zone.
+ * Tests for FileUploadButton: its drop zone's accessibility, and how an
+ * upload's response updates the client.
  *
  * The drop zone used to be a `<div onClick>` wrapping a `display: none` file
  * input, which put the only upload affordance out of reach of the keyboard and
@@ -17,6 +18,12 @@ import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
+import {
+  createCounts,
+  invalidatedProcedures,
+  spyOnInvalidate,
+  storedCount,
+} from "../../../utils/cache-test-helpers";
 
 // sonner's toast is a side-effecting singleton (renders a portal); stub it so
 // tests assert on component behavior, not the toast implementation.
@@ -25,7 +32,10 @@ vi.mock("sonner", () => ({
 }));
 
 const handlers: ProcedureHandlers = {
-  "saved.uploadFile": () => ({ id: "entry-1" }),
+  "saved.uploadFile": () => ({
+    article: { id: "entry-1", title: "notes" },
+    counts: createCounts({ all: { unread: 3 }, saved: { unread: 2 } }),
+  }),
 };
 
 function openDialog() {
@@ -34,6 +44,15 @@ function openDialog() {
 
 function getFileInput(): HTMLInputElement {
   return screen.getByLabelText("Choose a file to upload") as HTMLInputElement;
+}
+
+async function uploadMarkdownFile(): Promise<void> {
+  const file = new File(["# hello"], "notes.md", { type: "text/markdown" });
+  fireEvent.change(getFileInput(), { target: { files: [file] } });
+  expect(await screen.findByText("notes.md")).toBeInTheDocument();
+  const upload = screen.getByRole("button", { name: "Upload" });
+  await waitFor(() => expect(upload).toBeEnabled());
+  fireEvent.click(upload);
 }
 
 describe("FileUploadButton drop zone accessibility", () => {
@@ -73,14 +92,7 @@ describe("FileUploadButton drop zone accessibility", () => {
     // only usable control in the dialog besides Cancel.
     expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
 
-    const file = new File(["# hello"], "notes.md", { type: "text/markdown" });
-    fireEvent.change(getFileInput(), { target: { files: [file] } });
-
-    expect(await screen.findByText("notes.md")).toBeInTheDocument();
-
-    const upload = screen.getByRole("button", { name: "Upload" });
-    await waitFor(() => expect(upload).toBeEnabled());
-    fireEvent.click(upload);
+    await uploadMarkdownFile();
 
     await waitFor(() => expect(callsFor("saved.uploadFile")).toHaveLength(1));
   });
@@ -107,5 +119,19 @@ describe("FileUploadButton drop zone accessibility", () => {
 
     expect(await screen.findByText(/Unsupported file type/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
+  });
+});
+
+describe("FileUploadButton upload response", () => {
+  it("applies the response's counts, leaving the Saved list to the new_entry event", async () => {
+    const { queryClient } = renderWithTrpc(<FileUploadButton />, { handlers });
+    const invalidate = spyOnInvalidate(queryClient);
+    openDialog();
+
+    await uploadMarkdownFile();
+
+    await waitFor(() => expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 }));
+    expect(storedCount(queryClient, {})).toEqual({ unread: 3 });
+    expect(invalidatedProcedures(invalidate)).toEqual([]);
   });
 });
