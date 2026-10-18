@@ -43,8 +43,8 @@ export const entryMetadataSchema = z.object({
  */
 export const newEntryListDataSchema = entryMetadataSchema.extend({
   // The entry's own type, for display only (a saved article shows its site
-  // name); list membership comes from `subscriptionIds` (#1846). Replaces the
-  // event's `feedType`, which #1846 phase 9 drops.
+  // name); list membership comes from `subscriptionIds` (#1846). The web
+  // client reads this, not the event's `feedType`, which the Android app reads.
   type: z.enum(ENTRY_TYPES),
   fetchedAt: z.string(),
   siteName: z.string().nullable(),
