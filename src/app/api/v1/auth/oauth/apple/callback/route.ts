@@ -15,6 +15,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { appUrl } from "@/server/config/env";
 import { validateAppleCallback, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
@@ -38,8 +39,6 @@ const REDIRECT_STATUS = 303;
  * - id_token: JWT token (we use this from validateAppleCallback)
  */
 export async function POST(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
   try {
     // Check if Apple OAuth is enabled
     if (!isAppleOAuthEnabled()) {

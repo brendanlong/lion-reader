@@ -15,6 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { appUrl } from "@/server/config/env";
 import { eq, and } from "drizzle-orm";
 import { validateGoogleCallback, isGoogleOAuthEnabled } from "@/server/auth/oauth/google";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
@@ -40,8 +41,6 @@ import {
  * - state: CSRF protection state
  */
 export async function GET(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
   try {
     // Check if Google OAuth is enabled
     if (!isGoogleOAuthEnabled()) {
