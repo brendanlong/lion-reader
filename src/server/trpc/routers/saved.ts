@@ -10,7 +10,7 @@
  * - entries.list({ type: 'saved' }) for listing
  * - entries.get for fetching single articles
  * - entries.count({ type: 'saved' }) for counts
- * - entries.markRead, entries.star, entries.unstar for mutations
+ * - entries.markRead, entries.setStarred for mutations
  *
  * This router only handles:
  * - saved.save: Save a URL (content extraction in services/saved.ts)
