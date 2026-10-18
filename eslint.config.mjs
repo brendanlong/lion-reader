@@ -134,8 +134,9 @@ const eslintConfig = defineConfig([
     },
   },
   // Restricted imports for all of src/. They share one block (plus one
-  // override per exempt file) because a later `no-restricted-imports` block
-  // for the same files replaces an earlier one's paths instead of merging.
+  // override per exempt file or directory) because a later
+  // `no-restricted-imports` block for the same files replaces an earlier one's
+  // paths instead of merging: each override re-lists the rules it keeps.
   {
     files: ["src/**/*.{ts,tsx}"],
     rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [NARRATION_INTERNALS]),

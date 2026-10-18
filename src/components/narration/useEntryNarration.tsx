@@ -28,9 +28,11 @@ interface UseEntryNarrationOptions {
   feedTitle: string;
   /** The content variant on screen (`selectDisplayedContent`). */
   content: string | null;
-  // The current view state, so the server narrates (and maps highlights
-  // against) exactly the variant on screen, not a fixed
-  // full/cleaned/original priority.
+  /**
+   * The current view state, so the server narrates (and maps highlights
+   * against) exactly the variant on screen, not a fixed
+   * full/cleaned/original priority.
+   */
   showFullContent: boolean;
   showOriginal: boolean;
   prerecordedVoice?: PrerecordedVoice;

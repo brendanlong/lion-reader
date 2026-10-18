@@ -200,7 +200,7 @@ export function EntryContentBody({
   const { className: textSizeClass, style: textStyle } = useEntryTextStyles();
 
   // Image prefetching is owned by EntryContentRenderer (shared with the demo
-  // reader); contentRef is still forwarded there for narration highlighting.
+  // reader); contentRef is forwarded there and to useEntryNarration.
 
   const {
     onTouchStart: handleTouchStart,
