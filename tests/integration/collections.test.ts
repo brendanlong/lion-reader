@@ -21,13 +21,13 @@ import {
   createCollection,
   removeEntriesFromCollection,
 } from "../../src/server/services/collections";
+import { getEntries } from "../../src/server/services/entry-reads";
+import { listEntries } from "../../src/server/services/entries";
 import {
-  getEntries,
-  listEntries,
   markAllEntriesRead,
   markEntriesRead,
   updateEntryStarred,
-} from "../../src/server/services/entries";
+} from "../../src/server/services/entry-state";
 import { getBulkEntryRelatedCounts, getGlobalUnreadCounts } from "../../src/server/services/counts";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { deleteSavedArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";

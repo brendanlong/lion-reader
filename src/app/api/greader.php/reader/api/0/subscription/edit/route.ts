@@ -25,12 +25,12 @@ import { parseStreamId } from "@/server/google-reader/streams";
 import { resolveTagByName } from "@/server/google-reader/tags";
 import { db } from "@/server/db";
 import * as tagsService from "@/server/services/tags";
+import { clearedCustomTitle } from "@/server/services/subscriptions";
 import {
-  clearedCustomTitle,
   editSubscriptionTags,
   unsubscribe,
   updateSubscription,
-} from "@/server/services/subscriptions";
+} from "@/server/services/subscription-updates";
 
 export const dynamic = "force-dynamic";
 

@@ -46,15 +46,17 @@ import {
   countEntries,
   type CountEntriesParams,
   listEntries,
+} from "../../src/server/services/entries";
+import {
   markAllEntriesRead,
   markEntriesRead,
   updateEntryStarred,
-} from "../../src/server/services/entries";
+} from "../../src/server/services/entry-state";
 import {
   createSubscription,
   migrateSubscriptionsToExistingFeed,
-  setSubscriptionTags,
-} from "../../src/server/services/subscriptions";
+} from "../../src/server/services/subscribe";
+import { setSubscriptionTags } from "../../src/server/services/subscription-updates";
 import { deleteTag } from "../../src/server/services/tags";
 import { deleteSavedArticle, saveArticle, uploadArticle } from "../../src/server/services/saved";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";

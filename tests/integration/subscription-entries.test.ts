@@ -28,11 +28,8 @@ import {
   createCollection,
   removeEntriesFromCollection,
 } from "../../src/server/services/collections";
-import {
-  createSubscription,
-  mergeSubscriptionIntoFeed,
-  unsubscribe,
-} from "../../src/server/services/subscriptions";
+import { createSubscription, mergeSubscriptionIntoFeed } from "../../src/server/services/subscribe";
+import { unsubscribe } from "../../src/server/services/subscription-updates";
 import { uploadArticle } from "../../src/server/services/saved";
 import { getGlobalUnreadCounts } from "../../src/server/services/counts";
 import {

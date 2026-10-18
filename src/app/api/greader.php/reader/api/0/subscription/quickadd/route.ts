@@ -18,7 +18,7 @@ import {
   withClientErrors,
 } from "@/server/google-reader/parse";
 import { feedStreamId } from "@/server/google-reader/id";
-import { subscribeToUrl } from "@/server/services/subscriptions";
+import { subscribeToUrl } from "@/server/services/subscribe";
 import { feedUrlSchema } from "@/server/trpc/validation";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { db } from "@/server/db";

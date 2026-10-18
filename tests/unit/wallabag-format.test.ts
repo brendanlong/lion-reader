@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "vitest";
 import { formatEntryFull, formatSavedArticle, formatTag } from "../../src/server/wallabag/format";
-import type { EntryFull } from "../../src/server/services/entries";
+import type { EntryFull } from "../../src/server/services/entry-reads";
 import type { SavedArticle } from "../../src/server/services/saved";
 
 describe("formatSavedArticle", () => {

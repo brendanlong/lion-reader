@@ -17,17 +17,12 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import {
-  getEntry,
-  listEntries,
-  markAllEntriesRead,
-  markEntriesRead,
-} from "../../src/server/services/entries";
+import { getEntry } from "../../src/server/services/entry-reads";
+import { listEntries } from "../../src/server/services/entries";
+import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entry-state";
 import { uploadArticle } from "../../src/server/services/saved";
-import {
-  getSavedSubscriptionId,
-  migrateSubscriptionsToExistingFeed,
-} from "../../src/server/services/subscriptions";
+import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
+import { migrateSubscriptionsToExistingFeed } from "../../src/server/services/subscribe";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,

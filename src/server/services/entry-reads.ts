@@ -1,0 +1,573 @@
+/**
+ * Reads of whole entries by id (the app's entry view, the external APIs'
+ * entries, the AI paths' raw content) and the account export's pages. Every
+ * read sanitizes the content it returns except `getOwnedEntryRawContent`.
+ */
+
+import { eq, and, asc, inArray, gt, sql, or, type SQL } from "drizzle-orm";
+import type { db as dbType } from "@/server/db";
+import { entries, feeds, subscriptions, userEntries, visibleEntries } from "@/server/db/schema";
+import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
+import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
+import { showsFullContent } from "@/lib/entry-content";
+import { errors } from "@/server/errors";
+import {
+  entryFeedTitleSql,
+  entryOriginOn,
+  VISIBLE_MEMBERSHIPS,
+  VISIBLE_ROW,
+} from "./entry-filters";
+import type { EntryType } from "@/lib/entry-types";
+
+/**
+ * Full entry with content. `contentOriginal`/`contentCleaned` are the
+ * sanitized versions of the stored content — raw feed HTML never leaves the
+ * service layer.
+ */
+export interface EntryFull {
+  id: string;
+  /** See EntryListItem (`entries.ts`). */
+  subscriptionId: string | null;
+  subscriptionIds: string[];
+  type: EntryType;
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  contentOriginal: string | null;
+  contentCleaned: string | null;
+  /**
+   * The sanitized fetched full article when the entry view shows it instead of
+   * the feed content (`showsFullContent`), else null. External clients serve
+   * this first so they match the web app.
+   */
+  fullContent: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  updatedAt: Date;
+  /** See EntryListItem (`entries.ts`). */
+  entryUpdatedAt: Date;
+  read: boolean;
+  starred: boolean;
+  feedTitle: string | null;
+  feedUrl: string | null;
+  siteName: string | null;
+  unsubscribeUrl: string | null;
+}
+
+/**
+ * Every full-entry read selects these and maps them to its output shape
+ * (`toFullEntry` for the app's entry view, `toEntryFull` for the external
+ * APIs). The content columns are **raw** (untrusted): both mappers sanitize
+ * them, so raw feed HTML never leaves this service.
+ */
+const entryReadSelectFields = {
+  id: visibleEntries.id,
+  type: visibleEntries.type,
+  url: visibleEntries.url,
+  title: visibleEntries.title,
+  author: visibleEntries.author,
+  contentOriginal: visibleEntries.contentOriginal,
+  contentCleaned: visibleEntries.contentCleaned,
+  fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+  fullContentError: visibleEntries.fullContentError,
+  summary: visibleEntries.summary,
+  publishedAt: visibleEntries.publishedAt,
+  fetchedAt: visibleEntries.fetchedAt,
+  read: visibleEntries.read,
+  starred: visibleEntries.starred,
+  readChangedAt: visibleEntries.readChangedAt,
+  updatedAt: visibleEntries.updatedAt,
+  entryUpdatedAt: visibleEntries.entryUpdatedAt,
+  contentHash: visibleEntries.contentHash,
+  subscriptionId: subscriptions.id,
+  subscriptionIds: VISIBLE_MEMBERSHIPS.subscriptionIds,
+  fetchFullContent: subscriptions.fetchFullContent,
+  siteName: visibleEntries.siteName,
+  feedTitle: entryFeedTitleSql(),
+  feedUrl: feeds.url,
+  unsubscribeUrl: visibleEntries.unsubscribeUrl,
+};
+
+/**
+ * Which fetched full articles a read loads: all of them (the app's entry view
+ * can toggle between full and feed content), or only those the entry view
+ * shows by default, for reads that serve just that variant. The bodies sit on
+ * the shared entry row, so another subscriber's fetch fills them in either
+ * way.
+ */
+type FullContentScope = "all" | "shown";
+
+/**
+ * The full-content bodies, raw. The original is the whole fetched page and is
+ * served only when there's no cleaned version, so it isn't loaded otherwise.
+ */
+function fullContentBodyFields(scope: FullContentScope) {
+  const loaded = scope === "all" ? sql`true` : sql`${subscriptions.fetchFullContent}`;
+  return {
+    fullContentOriginal: sql<
+      string | null
+    >`CASE WHEN ${loaded} AND ${visibleEntries.fullContentCleaned} IS NULL THEN ${visibleEntries.fullContentOriginal} END`,
+    fullContentCleaned: sql<
+      string | null
+    >`CASE WHEN ${loaded} THEN ${visibleEntries.fullContentCleaned} END`,
+  };
+}
+
+function selectEntryRows(db: typeof dbType, where: SQL | undefined, scope: FullContentScope) {
+  return db
+    .select({ ...entryReadSelectFields, ...fullContentBodyFields(scope) })
+    .from(visibleEntries)
+    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
+    .where(where);
+}
+
+type EntryRow = Awaited<ReturnType<typeof selectEntryRows>>[number];
+
+/**
+ * Reads the user's visible entries among `entryIds` and maps each to an output
+ * shape, in input order, skipping ids the user can't see. Mapping sanitizes,
+ * so it runs with a small concurrency bound: a batch of large bodies mustn't
+ * flood the thread pool.
+ */
+async function readEntries<T extends { id: string }>(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[],
+  scope: FullContentScope,
+  toOutput: (row: EntryRow) => Promise<T>
+): Promise<T[]> {
+  if (entryIds.length === 0) return [];
+  const rows = await selectEntryRows(
+    db,
+    and(inArray(visibleEntries.id, entryIds), eq(visibleEntries.userId, userId)),
+    scope
+  );
+  const mapped = await mapWithConcurrency(rows, GET_ENTRIES_SANITIZE_CONCURRENCY, toOutput);
+  const byId = new Map(mapped.map((entry) => [entry.id, entry]));
+  return entryIds.flatMap((id) => byId.get(id) ?? []);
+}
+
+/** Like {@link readEntries} for one entry. @throws entryNotFound */
+async function readEntry<T>(
+  db: typeof dbType,
+  userId: string,
+  entryId: string,
+  scope: FullContentScope,
+  toOutput: (row: EntryRow) => Promise<T>
+): Promise<T> {
+  const [row] = await selectEntryRows(
+    db,
+    and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)),
+    scope
+  ).limit(1);
+  if (!row) {
+    throw errors.entryNotFound();
+  }
+  return toOutput(row);
+}
+
+/**
+ * The stored content family of an entry, plus the fields the AI paths key their
+ * caches on (`contentHash`/`fullContentHash`) and prompt with (`title`).
+ * Deliberately one shape for both callers even though each reads a subset: the
+ * point of the shared read is that they can't drift, and the row it saves is
+ * noise next to the LLM call that follows.
+ */
+const entryRawContentSelectFields = {
+  title: visibleEntries.title,
+  // Raw (untrusted) content — see getOwnedEntryRawContent.
+  contentOriginal: visibleEntries.contentOriginal,
+  contentCleaned: visibleEntries.contentCleaned,
+  contentHash: visibleEntries.contentHash,
+  fullContentOriginal: visibleEntries.fullContentOriginal,
+  fullContentCleaned: visibleEntries.fullContentCleaned,
+  fullContentHash: visibleEntries.fullContentHash,
+};
+
+export interface OwnedEntryRawContent {
+  title: string | null;
+  contentOriginal: string | null;
+  contentCleaned: string | null;
+  contentHash: string;
+  fullContentOriginal: string | null;
+  fullContentCleaned: string | null;
+  fullContentHash: string | null;
+}
+
+/**
+ * Fetch an entry's stored content for a user, enforcing ownership through
+ * `visible_entries` — the same visibility rule `listEntries`/`getEntry` apply,
+ * so an entry the user can't see in a list can't be reached through a side
+ * door either (a raw `user_entries` join would let e.g. an unsubscribed,
+ * unstarred entry through).
+ *
+ * Unlike every other read out of this service, the content is **raw**: this is
+ * for callers that hash it or feed it to an LLM, not ones that return it.
+ * Anything that reaches a client must be sanitized first (`sanitizeEntryHtml`;
+ * the ordinary read path does it in `toFullEntry`).
+ *
+ * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
+ */
+export async function getOwnedEntryRawContent(
+  db: typeof dbType,
+  userId: string,
+  entryId: string
+): Promise<OwnedEntryRawContent> {
+  const result = await db
+    .select(entryRawContentSelectFields)
+    .from(visibleEntries)
+    .where(and(eq(visibleEntries.id, entryId), eq(visibleEntries.userId, userId)))
+    .limit(1);
+
+  if (result.length === 0) {
+    throw errors.entryNotFound();
+  }
+
+  return result[0];
+}
+
+/**
+ * Sanitize both content families of a full entry for display.
+ *
+ * Entry bodies come from untrusted feeds and are rendered via
+ * `dangerouslySetInnerHTML` (and served to external clients such as MCP,
+ * Google Reader, and Wallabag), so they must be sanitized. As of issue #1282
+ * sanitization is not persisted — the native sanitizer is fast enough to run on
+ * every read — so the read query selects the raw columns and this sanitizes
+ * them (large bodies off the event loop; the full-content original only when
+ * cleaned is NULL). See `sanitizeEntryContentFamily`.
+ */
+async function sanitizeFullEntryContent(row: {
+  contentOriginal: string | null;
+  contentCleaned: string | null;
+  fullContentOriginal: string | null;
+  fullContentCleaned: string | null;
+}) {
+  const [content, fullContent] = await Promise.all([
+    sanitizeEntryContentFamily("content", {
+      original: row.contentOriginal,
+      cleaned: row.contentCleaned,
+    }),
+    sanitizeEntryContentFamily("fullContent", {
+      original: row.fullContentOriginal,
+      cleaned: row.fullContentCleaned,
+    }),
+  ]);
+
+  return {
+    contentOriginal: content.original,
+    contentCleaned: content.cleaned,
+    fullContentOriginal: fullContent.original,
+    fullContentCleaned: fullContent.cleaned,
+  };
+}
+
+/**
+ * The app's full-entry view of a row: both content families sanitized (the
+ * view can toggle back to feed content) and the subscription's
+ * fetchFullContent setting.
+ */
+async function toFullEntry(row: EntryRow) {
+  const {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    contentHash,
+    contentOriginal,
+    contentCleaned,
+    fullContentOriginal,
+    fullContentCleaned,
+    ...rest
+  } = row;
+
+  const content = await sanitizeFullEntryContent({
+    contentOriginal,
+    contentCleaned,
+    fullContentOriginal,
+    fullContentCleaned,
+  });
+
+  return {
+    ...rest,
+    contentOriginal: content.contentOriginal,
+    contentCleaned: content.contentCleaned,
+    fullContentOriginal: content.fullContentOriginal,
+    fullContentCleaned: content.fullContentCleaned,
+    fetchFullContent: row.fetchFullContent ?? false,
+  };
+}
+
+export type FullEntry = Awaited<ReturnType<typeof toFullEntry>>;
+
+/**
+ * One entry in the app's full-entry view (`entries.get`), plus its content
+ * hash, which keys caches built from the content (narration) but isn't shown.
+ *
+ * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
+ */
+export async function getFullEntry(
+  db: typeof dbType,
+  userId: string,
+  entryId: string
+): Promise<{ entry: FullEntry; contentHash: string }> {
+  return readEntry(db, userId, entryId, "all", async (row) => ({
+    entry: await toFullEntry(row),
+    contentHash: row.contentHash,
+  }));
+}
+
+/**
+ * {@link getFullEntry}'s entries for many ids at once (the native app's offline
+ * download). Ids the user can't see are skipped; order follows the input.
+ */
+export async function getFullEntries(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[]
+): Promise<FullEntry[]> {
+  return readEntries(db, userId, entryIds, "all", toFullEntry);
+}
+
+export interface ExportableEntry {
+  id: string;
+  type: EntryType;
+  url: string | null;
+  title: string | null;
+  author: string | null;
+  siteName: string | null;
+  /** The subscription's name for the feed; null for saved articles. */
+  feedTitle: string | null;
+  summary: string | null;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  read: boolean;
+  starred: boolean;
+  /** The sanitized body the entry view shows by default. */
+  contentHtml: string | null;
+}
+
+/**
+ * The fetched full article, for reads that serve the variant the entry view
+ * shows rather than both families. Needs `subscriptions` LEFT JOINed on the
+ * entry's subscription. The body is raw (untrusted) and loaded only for
+ * subscriptions that fetch full content, reduced to the variant served so a
+ * whole-page original is never loaded alongside its cleaned version.
+ */
+const shownFullContentSelectFields = {
+  fullContent: sql<
+    string | null
+  >`CASE WHEN ${subscriptions.fetchFullContent} THEN COALESCE(${visibleEntries.fullContentCleaned}, ${visibleEntries.fullContentOriginal}) END`,
+  fullContentFetchedAt: visibleEntries.fullContentFetchedAt,
+  fullContentError: visibleEntries.fullContentError,
+  fetchFullContent: subscriptions.fetchFullContent,
+};
+
+interface ShownFullContentFields {
+  fullContent: string | null;
+  fullContentFetchedAt: Date | null;
+  fullContentError: string | null;
+  fetchFullContent: boolean | null;
+}
+
+/**
+ * Splits a row selected with `shownFullContentSelectFields` into the raw full
+ * content the entry view shows (null when it shows feed content, per
+ * `showsFullContent`) and the rest of the row.
+ */
+function takeShownFullContent<T extends ShownFullContentFields>(
+  row: T
+): [string | null, Omit<T, keyof ShownFullContentFields>] {
+  const { fullContent, fullContentFetchedAt, fullContentError, fetchFullContent, ...rest } = row;
+  const shown = showsFullContent({
+    fullContentCleaned: fullContent,
+    fullContentFetchedAt,
+    fullContentError,
+    fetchFullContent,
+  });
+  return [shown ? fullContent : null, rest];
+}
+
+/**
+ * One page of the entries an account export keeps (`library-export.ts`): saved
+ * and uploaded articles, newsletter issues, and starred entries of any type,
+ * limited like every read to what `visible_entries` shows. Pages are keyed on
+ * entry id; pass the previous page's `nextAfterId` until it comes back null.
+ *
+ * The page's ids come from `user_entries` directly so its primary key bounds
+ * each page's scan (a range predicate on the view's id doesn't reach it); a
+ * page can hold fewer entries than `limit` when some aren't visible.
+ */
+export async function listExportableEntries(
+  db: typeof dbType,
+  userId: string,
+  { afterId, limit }: { afterId: string | null; limit: number }
+): Promise<{ entries: ExportableEntry[]; nextAfterId: string | null }> {
+  const idRows = await db
+    .select({ id: userEntries.entryId })
+    .from(userEntries)
+    .innerJoin(entries, eq(entries.id, userEntries.entryId))
+    .where(
+      and(
+        eq(userEntries.userId, userId),
+        afterId ? gt(userEntries.entryId, afterId) : undefined,
+        or(
+          eq(userEntries.starred, true),
+          and(inArray(entries.type, ["saved", "email"]), eq(entries.isSpam, false))
+        )
+      )
+    )
+    .orderBy(asc(userEntries.entryId))
+    .limit(limit);
+  if (idRows.length === 0) return { entries: [], nextAfterId: null };
+
+  // Feed content is reduced to the variant the view shows by default (cleaned,
+  // falling back to original), like full content.
+  const rows = await db
+    .select({
+      id: visibleEntries.id,
+      type: visibleEntries.type,
+      url: visibleEntries.url,
+      title: visibleEntries.title,
+      author: visibleEntries.author,
+      siteName: visibleEntries.siteName,
+      feedTitle: sql<
+        string | null
+      >`CASE WHEN ${visibleEntries.type} = 'saved' THEN NULL ELSE ${entryFeedTitleSql()} END`,
+      summary: visibleEntries.summary,
+      publishedAt: visibleEntries.publishedAt,
+      fetchedAt: visibleEntries.fetchedAt,
+      read: visibleEntries.read,
+      starred: visibleEntries.starred,
+      content: sql<
+        string | null
+      >`COALESCE(${visibleEntries.contentCleaned}, ${visibleEntries.contentOriginal})`,
+      ...shownFullContentSelectFields,
+    })
+    .from(visibleEntries)
+    .leftJoin(feeds, eq(visibleEntries.ownerFeedId, feeds.id))
+    .leftJoinLateral(VISIBLE_MEMBERSHIPS, sql`true`)
+    .leftJoin(subscriptions, entryOriginOn(VISIBLE_MEMBERSHIPS, VISIBLE_ROW))
+    .where(
+      and(
+        eq(visibleEntries.userId, userId),
+        inArray(
+          visibleEntries.id,
+          idRows.map((row) => row.id)
+        )
+      )
+    )
+    .orderBy(asc(visibleEntries.id));
+
+  const exportable = await mapWithConcurrency(
+    rows,
+    GET_ENTRIES_SANITIZE_CONCURRENCY,
+    async (row) => {
+      const [fullContent, { content, ...rest }] = takeShownFullContent(row);
+      return { ...rest, contentHtml: await sanitizeEntryHtmlAsync(fullContent ?? content) };
+    }
+  );
+
+  return {
+    entries: exportable,
+    nextAfterId: idRows.length < limit ? null : idRows[idRows.length - 1].id,
+  };
+}
+
+/**
+ * The external APIs' view of a row (EntryFull): the feed content family
+ * sanitized, and the fetched full article only when it's the variant the
+ * entry view shows (`showsFullContent`).
+ */
+async function toEntryFull(row: EntryRow): Promise<EntryFull> {
+  const shownFullContent = showsFullContent(row)
+    ? (row.fullContentCleaned ?? row.fullContentOriginal)
+    : null;
+  const [content, fullContent] = await Promise.all([
+    sanitizeEntryContentFamily("content", {
+      original: row.contentOriginal,
+      cleaned: row.contentCleaned,
+    }),
+    sanitizeEntryHtmlAsync(shownFullContent),
+  ]);
+
+  return {
+    id: row.id,
+    subscriptionId: row.subscriptionId,
+    subscriptionIds: row.subscriptionIds,
+    type: row.type,
+    url: row.url,
+    title: row.title,
+    author: row.author,
+    contentOriginal: content.original,
+    contentCleaned: content.cleaned,
+    fullContent,
+    summary: row.summary,
+    publishedAt: row.publishedAt,
+    fetchedAt: row.fetchedAt,
+    updatedAt: row.updatedAt,
+    entryUpdatedAt: row.entryUpdatedAt,
+    read: row.read,
+    starred: row.starred,
+    feedTitle: row.feedTitle,
+    feedUrl: row.feedUrl,
+    siteName: row.siteName,
+    unsubscribeUrl: row.unsubscribeUrl,
+  };
+}
+
+/**
+ * Runs `fn` over `items` with at most `limit` in flight at once, preserving
+ * input order in the result. Used to bound how many entry bodies sanitize
+ * concurrently on batch reads (see getEntries).
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/**
+ * The largest read batch is the Google Reader stream-contents sync, up to ~100
+ * entries. Sanitization is native and fast (~0.09 ms / 10 KB, off the event loop
+ * for large bodies), but this caps how many bodies are in flight at once so a
+ * batch of large bodies can't flood the libuv pool or spike memory.
+ */
+const GET_ENTRIES_SANITIZE_CONCURRENCY = 8;
+
+/**
+ * Gets a single entry by ID with full content, for the external APIs (MCP,
+ * Google Reader, Wallabag).
+ *
+ * @throws entryNotFound if the entry doesn't exist or isn't visible to the user
+ */
+export async function getEntry(
+  db: typeof dbType,
+  userId: string,
+  entryId: string
+): Promise<EntryFull> {
+  return readEntry(db, userId, entryId, "shown", toEntryFull);
+}
+
+/**
+ * {@link getEntry} for many ids in one query. Ids the user can't see are
+ * skipped; order follows the input.
+ */
+export async function getEntries(
+  db: typeof dbType,
+  userId: string,
+  entryIds: string[]
+): Promise<EntryFull[]> {
+  return readEntries(db, userId, entryIds, "shown", toEntryFull);
+}

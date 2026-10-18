@@ -4,7 +4,7 @@
 
 ## Where sanitization happens
 
-- **On every read, in the services layer.** Entries store only raw content (`entries.content_*` / `full_content_*`); every full-entry read in `services/entries.ts` (one select, `toFullEntry`/`toEntryFull`), the saved-article reads (`saved.ts`), `full-content.ts` and `summarization.ts` funnel through `sanitizeEntryContentFamily` or `sanitizeEntryHtml[Async]`. Fetch, WebSub and email ingest store raw and sanitize nothing.
+- **On every read, in the services layer.** Entries store only raw content (`entries.content_*` / `full_content_*`); every full-entry read in `services/entry-reads.ts` (one select, `toFullEntry`/`toEntryFull`), the saved-article reads (`saved.ts`), `full-content.ts` and `summarization.ts` funnel through `sanitizeEntryContentFamily` or `sanitizeEntryHtml[Async]`. Fetch, WebSub and email ingest store raw and sanitize nothing.
 - **Never add a client-side sanitizer, and never persist sanitized output** — except AI summaries, which are stored sanitized and still re-sanitized on read.
 - There is deliberately **no sanitizer version constant**: a rules change takes effect on the next read after a deploy. Don't reintroduce one without a consumer that compares it.
 - The full-content family sanitizes the whole-page `original` only when `cleaned` is NULL, because only `cleaned ?? original` is ever shown; the content family sanitizes both (the UI toggles between them).

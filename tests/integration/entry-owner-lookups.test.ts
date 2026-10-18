@@ -24,7 +24,7 @@ import {
 } from "../../src/server/services/saved";
 import { resolveGreaderIdsForEntries } from "../../src/server/google-reader/id";
 import { listEntries } from "../../src/server/services/entries";
-import { unsubscribe } from "../../src/server/services/subscriptions";
+import { unsubscribe } from "../../src/server/services/subscription-updates";
 import { createCaller } from "../../src/server/trpc/root";
 import { createAuthContext, createTestIngestAddress, createTestUser } from "./helpers";
 

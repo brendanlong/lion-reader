@@ -20,7 +20,7 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { usageLimitsConfig } from "../../src/server/config/env";
-import { createSubscription } from "../../src/server/services/subscriptions";
+import { createSubscription } from "../../src/server/services/subscribe";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import {
   getGreaderUnreadCounts,

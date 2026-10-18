@@ -21,6 +21,8 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { uuidSchema } from "../validation";
 import * as fullContentService from "@/server/services/full-content";
 import * as entriesService from "@/server/services/entries";
+import * as entryReadsService from "@/server/services/entry-reads";
+import * as entryStateService from "@/server/services/entry-state";
 import { toServerTime } from "@/server/services/client-time";
 import {
   countsAsOfSchema,
@@ -64,8 +66,8 @@ const stateChangeEntriesSchema = z
   )
   .min(1, "At least one entry is required")
   .max(
-    entriesService.MAX_ENTRY_STATE_BATCH,
-    `Maximum ${entriesService.MAX_ENTRY_STATE_BATCH} entries per request`
+    entryStateService.MAX_ENTRY_STATE_BATCH,
+    `Maximum ${entryStateService.MAX_ENTRY_STATE_BATCH} entries per request`
   );
 
 /**
@@ -240,7 +242,7 @@ const setStarredOutputSchema = z.object({
 // Router
 // ============================================================================
 //
-// Full-entry reads go through `entriesService.getFullEntry`, which sanitizes
+// Full-entry reads go through `entryReadsService.getFullEntry`, which sanitizes
 // the content (the read-path sanitization chokepoint lives in the services
 // layer so MCP, Google Reader, and Wallabag get the same guarantee).
 
@@ -369,7 +371,7 @@ export const entriesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      const { entry } = await entriesService.getFullEntry(ctx.db, userId, input.id);
+      const { entry } = await entryReadsService.getFullEntry(ctx.db, userId, input.id);
       return { entry: withLegacyFeedId(entry) };
     }),
 
@@ -395,9 +397,9 @@ export const entriesRouter = createTRPCRouter({
     .output(z.object({ entries: z.array(entryFullSchema) }))
     .query(async ({ ctx, input }) => {
       return {
-        entries: (await entriesService.getFullEntries(ctx.db, ctx.session.user.id, input.ids)).map(
-          withLegacyFeedId
-        ),
+        entries: (
+          await entryReadsService.getFullEntries(ctx.db, ctx.session.user.id, input.ids)
+        ).map(withLegacyFeedId),
       };
     }),
 
@@ -438,7 +440,7 @@ export const entriesRouter = createTRPCRouter({
       // entry_state_changed SSE events itself (so every caller — tRPC, MCP, and
       // the Google Reader/Wallabag compat routes — notifies other tabs).
       const now = new Date();
-      const { entries: entriesResult, counts } = await entriesService.markEntriesRead(
+      const { entries: entriesResult, counts } = await entryStateService.markEntriesRead(
         ctx.db,
         userId,
         input.entries.map((entry) => ({
@@ -491,7 +493,7 @@ export const entriesRouter = createTRPCRouter({
     .output(z.object({ count: z.number(), counts: unreadCountsSchema.optional() }))
     .mutation(async ({ ctx, input }) => {
       const { clientSentAt, ...filters } = input;
-      const { entryIds, counts } = await entriesService.markAllEntriesRead(ctx.db, {
+      const { entryIds, counts } = await entryStateService.markAllEntriesRead(ctx.db, {
         ...filters,
         changedAt: toServerTime(input.changedAt, clientSentAt),
         userId: ctx.session.user.id,
@@ -533,7 +535,7 @@ export const entriesRouter = createTRPCRouter({
       // updateEntryStarred computes the absolute counts and publishes the
       // entry_state_changed SSE event itself (so every caller — tRPC, MCP, and
       // the Google Reader/Wallabag compat routes — notifies other tabs).
-      const { entry, counts } = await entriesService.updateEntryStarred(
+      const { entry, counts } = await entryStateService.updateEntryStarred(
         ctx.db,
         userId,
         input.id,
@@ -567,7 +569,7 @@ export const entriesRouter = createTRPCRouter({
     .output(bulkStateChangeOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const now = new Date();
-      const { entries, counts } = await entriesService.updateEntriesStarred(
+      const { entries, counts } = await entryStateService.updateEntriesStarred(
         ctx.db,
         ctx.session.user.id,
         input.entries.map((entry) => ({

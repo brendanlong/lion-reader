@@ -18,10 +18,7 @@ import {
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processInboundEmail } from "../../src/server/email/process-inbound";
 import { createCollection } from "../../src/server/services/collections";
-import {
-  createSubscription,
-  mergeSubscriptionIntoFeed,
-} from "../../src/server/services/subscriptions";
+import { createSubscription, mergeSubscriptionIntoFeed } from "../../src/server/services/subscribe";
 import {
   createTestFeed,
   createTestIngestAddress,

@@ -21,12 +21,10 @@ import {
   getUserEventsChannel,
 } from "../../src/server/redis/pubsub";
 import { getBulkEntryRelatedCounts } from "../../src/server/services/counts";
-import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entries";
+import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entry-state";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import {
-  getSavedSubscriptionId,
-  setSubscriptionTags,
-} from "../../src/server/services/subscriptions";
+import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
+import { setSubscriptionTags } from "../../src/server/services/subscription-updates";
 import { entries, tags, userEntries } from "../../src/server/db/schema";
 import { and, eq } from "drizzle-orm";
 import {

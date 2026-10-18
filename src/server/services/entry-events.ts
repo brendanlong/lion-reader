@@ -23,7 +23,7 @@ import {
 } from "@/server/services/entry-filters";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
-import type { MarkReadEntryState } from "@/server/services/entries";
+import type { MarkReadEntryState } from "@/server/services/entry-state";
 import type { EntryType } from "@/lib/entry-types";
 import type { NewEntryListData } from "@/lib/events/schemas";
 

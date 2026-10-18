@@ -33,7 +33,7 @@ import {
   userEntries,
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
-import * as entriesService from "../../src/server/services/entries";
+import * as entryStateService from "../../src/server/services/entry-state";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import {
   expectNoMessage,
@@ -162,7 +162,7 @@ describe("markEntriesRead SSE publishing", () => {
     await subscriber.subscribe(channel);
     const messagePromise = waitForMessage(subscriber, channel);
 
-    const { entries: result, counts } = await entriesService.markEntriesRead(
+    const { entries: result, counts } = await entryStateService.markEntriesRead(
       db,
       userId,
       [{ id: entryId }],
@@ -190,11 +190,11 @@ describe("markEntriesRead SSE publishing", () => {
     // subscribe first and drain that event rather than racing it (issue #1427).
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
+      entryStateService.markEntriesRead(db, userId, [{ id: entryId }], true)
     );
     const messagePromise = waitForMessage(subscriber, channel);
 
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
+    await entryStateService.markEntriesRead(db, userId, [{ id: entryId }], false);
 
     // The payload mirrors new_entry so a client with the entry in no cached
     // list can insert it into the lists it now belongs to.
@@ -218,11 +218,11 @@ describe("markEntriesRead SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
+      entryStateService.markEntriesRead(db, userId, [{ id: entryId }], true)
     );
     const messagePromise = waitForMessage(subscriber, channel);
 
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
+    await entryStateService.markEntriesRead(db, userId, [{ id: entryId }], false);
 
     // The default entries.list filters spam, so a client-side insert would
     // show a row the server never returns (same rule as new_entry).
@@ -238,13 +238,18 @@ describe("markEntriesRead SSE publishing", () => {
     // Establish a recent read_changed_at.
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
+      entryStateService.markEntriesRead(db, userId, [{ id: entryId }], true)
     );
 
     // Replaying an older action loses the read_changed_at <= changedAt guard, so
     // no row updates and nothing is published.
     await expectNoMessage(subscriber, channel, () =>
-      entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: new Date(0) }], false)
+      entryStateService.markEntriesRead(
+        db,
+        userId,
+        [{ id: entryId, changedAt: new Date(0) }],
+        false
+      )
     );
   });
 
@@ -256,7 +261,7 @@ describe("markEntriesRead SSE publishing", () => {
     const t2 = new Date("2026-01-01T00:00:05Z");
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true)
+      entryStateService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true)
     );
 
     // Capture updated_at (the delta-sync "meaningful change" timestamp) after
@@ -267,7 +272,7 @@ describe("markEntriesRead SSE publishing", () => {
     // advance), but the read value doesn't flip — so nothing is published,
     // `changed` is empty, and no counts are computed.
     await expectNoMessage(subscriber, channel, async () => {
-      const result = await entriesService.markEntriesRead(
+      const result = await entryStateService.markEntriesRead(
         db,
         userId,
         [{ id: entryId, changedAt: t2 }],
@@ -298,9 +303,9 @@ describe("markEntriesRead SSE publishing", () => {
     const t3 = new Date("2026-01-01T00:00:03Z");
     const t2 = new Date("2026-01-01T00:00:05Z");
 
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true);
-    await entriesService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t2 }], true);
-    const stale = await entriesService.markEntriesRead(
+    await entryStateService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t1 }], true);
+    await entryStateService.markEntriesRead(db, userId, [{ id: entryId, changedAt: t2 }], true);
+    const stale = await entryStateService.markEntriesRead(
       db,
       userId,
       [{ id: entryId, changedAt: t3 }],
@@ -323,12 +328,12 @@ describe("markEntriesRead SSE publishing", () => {
 
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.markEntriesRead(db, userId, [{ id: readEntryId }], true)
+      entryStateService.markEntriesRead(db, userId, [{ id: readEntryId }], true)
     );
     const messagePromise = waitForMessage(subscriber, channel);
 
     // One entry flips unread→read, the other is a same-value re-assert.
-    const result = await entriesService.markEntriesRead(
+    const result = await entryStateService.markEntriesRead(
       db,
       userId,
       [{ id: unreadEntryId }, { id: readEntryId }],
@@ -354,7 +359,7 @@ describe("updateEntryStarred SSE publishing", () => {
     await subscriber.subscribe(channel);
     const messagePromise = waitForMessage(subscriber, channel);
 
-    const { entry, counts } = await entriesService.updateEntryStarred(db, userId, entryId, true);
+    const { entry, counts } = await entryStateService.updateEntryStarred(db, userId, entryId, true);
     expect(entry.starred).toBe(true);
     expect(counts?.starred.unread).toBe(1);
 
@@ -372,12 +377,12 @@ describe("updateEntryStarred SSE publishing", () => {
     // Establish a recent starred_changed_at.
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.updateEntryStarred(db, userId, entryId, true, new Date())
+      entryStateService.updateEntryStarred(db, userId, entryId, true, new Date())
     );
 
     // Replaying an older action loses the starred_changed_at <= changedAt guard.
     await expectNoMessage(subscriber, channel, () =>
-      entriesService.updateEntryStarred(db, userId, entryId, false, new Date(0))
+      entryStateService.updateEntryStarred(db, userId, entryId, false, new Date(0))
     );
   });
 
@@ -389,7 +394,7 @@ describe("updateEntryStarred SSE publishing", () => {
     const t2 = new Date("2026-01-01T00:00:05Z");
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.updateEntryStarred(db, userId, entryId, true, t1)
+      entryStateService.updateEntryStarred(db, userId, entryId, true, t1)
     );
 
     // Capture updated_at (the delta-sync "meaningful change" timestamp) after
@@ -400,7 +405,7 @@ describe("updateEntryStarred SSE publishing", () => {
     // advance), but the starred value doesn't flip — so nothing is published
     // and no counts are computed.
     await expectNoMessage(subscriber, channel, async () => {
-      const result = await entriesService.updateEntryStarred(db, userId, entryId, true, t2);
+      const result = await entryStateService.updateEntryStarred(db, userId, entryId, true, t2);
       expect(result.entry.starred).toBe(true);
       expect(result.counts).toBeUndefined();
     });
@@ -424,9 +429,9 @@ describe("updateEntryStarred SSE publishing", () => {
     const t3 = new Date("2026-01-01T00:00:03Z");
     const t2 = new Date("2026-01-01T00:00:05Z");
 
-    await entriesService.updateEntryStarred(db, userId, entryId, true, t1);
-    await entriesService.updateEntryStarred(db, userId, entryId, true, t2);
-    const stale = await entriesService.updateEntryStarred(db, userId, entryId, false, t3);
+    await entryStateService.updateEntryStarred(db, userId, entryId, true, t1);
+    await entryStateService.updateEntryStarred(db, userId, entryId, true, t2);
+    const stale = await entryStateService.updateEntryStarred(db, userId, entryId, false, t3);
 
     // The unstar@T3 was rejected by the watermark.
     expect(stale.entry.starred).toBe(true);
@@ -442,7 +447,7 @@ describe("updateEntryStarred SSE publishing", () => {
     const channel = getUserEventsChannel(userId);
 
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.updateEntryStarred(db, userId, entryId, true)
+      entryStateService.updateEntryStarred(db, userId, entryId, true)
     );
     // Unsubscribing leaves the entry visible only through the starred arm of
     // visible_entries — so unstarring it removes it from that view. The
@@ -451,7 +456,12 @@ describe("updateEntryStarred SSE publishing", () => {
     await unsubscribeEntryFeed(userId, entryId);
 
     const messagePromise = waitForMessage(subscriber, channel);
-    const { entry, counts } = await entriesService.updateEntryStarred(db, userId, entryId, false);
+    const { entry, counts } = await entryStateService.updateEntryStarred(
+      db,
+      userId,
+      entryId,
+      false
+    );
     expect(entry.id).toBe(entryId);
     expect(entry.starred).toBe(false);
     // The entry left every list it was in: starred is empty, and with the
@@ -475,7 +485,7 @@ describe("updateEntryStarred SSE publishing", () => {
 
     // The read-back is scoped by user_entries.user_id, so a user with no row
     // for this entry gets not-found rather than someone else's state.
-    await expect(entriesService.updateEntryStarred(db, otherId, entryId, true)).rejects.toThrow(
+    await expect(entryStateService.updateEntryStarred(db, otherId, entryId, true)).rejects.toThrow(
       /Entry not found/
     );
     expect((await getUserEntryRow(ownerId, entryId)).starred).toBe(false);
@@ -497,7 +507,7 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
       entries: state,
       changed,
       counts,
-    } = await entriesService.updateEntriesStarred(
+    } = await entryStateService.updateEntriesStarred(
       db,
       userId,
       [{ id: entryA }, { id: entryB }],
@@ -521,17 +531,17 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
 
   it("rejects more than MAX_ENTRY_STATE_BATCH entries", async () => {
     const userId = await seedUser();
-    const ids = Array.from({ length: entriesService.MAX_ENTRY_STATE_BATCH + 1 }, () =>
+    const ids = Array.from({ length: entryStateService.MAX_ENTRY_STATE_BATCH + 1 }, () =>
       generateUuidv7()
     );
     await expect(
-      entriesService.updateEntriesStarred(
+      entryStateService.updateEntriesStarred(
         db,
         userId,
         ids.map((id) => ({ id })),
         true
       )
-    ).rejects.toThrow(`Maximum ${entriesService.MAX_ENTRY_STATE_BATCH} entries`);
+    ).rejects.toThrow(`Maximum ${entryStateService.MAX_ENTRY_STATE_BATCH} entries`);
   });
 
   it("does not publish or compute counts when re-asserting already-starred entries (issue #1118)", async () => {
@@ -542,7 +552,7 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
     const t2 = new Date("2026-01-01T00:00:05Z");
     const channel = getUserEventsChannel(userId);
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.updateEntriesStarred(db, userId, [{ id: entryId, changedAt: t1 }], true)
+      entryStateService.updateEntriesStarred(db, userId, [{ id: entryId, changedAt: t1 }], true)
     );
 
     const before = await getUserEntryRow(userId, entryId);
@@ -550,7 +560,7 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
     // A fresh changedAt advances the watermark, but the value doesn't flip, so
     // nothing is published and no counts are computed.
     await expectNoMessage(subscriber, channel, async () => {
-      const result = await entriesService.updateEntriesStarred(
+      const result = await entryStateService.updateEntriesStarred(
         db,
         userId,
         [{ id: entryId, changedAt: t2 }],
@@ -571,7 +581,7 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
     const channel = getUserEventsChannel(userId);
 
     await subscribeAndDrain(subscriber, channel, () =>
-      entriesService.updateEntriesStarred(db, userId, [{ id: entryId }], true)
+      entryStateService.updateEntriesStarred(db, userId, [{ id: entryId }], true)
     );
     // As in the single-entry case: once unsubscribed, the entry is visible only
     // because it's starred, so a post-update read through visible_entries comes
@@ -584,7 +594,7 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
       entries: state,
       changed,
       counts,
-    } = await entriesService.updateEntriesStarred(db, userId, [{ id: entryId }], false);
+    } = await entryStateService.updateEntriesStarred(db, userId, [{ id: entryId }], false);
     expect(state.map((e) => e.id)).toEqual([entryId]);
     expect(state[0].starred).toBe(false);
     expect(changed.map((e) => e.id)).toEqual([entryId]);
@@ -606,7 +616,12 @@ describe("updateEntriesStarred (bulk) SSE publishing", () => {
 
     // Scoped by user_entries.user_id: a user with no row for this entry gets
     // nothing back, and the owner's state is untouched.
-    const result = await entriesService.updateEntriesStarred(db, otherId, [{ id: entryId }], true);
+    const result = await entryStateService.updateEntriesStarred(
+      db,
+      otherId,
+      [{ id: entryId }],
+      true
+    );
     expect(result.entries).toEqual([]);
     expect(result.changed).toEqual([]);
     expect((await getUserEntryRow(ownerId, entryId)).starred).toBe(false);

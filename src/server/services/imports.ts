@@ -25,7 +25,8 @@ import {
 import { parseOpmlAsync } from "@/server/feed/opml";
 import { createJob } from "@/server/jobs/queue";
 import { publishUserEvent } from "@/server/redis/pubsub";
-import { createSubscription, setSubscriptionTags } from "@/server/services/subscriptions";
+import { createSubscription } from "@/server/services/subscribe";
+import { setSubscriptionTags } from "@/server/services/subscription-updates";
 import { fitTagName } from "@/server/services/tags";
 import { getAppErrorCode } from "@/server/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";

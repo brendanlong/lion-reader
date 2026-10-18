@@ -31,7 +31,7 @@ import {
 } from "@/server/google-reader/parse";
 import { formatEntryAsItem } from "@/server/google-reader/format";
 import { greaderItemIdsToUuids, resolveGreaderIdsForEntries } from "@/server/google-reader/id";
-import * as entriesService from "@/server/services/entries";
+import * as entryReadsService from "@/server/services/entry-reads";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -79,7 +79,7 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
   // visible to the user, etc.).
   const uuids = [...uuidMap.values()];
   const [entries, idsByEntry] = await Promise.all([
-    entriesService.getEntries(db, session.user.id, uuids),
+    entryReadsService.getEntries(db, session.user.id, uuids),
     resolveGreaderIdsForEntries(db, session.user.id, uuids),
   ]);
   const items = entries.flatMap((entry) => {

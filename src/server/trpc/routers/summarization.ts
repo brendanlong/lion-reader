@@ -18,7 +18,7 @@ import { errors, markReported } from "@/server/errors";
 import { aiModelListSchema, uuidSchema } from "../validation";
 import { entrySummaries } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { getOwnedEntryRawContent } from "@/server/services/entries";
+import { getOwnedEntryRawContent } from "@/server/services/entry-reads";
 import {
   generateSummary,
   isSummarizationAvailable,

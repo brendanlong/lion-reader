@@ -17,7 +17,8 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { exportSubscriptionsOpml, unsubscribe } from "../../src/server/services/subscriptions";
+import { exportSubscriptionsOpml } from "../../src/server/services/subscriptions";
+import { unsubscribe } from "../../src/server/services/subscription-updates";
 import { deleteUser } from "../../src/server/services/users";
 import { listGreaderSubscriptions } from "../../src/server/google-reader/subscriptions";
 import { listWallabagTags } from "../../src/server/wallabag/tags";

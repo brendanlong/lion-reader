@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import Redis from "ioredis";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/services/subscriptions";
+import { migrateSubscriptionsToExistingFeed } from "../../src/server/services/subscribe";
 import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { waitForMessages } from "../utils/pubsub";
 import {

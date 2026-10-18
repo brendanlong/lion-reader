@@ -21,13 +21,12 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { addEntriesToCollection, createCollection } from "../../src/server/services/collections";
-import { markEntriesRead } from "../../src/server/services/entries";
+import { markEntriesRead } from "../../src/server/services/entry-state";
 import {
   createSubscription,
   migrateSubscriptionsToExistingFeed,
-  setSubscriptionTags,
-  unsubscribe,
-} from "../../src/server/services/subscriptions";
+} from "../../src/server/services/subscribe";
+import { setSubscriptionTags, unsubscribe } from "../../src/server/services/subscription-updates";
 import { deleteTag } from "../../src/server/services/tags";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";

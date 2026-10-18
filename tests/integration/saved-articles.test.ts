@@ -25,7 +25,7 @@ import {
   savePlaceholderArticle,
   savedArticleExistsByUrl,
 } from "../../src/server/services/saved";
-import { markEntriesRead } from "../../src/server/services/entries";
+import { markEntriesRead } from "../../src/server/services/entry-state";
 import {
   createAuthContext,
   createTestUser,

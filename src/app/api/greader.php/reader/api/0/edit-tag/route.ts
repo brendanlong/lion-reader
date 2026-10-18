@@ -29,7 +29,7 @@ import {
 } from "@/server/google-reader/parse";
 import { greaderItemIdsToUuids } from "@/server/google-reader/id";
 import { isState } from "@/server/google-reader/streams";
-import * as entriesService from "@/server/services/entries";
+import * as entryStateService from "@/server/services/entry-state";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
@@ -48,9 +48,9 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
   }
 
   // Bounded so one call can't issue an unbounded number of per-entry updates (#1266).
-  if (itemIds.length > entriesService.MAX_ENTRY_STATE_BATCH) {
+  if (itemIds.length > entryStateService.MAX_ENTRY_STATE_BATCH) {
     return errorResponse(
-      `Too many item ids: ${itemIds.length} requested, maximum ${entriesService.MAX_ENTRY_STATE_BATCH} per request. Split into smaller batches.`,
+      `Too many item ids: ${itemIds.length} requested, maximum ${entryStateService.MAX_ENTRY_STATE_BATCH} per request. Split into smaller batches.`,
       400
     );
   }
@@ -76,9 +76,9 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
 
   const entriesToMark = entryUuids.map((id) => ({ id }));
   if (addRead) {
-    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, true);
+    await entryStateService.markEntriesRead(db, session.user.id, entriesToMark, true);
   } else if (removeRead) {
-    await entriesService.markEntriesRead(db, session.user.id, entriesToMark, false);
+    await entryStateService.markEntriesRead(db, session.user.id, entriesToMark, false);
   }
 
   // Process starred state changes
@@ -86,7 +86,7 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
   const removeStarred = removeTags.some((t) => isState(t, "starred"));
 
   if (addStarred || removeStarred) {
-    await entriesService.updateEntriesStarred(
+    await entryStateService.updateEntriesStarred(
       db,
       session.user.id,
       entryUuids.map((id) => ({ id })),

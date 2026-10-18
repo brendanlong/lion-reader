@@ -14,6 +14,7 @@ import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
 import * as entriesService from "../../src/server/services/entries";
+import * as entryStateService from "../../src/server/services/entry-state";
 import {
   getUserEventsChannel,
   publishFeedEvent,
@@ -141,10 +142,10 @@ describe("entry feedTitle is the user's subscription title", () => {
       async (userId, entryId) => {
         const channel = getUserEventsChannel(userId);
         await subscribeAndDrain(subscriber, channel, () =>
-          entriesService.markEntriesRead(db, userId, [{ id: entryId }], true)
+          entryStateService.markEntriesRead(db, userId, [{ id: entryId }], true)
         );
         const message = waitForMessage(subscriber, channel);
-        await entriesService.markEntriesRead(db, userId, [{ id: entryId }], false);
+        await entryStateService.markEntriesRead(db, userId, [{ id: entryId }], false);
         const event = JSON.parse(await message);
         await subscriber.unsubscribe(channel);
         return event.entry?.feedTitle;

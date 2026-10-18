@@ -19,7 +19,7 @@ import {
 } from "@/server/google-reader/parse";
 import { isStreamError, resolveStreamFilter } from "@/server/google-reader/stream-filters";
 import { db } from "@/server/db";
-import { markAllEntriesRead } from "@/server/services/entries";
+import { markAllEntriesRead } from "@/server/services/entry-state";
 
 export const dynamic = "force-dynamic";
 

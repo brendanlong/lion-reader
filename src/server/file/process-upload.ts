@@ -3,7 +3,7 @@
  *
  * Converts an uploaded file to raw article HTML. This is only the *acquisition*
  * step — Readability cleaning, excerpt generation, and metadata (title / author /
- * site name) all happen downstream in `buildArticleFields` (see `saved.ts`), so
+ * site name) all happen downstream in `buildArticleFields` (see `saved-content.ts`), so
  * uploads share exactly the same processing as URL saves.
  *
  * Supports:

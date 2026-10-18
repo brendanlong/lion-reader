@@ -17,11 +17,8 @@ import {
 } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createCaller } from "../../src/server/trpc/root";
-import {
-  markAllEntriesRead,
-  markEntriesRead,
-  listEntries,
-} from "../../src/server/services/entries";
+import { markAllEntriesRead, markEntriesRead } from "../../src/server/services/entry-state";
+import { listEntries } from "../../src/server/services/entries";
 import {
   createAuthContext,
   createTestSubscription,

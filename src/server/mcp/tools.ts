@@ -20,6 +20,9 @@ import { users } from "@/server/db/schema";
 import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
 import { getAppErrorCode } from "@/server/errors";
 import * as entriesService from "@/server/services/entries";
+import * as entryReadsService from "@/server/services/entry-reads";
+import * as entryStateService from "@/server/services/entry-state";
+import * as subscriptionUpdatesService from "@/server/services/subscription-updates";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import * as savedService from "@/server/services/saved";
 import * as tagsService from "@/server/services/tags";
@@ -158,7 +161,7 @@ const markEntriesReadArgs = z.object({
   entryIds: z
     .array(uuidSchema)
     .min(1)
-    .max(entriesService.MAX_ENTRY_STATE_BATCH)
+    .max(entryStateService.MAX_ENTRY_STATE_BATCH)
     .describe("Array of entry IDs to mark"),
   read: z.boolean().describe("Mark as read (true) or unread (false)"),
 });
@@ -399,19 +402,19 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(getEntryArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(getEntryArgs, args);
-        return entriesService.getEntry(db, userId, params.entryId);
+        return entryReadsService.getEntry(db, userId, params.entryId);
       },
     },
 
     {
       name: "mark_entries_read",
-      description: `Mark entries as read or unread (bulk operation, max ${entriesService.MAX_ENTRY_STATE_BATCH}). Returns updated entries and unread counts.`,
+      description: `Mark entries as read or unread (bulk operation, max ${entryStateService.MAX_ENTRY_STATE_BATCH}). Returns updated entries and unread counts.`,
       inputSchema: toInputSchema(markEntriesReadArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(markEntriesReadArgs, args);
         // markEntriesRead computes the counts and publishes entry_state_changed
         // for multi-tab/device sync itself, mirroring the tRPC mutation.
-        const { entries, counts } = await entriesService.markEntriesRead(
+        const { entries, counts } = await entryStateService.markEntriesRead(
           db,
           userId,
           params.entryIds.map((id) => ({ id })),
@@ -435,7 +438,7 @@ function buildTools(): Tool[] {
         // updateEntryStarred computes the counts and publishes
         // entry_state_changed for multi-tab/device sync itself, mirroring the
         // tRPC entries.setStarred mutation.
-        const { entry } = await entriesService.updateEntryStarred(
+        const { entry } = await entryStateService.updateEntryStarred(
           db,
           userId,
           params.entryId,
@@ -551,7 +554,7 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(setSubscriptionTagsArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(setSubscriptionTagsArgs, args);
-        await subscriptionsService.setSubscriptionTags(
+        await subscriptionUpdatesService.setSubscriptionTags(
           db,
           userId,
           params.subscriptionId,

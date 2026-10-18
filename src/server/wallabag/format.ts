@@ -11,7 +11,8 @@
  * src/server/wallabag/tags.ts), and the user id is `users.greader_user_id`.
  */
 
-import type { EntryFull, EntryListItem } from "@/server/services/entries";
+import type { EntryFull } from "@/server/services/entry-reads";
+import type { EntryListItem } from "@/server/services/entries";
 import type { SavedArticle } from "@/server/services/saved";
 
 // ============================================================================
