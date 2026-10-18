@@ -209,8 +209,8 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
   // Gateway diagnostics. `client.login()` resolves as soon as the token
   // handshake starts, long before the gateway is actually connected, so a bot
   // that authenticates but never reaches `clientReady` would silently receive
-  // zero reaction events while still logging "started successfully". These
-  // handlers make that failure mode visible instead of invisible.
+  // zero reaction events while the process reports itself started (and pings
+  // its heartbeat). These handlers make that failure mode visible.
   client.on("error", (error) => {
     logger.error("Discord client error", { error });
   });
@@ -365,7 +365,7 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
   // Watchdog: `client.login()` below resolves on token handshake, not on a live
   // gateway. If `clientReady` hasn't fired within this window the bot is logged
   // in but not receiving events (stuck handshake, network, disallowed intents),
-  // so log loudly rather than sitting silently "started successfully".
+  // so log loudly rather than sitting silently "started".
   const readyWatchdog = setTimeout(() => {
     logger.error("Discord gateway not ready after login", {
       timeoutMs: READY_WATCHDOG_MS,
