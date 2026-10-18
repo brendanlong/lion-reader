@@ -146,7 +146,12 @@ interface DiscordBot {
   stop: () => Promise<void>;
 }
 
-/** Logs the bot in. Resolves to null if the bot is disabled (no DISCORD_BOT_TOKEN). */
+/**
+ * Logs the bot in. Resolves to null if the bot is disabled (no
+ * DISCORD_BOT_TOKEN: the discord process group runs on every deploy of
+ * fly.toml, Discord or not), and rejects if it is misconfigured, so the process
+ * fails instead of reporting itself alive.
+ */
 export async function startDiscordBot(): Promise<DiscordBot | null> {
   if (!DISCORD_BOT_TOKEN) {
     logger.info("Discord bot disabled (DISCORD_BOT_TOKEN not set)");
@@ -154,8 +159,7 @@ export async function startDiscordBot(): Promise<DiscordBot | null> {
   }
 
   if (!DISCORD_CLIENT_ID) {
-    logger.error("DISCORD_CLIENT_ID is required for Discord bot");
-    return null;
+    throw new Error("DISCORD_BOT_TOKEN is set but DISCORD_CLIENT_ID is not");
   }
 
   client = new Client({
