@@ -295,9 +295,9 @@ export const authRouter = createTRPCRouter({
   /**
    * Generate Google OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Google OAuth login, for the
-   * REST/OpenAPI surface — browsers are redirected to the route handler in
-   * `src/app/api/v1/auth/oauth/google/callback` instead.
+   * Returns a URL to redirect the user to for Google OAuth login. Google
+   * redirects back to the route handler in
+   * `src/app/api/v1/auth/oauth/google/callback`, which finishes sign-in.
    *
    * Flow:
    * 1. Client calls this endpoint
@@ -336,9 +336,9 @@ export const authRouter = createTRPCRouter({
   /**
    * Generate Apple OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Apple OAuth login, for the
-   * REST/OpenAPI surface — browsers are redirected to the route handler in
-   * `src/app/api/v1/auth/oauth/apple/callback` instead.
+   * Returns a URL to redirect the user to for Apple OAuth login. Apple
+   * redirects back to the route handler in
+   * `src/app/api/v1/auth/oauth/apple/callback`, which finishes sign-in.
    *
    * Flow:
    * 1. Client calls this endpoint
@@ -379,9 +379,9 @@ export const authRouter = createTRPCRouter({
   /**
    * Generate Discord OAuth authorization URL.
    *
-   * Returns a URL to redirect the user to for Discord OAuth login, for the
-   * REST/OpenAPI surface — browsers are redirected to the route handler in
-   * `src/app/api/v1/auth/oauth/discord/callback` instead.
+   * Returns a URL to redirect the user to for Discord OAuth login. Discord
+   * redirects back to the route handler in
+   * `src/app/api/v1/auth/oauth/discord/callback`, which finishes sign-in.
    *
    * Flow:
    * 1. Client calls this endpoint

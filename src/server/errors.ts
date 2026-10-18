@@ -26,7 +26,6 @@ const errorCodeToTRPCCode = {
   VALIDATION_ERROR: "BAD_REQUEST",
   URL_IS_FEED: "BAD_REQUEST",
   EMAIL_ALREADY_EXISTS: "BAD_REQUEST",
-  OAUTH_STATE_INVALID: "BAD_REQUEST",
   OAUTH_PROVIDER_NOT_CONFIGURED: "BAD_REQUEST",
   OAUTH_CALLBACK_FAILED: "BAD_REQUEST",
   INVITE_REQUIRED: "BAD_REQUEST",
@@ -143,12 +142,6 @@ export const errors = {
 
   emailExists: () =>
     createError("EMAIL_ALREADY_EXISTS", "An account with this email already exists"),
-
-  oauthStateInvalid: () =>
-    createError(
-      "OAUTH_STATE_INVALID",
-      "Invalid or expired OAuth state. Please try signing in again."
-    ),
 
   oauthProviderNotConfigured: (provider: string) =>
     createError(

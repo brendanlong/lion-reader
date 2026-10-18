@@ -64,20 +64,10 @@ export async function POST(request: NextRequest) {
       return createErrorRedirect(appUrl, "invalid_state", REDIRECT_STATUS);
     }
 
-    // Parse user data if provided (only on first auth)
-    let userData: { name?: { firstName?: string; lastName?: string }; email?: string } | undefined;
-    if (userDataRaw) {
-      try {
-        userData = JSON.parse(userDataRaw);
-      } catch {
-        // Invalid JSON, continue without user data
-      }
-    }
-
     // Validate the OAuth callback
     let appleResult;
     try {
-      appleResult = await validateAppleCallback(code, state, userData);
+      appleResult = await validateAppleCallback(code, state, userDataRaw ?? undefined);
     } catch (error) {
       if (error instanceof Error && error.message.includes("Invalid or expired OAuth state")) {
         return createErrorRedirect(appUrl, "invalid_state", REDIRECT_STATUS);

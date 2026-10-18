@@ -308,7 +308,7 @@ export async function createAppleAuthUrl(
 export async function validateAppleCallback(
   code: string,
   state: string,
-  userData?: string | AppleFirstAuthUserData
+  userData?: string
 ): Promise<AppleAuthResult> {
   const config = await getAppleTokenConfig();
 
@@ -341,14 +341,10 @@ export async function validateAppleCallback(
   // Apple sends this as a JSON string in the callback on first authorization only
   let firstAuthData: AppleFirstAuthUserData | undefined;
   if (userData) {
-    if (typeof userData === "string") {
-      try {
-        firstAuthData = JSON.parse(userData) as AppleFirstAuthUserData;
-      } catch {
-        // If parsing fails, it's not valid JSON - ignore
-      }
-    } else {
-      firstAuthData = userData;
+    try {
+      firstAuthData = JSON.parse(userData) as AppleFirstAuthUserData;
+    } catch {
+      // If parsing fails, it's not valid JSON - ignore
     }
   }
 
