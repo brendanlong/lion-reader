@@ -32,6 +32,27 @@ const APP_LAYER = {
   message: "src/server and src/lib don't import from src/app: move what both need under src/lib.",
 };
 
+// API surfaces authenticate requests with authenticateCredential, naming the
+// credential kinds they accept. A raw validator checks only that the token
+// exists, so a scope check after it lets one OAuth client's token into
+// another's API, which is how Wallabag accepted MCP clients' tokens.
+const RAW_CREDENTIAL_MESSAGE =
+  "Authenticate requests with authenticateCredential (@/server/auth/credential), which checks which client and audience a token belongs to.";
+const RAW_CREDENTIAL_VALIDATORS = [
+  ["oauth/service", "validateAccessToken"],
+  ["auth/api-token", "validateApiToken"],
+  ["auth/session", "validateSession"],
+].map(([module, importName]) => ({
+  group: [`@/server/${module}`, `**/${module}`, `./${module.split("/")[1]}`].flatMap((path) => [
+    path,
+    `${path}.js`,
+  ]),
+  importNames: [importName],
+  message: RAW_CREDENTIAL_MESSAGE,
+}));
+// The request-auth code outside API_SURFACES.
+const REQUEST_AUTH = ["src/server/trpc/context.ts", "src/server/auth/route-auth.ts"];
+
 function restrictImports(paths, patterns = []) {
   return { "no-restricted-imports": ["error", { paths, patterns }] };
 }
@@ -114,6 +135,14 @@ const eslintConfig = defineConfig([
   {
     files: ["src/server/markdown/index.ts"],
     rules: restrictImports([NEXT_LINK], [APP_LAYER]),
+  },
+  {
+    files: API_SURFACES.filter((glob) => glob.startsWith("src/app/")),
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], RAW_CREDENTIAL_VALIDATORS),
+  },
+  {
+    files: [...API_SURFACES.filter((glob) => glob.startsWith("src/server/")), ...REQUEST_AUTH],
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, ...RAW_CREDENTIAL_VALIDATORS]),
   },
   // A later block setting no-restricted-syntax for a subset of src/ replaces
   // these selectors there (flat config doesn't merge them): include them.

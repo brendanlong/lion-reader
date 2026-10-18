@@ -12,9 +12,9 @@
 
 import { db } from "@/server/db";
 import { verifyEmailPassword } from "@/server/auth/password";
-import { createSession, validateSession, type SessionData } from "@/server/auth/session";
+import { createSession, type SessionData } from "@/server/auth/session";
 import { extractBearerToken } from "@/server/auth/bearer";
-import { isSignupConfirmed } from "@/server/auth/confirmation";
+import { authenticateCredential } from "@/server/auth/credential";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 
 /**
@@ -80,51 +80,31 @@ export function extractAuthToken(request: Request): string | null {
 }
 
 /**
- * Validates a Google Reader request and returns the authenticated session.
- * Returns null if the request carries no valid session token at all. A session
- * that authenticates but is scoped to something other than the reader surface,
- * or belongs to an unconfirmed user, is a valid session and returned here — the
- * scope/confirmation gates live in {@link requireAuth} so it can distinguish
- * those cases (403) from an unauthenticated request (401).
- */
-async function authenticateRequest(request: Request): Promise<SessionData | null> {
-  const token = extractAuthToken(request);
-  if (!token) return null;
-
-  // Google Reader tokens are scoped sessions, so opt into scoped validation.
-  return validateSession(token, { allowScoped: true });
-}
-
-/**
- * Validates a Google Reader request and returns the session.
+ * Validates a Google Reader request and returns the session: a `ClientLogin`
+ * session scoped to `reader:full-access`, or a full-access browser session.
  *
  * Returns a `Response` that callers must forward, e.g.
  * `const session = await requireAuth(request); if (session instanceof Response) return session;`:
  * - **401** if the request is unauthenticated (missing/invalid token).
- * - **403** if the session authenticates but is scoped to something other than
- *   `reader:full-access` (a browser session with NULL scopes is full access and
- *   allowed), or the user hasn't completed signup confirmation — the same gates
- *   the tRPC and MCP surfaces enforce.
+ * - **403** if the session is scoped to something other than
+ *   `reader:full-access`, or the user hasn't completed signup confirmation.
  *
  * (We return rather than throw because Next.js App Router route handlers don't
  * convert a thrown `Response` into the HTTP response — it surfaces as a 500.)
  */
 export async function requireAuth(request: Request): Promise<SessionData | Response> {
-  const session = await authenticateRequest(request);
-  if (!session) {
-    return new Response("Unauthorized", { status: 401 });
+  const auth = await authenticateCredential(extractAuthToken(request), {
+    accept: ["session", "scoped_session"],
+    requiredScopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+    requireConfirmed: true,
+  });
+  if (auth.ok) return auth.credential.session;
+  switch (auth.reason) {
+    case "unauthenticated":
+      return new Response("Unauthorized", { status: 401 });
+    case "insufficient_scope":
+      return new Response("Insufficient scope", { status: 403 });
+    case "unconfirmed":
+      return new Response("Signup confirmation required", { status: 403 });
   }
-
-  // A browser session (NULL scopes) is full access; a scoped session must carry
-  // reader:full-access. Any other restricted scope is rejected with 403.
-  const scopes = session.session.scopes;
-  if (scopes !== null && !scopes.includes(OAUTH_SCOPES.READER_FULL_ACCESS)) {
-    return new Response("Insufficient scope", { status: 403 });
-  }
-
-  if (!isSignupConfirmed(session.user)) {
-    return new Response("Signup confirmation required", { status: 403 });
-  }
-
-  return session;
 }

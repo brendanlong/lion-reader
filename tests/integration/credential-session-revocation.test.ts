@@ -22,7 +22,7 @@ import {
   rotateRefreshToken,
   validateAccessToken,
 } from "../../src/server/oauth/service";
-import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/auth";
+import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { createCaller } from "../../src/server/trpc/root";
 import type { Context } from "../../src/server/trpc/context";
 import { createAuthContext, createTestOAuthLink, createTestUser } from "./helpers";

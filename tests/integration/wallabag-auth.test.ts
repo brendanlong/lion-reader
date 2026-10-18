@@ -14,7 +14,7 @@ import { describe, it, expect, afterAll, vi } from "vitest";
 import * as argon2 from "argon2";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { oauthRefreshTokens, users } from "../../src/server/db/schema";
+import { oauthClients, oauthRefreshTokens, users } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import {
   createTokens,
@@ -22,13 +22,17 @@ import {
   rotateRefreshToken,
   validateAccessToken,
 } from "../../src/server/oauth/service";
-import { requireAuth, passwordGrant, WALLABAG_CLIENT_ID } from "../../src/server/wallabag/auth";
+import { requireAuth, passwordGrant } from "../../src/server/wallabag/auth";
+import { WALLABAG_CLIENT_ID } from "../../src/server/wallabag/client";
 import { OAUTH_SCOPES } from "../../src/server/oauth/utils";
+import { APP_CLIENT_ID, getAppResourceIdentifier } from "../../src/server/oauth/app-client";
+import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { POST as tokenEndpoint } from "../../src/app/api/wallabag/oauth/v2/token/route";
 import { createCaller } from "../../src/server/trpc/root";
-import { createAuthContext, createTestUser } from "./helpers";
+import { createAuthContext, createTestOAuthClient, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
+const createdClientIds: string[] = [];
 
 /**
  * A confirmed user. Pass `password` when the test signs in through the password
@@ -60,6 +64,9 @@ function bearerRequest(token: string | null): Request {
 afterAll(async () => {
   if (createdUserIds.length > 0) {
     await db.delete(users).where(inArray(users.id, createdUserIds));
+  }
+  if (createdClientIds.length > 0) {
+    await db.delete(oauthClients).where(inArray(oauthClients.clientId, createdClientIds));
   }
 });
 
@@ -98,6 +105,42 @@ describe("Wallabag requireAuth scope enforcement", () => {
     if (!(result instanceof Response)) throw new Error("unreachable");
     expect(result.status).toBe(403);
   });
+
+  // Scopes don't say which API a token is for: any registered client may ask
+  // for reader:full-access, so only the Wallabag client's tokens are accepted.
+  it.each([
+    {
+      issuer: "an MCP client",
+      clientId: async () => {
+        const clientId = await createTestOAuthClient({ scopes: [OAUTH_SCOPES.READER_FULL_ACCESS] });
+        createdClientIds.push(clientId);
+        return clientId;
+      },
+      resource: getResourceIdentifier,
+    },
+    {
+      issuer: "the native app",
+      clientId: async () => APP_CLIENT_ID,
+      resource: getAppResourceIdentifier,
+    },
+  ])(
+    "rejects a reader:full-access token issued to $issuer with 401",
+    async ({ clientId, resource }) => {
+      const user = await createUser();
+      const { accessToken } = await createTokens({
+        clientId: await clientId(),
+        userId: user.id,
+        scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+        resource: resource(),
+      });
+
+      const result = await requireAuth(bearerRequest(accessToken));
+
+      expect(result).toBeInstanceOf(Response);
+      if (!(result instanceof Response)) throw new Error("unreachable");
+      expect(result.status).toBe(401);
+    }
+  );
 
   it("rejects a reader:full-access token for an unconfirmed user with 403", async () => {
     const id = generateUuidv7();

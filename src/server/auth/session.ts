@@ -300,9 +300,8 @@ export interface ValidateSessionOptions {
    * Accept restricted (scoped) sessions. Defaults to `false` — a fail-closed
    * default so full-access consumers (tRPC context, RSC caller, SSE, OAuth
    * authorize) automatically reject a scoped session (e.g. a Google Reader
-   * token) as if it were invalid. Only surfaces that understand scoped sessions
-   * (the Google Reader API) should pass `true`, and they must then check the
-   * returned `session.scopes` themselves.
+   * token) as if it were invalid. `authenticateCredential` passes `true` only
+   * for a surface that accepts the `scoped_session` kind, and checks its scopes.
    */
   allowScoped?: boolean;
 }

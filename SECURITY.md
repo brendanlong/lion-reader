@@ -134,7 +134,7 @@ fetches user-influenced URLs and must never be usable to reach internal services
 ## 6. OAuth 2.1 server & MCP auth
 
 **Docs:** `src/server/oauth/CLAUDE.md` · **Code:** `src/server/oauth/`,
-`src/app/(spa)/oauth/`, `src/app/api/mcp/`
+`src/app/(spa)/oauth/`, `src/app/api/mcp/`, `src/server/auth/credential.ts`
 
 - PKCE mandatory; auth codes single-use, expiring, and client/redirect bound;
   `redirect_uri` exact-match; refresh rotation with reuse detection; client secrets
@@ -144,7 +144,8 @@ fetches user-influenced URLs and must never be usable to reach internal services
 - **OAuth access tokens are accepted only by the resource their audience names.**
   **Only the pinned first-party app client (`app-client.ts`) may be minted the
   `/api/v1` audience** — dynamic registration lets any client request any scope, so
-  the audience is the gate.
+  the audience is the gate. Wallabag's tokens are told apart by their client
+  (`WALLABAG_CLIENT_ID`), and only the Wallabag API accepts them.
 - The keys published in `/.well-known/assetlinks.json` (`ANDROID_APP_CERT_SHA256`,
   `ANDROID_DEBUG_APP_CERT_SHA256`) decide which installed apps receive that client's
   codes; the debug redirect path is accepted only while it has a published key.

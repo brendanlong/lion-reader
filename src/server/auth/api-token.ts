@@ -51,7 +51,7 @@ export const SAVE_ARTICLE_SCOPES: ApiTokenScope[] = [
 /**
  * Scopes that reach the MCP tool surface's tRPC endpoints: `mcp` tokens, and the
  * first-party app's `reader:full-access` OAuth token (the only token with that
- * scope the tRPC context accepts — see src/server/auth/app-token.ts).
+ * scope the tRPC context accepts — see src/server/auth/credential.ts).
  */
 export const READER_SCOPES: OAuthScope[] = [API_TOKEN_SCOPES.MCP, OAUTH_SCOPES.READER_FULL_ACCESS];
 

@@ -23,7 +23,8 @@
  * client_id must be "wallabag" (or omitted); see WALLABAG_CLIENT_ID.
  */
 
-import { passwordGrant, refreshTokenGrant, WALLABAG_CLIENT_ID } from "@/server/wallabag/auth";
+import { passwordGrant, refreshTokenGrant } from "@/server/wallabag/auth";
+import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
 import { parseBody } from "@/server/wallabag/parse";
 import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
 import { checkRouteRateLimit, checkAccountRouteRateLimit } from "@/server/rate-limit";

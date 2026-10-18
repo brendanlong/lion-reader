@@ -7,18 +7,17 @@
 
 import { type FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { db, type Database } from "@/server/db";
-import { validateSession, type SessionData } from "@/server/auth/session";
-import { validateApiToken, type ApiTokenData } from "@/server/auth/api-token";
-import { validateAppAccessToken } from "@/server/auth/app-token";
-import { extractBearerToken } from "@/server/auth/bearer";
+import type { SessionData } from "@/server/auth/session";
+import type { ApiTokenData } from "@/server/auth/api-token";
+import { authenticateCredential, getBearerOrSessionCookie } from "@/server/auth/credential";
 import { trackAndroidAppRequest } from "@/server/metrics/metrics";
-import { isOAuthAccessTokenFormat, type OAuthScope } from "@/server/oauth/utils";
+import type { OAuthScope } from "@/server/oauth/utils";
 import type { User } from "@/server/db/schema";
 
 // Re-export types for use in other modules
 /**
  * Authentication type: a user session, an API token, or the first-party app's
- * OAuth access token (see src/server/auth/app-token.ts).
+ * OAuth access token (see src/server/auth/credential.ts).
  */
 export type AuthType = "session" | "api_token" | "app_token";
 
@@ -70,34 +69,6 @@ export interface Context {
 }
 
 /**
- * Extracts bearer token from request headers.
- * Supports both cookie-based and Authorization header authentication.
- */
-function getToken(headers: Headers): string | null {
-  // Check Authorization header first (for API clients and extensions)
-  const bearerToken = extractBearerToken(headers.get("authorization"));
-  if (bearerToken) {
-    return bearerToken;
-  }
-
-  // Check cookie (for browser clients)
-  const cookieHeader = headers.get("cookie");
-  if (cookieHeader) {
-    const cookies = Object.fromEntries(
-      cookieHeader.split("; ").map((c) => {
-        const [key, ...value] = c.split("=");
-        return [key, value.join("=")];
-      })
-    );
-    if (cookies.session) {
-      return cookies.session;
-    }
-  }
-
-  return null;
-}
-
-/**
  * Builds a session-shaped view of a token's user so downstream code can read
  * user data uniformly. This does NOT grant full access: token requests carry
  * the token's scopes, and every protected procedure is either session-only or
@@ -128,105 +99,75 @@ function syntheticSession(
 }
 
 /**
- * Creates the tRPC context for each request.
- * This is called for every request and provides access to the database
- * and current user session or API token.
- *
- * An OAuth access token is recognized by its prefix and checked only as the
- * first-party app's token. Any other token is tried as a session (Redis cache,
- * then Postgres), then an API token, then an app token, since unprefixed
- * access tokens are still accepted until #1955.
+ * Creates the tRPC context for each request: a browser session, an API token,
+ * or the first-party app's OAuth token. Procedures enforce scopes and signup
+ * confirmation (src/server/trpc/trpc.ts).
  */
 export async function createContext(opts: FetchCreateContextFnOptions): Promise<Context> {
   const { req } = opts;
   // Present on the browser tRPC fetch path; undefined on the REST/OpenAPI path
   // (its adapter uses a Node res shim and doesn't pass resHeaders through).
   const resHeaders = opts.resHeaders as Headers | undefined;
+  const base = { db, headers: req.headers, resHeaders };
 
-  // Extract token from request
-  const token = getToken(req.headers);
-
-  if (!token) {
+  const token = getBearerOrSessionCookie(req.headers);
+  const auth = await authenticateCredential(token, {
+    accept: ["session", "api_token", "app_token"],
+  });
+  if (!auth.ok) {
     return {
-      db,
+      ...base,
       session: null,
       apiToken: null,
       authType: null,
       scopes: [],
       sessionToken: null,
-      headers: req.headers,
-      resHeaders,
     };
   }
 
-  if (!isOAuthAccessTokenFormat(token)) {
-    const session = await validateSession(token);
-    if (session) {
+  const { credential } = auth;
+  switch (credential.kind) {
+    case "session":
       return {
-        db,
-        session,
+        ...base,
+        session: credential.session,
         apiToken: null,
         authType: "session",
         scopes: [], // Session auth has full access, scopes not used
         sessionToken: token,
-        headers: req.headers,
-        resHeaders,
       };
-    }
-
-    const apiTokenData = await validateApiToken(token);
-    if (apiTokenData) {
+    case "api_token": {
+      const { token: apiToken, user } = credential.apiToken;
       return {
-        db,
-        session: syntheticSession(apiTokenData.user, {
-          id: apiTokenData.token.id,
-          createdAt: apiTokenData.token.createdAt,
-          expiresAt:
-            apiTokenData.token.expiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-          lastActiveAt: apiTokenData.token.lastUsedAt ?? apiTokenData.token.createdAt,
+        ...base,
+        session: syntheticSession(user, {
+          id: apiToken.id,
+          createdAt: apiToken.createdAt,
+          expiresAt: apiToken.expiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          lastActiveAt: apiToken.lastUsedAt ?? apiToken.createdAt,
         }),
-        apiToken: apiTokenData,
+        apiToken: credential.apiToken,
         authType: "api_token",
-        scopes: (apiTokenData.token.scopes ?? []) as OAuthScope[],
+        scopes: apiToken.scopes as OAuthScope[],
         sessionToken: token,
-        headers: req.headers,
-        resHeaders,
+      };
+    }
+    case "app_token": {
+      trackAndroidAppRequest(req.headers.get("user-agent"));
+      const now = new Date();
+      return {
+        ...base,
+        session: syntheticSession(credential.oauthToken.user, {
+          id: credential.oauthToken.tokenId,
+          createdAt: now,
+          expiresAt: credential.oauthToken.expiresAt,
+          lastActiveAt: now,
+        }),
+        apiToken: null,
+        authType: "app_token",
+        scopes: credential.oauthToken.scopes as OAuthScope[],
+        sessionToken: token,
       };
     }
   }
-
-  // Try the first-party app's OAuth access token. Other OAuth tokens (MCP
-  // clients, Wallabag) are audience-bound elsewhere and rejected here.
-  const appToken = await validateAppAccessToken(token);
-  if (appToken) {
-    trackAndroidAppRequest(req.headers.get("user-agent"));
-    const now = new Date();
-    return {
-      db,
-      session: syntheticSession(appToken.user, {
-        id: appToken.tokenId,
-        createdAt: now,
-        expiresAt: appToken.expiresAt,
-        lastActiveAt: now,
-      }),
-      apiToken: null,
-      authType: "app_token",
-      scopes: appToken.scopes as OAuthScope[],
-      sessionToken: token,
-      headers: req.headers,
-      resHeaders,
-    };
-  }
-
-  // Token provided but invalid
-  return {
-    db,
-    session: null,
-    apiToken: null,
-    authType: null,
-    scopes: [],
-    sessionToken: null,
-    headers: req.headers,
-    resHeaders,
-  };
 }
