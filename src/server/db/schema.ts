@@ -953,9 +953,7 @@ export const userFeeds = pgView("user_feeds", {
   id: uuid("id").notNull(),
   userId: uuid("user_id").notNull(),
   subscribedAt: timestamp("subscribed_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(), // for sync cursor tracking
   feedId: uuid("feed_id"), // internal use only; NULL without a feed (LEFT JOIN)
-  customTitle: text("custom_title"),
   fetchFullContent: boolean("fetch_full_content").notNull(), // fetch full article from URL
   type: feedTypeEnum("type").notNull(),
   title: text("title"), // resolved title (custom or original)
@@ -983,7 +981,6 @@ export const visibleEntries = pgView("visible_entries", {
   id: uuid("id").notNull(),
   ownerFeedId: uuid("owner_feed_id"),
   type: feedTypeEnum("type").$type<EntryType>().notNull(),
-  guid: text("guid").notNull(),
   url: text("url"),
   title: text("title"),
   author: text("author"),
@@ -991,18 +988,11 @@ export const visibleEntries = pgView("visible_entries", {
   contentCleaned: text("content_cleaned"),
   summary: text("summary"),
   siteName: text("site_name"),
-  imageUrl: text("image_url"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
-  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   contentHash: text("content_hash").notNull(),
   fullContentHash: text("full_content_hash"),
-  spamScore: real("spam_score"),
   isSpam: boolean("is_spam").notNull(),
-  listUnsubscribeMailto: text("list_unsubscribe_mailto"),
-  listUnsubscribeHttps: text("list_unsubscribe_https"),
-  listUnsubscribePost: boolean("list_unsubscribe_post"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(), // GREATEST(entries, user_entries)
   entryUpdatedAt: timestamp("entry_updated_at", { withTimezone: true }).notNull(), // entries.updated_at alone
   fullContentOriginal: text("full_content_original"),
@@ -1202,15 +1192,8 @@ export const entrySummaries = pgTable(
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     generatedAt: timestamp("generated_at", { withTimezone: true }), // when summary was generated
-
-    // Unused: a failed summary records nothing. Left for a contract migration
-    // to drop.
-    error: text("error"),
-    errorAt: timestamp("error_at", { withTimezone: true }),
   },
   (table) => [
-    // Index for finding stale summaries
-    index("idx_entry_summaries_prompt_version").on(table.promptVersion),
     // Unique constraint for per-user summary caching
     unique("entry_summaries_user_content_unique").on(table.userId, table.contentHash),
   ]
