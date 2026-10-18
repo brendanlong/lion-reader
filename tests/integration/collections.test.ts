@@ -30,7 +30,7 @@ import {
 } from "../../src/server/services/entries";
 import { getBulkEntryRelatedCounts, getGlobalUnreadCounts } from "../../src/server/services/counts";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
-import { deleteSavedArticle, uploadArticle } from "../../src/server/services/saved";
+import { deleteSavedArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -469,6 +469,30 @@ describe("collections", () => {
         collectionIds: [collectionId],
       });
       expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([article.id]);
+    });
+
+    it("checks an upload's collections before saving, and files it into them", async () => {
+      const { userId, collectionId } = await setup();
+      const other = await setup();
+      const file = { content: Buffer.from("# Notes\n\nBody").toString("base64"), filename: "a.md" };
+      const markdown = { content: "# Notes\n\nBody", title: "Notes" };
+
+      await expect(
+        uploadFile(db, userId, { ...file, collectionIds: [other.collectionId] })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        uploadArticle(db, userId, { ...markdown, collectionIds: [other.collectionId] })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await savedEntryCount(userId)).toBe(0);
+
+      const uploaded = await uploadFile(db, userId, { ...file, collectionIds: [collectionId] });
+      const written = await uploadArticle(db, userId, {
+        ...markdown,
+        collectionIds: [collectionId],
+      });
+      expect(await listIds(userId, { subscriptionId: collectionId })).toEqual(
+        [uploaded.id, written.id].sort()
+      );
     });
   });
 

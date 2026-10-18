@@ -468,7 +468,6 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(saveArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(saveArticleArgs, args);
-        await collectionsService.assertOwnedCollections(db, userId, params.collectionIds ?? []);
         const article = await savedService.saveArticle(db, userId, {
           url: params.url,
           title: params.title,
@@ -476,18 +475,13 @@ function buildTools(): Tool[] {
           excerpt: params.summary,
           refetch: params.refetch,
           force: params.force,
+          collectionIds: params.collectionIds,
           // Use the user's stored Google credentials for private Google Docs
           // when already linked/granted; otherwise throw a clear error telling
           // them to authorize Google Docs access in the web app (an MCP client
           // can't run the interactive consent flow).
           userAuth: "non-interactive",
         });
-        await collectionsService.addEntryToCollections(
-          db,
-          userId,
-          article.id,
-          params.collectionIds ?? []
-        );
         return withoutContent(article);
       },
     },
@@ -510,19 +504,13 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(uploadArticleArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(uploadArticleArgs, args);
-        await collectionsService.assertOwnedCollections(db, userId, params.collectionIds ?? []);
         const article = await savedService.uploadArticle(db, userId, {
           content: params.content,
           title: params.title,
           author: params.author,
           excerpt: params.summary,
+          collectionIds: params.collectionIds,
         });
-        await collectionsService.addEntryToCollections(
-          db,
-          userId,
-          article.id,
-          params.collectionIds ?? []
-        );
         return withoutContent(article);
       },
     },

@@ -14,7 +14,12 @@ import { entries, userEntries } from "@/server/db/schema";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { listEntryCollectionIds, publishEntryLeftCollections } from "./collections";
+import {
+  addEntryToCollections,
+  assertOwnedCollections,
+  listEntryCollectionIds,
+  publishEntryLeftCollections,
+} from "./collections";
 import { recordEntryTombstone } from "./entry-tombstones";
 import { normalizeUrl } from "@/lib/url";
 import {
@@ -30,7 +35,13 @@ import {
   processArticleContent,
   type ArticleContentBundle,
 } from "./article-content";
-import { titleFromFilename, type ConvertedUpload } from "@/server/file/process-upload";
+import {
+  convertUploadedFile,
+  detectFileType,
+  getSupportedTypesDescription,
+  titleFromFilename,
+  type ConvertedUpload,
+} from "@/server/file/process-upload";
 import { type SupportedFileType } from "@/lib/upload-file-types";
 import { usageLimitsConfig } from "@/server/config/env";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
@@ -55,7 +66,12 @@ import {
 // Types
 // ============================================================================
 
-export interface SaveArticleParams {
+interface CollectionsParam {
+  /** The user's collections to file the new article into ({@link withCollections}). */
+  collectionIds?: string[];
+}
+
+export interface SaveArticleParams extends CollectionsParam {
   url: string;
   /** Optional title hint (useful when page title is poor) */
   title?: string;
@@ -107,7 +123,7 @@ export interface SaveArticleResult extends SavedArticle {
   outcome: SaveArticleOutcome;
 }
 
-export interface UploadArticleParams {
+export interface UploadArticleParams extends CollectionsParam {
   /** Article content in Markdown format */
   content: string;
   /** Article title */
@@ -819,6 +835,34 @@ export async function saveArticle(
   userId: string,
   params: SaveArticleParams
 ): Promise<SaveArticleResult> {
+  return withCollections(db, userId, params.collectionIds, () =>
+    saveArticleContent(db, userId, params)
+  );
+}
+
+/**
+ * Runs a save, then files the article into `collectionIds`. A bad id fails
+ * before anything is saved (or fetched). The add itself is best effort and
+ * re-checks ownership under lock, adding only an article the user can see
+ * (`addEntryToCollections`), so a collection never grants access.
+ */
+async function withCollections<T extends SavedArticle>(
+  db: typeof dbType,
+  userId: string,
+  collectionIds: string[] = [],
+  save: () => Promise<T>
+): Promise<T> {
+  await assertOwnedCollections(db, userId, collectionIds);
+  const article = await save();
+  await addEntryToCollections(db, userId, article.id, collectionIds);
+  return article;
+}
+
+async function saveArticleContent(
+  db: typeof dbType,
+  userId: string,
+  params: SaveArticleParams
+): Promise<SaveArticleResult> {
   const normalizedUrl = normalizeSavedUrl(params.url);
 
   // Check if URL is already saved (guid = normalized URL for saved articles).
@@ -1130,34 +1174,81 @@ export async function deleteSavedArticle(
   return true;
 }
 
+export interface UploadFileParams extends CollectionsParam {
+  /** The file's bytes, base64-encoded. */
+  content: string;
+  /** The original filename: picks the converter, and is the last-resort title. */
+  filename: string;
+  title?: string;
+}
+
 /**
- * Create a saved article from an uploaded file (see `convertUploadedFile`).
+ * Enforces the saved article size limit on an upload's raw bytes, before any
+ * conversion (mammoth, Readability, Markdown) can burn memory or CPU on it.
+ */
+function assertUploadSize(resource: string, bytes: number): void {
+  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
+  if (bytes > maxSize) {
+    throw errors.contentTooLarge(resource, maxSize);
+  }
+}
+
+/**
+ * Save an uploaded file (.docx, .html, .md, .txt; see `convertUploadedFile`).
  *
  * The converted content runs through the same {@link buildArticleFields} pipeline
  * as a URL save — Readability, excerpt, and title/author/site-name precedence —
  * with a null URL and the filename as a last-resort title.
  */
-export async function createSavedFromUpload(
+export async function uploadFile(
   db: typeof dbType,
   userId: string,
-  params: { converted: ConvertedUpload; title?: string | null }
+  params: UploadFileParams
 ): Promise<SavedArticle> {
-  const { converted } = params;
-  const fields = await buildArticleFields(
-    {
-      html: converted.html,
-      contentUrl: null,
-      pluginContent: null,
-      preCleanedContent: converted.preCleanedContent,
-    },
-    {
-      providedTitle: params.title ?? null,
-      filename: converted.filename,
-      siteName: UPLOAD_SITE_NAMES[converted.fileType],
-    },
-    { minCleanedLength: 10 }
-  );
-  return insertUploadedArticle(db, userId, fields);
+  const { filename } = params;
+  const fileType = detectFileType(filename);
+  if (!fileType) {
+    throw errors.validation(`Unsupported file type. ${getSupportedTypesDescription()}`);
+  }
+  // Node's decoder never throws — it skips non-base64 characters — so content
+  // that isn't really base64 decodes to garbage bytes, which conversion rejects.
+  const file = Buffer.from(params.content, "base64");
+  assertUploadSize("Uploaded file", file.length);
+
+  return withCollections(db, userId, params.collectionIds, async () => {
+    const converted = await convertUpload(file, filename);
+    const fields = await buildArticleFields(
+      {
+        html: converted.html,
+        contentUrl: null,
+        pluginContent: null,
+        preCleanedContent: converted.preCleanedContent,
+      },
+      {
+        providedTitle: params.title ?? null,
+        filename,
+        siteName: UPLOAD_SITE_NAMES[fileType],
+      },
+      { minCleanedLength: 10 }
+    );
+    return insertUploadedArticle(db, userId, fields);
+  });
+}
+
+/**
+ * Converts an uploaded file, reporting a file it can't read as the user's
+ * error. An error that already knows what it is keeps its own code: Markdown
+ * busting its byte budget is `CONTENT_TOO_LARGE` (#1431), not a bad file.
+ */
+async function convertUpload(file: Buffer, filename: string): Promise<ConvertedUpload> {
+  try {
+    return await convertUploadedFile(file, filename);
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn("Failed to convert uploaded file", { filename, error: message });
+    throw errors.validation(`Failed to process file: ${message}`);
+  }
 }
 
 /**
@@ -1173,29 +1264,27 @@ export async function uploadArticle(
   userId: string,
   params: UploadArticleParams
 ): Promise<SavedArticle> {
-  // Check raw content size before processing
-  const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-  if (params.content.length > maxSize) {
-    throw errors.contentTooLarge("Uploaded article", maxSize);
-  }
+  assertUploadSize("Uploaded article", Buffer.byteLength(params.content, "utf8"));
 
-  // Convert markdown to HTML (with frontmatter title/summary/author); Readability
-  // is skipped downstream because preCleanedContent is set.
-  const markdownResult = await processMarkdown(params.content);
-  const fields = await buildArticleFields(
-    {
-      html: markdownResult.html,
-      contentUrl: null,
-      pluginContent: null,
-      preCleanedContent: markdownResult,
-    },
-    {
-      providedTitle: params.title,
-      providedAuthor: params.author ?? null,
-      providedExcerpt: params.excerpt ?? null,
-      siteName: "Uploaded Article",
-    },
-    { keepRelativeUrls: params.keepRelativeUrls }
-  );
-  return insertUploadedArticle(db, userId, fields);
+  return withCollections(db, userId, params.collectionIds, async () => {
+    // Convert markdown to HTML (with frontmatter title/summary/author); Readability
+    // is skipped downstream because preCleanedContent is set.
+    const markdownResult = await processMarkdown(params.content);
+    const fields = await buildArticleFields(
+      {
+        html: markdownResult.html,
+        contentUrl: null,
+        pluginContent: null,
+        preCleanedContent: markdownResult,
+      },
+      {
+        providedTitle: params.title,
+        providedAuthor: params.author ?? null,
+        providedExcerpt: params.excerpt ?? null,
+        siteName: "Uploaded Article",
+      },
+      { keepRelativeUrls: params.keepRelativeUrls }
+    );
+    return insertUploadedArticle(db, userId, fields);
+  });
 }
