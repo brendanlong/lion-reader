@@ -9,18 +9,17 @@
  */
 
 import * as client from "openid-client";
+import { getDiscordConfig, getRedirectUri } from "./config";
 import {
-  getDiscordConfig,
-  getRedirectUri,
-  isProviderEnabled,
-  type OAuthLinkTarget,
-} from "./config";
-import {
-  accessTokenExpiresAt,
   consumeOAuthState,
   exchangeAuthorizationCode,
   fetchUserInfo,
+  signInOrLinkFlow,
   storeOAuthState,
+  tokensFromResponse,
+  type OAuthAuthUrl,
+  type PendingOAuthCallback,
+  type SignInOrLinkState,
 } from "./token-exchange";
 
 // ============================================================================
@@ -49,160 +48,74 @@ const DISCORD_SCOPES = ["identify", "email"];
 interface DiscordUserInfo {
   /** Discord's unique user ID */
   id: string;
-  /** User's username */
-  username: string;
   /** User's email address (requires email scope) */
   email: string;
   /** Whether the email has been verified */
   verified: boolean;
-  /** User's avatar hash */
-  avatar?: string;
-  /** User's global display name */
-  global_name?: string;
-}
-
-/**
- * Result of generating an authorization URL
- */
-export interface DiscordAuthUrlResult {
-  /** The authorization URL to redirect the user to */
-  url: string;
-  /** The state parameter for CSRF protection */
-  state: string;
-}
-
-/**
- * Result of validating a Discord OAuth callback
- */
-export interface DiscordAuthResult {
-  /** Discord user information */
-  userInfo: DiscordUserInfo;
-  /** OAuth tokens */
-  tokens: {
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt?: Date;
-  };
-  /** Optional invite token for new user registration */
-  inviteToken?: string;
-  /** Set when this flow is a link: the account it attaches to */
-  link?: OAuthLinkTarget;
-}
-
-// ============================================================================
-// State Storage
-// ============================================================================
-
-/**
- * Data stored in Redis for state verification
- */
-interface StateData {
-  /** Optional invite token for new user registration */
-  inviteToken?: string;
-  /** Present when this flow is a link (see `OAuthLinkTarget`) */
-  link?: OAuthLinkTarget;
 }
 
 // ============================================================================
 // Discord OAuth Functions
 // ============================================================================
 
-export interface CreateDiscordAuthUrlOptions {
-  /** Invite token for new user registration */
-  inviteToken?: string;
-  /** Link this Discord account to the given account instead of signing in */
-  link?: OAuthLinkTarget;
-}
-
 /**
- * Generates a Discord OAuth authorization URL
+ * Generates a Discord OAuth authorization URL, storing the flow in Redis under the
+ * returned `state`. Discord doesn't require PKCE.
  *
- * This creates:
- * 1. A random state parameter for CSRF protection
- * 2. The authorization URL with all parameters
- *
- * @returns The authorization URL and state
  * @throws Error if Discord OAuth is not configured
  */
-export async function createDiscordAuthUrl(
-  options: CreateDiscordAuthUrlOptions = {}
-): Promise<DiscordAuthUrlResult> {
+export async function createDiscordAuthUrl(options: SignInOrLinkState = {}): Promise<OAuthAuthUrl> {
   const config = getDiscordConfig();
 
   if (!config) {
     throw new Error("Discord OAuth is not configured");
   }
 
-  // Generate state parameter
   const state = client.randomState();
 
-  // Store the link target and invite token for later use
   await storeOAuthState(STATE_PREFIX + state, {
     inviteToken: options.inviteToken,
     link: options.link,
-  });
+  } satisfies SignInOrLinkState);
 
-  // Create the authorization URL (Discord doesn't require PKCE)
   const url = client.buildAuthorizationUrl(config, {
     redirect_uri: getRedirectUri("discord"),
     scope: DISCORD_SCOPES.join(" "),
     state,
   });
 
-  return {
-    url: url.toString(),
-    state,
-  };
+  return { url: url.toString(), state };
 }
 
 /**
- * Validates a Discord OAuth callback and retrieves user information
+ * Consumes a Discord callback's state.
  *
- * This:
- * 1. Retrieves the state from Redis
- * 2. Exchanges the authorization code for tokens
- * 3. Fetches the user's Discord profile
- *
- * @param code - The authorization code from Discord
- * @param state - The state parameter for verification
- * @returns The user info and tokens
- * @throws Error if Discord OAuth is not configured, state is invalid, or code exchange fails
+ * @throws OAuthStateError if the state is unknown, expired or already used
  */
-export async function validateDiscordCallback(
-  code: string,
-  state: string
-): Promise<DiscordAuthResult> {
-  const config = getDiscordConfig();
-
-  if (!config) {
-    throw new Error("Discord OAuth is not configured");
-  }
-
-  // Retrieve and consume the state data
-  const stateData = await consumeOAuthState<StateData>(STATE_PREFIX + state);
-
-  if (!stateData) {
-    throw new Error("Invalid or expired OAuth state");
-  }
-
-  // Exchange the authorization code for tokens (Discord doesn't require PKCE)
-  const tokens = await exchangeAuthorizationCode(config, getRedirectUri("discord"), {
-    code,
-    state,
-  });
-
-  // Fetch user info from Discord
-  const userInfo = await fetchDiscordUserInfo(tokens.access_token);
+export async function beginDiscordCallback(state: string): Promise<PendingOAuthCallback> {
+  const stateData = await consumeOAuthState<SignInOrLinkState>(STATE_PREFIX + state);
 
   return {
-    userInfo,
-    tokens: {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: accessTokenExpiresAt(tokens),
+    flow: signInOrLinkFlow(stateData),
+    async complete(code) {
+      const config = getDiscordConfig();
+      if (!config) {
+        throw new Error("Discord OAuth is not configured");
+      }
+
+      const tokens = await exchangeAuthorizationCode(config, getRedirectUri("discord"), {
+        code,
+        state,
+      });
+      const userInfo = await fetchDiscordUserInfo(tokens.access_token);
+
+      return {
+        providerAccountId: userInfo.id,
+        email: userInfo.email,
+        emailVerified: userInfo.verified === true,
+        ...tokensFromResponse(tokens),
+      };
     },
-    inviteToken: stateData.inviteToken,
-    link: stateData.link,
   };
 }
 
@@ -231,13 +144,4 @@ async function fetchDiscordUserInfo(accessToken: string): Promise<DiscordUserInf
   }
 
   return userInfo;
-}
-
-/**
- * Checks if Discord OAuth is available
- *
- * @returns Whether Discord OAuth is configured and enabled
- */
-export function isDiscordOAuthEnabled(): boolean {
-  return isProviderEnabled("discord");
 }

@@ -16,7 +16,7 @@ import { redirect } from "next/navigation";
 import { validateSession } from "@/server/auth/session";
 import { createApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { createGoogleAuthUrl } from "@/server/auth/oauth/google";
-import { getGoogleDocsGrant, GOOGLE_DOCS_SCOPES } from "@/server/google/tokens";
+import { getGoogleDocsGrant } from "@/server/google/tokens";
 import { db } from "@/server/db";
 import { createCaller } from "@/server/trpc/root";
 import { ExtensionSaveClient } from "./client";
@@ -39,11 +39,9 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   }
 
   const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-  const redirectToGoogleDocsAuth = async (): Promise<never> => {
+  const redirectToGoogleDocsAuth = async (userId: string): Promise<never> => {
     const authResult = await createGoogleAuthUrl({
-      additionalScopes: GOOGLE_DOCS_SCOPES,
-      mode: "extension-save",
-      returnUrl,
+      docsAccess: { userId, mode: "extension-save", returnUrl },
     });
     redirect(authResult.url);
   };
@@ -69,7 +67,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   // The Google callback only adds scopes to an already-linked account, so
   // without one, just try the save (public docs need no auth)
   if (isGoogleDoc && (await getGoogleDocsGrant(session.user.id)).status === "missing-scopes") {
-    await redirectToGoogleDocsAuth();
+    await redirectToGoogleDocsAuth(session.user.id);
   }
 
   // All auth is complete - save the article
@@ -108,7 +106,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
   // Handle Google reauth redirect outside try/catch (redirect throws)
   if (needsGoogleReauth) {
-    await redirectToGoogleDocsAuth();
+    await redirectToGoogleDocsAuth(session.user.id);
   }
 
   // Create an API token for the extension

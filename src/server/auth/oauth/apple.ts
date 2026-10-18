@@ -5,10 +5,10 @@
  * - Generating authorization URLs
  * - Storing/retrieving state in Redis
  * - Exchanging authorization codes for tokens
- * - Decoding Apple's JWT id_token for user info
+ * - Verifying Apple's JWT id_token for user info
  *
  * Important Apple-specific considerations:
- * - Apple only sends user info (name, email) on FIRST authorization
+ * - Apple only sends the email on FIRST authorization
  * - Users may use Apple's private relay email (randomized@privaterelay.appleid.com)
  * - Apple uses JWT id_token to convey user information
  * - Apple requires response_mode=form_post for the callback
@@ -23,14 +23,16 @@ import {
   getAppleTokenConfig,
   getAppleClientId,
   getRedirectUri,
-  isProviderEnabled,
-  type OAuthLinkTarget,
 } from "./config";
 import {
-  accessTokenExpiresAt,
   consumeOAuthState,
   exchangeAuthorizationCode,
+  signInOrLinkFlow,
   storeOAuthState,
+  tokensFromResponse,
+  type OAuthAuthUrl,
+  type PendingOAuthCallback,
+  type SignInOrLinkState,
 } from "./token-exchange";
 
 /**
@@ -74,66 +76,6 @@ const APPLE_SCOPES = ["name", "email"];
 // ============================================================================
 
 /**
- * User information from Apple's id_token JWT
- * Note: Apple encodes user info in the JWT, not a separate userinfo endpoint
- */
-interface AppleUserInfo {
-  /** Apple's unique user ID (subject) - always present in id_token */
-  sub: string;
-  /** User's email address - may be a private relay address */
-  email?: string;
-  /** Whether the email is a private relay email */
-  isPrivateEmail?: boolean;
-  /** Whether the email has been verified by Apple */
-  emailVerified?: boolean;
-}
-
-/**
- * User data sent by Apple on first authorization only
- * This comes as a separate parameter in the callback, not in the JWT
- */
-export interface AppleFirstAuthUserData {
-  /** User's name (only on first auth) */
-  name?: {
-    firstName?: string;
-    lastName?: string;
-  };
-  /** User's email (also in JWT, but may include more details here) */
-  email?: string;
-}
-
-/**
- * Result of generating an authorization URL
- */
-export interface AppleAuthUrlResult {
-  /** The authorization URL to redirect the user to */
-  url: string;
-  /** The state parameter for CSRF protection */
-  state: string;
-}
-
-/**
- * Result of validating an Apple OAuth callback
- */
-export interface AppleAuthResult {
-  /** Apple user information from JWT */
-  userInfo: AppleUserInfo;
-  /** User data from first auth (name, email) - only present on first authorization */
-  firstAuthData?: AppleFirstAuthUserData;
-  /** OAuth tokens */
-  tokens: {
-    accessToken: string;
-    refreshToken?: string;
-    idToken: string;
-    expiresAt?: Date;
-  };
-  /** Optional invite token for new user registration */
-  inviteToken?: string;
-  /** Set when this flow is a link: the account it attaches to */
-  link?: OAuthLinkTarget;
-}
-
-/**
  * Decoded Apple JWT id_token payload
  */
 interface AppleJWTPayload {
@@ -144,23 +86,8 @@ interface AppleJWTPayload {
   sub: string; // user's unique ID
   email?: string;
   email_verified?: string | boolean;
-  is_private_email?: string | boolean;
   auth_time: number;
   nonce_supported: boolean;
-}
-
-// ============================================================================
-// State Storage
-// ============================================================================
-
-/**
- * Data stored in Redis for state verification
- */
-interface AppleStateData {
-  /** Optional invite token for new user registration */
-  inviteToken?: string;
-  /** Present when this flow is a link (see `OAuthLinkTarget`) */
-  link?: OAuthLinkTarget;
 }
 
 // ============================================================================
@@ -205,77 +132,30 @@ async function verifyAppleIdToken(idToken: string): Promise<AppleJWTPayload> {
   return payload as unknown as AppleJWTPayload;
 }
 
-/**
- * Verifies Apple's id_token and extracts user info from it.
- *
- * @param idToken - The JWT id_token from Apple
- * @returns Parsed user information
- */
-async function extractUserInfoFromToken(idToken: string): Promise<AppleUserInfo> {
-  const payload = await verifyAppleIdToken(idToken);
-
-  // Parse email_verified - Apple may send as string "true"/"false" or boolean
-  let emailVerified: boolean | undefined;
-  if (payload.email_verified !== undefined) {
-    emailVerified = payload.email_verified === true || payload.email_verified === "true";
-  }
-
-  // Parse is_private_email
-  let isPrivateEmail: boolean | undefined;
-  if (payload.is_private_email !== undefined) {
-    isPrivateEmail = payload.is_private_email === true || payload.is_private_email === "true";
-  }
-
-  return {
-    sub: payload.sub,
-    email: payload.email,
-    emailVerified,
-    isPrivateEmail,
-  };
-}
-
 // ============================================================================
 // Apple OAuth Functions
 // ============================================================================
 
-export interface CreateAppleAuthUrlOptions {
-  /** Invite token for new user registration */
-  inviteToken?: string;
-  /** Link this Apple account to the given account instead of signing in */
-  link?: OAuthLinkTarget;
-}
-
 /**
- * Generates an Apple OAuth authorization URL
+ * Generates an Apple OAuth authorization URL, storing the flow in Redis under the
+ * returned `state`. Apple doesn't use PKCE like Google does.
  *
- * This creates:
- * 1. A random state parameter for CSRF protection (stored in Redis)
- * 2. The authorization URL with all parameters
- *
- * Note: Apple doesn't use PKCE like Google does
- *
- * @returns The authorization URL and state
  * @throws Error if Apple OAuth is not configured
  */
-export async function createAppleAuthUrl(
-  options: CreateAppleAuthUrlOptions = {}
-): Promise<AppleAuthUrlResult> {
+export async function createAppleAuthUrl(options: SignInOrLinkState = {}): Promise<OAuthAuthUrl> {
   const config = getAppleAuthorizationConfig();
 
   if (!config) {
     throw new Error("Apple OAuth is not configured");
   }
 
-  // Generate state parameter for CSRF protection
   const state = client.randomState();
 
-  // Store the link target and invite token for later verification
   await storeOAuthState(STATE_PREFIX + state, {
     inviteToken: options.inviteToken,
     link: options.link,
-  });
+  } satisfies SignInOrLinkState);
 
-  // Create the authorization URL
   // Apple requires response_mode=form_post when requesting name or email scopes
   const url = client.buildAuthorizationUrl(config, {
     redirect_uri: getRedirectUri("apple"),
@@ -284,89 +164,49 @@ export async function createAppleAuthUrl(
     response_mode: "form_post",
   });
 
-  return {
-    url: url.toString(),
-    state,
-  };
+  return { url: url.toString(), state };
 }
 
 /**
- * Validates an Apple OAuth callback and retrieves user information
+ * Consumes an Apple callback's state.
  *
- * This:
- * 1. Validates the state parameter
- * 2. Exchanges the authorization code for tokens
- * 3. Decodes the id_token to get user info
- * 4. Parses first-auth user data if present
+ * The identity comes **only** from the signature-verified id_token. Apple also posts
+ * a `user` form value with a name and email on first authorization, but the client
+ * posts it, so it is attacker-controllable and deliberately never read: an email
+ * taken from it would decide which account a sign-in links into. Returning users
+ * (no email on re-auth) are matched by `sub`.
  *
- * @param code - The authorization code from Apple
- * @param state - The state parameter for verification
- * @param userData - Optional user data (only sent on first authorization)
- * @returns The user info and tokens
- * @throws Error if Apple OAuth is not configured, state is invalid, or code exchange fails
+ * @throws OAuthStateError if the state is unknown, expired or already used
  */
-export async function validateAppleCallback(
-  code: string,
-  state: string,
-  userData?: string
-): Promise<AppleAuthResult> {
-  const config = await getAppleTokenConfig();
-
-  if (!config) {
-    throw new Error("Apple OAuth is not configured");
-  }
-
-  // Validate the state and retrieve stored data
-  // A legacy blob was the bare string "valid": a valid state with no data
-  const stateData = await consumeOAuthState<AppleStateData>(STATE_PREFIX + state, {});
-
-  if (!stateData) {
-    throw new Error("Invalid or expired OAuth state");
-  }
-
-  // Exchange the authorization code for tokens (Apple doesn't use PKCE)
-  const tokens = await exchangeAuthorizationCode(config, getRedirectUri("apple"), { code, state });
-
-  // Apple returns an id_token that contains user info
-  const idToken = tokens.id_token;
-
-  if (!idToken) {
-    throw new Error("Apple did not return an id_token");
-  }
-
-  // Verify and extract user info from the id_token
-  const userInfo = await extractUserInfoFromToken(idToken);
-
-  // Parse first-auth user data if provided
-  // Apple sends this as a JSON string in the callback on first authorization only
-  let firstAuthData: AppleFirstAuthUserData | undefined;
-  if (userData) {
-    try {
-      firstAuthData = JSON.parse(userData) as AppleFirstAuthUserData;
-    } catch {
-      // If parsing fails, it's not valid JSON - ignore
-    }
-  }
+export async function beginAppleCallback(state: string): Promise<PendingOAuthCallback> {
+  const stateData = await consumeOAuthState<SignInOrLinkState>(STATE_PREFIX + state);
 
   return {
-    userInfo,
-    firstAuthData,
-    tokens: {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      idToken,
-      expiresAt: accessTokenExpiresAt(tokens),
+    flow: signInOrLinkFlow(stateData),
+    async complete(code) {
+      const config = await getAppleTokenConfig();
+      if (!config) {
+        throw new Error("Apple OAuth is not configured");
+      }
+
+      // Apple doesn't use PKCE
+      const tokens = await exchangeAuthorizationCode(config, getRedirectUri("apple"), {
+        code,
+        state,
+      });
+
+      if (!tokens.id_token) {
+        throw new Error("Apple did not return an id_token");
+      }
+      const claims = await verifyAppleIdToken(tokens.id_token);
+
+      return {
+        providerAccountId: claims.sub,
+        email: claims.email,
+        // Apple may send the claim as the string "true"/"false" or a boolean
+        emailVerified: claims.email_verified === true || claims.email_verified === "true",
+        ...tokensFromResponse(tokens),
+      };
     },
-    inviteToken: stateData.inviteToken,
-    link: stateData.link,
   };
-}
-
-/**
- * Checks if Apple OAuth is available
- *
- * @returns Whether Apple OAuth is configured and enabled
- */
-export function isAppleOAuthEnabled(): boolean {
-  return isProviderEnabled("apple");
 }

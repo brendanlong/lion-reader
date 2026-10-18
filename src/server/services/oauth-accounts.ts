@@ -21,8 +21,9 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { errors } from "@/server/errors";
 import { PROVIDER_LABELS, type OAuthProviderName } from "@/server/auth/oauth/config";
+import { oauthTokenColumns, type OAuthTokens } from "@/server/auth/oauth/token-exchange";
 
-export interface LinkOAuthAccountParams {
+export interface LinkOAuthAccountParams extends OAuthTokens {
   /** The signed-in user the provider account is being attached to. */
   userId: string;
   /** The caller's session, kept alive when the credential change revokes the rest. */
@@ -30,11 +31,6 @@ export interface LinkOAuthAccountParams {
   provider: OAuthProviderName;
   /** The provider's stable id for the account (`sub` / Discord user id). */
   providerAccountId: string;
-  accessToken: string;
-  refreshToken?: string | null;
-  expiresAt?: Date | null;
-  /** Granted scopes, where the provider reports them (Google). */
-  scopes?: string[];
 }
 
 /**
@@ -65,31 +61,9 @@ export async function linkOAuthAccount(
   db: Database,
   params: LinkOAuthAccountParams
 ): Promise<"linked" | "updated"> {
-  const {
-    userId,
-    currentSessionId,
-    provider,
-    providerAccountId,
-    accessToken,
-    refreshToken,
-    expiresAt,
-    scopes,
-  } = params;
+  const { userId, currentSessionId, provider, providerAccountId } = params;
   const label = PROVIDER_LABELS[provider];
-
-  // What the provider omits is not the same as what it cleared. A re-consent
-  // typically returns no refresh token, Apple and Discord report no scope list,
-  // and dropping either would lose access we still hold — so both are only
-  // written when present (the same rule `refreshGoogleToken` follows).
-  // `expiresAt` is the exception and is always written: it belongs to the access
-  // token in this response, so keeping a stale one next to a fresh token would
-  // re-refresh forever.
-  const tokenColumns = {
-    accessToken,
-    expiresAt: expiresAt ?? null,
-    ...(refreshToken ? { refreshToken } : {}),
-    ...(scopes !== undefined ? { scopes } : {}),
-  };
+  const tokenColumns = oauthTokenColumns(params);
 
   // Ordered so a user who somehow has two rows for one provider (nothing
   // enforces uniqueness on (user_id, provider)) resolves to their oldest link
@@ -138,6 +112,41 @@ export async function linkOAuthAccount(
   await revokeOtherUserSessionsOrReport(userId, currentSessionId, `${label} linked`);
 
   return "linked";
+}
+
+export interface ReauthorizeOAuthAccountParams extends OAuthTokens {
+  /** The user who started the re-authorization. */
+  userId: string;
+  provider: OAuthProviderName;
+  providerAccountId: string;
+}
+
+/**
+ * Store the tokens from a re-authorization of a link the user already has (Google's
+ * incremental authorization for Docs). Changes no credential, so revokes nothing.
+ *
+ * Matches the row by the flow's user as well as the provider account, so the
+ * provider account the browser returned with can only update the flow user's own
+ * link, never another user's.
+ *
+ * @returns whether that link existed (and was updated)
+ */
+export async function reauthorizeOAuthAccount(
+  db: Database,
+  params: ReauthorizeOAuthAccountParams
+): Promise<boolean> {
+  const updated = await db
+    .update(oauthAccounts)
+    .set(oauthTokenColumns(params))
+    .where(
+      and(
+        eq(oauthAccounts.userId, params.userId),
+        eq(oauthAccounts.provider, params.provider),
+        eq(oauthAccounts.providerAccountId, params.providerAccountId)
+      )
+    )
+    .returning({ id: oauthAccounts.id });
+  return updated.length > 0;
 }
 
 export interface UnlinkOAuthAccountParams {

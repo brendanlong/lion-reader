@@ -29,6 +29,13 @@ const mockTokenResponse = {
 // Overwritten per test to exercise the user-info validation branches
 let userInfoResponse: Record<string, unknown> = mockDiscordUserInfo;
 
+/** Runs both halves of a callback: consume the state, then exchange the code. */
+async function validateDiscordCallback(code: string, state: string) {
+  const { beginDiscordCallback } = await import("../../src/server/auth/oauth/discord");
+  const pending = await beginDiscordCallback(state);
+  return { flow: pending.flow, identity: await pending.complete(code) };
+}
+
 describe("Discord OAuth", () => {
   let realFetch: typeof globalThis.fetch;
 
@@ -115,24 +122,25 @@ describe("Discord OAuth", () => {
 
   describe("validateDiscordCallback", () => {
     it("exchanges the code and returns user info and tokens", async () => {
-      const { createDiscordAuthUrl, validateDiscordCallback } =
-        await import("../../src/server/auth/oauth/discord");
+      const { createDiscordAuthUrl } = await import("../../src/server/auth/oauth/discord");
 
       const { state } = await createDiscordAuthUrl({ inviteToken: "invite-abc" });
 
       const result = await validateDiscordCallback("mock-auth-code", state);
 
-      expect(result.userInfo.id).toBe("discord-user-123");
-      expect(result.userInfo.email).toBe("test@example.com");
-      expect(result.tokens.accessToken).toBe("mock-discord-access-token");
-      expect(result.tokens.refreshToken).toBe("mock-discord-refresh-token");
-      expect(result.tokens.expiresAt?.getTime()).toBeGreaterThan(Date.now());
-      expect(result.inviteToken).toBe("invite-abc");
+      expect(result.identity).toMatchObject({
+        providerAccountId: "discord-user-123",
+        email: "test@example.com",
+        emailVerified: true,
+        accessToken: "mock-discord-access-token",
+        refreshToken: "mock-discord-refresh-token",
+      });
+      expect(result.identity.expiresAt?.getTime()).toBeGreaterThan(Date.now());
+      expect(result.flow).toEqual({ kind: "sign-in", inviteToken: "invite-abc" });
     });
 
     it("consumes the state (one-time use)", async () => {
-      const { createDiscordAuthUrl, validateDiscordCallback } =
-        await import("../../src/server/auth/oauth/discord");
+      const { createDiscordAuthUrl } = await import("../../src/server/auth/oauth/discord");
 
       const { state } = await createDiscordAuthUrl();
 
@@ -144,16 +152,13 @@ describe("Discord OAuth", () => {
     });
 
     it("fails with an unknown state", async () => {
-      const { validateDiscordCallback } = await import("../../src/server/auth/oauth/discord");
-
       await expect(validateDiscordCallback("mock-auth-code", "never-issued")).rejects.toThrow(
         "Invalid or expired OAuth state"
       );
     });
 
     it("rejects an account whose email Discord has not verified", async () => {
-      const { createDiscordAuthUrl, validateDiscordCallback } =
-        await import("../../src/server/auth/oauth/discord");
+      const { createDiscordAuthUrl } = await import("../../src/server/auth/oauth/discord");
 
       userInfoResponse = { ...mockDiscordUserInfo, verified: false };
       const { state } = await createDiscordAuthUrl();
