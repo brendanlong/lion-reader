@@ -1244,9 +1244,12 @@ async function convertUpload(file: Buffer, filename: string): Promise<ConvertedU
   try {
     return await convertUploadedFile(file, filename);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    logger.warn("Failed to convert uploaded file", { filename, error: message });
+    logger.warn("Failed to convert uploaded file", {
+      filename,
+      error: error instanceof Error ? error.message : String(error),
+    });
     if (error instanceof TRPCError) throw error;
+    const message = error instanceof Error ? error.message : "Unknown error";
     throw errors.validation(`Failed to process file: ${message}`);
   }
 }

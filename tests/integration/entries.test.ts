@@ -859,25 +859,38 @@ describe("Entries", () => {
       expect(ownMarked).toEqual([entryId]);
     });
 
+    it("marks nothing through a deleted tag", async () => {
+      const userId = await createTestUser();
+      const feedId = await createTestFeed("https://deleted-tag-mark-all.com/rss");
+      const subscriptionId = await createTestSubscription(userId, feedId);
+      const entryId = await createTestEntry(feedId, { title: "Tagged entry" });
+      await createUserEntry(userId, entryId, { read: false });
+      const tagId = await createTestTag(userId, { subscriptionIds: [subscriptionId] });
+      await db.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
+
+      const { entryIds } = await markAllEntriesRead(db, { userId, tagId, showSpam: false });
+      expect(entryIds).toEqual([]);
+    });
+
     // A starred article stays visible after its subscription is unsubscribed,
-    // and keeps its membership, so only the ownership checks stop these.
-    it("marks nothing through a deleted tag or an unsubscribed subscription", async () => {
+    // and keeps its membership, so only the ownership check stops this.
+    it("marks nothing through an unsubscribed subscription", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed("https://unsubscribed-mark-all.com/rss");
       const subscriptionId = await createTestSubscription(userId, feedId);
       const entryId = await createTestEntry(feedId, { title: "Starred leftover" });
       await createUserEntry(userId, entryId, { read: false, starred: true });
-      const tagId = await createTestTag(userId, { subscriptionIds: [subscriptionId] });
-      await db.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
       await db
         .update(subscriptions)
         .set({ unsubscribedAt: new Date() })
         .where(eq(subscriptions.id, subscriptionId));
 
-      for (const filter of [{ tagId }, { subscriptionId }]) {
-        const { entryIds } = await markAllEntriesRead(db, { userId, ...filter, showSpam: false });
-        expect(entryIds).toEqual([]);
-      }
+      const { entryIds } = await markAllEntriesRead(db, {
+        userId,
+        subscriptionId,
+        showSpam: false,
+      });
+      expect(entryIds).toEqual([]);
     });
 
     it("excludes hidden spam entries unless showSpam is set", async () => {
