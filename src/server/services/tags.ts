@@ -4,7 +4,9 @@
  * Business logic for tag operations. Used by both tRPC routers and MCP server.
  */
 
+import { z } from "zod";
 import { eq, and, ne, sql, isNull, inArray, type SQL } from "drizzle-orm";
+import { countsAsOfSchema } from "@/lib/events/schemas";
 import type { db as dbType } from "@/server/db";
 import { tags, subscriptionTags, subscriptions, users } from "@/server/db/schema";
 import { errors } from "@/server/errors";
@@ -24,26 +26,25 @@ import {
 // Types
 // ============================================================================
 
-export interface Tag {
-  id: string;
-  name: string;
-  color: string | null;
-  feedCount: number;
-  unreadCount: number;
-  createdAt: Date;
-}
+export const tagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().nullable(),
+  feedCount: z.number(),
+  unreadCount: z.number(),
+  createdAt: z.date(),
+});
 
-export interface UncategorizedCounts {
-  feedCount: number;
-  unreadCount: number;
-}
+export type Tag = z.infer<typeof tagSchema>;
 
-export interface ListTagsResult {
-  items: Tag[];
-  uncategorized: UncategorizedCounts;
-  /** When the unread counts were read (`countsAsOfSchema`). */
-  asOf: string;
-}
+export const listTagsResultSchema = z.object({
+  items: z.array(tagSchema),
+  uncategorized: z.object({ feedCount: z.number(), unreadCount: z.number() }),
+  /** When the unread counts were read. */
+  asOf: countsAsOfSchema,
+});
+
+type ListTagsResult = z.infer<typeof listTagsResultSchema>;
 
 export interface CreateTagParams {
   name: string;

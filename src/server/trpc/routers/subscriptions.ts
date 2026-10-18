@@ -15,15 +15,20 @@ import {
 } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
 import { errors } from "@/server/errors";
-import { feedUrlSchema, uuidSchema } from "../validation";
+import {
+  booleanQueryParam,
+  feedUrlSchema,
+  subscriptionListInputSchema,
+  subscriptionTagIdsSchema,
+  uuidSchema,
+} from "../validation";
 import { OpmlParseError } from "@/server/feed/opml";
 import { logger } from "@/lib/logger";
 import * as subscribeService from "@/server/services/subscribe";
 import * as subscriptionUpdatesService from "@/server/services/subscription-updates";
 import * as subscriptionsService from "@/server/services/subscriptions";
 import { importOpml } from "@/server/services/imports";
-import { countsAsOfSchema, unreadCountsSchema } from "@/lib/events/schemas";
-import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
+import { unreadCountsSchema } from "@/lib/events/schemas";
 
 // Endpoints exposed via the MCP tool surface; the native app uses them too.
 const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
@@ -50,38 +55,10 @@ const customTitleSchema = z
 // ============================================================================
 
 /**
- * Tag output schema for subscriptions - lightweight tag info.
- */
-const tagOutputSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  color: z.string().nullable(),
-});
-
-/**
- * Flat subscription output schema - subscription with feed metadata merged.
- * Uses subscription.id as the primary key, hiding internal feedId from clients.
- */
-export const subscriptionOutputSchema = z.object({
-  id: z.string(), // subscription ID (primary key)
-  type: z.enum(SUBSCRIPTION_TYPES),
-  url: z.string().nullable(),
-  title: z.string().nullable(), // resolved title (custom or original)
-  originalTitle: z.string().nullable(), // feed's original title for rename UI
-  description: z.string().nullable(),
-  siteUrl: z.string().nullable(),
-  subscribedAt: z.date(),
-  unreadCount: z.number(),
-  unreadCountAsOf: countsAsOfSchema,
-  tags: z.array(tagOutputSchema),
-  fetchFullContent: z.boolean(), // whether to fetch full article content from URL
-});
-
-/**
  * Create response: a subscription plus the absolute unread counts for the
  * lists it affected, so the client sets counts directly instead of estimating.
  */
-const createSubscriptionOutputSchema = subscriptionOutputSchema.extend({
+const createSubscriptionOutputSchema = subscriptionsService.subscriptionSchema.extend({
   counts: unreadCountsSchema.optional(),
 });
 
@@ -179,21 +156,17 @@ export const subscriptionsRouter = createTRPCRouter({
       },
     })
     .input(
-      z
-        .object({
-          query: z.string().optional(),
-          tagId: z.string().uuid().optional(),
-          uncategorized: z.boolean().optional(),
-          unreadOnly: z.boolean().optional(),
-          type: subscriptionOutputSchema.shape.type.optional(),
-          cursor: z.string().optional(),
-          limit: z.number().min(1).max(subscriptionsService.MAX_SUBSCRIPTIONS_PAGE_SIZE).optional(),
+      subscriptionListInputSchema
+        .extend({
+          uncategorized: booleanQueryParam,
+          unreadOnly: booleanQueryParam,
+          type: subscriptionsService.subscriptionSchema.shape.type.optional(),
         })
         .optional()
     )
     .output(
       z.object({
-        items: z.array(subscriptionOutputSchema),
+        items: z.array(subscriptionsService.subscriptionSchema),
         nextCursor: z.string().optional(),
       })
     )
@@ -224,7 +197,7 @@ export const subscriptionsRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(subscriptionOutputSchema)
+    .output(subscriptionsService.subscriptionSchema)
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       return subscriptionsService.getSubscription(ctx.db, userId, input.id);
@@ -255,7 +228,7 @@ export const subscriptionsRouter = createTRPCRouter({
         fetchFullContent: z.boolean().optional(),
       })
     )
-    .output(subscriptionOutputSchema)
+    .output(subscriptionsService.subscriptionSchema)
     .mutation(async ({ ctx, input }) => {
       const { id, ...params } = input;
       return subscriptionUpdatesService.updateSubscription(ctx.db, ctx.session.user.id, id, params);
@@ -403,10 +376,10 @@ export const subscriptionsRouter = createTRPCRouter({
     .input(
       z.object({
         id: uuidSchema,
-        tagIds: z.array(z.string().uuid("Invalid tag ID")),
+        tagIds: subscriptionTagIdsSchema,
       })
     )
-    .output(subscriptionOutputSchema)
+    .output(subscriptionsService.subscriptionSchema)
     .mutation(async ({ ctx, input }) => {
       await subscriptionUpdatesService.setSubscriptionTags(
         ctx.db,

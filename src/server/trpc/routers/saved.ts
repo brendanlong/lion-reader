@@ -26,10 +26,9 @@ import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
-import { MAX_SAVE_COLLECTIONS } from "@/lib/collections";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
-import { uuidSchema } from "../validation";
+import { savedArticleUrlSchema, saveCollectionIdsSchema, uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
 import type { db as dbType } from "@/server/db";
 import { getGlobalUnreadCounts } from "@/server/services/counts";
@@ -39,40 +38,8 @@ import * as savedService from "@/server/services/saved";
 const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
 
 // ============================================================================
-// Validation Schemas
-// ============================================================================
-
-/**
- * URL validation schema.
- */
-const urlSchema = z.string().url("Invalid URL");
-
-// ============================================================================
 // Output Schemas
 // ============================================================================
-
-/**
- * Saved article metadata returned from save/upload mutations.
- *
- * Deliberately omits the article body (`contentOriginal`/`contentCleaned`):
- * callers only use the metadata here (title etc.), and every body render goes
- * through `entries.get`, which sanitizes on the read path. Echoing raw bodies
- * back here would be a stored-XSS footgun for any future caller that rendered
- * them directly, with no upside since nothing reads them. See issue #927.
- * URL is nullable for uploaded files which don't have a source URL.
- */
-const savedArticleFullSchema = z.object({
-  id: z.string(),
-  url: z.string().nullable(),
-  title: z.string().nullable(),
-  siteName: z.string().nullable(),
-  author: z.string().nullable(),
-  imageUrl: z.string().nullable(),
-  excerpt: z.string().nullable(),
-  read: z.boolean(),
-  starred: z.boolean(),
-  savedAt: z.date(),
-});
 
 /**
  * Schema for unread counts returned from saved article mutations.
@@ -100,9 +67,6 @@ async function getSavedUnreadCounts(
   };
 }
 
-/** Collections to put a newly saved article in; checked before saving. */
-const collectionIdsSchema = z.array(uuidSchema).max(MAX_SAVE_COLLECTIONS).optional();
-
 /**
  * Changing collections needs a reader scope; the save-only `saved:write`
  * token may save but not file the article into collections.
@@ -125,8 +89,8 @@ function assertMayChangeCollections(
 // ============================================================================
 //
 // Mutations return the service article directly; the .output() schema
-// (savedArticleFullSchema) strips the body and internal fields (contentCleaned,
-// outcome) from the response.
+// (savedArticleMetadataSchema) strips the body and internal fields
+// (contentCleaned, outcome) from the response.
 
 export const savedRouter = createTRPCRouter({
   /**
@@ -156,7 +120,7 @@ export const savedRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        url: urlSchema,
+        url: savedArticleUrlSchema,
         html: z
           .string()
           .max(
@@ -173,10 +137,15 @@ export const savedRouter = createTRPCRouter({
         refetch: z.boolean().default(true),
         /** When true with refetch, update even if new content appears lower quality */
         force: z.boolean().optional(),
-        collectionIds: collectionIdsSchema,
+        collectionIds: saveCollectionIdsSchema,
       })
     )
-    .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
+    .output(
+      z.object({
+        article: savedService.savedArticleMetadataSchema,
+        counts: savedUnreadCountsSchema,
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       assertMayChangeCollections(ctx, input.collectionIds);
@@ -263,10 +232,15 @@ export const savedRouter = createTRPCRouter({
           ),
         filename: z.string().min(1, "Filename is required"),
         title: z.string().optional(),
-        collectionIds: collectionIdsSchema,
+        collectionIds: saveCollectionIdsSchema,
       })
     )
-    .output(z.object({ article: savedArticleFullSchema, counts: savedUnreadCountsSchema }))
+    .output(
+      z.object({
+        article: savedService.savedArticleMetadataSchema,
+        counts: savedUnreadCountsSchema,
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const article = await savedService.uploadFile(ctx.db, ctx.session.user.id, input);
       return { article, counts: await getSavedUnreadCounts(ctx.db, ctx.session.user.id) };

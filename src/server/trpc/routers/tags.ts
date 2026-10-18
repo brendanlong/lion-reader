@@ -10,44 +10,11 @@ import { z } from "zod";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
-import { uuidSchema, tagColorSchema } from "../validation";
+import { uuidSchema, tagColorSchema, tagNameSchema } from "../validation";
 import * as tagsService from "@/server/services/tags";
-import { countsAsOfSchema } from "@/lib/events/schemas";
 
 // All tag operations are part of the MCP tool surface; the native app uses them too.
 const protectedProcedure = scopedProtectedProcedure(READER_SCOPES);
-
-// ============================================================================
-// Validation Schemas
-// ============================================================================
-
-/**
- * Tag name validation schema.
- */
-const tagNameSchema = z
-  .string()
-  .min(1, "Tag name is required")
-  .max(
-    tagsService.TAG_NAME_MAX_LENGTH,
-    `Tag name must be at most ${tagsService.TAG_NAME_MAX_LENGTH} characters`
-  )
-  .trim();
-
-// ============================================================================
-// Output Schemas
-// ============================================================================
-
-/**
- * Tag output schema - what we return for a tag.
- */
-const tagOutputSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  color: z.string().nullable(),
-  feedCount: z.number(),
-  unreadCount: z.number(),
-  createdAt: z.date(),
-});
 
 // ============================================================================
 // Router
@@ -70,16 +37,7 @@ export const tagsRouter = createTRPCRouter({
       },
     })
     .input(z.object({}).optional())
-    .output(
-      z.object({
-        items: z.array(tagOutputSchema),
-        uncategorized: z.object({
-          feedCount: z.number(),
-          unreadCount: z.number(),
-        }),
-        asOf: countsAsOfSchema,
-      })
-    )
+    .output(tagsService.listTagsResultSchema)
     .query(async ({ ctx }) => {
       return tagsService.listTags(ctx.db, ctx.session.user.id);
     }),
@@ -105,7 +63,7 @@ export const tagsRouter = createTRPCRouter({
     )
     .output(
       z.object({
-        tag: tagOutputSchema,
+        tag: tagsService.tagSchema,
         created: z.boolean(),
       })
     )
@@ -142,7 +100,7 @@ export const tagsRouter = createTRPCRouter({
     )
     .output(
       z.object({
-        tag: tagOutputSchema,
+        tag: tagsService.tagSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {

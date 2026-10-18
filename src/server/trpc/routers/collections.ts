@@ -10,25 +10,13 @@ import { z } from "zod";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
 import { READER_SCOPES } from "@/server/auth/api-token";
-import { uuidSchema } from "../validation";
+import { collectionEntryIdsSchema, collectionNameSchema, uuidSchema } from "../validation";
 import { unreadCountsSchema } from "@/lib/events/schemas";
 import * as collectionsService from "@/server/services/collections";
-import { subscriptionOutputSchema } from "./subscriptions";
-import { COLLECTION_NAME_MAX_LENGTH, MAX_COLLECTION_BATCH } from "@/lib/collections";
+import { subscriptionSchema } from "@/server/services/subscriptions";
 
 // Part of the MCP tool surface; the native app uses it too.
 const protectedProcedure = scopedProtectedProcedure(READER_SCOPES);
-
-const collectionNameSchema = z
-  .string()
-  .trim()
-  .min(1, "Collection name is required")
-  .max(
-    COLLECTION_NAME_MAX_LENGTH,
-    `Collection name must be at most ${COLLECTION_NAME_MAX_LENGTH} characters`
-  );
-
-const entryIdsSchema = z.array(uuidSchema).min(1).max(MAX_COLLECTION_BATCH);
 
 const membershipOutputSchema = z.object({
   entryIds: z.array(z.string()),
@@ -53,7 +41,7 @@ export const collectionsRouter = createTRPCRouter({
     .input(z.object({ name: collectionNameSchema }))
     .output(
       z.object({
-        subscription: subscriptionOutputSchema,
+        subscription: subscriptionSchema,
         counts: unreadCountsSchema,
         created: z.boolean(),
       })
@@ -91,7 +79,7 @@ export const collectionsRouter = createTRPCRouter({
         summary: "Add articles to a collection",
       },
     })
-    .input(z.object({ id: uuidSchema, entryIds: entryIdsSchema }))
+    .input(z.object({ id: uuidSchema, entryIds: collectionEntryIdsSchema }))
     .output(membershipOutputSchema)
     .mutation(({ ctx, input }) =>
       collectionsService.addEntriesToCollection(
@@ -112,7 +100,7 @@ export const collectionsRouter = createTRPCRouter({
         summary: "Remove articles from a collection",
       },
     })
-    .input(z.object({ id: uuidSchema, entryIds: entryIdsSchema }))
+    .input(z.object({ id: uuidSchema, entryIds: collectionEntryIdsSchema }))
     .output(membershipOutputSchema)
     .mutation(({ ctx, input }) =>
       collectionsService.removeEntriesFromCollection(

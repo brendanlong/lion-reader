@@ -4,6 +4,7 @@
  * Value Flipped" in `src/server/CLAUDE.md`).
  */
 
+import type { z } from "zod";
 import { eq, and, exists, inArray, sql, isNull, lte, or, type SQL } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import { entries, userEntries, subscriptions, visibleEntries } from "@/server/db/schema";
@@ -24,17 +25,21 @@ import {
   VISIBLE_ROW,
 } from "./entry-filters";
 import type { EntryType } from "@/lib/entry-types";
+import { entryListItemSchema } from "./entries";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface EntryState {
-  id: string;
-  read: boolean;
-  starred: boolean;
-  updatedAt: Date;
-}
+/** An entry's state after a star write, for cache updates. */
+export const entryStateSchema = entryListItemSchema.pick({
+  id: true,
+  read: true,
+  starred: true,
+  updatedAt: true,
+});
+
+export type EntryState = z.infer<typeof entryStateSchema>;
 
 /**
  * A single entry to mark read/unread, with an optional per-entry timestamp for
@@ -46,20 +51,21 @@ export interface MarkReadEntry {
 }
 
 /**
- * Final entry state returned after marking read, including the context fields
- * needed for cache updates, count queries, and SSE publishing.
+ * Final entry state returned after a bulk read or star write, including the
+ * context fields needed for cache updates, count queries, and SSE publishing.
  */
-export interface MarkReadEntryState {
-  id: string;
-  /** See EntryListItem (`entries.ts`). */
-  subscriptionId: string | null;
-  subscriptionIds: string[];
-  read: boolean;
-  starred: boolean;
-  type: EntryType;
-  updatedAt: Date;
-  readChangedAt: Date | null;
-}
+export const markReadEntryStateSchema = entryListItemSchema.pick({
+  id: true,
+  subscriptionId: true,
+  subscriptionIds: true,
+  read: true,
+  starred: true,
+  type: true,
+  updatedAt: true,
+  readChangedAt: true,
+});
+
+export type MarkReadEntryState = z.infer<typeof markReadEntryStateSchema>;
 
 /** The most entries one read or star write may name, on every surface. */
 export const MAX_ENTRY_STATE_BATCH = 1000;

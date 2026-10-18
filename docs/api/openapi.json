@@ -4660,26 +4660,35 @@
             "in": "query",
             "name": "uncategorized",
             "schema": {
-              "type": "boolean"
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
             }
           },
           {
             "in": "query",
             "name": "unreadOnly",
             "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "type",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "web",
-                "email",
-                "saved",
-                "collection"
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
               ]
             }
           },
@@ -4694,9 +4703,22 @@
             "in": "query",
             "name": "limit",
             "schema": {
-              "type": "number",
+              "type": "integer",
               "minimum": 1,
               "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "email",
+                "saved",
+                "collection"
+              ]
             }
           }
         ],
@@ -5697,6 +5719,7 @@
                 "type": "object",
                 "properties": {
                   "tagIds": {
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -5933,21 +5956,6 @@
           },
           {
             "in": "query",
-            "name": "excludeTypes",
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "web",
-                  "email",
-                  "saved"
-                ]
-              }
-            }
-          },
-          {
-            "in": "query",
             "name": "unreadOnly",
             "schema": {
               "anyOf": [
@@ -5995,17 +6003,6 @@
           },
           {
             "in": "query",
-            "name": "sortBy",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "published",
-                "readChanged"
-              ]
-            }
-          },
-          {
-            "in": "query",
             "name": "cursor",
             "schema": {
               "type": "string"
@@ -6018,6 +6015,32 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "excludeTypes",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "web",
+                  "email",
+                  "saved"
+                ]
+              }
+            }
+          },
+          {
+            "in": "query",
+            "name": "sortBy",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "published",
+                "readChanged"
+              ]
             }
           }
         ],
@@ -6119,6 +6142,11 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "feedId": {
+                            "type": "string",
+                            "deprecated": true,
+                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
                           }
                         },
                         "required": [
@@ -6138,7 +6166,8 @@
                           "updatedAt",
                           "entryUpdatedAt",
                           "feedTitle",
-                          "siteName"
+                          "siteName",
+                          "feedId"
                         ],
                         "additionalProperties": false
                       }
@@ -6439,18 +6468,6 @@
                             "null"
                           ]
                         },
-                        "contentOriginal": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "contentCleaned": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "summary": {
                           "type": [
                             "string",
@@ -6490,13 +6507,25 @@
                             "null"
                           ]
                         },
-                        "feedUrl": {
+                        "siteName": {
                           "type": [
                             "string",
                             "null"
                           ]
                         },
-                        "siteName": {
+                        "contentOriginal": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "contentCleaned": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "feedUrl": {
                           "type": [
                             "string",
                             "null"
@@ -6534,6 +6563,11 @@
                         },
                         "fetchFullContent": {
                           "type": "boolean"
+                        },
+                        "feedId": {
+                          "type": "string",
+                          "deprecated": true,
+                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
                         }
                       },
                       "required": [
@@ -6544,8 +6578,6 @@
                         "url",
                         "title",
                         "author",
-                        "contentOriginal",
-                        "contentCleaned",
                         "summary",
                         "publishedAt",
                         "fetchedAt",
@@ -6555,14 +6587,17 @@
                         "updatedAt",
                         "entryUpdatedAt",
                         "feedTitle",
-                        "feedUrl",
                         "siteName",
+                        "contentOriginal",
+                        "contentCleaned",
+                        "feedUrl",
                         "unsubscribeUrl",
                         "fullContentOriginal",
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",
-                        "fetchFullContent"
+                        "fetchFullContent",
+                        "feedId"
                       ],
                       "additionalProperties": false
                     }
@@ -6720,18 +6755,6 @@
                               "null"
                             ]
                           },
-                          "contentOriginal": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "contentCleaned": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
                           "summary": {
                             "type": [
                               "string",
@@ -6771,13 +6794,25 @@
                               "null"
                             ]
                           },
-                          "feedUrl": {
+                          "siteName": {
                             "type": [
                               "string",
                               "null"
                             ]
                           },
-                          "siteName": {
+                          "contentOriginal": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "contentCleaned": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "feedUrl": {
                             "type": [
                               "string",
                               "null"
@@ -6815,6 +6850,11 @@
                           },
                           "fetchFullContent": {
                             "type": "boolean"
+                          },
+                          "feedId": {
+                            "type": "string",
+                            "deprecated": true,
+                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
                           }
                         },
                         "required": [
@@ -6825,8 +6865,6 @@
                           "url",
                           "title",
                           "author",
-                          "contentOriginal",
-                          "contentCleaned",
                           "summary",
                           "publishedAt",
                           "fetchedAt",
@@ -6836,14 +6874,17 @@
                           "updatedAt",
                           "entryUpdatedAt",
                           "feedTitle",
-                          "feedUrl",
                           "siteName",
+                          "contentOriginal",
+                          "contentCleaned",
+                          "feedUrl",
                           "unsubscribeUrl",
                           "fullContentOriginal",
                           "fullContentCleaned",
                           "fullContentFetchedAt",
                           "fullContentError",
-                          "fetchFullContent"
+                          "fetchFullContent",
+                          "feedId"
                         ],
                         "additionalProperties": false
                       }
@@ -8034,18 +8075,6 @@
                             "null"
                           ]
                         },
-                        "contentOriginal": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "contentCleaned": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
                         "summary": {
                           "type": [
                             "string",
@@ -8085,13 +8114,25 @@
                             "null"
                           ]
                         },
-                        "feedUrl": {
+                        "siteName": {
                           "type": [
                             "string",
                             "null"
                           ]
                         },
-                        "siteName": {
+                        "contentOriginal": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "contentCleaned": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "feedUrl": {
                           "type": [
                             "string",
                             "null"
@@ -8129,6 +8170,11 @@
                         },
                         "fetchFullContent": {
                           "type": "boolean"
+                        },
+                        "feedId": {
+                          "type": "string",
+                          "deprecated": true,
+                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
                         }
                       },
                       "required": [
@@ -8139,8 +8185,6 @@
                         "url",
                         "title",
                         "author",
-                        "contentOriginal",
-                        "contentCleaned",
                         "summary",
                         "publishedAt",
                         "fetchedAt",
@@ -8150,14 +8194,17 @@
                         "updatedAt",
                         "entryUpdatedAt",
                         "feedTitle",
-                        "feedUrl",
                         "siteName",
+                        "contentOriginal",
+                        "contentCleaned",
+                        "feedUrl",
                         "unsubscribeUrl",
                         "fullContentOriginal",
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",
-                        "fetchFullContent"
+                        "fetchFullContent",
+                        "feedId"
                       ],
                       "additionalProperties": false
                     },

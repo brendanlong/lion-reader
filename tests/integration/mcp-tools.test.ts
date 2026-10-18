@@ -22,6 +22,8 @@ import {
   createTestUser,
 } from "./helpers";
 import { getTools, toMcpError } from "../../src/server/mcp/tools";
+import { createApiToken } from "../../src/server/auth/api-token";
+import { GET as restHandler } from "../../src/app/api/v1/[...path]/route";
 
 let userId: string;
 let otherUserId: string;
@@ -105,6 +107,27 @@ describe("MCP tool argument validation", () => {
         color: "red;background-image:url(https://attacker.example/x)",
       })
     ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
+  });
+
+  // The REST handler turns on coercion in the input schemas it parses, which
+  // the tools share with the tRPC procedures.
+  it.each([
+    ["list_entries", "/entries", ["uncategorized", "unreadOnly", "starredOnly"]],
+    ["count_entries", "/entries/count", ["uncategorized", "starredOnly"]],
+    ["list_subscriptions", "/subscriptions", ["uncategorized", "unreadOnly"]],
+  ])("rejects a string boolean in %s even after a REST call", async (name, path, keys) => {
+    const { token } = await createApiToken(userId, ["mcp"]);
+    for (const key of keys) {
+      const res = await restHandler(
+        new Request(`http://localhost:3000/api/v1${path}?${key}=false`, {
+          headers: { authorization: `Bearer ${token}` },
+        })
+      );
+      expect(res.status).toBe(200);
+      await expect(tool(name).handler(db, userId, { [key]: "false" })).rejects.toMatchObject({
+        code: ErrorCode.InvalidParams,
+      });
+    }
   });
 
   it("strips unknown keys so internal service params can't be injected", async () => {

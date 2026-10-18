@@ -111,6 +111,7 @@ function makeFullEntry(overrides: Partial<EntryFull> = {}): EntryFull {
     entryUpdatedAt: new Date("2026-01-02T00:00:00Z"),
     read: false,
     starred: false,
+    readChangedAt: null,
     feedTitle: null,
     feedUrl: null,
     siteName: null,
