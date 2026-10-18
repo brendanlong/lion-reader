@@ -240,7 +240,8 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                 }
             }
             is SyncEvent.SubscriptionCreated -> {
-                store.upsertSubscription(event.subscriptionRow)
+                // Without one, SyncEngine listed subscriptions for the page.
+                event.subscriptionRow?.let(store::upsertSubscription)
                 db.entryQueries.refreshFeedTitlesFor(event.subscriptionId)
             }
             is SyncEvent.SubscriptionUpdated -> {

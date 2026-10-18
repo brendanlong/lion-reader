@@ -1261,6 +1261,27 @@ class SyncEngineTest {
         assertEquals(listOf("Also theirs", "Theirs"), titles())
     }
 
+    /** Neither a row nor a feed doesn't say the subscription's type; the server's listing does. */
+    @Test
+    fun aCreatedSubscriptionWithoutItsRowOrFeedIsListed() = runTest {
+        engine.sync()
+        server.subscriptions +=
+            Subscription(
+                "sub-2",
+                type = "email",
+                title = "Newsletter",
+                originalTitle = "Newsletter",
+                tags = emptyList(),
+            )
+        server.queueChanges(events = listOf(SyncEvent.SubscriptionCreated("sub-2")))
+
+        engine.sync(downloadContent = false)
+
+        val sub2 =
+            db.subscriptionQueries.selectSubscriptions().executeAsList().single { it.id == "sub-2" }
+        assertEquals("email", sub2.type)
+    }
+
     @Test
     fun aChangeUndoneAtTheSameMomentAsItsFlushIsKept() = runTest {
         serve(entry("a"))
