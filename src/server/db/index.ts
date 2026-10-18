@@ -104,8 +104,8 @@ export const db = drizzle(pool, {
         name: "db.query",
         op: "db.query",
         attributes: {
-          "db.system": "postgresql",
-          "db.statement": query.substring(0, 500), // Truncate long queries
+          "db.system.name": "postgresql",
+          "db.query.text": query.substring(0, 500), // Truncate long queries
           "db.params_count": params.length, // Include param count for debugging
         },
       });
