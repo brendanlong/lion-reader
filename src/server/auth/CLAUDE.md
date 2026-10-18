@@ -15,7 +15,7 @@ The security invariants for this directory are in SECURITY.md §4–5; the OAuth
 
 ## Token scopes
 
-Credential types: browser sessions (full access), scoped sessions, API tokens (`api_tokens`, limited to their scopes), and OAuth 2.1 access tokens (audience-bound, `src/server/oauth/CLAUDE.md`; the native app's arrive as `authType: "app_token"`, and on the streaming routes through `route-auth.ts`). Every surface authenticates through `authenticateCredential` (`credential.ts`), naming the kinds it accepts.
+Credential types: browser sessions (full access), scoped sessions, API tokens (`api_tokens`, limited to their scopes), and OAuth 2.1 access tokens (audience-bound, `src/server/oauth/CLAUDE.md`). Every API surface authenticates requests through `authenticateCredential` (`credential.ts`), naming the kinds it accepts.
 
 Scopes are `mcp`, `saved:write`, and `reader:full-access` (OAuth/session only: the reader surface minus account settings, minted for the Wallabag and Google Reader compat APIs and the native app).
 

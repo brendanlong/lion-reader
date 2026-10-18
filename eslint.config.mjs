@@ -39,14 +39,16 @@ const APP_LAYER = {
 const RAW_CREDENTIAL_MESSAGE =
   "Authenticate requests with authenticateCredential (@/server/auth/credential), which checks which client and audience a token belongs to.";
 const RAW_CREDENTIAL_VALIDATORS = [
-  ["@/server/oauth/service", "validateAccessToken"],
-  ["@/server/auth/api-token", "validateApiToken"],
-  ["@/server/auth/session", "validateSession"],
-].map(([name, importName]) => ({
-  name,
+  ["oauth/service", "validateAccessToken"],
+  ["auth/api-token", "validateApiToken"],
+  ["auth/session", "validateSession"],
+].map(([module, importName]) => ({
+  group: [`@/server/${module}`, `**/${module}`],
   importNames: [importName],
   message: RAW_CREDENTIAL_MESSAGE,
 }));
+// The request-auth code outside API_SURFACES.
+const REQUEST_AUTH = ["src/server/trpc/context.ts", "src/server/auth/route-auth.ts"];
 
 function restrictImports(paths, patterns = []) {
   return { "no-restricted-imports": ["error", { paths, patterns }] };
@@ -133,11 +135,11 @@ const eslintConfig = defineConfig([
   },
   {
     files: API_SURFACES.filter((glob) => glob.startsWith("src/app/")),
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN, ...RAW_CREDENTIAL_VALIDATORS]),
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], RAW_CREDENTIAL_VALIDATORS),
   },
   {
-    files: API_SURFACES.filter((glob) => glob.startsWith("src/server/")),
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN, ...RAW_CREDENTIAL_VALIDATORS], [APP_LAYER]),
+    files: [...API_SURFACES.filter((glob) => glob.startsWith("src/server/")), ...REQUEST_AUTH],
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, ...RAW_CREDENTIAL_VALIDATORS]),
   },
   // A later block setting no-restricted-syntax for a subset of src/ replaces
   // these selectors there (flat config doesn't merge them): include them.

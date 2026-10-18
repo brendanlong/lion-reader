@@ -108,29 +108,31 @@ describe("Wallabag requireAuth scope enforcement", () => {
 
   // Scopes don't say which API a token is for: any registered client may ask
   // for reader:full-access, so only the Wallabag client's tokens are accepted.
-  it.each(["an MCP client", "the native app"])(
-    "rejects a reader:full-access token issued to %s with 401",
-    async (issuer) => {
+  it.each([
+    {
+      issuer: "an MCP client",
+      clientId: async () => {
+        const clientId = await createTestOAuthClient({ scopes: [OAUTH_SCOPES.READER_FULL_ACCESS] });
+        createdClientIds.push(clientId);
+        return clientId;
+      },
+      resource: getResourceIdentifier,
+    },
+    {
+      issuer: "the native app",
+      clientId: async () => APP_CLIENT_ID,
+      resource: getAppResourceIdentifier,
+    },
+  ])(
+    "rejects a reader:full-access token issued to $issuer with 401",
+    async ({ clientId, resource }) => {
       const user = await createUser();
-      const mcpClientId = await createTestOAuthClient({
+      const { accessToken } = await createTokens({
+        clientId: await clientId(),
+        userId: user.id,
         scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
+        resource: resource(),
       });
-      createdClientIds.push(mcpClientId);
-      const { accessToken } = await createTokens(
-        issuer === "the native app"
-          ? {
-              clientId: APP_CLIENT_ID,
-              userId: user.id,
-              scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
-              resource: getAppResourceIdentifier(),
-            }
-          : {
-              clientId: mcpClientId,
-              userId: user.id,
-              scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
-              resource: getResourceIdentifier(),
-            }
-      );
 
       const result = await requireAuth(bearerRequest(accessToken));
 
