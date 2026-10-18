@@ -6164,11 +6164,6 @@
                               "string",
                               "null"
                             ]
-                          },
-                          "feedId": {
-                            "type": "string",
-                            "deprecated": true,
-                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
                           }
                         },
                         "required": [
@@ -6188,8 +6183,7 @@
                           "updatedAt",
                           "entryUpdatedAt",
                           "feedTitle",
-                          "siteName",
-                          "feedId"
+                          "siteName"
                         ],
                         "additionalProperties": false
                       }
@@ -6585,11 +6579,6 @@
                         },
                         "fetchFullContent": {
                           "type": "boolean"
-                        },
-                        "feedId": {
-                          "type": "string",
-                          "deprecated": true,
-                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
                         }
                       },
                       "required": [
@@ -6618,8 +6607,7 @@
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",
-                        "fetchFullContent",
-                        "feedId"
+                        "fetchFullContent"
                       ],
                       "additionalProperties": false
                     }
@@ -6872,11 +6860,6 @@
                           },
                           "fetchFullContent": {
                             "type": "boolean"
-                          },
-                          "feedId": {
-                            "type": "string",
-                            "deprecated": true,
-                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
                           }
                         },
                         "required": [
@@ -6905,8 +6888,7 @@
                           "fullContentCleaned",
                           "fullContentFetchedAt",
                           "fullContentError",
-                          "fetchFullContent",
-                          "feedId"
+                          "fetchFullContent"
                         ],
                         "additionalProperties": false
                       }
@@ -8192,11 +8174,6 @@
                         },
                         "fetchFullContent": {
                           "type": "boolean"
-                        },
-                        "feedId": {
-                          "type": "string",
-                          "deprecated": true,
-                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
                         }
                       },
                       "required": [
@@ -8225,8 +8202,7 @@
                         "fullContentCleaned",
                         "fullContentFetchedAt",
                         "fullContentError",
-                        "fetchFullContent",
-                        "feedId"
+                        "fetchFullContent"
                       ],
                       "additionalProperties": false
                     },
