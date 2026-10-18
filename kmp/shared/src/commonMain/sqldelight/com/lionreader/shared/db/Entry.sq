@@ -9,8 +9,8 @@ CREATE TABLE entry (
   -- adds the entry to.
   subscription_id TEXT,
   -- The server's entry type ('web', 'email', 'saved'…), as it sent it. Only
-  -- the shown source goes by it (Reader's entrySource); lists don't: Saved is
-  -- a subscription like the others.
+  -- the shown and searched source go by it (Reader's entrySource,
+  -- SearchIndex.kt); lists don't: Saved is a subscription like the others.
   type TEXT NOT NULL,
   url TEXT,
   title TEXT,
