@@ -542,32 +542,3 @@ function finishCleaned(
     byline: article.byline ?? null,
   };
 }
-
-// ============================================================================
-// Feed-Specific Content Cleaners
-// ============================================================================
-
-/**
- * Regex pattern for LessWrong's "Published on" date prefix.
- * Matches: "Published on [Month] [Day], [Year] [Time] [AM/PM] [Timezone]<br/><br/>"
- * The pattern is flexible about date format and <br> tag variations.
- *
- * Examples:
- * - "Published on January 7, 2026 2:39 AM GMT<br/><br/>"
- * - "Published on December 25, 2025 11:30 PM EST<br><br>"
- */
-const LESSWRONG_PUBLISHED_ON_PATTERN =
-  /^Published on [A-Za-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M \w+<br\s*\/?>(<br\s*\/?>|\s)*/i;
-
-/**
- * Strips the "Published on [date]<br/><br/>" prefix from LessWrong RSS content.
- *
- * LessWrong's RSS feed prepends publication date info to each article's content,
- * but we already get this from the pubDate field. This removes the redundant prefix.
- *
- * @param html - The HTML content from the RSS feed
- * @returns The content with the "Published on..." prefix removed
- */
-export function cleanLessWrongContent(html: string): string {
-  return html.replace(LESSWRONG_PUBLISHED_ON_PATTERN, "");
-}

@@ -16,9 +16,16 @@ import {
   LESSWRONG_FRONTPAGE_FEED_URL,
   LESSWRONG_SHORTFORM_FRONTPAGE_FEED_URL,
 } from "@/server/feed/lesswrong";
-import { cleanLessWrongContent } from "@/server/feed/content-cleaner";
 import { HttpFetchError } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
+
+/**
+ * LessWrong's "Published on [date]<br/><br/>" content prefix, e.g.
+ * "Published on January 7, 2026 2:39 AM GMT<br/><br/>", flexible about the
+ * `<br>` variants.
+ */
+const LESSWRONG_PUBLISHED_ON_PATTERN =
+  /^Published on [A-Za-z]+ \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M \w+<br\s*\/?>(<br\s*\/?>|\s)*/i;
 
 /**
  * LessWrong plugin using the GraphQL API for full content fetching.
@@ -105,8 +112,8 @@ export const lessWrongPlugin: UrlPlugin = {
       },
 
       cleanEntryContent(html: string): string {
-        // Strip "Published on January 7, 2026 2:39 AM GMT<br/><br/>" prefix
-        return cleanLessWrongContent(html);
+        // The feed prepends the publication date, which we already get from pubDate.
+        return html.replace(LESSWRONG_PUBLISHED_ON_PATTERN, "");
       },
 
       transformFeedTitle(title: string, feedUrl: URL, context: FeedTitleContext = {}): string {
