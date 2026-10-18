@@ -527,11 +527,19 @@ describe("generateChatCompletion", () => {
 
   describe("against a stand-in provider", () => {
     let server: Server;
-    const requests: { url: string; userAgent: string | undefined }[] = [];
+    const requests: { url: string; userAgent: string | undefined; apiKey: string | undefined }[] =
+      [];
 
     beforeAll(async () => {
       server = createServer((req, res) => {
-        requests.push({ url: req.url ?? "", userAgent: req.headers["user-agent"] });
+        requests.push({
+          url: req.url ?? "",
+          userAgent: req.headers["user-agent"],
+          // Anthropic sends `x-api-key`; the OpenAI-compatible SDKs a bearer token.
+          apiKey:
+            (req.headers["x-api-key"] as string | undefined) ??
+            req.headers.authorization?.replace(/^Bearer /, ""),
+        });
         res.setHeader("Content-Type", "application/json");
         // Both the Anthropic and the OpenAI-compatible answer shapes.
         res.end(
@@ -566,6 +574,28 @@ describe("generateChatCompletion", () => {
         );
         expect(text).toBe("hello");
         expect(requests.map((request) => request.userAgent)).toEqual([USER_AGENT]);
+      }
+    );
+
+    it.each(["anthropic", "groq", "cerebras"] as const)(
+      "calls %s with each request's own key, never a previous one",
+      async (provider) => {
+        pointSdksAtServer();
+        const options = { userPrompt: "hi", maxTokens: 10 };
+        const model = { provider, model: "some-model" };
+        await generateChatCompletion(model, { [provider]: "user-key-a" }, options);
+        await generateChatCompletion(model, { [provider]: "user-key-b" }, options);
+        const envVar = `${provider.toUpperCase()}_API_KEY`;
+        process.env[envVar] = "server-key-1";
+        await generateChatCompletion(model, {}, options);
+        process.env[envVar] = "server-key-2";
+        await generateChatCompletion(model, {}, options);
+        expect(requests.map((request) => request.apiKey)).toEqual([
+          "user-key-a",
+          "user-key-b",
+          "server-key-1",
+          "server-key-2",
+        ]);
       }
     );
 
