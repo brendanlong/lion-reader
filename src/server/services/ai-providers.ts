@@ -1,11 +1,11 @@
 /**
  * Generic AI provider layer.
  *
- * Wraps the Anthropic, Groq, and Cerebras SDKs and the OpenRouter HTTP API
- * behind one interface so features (summarization, narration preprocessing)
- * can run on any configured text provider (see `@/lib/ai/providers`). A
- * user's own key for a provider overrides the server's (`<PROVIDER>_API_KEY`);
- * a provider is "available" when either is set.
+ * Puts the text providers (`@/lib/ai/providers`) behind one interface, the
+ * adapters in {@link TEXT_PROVIDER_ADAPTERS}, so features (summarization,
+ * narration preprocessing) can run on any configured one. A user's own key
+ * for a provider overrides the server's (`<PROVIDER>_API_KEY`); a provider is
+ * "available" when either is set.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -21,6 +21,7 @@ import {
   type AiProvider,
   type TextAiProvider,
 } from "@/lib/ai/providers";
+import { USER_AGENT } from "@/server/http/user-agent";
 import {
   listOpenRouterModels,
   OpenRouterChatError,
@@ -128,67 +129,58 @@ export function getAvailableProviders(keys?: AiProviderKeys): TextAiProvider[] {
 }
 
 /**
- * The provider SDKs' timeout and retries: each attempt gets the timeout, so
- * together they keep a hung provider to about two minutes (OpenRouter's
- * request, which isn't retried, gets two minutes in all). The SDK defaults —
- * Anthropic's 10 minutes, and two retries everywhere — would hold a request
- * far longer than anyone waits for a summary.
+ * How long a text request may take in all, retries included: enough for a
+ * slow reasoning model, but a hung provider doesn't hold a summary nobody's
+ * still waiting for (the SDK defaults, Anthropic's 10 minutes and two retries
+ * everywhere, would).
  */
-const TEXT_CLIENT_OPTIONS = { timeout: 60_000, maxRetries: 1 };
+const TEXT_REQUEST_BUDGET_MS = 120_000;
 
-// Global clients for the server-wide env keys, created lazily. Clients for
-// per-user keys are always created fresh (never cached).
-let globalAnthropicClient: Anthropic | null = null;
-let globalGroqClient: Groq | null = null;
-let globalCerebrasClient: Cerebras | null = null;
+/**
+ * The SDK providers retry a failed attempt (no connection, a 429 or 5xx)
+ * once, each attempt getting its share of the budget. OpenRouter's request
+ * isn't retried, since OpenRouter already falls back across the hosts serving
+ * a model: it gets the whole budget.
+ */
+const SDK_RETRIES = 1;
 
-function getAnthropicClient(keys?: AiProviderKeys): Anthropic | null {
-  if (keys?.anthropic === UNREADABLE_API_KEY) return null;
-  const userKey = userKeyFor("anthropic", keys);
-  if (userKey) {
-    return new Anthropic({ apiKey: userKey, ...TEXT_CLIENT_OPTIONS });
-  }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return null;
-  }
-  globalAnthropicClient ??= new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    ...TEXT_CLIENT_OPTIONS,
-  });
-  return globalAnthropicClient;
+const SDK_CLIENT_OPTIONS = {
+  timeout: TEXT_REQUEST_BUDGET_MS / (SDK_RETRIES + 1),
+  maxRetries: SDK_RETRIES,
+  defaultHeaders: { "User-Agent": USER_AGENT },
+};
+
+/** The key a provider is called with. */
+interface ProviderCall {
+  apiKey: string;
+  /** It's the user's own key, so the server key's limits don't apply. */
+  onUserKey: boolean;
 }
 
-function getGroqClient(keys?: AiProviderKeys): Groq | null {
-  if (keys?.groq === UNREADABLE_API_KEY) return null;
-  const userKey = userKeyFor("groq", keys);
-  if (userKey) {
-    return new Groq({ apiKey: userKey, ...TEXT_CLIENT_OPTIONS });
-  }
-  if (!process.env.GROQ_API_KEY) {
-    return null;
-  }
-  globalGroqClient ??= new Groq({
-    apiKey: process.env.GROQ_API_KEY,
-    ...TEXT_CLIENT_OPTIONS,
-  });
-  return globalGroqClient;
+/**
+ * An SDK's client for a call: for the server's key, one created on first use;
+ * for a user's, a fresh one each time (never cached).
+ */
+function sdkClient<C>(
+  create: (options: typeof SDK_CLIENT_OPTIONS & { apiKey: string }) => C
+): (call: ProviderCall) => C {
+  let server: { apiKey: string; client: C } | null = null;
+  return ({ apiKey, onUserKey }) => {
+    if (onUserKey) return create({ apiKey, ...SDK_CLIENT_OPTIONS });
+    if (server?.apiKey !== apiKey) {
+      server = { apiKey, client: create({ apiKey, ...SDK_CLIENT_OPTIONS }) };
+    }
+    return server.client;
+  };
 }
 
-function getCerebrasClient(keys?: AiProviderKeys): Cerebras | null {
-  if (keys?.cerebras === UNREADABLE_API_KEY) return null;
-  const userKey = userKeyFor("cerebras", keys);
-  if (userKey) {
-    return new Cerebras({ apiKey: userKey, ...TEXT_CLIENT_OPTIONS });
-  }
-  if (!process.env.CEREBRAS_API_KEY) {
-    return null;
-  }
-  globalCerebrasClient ??= new Cerebras({
-    apiKey: process.env.CEREBRAS_API_KEY,
-    ...TEXT_CLIENT_OPTIONS,
-  });
-  return globalCerebrasClient;
-}
+const anthropicClient = sdkClient((options) => new Anthropic(options));
+const groqClient = sdkClient((options) => new Groq(options));
+// Not warming: a client is created just before its first request, so that's a
+// wasted extra request (one per call on a user's key).
+const cerebrasClient = sdkClient(
+  (options) => new Cerebras({ ...options, warmTCPConnection: false })
+);
 
 /**
  * Options for a single-turn chat completion.
@@ -201,8 +193,8 @@ export interface ChatCompletionOptions {
   /** Output token cap (reasoning models spend part of this on reasoning). */
   maxTokens: number;
   /**
-   * Request a JSON-object response. Only supported by the OpenAI-compatible
-   * providers (Groq, Cerebras, OpenRouter); throws for Anthropic.
+   * Request a JSON-object response. Throws for a provider that can't give one
+   * (see {@link TextProviderAdapter.jsonObject}).
    */
   jsonObject?: boolean;
   /** Sampling temperature. Ignored for Anthropic. */
@@ -210,17 +202,17 @@ export interface ChatCompletionOptions {
   /**
    * Reasoning effort for reasoning models. Ignored for Anthropic, and only
    * sent to models that accept the parameter (see
-   * {@link supportsReasoningEffort}) — Groq/Cerebras reject it with a 400 on
-   * non-reasoning models like Llama.
+   * {@link supportsReasoningEffort}).
    */
   reasoningEffort?: "low" | "medium" | "high";
 }
 
 /**
- * Whether a provider-native model ID accepts the OpenAI-style
- * `reasoning_effort` low/medium/high parameter. Currently only the gpt-oss
- * family does on Groq and Cerebras; other models (Llama, Qwen, ...) return
- * `400 reasoning_effort is not supported with this model`.
+ * Whether a provider-native model ID gets the OpenAI-style `reasoning_effort`
+ * low/medium/high parameter. Only the gpt-oss family does: on Groq and
+ * Cerebras other models (Llama, Qwen, ...) return `400 reasoning_effort is not
+ * supported with this model`, and on OpenRouter it would switch on (billed)
+ * extended thinking for Claude, Gemini, etc.
  */
 export function supportsReasoningEffort(model: string): boolean {
   return model.toLowerCase().includes("gpt-oss");
@@ -298,8 +290,8 @@ export function classifyTextGenerationError(error: unknown): TextGenerationFailu
  * response text (empty string if the model produced no text — callers decide
  * how to handle that).
  *
- * @throws Error if the provider is not configured, or the model isn't allowed
- *   on the server's key
+ * @throws Error if the provider is not configured, the model isn't allowed
+ *   on the server's key, or the provider can't do what's asked
  * @throws TextGenerationError if the provider call fails
  */
 export async function generateChatCompletion(
@@ -314,113 +306,26 @@ export async function generateChatCompletion(
   if (keys?.[provider] === UNREADABLE_API_KEY) {
     throw new UnreadableApiKeyError(provider);
   }
-  if (!isProviderAvailable(provider, keys)) {
+  const apiKey = getProviderApiKey(provider, keys);
+  if (!apiKey) {
     throw new Error(`${aiProviderName(provider)} API key not configured`);
   }
   const modelRef = formatModelRef(provider, ref.model);
   if (!(await isTextModelAllowed(modelRef, keys))) {
     throw new Error(`${modelRef} isn't allowed on the server's ${aiProviderName(provider)} key`);
   }
-  if (options.jsonObject && provider === "anthropic") {
-    throw new Error("JSON-object responses are not supported for Anthropic models");
+  const adapter = TEXT_PROVIDER_ADAPTERS[provider];
+  if (options.jsonObject && !adapter.jsonObject) {
+    throw new Error(`JSON-object responses are not supported for ${aiProviderName(provider)}`);
   }
+  const onUserKey = isOnUserKey(provider, keys);
   try {
-    return await runChatCompletion(provider, ref, keys, options);
+    return await adapter.complete({ apiKey, onUserKey }, ref.model, {
+      ...options,
+      reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
+    });
   } catch (error) {
-    throw new TextGenerationError(
-      provider,
-      classifyTextGenerationError(error),
-      isOnUserKey(provider, keys),
-      error
-    );
-  }
-}
-
-async function runChatCompletion(
-  provider: TextAiProvider,
-  ref: ModelRef,
-  keys: AiProviderKeys | undefined,
-  options: ChatCompletionOptions
-): Promise<string> {
-  switch (provider) {
-    case "anthropic": {
-      const client = getAnthropicClient(keys);
-      if (!client) {
-        throw new Error("Anthropic API key not configured");
-      }
-      const response = await client.messages.create({
-        model: ref.model,
-        max_tokens: options.maxTokens,
-        ...(options.system ? { system: options.system } : {}),
-        messages: [{ role: "user", content: options.userPrompt }],
-      });
-      const textContent = response.content.find((block) => block.type === "text");
-      return textContent?.type === "text" ? textContent.text : "";
-    }
-    case "groq": {
-      const client = getGroqClient(keys);
-      if (!client) {
-        throw new Error("Groq API key not configured");
-      }
-      const response = await client.chat.completions.create({
-        model: ref.model,
-        max_completion_tokens: options.maxTokens,
-        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-        ...(options.reasoningEffort && supportsReasoningEffort(ref.model)
-          ? { reasoning_effort: options.reasoningEffort }
-          : {}),
-        ...(options.jsonObject ? { response_format: { type: "json_object" as const } } : {}),
-        messages: [
-          ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
-          { role: "user" as const, content: options.userPrompt },
-        ],
-      });
-      return response.choices[0]?.message?.content ?? "";
-    }
-    case "cerebras": {
-      const client = getCerebrasClient(keys);
-      if (!client) {
-        throw new Error("Cerebras API key not configured");
-      }
-      const response = await client.chat.completions.create({
-        model: ref.model,
-        max_completion_tokens: options.maxTokens,
-        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-        ...(options.reasoningEffort && supportsReasoningEffort(ref.model)
-          ? { reasoning_effort: options.reasoningEffort }
-          : {}),
-        ...(options.jsonObject ? { response_format: { type: "json_object" as const } } : {}),
-        messages: [
-          ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
-          { role: "user" as const, content: options.userPrompt },
-        ],
-      });
-      // The SDK's non-streaming return type is a union that includes the error
-      // and chunk shapes; narrow to the completed-response choice, which is the
-      // only one carrying `message` (chunks carry `delta` instead).
-      const choice = "choices" in response ? response.choices?.[0] : undefined;
-      return choice && "message" in choice ? (choice.message.content ?? "") : "";
-    }
-    case "openrouter": {
-      const apiKey = getProviderApiKey("openrouter", keys);
-      if (!apiKey) {
-        throw new Error("OpenRouter API key not configured");
-      }
-      // Match Groq/Cerebras: only gpt-oss gets a reasoning effort. On OpenRouter
-      // it would otherwise switch on (billed) extended thinking for Claude,
-      // Gemini, etc.
-      return openRouterChatCompletion(
-        apiKey,
-        ref.model,
-        {
-          ...options,
-          reasoningEffort: supportsReasoningEffort(ref.model) ? options.reasoningEffort : undefined,
-        },
-        userKeyFor("openrouter", keys)
-          ? null
-          : serverKeyTokenPriceCaps(formatModelRef(provider, ref.model))
-      );
-    }
+    throw new TextGenerationError(provider, classifyTextGenerationError(error), onUserKey, error);
   }
 }
 
@@ -446,6 +351,114 @@ export interface AiModel {
 export interface ModelRequirements {
   /** The model must support JSON-object responses. */
   jsonObject?: boolean;
+}
+
+/** A text provider's chat completions and model catalog. */
+interface TextProviderAdapter {
+  /**
+   * Whether the provider can be asked for a JSON-object response at all.
+   * One that can lists only the models able to give one when that's required.
+   */
+  jsonObject: boolean;
+  /** The response text ("" for none) to `options` from `model` (provider-native). */
+  complete(call: ProviderCall, model: string, options: ChatCompletionOptions): Promise<string>;
+  listModels(call: ProviderCall, requirements: ModelRequirements): Promise<AiModel[]>;
+}
+
+/** A chat completion request to the OpenAI-compatible SDKs (Groq, Cerebras). */
+function openAiCompatibleRequest(model: string, options: ChatCompletionOptions) {
+  return {
+    model,
+    max_completion_tokens: options.maxTokens,
+    ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+    ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
+    ...(options.jsonObject ? { response_format: { type: "json_object" as const } } : {}),
+    messages: [
+      ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
+      { role: "user" as const, content: options.userPrompt },
+    ],
+  };
+}
+
+const TEXT_PROVIDER_ADAPTERS: Record<TextAiProvider, TextProviderAdapter> = {
+  anthropic: {
+    jsonObject: false,
+    complete: async (call, model, options) => {
+      const response = await anthropicClient(call).messages.create({
+        model,
+        max_tokens: options.maxTokens,
+        ...(options.system ? { system: options.system } : {}),
+        messages: [{ role: "user", content: options.userPrompt }],
+      });
+      const textContent = response.content.find((block) => block.type === "text");
+      return textContent?.type === "text" ? textContent.text : "";
+    },
+    listModels: async (call) => {
+      const models: { id: string; displayName: string }[] = [];
+      for await (const model of anthropicClient(call).models.list({ limit: 100 })) {
+        models.push({ id: model.id, displayName: model.display_name });
+      }
+      return filterToLatestClaudeGeneration(simplifyModelIds(models)).map((model) => ({
+        id: formatModelRef("anthropic", model.id),
+        displayName: model.displayName,
+        provider: "anthropic" as const,
+      }));
+    },
+  },
+  // Groq's and Cerebras' listings don't say which models do JSON mode; every
+  // chat model they serve does.
+  groq: {
+    jsonObject: true,
+    complete: async (call, model, options) => {
+      const response = await groqClient(call).chat.completions.create(
+        openAiCompatibleRequest(model, options)
+      );
+      return response.choices[0]?.message?.content ?? "";
+    },
+    listModels: async (call) => toChatModels("groq", (await groqClient(call).models.list()).data),
+  },
+  cerebras: {
+    jsonObject: true,
+    complete: async (call, model, options) => {
+      const response = await cerebrasClient(call).chat.completions.create(
+        openAiCompatibleRequest(model, options)
+      );
+      // The SDK's non-streaming return type is a union that includes the error
+      // and chunk shapes; narrow to the completed-response choice, which is the
+      // only one carrying `message` (chunks carry `delta` instead).
+      const choice = "choices" in response ? response.choices?.[0] : undefined;
+      return choice && "message" in choice ? (choice.message.content ?? "") : "";
+    },
+    listModels: async (call) =>
+      toChatModels("cerebras", (await cerebrasClient(call).models.list()).data),
+  },
+  openrouter: {
+    jsonObject: true,
+    complete: ({ apiKey, onUserKey }, model, options) =>
+      openRouterChatCompletion(
+        apiKey,
+        model,
+        options,
+        onUserKey ? null : serverKeyTokenPriceCaps(formatModelRef("openrouter", model)),
+        AbortSignal.timeout(TEXT_REQUEST_BUDGET_MS)
+      ),
+    listModels: async (_call, requirements) =>
+      (await listOpenRouterModels("text"))
+        .filter((model) => isUsableOpenRouterModel(model, requirements))
+        .map((model) => ({
+          id: formatModelRef("openrouter", model.id),
+          displayName: model.name,
+          provider: "openrouter" as const,
+          contextLength: model.context_length ?? undefined,
+          inputPricePerMillion: pricePerMillionUnits(model.pricing?.prompt),
+          outputPricePerMillion: pricePerMillionUnits(model.pricing?.completion),
+        }))
+        .sort(byDisplayName),
+  },
+};
+
+function byDisplayName(a: AiModel, b: AiModel): number {
+  return a.displayName.localeCompare(b.displayName);
 }
 
 /**
@@ -526,6 +539,18 @@ function isUsableChatModel(model: { id: string }): boolean {
   return contextWindow === undefined || contextWindow >= MIN_CONTEXT_WINDOW;
 }
 
+/** A Groq or Cerebras model listing's usable chat models, named by id. */
+function toChatModels(provider: "groq" | "cerebras", models: { id: string }[]): AiModel[] {
+  return models
+    .filter(isUsableChatModel)
+    .map((model) => ({
+      id: formatModelRef(provider, model.id),
+      displayName: model.id,
+      provider,
+    }))
+    .sort(byDisplayName);
+}
+
 /**
  * Whether an OpenRouter model can serve summarization/narration: text-only
  * output (drops image/audio generators), a long enough context, and
@@ -577,72 +602,10 @@ export function filterToLatestClaudeGeneration(
   return result;
 }
 
-async function listProviderModels(
-  provider: TextAiProvider,
-  keys: AiProviderKeys | undefined,
-  requirements: ModelRequirements
-): Promise<AiModel[]> {
-  switch (provider) {
-    case "anthropic": {
-      const client = getAnthropicClient(keys);
-      if (!client) return [];
-      const models: { id: string; displayName: string }[] = [];
-      // Fetch all models using auto-pagination
-      for await (const model of client.models.list({ limit: 100 })) {
-        models.push({ id: model.id, displayName: model.display_name });
-      }
-      return filterToLatestClaudeGeneration(simplifyModelIds(models)).map((model) => ({
-        id: formatModelRef("anthropic", model.id),
-        displayName: model.displayName,
-        provider: "anthropic" as const,
-      }));
-    }
-    case "groq": {
-      const client = getGroqClient(keys);
-      if (!client) return [];
-      const response = await client.models.list();
-      return response.data
-        .filter((model) => isUsableChatModel(model))
-        .map((model) => ({
-          id: formatModelRef("groq", model.id),
-          displayName: model.id,
-          provider: "groq" as const,
-        }))
-        .sort((a, b) => a.displayName.localeCompare(b.displayName));
-    }
-    case "cerebras": {
-      const client = getCerebrasClient(keys);
-      if (!client) return [];
-      const response = await client.models.list();
-      return response.data
-        .filter((model) => isUsableChatModel(model))
-        .map((model) => ({
-          id: formatModelRef("cerebras", model.id),
-          displayName: model.id,
-          provider: "cerebras" as const,
-        }))
-        .sort((a, b) => a.displayName.localeCompare(b.displayName));
-    }
-    case "openrouter": {
-      const models = await listOpenRouterModels("text");
-      return models
-        .filter((model) => isUsableOpenRouterModel(model, requirements))
-        .map((model) => ({
-          id: formatModelRef("openrouter", model.id),
-          displayName: model.name,
-          provider: "openrouter" as const,
-          contextLength: model.context_length ?? undefined,
-          inputPricePerMillion: pricePerMillionUnits(model.pricing?.prompt),
-          outputPricePerMillion: pricePerMillionUnits(model.pricing?.completion),
-        }))
-        .sort((a, b) => a.displayName.localeCompare(b.displayName));
-    }
-  }
-}
-
 /**
  * Lists selectable text models across the requested providers (default: all),
- * skipping providers with no usable key (none, or the user's can't be read).
+ * skipping providers with no usable key (none, or the user's can't be read)
+ * and, when JSON-object responses are required, those that can't give one.
  * A provider whose listing fails is logged and skipped so the others still
  * show up.
  */
@@ -652,19 +615,23 @@ export async function listAllModels(
   requirements: ModelRequirements = {}
 ): Promise<AiModel[]> {
   const results = await Promise.all(
-    providers
-      .filter((provider) => getProviderApiKey(provider, keys) !== null)
-      .map(async (provider) => {
-        try {
-          return await listProviderModels(provider, keys, requirements);
-        } catch (error) {
-          logger.error("Failed to list AI models", {
-            provider,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return [];
-        }
-      })
+    providers.map(async (provider) => {
+      const adapter = TEXT_PROVIDER_ADAPTERS[provider];
+      const apiKey = getProviderApiKey(provider, keys);
+      if (!apiKey || (requirements.jsonObject && !adapter.jsonObject)) return [];
+      try {
+        return await adapter.listModels(
+          { apiKey, onUserKey: isOnUserKey(provider, keys) },
+          requirements
+        );
+      } catch (error) {
+        logger.error("Failed to list AI models", {
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
+      }
+    })
   );
   return results.flat();
 }

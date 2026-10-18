@@ -1,4 +1,6 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import Anthropic from "@anthropic-ai/sdk";
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import Groq from "groq-sdk";
@@ -13,9 +15,12 @@ import {
   isModelAllowed,
   isProviderAvailable,
   isUsableOpenRouterModel,
+  listAllModels,
   supportsReasoningEffort,
   type AiProviderKeys,
 } from "@/server/services/ai-providers";
+import { TEXT_AI_PROVIDERS } from "@/lib/ai/providers";
+import { USER_AGENT } from "@/server/http/user-agent";
 import { getNarrationModelRef, isNarrationLlmAvailable } from "@/server/services/narration";
 import { parseModelRef } from "@/lib/ai/model-ref";
 import {
@@ -45,6 +50,9 @@ const ENV_VARS = [
   "SERVER_KEY_MAX_INPUT_PRICE",
   "SERVER_KEY_MAX_OUTPUT_PRICE",
   "SERVER_KEY_MAX_SPEECH_PRICE",
+  "ANTHROPIC_BASE_URL",
+  "GROQ_BASE_URL",
+  "CEREBRAS_BASE_URL",
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_VARS.map((name) => [name, process.env[name]]));
@@ -515,6 +523,66 @@ describe("generateChatCompletion", () => {
         }
       )
     ).rejects.toThrow("isn't allowed on the server's Groq key");
+  });
+
+  describe("against a stand-in provider", () => {
+    let server: Server;
+    const requests: { url: string; userAgent: string | undefined }[] = [];
+
+    beforeAll(async () => {
+      server = createServer((req, res) => {
+        requests.push({ url: req.url ?? "", userAgent: req.headers["user-agent"] });
+        res.setHeader("Content-Type", "application/json");
+        // Both the Anthropic and the OpenAI-compatible answer shapes.
+        res.end(
+          JSON.stringify({
+            content: [{ type: "text", text: "hello" }],
+            choices: [{ message: { content: "hello" } }],
+          })
+        );
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    });
+
+    afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+    function pointSdksAtServer() {
+      clearEnv();
+      requests.length = 0;
+      const { port } = server.address() as AddressInfo;
+      for (const name of ["ANTHROPIC_BASE_URL", "GROQ_BASE_URL", "CEREBRAS_BASE_URL"] as const) {
+        process.env[name] = `http://127.0.0.1:${port}`;
+      }
+    }
+
+    it.each(["anthropic", "groq", "cerebras"] as const)(
+      "calls %s with our User-Agent",
+      async (provider) => {
+        pointSdksAtServer();
+        const text = await generateChatCompletion(
+          { provider, model: "some-model" },
+          { [provider]: "user-key" },
+          { userPrompt: "hi", maxTokens: 10 }
+        );
+        expect(text).toBe("hello");
+        expect(requests.map((request) => request.userAgent)).toEqual([USER_AGENT]);
+      }
+    );
+
+    it("never asks a provider that can't do JSON mode for it, nor lists its models", async () => {
+      pointSdksAtServer();
+      await expect(
+        generateChatCompletion(
+          { provider: "anthropic", model: "claude-haiku-4-5" },
+          { anthropic: "user-key" },
+          { userPrompt: "hi", maxTokens: 10, jsonObject: true }
+        )
+      ).rejects.toThrow("JSON-object responses are not supported for Anthropic");
+      expect(
+        await listAllModels({ anthropic: "user-key" }, TEXT_AI_PROVIDERS, { jsonObject: true })
+      ).toEqual([]);
+      expect(requests).toEqual([]);
+    });
   });
 });
 
