@@ -51,8 +51,10 @@ const userConsentColumns = {
 
 /**
  * Resolve the Lion Reader user linked to a Discord user: the Discord OAuth link
- * first, then the API-token link. Returns `null` if neither exists or the
- * linked token is revoked/expired.
+ * first, then the API-token link, except that a confirmed user beats an
+ * unconfirmed one: an abandoned "Sign in with Discord" (an account that never
+ * accepted the Terms) must not shadow a later `/link` to a real account.
+ * Returns `null` if neither exists or the linked token is revoked/expired.
  */
 export async function resolveDiscordUser(
   db: Database,
@@ -66,8 +68,11 @@ export async function resolveDiscordUser(
       and(eq(oauthAccounts.provider, "discord"), eq(oauthAccounts.providerAccountId, discordId))
     )
     .limit(1);
-  if (oauth) {
-    return { userId: oauth.userId, method: "oauth", confirmed: isSignupConfirmed(oauth) };
+  const oauthUser: DiscordUser | null = oauth
+    ? { userId: oauth.userId, method: "oauth", confirmed: isSignupConfirmed(oauth) }
+    : null;
+  if (oauthUser?.confirmed) {
+    return oauthUser;
   }
 
   const [token] = await db
@@ -84,11 +89,11 @@ export async function resolveDiscordUser(
       )
     )
     .limit(1);
-  if (token) {
-    return { userId: token.userId, method: "token", confirmed: isSignupConfirmed(token) };
-  }
+  const tokenUser: DiscordUser | null = token
+    ? { userId: token.userId, method: "token", confirmed: isSignupConfirmed(token) }
+    : null;
 
-  return null;
+  return tokenUser?.confirmed ? tokenUser : (oauthUser ?? tokenUser);
 }
 
 /**

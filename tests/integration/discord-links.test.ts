@@ -151,6 +151,23 @@ describe("resolveDiscordUser", () => {
     });
   });
 
+  // An abandoned "Sign in with Discord" must not shadow a later /link to a real
+  // account.
+  it("prefers a confirmed API-token link over an unconfirmed OAuth link", async () => {
+    const oauthUserId = await createUser({ tosAgreedAt: null, privacyPolicyAgreedAt: null });
+    const tokenUserId = await createUser();
+    const discordId = makeDiscordId();
+    await createTestOAuthLink(oauthUserId, "discord", { providerAccountId: discordId });
+    const { id: tokenId } = await createApiToken(tokenUserId, ["saved:write"], "Discord");
+    await linkDiscordApiToken(db, discordId, tokenId);
+
+    expect(await resolveDiscordUser(db, discordId)).toEqual({
+      userId: tokenUserId,
+      method: "token",
+      confirmed: true,
+    });
+  });
+
   // A first Discord sign-in creates the account before its owner accepts the
   // Terms; the bot must not save for it (SECURITY.md §8).
   it.each(["oauth", "token"] as const)(
