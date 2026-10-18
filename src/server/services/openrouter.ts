@@ -156,7 +156,8 @@ export async function openRouterChatCompletion(
   apiKey: string,
   model: string,
   options: ChatCompletionOptions,
-  priceCaps: TokenPriceCaps | null = null
+  priceCaps: TokenPriceCaps | null,
+  signal: AbortSignal
 ): Promise<string> {
   // Without the catalog, fall back to sending no optional parameters.
   const catalog = await listOpenRouterModels("text").catch(() => []);
@@ -164,7 +165,7 @@ export async function openRouterChatCompletion(
   const response = await fetch(`${OPENROUTER_API_URL}/chat/completions`, {
     method: "POST",
     headers: { ...headers(apiKey), "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal,
     body: JSON.stringify(
       buildChatCompletionBody(model, options, catalogEntry?.supported_parameters ?? [], priceCaps)
     ),
