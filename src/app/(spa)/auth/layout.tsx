@@ -9,12 +9,11 @@
  * signupConfig/providers prefetch, which only the login/register forms used).
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
-import { validateSession } from "@/server/auth/session";
+import { getRequestSession } from "@/server/auth/request-session";
 import { sessionHomePath } from "@/server/auth/confirmation";
 
 interface OAuthTransitionLayoutProps {
@@ -22,16 +21,10 @@ interface OAuthTransitionLayoutProps {
 }
 
 export default async function OAuthTransitionLayout({ children }: OAuthTransitionLayoutProps) {
-  // Check if user is already authenticated
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
-
-  if (sessionToken) {
-    const session = await validateSession(sessionToken);
-    if (session) {
-      // Signed in: into the app, or to signup confirmation if incomplete.
-      redirect(sessionHomePath(session.user));
-    }
+  const current = await getRequestSession();
+  if (current) {
+    // Signed in: into the app, or to signup confirmation if incomplete.
+    redirect(sessionHomePath(current.session.user));
   }
 
   return (

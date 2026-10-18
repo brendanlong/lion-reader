@@ -16,7 +16,8 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
-import { SESSION_MAX_AGE_SECONDS } from "@/server/auth/session-cookie";
+import { SESSION_MAX_AGE_SECONDS, setSessionCookie } from "@/server/auth/session-cookie";
+import { extractClientInfo } from "@/server/http/client-ip";
 
 /**
  * Scopes a session may be restricted to. A scoped session is a fail-closed
@@ -141,9 +142,6 @@ export interface CreateSessionResult {
 /**
  * Creates a new session for a user.
  *
- * This centralizes session creation logic that was previously duplicated
- * across 6 different places (register, login, OAuth callbacks).
- *
  * @param dbOrTx - Database or transaction context
  * @param params - Session creation parameters
  * @returns The session ID and raw token (token should be returned to client)
@@ -180,6 +178,21 @@ export async function createSession(
   });
 
   return { sessionId, token };
+}
+
+/**
+ * Sign a user in: create a full-access browser session recording the request's
+ * client, and set its cookie on `resHeaders` (absent on the REST/OpenAPI path,
+ * whose clients take the returned token from the response body).
+ */
+export async function startSession(
+  dbOrTx: DbOrTx,
+  params: { userId: string; requestHeaders: Headers; resHeaders: Headers | undefined }
+): Promise<CreateSessionResult> {
+  const { userAgent, ipAddress } = extractClientInfo(params.requestHeaders);
+  const result = await createSession(dbOrTx, { userId: params.userId, userAgent, ipAddress });
+  setSessionCookie(params.resHeaders, result.token);
+  return result;
 }
 
 // ============================================================================

@@ -276,6 +276,26 @@ describe("Google OAuth", () => {
     return location.pathname + location.search;
   }
 
+  it("signs the user in with a session cookie and clears the state cookie", async () => {
+    const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
+    const { validateSession } = await import("../../src/server/auth/session");
+
+    await createTestUser({ email: mockGoogleUserInfo.email });
+    const { state } = await createGoogleAuthUrl();
+    const response = await callback(state);
+
+    expect(locationOf(response)).toBe("/auth/oauth/complete?redirect=%2Fall");
+    const setCookies = response.headers.getSetCookie();
+    const sessionCookie = setCookies.find((cookie) => cookie.startsWith("session="));
+    expect(sessionCookie).toMatch(/HttpOnly/);
+    const token = sessionCookie!.slice("session=".length).split(";")[0];
+    const session = await validateSession(token);
+    expect(session?.user.email).toBe(mockGoogleUserInfo.email);
+    expect(setCookies.find((c) => c.startsWith(`${OAUTH_STATE_COOKIE_NAME}=`))).toMatch(
+      /Max-Age=0/
+    );
+  });
+
   describe("state cookie (#1263)", () => {
     it("rejects a sign-in callback from a browser that didn't start the flow", async () => {
       const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");

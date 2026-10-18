@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { validateSession } from "@/server/auth/session";
+import { getSessionCookie } from "@/server/auth/session-cookie";
 import { resolveClient } from "@/server/oauth/clients";
 import { hasConsent, recordConsent } from "@/server/oauth/grants";
 import { createAuthorizationCode } from "@/server/oauth/service";
@@ -29,13 +30,6 @@ import {
 } from "@/server/oauth/app-client";
 import { checkRouteRateLimit } from "@/server/rate-limit";
 import { logger } from "@/lib/logger";
-
-/**
- * Extracts session token from cookies.
- */
-function getSessionToken(request: NextRequest): string | null {
-  return request.cookies.get("session")?.value ?? null;
-}
 
 /**
  * Builds an error redirect URL with OAuth error parameters.
@@ -212,7 +206,7 @@ export async function GET(request: NextRequest) {
   const effectiveResource = getTokenAudienceForClient(clientId);
 
   // Check if user is authenticated
-  const sessionToken = getSessionToken(request);
+  const sessionToken = getSessionCookie(request.cookies);
   if (!sessionToken) {
     // Redirect to login with return URL
     const loginUrl = new URL("/login", getIssuer());
@@ -307,7 +301,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Check authentication
-  const sessionToken = request.cookies.get("session")?.value;
+  const sessionToken = getSessionCookie(request.cookies);
   if (!sessionToken) {
     return NextResponse.json(createOAuthError(OAUTH_ERRORS.ACCESS_DENIED, "Not authenticated"), {
       status: 401,

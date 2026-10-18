@@ -24,10 +24,13 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { users } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
-import { createSession, revokeSessionByToken } from "@/server/auth/session";
-import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
+import {
+  invalidateUserSessionCaches,
+  revokeSessionByToken,
+  startSession,
+} from "@/server/auth/session";
+import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
-import { extractClientInfo } from "@/server/http/client-ip";
 import {
   getEnabledProviders,
   isProviderEnabled,
@@ -158,9 +161,8 @@ export const authRouter = createTRPCRouter({
 
       const passwordHash = await hashPassword(password);
 
-      const { userAgent, ipAddress } = extractClientInfo(ctx.headers);
-
-      // Create user and session in a transaction
+      // Create user and session in a transaction. The returned sessionToken stays
+      // in the body for REST/OpenAPI clients, which get no cookie.
       const result = await ctx.db.transaction(async (tx) => {
         // Create user (handles invite validation and provider restriction atomically)
         const user = await createUser(tx, {
@@ -171,11 +173,10 @@ export const authRouter = createTRPCRouter({
           provider: "email",
         });
 
-        // Create session
-        const { token } = await createSession(tx, {
+        const { token } = await startSession(tx, {
           userId: user.userId,
-          userAgent,
-          ipAddress,
+          requestHeaders: ctx.headers,
+          resHeaders: ctx.resHeaders,
         });
 
         return { user, token };
@@ -184,10 +185,6 @@ export const authRouter = createTRPCRouter({
       // Announcement-feed subscription + Getting Started article (fire-and-forget,
       // errors are caught internally)
       void runPostSignupTasks(ctx.db, result.user.userId);
-
-      // Set the httpOnly session cookie for the browser (the returned sessionToken
-      // stays in the body for REST/OpenAPI clients that read it directly).
-      setSessionCookie(ctx.resHeaders, result.token);
 
       return {
         user: {
@@ -238,18 +235,13 @@ export const authRouter = createTRPCRouter({
       }
       const foundUser = login.user;
 
-      const { userAgent, ipAddress } = extractClientInfo(ctx.headers);
-
-      // Create new session
-      const { token } = await createSession(ctx.db, {
+      // The returned sessionToken stays in the body for REST/OpenAPI clients,
+      // which get no cookie.
+      const { token } = await startSession(ctx.db, {
         userId: foundUser.id,
-        userAgent,
-        ipAddress,
+        requestHeaders: ctx.headers,
+        resHeaders: ctx.resHeaders,
       });
-
-      // Set the httpOnly session cookie for the browser (the returned sessionToken
-      // stays in the body for REST/OpenAPI clients that read it directly).
-      setSessionCookie(ctx.resHeaders, token);
 
       return {
         user: {
@@ -467,7 +459,6 @@ export const authRouter = createTRPCRouter({
         .where(eq(users.id, userId));
 
       // Invalidate session cache so the confirmed state is reflected immediately
-      const { invalidateUserSessionCaches } = await import("@/server/auth/session");
       await invalidateUserSessionCaches(userId);
 
       return { success: true };
