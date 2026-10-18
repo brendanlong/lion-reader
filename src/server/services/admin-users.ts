@@ -14,6 +14,7 @@ import {
   userEntries,
   users,
 } from "@/server/db/schema";
+import { containsPattern } from "@/server/db/like";
 import { parseTimestamptzOrNull } from "@/server/db/temporal";
 import { errors } from "@/server/errors";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
@@ -136,7 +137,7 @@ export async function listAdminUsers(
   const conditions = [];
 
   if (search) {
-    conditions.push(ilike(users.email, `%${search}%`));
+    conditions.push(ilike(users.email, containsPattern(search)));
   }
 
   // Keyset (cursor) pagination; each branch mirrors its ORDER BY below.

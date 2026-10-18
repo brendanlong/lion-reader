@@ -7,6 +7,7 @@ import { z } from "zod";
 import { and, desc, eq, ilike, isNull, lt } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { invites, users } from "@/server/db/schema";
+import { containsPattern } from "@/server/db/like";
 import { appUrl } from "@/server/config/env";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
@@ -77,7 +78,7 @@ export async function listInvites(
   }
 
   if (search) {
-    conditions.push(ilike(users.email, `%${search}%`));
+    conditions.push(ilike(users.email, containsPattern(search)));
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

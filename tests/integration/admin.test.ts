@@ -434,6 +434,20 @@ describe("Admin API", () => {
       expect(result.items[0].email).toContain("findme-unique");
     });
 
+    it.each([
+      ["%", "pct%x", "pctAAx"],
+      ["_", "und_r", "undXr"],
+    ])("matches a %s in the search literally", async (_wildcard, literal, lookalike) => {
+      const caller = createCaller(createAdminContext());
+      await createTestUser({ emailPrefix: literal });
+      await createTestUser({ emailPrefix: lookalike });
+
+      const result = await caller.admin.listUsers({ search: literal });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].email).toContain(literal);
+    });
+
     it("keeps lastActiveAt after the user's sessions are cleaned up", async () => {
       // Regression: activity used to be derived from MAX(sessions.last_active_at),
       // so retention cleanup deleting expired sessions blanked it out. It now

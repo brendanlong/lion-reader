@@ -6,6 +6,7 @@ import { z } from "zod";
 import { and, asc, count, desc, eq, gt, ilike, isNull, sql } from "drizzle-orm";
 import type { Database } from "@/server/db";
 import { entries, feeds, subscriptions } from "@/server/db/schema";
+import { containsPattern } from "@/server/db/like";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 
 /** Keyset cursor matching the feed list's ORDER BY failures DESC, COALESCE(title, '') ASC, id ASC. */
@@ -100,7 +101,7 @@ export async function listAdminFeeds(
   }
 
   if (urlFilter) {
-    conditions.push(ilike(feeds.url, `%${urlFilter}%`));
+    conditions.push(ilike(feeds.url, containsPattern(urlFilter)));
   }
 
   if (brokenOnly) {
@@ -116,7 +117,7 @@ export async function listAdminFeeds(
       sql`${feeds.id} IN (
         SELECT s.feed_id FROM subscriptions s
         JOIN users u ON u.id = s.user_id
-        WHERE u.email ILIKE ${`%${userEmail}%`}
+        WHERE u.email ILIKE ${containsPattern(userEmail)}
           AND s.unsubscribed_at IS NULL
       )`
     );

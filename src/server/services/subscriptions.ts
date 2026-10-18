@@ -22,6 +22,7 @@ import {
 import { countsAsOfColumn, formatCountsAsOf } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import { errors } from "@/server/errors";
+import { containsPattern } from "@/server/db/like";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
 import { countsAsOfSchema } from "@/lib/events/schemas";
 import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
@@ -304,8 +305,7 @@ export async function listSubscriptions(
 
   // Title search (case-insensitive)
   if (query && query.length > 0) {
-    const likePattern = `%${query}%`;
-    conditions.push(sql`COALESCE(${userFeeds.title}, '') ILIKE ${likePattern}`);
+    conditions.push(sql`COALESCE(${userFeeds.title}, '') ILIKE ${containsPattern(query)}`);
   }
 
   // Tag filter
