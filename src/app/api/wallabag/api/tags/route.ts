@@ -6,15 +6,15 @@
  */
 
 import { requireAuth } from "@/server/wallabag/auth";
-import { jsonResponse } from "@/server/wallabag/parse";
+import { jsonResponse, withClientErrors } from "@/server/wallabag/parse";
 import { listWallabagTags } from "@/server/wallabag/tags";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async function (request: Request): Promise<Response> {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
   return jsonResponse(await listWallabagTags(db, auth.userId));
-}
+});

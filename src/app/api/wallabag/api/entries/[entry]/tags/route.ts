@@ -8,11 +8,11 @@
 
 import { requireAuth } from "@/server/wallabag/auth";
 import {
-  clientErrorResponse,
   errorResponse,
   jsonResponse,
   parseBody,
   parseTagLabels,
+  withClientErrors,
 } from "@/server/wallabag/parse";
 import { resolveWallabagEntry } from "@/server/wallabag/id";
 import { addEntryTags, listEntryTags } from "@/server/wallabag/tags";
@@ -21,7 +21,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+export const GET = withClientErrors(async function (
   request: Request,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
@@ -35,9 +35,9 @@ export async function GET(
   }
   const tags = await listEntryTags(db, auth.userId, [resolved.id]);
   return jsonResponse(tags.get(resolved.id) ?? []);
-}
+});
 
-export async function POST(
+export const POST = withClientErrors(async function (
   request: Request,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
@@ -50,12 +50,6 @@ export async function POST(
   if (!resolved) {
     return errorResponse("not_found", "Entry not found", 404);
   }
-  try {
-    await addEntryTags(db, auth.userId, resolved.id, parseTagLabels(body.tags));
-  } catch (error) {
-    const response = clientErrorResponse(error);
-    if (response) return response;
-    throw error;
-  }
+  await addEntryTags(db, auth.userId, resolved.id, parseTagLabels(body.tags));
   return formatEntryResponse(db, auth.userId, resolved);
-}
+});

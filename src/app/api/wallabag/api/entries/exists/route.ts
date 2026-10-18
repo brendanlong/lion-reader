@@ -13,14 +13,14 @@
  */
 
 import { requireAuth } from "@/server/wallabag/auth";
-import { jsonResponse, errorResponse } from "@/server/wallabag/parse";
+import { jsonResponse, errorResponse, withClientErrors } from "@/server/wallabag/parse";
 import { entryIdsToWallabagIds } from "@/server/wallabag/id";
 import * as savedService from "@/server/services/saved";
 import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async function (request: Request): Promise<Response> {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
   const url = new URL(request.url);
@@ -48,4 +48,4 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   return jsonResponse({ exists: false });
-}
+});

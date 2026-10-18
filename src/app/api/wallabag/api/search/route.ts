@@ -12,7 +12,12 @@
  */
 
 import { requireAuth } from "@/server/wallabag/auth";
-import { jsonResponse, errorResponse, parseEntryListParams } from "@/server/wallabag/parse";
+import {
+  jsonResponse,
+  errorResponse,
+  parseEntryListParams,
+  withClientErrors,
+} from "@/server/wallabag/parse";
 import { formatEntryListItem, createPaginatedResponse } from "@/server/wallabag/format";
 import { entryIdsToWallabagIds } from "@/server/wallabag/id";
 import { listEntryTags } from "@/server/wallabag/tags";
@@ -21,7 +26,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async function (request: Request): Promise<Response> {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
 
@@ -63,4 +68,4 @@ export async function GET(request: Request): Promise<Response> {
   });
   const baseUrl = `${url.origin}/api/wallabag/api/search`;
   return jsonResponse(createPaginatedResponse(items, page, perPage, total, baseUrl));
-}
+});

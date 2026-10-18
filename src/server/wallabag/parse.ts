@@ -32,6 +32,24 @@ export function clientErrorResponse(error: unknown): Response | null {
     : errorResponse((error as TRPCError).code, (error as TRPCError).message, status);
 }
 
+/**
+ * Wraps a route handler so a service's client error is answered in the
+ * Wallabag envelope (`clientErrorResponse`) instead of an unhandled 500.
+ */
+export function withClientErrors<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      const response = clientErrorResponse(error);
+      if (response) return response;
+      throw error;
+    }
+  };
+}
+
 /** Splits a Wallabag `tags` parameter ("a,b, c") into its labels. */
 export function parseTagLabels(raw: string | null | undefined): string[] {
   if (!raw) return [];

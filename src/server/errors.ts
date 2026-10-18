@@ -1,7 +1,7 @@
 /**
  * App errors, thrown by services and every API surface. They're TRPCErrors
  * because tRPC's envelope is our error format (docs/DESIGN.md, "API Design");
- * the compat APIs convert client errors to their own (`clientErrorResponse`).
+ * the compat APIs convert client errors to their own (`withClientErrors`).
  */
 
 import { TRPCError } from "@trpc/server";

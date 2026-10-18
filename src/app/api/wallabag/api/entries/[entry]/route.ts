@@ -13,9 +13,9 @@ import { requireAuth } from "@/server/wallabag/auth";
 import {
   jsonResponse,
   errorResponse,
-  clientErrorResponse,
   parseBody,
   parseTagLabels,
+  withClientErrors,
 } from "@/server/wallabag/parse";
 import { formatEntryResponse } from "@/server/wallabag/entry-response";
 import { addEntryTags } from "@/server/wallabag/tags";
@@ -26,7 +26,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
+export const GET = withClientErrors(async function (
   request: Request,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
@@ -40,9 +40,9 @@ export async function GET(
   }
 
   return formatEntryResponse(db, auth.userId, resolved);
-}
+});
 
-export async function PATCH(
+export const PATCH = withClientErrors(async function (
   request: Request,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
@@ -57,13 +57,7 @@ export async function PATCH(
   }
 
   // Like Wallabag, `tags` adds to the entry's tags rather than replacing them.
-  try {
-    await addEntryTags(db, auth.userId, resolved.id, parseTagLabels(body.tags));
-  } catch (error) {
-    const response = clientErrorResponse(error);
-    if (response) return response;
-    throw error;
-  }
+  await addEntryTags(db, auth.userId, resolved.id, parseTagLabels(body.tags));
 
   // Handle archive (read) state
   if (body.archive !== undefined) {
@@ -79,9 +73,9 @@ export async function PATCH(
 
   // Return the updated entry
   return formatEntryResponse(db, auth.userId, resolved);
-}
+});
 
-export async function DELETE(
+export const DELETE = withClientErrors(async function (
   request: Request,
   { params }: { params: Promise<{ entry: string }> }
 ): Promise<Response> {
@@ -102,4 +96,4 @@ export async function DELETE(
 
   // Return the entry (Wallabag API returns the deleted entry)
   return jsonResponse({ id: resolved.wallabagId });
-}
+});

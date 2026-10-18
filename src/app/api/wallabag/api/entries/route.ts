@@ -37,6 +37,7 @@ import {
   parseEntryListParams,
   parseBody,
   parseTagLabels,
+  withClientErrors,
 } from "@/server/wallabag/parse";
 import { getAppErrorCode } from "@/server/errors";
 import {
@@ -54,7 +55,7 @@ import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withClientErrors(async function (request: Request): Promise<Response> {
   const auth = await requireAuth(request);
   if (auth instanceof Response) return auth;
   const url = new URL(request.url);
@@ -142,7 +143,7 @@ export async function GET(request: Request): Promise<Response> {
   return jsonResponse(
     createPaginatedResponse(formattedItems, params.page, params.perPage, total, baseUrl)
   );
-}
+});
 
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
