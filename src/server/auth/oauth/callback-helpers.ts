@@ -33,13 +33,14 @@ import {
   type ProviderIdentity,
 } from "@/server/auth/oauth/token-exchange";
 
-/** The `?error=` the login page shows for each signup error a sign-in can raise. */
-const SIGNUP_ERROR_PARAMS: Partial<Record<string, string>> = {
+/** The `?error=` the login page shows for each app error a sign-in can raise. */
+const SIGN_IN_ERROR_PARAMS: Partial<Record<string, string>> = {
   INVITE_REQUIRED: "invite_required",
   INVITE_INVALID: "invite_invalid",
   INVITE_EXPIRED: "invite_expired",
   INVITE_ALREADY_USED: "invite_already_used",
   SIGNUP_PROVIDER_NOT_ALLOWED: "signup_provider_not_allowed",
+  OAUTH_ALREADY_LINKED: "provider_already_linked",
 };
 
 /**
@@ -137,9 +138,9 @@ export async function handleOAuthCallback(
     if (error instanceof OAuthStateError) {
       return loginError("invalid_state");
     }
-    const signupError = SIGNUP_ERROR_PARAMS[getAppErrorCode(error) ?? ""];
-    if (signupError) {
-      return loginError(signupError);
+    const appError = SIGN_IN_ERROR_PARAMS[getAppErrorCode(error) ?? ""];
+    if (appError) {
+      return loginError(appError);
     }
     logger.warn("OAuth callback failed", {
       provider,

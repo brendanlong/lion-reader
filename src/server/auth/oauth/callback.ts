@@ -18,6 +18,7 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import type { OAuthProviderName } from "@/server/auth/oauth/config";
 import { oauthTokenColumns, type ProviderIdentity } from "@/server/auth/oauth/token-exchange";
+import { attachOAuthAccount } from "@/server/services/oauth-accounts";
 
 /**
  * Parameters for processing an OAuth callback.
@@ -133,23 +134,16 @@ export async function processOAuthCallback(
     // Link OAuth to existing user account.
     //
     // This adds a way to sign in, which SECURITY.md §4 would otherwise have
-    // revoke the user's other sessions — `oauth-accounts.ts` does exactly that
-    // for a link from the settings page (mode "link", which identifies the
-    // account by session instead). It deliberately doesn't here: this branch
-    // *is* an ordinary first social sign-in, so revoking would log every device
-    // out of an account whose owner just proved control of its verified email
-    // address and is signing in on this one.
+    // revoke the user's other sessions — `linkOAuthAccount` does exactly that
+    // for a link from the settings page (which identifies the account by
+    // session instead). It deliberately doesn't here: this branch *is* an
+    // ordinary first social sign-in, so revoking would log every device out of
+    // an account whose owner just proved control of its verified email address
+    // and is signing in on this one. The link itself is the same one-per-provider
+    // attach, so a user who already linked another account of this provider is
+    // refused rather than given a second one.
     const userId = existingUser[0].id;
-
-    // Create OAuth account link
-    await db.insert(oauthAccounts).values({
-      id: generateUuidv7(),
-      userId,
-      provider,
-      providerAccountId,
-      ...tokenColumns,
-      createdAt: now,
-    });
+    await attachOAuthAccount(db, { ...params, userId });
 
     // Mark email as verified if not already (OAuth provider verified it)
     if (!existingUser[0].emailVerifiedAt) {
