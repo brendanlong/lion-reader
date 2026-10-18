@@ -71,7 +71,7 @@ export default function EmailSettingsContent() {
 // Ingest Addresses Section
 // ============================================================================
 
-function IngestAddressesSection() {
+export function IngestAddressesSection() {
   const [isCreating, setIsCreating] = useState(false);
   const [newLabel, setNewLabel] = useState("");
 
@@ -372,7 +372,7 @@ function IngestAddressRow({ address }: IngestAddressRowProps) {
 // Spam Preference Section
 // ============================================================================
 
-function SpamPreferenceSection() {
+export function SpamPreferenceSection() {
   const preferencesQuery = trpc.users["me.preferences"].useQuery();
   const { update, isPending, pendingUpdate } = usePreferenceMutation();
 
