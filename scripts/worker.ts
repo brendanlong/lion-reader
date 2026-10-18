@@ -12,25 +12,18 @@
  * Environment variables:
  *   WORKER_POLL_INTERVAL_MS - Polling interval in ms (default: DEFAULT_POLL_INTERVAL_MS)
  *   WORKER_CONCURRENCY - Max concurrent jobs (default: DEFAULT_CONCURRENCY)
+ *   WORKER_HEARTBEAT_URL - Optional healthchecks.io check for the loop's liveness
  */
 
-import { isMainThread, threadId } from "node:worker_threads";
 import {
   DEFAULT_CONCURRENCY,
   DEFAULT_POLL_INTERVAL_MS,
-  startWorkerWithSignalHandling,
+  createWorker,
   type Worker,
 } from "../src/server/jobs/worker";
 import type { WorkerStats } from "../src/server/jobs/worker-core";
-import { startMetricsServer, setHealthChecker } from "../src/server/metrics/server";
-import { startHeartbeat } from "../src/server/notifications/healthchecks";
-import { initSentry } from "../src/server/sentry";
+import { runProcess } from "../src/server/process";
 import { logger } from "../src/lib/logger";
-
-// Initialize Sentry before any work starts. Next.js instrumentation only runs
-// in the app server, so without this the job runner's Sentry.captureException
-// calls are silent no-ops in this process.
-initSentry();
 
 const pollIntervalMs = parseInt(
   process.env.WORKER_POLL_INTERVAL_MS ?? String(DEFAULT_POLL_INTERVAL_MS),
@@ -48,9 +41,6 @@ const LIVENESS_THRESHOLD_MS = 10 * 60 * 1000;
 /** How often to ping the worker liveness healthchecks.io check. */
 const WORKER_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
-/** Optional healthchecks.io check for the worker process's loop liveness. */
-const workerHeartbeatUrl = process.env.WORKER_HEARTBEAT_URL;
-
 /**
  * The worker loop's liveness, shared by the Fly health check and the
  * healthchecks.io heartbeat so both judge staleness the same way.
@@ -65,67 +55,63 @@ function checkLoopLiveness(worker: Worker): {
   return { stale: staleDurationMs > LIVENESS_THRESHOLD_MS, staleDurationMs, stats };
 }
 
-logger.info("Starting standalone worker", {
-  pollIntervalMs,
-  concurrency,
-  pid: process.pid,
-  // Machine identity: a "Starting standalone worker" line carrying a discord/app
-  // process group is the smoking gun for a machine running the wrong binary.
-  flyProcessGroup: process.env.FLY_PROCESS_GROUP,
-  flyMachineId: process.env.FLY_MACHINE_ID,
-  // Thread identity: worker threads share the parent's pid, so pid alone can't
-  // distinguish "second OS process on this machine" from "this bundle was
-  // loaded inside another process's worker thread (a wrongly-resolved thread
-  // bootstrap)". isMainThread=false means the latter.
-  isMainThread,
-  threadId,
-});
+runProcess({
+  name: "standalone worker",
+  metricsPort: 9092,
+  includeDatabaseMetrics: true,
+  details: { pollIntervalMs, concurrency },
+  // Separate from the feed-health check so "worker process is alive and its
+  // loop is running" is a distinct signal from "feeds are fetching
+  // successfully": a stuck/dead worker shows here even when there's no
+  // feed-fetch regression.
+  heartbeat: { url: process.env.WORKER_HEARTBEAT_URL, intervalMs: WORKER_HEARTBEAT_INTERVAL_MS },
+  start: async (fail) => {
+    const worker = createWorker({
+      pollIntervalMs,
+      concurrency,
+      // The run loop should never exit on its own. If it does, the process is a
+      // zombie (alive but claiming no jobs), so exit non-zero and let Fly
+      // restart the machine — a clean restart beats lingering with a dead loop
+      // until the liveness health check eventually trips.
+      onLoopExit: (error) => {
+        logger.error("Worker run loop exited; restarting process", {
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+        fail("worker run loop exited");
+      },
+    });
+    await worker.start();
 
-// Start internal metrics server on port 9092 (separate from Next.js on 9091)
-startMetricsServer(9092, { includeDatabaseMetrics: true });
-
-startWorkerWithSignalHandling({
-  pollIntervalMs,
-  concurrency,
-})
-  .then((worker) => {
-    logger.info("Worker started successfully");
-
-    // Register liveness health checker now that the worker is running.
-    // Fly.io will restart the machine if /health returns 503.
-    setHealthChecker(() => {
-      const { stale, staleDurationMs, stats } = checkLoopLiveness(worker);
-
-      if (stale) {
+    return {
+      // Stops claiming and waits for in-flight jobs. A job still running when
+      // the drain times out is abandoned with its lease, and retried once the
+      // lease goes stale.
+      stop: () => worker.stop(),
+      checkHealth: () => {
+        const { stale, staleDurationMs, stats } = checkLoopLiveness(worker);
+        if (stale) {
+          return {
+            status: "unhealthy",
+            details: {
+              reason: "worker_loop_stale",
+              lastActivityAt: stats.lastActivityAt.toISOString(),
+              staleDurationMs,
+              thresholdMs: LIVENESS_THRESHOLD_MS,
+              activeJobs: stats.activeJobs,
+            },
+          };
+        }
         return {
-          status: "unhealthy",
+          status: "healthy",
           details: {
-            reason: "worker_loop_stale",
-            lastActivityAt: stats.lastActivityAt.toISOString(),
-            staleDurationMs,
-            thresholdMs: LIVENESS_THRESHOLD_MS,
             activeJobs: stats.activeJobs,
+            totalProcessed: stats.totalProcessed,
+            lastActivityAt: stats.lastActivityAt.toISOString(),
           },
         };
-      }
-
-      return {
-        status: "healthy",
-        details: {
-          activeJobs: stats.activeJobs,
-          totalProcessed: stats.totalProcessed,
-          lastActivityAt: stats.lastActivityAt.toISOString(),
-        },
-      };
-    });
-
-    // External worker-liveness heartbeat. Separate from the feed-health check so
-    // "worker process is alive and its loop is running" is a distinct signal
-    // from "feeds are fetching successfully": a stuck/dead worker shows here even
-    // when there's no feed-fetch regression. Reports /fail if the loop wedges
-    // instead of going silent.
-    if (workerHeartbeatUrl) {
-      startHeartbeat(workerHeartbeatUrl, WORKER_HEARTBEAT_INTERVAL_MS, () => {
+      },
+      // Reports /fail if the loop wedges instead of going silent.
+      heartbeatStatus: () => {
         const { stale, staleDurationMs, stats } = checkLoopLiveness(worker);
         if (stale) {
           return {
@@ -136,10 +122,7 @@ startWorkerWithSignalHandling({
         return {
           body: `Worker alive: activeJobs=${stats.activeJobs} processed=${stats.totalProcessed} lastActivity=${stats.lastActivityAt.toISOString()}`,
         };
-      });
-    }
-  })
-  .catch((error) => {
-    logger.error("Failed to start worker", { error });
-    process.exit(1);
-  });
+      },
+    };
+  },
+});

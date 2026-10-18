@@ -8,9 +8,9 @@
 app = "lion-reader"
 primary_region = "sjc"
 
-# Give graceful shutdown time to drain connections before SIGKILL (default 5s).
-# The app server drains in-flight requests and SSE streams for 15s, then closes
-# DB/Redis pools (see scripts/server.ts).
+# Give graceful shutdown time to drain before SIGKILL (default 5s). Every
+# process drains in-flight requests, SSE streams, jobs or bot handlers for 15s,
+# then closes DB/Redis, within a 25s deadline (src/server/shutdown.ts).
 kill_timeout = 30
 
 [build]

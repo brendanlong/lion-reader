@@ -140,15 +140,22 @@ function extractUrls(content: string): string[] {
 
 let client: Client | null = null;
 
-export async function startDiscordBot(): Promise<void> {
+/** A logged-in bot. */
+interface DiscordBot {
+  /** Disconnects from the gateway, so no further events arrive. */
+  stop: () => Promise<void>;
+}
+
+/** Logs the bot in. Resolves to null if the bot is disabled (no DISCORD_BOT_TOKEN). */
+export async function startDiscordBot(): Promise<DiscordBot | null> {
   if (!DISCORD_BOT_TOKEN) {
     logger.info("Discord bot disabled (DISCORD_BOT_TOKEN not set)");
-    return;
+    return null;
   }
 
   if (!DISCORD_CLIENT_ID) {
     logger.error("DISCORD_CLIENT_ID is required for Discord bot");
-    return;
+    return null;
   }
 
   client = new Client({
@@ -356,6 +363,14 @@ export async function startDiscordBot(): Promise<void> {
     clearTimeout(readyWatchdog);
     throw error;
   }
+
+  const loggedIn = client;
+  return {
+    stop: () => {
+      clearTimeout(readyWatchdog);
+      return loggedIn.destroy();
+    },
+  };
 }
 
 async function registerCommands(): Promise<void> {
