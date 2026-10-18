@@ -25,7 +25,7 @@ import { subscriptionCreatedEvent } from "@/server/services/subscription-sync-ev
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
-import { getSubscription, lockSubscriptionMembers } from "@/server/services/subscriptions";
+import { getSubscriptionsByIds, lockSubscriptionMembers } from "@/server/services/subscriptions";
 import { insertUserEntriesWithMemberships } from "@/server/services/subscription-entries";
 
 // ============================================================================
@@ -279,13 +279,17 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
     });
 
     // Publish subscription_created BEFORE the new_entry event (both on the
-    // user's channel, so in order), so the client knows the subscription first
-    publishUserEvent({
-      ...subscriptionCreatedEvent(await getSubscription(db, userId, owner.id)),
-      userId,
-      feedId: null,
-      updatedAt: upsertedSubscription.updatedAt,
-    });
+    // user's channel, so in order), so the client knows the subscription first.
+    // None if the user unsubscribed since: the email is still delivered.
+    const [row] = await getSubscriptionsByIds(db, userId, [owner.id]);
+    if (row) {
+      publishUserEvent({
+        ...subscriptionCreatedEvent(row),
+        userId,
+        feedId: null,
+        updatedAt: upsertedSubscription.updatedAt,
+      });
+    }
   }
 
   // 6. Check for duplicate Message-ID: a seek on the (owner_subscription_id,

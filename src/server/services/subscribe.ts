@@ -196,9 +196,11 @@ export async function createSubscription(
   //       lockAndCountActiveSubscriptions serializes the cap check (#952).
   const maxSubs = usageLimitsConfig.maxSubscriptionsPerUser;
 
+  // The row is read inside the transaction, so a concurrent unsubscribe can't
+  // make a subscribe that went through report "not found".
   interface TxResult {
     kind: "alreadyActive" | "created";
-    subscriptionId: string;
+    subscription: Subscription;
   }
 
   const txResult: TxResult = await db.transaction(async (tx) => {
@@ -228,7 +230,10 @@ export async function createSubscription(
       // Over cap — check if we're already subscribed to this specific feed
       const [existingSub] = await selectActiveSubscription();
       if (existingSub) {
-        return { kind: "alreadyActive", ...existingSub };
+        return {
+          kind: "alreadyActive",
+          subscription: await getSubscription(tx, userId, existingSub.subscriptionId),
+        };
       }
 
       throw errors.maxSubscriptionsReached(maxSubs);
@@ -259,7 +264,10 @@ export async function createSubscription(
       if (!sub) {
         throw new Error("Active subscription vanished after upsert conflict");
       }
-      return { kind: "alreadyActive", ...sub };
+      return {
+        kind: "alreadyActive",
+        subscription: await getSubscription(tx, userId, sub.subscriptionId),
+      };
     }
 
     const subscriptionId = upsertResult.rows[0].id;
@@ -270,19 +278,18 @@ export async function createSubscription(
       await populateInitialUserEntries(tx, userId, subscriptionId, feedId);
     }
 
-    return { kind: "created", subscriptionId };
+    return { kind: "created", subscription: await getSubscription(tx, userId, subscriptionId) };
   });
 
-  const { subscriptionId } = txResult;
+  const { subscription } = txResult;
   if (txResult.kind === "alreadyActive") {
-    return { subscription: await getSubscription(db, userId, subscriptionId), alreadyActive: true };
+    return { subscription, alreadyActive: true };
   }
 
   // 7. Compute absolute unread counts for the affected lists: All Articles,
   // Uncategorized (unsubscribing cleared a reactivated subscription's tags)
   // and its own. The client sets these directly.
-  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId }]);
-  const subscription = await getSubscription(db, userId, subscriptionId);
+  const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subscription.id }]);
 
   logger.debug("Populated initial user entries via lastSeenAt", {
     userId,
