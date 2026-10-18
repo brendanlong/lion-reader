@@ -16,7 +16,7 @@ import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcu
 import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
 import { applyCollectionEntriesChange } from "@/lib/cache/operations";
-import { createDemoStore } from "@/app/(public)/demo/store";
+import { createDemoStore } from "@/lib/demo/store";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 import { createRealTrpcUtils } from "../../../utils/cache-test-helpers";
 

@@ -52,7 +52,7 @@ import { useEntryListRefreshOnNavigate } from "@/lib/hooks/useEntryListRefreshOn
 import { useEntryListScrollResetOnNavigate } from "@/lib/hooks/useEntryListScrollResetOnNavigate";
 import { clientReplace } from "@/lib/navigation";
 import { DEMO_BASE_PATH } from "@/lib/routes";
-import { createDemoStore } from "./store";
+import { createDemoStore } from "@/lib/demo/store";
 import { buildDemoDehydratedState } from "./seed";
 import { demoEntrySlots } from "./DemoEntrySlots";
 import { DEMO_NARRATION_VOICE } from "@/lib/demo/narration";
