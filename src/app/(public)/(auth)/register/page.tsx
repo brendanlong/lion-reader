@@ -21,6 +21,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
+import { PASSWORD_MIN_LENGTH, passwordLengthError } from "@/lib/password";
 import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,12 +134,9 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
       newErrors.email = "Please enter a valid email address";
     }
 
-    if (!password) {
-      newErrors.password = "Password is required";
-    } else if (password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters";
-    } else if (password.length > 128) {
-      newErrors.password = "Password must be less than 128 characters";
+    const passwordError = password ? passwordLengthError(password) : "Password is required";
+    if (passwordError) {
+      newErrors.password = passwordError;
     }
 
     if (!confirmPassword) {
@@ -264,7 +262,7 @@ function RegisterForm({ inviteToken }: { inviteToken: string | null }) {
               id="password"
               type="password"
               label="Password"
-              placeholder="At least 8 characters"
+              placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               error={errors.password}

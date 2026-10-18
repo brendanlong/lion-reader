@@ -22,6 +22,7 @@ import {
   invalidateUserSessionCaches,
 } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
+import { hashPassword, passwordSchema } from "@/server/auth/password";
 import { isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
@@ -180,10 +181,7 @@ export const usersRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        newPassword: z
-          .string()
-          .min(8, "Password must be at least 8 characters")
-          .max(128, "Password must be less than 128 characters"),
+        newPassword: passwordSchema(),
       })
     )
     .output(z.object({ success: z.boolean() }))
@@ -192,8 +190,7 @@ export const usersRouter = createTRPCRouter({
       const currentSessionId = ctx.session.session.id;
       const { newPassword } = input;
 
-      // Hash the new password
-      const passwordHash = await argon2.hash(newPassword);
+      const passwordHash = await hashPassword(newPassword);
 
       // Attempt to set password only if user doesn't already have one
       const updated = await ctx.db.transaction(async (tx) => {
@@ -240,10 +237,7 @@ export const usersRouter = createTRPCRouter({
     .input(
       z.object({
         currentPassword: z.string().min(1, "Current password is required"),
-        newPassword: z
-          .string()
-          .min(8, "New password must be at least 8 characters")
-          .max(128, "New password must be less than 128 characters"),
+        newPassword: passwordSchema("New password"),
       })
     )
     .output(z.object({ success: z.boolean() }))
@@ -269,8 +263,7 @@ export const usersRouter = createTRPCRouter({
         throw errors.validation("Current password is incorrect");
       }
 
-      // Hash the new password
-      const newPasswordHash = await argon2.hash(newPassword);
+      const newPasswordHash = await hashPassword(newPassword);
 
       // Wallabag tokens are minted from the password (password grant), so they
       // must not outlive it.

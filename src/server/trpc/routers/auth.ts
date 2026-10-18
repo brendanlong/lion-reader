@@ -7,11 +7,10 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import * as argon2 from "argon2";
 import { eq } from "drizzle-orm";
 
 import { checkAccountRateLimit } from "@/server/rate-limit";
-import { verifyEmailPassword } from "@/server/auth/password";
+import { hashPassword, passwordSchema, verifyEmailPassword } from "@/server/auth/password";
 
 import {
   createTRPCRouter,
@@ -66,22 +65,11 @@ const emailSchema = z
   .trim();
 
 /**
- * Password validation schema.
- * Enforces minimum security requirements:
- * - At least 8 characters
- * - Maximum 128 characters (reasonable limit)
- */
-const passwordSchema = z
-  .string()
-  .min(8, "Password must be at least 8 characters")
-  .max(128, "Password must be less than 128 characters");
-
-/**
  * Registration input schema
  */
 const registerInputSchema = z.object({
   email: emailSchema,
-  password: passwordSchema,
+  password: passwordSchema(),
   inviteToken: z.string().optional(),
 });
 
@@ -90,7 +78,7 @@ const registerInputSchema = z.object({
  */
 const loginInputSchema = z.object({
   email: emailSchema,
-  password: passwordSchema,
+  password: passwordSchema(),
 });
 
 const sessionOutputSchema = z.object({
@@ -168,8 +156,7 @@ export const authRouter = createTRPCRouter({
         throw errors.emailExists();
       }
 
-      // Hash the password with argon2
-      const passwordHash = await argon2.hash(password);
+      const passwordHash = await hashPassword(password);
 
       const { userAgent, ipAddress } = extractClientInfo(ctx.headers);
 
