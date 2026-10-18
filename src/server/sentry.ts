@@ -13,7 +13,8 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
-import type { ErrorEvent, Event } from "@sentry/nextjs";
+import type { ErrorEvent } from "@sentry/nextjs";
+import { SENTRY_DATA_COLLECTION } from "@/lib/sentry/data-collection";
 
 // Query params whose values are credentials/PII and must never reach Sentry.
 // Some clients pass these in the URL even on a POST — notably FeedMe sends the
@@ -55,33 +56,24 @@ export function redactSensitiveRequestParams(event: ErrorEvent): void {
 }
 
 // Span attributes carrying a caller IP. Sentry's HTTP server instrumentation
-// sets `http.client_ip` from `x-forwarded-for` and `net.peer.ip` from the socket
-// unconditionally — unlike the sibling header attributes, neither is gated by
-// `dataCollection`, and the project's "Prevent Storing of IP Addresses" setting
-// only covers `user.ip_address`. So a sampled transaction would carry the
-// client IP with nothing else to stop it.
+// sets `client.address` from `x-forwarded-for` and `network.peer.address` from
+// the socket, and the project's "Prevent Storing of IP Addresses" setting only
+// covers `user.ip_address`. `dataCollection.userInfo: false` is meant to stop
+// them too; this is the backstop if an SDK change ever lets one through.
 //
-// `net.host.ip` is deliberately kept: that is our own machine's address, not a
-// user's, and it is useful for telling instances apart.
-const IP_SPAN_ATTRIBUTES = ["http.client_ip", "net.peer.ip"];
+// `network.local.address` is deliberately kept: that is our own machine's
+// address, not a user's, and it is useful for telling instances apart.
+const IP_SPAN_ATTRIBUTES = ["client.address", "network.peer.address"];
 
-/**
- * Removes caller-IP attributes from a transaction's root span and every child
- * span, in place.
- */
-export function stripIpSpanAttributes(event: Event): void {
-  const traceData = event.contexts?.trace?.data;
-  if (traceData) {
-    for (const key of IP_SPAN_ATTRIBUTES) {
-      delete traceData[key];
-    }
-  }
+type SentryOptions = NonNullable<Parameters<typeof Sentry.init>[0]>;
+type StreamedSpan = Parameters<NonNullable<SentryOptions["beforeSendSpan"]>>[0];
 
-  for (const span of event.spans ?? []) {
-    for (const key of IP_SPAN_ATTRIBUTES) {
-      delete span.data[key];
-    }
+/** Removes caller-IP attributes from a span, in place. */
+function stripIpSpanAttributes(span: StreamedSpan): StreamedSpan {
+  for (const key of IP_SPAN_ATTRIBUTES) {
+    delete span.attributes[key];
   }
+  return span;
 }
 
 /**
@@ -89,12 +81,16 @@ export function stripIpSpanAttributes(event: Event): void {
  * (subsequent calls re-init the same client) and a no-op without a DSN.
  */
 export function initSentry(): void {
-  if (!process.env.SENTRY_DSN) {
+  const dsn = process.env.SENTRY_DSN;
+  if (!dsn) {
     return;
   }
+  Sentry.init(serverSentryOptions(dsn));
+}
 
-  Sentry.init({
-    dsn: process.env.SENTRY_DSN,
+export function serverSentryOptions(dsn: string): SentryOptions {
+  return {
+    dsn,
 
     // Adjust this value in production, or use tracesSampler for greater control
     tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
@@ -132,10 +128,10 @@ export function initSentry(): void {
       return event;
     },
 
-    beforeSendTransaction(event) {
-      stripIpSpanAttributes(event);
-      return event;
-    },
+    // Called for every span, root and child, as it finishes.
+    beforeSendSpan: stripIpSpanAttributes,
+
+    dataCollection: SENTRY_DATA_COLLECTION,
 
     // Ignore common expected errors
     ignoreErrors: [
@@ -144,5 +140,5 @@ export function initSentry(): void {
       // Redis connection errors during shutdown
       "Connection is closed",
     ],
-  });
+  };
 }

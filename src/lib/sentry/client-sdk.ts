@@ -6,6 +6,7 @@
  */
 
 import { captureException, captureRouterTransitionStart, init } from "@sentry/nextjs";
+import { SENTRY_DATA_COLLECTION } from "./data-collection";
 
 export { captureException, captureRouterTransitionStart };
 
@@ -24,6 +25,8 @@ export function initSentry(dsn: string): void {
 
     // Only send errors from production
     enabled: process.env.NODE_ENV === "production",
+
+    dataCollection: SENTRY_DATA_COLLECTION,
 
     // Filter out common client-side noise
     beforeSend(event) {
