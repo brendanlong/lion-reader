@@ -72,14 +72,39 @@ interface ProcessOptions {
   start: (fail: (reason: string) => void) => Promise<RunningService | null>;
 }
 
-export function runProcess({
-  name,
-  metricsPort,
-  includeDatabaseMetrics,
-  details,
-  heartbeat,
-  start,
-}: ProcessOptions): void {
+/** The process-wide effects of {@link superviseProcess}; tests pass their own. */
+export interface ProcessRuntime {
+  drainTimeoutMs: number;
+  deadlineMs: number;
+  exit: (code: number) => void;
+  /** Calls `shutdown` on SIGTERM/SIGINT. */
+  handleSignals: (shutdown: (reason: string) => void) => void;
+  setHealthChecker: (checker: () => HealthCheckResult) => void;
+  /** Returns a function that stops the heartbeat. */
+  startHeartbeat: (url: string, intervalMs: number, status: () => HeartbeatStatus) => () => void;
+  reportStartupError: (error: unknown) => void;
+  closeSharedResources: () => Promise<void>;
+  flushSentry: () => Promise<void>;
+}
+
+const nodeRuntime: ProcessRuntime = {
+  drainTimeoutMs: DRAIN_TIMEOUT_MS,
+  deadlineMs: SHUTDOWN_DEADLINE_MS,
+  exit: (code) => process.exit(code),
+  handleSignals: handleProcessSignals,
+  setHealthChecker,
+  startHeartbeat,
+  reportStartupError: (error) => {
+    Sentry.captureException(error, { tags: { context: "process-start" } });
+  },
+  closeSharedResources,
+  flushSentry: async () => {
+    await Sentry.close(SENTRY_FLUSH_TIMEOUT_MS);
+  },
+};
+
+export function runProcess(options: ProcessOptions): void {
+  const { name, metricsPort, includeDatabaseMetrics, details } = options;
   // Next.js instrumentation only runs in the app server, so without this the
   // process's Sentry.captureException calls are silent no-ops. It also installs
   // Sentry's global uncaught-exception / unhandled-rejection handlers.
@@ -102,15 +127,23 @@ export function runProcess({
 
   startMetricsServer(metricsPort, { includeDatabaseMetrics });
 
+  superviseProcess(options, nodeRuntime);
+}
+
+/** Starts the work and runs its lifecycle: health check, heartbeat, shutdown. */
+export function superviseProcess(
+  { name, heartbeat, start }: Pick<ProcessOptions, "name" | "heartbeat" | "start">,
+  runtime: ProcessRuntime
+): void {
   let service: RunningService | null = null;
   let stopping = false;
   let stopHeartbeat: (() => void) | undefined;
   let idleTimer: NodeJS.Timeout | undefined;
 
   const shutdown = createShutdown({
-    drainTimeoutMs: DRAIN_TIMEOUT_MS,
-    deadlineMs: SHUTDOWN_DEADLINE_MS,
-    exit: (code) => process.exit(code),
+    drainTimeoutMs: runtime.drainTimeoutMs,
+    deadlineMs: runtime.deadlineMs,
+    exit: runtime.exit,
     drain: async (timeout) => {
       stopping = true;
       stopHeartbeat?.();
@@ -123,18 +156,18 @@ export function runProcess({
     },
     cleanup: async ({ drained }) => {
       if (drained) {
-        await closeSharedResources();
+        await runtime.closeSharedResources();
         return;
       }
       // Work is still running against the DB pool and Redis, so leave them
       // open: closing them would only turn that work's last writes into errors.
       // An interrupted job keeps its lease until it goes stale, then another
       // worker reclaims and retries it (STALE_JOB_THRESHOLD_MS in jobs/queue.ts).
-      logger.warn(`${name} did not stop within ${DRAIN_TIMEOUT_MS}ms; exiting anyway`);
-      await Sentry.close(SENTRY_FLUSH_TIMEOUT_MS);
+      logger.warn(`${name} did not stop within ${runtime.drainTimeoutMs}ms; exiting anyway`);
+      await runtime.flushSentry();
     },
   });
-  handleProcessSignals(shutdown);
+  runtime.handleSignals(shutdown);
 
   start((reason) => shutdown(reason, 1)).then(
     (started) => {
@@ -146,14 +179,14 @@ export function runProcess({
       }
       service = started;
       logger.info(`Started ${name}`);
-      if (started.checkHealth) setHealthChecker(started.checkHealth);
+      if (started.checkHealth) runtime.setHealthChecker(started.checkHealth);
       // Only once started, so a process that fails to start never reports
       // itself alive.
       if (heartbeat?.url) {
         const machine = process.env.FLY_MACHINE_ID || process.env.HOSTNAME || "unknown";
         const region = process.env.FLY_REGION || "unknown";
         const body = `${name} alive (machine=${machine} region=${region} pid=${process.pid})`;
-        stopHeartbeat = startHeartbeat(
+        stopHeartbeat = runtime.startHeartbeat(
           heartbeat.url,
           heartbeat.intervalMs,
           started.heartbeatStatus ?? (() => ({ body }))
@@ -162,7 +195,7 @@ export function runProcess({
     },
     (error: unknown) => {
       logger.error(`Failed to start ${name}`, { error });
-      Sentry.captureException(error, { tags: { context: "process-start" } });
+      runtime.reportStartupError(error);
       shutdown("startup failure", 1);
     }
   );
