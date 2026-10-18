@@ -34,8 +34,8 @@ import {
   normalizeSavedArticleUrl,
   UserFetchError,
   type AcquiredArticle,
-  type UserAuthMode,
 } from "@/server/plugins";
+import type { SaveArticleParams } from "./saved";
 
 // ============================================================================
 // Helper Functions
@@ -321,7 +321,7 @@ async function urlIsDirectFeed(url: string, contentType: string): Promise<boolea
  */
 export async function acquireSavedArticleContent(
   userId: string,
-  params: { url: string; html?: string; userAuth?: UserAuthMode }
+  params: Pick<SaveArticleParams, "url" | "html" | "userAuth">
 ): Promise<ArticleContentBundle & { contentUrl: string }> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
 

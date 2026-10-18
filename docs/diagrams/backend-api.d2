@@ -137,9 +137,27 @@ services: {
     methods: |md
       - listEntries
       - searchEntries
-      - getEntry
-      - markEntriesRead
       - countEntries
+    |
+  }
+
+  entry_reads_svc: {
+    label: entry-reads
+    shape: hexagon
+
+    methods: |md
+      - getEntry
+      - getFullEntry
+    |
+  }
+
+  entry_state_svc: {
+    label: entry-state
+    shape: hexagon
+
+    methods: |md
+      - markEntriesRead
+      - updateEntryStarred
     |
   }
 
@@ -233,6 +251,14 @@ api.trpc.routers.entries -> services.entries_svc {
   style.stroke: "#9e9e9e"
 }
 
+api.trpc.routers.entries -> services.entry_reads_svc {
+  style.stroke: "#9e9e9e"
+}
+
+api.trpc.routers.entries -> services.entry_state_svc {
+  style.stroke: "#9e9e9e"
+}
+
 api.trpc.routers.subscriptions -> services.subscriptions_svc {
   style.stroke: "#9e9e9e"
 }
@@ -251,6 +277,16 @@ api.rest -> api.trpc: "Generated from" {
 # ==============================================================================
 
 services.entries_svc -> data.postgres {
+  style.stroke: "#4caf50"
+  style.stroke-width: 2
+}
+
+services.entry_reads_svc -> data.postgres {
+  style.stroke: "#4caf50"
+  style.stroke-width: 2
+}
+
+services.entry_state_svc -> data.postgres {
   style.stroke: "#4caf50"
   style.stroke-width: 2
 }
