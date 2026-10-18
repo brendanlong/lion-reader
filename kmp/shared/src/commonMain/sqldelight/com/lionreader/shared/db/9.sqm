@@ -1,0 +1,7 @@
+-- Bodies on the device were picked by the app's own copy of the web's choice
+-- of content, which had drifted from it; the server now sends the content to
+-- show. Marking every body out of date (entries' body_version starts at 1) has
+-- the background download replace them, while they stay readable offline
+-- until it does. Summaries stay: the server made them from its own content,
+-- not the app's pick.
+UPDATE entry_body SET body_version = 0;
