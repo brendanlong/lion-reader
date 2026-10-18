@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as argon2 from "argon2";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { checkAccountRateLimit } from "@/server/rate-limit";
 import { verifyEmailPassword } from "@/server/auth/password";
@@ -23,7 +23,7 @@ import {
 } from "../trpc";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
-import { users, oauthAccounts } from "@/server/db/schema";
+import { users } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
 import { createSession, revokeSessionByToken } from "@/server/auth/session";
 import { setSessionCookie, clearSessionCookie } from "@/server/auth/session-cookie";
@@ -34,16 +34,12 @@ import {
   isProviderEnabled,
   PROVIDER_LABELS,
 } from "@/server/auth/oauth/config";
-import {
-  createGoogleAuthUrl,
-  isGoogleOAuthEnabled,
-  GOOGLE_DOCS_READONLY_SCOPE,
-} from "@/server/auth/oauth/google";
+import { createGoogleAuthUrl, isGoogleOAuthEnabled } from "@/server/auth/oauth/google";
 import { createAppleAuthUrl, isAppleOAuthEnabled } from "@/server/auth/oauth/apple";
 import { createDiscordAuthUrl, isDiscordOAuthEnabled } from "@/server/auth/oauth/discord";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { unlinkOAuthAccount } from "@/server/services/oauth-accounts";
-import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
+import { getGoogleDocsGrant, GOOGLE_DOCS_SCOPES } from "@/server/google/tokens";
 import {
   DISCORD_BOT_ENABLED,
   DISCORD_BOT_INVITE_URL,
@@ -735,25 +731,13 @@ export const authRouter = createTRPCRouter({
         throw errors.oauthProviderNotConfigured("Google");
       }
 
-      // Check if user has Google OAuth account linked
-      const existingLink = await ctx.db
-        .select()
-        .from(oauthAccounts)
-        .where(
-          and(eq(oauthAccounts.userId, ctx.session.user.id), eq(oauthAccounts.provider, "google"))
-        )
-        .limit(1);
-
-      if (existingLink.length === 0) {
+      if ((await getGoogleDocsGrant(ctx.session.user.id)).status === "unlinked") {
         throw errors.validation("You must link your Google account before requesting Docs access");
       }
 
-      // Create OAuth URL with both scopes needed for Google Docs access:
-      // - documents.readonly for native Google Docs via Docs API
-      // - drive.readonly for uploaded .docx files via Drive API
       // Pass mode: "save" so the callback knows to redirect back to /save
       const result = await createGoogleAuthUrl({
-        additionalScopes: [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE],
+        additionalScopes: GOOGLE_DOCS_SCOPES,
         mode: "save",
       });
 

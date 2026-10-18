@@ -24,8 +24,8 @@ import { users, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { saveArticle } from "../../src/server/services/saved";
 import { createTestUser } from "./helpers";
-import { GOOGLE_DOCS_READONLY_SCOPE } from "../../src/server/auth/oauth/google";
-import { fetchPrivateGoogleDoc, GOOGLE_DRIVE_SCOPE } from "../../src/server/google/docs";
+import { fetchPrivateGoogleDoc } from "../../src/server/google/docs";
+import { GOOGLE_DOCS_SCOPES } from "../../src/server/google/tokens";
 
 vi.mock("../../src/server/google/docs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/server/google/docs")>()),
@@ -140,7 +140,7 @@ describe("Saving private Google Docs via compat surfaces (issue #1165)", () => {
   // expiring and deletes it (#1772).
   it("throws NEEDS_GOOGLE_REAUTH in interactive mode when Google rejects the stored token", async () => {
     const userId = await createUser();
-    await linkGoogleAccount(userId, [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE]);
+    await linkGoogleAccount(userId, GOOGLE_DOCS_SCOPES);
     vi.mocked(fetchPrivateGoogleDoc).mockRejectedValueOnce(new Error("GOOGLE_TOKEN_INVALID"));
 
     await expect(

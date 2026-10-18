@@ -12,6 +12,35 @@ import { oauthAccounts } from "@/server/db/schema";
 import { getGoogleConfig } from "@/server/auth/oauth/config";
 import { accessTokenExpiresAt } from "@/server/auth/oauth/token-exchange";
 import { logger } from "@/lib/logger";
+import { GOOGLE_DOCS_SCOPE } from "./docs";
+import { GOOGLE_DRIVE_SCOPE } from "./drive";
+
+type GoogleOAuthAccount = typeof oauthAccounts.$inferSelect;
+
+/**
+ * The scopes saving a private Google Doc needs: documents.readonly for native
+ * docs (Docs API) and drive.readonly for uploaded .docx files (Drive API).
+ * Every consent request and grant check uses this one list.
+ */
+export const GOOGLE_DOCS_SCOPES = [GOOGLE_DOCS_SCOPE, GOOGLE_DRIVE_SCOPE];
+
+type GoogleDocsGrant =
+  | { status: "unlinked" }
+  | { status: "missing-scopes" }
+  | { status: "granted"; account: GoogleOAuthAccount };
+
+/** Whether a user's linked Google account has granted every `GOOGLE_DOCS_SCOPES` scope. */
+export async function getGoogleDocsGrant(userId: string): Promise<GoogleDocsGrant> {
+  const account = await db.query.oauthAccounts.findFirst({
+    where: and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")),
+  });
+  if (!account) return { status: "unlinked" };
+  const scopes = account.scopes ?? [];
+  if (!GOOGLE_DOCS_SCOPES.every((scope) => scopes.includes(scope))) {
+    return { status: "missing-scopes" };
+  }
+  return { status: "granted", account };
+}
 
 /**
  * Minimum time before expiry to trigger token refresh (5 minutes buffer)
@@ -19,21 +48,13 @@ import { logger } from "@/lib/logger";
 const TOKEN_REFRESH_BUFFER_SECONDS = 300;
 
 /**
- * Gets a valid Google OAuth access token for a user.
- * Automatically refreshes the token if it's expired or about to expire.
+ * Gets a valid access token for a linked Google account, refreshing it if it's
+ * expired or about to expire.
  *
- * @param userId - The user's ID
- * @returns Valid access token
- * @throws Error if no Google OAuth account exists or refresh fails
+ * @throws Error if the account has no token or refresh fails
  */
-export async function getValidGoogleToken(userId: string): Promise<string> {
-  const oauth = await db.query.oauthAccounts.findFirst({
-    where: and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")),
-  });
-
-  if (!oauth) {
-    throw new Error("No Google OAuth account linked");
-  }
+export async function getValidGoogleToken(oauth: GoogleOAuthAccount): Promise<string> {
+  const userId = oauth.userId;
 
   if (!oauth.accessToken) {
     throw new Error("No access token stored for Google OAuth account");
@@ -110,36 +131,4 @@ async function refreshGoogleToken(oauthAccountId: string, refreshToken: string):
     });
     throw new Error("GOOGLE_NEEDS_REAUTH");
   }
-}
-
-/**
- * Checks if a user has a specific OAuth scope granted.
- *
- * @param userId - The user's ID
- * @param scope - The OAuth scope to check
- * @returns Whether the user has granted the scope
- */
-export async function hasGoogleScope(userId: string, scope: string): Promise<boolean> {
-  const oauth = await db.query.oauthAccounts.findFirst({
-    where: and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, "google")),
-  });
-
-  if (!oauth || !oauth.scopes) {
-    return false;
-  }
-
-  return oauth.scopes.includes(scope);
-}
-
-/**
- * Gets the OAuth account for a user and provider.
- *
- * @param userId - The user's ID
- * @param provider - The OAuth provider ('google', 'apple', etc.)
- * @returns OAuth account or null if not found
- */
-export async function getOAuthAccount(userId: string, provider: string) {
-  return db.query.oauthAccounts.findFirst({
-    where: and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)),
-  });
 }
