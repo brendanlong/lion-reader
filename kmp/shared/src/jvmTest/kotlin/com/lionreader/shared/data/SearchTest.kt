@@ -45,8 +45,7 @@ class SearchTest {
                 fetchedAt = at,
                 read = false,
                 starred = false,
-                contentCleaned = body,
-                fetchFullContent = false,
+                content = body,
             )
     }
 
