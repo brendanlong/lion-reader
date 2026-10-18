@@ -30,7 +30,7 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { savedArticleUrlSchema, saveCollectionIdsSchema, uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
-import { unreadCountsSchema } from "@/lib/events/schemas";
+import { newEntryListItemSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
 
@@ -213,14 +213,17 @@ export const savedRouter = createTRPCRouter({
     .output(
       z.object({
         article: savedService.savedArticleMetadataSchema,
+        // The article's list item, as its new_entry event carries it.
+        listItem: newEntryListItemSchema,
         counts: unreadCountsSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const article = await savedService.uploadFile(ctx.db, userId, input);
+      const { article, listItem } = await savedService.uploadFile(ctx.db, userId, input);
       return {
         article,
+        listItem,
         counts: await getBulkEntryRelatedCounts(ctx.db, userId, [
           { id: article.id, subscriptionId: null },
         ]),

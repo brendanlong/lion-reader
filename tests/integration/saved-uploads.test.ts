@@ -9,11 +9,15 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
+import Redis from "ioredis";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, entries } from "../../src/server/db/schema";
+import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { uploadArticle, uploadFile } from "../../src/server/services/saved";
+import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
 import { buildMinimalDocx } from "../utils/docx";
+import { waitForMessage } from "../utils/pubsub";
 import { createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
@@ -25,8 +29,9 @@ async function createUser(): Promise<string> {
   return userId;
 }
 
-function upload(userId: string, file: Buffer, filename: string, title?: string) {
-  return uploadFile(db, userId, { content: file.toString("base64"), filename, title });
+async function upload(userId: string, file: Buffer, filename: string, title?: string) {
+  return (await uploadFile(db, userId, { content: file.toString("base64"), filename, title }))
+    .article;
 }
 
 /** Reads the stored raw columns for a saved entry (bypassing the read-path sanitize). */
@@ -63,6 +68,37 @@ afterAll(async () => {
   for (const id of createdUserIds) {
     await db.delete(users).where(eq(users.id, id));
   }
+});
+
+describe("uploadFile's list item", () => {
+  it("is the one its new_entry event carries, in the user's saved subscription", async () => {
+    const userId = await createUser();
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) throw new Error("REDIS_URL must be set for integration tests");
+    const subscriber = new Redis(redisUrl);
+    try {
+      const channel = getUserEventsChannel(userId);
+      await subscriber.subscribe(channel);
+      const published = waitForMessage(subscriber, channel);
+
+      const { listItem } = await uploadFile(db, userId, {
+        content: Buffer.from(`<html><body>${ARTICLE_BODY}</body></html>`).toString("base64"),
+        filename: "notes.html",
+      });
+
+      const savedSubscriptionId = await getSavedSubscriptionId(db, userId);
+      expect(listItem.subscriptionIds).toEqual([savedSubscriptionId]);
+      expect(JSON.parse(await published)).toMatchObject({
+        type: "new_entry",
+        entryId: listItem.entryId,
+        subscriptionId: savedSubscriptionId,
+        updatedAt: listItem.updatedAt,
+        entry: listItem.entry,
+      });
+    } finally {
+      await subscriber.quit();
+    }
+  });
 });
 
 describe("uploadFile (HTML)", () => {

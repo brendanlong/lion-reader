@@ -491,7 +491,10 @@ describe("collections", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
       expect(await savedEntryCount(userId)).toBe(0);
 
-      const uploaded = await uploadFile(db, userId, { ...file, collectionIds: [collectionId] });
+      const { article: uploaded } = await uploadFile(db, userId, {
+        ...file,
+        collectionIds: [collectionId],
+      });
       const written = await uploadArticle(db, userId, {
         ...markdown,
         collectionIds: [collectionId],

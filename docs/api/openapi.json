@@ -9761,6 +9761,122 @@
                       ],
                       "additionalProperties": false
                     },
+                    "listItem": {
+                      "type": "object",
+                      "properties": {
+                        "entryId": {
+                          "type": "string"
+                        },
+                        "subscriptionId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "subscriptionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "entry": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "author": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "summary": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "url": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "publishedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "web",
+                                "email",
+                                "saved"
+                              ]
+                            },
+                            "fetchedAt": {
+                              "type": "string"
+                            },
+                            "siteName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "feedTitle": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "read": {
+                              "type": "boolean"
+                            },
+                            "starred": {
+                              "type": "boolean"
+                            },
+                            "readChangedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "entryUpdatedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "summary",
+                            "url",
+                            "publishedAt",
+                            "type",
+                            "fetchedAt",
+                            "siteName",
+                            "feedTitle"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "entryId",
+                        "subscriptionId",
+                        "subscriptionIds",
+                        "updatedAt",
+                        "entry"
+                      ],
+                      "additionalProperties": false
+                    },
                     "counts": {
                       "type": "object",
                       "properties": {
@@ -9874,6 +9990,7 @@
                   },
                   "required": [
                     "article",
+                    "listItem",
                     "counts"
                   ],
                   "additionalProperties": false

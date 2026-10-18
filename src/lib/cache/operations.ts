@@ -9,9 +9,15 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { z } from "zod";
-import type { unreadCountsSchema } from "@/lib/events/schemas";
+import type { NewEntryListData, NewEntryListItem, unreadCountsSchema } from "@/lib/events/schemas";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
+import {
+  addServerEntryToLists,
+  getLocalDb,
+  insertEntryIntoLists,
+  type LocalDb,
+} from "@/lib/local-db/local-db";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import {
   removeStoredEntryMemberships,
   setServerEntryState,
@@ -257,6 +263,86 @@ export function applyEntryStateChanges(
     }
   }
   if (change.counts) applyUnreadCounts(utils, queryClient, change.counts);
+}
+
+/** Builds the entry row for a list-item payload. */
+export function toEntryRow(
+  event: {
+    entryId: string;
+    subscriptionId?: string | null;
+    subscriptionIds: string[];
+    updatedAt: string;
+  },
+  entry: NewEntryListData,
+  state: { read: boolean; starred: boolean }
+): EntryRow {
+  return {
+    id: event.entryId,
+    subscriptionId: event.subscriptionId ?? null,
+    subscriptionIds: event.subscriptionIds,
+    type: entry.type,
+    url: entry.url,
+    title: entry.title,
+    author: entry.author,
+    summary: entry.summary,
+    publishedAt: entry.publishedAt ? new Date(entry.publishedAt) : null,
+    fetchedAt: new Date(entry.fetchedAt),
+    updatedAt: new Date(event.updatedAt),
+    ...(entry.entryUpdatedAt && { entryUpdatedAt: new Date(entry.entryUpdatedAt) }),
+    read: state.read,
+    starred: state.starred,
+    feedTitle: entry.feedTitle,
+    siteName: entry.siteName,
+  };
+}
+
+/**
+ * A saved article was created while the client knows of no saved subscription:
+ * this save created it (the user's first), so look its id up, then place the
+ * entry. Keyed on the entry's type, the one thing a first save's list item surely
+ * says (it may be read already, so its counts needn't show it), and done at
+ * most once per page load, so a server answering null can't make every save
+ * refetch.
+ */
+function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: EntryRow): void {
+  if (entry.type !== "saved" || db.saved.id !== null || db.saved.lookedUp) return;
+  db.saved.lookedUp = true;
+  // The cached null is still fresh by the staleTime, but out of date now.
+  void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT, { staleTime: 0 }).then(
+    () => {
+      const stored = db.entries.getSynced(entry.id);
+      if (stored) insertEntryIntoLists(db, stored);
+    },
+    () => {
+      // Lists pick the entry up on their next refresh.
+    }
+  );
+}
+
+/**
+ * Places a new entry, whether from the response of the mutation that created
+ * it or its `new_entry` event, and applies the counts that came with it.
+ * Idempotent (absolute counts, insert deduped by id), so the acting tab can
+ * apply both, and a reconnect catch-up can re-deliver the event. `read`/
+ * `starred` are set only by the catch-up (the entry may have changed state on
+ * another device while this client was offline): a brand-new entry is
+ * unread and unstarred.
+ */
+export function applyNewEntry(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  item: NewEntryListItem | undefined,
+  counts: UnreadCounts | undefined
+): void {
+  if (counts) applyUnreadCounts(utils, queryClient, counts);
+  if (!item) return;
+  const db = getLocalDb(queryClient);
+  const row = toEntryRow(item, item.entry, {
+    read: item.entry.read ?? false,
+    starred: item.entry.starred ?? false,
+  });
+  addServerEntryToLists(db, row);
+  learnNewSavedSubscription(utils, db, row);
 }
 
 /**

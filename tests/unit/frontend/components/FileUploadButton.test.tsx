@@ -14,13 +14,21 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { FileUploadButton } from "@/components/saved/FileUploadButton";
 import { DROP_ZONE_FILE_INPUT_CLASSES } from "@/components/ui/drop-zone-file-input";
+import { handleSyncEvent } from "@/lib/cache/event-handlers";
+import type { NewEntryListItem } from "@/lib/events/schemas";
+import { useEntryListEntries } from "@/lib/hooks/useLocalEntries";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 import {
   createCounts,
+  createNewEntryEvent,
+  createRealTrpcUtils,
   invalidatedProcedures,
+  savedSubscriptionRow,
+  SEEDED_SAVED_SUBSCRIPTION_ID,
   spyOnInvalidate,
   storedCount,
 } from "../../../utils/cache-test-helpers";
@@ -31,12 +39,39 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
+const listItem: NewEntryListItem = {
+  entryId: "entry-1",
+  subscriptionId: SEEDED_SAVED_SUBSCRIPTION_ID,
+  subscriptionIds: [SEEDED_SAVED_SUBSCRIPTION_ID],
+  updatedAt: "2024-07-01T00:00:00.000Z",
+  entry: {
+    type: "saved",
+    url: null,
+    title: "notes",
+    author: null,
+    summary: null,
+    publishedAt: null,
+    fetchedAt: "2024-07-01T00:00:00.000Z",
+    siteName: "Uploaded Text",
+    feedTitle: "Saved Articles",
+  },
+};
+
 const handlers: ProcedureHandlers = {
   "saved.uploadFile": () => ({
     article: { id: "entry-1", title: "notes" },
+    listItem,
     counts: createCounts({ all: { unread: 3 }, saved: { unread: 2 } }),
   }),
 };
+
+const SAVED_LIST = { type: "saved", sortOrder: "newest", limit: 10 } as const;
+
+/** The Saved list's entry ids, as the page renders them. */
+function SavedListIds() {
+  const entries = useEntryListEntries(SAVED_LIST, null);
+  return <div aria-label="Saved list">{entries.map((entry) => entry.id).join(",")}</div>;
+}
 
 function openDialog() {
   fireEvent.click(screen.getByRole("button", { name: "Upload file" }));
@@ -123,15 +158,44 @@ describe("FileUploadButton drop zone accessibility", () => {
 });
 
 describe("FileUploadButton upload response", () => {
-  it("applies the response's counts, leaving the Saved list to the new_entry event", async () => {
-    const { queryClient } = renderWithTrpc(<FileUploadButton />, { handlers });
+  it("places the article in the loaded Saved list and applies the counts, without a refetch", async () => {
+    const { queryClient } = renderWithTrpc(
+      <>
+        <FileUploadButton />
+        <SavedListIds />
+      </>,
+      { handlers }
+    );
+    // As the app starts: the saved subscription is known and Saved is loaded.
+    act(() => {
+      queryClient.setQueryData(
+        [["subscriptions", "list"], { input: SAVED_SUBSCRIPTION_LIST_INPUT, type: "query" }],
+        { items: [savedSubscriptionRow(SEEDED_SAVED_SUBSCRIPTION_ID)] }
+      );
+      queryClient.setQueryData([["entries", "list"], { input: SAVED_LIST, type: "infinite" }], {
+        pages: [{ items: [] }],
+        pageParams: [undefined],
+      });
+    });
     const invalidate = spyOnInvalidate(queryClient);
     openDialog();
 
     await uploadMarkdownFile();
 
-    await waitFor(() => expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 }));
+    const savedList = screen.getByLabelText("Saved list");
+    await waitFor(() => expect(savedList).toHaveTextContent("entry-1"));
+    expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 });
     expect(storedCount(queryClient, {})).toEqual({ unread: 3 });
     expect(invalidatedProcedures(invalidate)).toEqual([]);
+
+    // The upload's own new_entry, arriving after the response, changes nothing.
+    act(() => {
+      handleSyncEvent(
+        createRealTrpcUtils(queryClient),
+        queryClient,
+        createNewEntryEvent({ ...listItem, counts: createCounts({ saved: { unread: 2 } }) })
+      );
+    });
+    expect(savedList).toHaveTextContent(/^entry-1$/);
   });
 });
