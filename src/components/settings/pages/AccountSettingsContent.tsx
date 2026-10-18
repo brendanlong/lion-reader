@@ -87,7 +87,7 @@ function OAuthMessages() {
   );
 }
 
-function AccountInfoSection() {
+export function AccountInfoSection() {
   const userQuery = trpc.auth.me.useQuery();
 
   return (
@@ -136,7 +136,7 @@ function AccountInfoSection() {
   );
 }
 
-function PasswordSection() {
+export function PasswordSection() {
   const linkedAccountsQuery = trpc.users["me.linkedAccounts"].useQuery();
   const hasPassword = linkedAccountsQuery.data?.hasPassword ?? true;
 
@@ -295,6 +295,24 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
   );
 }
 
+export function PrivacyLegalSection() {
+  return (
+    <SettingsSection
+      title="Privacy & Legal"
+      description="Learn more about how we collect, use, and protect your data."
+    >
+      <div className="flex gap-4">
+        <TextLink href="/privacy" className="ui-text-sm">
+          View Privacy Policy &rarr;
+        </TextLink>
+        <TextLink href="/terms" className="ui-text-sm">
+          View Terms of Service &rarr;
+        </TextLink>
+      </div>
+    </SettingsSection>
+  );
+}
+
 export default function AccountSettingsContent() {
   return (
     <div className="space-y-8">
@@ -316,19 +334,7 @@ export default function AccountSettingsContent() {
       <KeyboardShortcutsSettings />
 
       {/* Privacy & Legal Section - fully static */}
-      <SettingsSection
-        title="Privacy & Legal"
-        description="Learn more about how we collect, use, and protect your data."
-      >
-        <div className="flex gap-4">
-          <TextLink href="/privacy" className="ui-text-sm">
-            View Privacy Policy &rarr;
-          </TextLink>
-          <TextLink href="/terms" className="ui-text-sm">
-            View Terms of Service &rarr;
-          </TextLink>
-        </div>
-      </SettingsSection>
+      <PrivacyLegalSection />
 
       {/* About Section - fully static */}
       <AboutSection />

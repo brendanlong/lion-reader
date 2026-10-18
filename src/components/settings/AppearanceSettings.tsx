@@ -132,7 +132,16 @@ function TextPreview() {
 }
 
 export function AppearanceSettings() {
-  const { settings, updateSettings } = useAppearance();
+  return (
+    <div className="space-y-8">
+      <ThemeSettings />
+      <ArticleTextSettings />
+      <EntryListSettings />
+    </div>
+  );
+}
+
+export function ThemeSettings() {
   const nextTheme = useTheme();
   // next-themes reads localStorage during the client's hydration render but not
   // on the server, so use its values only after hydration (#1934).
@@ -144,74 +153,81 @@ export function AppearanceSettings() {
   const isEInk = useIsEInkDisplay();
 
   return (
-    <div className="space-y-8">
-      {/* Theme Section */}
-      <SettingsSection title="Theme">
+    <SettingsSection title="Theme">
+      <OptionGroup
+        label="Color Mode"
+        description={
+          theme === "system" && (isEInk || resolvedTheme)
+            ? `Following system preference (currently ${isEInk ? "e-paper" : resolvedTheme})`
+            : theme === "system"
+              ? "Following system preference"
+              : theme === "epaper"
+                ? "Pure white background with high-contrast colors designed for e-ink screens"
+                : undefined
+        }
+        value={theme || "system"}
+        options={THEME_OPTIONS}
+        onChange={setTheme}
+      />
+    </SettingsSection>
+  );
+}
+
+export function ArticleTextSettings() {
+  const { settings, updateSettings } = useAppearance();
+
+  return (
+    <SettingsSection
+      title="Article Text"
+      description="These settings affect how article content is displayed in the entry view."
+    >
+      <div className="space-y-6">
         <OptionGroup
-          label="Color Mode"
-          description={
-            theme === "system" && (isEInk || resolvedTheme)
-              ? `Following system preference (currently ${isEInk ? "e-paper" : resolvedTheme})`
-              : theme === "system"
-                ? "Following system preference"
-                : theme === "epaper"
-                  ? "Pure white background with high-contrast colors designed for e-ink screens"
-                  : undefined
-          }
-          value={theme || "system"}
-          options={THEME_OPTIONS}
-          onChange={setTheme}
+          label="Text Size"
+          value={settings.textSize}
+          options={TEXT_SIZE_OPTIONS}
+          onChange={(textSize) => updateSettings({ textSize })}
         />
-      </SettingsSection>
 
-      {/* Article Text Section */}
-      <SettingsSection
-        title="Article Text"
-        description="These settings affect how article content is displayed in the entry view."
-      >
-        <div className="space-y-6">
-          <OptionGroup
-            label="Text Size"
-            value={settings.textSize}
-            options={TEXT_SIZE_OPTIONS}
-            onChange={(textSize) => updateSettings({ textSize })}
-          />
-
-          <OptionGroup
-            label="Font"
-            value={settings.fontFamily}
-            options={FONT_OPTIONS}
-            onChange={(fontFamily) => updateSettings({ fontFamily })}
-          />
-
-          <OptionGroup
-            label="Text Alignment"
-            value={settings.textJustification}
-            options={JUSTIFICATION_OPTIONS}
-            onChange={(textJustification) => updateSettings({ textJustification })}
-          />
-
-          <TextPreview />
-        </div>
-      </SettingsSection>
-
-      {/* Entry List Section */}
-      <SettingsSection
-        title="Entry List"
-        description="Controls how densely entries are packed in the article list."
-      >
         <OptionGroup
-          label="List Density"
-          description={
-            settings.listDensity === "compact"
-              ? "A single divided list with tighter spacing and no preview — best for scanning many entries."
-              : "Roomy bordered cards with a preview snippet — best for relaxed reading."
-          }
-          value={settings.listDensity}
-          options={LIST_DENSITY_OPTIONS}
-          onChange={(listDensity) => updateSettings({ listDensity })}
+          label="Font"
+          value={settings.fontFamily}
+          options={FONT_OPTIONS}
+          onChange={(fontFamily) => updateSettings({ fontFamily })}
         />
-      </SettingsSection>
-    </div>
+
+        <OptionGroup
+          label="Text Alignment"
+          value={settings.textJustification}
+          options={JUSTIFICATION_OPTIONS}
+          onChange={(textJustification) => updateSettings({ textJustification })}
+        />
+
+        <TextPreview />
+      </div>
+    </SettingsSection>
+  );
+}
+
+export function EntryListSettings() {
+  const { settings, updateSettings } = useAppearance();
+
+  return (
+    <SettingsSection
+      title="Entry List"
+      description="Controls how densely entries are packed in the article list."
+    >
+      <OptionGroup
+        label="List Density"
+        description={
+          settings.listDensity === "compact"
+            ? "A single divided list with tighter spacing and no preview — best for scanning many entries."
+            : "Roomy bordered cards with a preview snippet — best for relaxed reading."
+        }
+        value={settings.listDensity}
+        options={LIST_DENSITY_OPTIONS}
+        onChange={(listDensity) => updateSettings({ listDensity })}
+      />
+    </SettingsSection>
   );
 }
