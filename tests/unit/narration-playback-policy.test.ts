@@ -11,9 +11,6 @@ import {
   decideSynthesisFailure,
   lastWantedChunk,
   MAX_STREAM_RETRIES,
-  nextParagraphChunk,
-  paragraphChunk,
-  previousParagraphChunk,
   shouldPauseForBlock,
   shouldStartSynthesis,
   StreamInterruptedError,
@@ -21,8 +18,13 @@ import {
   type AppendFailureDecision,
   type ChunkFailureKind,
   type ChunkSpan,
+} from "@/lib/narration/playback-policy";
+import {
+  nextParagraphChunk,
+  paragraphChunk,
+  previousParagraphChunk,
   type SpeechChunk,
-} from "@/lib/narration/media-source-player";
+} from "@/lib/narration/speech-chunks";
 
 const DELAYS = [2_000, 5_000, 10_000];
 

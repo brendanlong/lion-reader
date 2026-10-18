@@ -1,12 +1,7 @@
 import { describe, it, expect } from "vitest";
-import {
-  MediaSourcePlayer,
-  splitIntoSentenceChunks,
-  splitIntoSpeechChunks,
-  StreamInterruptedError,
-  TransientSynthesisError,
-  type PlaybackStatus,
-} from "@/lib/narration/media-source-player";
+import { MediaSourcePlayer, type PlaybackStatus } from "@/lib/narration/media-source-player";
+import { StreamInterruptedError, TransientSynthesisError } from "@/lib/narration/playback-policy";
+import { splitIntoSentenceChunks, splitIntoSpeechChunks } from "@/lib/narration/speech-chunks";
 
 describe("splitIntoSpeechChunks", () => {
   it("keeps short paragraphs whole and skips unspeakable ones without renumbering", () => {

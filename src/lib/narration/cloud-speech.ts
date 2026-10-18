@@ -15,12 +15,10 @@ import {
   AAC_MIME_TYPE,
   getMediaSourceClass,
   MediaSourcePlayer,
-  splitIntoSpeechChunks,
-  StreamInterruptedError,
-  type SpeechChunk,
-  TransientSynthesisError,
   UNSUPPORTED_MESSAGE,
 } from "./media-source-player";
+import { StreamInterruptedError, TransientSynthesisError } from "./playback-policy";
+import { splitIntoSpeechChunks, type SpeechChunk } from "./speech-chunks";
 import { splitNarrationParagraphs } from "./paragraph-map";
 import {
   prerecordedSpeechKey,

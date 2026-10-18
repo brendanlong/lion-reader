@@ -12,12 +12,8 @@ import {
   withTrailingSilence,
   type SegmentEncoder,
 } from "./audio-encoding";
-import {
-  getMediaSourceClass,
-  MediaSourcePlayer,
-  splitIntoSentenceChunks,
-  UNSUPPORTED_MESSAGE,
-} from "./media-source-player";
+import { getMediaSourceClass, MediaSourcePlayer, UNSUPPORTED_MESSAGE } from "./media-source-player";
+import { splitIntoSentenceChunks } from "./speech-chunks";
 import { getPiperTTSProvider } from "./piper-tts-provider";
 
 export interface PiperVoice {
