@@ -168,16 +168,16 @@ export type BulkUnreadCounts = z.infer<typeof unreadCountsSchema>;
  * @param userId - User ID
  * @param entries - Entries (by id: every subscription but Saved holding them),
  *   or subscriptions (by subscriptionId, for an entry-less change)
- * @param options.removedSubscriptionTagIds - The former tags of a subscription
- *   the change removed (empty: it was in Uncategorized), whose lists it also
- *   moved. Its tag associations are gone by then, so the caller says them.
+ * @param options.formerTagIds - The former tags of each subscription the change
+ *   moved out of lists (empty: it was in Uncategorized), whose lists it also
+ *   moved. Those associations are gone by then, so the caller says them.
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
   db: CountsDb,
   userId: string,
   entries: Array<{ id?: string; subscriptionId: string | null }>,
-  { removedSubscriptionTagIds }: { removedSubscriptionTagIds?: string[] } = {}
+  { formerTagIds = [] }: { formerTagIds?: string[][] } = {}
 ): Promise<BulkUnreadCounts> {
   const entryIds = entries.map((e) => e.id).filter((id) => id !== undefined);
   // The active subscriptions holding the entries (#1846) but Saved, whose
@@ -256,13 +256,11 @@ export async function getBulkEntryRelatedCounts(
     tagIds: subTags.filter((t) => t.subscriptionId === id).map((t) => t.tagId),
   }));
 
-  const tagIds = [
-    ...new Set([...subTags.map((t) => t.tagId), ...(removedSubscriptionTagIds ?? [])]),
-  ];
+  const tagIds = [...new Set([...subTags.map((t) => t.tagId), ...formerTagIds.flat()])];
   const subscriptionsWithTags = new Set(subTags.map((t) => t.subscriptionId));
   const hasUncategorized =
     subscriptionIds.some((id) => !subscriptionsWithTags.has(id)) ||
-    removedSubscriptionTagIds?.length === 0;
+    formerTagIds.some((ids) => ids.length === 0);
 
   baseCounts.tags = await getTagUnreadCounts(db, userId, tagIds);
   if (hasUncategorized) {

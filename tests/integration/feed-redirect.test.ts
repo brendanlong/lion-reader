@@ -565,6 +565,33 @@ describe("Feed Redirect Handling", () => {
         subscriber.disconnect();
       }
     });
+
+    it("counts Uncategorized when only an untagged active survivor was in it", async () => {
+      const userId = await createTestUser();
+      const { oldFeedId, newFeedId } = await createFeedPair();
+      const oldSubId = await createTestSubscription(userId, oldFeedId);
+      await createTestSubscription(userId, newFeedId);
+      const tagId = await createTestTag(userId, { subscriptionIds: [oldSubId] });
+
+      const subscriber = new Redis(process.env.REDIS_URL!);
+      try {
+        const channel = getUserEventsChannel(userId);
+        await subscriber.subscribe(channel);
+        const events = waitForMessages(subscriber, channel, 1);
+        await migrateSubscriptionsToExistingFeed(
+          db,
+          await getFeed(oldFeedId),
+          await getFeed(newFeedId)
+        );
+        const [deleted] = (await events).map((message) => JSON.parse(message));
+        expect(deleted).toMatchObject({
+          type: "subscription_deleted",
+          counts: { tags: [{ id: tagId, unread: 0 }], uncategorized: { unread: 0 } },
+        });
+      } finally {
+        subscriber.disconnect();
+      }
+    });
   });
 
   describe("fetch_feed job for the surviving feed", () => {

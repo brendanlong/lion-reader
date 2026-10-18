@@ -425,7 +425,7 @@ export async function unsubscribe(
   // these directly (the sync.events catch-up path can't recompute the former
   // tags, so it omits counts and the client invalidates instead).
   const counts = await getBulkEntryRelatedCounts(db, userId, [], {
-    removedSubscriptionTagIds: formerTagIds,
+    formerTagIds: [formerTagIds],
   });
 
   publishUserEvent({

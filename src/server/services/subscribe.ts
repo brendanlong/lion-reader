@@ -480,7 +480,16 @@ export async function mergeSubscriptionIntoFeed(
       ON CONFLICT DO NOTHING
     `);
 
-    if (!survivorWasActive) {
+    // An already-active survivor's tags before it takes the old one's: its
+    // former lists (Uncategorized, if none) change too.
+    let survivorFormerTagIds: string[] | null = null;
+    if (survivorWasActive) {
+      const rows = await tx
+        .select({ tagId: subscriptionTags.tagId })
+        .from(subscriptionTags)
+        .where(eq(subscriptionTags.subscriptionId, survivor.id));
+      survivorFormerTagIds = rows.map(({ tagId }) => tagId);
+    } else {
       // Tags left on an inactive subscription are stale (unsubscribing clears them).
       await tx.delete(subscriptionTags).where(eq(subscriptionTags.subscriptionId, survivor.id));
       // After the copy, so the populate's GUID check sees the old feed's entries.
@@ -515,7 +524,10 @@ export async function mergeSubscriptionIntoFeed(
 
     return {
       oldFeedId: old.feedId,
-      movedTagIds: movedTags.map(({ tagId }) => tagId),
+      formerTagIds: [
+        movedTags.map(({ tagId }) => tagId),
+        ...(survivorFormerTagIds ? [survivorFormerTagIds] : []),
+      ],
       survivor: await getSubscription(tx, userId, survivor.id),
       survivorWasActive,
       survivorTagsChanged: addedTags.length > 0,
@@ -525,7 +537,7 @@ export async function mergeSubscriptionIntoFeed(
   if (!merged) {
     return false;
   }
-  const { oldFeedId, movedTagIds, survivor, survivorWasActive } = merged;
+  const { oldFeedId, formerTagIds, survivor, survivorWasActive } = merged;
 
   // Unconditional, not just for a new survivor: retention deletes the job of a
   // feed with no active subscriber, so a merge can be what brings the feed back.
@@ -536,7 +548,7 @@ export async function mergeSubscriptionIntoFeed(
   }
 
   const counts = await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: survivor.id }], {
-    removedSubscriptionTagIds: movedTagIds,
+    formerTagIds,
   });
   publishUserEvent({
     type: "subscription_deleted",
