@@ -57,57 +57,57 @@ export async function attachOAuthAccount(
   const label = PROVIDER_LABELS[provider];
   const tokenColumns = oauthTokenColumns(params);
 
-  // Ordered so a user who has two rows for one provider (nothing enforces
-  // uniqueness on (user_id, provider)) resolves to their oldest link
-  // deterministically, rather than to whichever row the planner returns.
-  const existingLink = await db
-    .select({ id: oauthAccounts.id, providerAccountId: oauthAccounts.providerAccountId })
-    .from(oauthAccounts)
-    .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-    .orderBy(oauthAccounts.createdAt)
-    .limit(1);
+  return db.transaction(async (tx) => {
+    // Nothing enforces one link per (user_id, provider), so concurrent attaches for
+    // this user (two first sign-ins with different accounts, a link clicked twice)
+    // serialize on the user row: each then sees the link the other committed.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
 
-  if (existingLink.length > 0) {
-    if (existingLink[0].providerAccountId !== providerAccountId) {
-      throw errors.oauthAlreadyLinked(label);
+    // Ordered so a user who already has two rows for one provider resolves to
+    // their oldest link deterministically, rather than to whichever row the
+    // planner returns.
+    const existingLink = await tx
+      .select({ id: oauthAccounts.id, providerAccountId: oauthAccounts.providerAccountId })
+      .from(oauthAccounts)
+      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
+      .orderBy(oauthAccounts.createdAt)
+      .limit(1);
+
+    if (existingLink.length > 0) {
+      if (existingLink[0].providerAccountId !== providerAccountId) {
+        throw errors.oauthAlreadyLinked(label);
+      }
+
+      await tx
+        .update(oauthAccounts)
+        .set(tokenColumns)
+        .where(eq(oauthAccounts.id, existingLink[0].id));
+
+      return "updated";
     }
 
-    await db
-      .update(oauthAccounts)
-      .set(tokenColumns)
-      .where(eq(oauthAccounts.id, existingLink[0].id));
+    // Insert, letting the (provider, provider_account_id) unique constraint decide
+    // whether another user holds this provider account (the user lock doesn't
+    // cover them). The conflict must *not* update that user's row, or one user
+    // could take over another's link.
+    const inserted = await tx
+      .insert(oauthAccounts)
+      .values({
+        id: generateUuidv7(),
+        userId,
+        provider,
+        providerAccountId,
+        ...tokenColumns,
+        createdAt: new Date(),
+      })
+      .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
+      .returning({ id: oauthAccounts.id });
 
-    return "updated";
-  }
-
-  // Insert, letting the (provider, provider_account_id) unique constraint decide
-  // whether this provider account is already spoken for. Checking with a SELECT
-  // first would leave a window where two concurrent links both see it free; the
-  // conflict must *not* update another user's row, or one user could take over
-  // another's link.
-  const inserted = await db
-    .insert(oauthAccounts)
-    .values({
-      id: generateUuidv7(),
-      userId,
-      provider,
-      providerAccountId,
-      ...tokenColumns,
-      createdAt: new Date(),
-    })
-    .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
-    .returning({ id: oauthAccounts.id });
-
-  if (inserted.length > 0) {
+    if (inserted.length === 0) {
+      throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
+    }
     return "linked";
-  }
-
-  // The conflicting row is this user's own when a concurrent attach of the same
-  // account won the insert (two first sign-ins, a link clicked twice).
-  if (await reauthorizeOAuthAccount(db, params)) {
-    return "updated";
-  }
-  throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
+  });
 }
 
 export interface LinkOAuthAccountParams extends AttachOAuthAccountParams {

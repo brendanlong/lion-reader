@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
@@ -176,6 +176,22 @@ describe("processOAuthCallback email verification", () => {
 
       const links = await db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, userId));
       expect(links.map((link) => link.providerAccountId)).toEqual(["first-google-id"]);
+    });
+
+    it("links only one of several concurrent first sign-ins with different accounts", async () => {
+      const userId = await createTestUser({ email: VICTIM_EMAIL });
+      const attempts = 5;
+      // Open a pool connection per attempt first, so connection setup doesn't
+      // stagger the attempts past the window between the lookup and the insert.
+      await Promise.all(Array.from({ length: attempts }, () => db.execute(sql`SELECT 1`)));
+
+      const results = await Promise.allSettled(
+        Array.from({ length: attempts }, (_, i) => signInByEmail(`racing-google-id-${i}`))
+      );
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const links = await db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, userId));
+      expect(links).toHaveLength(1);
     });
 
     it("leaves the user's other sessions signed in", async () => {
