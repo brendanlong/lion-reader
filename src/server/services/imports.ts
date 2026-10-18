@@ -24,7 +24,7 @@ import {
 } from "@/server/db/schema";
 import { parseOpmlAsync } from "@/server/feed/opml";
 import { createJob } from "@/server/jobs/queue";
-import { publishImportProgress, publishImportCompleted } from "@/server/redis/pubsub";
+import { publishUserEvent } from "@/server/redis/pubsub";
 import { createSubscription, setSubscriptionTags } from "@/server/services/subscriptions";
 import { fitTagName } from "@/server/services/tags";
 import { getAppErrorCode } from "@/server/errors";
@@ -414,7 +414,14 @@ export async function processOpmlImport(
         });
         counts.skipped++;
 
-        await publishImportProgress(userId, importId, feedUrl, "skipped", { ...counts });
+        await publishUserEvent({
+          type: "import_progress",
+          userId,
+          importId,
+          feedUrl,
+          feedStatus: "skipped",
+          ...counts,
+        });
         await flushProgressToDb();
 
         continue;
@@ -442,7 +449,14 @@ export async function processOpmlImport(
         });
         counts.imported++;
 
-        await publishImportProgress(userId, importId, feedUrl, "imported", { ...counts });
+        await publishUserEvent({
+          type: "import_progress",
+          userId,
+          importId,
+          feedUrl,
+          feedStatus: "imported",
+          ...counts,
+        });
         await flushProgressToDb();
 
         logger.info("OPML import: feed imported", { feedUrl, userId, importId });
@@ -456,7 +470,14 @@ export async function processOpmlImport(
         });
         counts.failed++;
 
-        await publishImportProgress(userId, importId, feedUrl, "failed", { ...counts });
+        await publishUserEvent({
+          type: "import_progress",
+          userId,
+          importId,
+          feedUrl,
+          feedStatus: "failed",
+          ...counts,
+        });
         await flushProgressToDb();
 
         logger.warn("OPML import: feed import failed", {
@@ -518,5 +539,5 @@ async function finishImport(
     })
     .where(eq(opmlImports.id, importId));
 
-  await publishImportCompleted(userId, importId, counts);
+  await publishUserEvent({ type: "import_completed", userId, importId, ...counts });
 }

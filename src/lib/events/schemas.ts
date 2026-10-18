@@ -13,7 +13,7 @@
  */
 
 import { z } from "zod";
-import { ENTRY_TYPES, SUBSCRIPTION_TYPES } from "@/lib/entry-types";
+import { ENTRY_TYPES, SUBSCRIPTION_TYPES, type EntryType } from "@/lib/entry-types";
 
 // ============================================================================
 // Reusable Sub-Schemas
@@ -70,6 +70,7 @@ export type NewEntryListData = z.infer<typeof newEntryListDataSchema>;
  * holds instead of hand-assembling it.
  */
 export interface NewEntryListDataSource {
+  type: EntryType;
   url?: string | null;
   title?: string | null;
   author?: string | null;
@@ -91,6 +92,7 @@ export function toNewEntryListData(
   state?: { read: boolean; starred: boolean; readChangedAt?: Date | null }
 ): NewEntryListData {
   return {
+    type: entry.type,
     url: entry.url ?? null,
     title: entry.title ?? null,
     author: entry.author ?? null,
@@ -177,7 +179,7 @@ export function legacyFeedId(subscriptionId: string | null): string {
 /**
  * Subscription data for subscription_created events.
  */
-export const subscriptionCreatedDataSchema = z.object({
+const subscriptionCreatedDataSchema = z.object({
   id: z.string(),
   feedId: legacyFeedIdSchema,
   customTitle: z.string().nullable(),
@@ -189,7 +191,7 @@ export const subscriptionCreatedDataSchema = z.object({
 /**
  * Feed data for subscription_created events.
  */
-export const feedCreatedDataSchema = z.object({
+const feedCreatedDataSchema = z.object({
   id: legacyFeedIdSchema,
   type: z.enum(SUBSCRIPTION_TYPES),
   url: z.string().nullable(),

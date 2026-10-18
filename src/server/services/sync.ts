@@ -22,7 +22,7 @@ import {
   tags,
   entryTombstones,
 } from "@/server/db/schema";
-import { legacyFeedId, syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
 import {
   entryFeedTitleSql,
   entryMemberships,
@@ -30,6 +30,11 @@ import {
   visibleUserEntrySql,
 } from "@/server/services/entry-filters";
 import { entryRowToSyncEvents } from "@/server/services/entry-sync-events";
+import {
+  subscriptionCreatedEvent,
+  subscriptionUpdatedEvent,
+  toSyncTag,
+} from "@/server/services/subscription-sync-events";
 import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
@@ -581,7 +586,7 @@ export async function collectSyncEvents(
         readChangedAt: userEntries.readChangedAt,
         subscriptionId: subscriptions.id,
         subscriptionIds: USER_MEMBERSHIPS.subscriptionIds,
-        feedType: entries.type,
+        type: entries.type,
         feedTitle: entryFeedTitleSql(),
         visible: sql<boolean>`${visibleUserEntrySql()}`,
         // Categorization booleans, computed in SQL at µs precision so a row
@@ -717,55 +722,28 @@ export async function collectSyncEvents(
     const subscriptionsCursorDate = new Date(subscriptionsCursor);
     for (const { subscription, feed, updatedAtInstant } of subscriptionResults) {
       const updatedAtIso = updatedAtInstant.toString();
-      if (subscription.unsubscribedAt === null) {
-        // Distinguish new subscriptions from updated ones:
-        // If subscribedAt is after the cursor, it's a new subscription.
-        // Otherwise, it's an existing subscription whose properties changed.
-        const isNew = subscription.subscribedAt > subscriptionsCursorDate;
-        if (isNew) {
-          allEvents.push({
-            type: "subscription_created" as const,
-            subscriptionId: subscription.id,
-            timestamp: updatedAtIso,
-            updatedAt: updatedAtIso,
-            subscription: {
-              id: subscription.id,
-              feedId: legacyFeedId(subscription.id),
-              customTitle: subscription.customTitle,
-              subscribedAt: subscription.subscribedAt.toISOString(),
-              unreadCount: subscription.unreadCount,
-              tags: tagsBySubscription.get(subscription.id) ?? [],
-            },
-            // A subscription without a feed (#1846) has only its own name.
-            feed: {
-              id: legacyFeedId(subscription.id),
-              type: subscription.type,
-              url: feed?.url ?? null,
-              title: feed?.title ?? subscription.customTitle,
-              description: feed?.description ?? null,
-              siteUrl: feed?.siteUrl ?? null,
-            },
-            _sortTime: updatedAtInstant,
-          });
-        } else {
-          allEvents.push({
-            type: "subscription_updated" as const,
-            subscriptionId: subscription.id,
-            tags: tagsBySubscription.get(subscription.id) ?? [],
-            customTitle: subscription.customTitle,
-            fetchFullContent: subscription.fetchFullContent,
-            timestamp: updatedAtIso,
-            updatedAt: updatedAtIso,
-            _sortTime: updatedAtInstant,
-          });
-        }
-      } else {
+      const stamps = {
+        timestamp: updatedAtIso,
+        updatedAt: updatedAtIso,
+        _sortTime: updatedAtInstant,
+      };
+      const subscriptionTagList = tagsBySubscription.get(subscription.id) ?? [];
+      if (subscription.unsubscribedAt !== null) {
         allEvents.push({
           type: "subscription_deleted" as const,
           subscriptionId: subscription.id,
-          timestamp: updatedAtIso,
-          updatedAt: updatedAtIso,
-          _sortTime: updatedAtInstant,
+          ...stamps,
+        });
+      } else if (subscription.subscribedAt > subscriptionsCursorDate) {
+        // Subscribed since the cursor: new, not changed.
+        allEvents.push({
+          ...subscriptionCreatedEvent(subscription, subscriptionTagList, feed),
+          ...stamps,
+        });
+      } else {
+        allEvents.push({
+          ...subscriptionUpdatedEvent(subscription, subscriptionTagList),
+          ...stamps,
         });
       }
     }
@@ -798,37 +776,18 @@ export async function collectSyncEvents(
 
     for (const row of tagResults) {
       const updatedAtIso = row.updatedAtInstant.toString();
+      const stamps = {
+        timestamp: updatedAtIso,
+        updatedAt: updatedAtIso,
+        _sortTime: row.updatedAtInstant,
+      };
       if (row.deletedAt !== null) {
-        allEvents.push({
-          type: "tag_deleted" as const,
-          tagId: row.id,
-          timestamp: updatedAtIso,
-          updatedAt: updatedAtIso,
-          _sortTime: row.updatedAtInstant,
-        });
-      } else if (row.createdAt > tagsCursorDate) {
-        allEvents.push({
-          type: "tag_created" as const,
-          tag: {
-            id: row.id,
-            name: row.name,
-            color: row.color,
-          },
-          timestamp: updatedAtIso,
-          updatedAt: updatedAtIso,
-          _sortTime: row.updatedAtInstant,
-        });
+        allEvents.push({ type: "tag_deleted" as const, tagId: row.id, ...stamps });
       } else {
         allEvents.push({
-          type: "tag_updated" as const,
-          tag: {
-            id: row.id,
-            name: row.name,
-            color: row.color,
-          },
-          timestamp: updatedAtIso,
-          updatedAt: updatedAtIso,
-          _sortTime: row.updatedAtInstant,
+          type: row.createdAt > tagsCursorDate ? "tag_created" : "tag_updated",
+          tag: toSyncTag(row),
+          ...stamps,
         });
       }
     }

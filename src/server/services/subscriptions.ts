@@ -26,11 +26,11 @@ import { usageLimitsConfig } from "@/server/config/env";
 import { ensureFeedJob, scheduleFeedRefreshNow } from "@/server/jobs/queue";
 import { shouldRefetchOnSubscribe } from "@/server/feed/scheduling";
 import { feedDefaultsToFullContent, getFeedHooks } from "@/server/plugins";
+import { publishUserEvent } from "@/server/redis/pubsub";
 import {
-  publishSubscriptionCreated,
-  publishSubscriptionDeleted,
-  publishSubscriptionUpdated,
-} from "@/server/redis/pubsub";
+  subscriptionCreatedEvent,
+  subscriptionUpdatedEvent,
+} from "@/server/services/subscription-sync-events";
 import { attemptUnsubscribe, getLatestUnsubscribeMailto } from "@/server/email/unsubscribe";
 import {
   countsAsOfColumn,
@@ -846,20 +846,17 @@ export async function createSubscription(
   });
 
   // 8. Publish SSE event for new/reactivated subscriptions
-  publishSubscriptionCreated(
+  publishUserEvent({
+    ...subscriptionCreatedEvent(
+      { id: subscriptionId, type: "web", customTitle, subscribedAt, unreadCount },
+      [],
+      feedRecord
+    ),
     userId,
     feedId,
-    subscriptionId,
-    subscribedAt,
-    {
-      customTitle,
-      subscribedAt: subscribedAt.toISOString(),
-      unreadCount,
-      tags: [],
-    },
-    feedData,
-    counts
-  );
+    updatedAt: subscribedAt,
+    counts,
+  });
 
   return {
     subscriptionId,
@@ -1069,14 +1066,11 @@ export async function updateSubscription(
 
   if (updated.changed) {
     const currentTags = await selectSubscriptionTags(db, subscriptionId);
-    publishSubscriptionUpdated(
+    publishUserEvent({
+      ...subscriptionUpdatedEvent({ id: subscriptionId, ...updated }, currentTags),
       userId,
-      subscriptionId,
-      now,
-      currentTags,
-      updated.customTitle,
-      updated.fetchFullContent
-    );
+      updatedAt: now,
+    });
   }
 
   return getSubscription(db, userId, subscriptionId);
@@ -1219,14 +1213,11 @@ async function changeSubscriptionTags(
   });
 
   if (after) {
-    publishSubscriptionUpdated(
+    publishUserEvent({
+      ...subscriptionUpdatedEvent({ id: subscriptionId, ...after }, after.tags),
       userId,
-      subscriptionId,
-      now,
-      after.tags,
-      after.customTitle,
-      after.fetchFullContent
-    );
+      updatedAt: now,
+    });
   }
 }
 
@@ -1370,7 +1361,14 @@ export async function unsubscribe(
   // tags, so it omits counts and the client invalidates instead).
   const counts = await getSubscriptionDeletionCounts(db, userId, formerTagIds);
 
-  publishSubscriptionDeleted(userId, existing.feedId, subscriptionId, now, counts);
+  publishUserEvent({
+    type: "subscription_deleted",
+    userId,
+    feedId: existing.feedId,
+    subscriptionId,
+    updatedAt: now,
+    counts,
+  });
 
   return { counts };
 }
@@ -1448,6 +1446,7 @@ export async function mergeSubscriptionIntoFeed(
         id: subscriptions.id,
         subscribedAt: subscriptions.subscribedAt,
         customTitle: subscriptions.customTitle,
+        fetchFullContent: subscriptions.fetchFullContent,
       })
       .from(subscriptions)
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.feedId, newFeed.id)));
@@ -1532,30 +1531,29 @@ export async function mergeSubscriptionIntoFeed(
   if (oldWasUncategorized && !counts.uncategorized) {
     counts.uncategorized = { unread: (await getUserUnreadCounts(db, userId)).uncategorizedUnread };
   }
-  publishSubscriptionDeleted(userId, oldFeedId, oldSubscriptionId, now, counts);
+  publishUserEvent({
+    type: "subscription_deleted",
+    userId,
+    feedId: oldFeedId,
+    subscriptionId: oldSubscriptionId,
+    updatedAt: now,
+    counts,
+  });
   if (!survivorWasActive) {
-    publishSubscriptionCreated(
+    const unreadCount = counts.subscriptions.find((s) => s.id === survivor.id)?.unread ?? 0;
+    publishUserEvent({
+      ...subscriptionCreatedEvent({ ...survivor, type: "web", unreadCount }, survivorTags, newFeed),
       userId,
-      newFeed.id,
-      survivor.id,
-      now,
-      {
-        customTitle: survivor.customTitle,
-        subscribedAt: survivor.subscribedAt.toISOString(),
-        unreadCount: counts.subscriptions.find((s) => s.id === survivor.id)?.unread ?? 0,
-        tags: survivorTags,
-      },
-      {
-        type: "web",
-        url: newFeed.url,
-        title: newFeed.title,
-        description: newFeed.description,
-        siteUrl: newFeed.siteUrl,
-      },
-      counts
-    );
+      feedId: newFeed.id,
+      updatedAt: now,
+      counts,
+    });
   } else if (merged.survivorTagsChanged) {
-    publishSubscriptionUpdated(userId, survivor.id, now, survivorTags, survivor.customTitle);
+    publishUserEvent({
+      ...subscriptionUpdatedEvent(survivor, survivorTags),
+      userId,
+      updatedAt: now,
+    });
   }
 
   return true;

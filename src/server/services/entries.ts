@@ -38,7 +38,7 @@ import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { showsFullContent } from "@/lib/entry-content";
 import { errors } from "@/server/errors";
-import { publishMarkAllRead } from "@/server/redis/pubsub";
+import { publishUserEvent } from "@/server/redis/pubsub";
 import { createCursorCodec, cursorUuid } from "./cursor";
 import {
   countsAsOfColumn,
@@ -1528,7 +1528,13 @@ export async function markAllEntriesRead(
   // if its live event was missed (#1102). UUIDs are lowercase, so string
   // comparison matches Postgres uuid ordering.
   const maxEntryId = entryIds.reduce((max, id) => (id > max ? id : max));
-  publishMarkAllRead(params.userId, updatedAt, maxEntryId, counts);
+  publishUserEvent({
+    type: "mark_all_read",
+    userId: params.userId,
+    updatedAt,
+    entryId: maxEntryId,
+    counts,
+  });
 
   return { entryIds, counts };
 }

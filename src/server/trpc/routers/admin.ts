@@ -36,7 +36,7 @@ import {
   setAnnouncement,
 } from "@/server/services/site-status";
 import { ANNOUNCEMENT_LEVELS } from "@/lib/events/schemas";
-import { publishAnnouncementChanged } from "@/server/redis/pubsub";
+import { publishSiteStatusEvent } from "@/server/redis/pubsub";
 
 // ============================================================================
 // CONSTANTS
@@ -932,7 +932,10 @@ const siteStatusEndpoints = {
       // the cache) and resolves the message-derived id, or null when disabled.
       // A failed broadcast doesn't fail the save: clients pick it up on their
       // next page load.
-      await publishAnnouncementChanged(await getAnnouncement());
+      await publishSiteStatusEvent({
+        type: "announcement_changed",
+        announcement: await getAnnouncement(),
+      });
       return { success: true };
     }),
 

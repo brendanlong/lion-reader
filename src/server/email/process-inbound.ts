@@ -20,7 +20,8 @@ import {
   type NewEntry,
 } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
-import { publishUserNewEntry, publishSubscriptionCreated } from "../redis/pubsub";
+import { publishUserEvent } from "../redis/pubsub";
+import { subscriptionCreatedEvent } from "@/server/services/subscription-sync-events";
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
@@ -279,25 +280,16 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
 
     // Publish subscription_created BEFORE the new_entry event (both on the
     // user's channel, so in order), so the client knows the subscription first
-    publishSubscriptionCreated(
+    publishUserEvent({
+      ...subscriptionCreatedEvent(
+        { ...upsertedSubscription, id: owner.id, type: "email", unreadCount: 1 },
+        [],
+        null
+      ),
       userId,
-      null,
-      owner.id,
-      upsertedSubscription.updatedAt,
-      {
-        customTitle: upsertedSubscription.customTitle,
-        subscribedAt: upsertedSubscription.subscribedAt.toISOString(),
-        unreadCount: 1,
-        tags: [],
-      },
-      {
-        type: "email",
-        url: null,
-        title: owner.title,
-        description: null,
-        siteUrl: null,
-      }
-    );
+      feedId: null,
+      updatedAt: upsertedSubscription.updatedAt,
+    });
   }
 
   // 6. Check for duplicate Message-ID: a seek on the (owner_subscription_id,
@@ -420,12 +412,15 @@ export async function processInboundEmail(email: InboundEmail): Promise<ProcessE
   // 8. Publish real-time event via Redis
   // Fire and forget - we don't want publishing failures to affect email processing.
   // A spam entry's event still fires, for the counts.
-  publishUserNewEntry(
-    { userId, subscriptionId: owner.id, feedType: "email" },
+  publishUserEvent({
+    type: "new_entry",
+    userId,
+    subscriptionId: owner.id,
+    feedType: "email",
     entryId,
-    now,
-    entryListPayload(newEntry, owner.title)
-  );
+    updatedAt: now,
+    entry: entryListPayload(newEntry, owner.title),
+  });
 
   return {
     success: true,

@@ -13,7 +13,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { publishEntryStateChanged, type EntryStateListData } from "@/server/redis/pubsub";
+import { publishUserEvent } from "@/server/redis/pubsub";
 import type { DbOrTx } from "@/server/db";
 import { feeds, subscriptions, visibleEntries } from "@/server/db/schema";
 import {
@@ -24,11 +24,24 @@ import {
 import { entryListPayload } from "@/server/services/entry-sync-events";
 import type { BulkUnreadCounts } from "@/server/services/counts";
 import type { MarkReadEntryState } from "@/server/services/entries";
+import type { EntryType } from "@/lib/entry-types";
+import type { NewEntryListData } from "@/lib/events/schemas";
 
 const VISIBLE_MEMBERSHIPS = entryMemberships({
   userId: visibleEntries.userId,
   entryId: visibleEntries.id,
 });
+
+/**
+ * List-item context for an entry_state_changed event, attached when the entry
+ * flipped to unread so clients can insert it into cached lists it's missing
+ * from (issue #1237).
+ */
+interface EntryStateListData {
+  subscriptionId: string | null;
+  feedType: EntryType;
+  entry: NewEntryListData;
+}
 
 /**
  * Fetches the list-item context for entries that flipped to unread, keyed by
@@ -44,7 +57,7 @@ async function fetchUnreadListData(
     .select({
       id: visibleEntries.id,
       subscriptionId: subscriptions.id,
-      feedType: visibleEntries.type,
+      type: visibleEntries.type,
       url: visibleEntries.url,
       title: visibleEntries.title,
       author: visibleEntries.author,
@@ -68,7 +81,7 @@ async function fetchUnreadListData(
     if (!entry) continue;
     result.set(row.id, {
       subscriptionId: row.subscriptionId,
-      feedType: row.feedType,
+      feedType: row.type,
       entry,
     });
   }
@@ -103,18 +116,7 @@ export function publishMarkReadStateChanges(
       }
     }
     await Promise.all(
-      entries.map((entry) =>
-        publishEntryStateChanged(
-          userId,
-          entry.id,
-          entry.read,
-          entry.starred,
-          entry.updatedAt,
-          counts,
-          listData.get(entry.id),
-          entry.subscriptionIds
-        )
-      )
+      entries.map((entry) => publishEntryState(userId, entry, counts, listData.get(entry.id)))
     );
   })();
 }
@@ -125,23 +127,32 @@ export function publishMarkReadStateChanges(
  */
 export function publishStarredStateChanges(
   userId: string,
-  entries: Array<
-    Pick<MarkReadEntryState, "id" | "read" | "starred" | "updatedAt" | "subscriptionIds">
-  >,
+  entries: PublishedEntryState[],
   counts: BulkUnreadCounts
 ): void {
-  void Promise.all(
-    entries.map((entry) =>
-      publishEntryStateChanged(
-        userId,
-        entry.id,
-        entry.read,
-        entry.starred,
-        entry.updatedAt,
-        counts,
-        undefined,
-        entry.subscriptionIds
-      )
-    )
-  );
+  void Promise.all(entries.map((entry) => publishEntryState(userId, entry, counts)));
+}
+
+type PublishedEntryState = Pick<
+  MarkReadEntryState,
+  "id" | "read" | "starred" | "updatedAt" | "subscriptionIds"
+>;
+
+function publishEntryState(
+  userId: string,
+  entry: PublishedEntryState,
+  counts: BulkUnreadCounts,
+  listData?: EntryStateListData
+): Promise<number> {
+  return publishUserEvent({
+    type: "entry_state_changed",
+    userId,
+    entryId: entry.id,
+    read: entry.read,
+    starred: entry.starred,
+    updatedAt: entry.updatedAt,
+    counts,
+    subscriptionIds: entry.subscriptionIds,
+    ...listData,
+  });
 }

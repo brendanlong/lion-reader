@@ -11,7 +11,8 @@ import { errors } from "@/server/errors";
 import { isUniqueViolation } from "@/server/db/errors";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { isListedSubscription } from "@/server/services/subscriptions";
-import { publishTagCreated, publishTagUpdated, publishTagDeleted } from "@/server/redis/pubsub";
+import { publishUserEvent } from "@/server/redis/pubsub";
+import { toSyncTag } from "@/server/services/subscription-sync-events";
 import {
   countsAsOfColumn,
   countsAsOfNow,
@@ -194,11 +195,12 @@ export async function createTag(
       });
 
     if (createdTag) {
-      publishTagCreated(
+      publishUserEvent({
+        type: "tag_created",
         userId,
-        { id: createdTag.id, name: createdTag.name, color: createdTag.color },
-        createdTag.updatedAt
-      );
+        tag: toSyncTag(createdTag),
+        updatedAt: createdTag.updatedAt,
+      });
       return {
         tag: {
           id: createdTag.id,
@@ -305,15 +307,7 @@ export async function updateTag(
   }
 
   // Publish tag updated event for multi-tab/device sync (fire and forget)
-  publishTagUpdated(
-    userId,
-    {
-      id: tag.id,
-      name: tag.name,
-      color: tag.color,
-    },
-    tag.updatedAt
-  );
+  publishUserEvent({ type: "tag_updated", userId, tag: toSyncTag(tag), updatedAt: tag.updatedAt });
 
   return toTag(tag);
 }
@@ -395,5 +389,5 @@ export async function deleteTag(db: typeof dbType, userId: string, tagId: string
   });
 
   // Publish tag deleted event for multi-tab/device sync (fire and forget)
-  publishTagDeleted(userId, tagId, updatedAt);
+  publishUserEvent({ type: "tag_deleted", userId, tagId, updatedAt });
 }

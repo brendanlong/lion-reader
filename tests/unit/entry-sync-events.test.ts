@@ -36,7 +36,7 @@ function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
     readChangedAt: null,
     subscriptionId: "sub-1",
     subscriptionIds: ["sub-1"],
-    feedType: "web",
+    type: "web",
     feedTitle: "Example feed",
     metadataChanged: true,
     stateChanged: true,
@@ -133,8 +133,6 @@ describe("entryRowToSyncEvents", () => {
     const entry = catchUp.type === "new_entry" ? catchUp.entry : undefined;
     expect(entry).toEqual({
       ...live?.entry,
-      // The publishers add the type, which they know from the source.
-      type: "web",
       read: false,
       starred: false,
       readChangedAt: null,

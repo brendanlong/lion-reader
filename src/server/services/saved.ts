@@ -39,8 +39,8 @@ import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 import { escapeHtml } from "@/server/http/html";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { logger } from "@/lib/logger";
-import { publishUserNewEntry, publishUserEntryUpdated } from "@/server/redis/pubsub";
-import { entryListPayload } from "@/server/services/entry-sync-events";
+import { publishUserEvent } from "@/server/redis/pubsub";
+import { entryListPayload, toEntryMetadata } from "@/server/services/entry-sync-events";
 import { errors } from "@/server/errors";
 import { finishEntriesRead, writeEntriesRead } from "@/server/services/entries";
 import {
@@ -498,12 +498,15 @@ async function insertSavedEntry(
 
   // Fire-and-forget: SSE is best-effort and must never fail the save response
   // (the entry transaction has already committed). See entry-events.ts.
-  publishUserNewEntry(
-    { userId, subscriptionId: inserted.savedSubscriptionId, feedType: "saved" },
+  publishUserEvent({
+    type: "new_entry",
+    userId,
+    subscriptionId: inserted.savedSubscriptionId,
+    feedType: "saved",
     entryId,
-    now,
-    entryListPayload(values, SAVED_ARTICLES_TITLE)
-  );
+    updatedAt: now,
+    entry: entryListPayload(values, SAVED_ARTICLES_TITLE),
+  });
 
   // Sanitize the body for the returned SavedArticle: callers like the Wallabag
   // POST response send it to clients, so raw fetched HTML must not leave the
@@ -933,18 +936,21 @@ export async function saveArticle(
     // Publish event to notify other browser windows/tabs of the content update.
     // Fire-and-forget: SSE is best-effort and must never fail the response (the
     // transaction has already committed). See entry-events.ts.
-    publishUserEntryUpdated(
-      { userId, subscriptionId: null, feedType: "saved" },
-      {
-        id: oldEntry.id,
+    publishUserEvent({
+      type: "entry_updated",
+      userId,
+      subscriptionId: null,
+      feedType: "saved",
+      entryId: oldEntry.id,
+      updatedAt: now,
+      metadata: toEntryMetadata({
         title: finalTitle,
         author: finalAuthor,
         summary: excerpt,
         url: normalizedUrl,
         publishedAt: oldEntry.publishedAt,
-        updatedAt: now,
-      }
-    );
+      }),
+    });
 
     return {
       id: oldEntry.id,

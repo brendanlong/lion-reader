@@ -21,7 +21,7 @@ import { exportSubscriptionsOpml, unsubscribe } from "../../src/server/services/
 import { deleteUser } from "../../src/server/services/users";
 import { listGreaderSubscriptions } from "../../src/server/google-reader/subscriptions";
 import { listWallabagTags } from "../../src/server/wallabag/tags";
-import { publishNewEntry } from "../../src/server/redis/pubsub";
+import { publishFeedEvent } from "../../src/server/redis/pubsub";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -204,7 +204,14 @@ describe("subscriptions without a feed (#1846)", () => {
     try {
       // The web feed's channel is still followed.
       await publishUntil(
-        () => publishNewEntry(feedId, entryId, new Date(), undefined),
+        () =>
+          publishFeedEvent({
+            type: "new_entry",
+            feedId,
+            entryId,
+            updatedAt: new Date(),
+            feedType: "web",
+          }),
         () => stream.events("new_entry").length > 0
       );
       laterId = (await caller.collections.create({ name: "Later" })).subscription.id;
