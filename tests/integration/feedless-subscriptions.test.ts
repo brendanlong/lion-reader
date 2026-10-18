@@ -181,12 +181,10 @@ describe("subscriptions without a feed (#1846)", () => {
     ).toMatchObject({
       subscription: {
         id: collectionId,
-        feedId: collectionId,
         customTitle: "Reading",
         unreadCount: 1,
       },
       feed: {
-        id: collectionId,
         type: "collection",
         url: null,
         title: "Reading",
@@ -223,8 +221,7 @@ describe("subscriptions without a feed (#1846)", () => {
       await stream.close();
     }
 
-    // Released Android builds (up to v0.5.1) require subscription.feedId and
-    // feed.id; they carry the subscription id. The internal feedId is stripped.
+    // The internal feedId is stripped.
     expect(stream.events("subscription_created")).toEqual([
       {
         type: "subscription_created",
@@ -234,14 +231,12 @@ describe("subscriptions without a feed (#1846)", () => {
         updatedAt: expect.any(String),
         subscription: {
           id: laterId,
-          feedId: laterId,
           customTitle: "Later",
           subscribedAt: expect.any(String),
           unreadCount: 0,
           tags: [],
         },
         feed: {
-          id: laterId,
           type: "collection",
           url: null,
           title: "Later",

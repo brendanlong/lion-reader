@@ -166,26 +166,10 @@ export const unreadCountsSchema = z.object({
 });
 
 /**
- * Clients only ever see subscription IDs, never feed IDs. Released Android
- * builds (up to v0.5.1) still require a `feedId` on entries, and
- * `subscription.feedId` and `feed.id` on subscription_created events, though
- * they never read them, so those keys carry `legacyFeedId(subscriptionId)`.
- */
-export const legacyFeedIdSchema = z.string().meta({
-  deprecated: true,
-  description: "Unused placeholder: the subscription ID, or empty when there is none.",
-});
-
-export function legacyFeedId(subscriptionId: string | null): string {
-  return subscriptionId ?? "";
-}
-
-/**
  * Subscription data for subscription_created events.
  */
 const subscriptionCreatedDataSchema = z.object({
   id: z.string(),
-  feedId: legacyFeedIdSchema,
   customTitle: z.string().nullable(),
   subscribedAt: z.string(),
   unreadCount: z.number(),
@@ -196,7 +180,6 @@ const subscriptionCreatedDataSchema = z.object({
  * Feed data for subscription_created events.
  */
 const feedCreatedDataSchema = z.object({
-  id: legacyFeedIdSchema,
   type: z.enum(SUBSCRIPTION_TYPES),
   url: z.string().nullable(),
   title: z.string().nullable(),

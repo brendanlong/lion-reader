@@ -24,12 +24,7 @@ import * as entriesService from "@/server/services/entries";
 import * as entryReadsService from "@/server/services/entry-reads";
 import * as entryStateService from "@/server/services/entry-state";
 import { toServerTime } from "@/server/services/client-time";
-import {
-  countsAsOfSchema,
-  legacyFeedId,
-  legacyFeedIdSchema,
-  unreadCountsSchema,
-} from "@/lib/events/schemas";
+import { countsAsOfSchema, unreadCountsSchema } from "@/lib/events/schemas";
 import { ENTRY_TYPES } from "@/lib/entry-types";
 
 // Endpoints exposed via the MCP tool surface, plus the ones the native app needs.
@@ -119,7 +114,6 @@ const entryListItemSchema = z.object({
   // Every active subscription holding the entry: its origin, its collections,
   // and for a saved article the saved subscription (#1846).
   subscriptionIds: z.array(z.string()),
-  feedId: legacyFeedIdSchema,
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -147,7 +141,6 @@ const entryFullSchema = z.object({
   // Every active subscription holding the entry: its origin, its collections,
   // and for a saved article the saved subscription (#1846).
   subscriptionIds: z.array(z.string()),
-  feedId: legacyFeedIdSchema,
   type: feedTypeSchema,
   url: z.string().nullable(),
   title: z.string().nullable(),
@@ -175,12 +168,6 @@ const entryFullSchema = z.object({
   // Subscription field - included to avoid separate subscriptions.get query
   fetchFullContent: z.boolean(), // subscription setting for auto-fetching full content
 });
-
-function withLegacyFeedId<T extends { subscriptionId: string | null }>(
-  entry: T
-): T & { feedId: string } {
-  return { ...entry, feedId: legacyFeedId(entry.subscriptionId) };
-}
 
 /**
  * Paginated entries list output schema.
@@ -299,7 +286,7 @@ export const entriesRouter = createTRPCRouter({
         userId: ctx.session.user.id,
         showSpam: ctx.session.user.showSpam,
       });
-      return { ...page, items: page.items.map(withLegacyFeedId) };
+      return page;
     }),
 
   // REST routes match in procedure order, so `GET /entries/count` must come
@@ -372,7 +359,7 @@ export const entriesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       const { entry } = await entryReadsService.getFullEntry(ctx.db, userId, input.id);
-      return { entry: withLegacyFeedId(entry) };
+      return { entry };
     }),
 
   /**
@@ -397,9 +384,7 @@ export const entriesRouter = createTRPCRouter({
     .output(z.object({ entries: z.array(entryFullSchema) }))
     .query(async ({ ctx, input }) => {
       return {
-        entries: (
-          await entryReadsService.getFullEntries(ctx.db, ctx.session.user.id, input.ids)
-        ).map(withLegacyFeedId),
+        entries: await entryReadsService.getFullEntries(ctx.db, ctx.session.user.id, input.ids),
       };
     }),
 
@@ -617,7 +602,6 @@ export const entriesRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      const result = await fullContentService.fetchAndStoreFullContent(ctx.db, userId, input.id);
-      return { ...result, entry: result.entry && withLegacyFeedId(result.entry) };
+      return fullContentService.fetchAndStoreFullContent(ctx.db, userId, input.id);
     }),
 });

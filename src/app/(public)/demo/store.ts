@@ -17,7 +17,6 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/server/trpc/root";
 import { procedureError, type ProcedureHandlers } from "@/lib/trpc/handler-link";
-import { legacyFeedId } from "@/lib/events/schemas";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { entryMatchesList, entryMembershipScope } from "@/lib/local-db/entry-lists";
 import {
@@ -314,7 +313,6 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
       id: entry.id,
       subscriptionId: originOf(state),
       subscriptionIds: subscriptionIdsOf(state),
-      feedId: legacyFeedId(originOf(state)),
       type: entry.type,
       url: entry.url,
       title: entry.title,

@@ -832,14 +832,12 @@ describe("handleSyncEvent - subscription_created", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-new",
-          feedId: "feed-new",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 7,
           tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
         },
         feed: {
-          id: "feed-new",
           type: "web",
           url: "https://example.com/new.xml",
           title: "New Feed",
@@ -872,14 +870,12 @@ describe("handleSyncEvent - subscription_created", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-new",
-          feedId: "feed-new",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 3,
           tags: [],
         },
         feed: {
-          id: "feed-new",
           type: "web",
           url: "https://example.com/new.xml",
           title: "Uncat Feed",
@@ -926,14 +922,12 @@ describe("handleSyncEvent - subscription_created", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-new",
-          feedId: "feed-new",
           customTitle: "My Custom Title",
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 0,
           tags: [],
         },
         feed: {
-          id: "feed-new",
           type: "web",
           url: "https://example.com/new.xml",
           title: "Original Feed Title",
@@ -1729,14 +1723,12 @@ describe("handleSyncEvent - event sequences", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-seq",
-          feedId: "feed-seq",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 2,
           tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }],
         },
         feed: {
-          id: "feed-seq",
           type: "web",
           url: "https://example.com/seq.xml",
           title: "Seq Feed",
@@ -1785,14 +1777,12 @@ describe("handleSyncEvent - event sequences", () => {
       createSubscriptionCreatedEvent({
         subscription: {
           id: "sub-temp",
-          feedId: "feed-temp",
           customTitle: null,
           subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 5,
           tags: [],
         },
         feed: {
-          id: "feed-temp",
           type: "web",
           url: "https://example.com/temp.xml",
           title: "Temp Feed",

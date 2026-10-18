@@ -6056,11 +6056,6 @@
                               "type": "string"
                             }
                           },
-                          "feedId": {
-                            "type": "string",
-                            "deprecated": true,
-                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
-                          },
                           "type": {
                             "type": "string",
                             "enum": [
@@ -6137,7 +6132,6 @@
                           "id",
                           "subscriptionId",
                           "subscriptionIds",
-                          "feedId",
                           "type",
                           "url",
                           "title",
@@ -6426,11 +6420,6 @@
                             "type": "string"
                           }
                         },
-                        "feedId": {
-                          "type": "string",
-                          "deprecated": true,
-                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
-                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -6558,7 +6547,6 @@
                         "id",
                         "subscriptionId",
                         "subscriptionIds",
-                        "feedId",
                         "type",
                         "url",
                         "title",
@@ -6713,11 +6701,6 @@
                               "type": "string"
                             }
                           },
-                          "feedId": {
-                            "type": "string",
-                            "deprecated": true,
-                            "description": "Unused placeholder: the subscription ID, or empty when there is none."
-                          },
                           "type": {
                             "type": "string",
                             "enum": [
@@ -6845,7 +6828,6 @@
                           "id",
                           "subscriptionId",
                           "subscriptionIds",
-                          "feedId",
                           "type",
                           "url",
                           "title",
@@ -8033,11 +8015,6 @@
                             "type": "string"
                           }
                         },
-                        "feedId": {
-                          "type": "string",
-                          "deprecated": true,
-                          "description": "Unused placeholder: the subscription ID, or empty when there is none."
-                        },
                         "type": {
                           "type": "string",
                           "enum": [
@@ -8165,7 +8142,6 @@
                         "id",
                         "subscriptionId",
                         "subscriptionIds",
-                        "feedId",
                         "type",
                         "url",
                         "title",
@@ -13491,11 +13467,6 @@
                                   "id": {
                                     "type": "string"
                                   },
-                                  "feedId": {
-                                    "type": "string",
-                                    "deprecated": true,
-                                    "description": "Unused placeholder: the subscription ID, or empty when there is none."
-                                  },
                                   "customTitle": {
                                     "type": [
                                       "string",
@@ -13537,7 +13508,6 @@
                                 },
                                 "required": [
                                   "id",
-                                  "feedId",
                                   "customTitle",
                                   "subscribedAt",
                                   "unreadCount",
@@ -13548,11 +13518,6 @@
                               "feed": {
                                 "type": "object",
                                 "properties": {
-                                  "id": {
-                                    "type": "string",
-                                    "deprecated": true,
-                                    "description": "Unused placeholder: the subscription ID, or empty when there is none."
-                                  },
                                   "type": {
                                     "type": "string",
                                     "enum": [
@@ -13588,7 +13553,6 @@
                                   }
                                 },
                                 "required": [
-                                  "id",
                                   "type",
                                   "url",
                                   "title",
