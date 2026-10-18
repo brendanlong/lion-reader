@@ -6,7 +6,7 @@ The security invariants for this directory are in SECURITY.md §4–5; the OAuth
 
 - **The server is the session cookie's only writer**; there is no client-side token management. Browser tRPC mutations set and clear it through the fetch adapter's `resHeaders` (a no-op on the REST/OpenAPI surface, whose clients use the token in the response body); the OAuth redirect routes set it on the redirect response.
 - **The client never inspects the cookie.** `<AuthErrorHandler>` is mounted only on authenticated surfaces, so any `UNAUTHORIZED` there means the session died. Don't mount it on auth, `/save` or `/demo` pages, whose 401s are expected.
-- A **scoped session** (`scopes IS NOT NULL`, the Google Reader `ClientLogin` token) is rejected for full-access use unless the caller passes `allowScoped: true` and checks the scope itself (only the Google Reader API does). It doesn't count as user activity (`updateLastActiveAt` says why).
+- A **scoped session** (`scopes IS NOT NULL`, the Google Reader `ClientLogin` token) is accepted only where a surface accepts the `scoped_session` credential kind (only the Google Reader API). It doesn't count as user activity (`updateLastActiveAt` says why).
 
 ## Social login (OAuth client)
 
@@ -15,7 +15,7 @@ The security invariants for this directory are in SECURITY.md §4–5; the OAuth
 
 ## Token scopes
 
-Credential types: browser sessions (full access), scoped sessions, API tokens (`api_tokens`, limited to their scopes), and OAuth 2.1 access tokens (audience-bound, `src/server/oauth/CLAUDE.md`; the native app's arrive as `authType: "app_token"`, and on the streaming routes through `route-auth.ts`).
+Credential types: browser sessions (full access), scoped sessions, API tokens (`api_tokens`, limited to their scopes), and OAuth 2.1 access tokens (audience-bound, `src/server/oauth/CLAUDE.md`). Every API surface authenticates requests through `authenticateCredential` (`credential.ts`), naming the kinds it accepts.
 
 Scopes are `mcp`, `saved:write`, and `reader:full-access` (OAuth/session only: the reader surface minus account settings, minted for the Wallabag and Google Reader compat APIs and the native app).
 

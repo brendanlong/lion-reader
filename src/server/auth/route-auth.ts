@@ -4,12 +4,10 @@
  * OAuth access token.
  */
 
-import { extractBearerToken } from "@/server/auth/bearer";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
-import { validateAppAccessToken } from "@/server/auth/app-token";
-import { isSessionActive, validateSession } from "@/server/auth/session";
+import { authenticateCredential, getBearerOrSessionCookie } from "@/server/auth/credential";
+import { isSessionActive } from "@/server/auth/session";
 import { isAccessTokenActive } from "@/server/oauth/service";
-import { isOAuthAccessTokenFormat } from "@/server/oauth/utils";
 import { trackAndroidAppRequest } from "@/server/metrics/metrics";
 
 export interface RouteAuth {
@@ -21,49 +19,24 @@ export interface RouteAuth {
   isCredentialActive: () => Promise<boolean>;
 }
 
-function getCredential(headers: Headers): string | null {
-  const bearerToken = extractBearerToken(headers.get("authorization"));
-  if (bearerToken) return bearerToken;
-
-  const cookieHeader = headers.get("cookie");
-  if (!cookieHeader) return null;
-  const cookies = Object.fromEntries(
-    cookieHeader.split("; ").map((c) => {
-      const [key, ...value] = c.split("=");
-      return [key, value.join("=")];
-    })
-  );
-  return cookies.session ?? null;
-}
-
 /** The request's user, or null when it has no valid credential. */
 export async function authenticateRouteRequest(headers: Headers): Promise<RouteAuth | null> {
-  const credential = getCredential(headers);
-  if (!credential) return null;
+  const auth = await authenticateCredential(getBearerOrSessionCookie(headers), {
+    accept: ["session", "app_token"],
+  });
+  if (!auth.ok) return null;
 
-  // Same dispatch as the tRPC context: an unprefixed credential still falls
-  // through to the app token until #1955.
-  if (!isOAuthAccessTokenFormat(credential)) {
-    const sessionData = await validateSession(credential);
-    if (sessionData) {
-      const sessionId = sessionData.session.id;
-      return {
-        userId: sessionData.user.id,
-        credential: "session",
-        confirmed: isSignupConfirmed(sessionData.user),
-        isCredentialActive: () => isSessionActive(sessionId),
-      };
-    }
+  const { credential } = auth;
+  const base = { userId: credential.user.id, confirmed: isSignupConfirmed(credential.user) };
+  if (credential.kind === "session") {
+    const sessionId = credential.session.session.id;
+    return { ...base, credential: "session", isCredentialActive: () => isSessionActive(sessionId) };
   }
-
-  const appToken = await validateAppAccessToken(credential);
-  if (!appToken) return null;
   trackAndroidAppRequest(headers.get("user-agent"));
-  const tokenId = appToken.tokenId;
+  const tokenId = credential.oauthToken.tokenId;
   return {
-    userId: appToken.userId,
+    ...base,
     credential: "app-token",
-    confirmed: isSignupConfirmed(appToken.user),
     isCredentialActive: () => isAccessTokenActive(tokenId),
   };
 }
