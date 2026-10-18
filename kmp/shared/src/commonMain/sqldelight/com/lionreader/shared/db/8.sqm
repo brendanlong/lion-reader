@@ -1,0 +1,8 @@
+-- The search index takes a saved article's source from its site, as the UI
+-- shows it, not its feed title ("Saved Articles"). AppSchema adds entry's
+-- triggers back, changed, and re-indexes saved articles' sources.
+DROP TRIGGER IF EXISTS entry_search_insert;
+
+DROP TRIGGER IF EXISTS entry_search_update;
+
+DROP TRIGGER IF EXISTS entry_search_delete;

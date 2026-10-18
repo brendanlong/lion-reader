@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.AfterVersion
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
+import com.lionreader.shared.api.SAVED_TYPE
 import com.lionreader.shared.db.LionReaderDatabase
 
 /**
@@ -12,7 +13,8 @@ import com.lionreader.shared.db.LionReaderDatabase
  * SQLDelight can't compile statements that name an FTS4 table's columns. Open databases with this,
  * not the generated schema. The index is keyed by `entry`'s implicit rowid, so a migration that
  * rebuilds `entry` must keep each row's rowid (as 7.sqm does) and be listed in [ENTRY_REBUILDS],
- * since dropping `entry` drops its triggers. Don't VACUUM: it renumbers rowids.
+ * since dropping `entry` drops its triggers; so must one that drops the triggers to change them (as
+ * 8.sqm does). Don't VACUUM: it renumbers rowids.
  */
 object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Schema {
     override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
@@ -37,32 +39,48 @@ object AppSchema : SqlSchema<QueryResult.Value<Unit>> by LionReaderDatabase.Sche
                     }
                 }
                 .toTypedArray(),
+            // 8.sqm: saved articles were indexed under their feed title, "Saved Articles".
+            AfterVersion(8) { d ->
+                d.execute(
+                    null,
+                    """
+                    UPDATE entry_search
+                    SET source = (SELECT ${source("e")} FROM entry e WHERE e.rowid = entry_search.rowid)
+                    WHERE rowid IN (SELECT rowid FROM entry WHERE type = '$SAVED_TYPE')
+                    """,
+                    0,
+                )
+            },
             *callbacks,
         )
 }
 
-/** The migrations (by the version they start from) that rebuild `entry`. */
-private val ENTRY_REBUILDS = listOf(7L)
+/** The migrations (by the version they start from) that drop `entry`'s triggers. */
+private val ENTRY_REBUILDS = listOf(7L, 8L)
+
+/** The source indexed for [row]: what the UI shows (Reader's `entrySource`). */
+private fun source(row: String): String =
+    "CASE WHEN $row.type = '$SAVED_TYPE' THEN COALESCE($row.site_name, $row.feed_title) " +
+        "ELSE COALESCE($row.feed_title, $row.site_name) END"
 
 private val ENTRY_TRIGGERS =
     listOf(
         """
         CREATE TRIGGER entry_search_insert AFTER INSERT ON entry BEGIN
           INSERT INTO entry_search(rowid, title, author, source, summary)
-          VALUES (NEW.rowid, NEW.title, NEW.author, COALESCE(NEW.feed_title, NEW.site_name),
-            NEW.summary);
+          VALUES (NEW.rowid, NEW.title, NEW.author, ${source("NEW")}, NEW.summary);
         END
         """,
         """
         CREATE TRIGGER entry_search_update
-        AFTER UPDATE OF title, author, feed_title, site_name, summary ON entry
+        AFTER UPDATE OF title, author, type, feed_title, site_name, summary ON entry
         WHEN OLD.title IS NOT NEW.title OR OLD.author IS NOT NEW.author
-          OR OLD.feed_title IS NOT NEW.feed_title OR OLD.site_name IS NOT NEW.site_name
-          OR OLD.summary IS NOT NEW.summary
+          OR OLD.type IS NOT NEW.type OR OLD.feed_title IS NOT NEW.feed_title
+          OR OLD.site_name IS NOT NEW.site_name OR OLD.summary IS NOT NEW.summary
         BEGIN
           UPDATE entry_search
           SET title = NEW.title, author = NEW.author,
-            source = COALESCE(NEW.feed_title, NEW.site_name), summary = NEW.summary
+            source = ${source("NEW")}, summary = NEW.summary
           WHERE rowid = NEW.rowid;
         END
         """,
