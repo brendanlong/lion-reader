@@ -156,7 +156,7 @@ export const subscriptionsRouter = createTRPCRouter({
       },
     })
     .input(
-      subscriptionListInputSchema
+      subscriptionListInputSchema()
         .extend({
           uncategorized: booleanQueryParam,
           unreadOnly: booleanQueryParam,

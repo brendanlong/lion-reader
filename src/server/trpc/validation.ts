@@ -5,10 +5,11 @@
  * services so the two surfaces enforce the same limits. MCP adds
  * `.describe()`s.
  *
- * REST procedures swap each shared boolean for `booleanQueryParam`:
- * trpc-to-openapi sets `coerce` in place on the number and boolean schemas of
- * a REST procedure's input, so a plain `z.boolean()` there reads "false" as
- * true, and so would an MCP tool sharing that instance.
+ * trpc-to-openapi sets `coerce` in place on the top-level number and boolean
+ * schemas of a REST procedure's input, so a plain `z.boolean()` there reads
+ * "false" as true: REST procedures swap each boolean for `booleanQueryParam`.
+ * Input objects with such fields are factories, so a schema instance REST has
+ * coerced is never one an MCP tool also validates with.
  */
 
 import { z } from "zod";
@@ -50,46 +51,49 @@ export const booleanQueryParam = z
 // ============================================================================
 
 /** Filters and paging of an entry list (`listEntries`). */
-export const entryListInputSchema = z.object({
-  query: z.string().optional(),
-  subscriptionId: uuidSchema.optional(),
-  tagId: uuidSchema.optional(),
-  uncategorized: z.boolean().optional(),
-  type: z.enum(ENTRY_TYPES).optional(),
-  unreadOnly: z.boolean().optional(),
-  starredOnly: z.boolean().optional(),
-  sortOrder: z.enum(["newest", "oldest"]).optional(),
-  cursor: z.string().optional(),
-  limit: z.number().int().min(1).max(MAX_ENTRIES_PAGE_SIZE).optional(),
-});
+export const entryListInputSchema = () =>
+  z.object({
+    query: z.string().optional(),
+    subscriptionId: uuidSchema.optional(),
+    tagId: uuidSchema.optional(),
+    uncategorized: z.boolean().optional(),
+    type: z.enum(ENTRY_TYPES).optional(),
+    unreadOnly: z.boolean().optional(),
+    starredOnly: z.boolean().optional(),
+    sortOrder: z.enum(["newest", "oldest"]).optional(),
+    cursor: z.string().optional(),
+    limit: z.number().int().min(1).max(MAX_ENTRIES_PAGE_SIZE).optional(),
+  });
 
 /**
  * The one list `countEntries` counts. Strict, so a filter it has no counter
  * for (excludeTypes, readOnly, ...) fails instead of being dropped into a
  * different list's count.
  */
-export const entryCountInputSchema = z.strictObject({
-  subscriptionId: uuidSchema.optional(),
-  tagId: uuidSchema.optional(),
-  uncategorized: z.boolean().optional(),
-  type: z.enum(["saved"]).optional(),
-  starredOnly: z.boolean().optional(),
-});
+export const entryCountInputSchema = () =>
+  z.strictObject({
+    subscriptionId: uuidSchema.optional(),
+    tagId: uuidSchema.optional(),
+    uncategorized: z.boolean().optional(),
+    type: z.enum(["saved"]).optional(),
+    starredOnly: z.boolean().optional(),
+  });
 
 // ============================================================================
 // Subscription Schemas
 // ============================================================================
 
 /** Filters and paging of the subscription list (`listSubscriptions`). */
-export const subscriptionListInputSchema = z.object({
-  /** Case-insensitive substring of the title. */
-  query: z.string().optional(),
-  tagId: uuidSchema.optional(),
-  uncategorized: z.boolean().optional(),
-  unreadOnly: z.boolean().optional(),
-  cursor: z.string().optional(),
-  limit: z.number().int().min(1).max(MAX_SUBSCRIPTIONS_PAGE_SIZE).optional(),
-});
+export const subscriptionListInputSchema = () =>
+  z.object({
+    /** Case-insensitive substring of the title. */
+    query: z.string().optional(),
+    tagId: uuidSchema.optional(),
+    uncategorized: z.boolean().optional(),
+    unreadOnly: z.boolean().optional(),
+    cursor: z.string().optional(),
+    limit: z.number().int().min(1).max(MAX_SUBSCRIPTIONS_PAGE_SIZE).optional(),
+  });
 
 /** Most tags one call may set on a subscription. */
 const MAX_SUBSCRIPTION_TAGS = 100;

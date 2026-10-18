@@ -10,6 +10,7 @@ import { eq, and, isNull, isNotNull, sql, desc, asc, lt, gt, ilike, count, max }
 import crypto from "crypto";
 
 import { createTRPCRouter, adminProcedure } from "../trpc";
+import { booleanQueryParam } from "../validation";
 import { errors } from "@/server/errors";
 import { retryFeed } from "@/server/services/feeds";
 import {
@@ -320,8 +321,8 @@ const feedHealthEndpoints = {
         .extend({
           urlFilter: z.string().optional(),
           userEmail: z.string().optional(),
-          brokenOnly: z.boolean().optional(),
-          hasSubscribers: z.boolean().optional(),
+          brokenOnly: booleanQueryParam,
+          hasSubscribers: booleanQueryParam,
         })
         .optional()
     )

@@ -133,8 +133,8 @@ function toInputSchema(schema: z.ZodType): Tool["inputSchema"] {
 // Argument Schemas
 // ============================================================================
 
-const entryList = entryListInputSchema.shape;
-const listEntriesArgs = entryListInputSchema.extend({
+const entryList = entryListInputSchema().shape;
+const listEntriesArgs = entryListInputSchema().extend({
   query: entryList.query.describe(
     "Full-text search query over entry title and content (relevance-ranked)"
   ),
@@ -173,8 +173,8 @@ const starEntriesArgs = z.object({
   starred: z.boolean().describe("Star (true) or unstar (false)"),
 });
 
-const entryCount = entryCountInputSchema.shape;
-const countEntriesArgs = entryCountInputSchema.extend({
+const entryCount = entryCountInputSchema().shape;
+const countEntriesArgs = entryCountInputSchema().extend({
   subscriptionId: entryCount.subscriptionId.describe(
     "Count a subscription's unread entries (a feed, a collection or Saved)"
   ),
@@ -275,8 +275,8 @@ const uploadArticleArgs = z.object({
   collectionIds: saveCollectionIdsArg,
 });
 
-const subscriptionList = subscriptionListInputSchema.shape;
-const listSubscriptionsArgs = subscriptionListInputSchema.extend({
+const subscriptionList = subscriptionListInputSchema().shape;
+const listSubscriptionsArgs = subscriptionListInputSchema().extend({
   query: subscriptionList.query.describe("Case-insensitive title search (substring matching)"),
   tagId: subscriptionList.tagId.describe("Filter by tag ID"),
   uncategorized: subscriptionList.uncategorized.describe("Only show subscriptions with no tags"),

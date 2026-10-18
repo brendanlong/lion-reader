@@ -151,7 +151,7 @@ export const entriesRouter = createTRPCRouter({
       },
     })
     .input(
-      entryListInputSchema.extend({
+      entryListInputSchema().extend({
         uncategorized: booleanQueryParam,
         unreadOnly: booleanQueryParam,
         starredOnly: booleanQueryParam,
@@ -186,7 +186,7 @@ export const entriesRouter = createTRPCRouter({
       },
     })
     .input(
-      entryCountInputSchema
+      entryCountInputSchema()
         .extend({ uncategorized: booleanQueryParam, starredOnly: booleanQueryParam })
         .optional()
     )

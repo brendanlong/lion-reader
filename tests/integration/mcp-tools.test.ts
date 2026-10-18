@@ -112,19 +112,28 @@ describe("MCP tool argument validation", () => {
   // The REST handler turns on coercion in the input schemas it parses, which
   // the tools share with the tRPC procedures.
   it.each([
-    ["list_entries", "/entries", ["uncategorized", "unreadOnly", "starredOnly"]],
-    ["count_entries", "/entries/count", ["uncategorized", "starredOnly"]],
-    ["list_subscriptions", "/subscriptions", ["uncategorized", "unreadOnly"]],
-  ])("rejects a string boolean in %s even after a REST call", async (name, path, keys) => {
+    [
+      "list_entries",
+      "/entries",
+      ["uncategorized=false", "unreadOnly=false", "starredOnly=false", "limit=5"],
+    ],
+    ["count_entries", "/entries/count", ["uncategorized=false", "starredOnly=false"]],
+    [
+      "list_subscriptions",
+      "/subscriptions",
+      ["uncategorized=false", "unreadOnly=false", "limit=5"],
+    ],
+  ])("rejects a string arg in %s even after a REST call", async (name, path, params) => {
     const { token } = await createApiToken(userId, ["mcp"]);
-    for (const key of keys) {
+    for (const param of params) {
       const res = await restHandler(
-        new Request(`http://localhost:3000/api/v1${path}?${key}=false`, {
+        new Request(`http://localhost:3000/api/v1${path}?${param}`, {
           headers: { authorization: `Bearer ${token}` },
         })
       );
       expect(res.status).toBe(200);
-      await expect(tool(name).handler(db, userId, { [key]: "false" })).rejects.toMatchObject({
+      const [key, value] = param.split("=");
+      await expect(tool(name).handler(db, userId, { [key]: value })).rejects.toMatchObject({
         code: ErrorCode.InvalidParams,
       });
     }
