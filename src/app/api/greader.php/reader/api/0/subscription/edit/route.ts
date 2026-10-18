@@ -125,6 +125,8 @@ async function editSubscription(
   }
   const addTagIds: string[] = [];
   for (const tagName of labelNames(addTags)) {
+    // Look up before `createTag`, which would also return an existing tag but
+    // rejects a name over the length limit that older tags can still have.
     const tag =
       (await resolveTagByName(db, userId, tagName)) ??
       (await tagsService.createTag(db, userId, { name: tagName })).tag;
