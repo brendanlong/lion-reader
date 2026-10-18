@@ -812,33 +812,21 @@ describe("handleSyncEvent - mark_all_read", () => {
 describe("handleSyncEvent - subscription_created", () => {
   it("adds the subscription and sets absolute counts from the event", () => {
     // A subscription_created with a tag exercises the handler's tag-count
-    // setting (the server only sends untagged created events, but the handler
-    // applies whatever absolute counts it's given).
+    // setting (a merge's survivor can arrive tagged).
     handleSyncEvent(
       utils,
       queryClient,
-      createSubscriptionCreatedEvent({
-        subscription: {
-          id: "sub-new",
-          customTitle: null,
-          subscribedAt: "2024-07-01T00:00:00.000Z",
-          unreadCount: 7,
-          tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
-        },
-        feed: {
-          type: "web",
-          url: "https://example.com/new.xml",
-          title: "New Feed",
-          description: null,
-          siteUrl: null,
-        },
-        counts: createCounts({
-          all: { unread: 25 },
-          starred: { unread: 1 },
-          subscriptions: [{ id: "sub-new", unread: 7 }],
-          tags: [{ id: "tag-1", unread: 22 }],
-        }),
-      })
+      createSubscriptionCreatedEvent(
+        { tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }] },
+        {
+          counts: createCounts({
+            all: { unread: 25 },
+            starred: { unread: 1 },
+            subscriptions: [{ id: "sub-new", unread: 7 }],
+            tags: [{ id: "tag-1", unread: 22 }],
+          }),
+        }
+      )
     );
 
     const newSub = findSubscription("sub-new");
@@ -857,23 +845,7 @@ describe("handleSyncEvent - subscription_created", () => {
     handleSyncEvent(
       utils,
       queryClient,
-      createSubscriptionCreatedEvent({
-        subscription: {
-          id: "sub-full",
-          customTitle: null,
-          subscribedAt: "2024-07-01T00:00:00.000Z",
-          unreadCount: 0,
-          tags: [],
-          fetchFullContent: true,
-        },
-        feed: {
-          type: "web",
-          url: "https://bsky.app/profile/alice/rss",
-          title: "Alice",
-          description: null,
-          siteUrl: null,
-        },
-      })
+      createSubscriptionCreatedEvent({ id: "sub-full", fetchFullContent: true })
     );
 
     expect(findSubscription("sub-full")?.fetchFullContent).toBe(true);
@@ -883,29 +855,18 @@ describe("handleSyncEvent - subscription_created", () => {
     handleSyncEvent(
       utils,
       queryClient,
-      createSubscriptionCreatedEvent({
-        subscription: {
-          id: "sub-new",
-          customTitle: null,
-          subscribedAt: "2024-07-01T00:00:00.000Z",
-          unreadCount: 3,
-          tags: [],
-        },
-        feed: {
-          type: "web",
-          url: "https://example.com/new.xml",
-          title: "Uncat Feed",
-          description: null,
-          siteUrl: null,
-        },
-        counts: createCounts({
-          all: { unread: 21 },
-          starred: { unread: 1 },
-          subscriptions: [{ id: "sub-new", unread: 3 }],
-          tags: [],
-          uncategorized: { unread: 6 },
-        }),
-      })
+      createSubscriptionCreatedEvent(
+        { unreadCount: 3, tags: [] },
+        {
+          counts: createCounts({
+            all: { unread: 21 },
+            starred: { unread: 1 },
+            subscriptions: [{ id: "sub-new", unread: 3 }],
+            tags: [],
+            uncategorized: { unread: 6 },
+          }),
+        }
+      )
     );
 
     const tagsList = getTagsList();
@@ -915,14 +876,17 @@ describe("handleSyncEvent - subscription_created", () => {
   });
 
   it("is idempotent: applying the same created event twice does not inflate", () => {
-    const event = createSubscriptionCreatedEvent({
-      counts: createCounts({
-        all: { unread: 25 },
-        starred: { unread: 1 },
-        subscriptions: [{ id: "sub-new", unread: 7 }],
-        tags: [{ id: "tag-1", unread: 22 }],
-      }),
-    });
+    const event = createSubscriptionCreatedEvent(
+      {},
+      {
+        counts: createCounts({
+          all: { unread: 25 },
+          starred: { unread: 1 },
+          subscriptions: [{ id: "sub-new", unread: 7 }],
+          tags: [{ id: "tag-1", unread: 22 }],
+        }),
+      }
+    );
 
     handleSyncEvent(utils, queryClient, event);
     handleSyncEvent(utils, queryClient, event);
@@ -931,30 +895,32 @@ describe("handleSyncEvent - subscription_created", () => {
     expect(getTagsList()?.items.find((t) => t.id === "tag-1")?.unreadCount).toBe(22);
   });
 
-  it("uses customTitle when provided", () => {
+  it("stores the event's row", () => {
     handleSyncEvent(
       utils,
       queryClient,
-      createSubscriptionCreatedEvent({
-        subscription: {
-          id: "sub-new",
-          customTitle: "My Custom Title",
-          subscribedAt: "2024-07-01T00:00:00.000Z",
-          unreadCount: 0,
-          tags: [],
-        },
-        feed: {
-          type: "web",
-          url: "https://example.com/new.xml",
-          title: "Original Feed Title",
-          description: null,
-          siteUrl: null,
-        },
-      })
+      createSubscriptionCreatedEvent({ title: "My Custom Title", originalTitle: "Feed Title" })
     );
 
     const newSub = findSubscription("sub-new");
-    expect((newSub as Record<string, unknown>)?.title).toBe("My Custom Title");
+    expect(newSub?.title).toBe("My Custom Title");
+    expect(newSub?.originalTitle).toBe("Feed Title");
+  });
+});
+
+// A previous release's publisher, during a deploy, sends no row.
+describe.each([
+  ["subscription_created", () => ({ ...createSubscriptionCreatedEvent(), row: undefined })],
+  ["subscription_updated", () => ({ ...createSubscriptionUpdatedEvent(), row: undefined })],
+])("handleSyncEvent - %s without its row", (_type, event) => {
+  it("fetches the subscription", () => {
+    const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue(undefined);
+
+    handleSyncEvent(utils, queryClient, event());
+
+    expect(fetchSpy.mock.calls.map(([options]) => options.queryKey)).toEqual([
+      [["subscriptions", "get"], { input: { id: event().subscriptionId }, type: "query" }],
+    ]);
   });
 });
 
@@ -964,88 +930,33 @@ describe("handleSyncEvent - subscription_created", () => {
 
 describe("handleSyncEvent - subscription_updated", () => {
   it("stores a changed full-content setting, which the reader reads", () => {
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createSubscriptionUpdatedEvent({ subscriptionId: "sub-1", fetchFullContent: true })
-    );
+    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent({ fetchFullContent: true }));
 
     expect(findSubscription("sub-1")?.fetchFullContent).toBe(true);
-  });
-
-  it("refetches open entries for a full-content change to a subscription it doesn't hold", () => {
-    invalidateSpy.mockClear();
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createSubscriptionUpdatedEvent({ subscriptionId: "sub-unstored", fetchFullContent: true })
-    );
-
-    expect(invalidatedProcedures(invalidateSpy)).toContain("entries.get");
   });
 
   it("updates tags on subscription", () => {
     handleSyncEvent(
       utils,
       queryClient,
-      createSubscriptionUpdatedEvent({
-        subscriptionId: "sub-1",
-        tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }],
-        customTitle: null,
-      })
+      createSubscriptionUpdatedEvent({ tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }] })
     );
 
     const sub1 = findSubscription("sub-1");
     expect(sub1?.tags).toEqual([{ id: "tag-2", name: "Science", color: "#00ff00" }]);
   });
 
-  it("sets customTitle when provided", () => {
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createSubscriptionUpdatedEvent({
-        subscriptionId: "sub-1",
-        tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
-        customTitle: "Custom Name",
-      })
-    );
-
-    const sub1 = findSubscription("sub-1");
-    expect((sub1 as Record<string, unknown>)?.title).toBe("Custom Name");
-  });
-
-  it("reverts to the feed's own title when customTitle is cleared", () => {
-    const update = (customTitle: string | null) =>
-      handleSyncEvent(
-        utils,
-        queryClient,
-        createSubscriptionUpdatedEvent({
-          subscriptionId: "sub-1",
-          tags: [{ id: "tag-1", name: "Tech", color: "#ff0000" }],
-          customTitle,
-        })
-      );
-
-    update("Custom Name");
-    update(null);
-
-    expect(findSubscription("sub-1")?.title).toBe(DEFAULT_SUBSCRIPTIONS[0].originalTitle);
-  });
-
   it("renames the source on the subscription's loaded entries, and only its", () => {
-    const update = (customTitle: string | null) =>
-      handleSyncEvent(
-        utils,
-        queryClient,
-        createSubscriptionUpdatedEvent({ subscriptionId: "sub-1", tags: [], customTitle })
-      );
+    const update = (title: string) =>
+      handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent({ tags: [], title }));
     const feedTitles = () => Object.fromEntries(listedEntries().map((e) => [e.id, e.feedTitle]));
     const before = feedTitles();
 
     update("Custom Name");
+    expect(findSubscription("sub-1")?.title).toBe("Custom Name");
     expect(feedTitles()).toEqual({ ...before, "entry-1": "Custom Name", "entry-2": "Custom Name" });
 
-    update(null);
+    update("Feed One");
     expect(feedTitles()).toEqual({
       ...before,
       "entry-1": DEFAULT_SUBSCRIPTIONS[0].originalTitle,
@@ -1055,7 +966,7 @@ describe("handleSyncEvent - subscription_updated", () => {
 
   it("refetches tag feed counts and the collection picker, not the sidebar sections", () => {
     invalidateSpy.mockClear();
-    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent({ customTitle: "Renamed" }));
+    handleSyncEvent(utils, queryClient, createSubscriptionUpdatedEvent({ title: "Renamed" }));
 
     expect(invalidatedQueries(invalidateSpy)).toEqual([
       { path: "tags.list", input: undefined },
@@ -1064,7 +975,7 @@ describe("handleSyncEvent - subscription_updated", () => {
   });
 
   it("refetches nothing for an update that changes neither tags nor title", () => {
-    const update = createSubscriptionUpdatedEvent({ customTitle: "Renamed" });
+    const update = createSubscriptionUpdatedEvent({ title: "Renamed" });
     handleSyncEvent(utils, queryClient, update);
     invalidateSpy.mockClear();
 
@@ -1074,32 +985,23 @@ describe("handleSyncEvent - subscription_updated", () => {
     expect(invalidatedQueries(invalidateSpy)).toEqual([]);
   });
 
-  it("loads an unstored subscription it moves into a loaded section, not into a collapsed one", () => {
+  it("stores a subscription it doesn't hold from the event, without fetching it", () => {
     const fetchSpy = vi.spyOn(queryClient, "fetchQuery").mockResolvedValue(undefined);
-    const fetchedIds = () =>
-      fetchSpy.mock.calls.map(
-        ([options]) => (options.queryKey[1] as { input: { id: string } }).input.id
-      );
+    invalidateSpy.mockClear();
 
     handleSyncEvent(
       utils,
       queryClient,
       createSubscriptionUpdatedEvent({
-        subscriptionId: "sub-new",
-        tags: [{ id: "tag-x", name: "X", color: null }],
-      })
-    );
-    expect(fetchedIds()).toEqual([]);
-
-    handleSyncEvent(
-      utils,
-      queryClient,
-      createSubscriptionUpdatedEvent({
-        subscriptionId: "sub-new",
+        id: "sub-unstored",
         tags: [{ id: "tag-1", name: "Tech", color: null }],
+        fetchFullContent: true,
       })
     );
-    expect(fetchedIds()).toEqual(["sub-new"]);
+
+    expect(findSubscription("sub-unstored")?.fetchFullContent).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(invalidatedProcedures(invalidateSpy)).not.toContain("entries.get");
   });
 });
 
@@ -1735,28 +1637,21 @@ describe("handleSyncEvent - event sequences", () => {
     handleSyncEvent(
       utils,
       queryClient,
-      createSubscriptionCreatedEvent({
-        subscription: {
+      createSubscriptionCreatedEvent(
+        {
           id: "sub-seq",
-          customTitle: null,
-          subscribedAt: "2024-07-01T00:00:00.000Z",
           unreadCount: 2,
           tags: [{ id: "tag-2", name: "Science", color: "#00ff00" }],
         },
-        feed: {
-          type: "web",
-          url: "https://example.com/seq.xml",
-          title: "Seq Feed",
-          description: null,
-          siteUrl: null,
-        },
-        counts: createCounts({
-          all: { unread: 20 },
-          starred: { unread: 1 },
-          subscriptions: [{ id: "sub-seq", unread: 2 }],
-          tags: [{ id: "tag-2", unread: 12 }],
-        }),
-      })
+        {
+          counts: createCounts({
+            all: { unread: 20 },
+            starred: { unread: 1 },
+            subscriptions: [{ id: "sub-seq", unread: 2 }],
+            tags: [{ id: "tag-2", unread: 12 }],
+          }),
+        }
+      )
     );
 
     expect(getEntriesCount({})?.unread).toBe(20); // 18 + 2
@@ -1788,29 +1683,18 @@ describe("handleSyncEvent - event sequences", () => {
     handleSyncEvent(
       utils,
       queryClient,
-      createSubscriptionCreatedEvent({
-        subscription: {
-          id: "sub-temp",
-          customTitle: null,
-          subscribedAt: "2024-07-01T00:00:00.000Z",
-          unreadCount: 5,
-          tags: [],
-        },
-        feed: {
-          type: "web",
-          url: "https://example.com/temp.xml",
-          title: "Temp Feed",
-          description: null,
-          siteUrl: null,
-        },
-        counts: createCounts({
-          all: { unread: 23 },
-          starred: { unread: 1 },
-          subscriptions: [{ id: "sub-temp", unread: 5 }],
-          tags: [],
-          uncategorized: { unread: 8 },
-        }),
-      })
+      createSubscriptionCreatedEvent(
+        { id: "sub-temp", unreadCount: 5, tags: [] },
+        {
+          counts: createCounts({
+            all: { unread: 23 },
+            starred: { unread: 1 },
+            subscriptions: [{ id: "sub-temp", unread: 5 }],
+            tags: [],
+            uncategorized: { unread: 8 },
+          }),
+        }
+      )
     );
 
     expect(getEntriesCount({})?.unread).toBe(23); // 18 + 5

@@ -30,8 +30,23 @@ import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription"
 import { setLiveAnnouncement } from "@/lib/site-status/announcement-store";
 
 // Re-export SyncEvent type from the shared schema (single source of truth)
-import type { NewEntryListData, SyncEvent } from "@/lib/events/schemas";
+import type { NewEntryListData, SyncEvent, SyncSubscription } from "@/lib/events/schemas";
+import type { StampedSubscriptionRow } from "@/lib/local-db/subscriptions";
 export type { SyncEvent } from "@/lib/events/schemas";
+
+function toSubscriptionRow(subscription: SyncSubscription): StampedSubscriptionRow {
+  return { ...subscription, subscribedAt: new Date(subscription.subscribedAt) };
+}
+
+/**
+ * Loads a subscription whose event came without its row (from a previous
+ * release, during a deploy) into the store.
+ */
+function fetchSubscription(utils: TRPCClientUtils, id: string): void {
+  utils.subscriptions.get.fetch({ id }, { staleTime: 0 }).catch(() => {
+    // Gone already, or offline: the next list refresh settles it.
+  });
+}
 
 /** Builds the entry row for an event's list-item payload. */
 function toEntryRow(
@@ -171,41 +186,22 @@ export function handleSyncEvent(
       handleMarkAllRead(utils, queryClient, event.counts);
       break;
 
-    case "subscription_created": {
-      const { subscription, feed } = event;
-      handleSubscriptionCreated(
-        utils,
-        {
-          id: subscription.id,
-          type: feed.type,
-          url: feed.url,
-          title: subscription.customTitle ?? feed.title,
-          originalTitle: feed.title,
-          description: feed.description,
-          siteUrl: feed.siteUrl,
-          subscribedAt: new Date(subscription.subscribedAt),
-          unreadCount: subscription.unreadCount,
-          tags: subscription.tags,
-          fetchFullContent: subscription.fetchFullContent ?? false,
-        },
-        queryClient,
-        event.counts
-      );
+    case "subscription_created":
+      if (event.row) {
+        handleSubscriptionCreated(utils, toSubscriptionRow(event.row), queryClient, event.counts);
+      } else {
+        fetchSubscription(utils, event.subscriptionId);
+        if (event.counts) applyUnreadCounts(utils, queryClient, event.counts);
+      }
       break;
-    }
 
-    case "subscription_updated": {
-      // A cleared custom title falls back to the feed's own, which only a
-      // stored row knows.
-      const stored = db.subscriptions.rows.getSynced(event.subscriptionId);
-      applySubscriptionUpdate(utils, queryClient, {
-        id: event.subscriptionId,
-        tags: event.tags,
-        title: event.customTitle ?? stored?.originalTitle,
-        fetchFullContent: event.fetchFullContent,
-      });
+    case "subscription_updated":
+      if (event.row) {
+        applySubscriptionUpdate(utils, queryClient, toSubscriptionRow(event.row));
+      } else {
+        fetchSubscription(utils, event.subscriptionId);
+      }
       break;
-    }
 
     case "subscription_deleted":
       // handleSubscriptionDeleted is idempotent: it skips the structural removal

@@ -17,12 +17,11 @@ import {
   entries,
   feeds,
   subscriptions,
-  subscriptionTags,
   userEntries,
   tags,
   entryTombstones,
 } from "@/server/db/schema";
-import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { serverSyncEventSchema } from "@/lib/events/schemas";
 import {
   entryFeedTitleSql,
   entryMemberships,
@@ -39,44 +38,10 @@ import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
 import {
+  getSubscriptionsByIds,
   isCollectionSubscription,
   isUserManagedSubscription,
 } from "@/server/services/subscriptions";
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * Batch-fetch tags grouped by subscription ID.
- * Used by sync.events to avoid N+1 queries.
- */
-async function fetchTagsBySubscriptionIds(
-  db: Database,
-  subscriptionIds: string[]
-): Promise<Map<string, Array<z.infer<typeof syncTagSchema>>>> {
-  const result = new Map<string, Array<z.infer<typeof syncTagSchema>>>();
-  if (subscriptionIds.length === 0) return result;
-
-  const rows = await db
-    .select({
-      subscriptionId: subscriptionTags.subscriptionId,
-      tagId: tags.id,
-      tagName: tags.name,
-      tagColor: tags.color,
-    })
-    .from(subscriptionTags)
-    .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .where(inArray(subscriptionTags.subscriptionId, subscriptionIds));
-
-  for (const row of rows) {
-    const existing = result.get(row.subscriptionId) ?? [];
-    existing.push({ id: row.tagId, name: row.tagName, color: row.tagColor });
-    result.set(row.subscriptionId, existing);
-  }
-
-  return result;
-}
 
 // ============================================================================
 // Constants
@@ -692,12 +657,12 @@ export async function collectSyncEvents(
   if (subscriptionsCursor) {
     const subscriptionResults = await db
       .select({
-        subscription: subscriptions,
-        feed: feeds,
+        id: subscriptions.id,
+        subscribedAt: subscriptions.subscribedAt,
+        unsubscribedAt: subscriptions.unsubscribedAt,
         updatedAtInstant: sql`${subscriptions.updatedAt}`.mapWith(parseTimestamptz),
       })
       .from(subscriptions)
-      .leftJoin(feeds, eq(subscriptions.feedId, feeds.id))
       .where(
         and(
           eq(subscriptions.userId, userId),
@@ -709,15 +674,14 @@ export async function collectSyncEvents(
       )
       .orderBy(subscriptions.updatedAt);
 
-    // Collect active subscription IDs for batch tag fetching
-    const activeSubscriptions = subscriptionResults.filter(
-      ({ subscription }) => subscription.unsubscribedAt === null
-    );
-
-    // Batch-fetch tags for all active subscriptions in one query
-    const tagsBySubscription = await fetchTagsBySubscriptionIds(
-      db,
-      activeSubscriptions.map(({ subscription }) => subscription.id)
+    const activeRows = new Map(
+      (
+        await getSubscriptionsByIds(
+          db,
+          userId,
+          subscriptionResults.flatMap((row) => (row.unsubscribedAt === null ? [row.id] : []))
+        )
+      ).map((row) => [row.id, row])
     );
 
     const lastSubscription = subscriptionResults.at(-1);
@@ -726,31 +690,25 @@ export async function collectSyncEvents(
     }
 
     const subscriptionsCursorDate = new Date(subscriptionsCursor);
-    for (const { subscription, feed, updatedAtInstant } of subscriptionResults) {
+    for (const { id, subscribedAt, unsubscribedAt, updatedAtInstant } of subscriptionResults) {
       const updatedAtIso = updatedAtInstant.toString();
       const stamps = {
         timestamp: updatedAtIso,
         updatedAt: updatedAtIso,
         _sortTime: updatedAtInstant,
       };
-      const subscriptionTagList = tagsBySubscription.get(subscription.id) ?? [];
-      if (subscription.unsubscribedAt !== null) {
-        allEvents.push({
-          type: "subscription_deleted" as const,
-          subscriptionId: subscription.id,
-          ...stamps,
-        });
-      } else if (subscription.subscribedAt > subscriptionsCursorDate) {
+      // Missing when unsubscribed since the first read: that unsubscribe moved
+      // its updated_at past this page's cursor, so the next sync deletes it.
+      const row = activeRows.get(id);
+      if (unsubscribedAt !== null) {
+        allEvents.push({ type: "subscription_deleted" as const, subscriptionId: id, ...stamps });
+      } else if (!row) {
+        continue;
+      } else if (subscribedAt > subscriptionsCursorDate) {
         // Subscribed since the cursor: new, not changed.
-        allEvents.push({
-          ...subscriptionCreatedEvent(subscription, subscriptionTagList, feed),
-          ...stamps,
-        });
+        allEvents.push({ ...subscriptionCreatedEvent(row), ...stamps });
       } else {
-        allEvents.push({
-          ...subscriptionUpdatedEvent(subscription, subscriptionTagList),
-          ...stamps,
-        });
+        allEvents.push({ ...subscriptionUpdatedEvent(row), ...stamps });
       }
     }
   }

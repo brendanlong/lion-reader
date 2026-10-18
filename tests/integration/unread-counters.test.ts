@@ -98,7 +98,7 @@ describe("unread counters (triggers + reconciliation)", () => {
 
     const result = await createSubscription(db, userId, { url });
 
-    expect(await subscriptionCounters(result.subscriptionId)).toEqual({ unread: 2 });
+    expect(await subscriptionCounters(result.subscription.id)).toEqual({ unread: 2 });
     await expectNoDrift();
   });
 

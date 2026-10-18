@@ -253,20 +253,17 @@ internal class SyncWriter(private val db: LionReaderDatabase) {
                         )
                 }
             }
-            is SyncEvent.SubscriptionCreated ->
-                with(event) {
-                    store.upsertSubscription(
-                        subscription.id,
-                        subscription.customTitle ?: feed.title,
-                        feed.title,
-                        feed.url,
-                        feed.type,
-                        subscription.tags,
-                    )
-                    db.entryQueries.refreshFeedTitlesFor(subscription.id)
-                }
+            is SyncEvent.SubscriptionCreated -> {
+                store.upsertSubscription(event.subscriptionRow)
+                db.entryQueries.refreshFeedTitlesFor(event.subscriptionId)
+            }
             is SyncEvent.SubscriptionUpdated -> {
-                store.updateSubscription(event.subscriptionId, event.customTitle, event.tags)
+                val row = event.row
+                if (row != null) {
+                    store.upsertSubscription(row)
+                } else {
+                    store.updateSubscription(event.subscriptionId, event.customTitle, event.tags)
+                }
                 db.entryQueries.refreshFeedTitlesFor(event.subscriptionId)
             }
             is SyncEvent.SubscriptionDeleted -> {

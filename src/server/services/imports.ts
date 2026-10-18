@@ -435,7 +435,7 @@ export async function processOpmlImport(
           siteUrl: opmlFeed.htmlUrl ?? null,
         });
 
-        const subscriptionId = subscriptionResult.subscriptionId;
+        const subscriptionId = subscriptionResult.subscription.id;
 
         await applyImportTags(db, userId, subscriptionId, opmlFeed.category ?? [], tagNameToInfo);
 

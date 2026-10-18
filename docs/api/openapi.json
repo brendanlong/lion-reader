@@ -12755,6 +12755,106 @@
                               "updatedAt": {
                                 "type": "string"
                               },
+                              "row": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "web",
+                                      "email",
+                                      "saved",
+                                      "collection"
+                                    ]
+                                  },
+                                  "url": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "title": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "originalTitle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "description": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "siteUrl": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "subscribedAt": {
+                                    "type": "string"
+                                  },
+                                  "unreadCount": {
+                                    "type": "number"
+                                  },
+                                  "unreadCountAsOf": {
+                                    "type": "string"
+                                  },
+                                  "tags": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "color": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "name",
+                                        "color"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "fetchFullContent": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "type",
+                                  "url",
+                                  "title",
+                                  "originalTitle",
+                                  "description",
+                                  "siteUrl",
+                                  "subscribedAt",
+                                  "unreadCount",
+                                  "unreadCountAsOf",
+                                  "tags",
+                                  "fetchFullContent"
+                                ],
+                                "additionalProperties": false
+                              },
                               "subscription": {
                                 "type": "object",
                                 "properties": {
@@ -12762,6 +12862,7 @@
                                     "type": "string"
                                   },
                                   "customTitle": {
+                                    "deprecated": true,
                                     "type": [
                                       "string",
                                       "null"
@@ -12810,7 +12911,8 @@
                                   "unreadCount",
                                   "tags"
                                 ],
-                                "additionalProperties": false
+                                "additionalProperties": false,
+                                "deprecated": true
                               },
                               "feed": {
                                 "type": "object",
@@ -12856,7 +12958,8 @@
                                   "description",
                                   "siteUrl"
                                 ],
-                                "additionalProperties": false
+                                "additionalProperties": false,
+                                "deprecated": true
                               },
                               "counts": {
                                 "type": "object",
@@ -13126,6 +13229,106 @@
                               "subscriptionId": {
                                 "type": "string"
                               },
+                              "row": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "web",
+                                      "email",
+                                      "saved",
+                                      "collection"
+                                    ]
+                                  },
+                                  "url": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "title": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "originalTitle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "description": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "siteUrl": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "subscribedAt": {
+                                    "type": "string"
+                                  },
+                                  "unreadCount": {
+                                    "type": "number"
+                                  },
+                                  "unreadCountAsOf": {
+                                    "type": "string"
+                                  },
+                                  "tags": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "color": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "name",
+                                        "color"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "fetchFullContent": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "type",
+                                  "url",
+                                  "title",
+                                  "originalTitle",
+                                  "description",
+                                  "siteUrl",
+                                  "subscribedAt",
+                                  "unreadCount",
+                                  "unreadCountAsOf",
+                                  "tags",
+                                  "fetchFullContent"
+                                ],
+                                "additionalProperties": false
+                              },
                               "tags": {
                                 "type": "array",
                                 "items": {
@@ -13150,15 +13353,18 @@
                                     "color"
                                   ],
                                   "additionalProperties": false
-                                }
+                                },
+                                "deprecated": true
                               },
                               "customTitle": {
+                                "deprecated": true,
                                 "type": [
                                   "string",
                                   "null"
                                 ]
                               },
                               "fetchFullContent": {
+                                "deprecated": true,
                                 "type": "boolean"
                               },
                               "timestamp": {

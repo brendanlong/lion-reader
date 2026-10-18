@@ -63,33 +63,6 @@ const createSubscriptionOutputSchema = subscriptionsService.subscriptionSchema.e
 });
 
 // ============================================================================
-// Subscription Helpers
-// ============================================================================
-
-/**
- * Format a CreateSubscriptionResult into the API response shape.
- */
-function formatSubscriptionResponse(
-  result: subscribeService.CreateSubscriptionResult
-): z.infer<typeof createSubscriptionOutputSchema> {
-  return {
-    id: result.subscriptionId,
-    type: result.feed.type,
-    url: result.feed.url,
-    title: result.customTitle ?? result.feed.title,
-    originalTitle: result.feed.title,
-    description: result.feed.description,
-    siteUrl: result.feed.siteUrl,
-    subscribedAt: result.subscribedAt,
-    unreadCount: result.unreadCount,
-    unreadCountAsOf: result.unreadCountAsOf,
-    tags: [],
-    fetchFullContent: result.fetchFullContent,
-    counts: result.counts,
-  };
-}
-
-// ============================================================================
 // Router
 // ============================================================================
 
@@ -126,8 +99,12 @@ export const subscriptionsRouter = createTRPCRouter({
     )
     .output(createSubscriptionOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const result = await subscribeService.subscribeToUrl(ctx.db, ctx.session.user.id, input.url);
-      return formatSubscriptionResponse(result);
+      const { subscription, counts } = await subscribeService.subscribeToUrl(
+        ctx.db,
+        ctx.session.user.id,
+        input.url
+      );
+      return { ...subscription, counts };
     }),
 
   /**
@@ -380,15 +357,14 @@ export const subscriptionsRouter = createTRPCRouter({
       })
     )
     .output(subscriptionsService.subscriptionSchema)
-    .mutation(async ({ ctx, input }) => {
-      await subscriptionUpdatesService.setSubscriptionTags(
+    .mutation(async ({ ctx, input }) =>
+      subscriptionUpdatesService.setSubscriptionTags(
         ctx.db,
         ctx.session.user.id,
         input.id,
         input.tagIds
-      );
-      return subscriptionsService.getSubscription(ctx.db, ctx.session.user.id, input.id);
-    }),
+      )
+    ),
 });
 
 // Export helper for use in background job handlers

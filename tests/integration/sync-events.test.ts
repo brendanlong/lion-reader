@@ -479,7 +479,7 @@ describe("sync.events", () => {
       expect(updatedEvents[0]).toMatchObject({
         type: "subscription_updated",
         subscriptionId: subId,
-        customTitle: "My Title",
+        row: { id: subId, title: "My Title" },
       });
     });
 

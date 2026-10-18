@@ -1255,6 +1255,54 @@ class SyncEngineTest {
     }
 
     @Test
+    fun subscriptionEventsStoreTheirRow() = runTest {
+        serve()
+        engine.sync()
+        val tech = TagRef("tag-1", "Tech")
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.SubscriptionCreated(
+                        "sub-2",
+                        row =
+                            Subscription(
+                                "sub-2",
+                                type = "web",
+                                title = "Mine",
+                                originalTitle = "Theirs",
+                                tags = emptyList(),
+                            ),
+                    )
+                )
+        )
+        engine.sync(downloadContent = false)
+        suspend fun sub2() = reader.navigation().first().subscriptions.single { it.id == "sub-2" }
+        assertEquals("Mine", sub2().title)
+
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.SubscriptionUpdated(
+                        "sub-2",
+                        row =
+                            Subscription(
+                                "sub-2",
+                                type = "web",
+                                title = "Theirs",
+                                originalTitle = "Theirs",
+                                tags = listOf(tech),
+                            ),
+                    )
+                )
+        )
+        engine.sync(downloadContent = false)
+
+        assertEquals("Theirs", sub2().title)
+        assertEquals(listOf("tag-1"), sub2().tagIds)
+    }
+
+    /** A server that predates subscription events' `row`. */
+    @Test
     fun clearingACustomTitleShowsTheFeedsOwn() = runTest {
         server.subscriptions +=
             Subscription("sub-1", title = "Mine", originalTitle = "Theirs", tags = emptyList())
@@ -1263,12 +1311,14 @@ class SyncEngineTest {
             events =
                 listOf(
                     SyncEvent.SubscriptionCreated(
-                        com.lionreader.shared.api.EventSubscription(
-                            "sub-2",
-                            customTitle = "Also mine",
-                            tags = emptyList(),
-                        ),
-                        com.lionreader.shared.api.EventFeed(title = "Also theirs"),
+                        "sub-2",
+                        subscription =
+                            com.lionreader.shared.api.EventSubscription(
+                                "sub-2",
+                                customTitle = "Also mine",
+                                tags = emptyList(),
+                            ),
+                        feed = com.lionreader.shared.api.EventFeed(title = "Also theirs"),
                     )
                 )
         )
@@ -1279,8 +1329,8 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = null),
-                    SyncEvent.SubscriptionUpdated("sub-2", emptyList(), customTitle = null),
+                    SyncEvent.SubscriptionUpdated("sub-1", tags = emptyList(), customTitle = null),
+                    SyncEvent.SubscriptionUpdated("sub-2", tags = emptyList(), customTitle = null),
                 )
         )
         engine.sync(downloadContent = false)
