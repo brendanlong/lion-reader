@@ -19,6 +19,7 @@ import com.lionreader.shared.account.AccountStorage
 import com.lionreader.shared.account.Accounts
 import com.lionreader.shared.account.BackgroundSync
 import com.lionreader.shared.account.KeyValueStore
+import com.lionreader.shared.api.CloudSpeechPause
 import com.lionreader.shared.data.AppSchema
 import com.lionreader.shared.narration.SpeechUnavailable
 import com.lionreader.shared.settings.AppSettings
@@ -112,8 +113,7 @@ class AppGraph(
                     session.connection.api,
                     choice.model.id,
                     choice.voice,
-                    // The server takes up to 2 seconds.
-                    settings.cloudVoicePauseSeconds.coerceIn(0f, 2f),
+                    settings.cloudVoicePauseSeconds.coerceIn(0f, CloudSpeechPause.MAX_SECONDS),
                     cloudVoiceCache(session),
                     session.work,
                     cloudSpeechRequests,

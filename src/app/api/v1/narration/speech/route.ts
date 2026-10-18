@@ -4,7 +4,9 @@
  * One chunk of narration spoken by a cloud voice, streamed as AAC in
  * fragmented MP4 while the provider generates it (see `speech-encoding.ts`),
  * so playback can start on the first bytes. It's a route handler because tRPC
- * (and so the generated REST API) can't stream a binary body.
+ * (and so the generated REST API) can't stream a binary body; the OpenAPI
+ * document describes it by hand (`src/server/trpc/openapi.ts`), so keep its
+ * statuses there in step.
  *
  * Takes the web's session or the app's token (see `route-auth.ts`). Browser
  * requests are CSRF-safe the way tRPC's are: the session cookie is
@@ -17,8 +19,7 @@
  * started cuts the stream short.
  */
 
-import { z } from "zod";
-import { MAX_CLOUD_SPEECH_CHARS, MAX_CLOUD_SPEECH_PAUSE_SECONDS } from "@/lib/narration/constants";
+import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import {
   BodyReadTimeoutError,
@@ -26,7 +27,7 @@ import {
   readRequestBufferWithSizeLimit,
 } from "@/server/http/fetch";
 import { getUserApiKeys } from "@/server/services/user-api-keys";
-import { speechErrorAnswer, streamSpeech } from "@/server/services/speech";
+import { speechErrorAnswer, speechRequestSchema, streamSpeech } from "@/server/services/speech";
 import {
   checkRateLimit,
   getClientIdentifier,
@@ -37,16 +38,6 @@ import {
 
 /** Far more than the largest valid body (UTF-8 and JSON escapes included). */
 const MAX_BODY_BYTES = 8 * MAX_CLOUD_SPEECH_CHARS + 1024;
-
-const speechRequestSchema = z.object({
-  /** `provider:model` ref; null means the default model. */
-  model: z.string().max(200).nullable(),
-  /** Null means the model's default voice. */
-  voice: z.string().max(200).nullable(),
-  text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
-  /** Silence after the speech, so chunks played back to back pause like sentences do. */
-  pauseSeconds: z.number().min(0).max(MAX_CLOUD_SPEECH_PAUSE_SECONDS).default(0),
-});
 
 function errorResponse(
   status: number,

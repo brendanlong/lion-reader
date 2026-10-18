@@ -273,9 +273,6 @@ sealed interface SyncEvent {
 
 @Serializable data class Me(val user: AccountUser)
 
-/** The server's limit on one speech request. */
-const val MAX_CLOUD_SPEECH_CHARS = 1000
-
 /** [id] is what speech requests take; [name] is for showing. */
 @Serializable data class CloudVoice(val id: String, val name: String)
 

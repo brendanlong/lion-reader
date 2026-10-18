@@ -51,7 +51,7 @@ import {
  * Maximum number of entries to return in a single sync response.
  * Prevents extremely large responses for initial syncs.
  */
-const MAX_ENTRIES = 500;
+export const MAX_SYNC_PAGE_ENTRIES = 500;
 
 /**
  * Sync cursor schema.
@@ -389,7 +389,7 @@ export async function collectSyncEvents(
   // Keyset pagination on (GREATEST(...), entry_id): markAllEntriesRead (and
   // the subscribe-time insert) stamp one identical timestamp onto hundreds
   // of rows, so a strict timestamp `>` cursor would drop every tied row past
-  // the MAX_ENTRIES boundary permanently. Carrying the entry id as a
+  // the MAX_SYNC_PAGE_ENTRIES boundary permanently. Carrying the entry id as a
   // tiebreaker (same pattern as listEntries) lets the client page within a
   // tied-timestamp group. See #1080.
   //
@@ -450,7 +450,7 @@ export async function collectSyncEvents(
     //            `last_entries_updated_at >= cursor` pre-filter would then
     //            wrongly prune a feed once the cursor advances past
     //            last_entries_updated_at but not past the entries — silently
-    //            and permanently dropping the tail of a >MAX_ENTRIES same-poll
+    //            and permanently dropping the tail of a >MAX_SYNC_PAGE_ENTRIES same-poll
     //            content burst from the delta. The per-feed index seek already
     //            bounds the work; no pre-filter is needed.
     //   Arm B2 — same, for emails, driven from the email subscriptions that
@@ -592,9 +592,9 @@ export async function collectSyncEvents(
       )
       // The origin join yields at most one subscription per row.
       .orderBy(greatest, entries.id)
-      .limit(MAX_ENTRIES + 1);
+      .limit(MAX_SYNC_PAGE_ENTRIES + 1);
 
-    if (changedEntryResults.length > MAX_ENTRIES) {
+    if (changedEntryResults.length > MAX_SYNC_PAGE_ENTRIES) {
       hasMore = true;
       changedEntryResults.pop();
     }
@@ -870,9 +870,9 @@ export async function collectSyncChanges(
           )
         )
         .orderBy(entryTombstones.deletedAt)
-        .limit(MAX_ENTRIES + 1)
+        .limit(MAX_SYNC_PAGE_ENTRIES + 1)
     : [];
-  const moreTombstones = tombstones.length > MAX_ENTRIES;
+  const moreTombstones = tombstones.length > MAX_SYNC_PAGE_ENTRIES;
   if (moreTombstones) {
     tombstones.pop();
   }

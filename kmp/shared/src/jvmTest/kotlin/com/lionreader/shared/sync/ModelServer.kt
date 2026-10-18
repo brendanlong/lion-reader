@@ -14,6 +14,7 @@ import com.lionreader.shared.api.GetManyResponse
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SAVED_TYPE
+import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.api.Subscription
@@ -282,7 +283,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))
                 "/entries" -> {
                     val limit = params["limit"]?.toInt() ?: 100
-                    if (limit !in 1..ServerLimits.LIST_LIMIT) return@run badRequest(request)
+                    if (limit !in 1..ServerLimits.ENTRIES_PAGE_SIZE) return@run badRequest(request)
                     list(
                         params["sortBy"] == "readChanged",
                         params["starredOnly"] == "true",
@@ -294,7 +295,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 }
                 "/entries/batch" -> {
                     val ids = body(request, GetManyRequest.serializer()).ids
-                    if (ids.size !in 1..ServerLimits.BATCH_IDS) return@run badRequest(request)
+                    if (ids.size !in 1..ServerLimits.ENTRIES_PAGE_SIZE)
+                        return@run badRequest(request)
                     encode(
                         GetManyResponse.serializer(),
                         GetManyResponse(

@@ -55,6 +55,7 @@ import com.lionreader.app.AppGraph
 import com.lionreader.app.R
 import com.lionreader.app.narration.VoiceOption
 import com.lionreader.app.openWebPage
+import com.lionreader.shared.api.CloudSpeechPause
 import com.lionreader.shared.api.VoiceModel
 import com.lionreader.shared.api.VoiceModels
 import com.lionreader.shared.settings.AppSettings
@@ -370,8 +371,8 @@ private fun NarrationSettings(
                         onValueChange = {
                             pause = (it * STEPS_PER_SECOND).roundToInt() / STEPS_PER_SECOND
                         },
-                        valueRange = 0f..MAX_PAUSE,
-                        steps = (MAX_PAUSE * STEPS_PER_SECOND).roundToInt() - 1,
+                        valueRange = 0f..CloudSpeechPause.MAX_SECONDS,
+                        steps = (CloudSpeechPause.MAX_SECONDS * STEPS_PER_SECOND).roundToInt() - 1,
                         onValueChangeFinished = {
                             update { it.copy(cloudVoicePauseSeconds = pause) }
                         },
@@ -412,9 +413,7 @@ private fun NarrationSettings(
     }
 }
 
-/** The server takes up to 2 seconds. */
-private const val MAX_PAUSE = 2f
-private const val STEPS_PER_SECOND = 20f
+private const val STEPS_PER_SECOND = 1f / CloudSpeechPause.STEP_SECONDS
 
 private fun pauseLabel(seconds: Float): String =
     if (seconds == 0f) "None" else "${shortNumber(seconds)} s"

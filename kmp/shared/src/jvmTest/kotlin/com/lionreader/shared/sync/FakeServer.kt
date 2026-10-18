@@ -18,6 +18,7 @@ import com.lionreader.shared.api.SAVED_TYPE
 import com.lionreader.shared.api.SaveArticleRequest
 import com.lionreader.shared.api.SaveArticleResponse
 import com.lionreader.shared.api.SavedArticle
+import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.Subscription
 import com.lionreader.shared.api.SubscriptionPage
@@ -221,7 +222,7 @@ class FakeServer {
                         ?: SyncChanges(emptyList(), false, cursors, emptyList(), false),
                 )
             path == "/entries" &&
-                (request.url.parameters["limit"]?.toInt() ?: 0) > ServerLimits.LIST_LIMIT ->
+                (request.url.parameters["limit"]?.toInt() ?: 0) > ServerLimits.ENTRIES_PAGE_SIZE ->
                 respond("{}", HttpStatusCode.BadRequest, jsonHeaders)
             path == "/entries" && entryPageFailures.remove(++entryPageRequests) ->
                 respond("{}", HttpStatusCode.ServiceUnavailable, jsonHeaders)
@@ -260,7 +261,7 @@ class FakeServer {
             }
             path == "/entries/batch" -> {
                 val ids = body(request, GetManyRequest.serializer()).ids
-                if (ids.size !in 1..ServerLimits.BATCH_IDS) {
+                if (ids.size !in 1..ServerLimits.ENTRIES_PAGE_SIZE) {
                     respond("{}", HttpStatusCode.BadRequest, jsonHeaders)
                 } else {
                     duringBatch?.invoke(ids)
@@ -376,21 +377,6 @@ class FakeServer {
 
 /** The Saved subscription's id in [FakeServer]'s answers. */
 const val SAVED_SUBSCRIPTION = "saved-sub"
-
-/**
- * What the real endpoints accept per request (src/server/trpc/routers/entries.ts,
- * src/server/services/sync.ts).
- */
-object ServerLimits {
-    /** `/entries/batch` ids. */
-    const val BATCH_IDS = 100
-    /** `/entries` `limit`. */
-    const val LIST_LIMIT = 100
-    /** `/entries/mark-read` and `/entries/starred` entries. */
-    const val STATE_WRITE_ENTRIES = 1000
-    /** Entries in one `sync.changes` page. */
-    const val SYNC_PAGE_ENTRIES = 500
-}
 
 fun FullEntry.listItem() =
     EntryListItem(
