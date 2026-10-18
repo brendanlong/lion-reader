@@ -309,7 +309,7 @@ export function isClientError(error: TRPCError): boolean {
  * everything else propagates, so a real bug still reaches Sentry instead of
  * the client's mistake becoming an unhandled 500.
  */
-export function clientErrorStatus(error: unknown): number | null {
+function clientErrorStatus(error: unknown): number | null {
   if (!(error instanceof TRPCError) || !isClientError(error)) return null;
   return getHTTPStatusCodeFromError(error);
 }
