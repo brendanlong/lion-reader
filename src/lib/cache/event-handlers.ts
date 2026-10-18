@@ -186,7 +186,7 @@ export function handleSyncEvent(
           subscribedAt: new Date(subscription.subscribedAt),
           unreadCount: subscription.unreadCount,
           tags: subscription.tags,
-          fetchFullContent: false,
+          fetchFullContent: subscription.fetchFullContent ?? false,
         },
         queryClient,
         event.counts

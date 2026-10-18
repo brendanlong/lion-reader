@@ -186,6 +186,7 @@ async function finishCreate(
         customTitle: name,
         subscribedAt: now,
         unreadCount: 0,
+        fetchFullContent: false,
       },
       [],
       null

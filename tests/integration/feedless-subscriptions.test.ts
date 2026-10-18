@@ -235,6 +235,7 @@ describe("subscriptions without a feed (#1846)", () => {
           subscribedAt: expect.any(String),
           unreadCount: 0,
           tags: [],
+          fetchFullContent: false,
         },
         feed: {
           type: "collection",

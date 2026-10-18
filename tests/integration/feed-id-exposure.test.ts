@@ -108,6 +108,7 @@ describe("feed IDs never reach clients", () => {
             customTitle: null,
             subscribedAt: new Date(),
             unreadCount: 0,
+            fetchFullContent: false,
           },
           [],
           {

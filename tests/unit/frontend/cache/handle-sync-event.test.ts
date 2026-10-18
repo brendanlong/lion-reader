@@ -851,6 +851,34 @@ describe("handleSyncEvent - subscription_created", () => {
     expect(getEntriesCount({})?.unread).toBe(25); // set
   });
 
+  // A Bluesky profile or a resubscribe can start with full content on, and
+  // this event usually beats the mutation response into the store.
+  it("stores the subscription's full-content setting", () => {
+    handleSyncEvent(
+      utils,
+      queryClient,
+      createSubscriptionCreatedEvent({
+        subscription: {
+          id: "sub-full",
+          customTitle: null,
+          subscribedAt: "2024-07-01T00:00:00.000Z",
+          unreadCount: 0,
+          tags: [],
+          fetchFullContent: true,
+        },
+        feed: {
+          type: "web",
+          url: "https://bsky.app/profile/alice/rss",
+          title: "Alice",
+          description: null,
+          siteUrl: null,
+        },
+      })
+    );
+
+    expect(findSubscription("sub-full")?.fetchFullContent).toBe(true);
+  });
+
   it("sets uncategorized count from the event for an untagged subscription", () => {
     handleSyncEvent(
       utils,
