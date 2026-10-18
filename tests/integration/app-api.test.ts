@@ -130,6 +130,7 @@ describe("app token authentication", () => {
       filename: "notes.unsupported",
     });
     expect(upload.status).toBe(400);
+    expect(JSON.stringify(await upload.json())).toContain("Unsupported file type");
   });
 
   it("rejects the app's token on session-only endpoints", async () => {
