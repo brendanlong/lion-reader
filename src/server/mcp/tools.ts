@@ -14,7 +14,9 @@
 import { z } from "zod";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
+import { users } from "@/server/db/schema";
 import { uuidSchema, tagColorSchema } from "@/server/trpc/validation";
 import { getAppErrorCode } from "@/server/errors";
 import * as entriesService from "@/server/services/entries";
@@ -378,10 +380,14 @@ function buildTools(): Tool[] {
       inputSchema: toInputSchema(listEntriesArgs),
       handler: async (db, userId, args) => {
         const params = parseArgs(listEntriesArgs, args);
+        const [user] = await db
+          .select({ showSpam: users.showSpam })
+          .from(users)
+          .where(eq(users.id, userId));
         return entriesService.listEntries(db, {
           userId,
           ...params,
-          showSpam: false, // Default to hiding spam for MCP
+          showSpam: user?.showSpam ?? false,
         });
       },
     },

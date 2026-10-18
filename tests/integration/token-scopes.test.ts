@@ -135,9 +135,9 @@ describe("API token scope enforcement", () => {
       await expectForbidden(caller.saved.save({ url: "not-a-url" }));
     });
 
-    // saved.delete requires the mcp scope. A non-existent id yields NOT_FOUND for
+    // saved.delete requires a reader scope. A non-existent id yields NOT_FOUND for
     // an mcp token (gate passed) but FORBIDDEN for a saved:write-only token.
-    it("saved.delete requires mcp; saved:write is rejected", async () => {
+    it("saved.delete requires a reader scope; saved:write is rejected", async () => {
       const mcpUser = await createUser();
       const writeUser = await createUser();
       const mcpCaller = createCaller(await createTokenContext(mcpUser, ["mcp"]));

@@ -25,7 +25,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, scopedProtectedProcedure } from "../trpc";
-import { API_TOKEN_SCOPES, READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
+import { READER_SCOPES, SAVE_ARTICLE_SCOPES } from "@/server/auth/api-token";
 import { MAX_SAVE_COLLECTIONS } from "@/lib/collections";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
@@ -42,8 +42,8 @@ import {
   getSupportedTypesDescription,
 } from "@/server/file/process-upload";
 
-// Saved-article reads/management are part of the MCP tool surface (`mcp` scope).
-const mcpProcedure = scopedProtectedProcedure(API_TOKEN_SCOPES.MCP);
+// Saved-article management is part of the MCP tool surface, which the app shares.
+const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
 
 // ============================================================================
 // Validation Schemas
@@ -221,7 +221,7 @@ export const savedRouter = createTRPCRouter({
    * @param id - The saved article ID to delete
    * @returns Empty object on success
    */
-  delete: mcpProcedure
+  delete: readerProcedure
     .meta({
       openapi: {
         method: "DELETE",
@@ -259,7 +259,7 @@ export const savedRouter = createTRPCRouter({
    * @param title - Optional title override
    * @returns The saved article
    */
-  uploadFile: mcpProcedure
+  uploadFile: readerProcedure
     .meta({
       openapi: {
         method: "POST",

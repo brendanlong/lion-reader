@@ -88,7 +88,7 @@ async function appToken(userId: string): Promise<string> {
 
 async function rest(
   token: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
   body?: unknown
 ): Promise<Response> {
@@ -119,6 +119,17 @@ describe("app token authentication", () => {
     const userId = await createUser();
     const res = await rest(await appToken(userId), "GET", "/entries");
     expect(res.status).toBe(200);
+  });
+
+  // A 404/400 means the request got past the scope gate (a 403).
+  it("accepts the app's token on the MCP tools' saved-article endpoints", async () => {
+    const token = await appToken(await createUser());
+    expect((await rest(token, "DELETE", `/saved/${generateUuidv7()}`)).status).toBe(404);
+    const upload = await rest(token, "POST", "/saved/upload", {
+      content: Buffer.from("x").toString("base64"),
+      filename: "notes.unsupported",
+    });
+    expect(upload.status).toBe(400);
   });
 
   it("rejects the app's token on session-only endpoints", async () => {
