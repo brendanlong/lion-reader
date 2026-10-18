@@ -31,10 +31,6 @@ import { trackSSEEventSent } from "@/server/metrics/metrics";
 import type { EntryType } from "@/lib/entry-types";
 import { logger } from "@/lib/logger";
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 /**
  * Gets a mapping of feedId -> subscriptionId for a user's active web
  * subscriptions. This lets the connection transform feed events (which use
@@ -185,7 +181,10 @@ export function startSseConnection({
     sendChain = sendChain
       .then(() => (closed ? undefined : task()))
       .catch((err) => {
-        logger.error("Failed to deliver SSE event", { userId, error: errorMessage(err) });
+        logger.error("Failed to deliver SSE event", {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
   }
 
@@ -217,8 +216,12 @@ export function startSseConnection({
       } catch (err) {
         // Leave counts off; the client skips the count update and it
         // self-heals on the next count-bearing event or refetch.
-        logger.error("Failed to compute new_entry counts", { userId, error: errorMessage(err) });
+        logger.error("Failed to compute new_entry counts", {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
+      if (closed) return;
       const cursor = new Date().toISOString();
       send(
         `event: new_entry\nid: ${cursor}\ndata: ${JSON.stringify({
@@ -336,8 +339,8 @@ export function startSseConnection({
   const subscription = createPubSubSubscription(handleMessage);
   if (!subscription) return null;
 
-  function subscribeToFeed(feedId: string, subscriptionId: string): void {
-    if (closed || !subscription) return;
+  const subscribeToFeed = (feedId: string, subscriptionId: string): void => {
+    if (closed) return;
 
     const channel = getFeedEventsChannel(feedId);
     if (subscribedFeedChannels.has(channel)) return;
@@ -348,15 +351,15 @@ export function startSseConnection({
       logger.error("Failed to subscribe to SSE feed channel", {
         userId,
         feedId,
-        error: errorMessage(err),
+        error: err instanceof Error ? err.message : String(err),
       });
       subscribedFeedChannels.delete(channel);
       feedSubscriptions.delete(feedId);
     });
-  }
+  };
 
-  function unsubscribeFromFeed(feedId: string): void {
-    if (closed || !subscription) return;
+  const unsubscribeFromFeed = (feedId: string): void => {
+    if (closed) return;
 
     const channel = getFeedEventsChannel(feedId);
     if (!subscribedFeedChannels.has(channel)) return;
@@ -364,7 +367,7 @@ export function startSseConnection({
     subscribedFeedChannels.delete(channel);
     feedSubscriptions.delete(feedId);
     subscription.unsubscribe(channel);
-  }
+  };
 
   const feedChannels = Array.from(feedSubscriptions.keys(), getFeedEventsChannel);
   for (const channel of feedChannels) {
@@ -384,7 +387,7 @@ export function startSseConnection({
       // new_entry then carries the feed's own title; nothing else breaks.
       logger.error("Failed to load subscription custom titles", {
         userId,
-        error: errorMessage(err),
+        error: err instanceof Error ? err.message : String(err),
       });
     })
     .finally(markCustomTitlesLoaded);

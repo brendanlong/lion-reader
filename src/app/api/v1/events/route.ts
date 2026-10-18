@@ -59,10 +59,6 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 // Helper Functions
 // ============================================================================
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 function formatSSEHello(): string {
   return `event: hello\ndata: ${JSON.stringify({ buildId: BUILD_ID } satisfies z.input<typeof helloEventSchema>)}\n\n`;
 }
@@ -218,7 +214,10 @@ export async function GET(req: Request): Promise<Response> {
           active = await isCredentialActive();
         } catch (err) {
           // Fail closed: the client reconnects, re-authenticating from scratch.
-          logger.error("Failed to re-check SSE credential", { userId, error: errorMessage(err) });
+          logger.error("Failed to re-check SSE credential", {
+            userId,
+            error: err instanceof Error ? err.message : String(err),
+          });
           active = false;
         } finally {
           credentialCheckInFlight = false;
@@ -244,7 +243,10 @@ export async function GET(req: Request): Promise<Response> {
         }
 
         connection.subscribed.catch((err) => {
-          logger.error("Failed to subscribe to SSE channels", { userId, error: errorMessage(err) });
+          logger.error("Failed to subscribe to SSE channels", {
+            userId,
+            error: err instanceof Error ? err.message : String(err),
+          });
           cleanup();
           try {
             controller.error(err);
@@ -266,7 +268,10 @@ export async function GET(req: Request): Promise<Response> {
         send(formatSSEHello());
         trackSSEEventSent("hello");
       } catch (err) {
-        logger.error("Failed to set up SSE connection", { userId, error: errorMessage(err) });
+        logger.error("Failed to set up SSE connection", {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
         cleanup();
         try {
           controller.error(err);
