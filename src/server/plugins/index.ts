@@ -74,7 +74,7 @@ export async function claimFetchedPage(
 }
 
 /** Article content a plugin produced. */
-export interface PluginArticle {
+interface PluginArticle {
   kind: "plugin";
   /** Plugin name, for logs. */
   source: string;

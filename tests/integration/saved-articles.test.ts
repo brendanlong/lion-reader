@@ -1206,6 +1206,19 @@ describe("Saved Articles API", () => {
       expect(await savedArticleExistsByUrl(db, userId, `${doc}?tab=t.1`)).toBeNull();
     });
 
+    // Only documents are the Docs plugin's: a sheet's gid picks its page.
+    it("keeps the query of Google URLs that aren't documents", async () => {
+      const userId = await createTestUser();
+      const sheet = "https://docs.google.com/spreadsheets/d/1ShEeTiD/edit";
+      const saved = await saveArticle(db, userId, {
+        url: `${sheet}?gid=1`,
+        html: "<html><body><article><p>Sheet</p></article></body></html>",
+      });
+
+      expect(await savedArticleExistsByUrl(db, userId, `${sheet}?gid=1`)).toBe(saved.id);
+      expect(await savedArticleExistsByUrl(db, userId, `${sheet}?gid=2`)).toBeNull();
+    });
+
     it("is scoped per user", async () => {
       const userId = await createTestUser();
       const otherId = await createTestUser({ emailPrefix: "other" });
