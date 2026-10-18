@@ -25,7 +25,7 @@ export interface FetchFullContentResult {
   success: boolean;
   /** The raw HTML content from the URL */
   contentOriginal?: string;
-  /** The Readability-cleaned HTML content */
+  /** The article body: Readability's extraction, or the content when already clean (set on success) */
   contentCleaned?: string;
   /** Error message if the fetch failed */
   error?: string;

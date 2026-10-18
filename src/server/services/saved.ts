@@ -124,11 +124,11 @@ export interface UploadArticleParams {
    */
   excerpt?: string;
   /**
-   * Resolves the content's relative URLs, for content we wrote ourselves (the
-   * Getting Started article's in-app links). Never caller-supplied: without
-   * it they resolve against a host that never resolves.
+   * Leaves relative URLs as written, so root-relative ones stay in-app links:
+   * only for content we wrote ourselves (the Getting Started article). Never
+   * caller-supplied: otherwise they resolve against a host that never resolves.
    */
-  baseUrl?: string;
+  keepRelativeUrls?: boolean;
 }
 
 export interface SavedArticle {
@@ -306,7 +306,10 @@ async function buildArticleFields(
   hints: ArticleFieldHints = {},
   // Uploads are trusted user content, so they pass a lower minCleanedLength than
   // a web fetch (where a short extraction usually means a failed JS-heavy page).
-  cleanOptions: { minCleanedLength?: number } = {}
+  {
+    keepRelativeUrls = false,
+    ...cleanOptions
+  }: { minCleanedLength?: number; keepRelativeUrls?: boolean } = {}
 ): Promise<BuiltArticleFields> {
   const { html, contentUrl, pluginContent, preCleanedContent } = bundle;
   // Uploads have no origin; a guaranteed-broken base keeps relative URLs from
@@ -318,7 +321,10 @@ async function buildArticleFields(
     contentOriginal,
     contentCleaned,
     readability: cleaned,
-  } = await processArticleContent(bundle, baseUrl, { offload: true, ...cleanOptions });
+  } = await processArticleContent(bundle, keepRelativeUrls ? null : baseUrl, {
+    offload: true,
+    ...cleanOptions,
+  });
 
   // Precedence: explicit caller value → plugin / Markdown frontmatter / docx
   // core.xml → Readability → raw Open Graph/<title>/meta scrape → filename (title only).
@@ -1174,7 +1180,7 @@ export async function uploadArticle(
   const fields = await buildArticleFields(
     {
       html: markdownResult.html,
-      contentUrl: params.baseUrl ?? null,
+      contentUrl: null,
       pluginContent: null,
       preCleanedContent: markdownResult,
     },
@@ -1183,7 +1189,8 @@ export async function uploadArticle(
       providedAuthor: params.author ?? null,
       providedExcerpt: params.excerpt ?? null,
       siteName: "Uploaded Article",
-    }
+    },
+    { keepRelativeUrls: params.keepRelativeUrls }
   );
   return insertUploadedArticle(db, userId, fields);
 }

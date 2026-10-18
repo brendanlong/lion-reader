@@ -111,7 +111,7 @@ export interface ProcessedArticleContent {
 /**
  * Run Readability unless the content is already clean (pre-cleaned, or a
  * plugin's with `skipReadability`), and absolutize relative URLs in both
- * stored copies against `baseUrl`. Readability absolutizes its own output;
+ * stored copies against `baseUrl` (null leaves them as written). Readability absolutizes its own output;
  * nothing downstream (the Markdown renderer, the sanitizer) does, so a
  * relative URL left here would resolve against Lion Reader's origin.
  *
@@ -125,17 +125,17 @@ export interface ProcessedArticleContent {
  */
 export async function processArticleContent(
   bundle: ArticleContentBundle,
-  baseUrl: string,
+  baseUrl: string | null,
   options: { offload: boolean; minCleanedLength?: number }
 ): Promise<ProcessedArticleContent> {
   const { html, pluginContent, preCleanedContent } = bundle;
-  const contentOriginal = absolutizeUrls(html, baseUrl);
+  const contentOriginal = baseUrl ? absolutizeUrls(html, baseUrl) : html;
 
   if (preCleanedContent || pluginContent?.skipReadability) {
     return { contentOriginal, contentCleaned: contentOriginal, readability: null };
   }
 
-  const cleanOptions = { url: baseUrl, minCleanedLength: options.minCleanedLength };
+  const cleanOptions = { url: baseUrl ?? undefined, minCleanedLength: options.minCleanedLength };
   const readability = options.offload
     ? await cleanContentAsync(html, cleanOptions)
     : cleanContent(html, cleanOptions);

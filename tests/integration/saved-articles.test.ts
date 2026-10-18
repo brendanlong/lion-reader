@@ -947,6 +947,7 @@ describe("Saved Articles API", () => {
               <h1>Article Heading</h1>
               <p>This is the article content that should be extracted by Readability.</p>
               <p>It has multiple paragraphs to ensure proper extraction.</p>
+              <p><a href="/related">A related post</a></p>
             </article>
           </body>
         </html>
@@ -966,6 +967,9 @@ describe("Saved Articles API", () => {
       // Readability and sanitized) is served through the read path.
       const fetched = await caller.entries.get({ id: result.article.id });
       expect(fetched.entry.contentCleaned).toContain("article content");
+      // Both copies resolve relative links against the page, not Lion Reader.
+      expect(fetched.entry.contentOriginal).toContain('href="https://example.com/related"');
+      expect(fetched.entry.contentCleaned).toContain('href="https://example.com/related"');
     });
 
     it("uses provided title parameter over extracted metadata", async () => {
