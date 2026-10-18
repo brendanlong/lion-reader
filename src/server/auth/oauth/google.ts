@@ -12,7 +12,7 @@ import * as client from "openid-client";
 import { GOOGLE_DOCS_SCOPES } from "@/server/google/tokens";
 import { getGoogleConfig, getRedirectUri } from "./config";
 import {
-  consumeOAuthState,
+  beginOAuthCallback,
   exchangeAuthorizationCode,
   fetchUserInfo,
   OAuthStateError,
@@ -159,42 +159,42 @@ function flowFromPkceData(data: PkceData): OAuthFlow {
 }
 
 /**
- * Consumes a Google callback's state: the PKCE verifier and the flow.
+ * Reads a Google callback's state: the PKCE verifier and the flow.
  *
  * @throws OAuthStateError if the state is unknown, expired or already used
  */
 export async function beginGoogleCallback(state: string): Promise<PendingOAuthCallback> {
-  const pkceData = await consumeOAuthState<PkceData>(PKCE_VERIFIER_PREFIX + state);
+  return beginOAuthCallback<PkceData>(PKCE_VERIFIER_PREFIX + state, (pkceData) => {
+    // An empty verifier must fail closed: the client treats a falsy `pkceCodeVerifier` as
+    // "this flow used no PKCE" and would silently drop the proof from the token request.
+    if (!pkceData.verifier) {
+      throw new OAuthStateError();
+    }
 
-  // An empty verifier must fail closed: the client treats a falsy `pkceCodeVerifier` as
-  // "this flow used no PKCE" and would silently drop the proof from the token request.
-  if (!pkceData.verifier) {
-    throw new OAuthStateError();
-  }
+    return {
+      flow: flowFromPkceData(pkceData),
+      async exchange(code) {
+        const config = getGoogleConfig();
+        if (!config) {
+          throw new Error("Google OAuth is not configured");
+        }
 
-  return {
-    flow: flowFromPkceData(pkceData),
-    async complete(code) {
-      const config = getGoogleConfig();
-      if (!config) {
-        throw new Error("Google OAuth is not configured");
-      }
+        const tokens = await exchangeAuthorizationCode(config, getRedirectUri("google"), {
+          code,
+          state,
+          codeVerifier: pkceData.verifier,
+        });
+        const userInfo = await fetchGoogleUserInfo(tokens.access_token);
 
-      const tokens = await exchangeAuthorizationCode(config, getRedirectUri("google"), {
-        code,
-        state,
-        codeVerifier: pkceData.verifier,
-      });
-      const userInfo = await fetchGoogleUserInfo(tokens.access_token);
-
-      return {
-        providerAccountId: userInfo.sub,
-        email: userInfo.email,
-        emailVerified: userInfo.email_verified === true,
-        ...tokensFromResponse(tokens),
-      };
-    },
-  };
+        return {
+          providerAccountId: userInfo.sub,
+          email: userInfo.email,
+          emailVerified: userInfo.email_verified === true,
+          ...tokensFromResponse(tokens),
+        };
+      },
+    };
+  });
 }
 
 /**

@@ -55,12 +55,18 @@ export type OAuthFlow =
     };
 
 /**
- * A callback whose state has been consumed: the flow is known, the code not yet
- * exchanged. Split so the state-cookie check runs before any token request.
+ * A callback whose state has been read but not yet used: the flow is known, the code
+ * not yet exchanged. Split so the state-cookie check runs before the state is consumed
+ * and before any token request (`beginOAuthCallback`).
  */
 export interface PendingOAuthCallback {
   flow: OAuthFlow;
-  /** Exchanges the authorization code and reads the provider's identity. */
+  /**
+   * Consumes the state, then exchanges the authorization code and reads the
+   * provider's identity.
+   *
+   * @throws OAuthStateError when another callback already consumed the state
+   */
   complete(code: string): Promise<ProviderIdentity>;
 }
 
@@ -92,21 +98,41 @@ export async function storeOAuthState(key: string, data: object): Promise<void> 
 }
 
 /**
- * Reads and deletes a state blob in one command, so two concurrent callbacks can't
- * both use one state.
+ * Starts a callback from the state blob under `key`; `start` maps the blob to the flow
+ * and the provider's code exchange.
+ *
+ * The blob is only read here. `complete` deletes it before exchanging the code and
+ * fails if it is already gone, so two concurrent callbacks can't both use one state,
+ * while a callback rejected before then (by the state-cookie check) can't burn the
+ * state of the browser that owns it.
  *
  * @throws OAuthStateError when it is absent, expired or not JSON
  */
-export async function consumeOAuthState<T>(key: string): Promise<T> {
-  const value = await redis.getdel(key);
+export async function beginOAuthCallback<T>(
+  key: string,
+  start: (data: T) => { flow: OAuthFlow; exchange(code: string): Promise<ProviderIdentity> }
+): Promise<PendingOAuthCallback> {
+  const value = await redis.get(key);
   if (!value) {
     throw new OAuthStateError();
   }
+  let data: T;
   try {
-    return JSON.parse(value) as T;
+    data = JSON.parse(value) as T;
   } catch {
     throw new OAuthStateError();
   }
+
+  const { flow, exchange } = start(data);
+  return {
+    flow,
+    async complete(code) {
+      if ((await redis.del(key)) === 0) {
+        throw new OAuthStateError();
+      }
+      return exchange(code);
+    },
+  };
 }
 
 /** GETs a provider's user-info endpoint with the access token as a bearer credential. */

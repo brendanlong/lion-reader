@@ -16,7 +16,7 @@ import { errors } from "@/server/errors";
 
 interface SocialLoginProvider {
   createAuthUrl(options: SignInOrLinkState): Promise<OAuthAuthUrl>;
-  /** Consumes the callback's state; throws `OAuthStateError` for an unknown one. */
+  /** Reads the callback's state (`beginOAuthCallback`); throws `OAuthStateError` for an unknown one. */
   beginCallback(state: string): Promise<PendingOAuthCallback>;
   /**
    * How the provider returns to us. `form_post` (Apple) is a cross-site POST: its
