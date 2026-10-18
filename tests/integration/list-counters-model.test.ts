@@ -50,8 +50,11 @@ import {
   markEntriesRead,
   updateEntryStarred,
 } from "../../src/server/services/entries";
-import { createSubscription, setSubscriptionTags } from "../../src/server/services/subscriptions";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
+import {
+  createSubscription,
+  migrateSubscriptionsToExistingFeed,
+  setSubscriptionTags,
+} from "../../src/server/services/subscriptions";
 import { deleteTag } from "../../src/server/services/tags";
 import { deleteSavedArticle, saveArticle, uploadArticle } from "../../src/server/services/saved";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
@@ -532,7 +535,7 @@ OPS.push(
         .select()
         .from(feeds)
         .where(eq(feeds.id, await createTestFeed()));
-      await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
+      await migrateSubscriptionsToExistingFeed(db, oldFeed, newFeed);
       const [survivor] = await db
         .select({ id: subscriptions.id })
         .from(subscriptions)
@@ -553,7 +556,7 @@ OPS.push(
       const old = w.feeds[from];
       const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, old.feedId));
       const [newFeed] = await db.select().from(feeds).where(eq(feeds.id, onto.feedId));
-      await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
+      await migrateSubscriptionsToExistingFeed(db, oldFeed, newFeed);
       const merged = !(await activeSubscriptionIds(w)).includes(old.subscriptionId);
       if (merged) replaceFeed(w, old.subscriptionId, onto);
       return `merge ${old.subscriptionId} onto ${onto.subscriptionId}${merged ? "" : " (inactive)"}`;

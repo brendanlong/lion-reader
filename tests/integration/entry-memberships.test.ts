@@ -24,8 +24,10 @@ import {
   markEntriesRead,
 } from "../../src/server/services/entries";
 import { uploadArticle } from "../../src/server/services/saved";
-import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
+import {
+  getSavedSubscriptionId,
+  migrateSubscriptionsToExistingFeed,
+} from "../../src/server/services/subscriptions";
 import { createCaller } from "../../src/server/trpc/root";
 import {
   createAuthContext,
@@ -84,7 +86,7 @@ describe("entry memberships (#1846)", () => {
     const [oldFeed] = await db.select().from(feeds).where(eq(feeds.id, oldFeedId));
     const [newFeed] = await db.select().from(feeds).where(eq(feeds.id, newFeedId));
 
-    await migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
+    await migrateSubscriptionsToExistingFeed(db, oldFeed, newFeed);
 
     const [survivor] = await db
       .select({ id: subscriptions.id })

@@ -1566,3 +1566,29 @@ export async function mergeSubscriptionIntoFeed(
 
   return true;
 }
+
+/**
+ * Moves every active subscription on `oldFeed` onto `newFeed`, the existing
+ * feed at its permanent redirect target. The old feed's job stops being claimed
+ * once it has no active subscribers.
+ */
+export async function migrateSubscriptionsToExistingFeed(
+  db: typeof dbType,
+  oldFeed: Feed,
+  newFeed: Feed
+): Promise<void> {
+  const activeSubscriptions = await db
+    .select({ userId: subscriptions.userId, id: subscriptions.id })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.feedId, oldFeed.id), isNull(subscriptions.unsubscribedAt)));
+
+  logger.info("Migrating subscriptions to existing feed", {
+    oldFeedId: oldFeed.id,
+    newFeedId: newFeed.id,
+    subscriptionCount: activeSubscriptions.length,
+  });
+
+  for (const { userId, id } of activeSubscriptions) {
+    await mergeSubscriptionIntoFeed(db, userId, id, newFeed);
+  }
+}

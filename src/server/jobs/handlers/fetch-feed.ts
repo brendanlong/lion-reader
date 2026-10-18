@@ -19,7 +19,6 @@ import { parseFeed } from "../../feed/parser";
 import { decodeBody } from "../../http/charset";
 import { processEntries } from "../../feed/entry-processor";
 import { calculateNextFetch, type FeedHints } from "../../feed/scheduling";
-import { mergeSubscriptionIntoFeed } from "../../services/subscriptions";
 import {
   canUseWebSub,
   subscribeToHub,
@@ -33,11 +32,12 @@ import type { JobPayloads } from "../queue";
 import { logger } from "@/lib/logger";
 import { startFeedFetchTimer, type FeedFetchStatus } from "../../metrics/metrics";
 import { getFeedHooks, getFeedPlugin } from "@/server/plugins";
+import { findPermanentRedirectUrl } from "../../feed/redirect-utils";
 import {
-  findPermanentRedirectUrl,
-  isHttpToHttpsUpgrade,
-  REDIRECT_WAIT_PERIOD_MS,
-} from "../../feed/redirect-utils";
+  applyRedirectMigration,
+  clearRedirectTracking,
+  handlePermanentRedirect,
+} from "../../feed/redirect-migration";
 import type { JobHandlerResult } from "./types";
 
 /**
@@ -736,27 +736,6 @@ async function updateFeedOnError(
     .where(eq(feeds.id, feedId));
 }
 
-// ============================================================================
-// REDIRECT TRACKING
-// ============================================================================
-
-/**
- * Clears redirect tracking fields on a feed.
- *
- * @param feedId - The feed ID
- * @param now - Current timestamp
- */
-async function clearRedirectTracking(feedId: string, now: Date): Promise<void> {
-  await db
-    .update(feeds)
-    .set({
-      redirectUrl: null,
-      redirectFirstSeenAt: null,
-      updatedAt: now,
-    })
-    .where(eq(feeds.id, feedId));
-}
-
 /**
  * Tracks or applies a permanent redirect in the fetch's redirect chain, or clears
  * stale tracking when there is none (the redirect was temporary or reverted).
@@ -783,197 +762,4 @@ async function checkPermanentRedirect(
     await clearRedirectTracking(feed.id, now);
   }
   return null;
-}
-
-/**
- * Handles a permanent redirect by either:
- * - Applying it immediately (HTTP->HTTPS upgrade or wait period exceeded)
- * - Starting/updating tracking (new redirect or within wait period)
- * - Returns true if the redirect was applied and the feed URL was changed
- *
- * @param feed - The feed record
- * @param redirectUrl - The permanent redirect URL
- * @param now - Current timestamp
- * @returns Object with applied flag and metadata
- */
-async function handlePermanentRedirect(
-  feed: Feed,
-  redirectUrl: string,
-  now: Date
-): Promise<{
-  applied: boolean;
-  metadata: Record<string, unknown>;
-  nextRunAt?: Date;
-}> {
-  // Check for HTTP -> HTTPS upgrade (apply immediately)
-  if (feed.url && isHttpToHttpsUpgrade(feed.url, redirectUrl)) {
-    logger.info("Applying HTTP to HTTPS redirect immediately", {
-      feedId: feed.id,
-      oldUrl: feed.url,
-      newUrl: redirectUrl,
-    });
-
-    return applyRedirectMigration(feed, redirectUrl, now);
-  }
-
-  // Check if we're already tracking this redirect
-  if (feed.redirectUrl === redirectUrl && feed.redirectFirstSeenAt) {
-    const timeSinceFirstSeen = now.getTime() - feed.redirectFirstSeenAt.getTime();
-
-    if (timeSinceFirstSeen >= REDIRECT_WAIT_PERIOD_MS) {
-      // Wait period exceeded - apply the redirect
-      logger.info("Redirect wait period exceeded, applying migration", {
-        feedId: feed.id,
-        oldUrl: feed.url,
-        newUrl: redirectUrl,
-        waitedDays: Math.floor(timeSinceFirstSeen / (24 * 60 * 60 * 1000)),
-      });
-
-      return applyRedirectMigration(feed, redirectUrl, now);
-    }
-
-    // Still within wait period
-    const daysRemaining = Math.ceil(
-      (REDIRECT_WAIT_PERIOD_MS - timeSinceFirstSeen) / (24 * 60 * 60 * 1000)
-    );
-
-    logger.debug("Redirect wait period not yet exceeded", {
-      feedId: feed.id,
-      redirectUrl,
-      daysRemaining,
-    });
-
-    return {
-      applied: false,
-      metadata: { redirectTracking: "waiting", redirectUrl, daysRemaining },
-    };
-  }
-
-  // New redirect, or the destination changed from the one we were tracking:
-  // (re)start tracking it
-  const tracking = feed.redirectUrl && feed.redirectUrl !== redirectUrl ? "reset" : "started";
-  logger.info(
-    tracking === "reset"
-      ? "Redirect URL changed, resetting tracking"
-      : "Starting redirect tracking",
-    {
-      feedId: feed.id,
-      feedUrl: feed.url,
-      previousRedirectUrl: feed.redirectUrl,
-      redirectUrl,
-    }
-  );
-
-  await db
-    .update(feeds)
-    .set({ redirectUrl, redirectFirstSeenAt: now, updatedAt: now })
-    .where(eq(feeds.id, feed.id));
-
-  return {
-    applied: false,
-    metadata: { redirectTracking: tracking, redirectUrl },
-  };
-}
-
-/**
- * Applies a permanent redirect migration.
- * Either updates the feed URL or migrates subscriptions to an existing feed.
- *
- * @param feed - The feed to migrate
- * @param redirectUrl - The redirect destination URL
- * @param now - Current timestamp
- * @returns Result with metadata about what happened
- */
-async function applyRedirectMigration(
-  feed: Feed,
-  redirectUrl: string,
-  now: Date
-): Promise<{
-  applied: boolean;
-  metadata: Record<string, unknown>;
-  nextRunAt?: Date;
-}> {
-  // Check if a feed already exists at the redirect URL
-  const [existingFeedAtRedirectUrl] = await db
-    .select()
-    .from(feeds)
-    .where(eq(feeds.url, redirectUrl))
-    .limit(1);
-
-  if (existingFeedAtRedirectUrl) {
-    // Feed exists at redirect URL - migrate subscriptions
-    await migrateSubscriptionsToExistingFeed(feed, existingFeedAtRedirectUrl);
-
-    logger.info("Migrated subscriptions due to redirect to existing feed", {
-      oldFeedId: feed.id,
-      oldUrl: feed.url,
-      newFeedId: existingFeedAtRedirectUrl.id,
-      newUrl: redirectUrl,
-    });
-
-    // The old feed's job will be disabled automatically when it has no subscribers
-    // Schedule far future - if any new subscribers somehow appear, we'll redirect again
-    return {
-      applied: true,
-      nextRunAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days
-      metadata: {
-        redirectApplied: true,
-        mergedIntoFeedId: existingFeedAtRedirectUrl.id,
-        newUrl: redirectUrl,
-      },
-    };
-  }
-
-  // No existing feed at redirect URL - update this feed's URL
-  await db
-    .update(feeds)
-    .set({
-      url: redirectUrl,
-      redirectUrl: null,
-      redirectFirstSeenAt: null,
-      lastFetchedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(feeds.id, feed.id));
-
-  logger.info("Updated feed URL due to redirect", {
-    feedId: feed.id,
-    oldUrl: feed.url,
-    newUrl: redirectUrl,
-  });
-
-  // Schedule immediate retry with new URL
-  return {
-    applied: true,
-    nextRunAt: now,
-    metadata: {
-      redirectApplied: true,
-      newUrl: redirectUrl,
-    },
-  };
-}
-
-/**
- * Moves every active subscription on `oldFeed` onto `newFeed`, the existing
- * feed at its permanent redirect target. The old feed's job stops being claimed
- * once it has no active subscribers.
- */
-export async function migrateSubscriptionsToExistingFeed(
-  oldFeed: Feed,
-  newFeed: Feed
-): Promise<void> {
-  const activeSubscriptions = await db
-    .select({ userId: subscriptions.userId, id: subscriptions.id })
-    .from(subscriptions)
-    .where(and(eq(subscriptions.feedId, oldFeed.id), isNull(subscriptions.unsubscribedAt)));
-
-  logger.info("Migrating subscriptions to existing feed", {
-    oldFeedId: oldFeed.id,
-    newFeedId: newFeed.id,
-    subscriptionCount: activeSubscriptions.length,
-  });
-
-  for (const { userId, id } of activeSubscriptions) {
-    await mergeSubscriptionIntoFeed(db, userId, id, newFeed);
-  }
 }

@@ -24,11 +24,11 @@ import { addEntriesToCollection, createCollection } from "../../src/server/servi
 import { markEntriesRead } from "../../src/server/services/entries";
 import {
   createSubscription,
+  migrateSubscriptionsToExistingFeed,
   setSubscriptionTags,
   unsubscribe,
 } from "../../src/server/services/subscriptions";
 import { deleteTag } from "../../src/server/services/tags";
-import { migrateSubscriptionsToExistingFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { createUserEntriesForFeed } from "../../src/server/feed/entry-processor";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import {
@@ -283,7 +283,7 @@ describe("unread counters under concurrent writes", () => {
       .from(feeds)
       .where(eq(feeds.id, await createTestFeed()));
 
-    const merge = migrateSubscriptionsToExistingFeed(oldFeed, newFeed);
+    const merge = migrateSubscriptionsToExistingFeed(db, oldFeed, newFeed);
     await expectAllFulfilled([merge, ...fanOutNewEntries(live)]);
     await expectNoDrift();
   });
