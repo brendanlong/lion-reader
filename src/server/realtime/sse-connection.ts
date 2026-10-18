@@ -6,7 +6,7 @@
  */
 
 import { db } from "@/server/db";
-import { subscriptions, userFeeds } from "@/server/db/schema";
+import { subscriptions } from "@/server/db/schema";
 import { isUserManagedSubscription, isWebSubscription } from "@/server/services/subscriptions";
 import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import {
@@ -23,6 +23,7 @@ import {
 import { eq, and, isNull } from "drizzle-orm";
 import type {
   NewEntryListData,
+  SyncSubscription,
   entryUpdatedEventSchema,
   newEntryEventSchema,
 } from "@/lib/events/schemas";
@@ -60,32 +61,42 @@ export async function getUserFeedSubscriptionMap(userId: string): Promise<Map<st
   return map;
 }
 
-/** subscriptionId -> title for the user's active subscriptions. */
-async function getUserSubscriptionTitles(userId: string): Promise<Map<string, string | null>> {
+/**
+ * subscriptionId -> custom title for the user's active subscriptions. Only
+ * custom titles: a feed's own title can change mid-connection (a rename, or a
+ * first fetch), and the publisher's stamp is always current.
+ */
+async function getUserCustomTitles(userId: string): Promise<Map<string, string | null>> {
   const rows = await db
-    .select({ id: userFeeds.id, title: userFeeds.title })
-    .from(userFeeds)
+    .select({ id: subscriptions.id, customTitle: subscriptions.customTitle })
+    .from(subscriptions)
     .where(
       and(
-        eq(userFeeds.userId, userId),
+        eq(subscriptions.userId, userId),
+        isNull(subscriptions.unsubscribedAt),
         // Saved articles show "Saved Articles", not the saved subscription's name.
-        isUserManagedSubscription(userFeeds.type)
+        isUserManagedSubscription()
       )
     );
-  return new Map(rows.map((row) => [row.id, row.title]));
+  return new Map(rows.map((row) => [row.id, row.customTitle]));
+}
+
+/** An event row's custom title: its title, unless that's just the feed's own. */
+function customTitleOf(row: SyncSubscription): string | null {
+  return row.title === row.originalTitle ? null : row.title;
 }
 
 /**
  * A new_entry list-item payload as this user sees it: publishers stamp the
- * feed's own title (a web feed's channel is shared), so the user's title for
- * the subscription replaces it here, matching what `entries.list` returns for
- * the same entry.
+ * feed's own title (a web feed's channel is shared), so the user's custom
+ * title for the subscription replaces it here, matching what `entries.list`
+ * returns for the same entry.
  */
-function withSubscriptionTitle(
+function withCustomFeedTitle(
   entry: NewEntryListData,
-  title: string | null | undefined
+  customTitle: string | null | undefined
 ): NewEntryListData {
-  return title == null ? entry : { ...entry, feedTitle: title };
+  return customTitle == null ? entry : { ...entry, feedTitle: customTitle };
 }
 
 /**
@@ -152,18 +163,18 @@ export function startSseConnection({
   let closed = false;
   const subscribedFeedChannels = new Set<string>();
 
-  // subscriptionId -> title, for new_entry payloads. Loaded only
+  // subscriptionId -> custom title, for new_entry payloads. Loaded only
   // once the user channel is subscribed, so a rename can't fall between
   // the load and the channel; a title an event set first wins over it.
-  const titles = new Map<string, string | null>();
+  const customTitles = new Map<string, string | null>();
   const titlesSetByEvents = new Set<string>();
-  let markTitlesLoaded = (): void => {};
-  const titlesLoaded = new Promise<void>((resolve) => {
-    markTitlesLoaded = resolve;
+  let markCustomTitlesLoaded = (): void => {};
+  const customTitlesLoaded = new Promise<void>((resolve) => {
+    markCustomTitlesLoaded = resolve;
   });
-  function setTitle(subscriptionId: string, title: string | null): void {
+  function setCustomTitle(subscriptionId: string, title: string | null): void {
     titlesSetByEvents.add(subscriptionId);
-    titles.set(subscriptionId, title);
+    customTitles.set(subscriptionId, title);
   }
 
   /**
@@ -205,7 +216,7 @@ export function startSseConnection({
     // already does for each new entry.
     const { subscriptionId } = event;
     enqueueSend(async () => {
-      await titlesLoaded;
+      await customTitlesLoaded;
       let counts: BulkUnreadCounts | undefined;
       try {
         // Saved's count is the global `saved` one (it's in no tag or Uncategorized).
@@ -236,12 +247,12 @@ export function startSseConnection({
           ...(counts ? { counts } : {}),
           // List-item data (absent for spam) lets the client insert the
           // entry into cached lists. Saved articles keep their own title
-          // ("Saved Articles"): the saved subscription isn't in titles.
+          // ("Saved Articles"): the saved subscription isn't in customTitles.
           ...(event.entry
             ? {
-                entry: withSubscriptionTitle(
+                entry: withCustomFeedTitle(
                   event.entry,
-                  subscriptionId ? titles.get(subscriptionId) : null
+                  subscriptionId ? customTitles.get(subscriptionId) : null
                 ),
               }
             : {}),
@@ -295,13 +306,13 @@ export function startSseConnection({
       // behind pending count queries.)
       if (event.type === "subscription_created") {
         // Email entries need the title too, though they come on this channel.
-        if (event.row) setTitle(event.subscriptionId, event.row.title);
+        if (event.row) setCustomTitle(event.subscriptionId, customTitleOf(event.row));
         // Only a web subscription has a feed channel.
         if (event.feedId !== null) subscribeToFeed(event.feedId, event.subscriptionId);
       } else if (event.type === "subscription_updated") {
-        if (event.row) setTitle(event.subscriptionId, event.row.title);
+        if (event.row) setCustomTitle(event.subscriptionId, customTitleOf(event.row));
       } else if (event.type === "subscription_deleted") {
-        setTitle(event.subscriptionId, null);
+        setCustomTitle(event.subscriptionId, null);
         if (event.feedId !== null) unsubscribeFromFeed(event.feedId);
       } else if (event.type === "new_entry") {
         sendNewEntry(event);
@@ -374,20 +385,20 @@ export function startSseConnection({
   subscribed
     .then(
       async () => {
-        for (const [id, title] of await getUserSubscriptionTitles(userId)) {
-          if (!titlesSetByEvents.has(id)) titles.set(id, title);
+        for (const [id, title] of await getUserCustomTitles(userId)) {
+          if (!titlesSetByEvents.has(id)) customTitles.set(id, title);
         }
       },
       () => {} // a failed subscribe is the caller's to handle
     )
     .catch((err) => {
       // new_entry then carries the feed's own title; nothing else breaks.
-      logger.error("Failed to load subscription titles", {
+      logger.error("Failed to load subscription custom titles", {
         userId,
         error: err instanceof Error ? err.message : String(err),
       });
     })
-    .finally(markTitlesLoaded);
+    .finally(markCustomTitlesLoaded);
 
   return {
     subscribed,

@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach, afterAll, beforeAll } from "vitest";
 import Redis from "ioredis";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, feeds, entries, subscriptions, userEntries } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
@@ -203,6 +204,22 @@ describe("entry feedTitle is the user's subscription title", () => {
       await publishNewEntry(feedId, laterEntryId, payload);
       await renamerStream.waitFor("new_entry", (event) => event.entryId === laterEntryId);
       expect(titlesFor(renamerStream, laterEntryId)).toEqual([FEED_TITLE]);
+
+      // The feed renaming itself mid-stream shows its new title, for a
+      // subscription whose title an event set (renamer) and one loaded on
+      // connect (other).
+      const renamedTitle = "Renamed By The Feed";
+      await db.update(feeds).set({ title: renamedTitle }).where(eq(feeds.id, feedId));
+      const renamedEntryId = await createTestEntry(feedId, { userIds: [renamer, other] });
+      await publishNewEntry(
+        feedId,
+        renamedEntryId,
+        toNewEntryListData({ type: "web", fetchedAt: new Date() }, renamedTitle)
+      );
+      await renamerStream.waitFor("new_entry", (event) => event.entryId === renamedEntryId);
+      await otherStream.waitFor("new_entry", (event) => event.entryId === renamedEntryId);
+      expect(titlesFor(renamerStream, renamedEntryId)).toEqual([renamedTitle]);
+      expect(titlesFor(otherStream, renamedEntryId)).toEqual([renamedTitle]);
     } finally {
       await renamerStream.close();
       await otherStream.close();
