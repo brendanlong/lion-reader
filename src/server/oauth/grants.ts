@@ -19,14 +19,16 @@ import { logger } from "@/lib/logger";
 
 /**
  * Checks if user has already consented to the client with required scopes.
+ * An empty `scopes` asks only whether an active grant exists.
  */
 export async function hasConsent(
   userId: string,
   clientId: string,
-  scopes: string[]
+  scopes: string[],
+  executor: DbOrTx = db
 ): Promise<boolean> {
-  const result = await db
-    .select()
+  const result = await executor
+    .select({ scopes: oauthConsentGrants.scopes })
     .from(oauthConsentGrants)
     .where(
       and(

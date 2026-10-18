@@ -11,7 +11,6 @@ import {
   oauthAuthorizationCodes,
   oauthAccessTokens,
   oauthRefreshTokens,
-  oauthConsentGrants,
   users,
   type User,
 } from "@/server/db/schema";
@@ -26,6 +25,7 @@ import {
   getRefreshTokenExpiry,
   getAuthCodeExpiry,
 } from "./utils";
+import { hasConsent } from "./grants";
 import { logger } from "@/lib/logger";
 
 // ============================================================================
@@ -393,25 +393,15 @@ export async function rotateRefreshToken(
     // rather than in the revocation sweep because a rotation racing the sweep
     // can commit a successor the sweep's snapshot never sees; that successor is
     // then born unusable. Only for OAuth-server flows — the Wallabag password
-    // grant shares this rotation path and has no consent grant to check.
-    if (options.requireUserConsent) {
-      const activeGrant = await tx
-        .select({ id: oauthConsentGrants.id })
-        .from(oauthConsentGrants)
-        .where(
-          and(
-            eq(oauthConsentGrants.userId, oldRefreshToken.userId),
-            eq(oauthConsentGrants.clientId, clientId),
-            isNull(oauthConsentGrants.revokedAt)
-          )
-        )
-        .limit(1);
-
-      if (activeGrant.length === 0) {
-        // The claim stands (the presented token is revoked): consent is gone,
-        // so the whole chain should be dead anyway.
-        return { rejected: "no_consent" };
-      }
+    // grant shares this rotation path and has no consent grant to check. Any
+    // active grant will do: the scopes test is the code exchange's job.
+    if (
+      options.requireUserConsent &&
+      !(await hasConsent(oldRefreshToken.userId, clientId, [], tx))
+    ) {
+      // The claim stands (the presented token is revoked): consent is gone,
+      // so the whole chain should be dead anyway.
+      return { rejected: "no_consent" };
     }
 
     // Revoke the old access token if it exists
