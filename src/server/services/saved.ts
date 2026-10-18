@@ -568,7 +568,7 @@ async function insertUploadedArticle(
   fields: UploadedArticleFields
 ): Promise<SavedArticle> {
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
-  if (fields.contentOriginal.length > maxSize) {
+  if (Buffer.byteLength(fields.contentOriginal, "utf8") > maxSize) {
     throw errors.contentTooLarge("Uploaded article", maxSize);
   }
 
@@ -648,7 +648,7 @@ async function acquireSavedArticleContent(
   const maxSize = usageLimitsConfig.maxSavedArticleSizeBytes;
 
   if (params.html) {
-    if (params.html.length > maxSize) {
+    if (Buffer.byteLength(params.html, "utf8") > maxSize) {
       throw errors.contentTooLarge("Article", maxSize);
     }
     logger.debug("Using provided HTML for saved article", {
@@ -1244,9 +1244,9 @@ async function convertUpload(file: Buffer, filename: string): Promise<ConvertedU
   try {
     return await convertUploadedFile(file, filename);
   } catch (error) {
-    if (error instanceof TRPCError) throw error;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : "Unknown error";
     logger.warn("Failed to convert uploaded file", { filename, error: message });
+    if (error instanceof TRPCError) throw error;
     throw errors.validation(`Failed to process file: ${message}`);
   }
 }

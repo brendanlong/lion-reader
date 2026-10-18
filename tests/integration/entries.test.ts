@@ -859,19 +859,22 @@ describe("Entries", () => {
       expect(ownMarked).toEqual([entryId]);
     });
 
-    it("marks nothing through a deleted tag or another user's subscription", async () => {
+    // A starred article stays visible after its subscription is unsubscribed,
+    // and keeps its membership, so only the ownership checks stop these.
+    it("marks nothing through a deleted tag or an unsubscribed subscription", async () => {
       const userId = await createTestUser();
-      const otherId = await createTestUser({ emailPrefix: "other" });
-      const feedId = await createTestFeed("https://shared-mark-all.com/rss");
+      const feedId = await createTestFeed("https://unsubscribed-mark-all.com/rss");
       const subscriptionId = await createTestSubscription(userId, feedId);
-      const otherSubscriptionId = await createTestSubscription(otherId, feedId);
-      const entryId = await createTestEntry(feedId, { title: "Shared entry" });
-      await createUserEntry(userId, entryId, { read: false });
-      await createUserEntry(otherId, entryId, { read: false });
+      const entryId = await createTestEntry(feedId, { title: "Starred leftover" });
+      await createUserEntry(userId, entryId, { read: false, starred: true });
       const tagId = await createTestTag(userId, { subscriptionIds: [subscriptionId] });
       await db.update(tags).set({ deletedAt: new Date() }).where(eq(tags.id, tagId));
+      await db
+        .update(subscriptions)
+        .set({ unsubscribedAt: new Date() })
+        .where(eq(subscriptions.id, subscriptionId));
 
-      for (const filter of [{ tagId }, { subscriptionId: otherSubscriptionId }]) {
+      for (const filter of [{ tagId }, { subscriptionId }]) {
         const { entryIds } = await markAllEntriesRead(db, { userId, ...filter, showSpam: false });
         expect(entryIds).toEqual([]);
       }
