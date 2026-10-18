@@ -36,6 +36,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_LANDING_PATH } from "@/lib/routes";
+import { getSessionCookie } from "@/server/auth/session-cookie";
 import {
   buildContentSecurityPolicy,
   buildPublicContentSecurityPolicy,
@@ -104,7 +105,7 @@ async function maybeSessionRedirect(request: NextRequest): Promise<NextResponse 
     return response;
   };
 
-  const sessionToken = request.cookies.get("session")?.value;
+  const sessionToken = getSessionCookie(request.cookies);
   if (sessionToken) {
     try {
       // Lazy imports keep the DB/Redis clients out of the cookieless hot path

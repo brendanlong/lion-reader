@@ -9,16 +9,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { appUrl } from "@/server/config/env";
-import { createSession, isSessionActive } from "@/server/auth/session";
+import { isSessionActive, startSession } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { getAppErrorCode } from "@/server/errors";
-import { extractClientInfo } from "@/server/http/client-ip";
 import {
   clearOAuthStateCookie,
   oauthStateCookieMatches,
   readOAuthStateCookie,
 } from "@/server/auth/oauth/state-cookie";
-import { SESSION_MAX_AGE_SECONDS } from "@/server/auth/session-cookie";
 import { linkOAuthAccount, reauthorizeOAuthAccount } from "@/server/services/oauth-accounts";
 import { processOAuthCallback } from "@/server/auth/oauth/callback";
 import {
@@ -232,22 +230,13 @@ async function completeSignIn(
     inviteToken,
   });
 
-  const { userAgent, ipAddress } = extractClientInfo(request.headers);
-  const { token } = await createSession(db, { userId, userAgent, ipAddress });
-
   // New users need to complete signup confirmation first. The completion page
   // broadcasts the success for PWAs.
   const redirectTo = isNewUser ? "/complete-signup" : "/all";
   const response = redirect(`/auth/oauth/complete?redirect=${encodeURIComponent(redirectTo)}`);
-
-  // See "Sessions" in src/server/auth/CLAUDE.md.
-  response.cookies.set("session", token, {
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    sameSite: "lax",
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-  });
+  // Set after `redirect` cleared the state cookie through `response.cookies`,
+  // whose every `set` rewrites the Set-Cookie headers from its own list.
+  await startSession(db, { userId, requestHeaders: request.headers, resHeaders: response.headers });
 
   return response;
 }

@@ -5,11 +5,10 @@
  * Requires authentication - redirects to login if not authenticated.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { WarningTriangleIcon } from "@/components/ui/icons";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
-import { validateSession } from "@/server/auth/session";
+import { getRequestSession } from "@/server/auth/request-session";
 import { resolveClient } from "@/server/oauth/clients";
 import { cimdClientHost } from "@/server/oauth/cimd";
 import {
@@ -48,12 +47,7 @@ export default async function ConsentPage({ searchParams }: ConsentPageProps) {
   }
 
   // Check authentication
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
-
-  const session = sessionToken ? await validateSession(sessionToken) : null;
-
-  if (!session) {
+  if (!(await getRequestSession())) {
     // Redirect to login with return URL
     const returnUrl = `/oauth/consent?${new URLSearchParams(params as Record<string, string>).toString()}`;
     redirect(`/login?redirect=${encodeURIComponent(returnUrl)}`);

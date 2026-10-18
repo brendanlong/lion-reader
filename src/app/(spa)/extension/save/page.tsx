@@ -11,9 +11,8 @@
  * Also accepts POST with html body for authenticated page content.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { validateSession } from "@/server/auth/session";
+import { getRequestSession } from "@/server/auth/request-session";
 import { createApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
 import { createGoogleAuthUrl } from "@/server/auth/oauth/google";
 import { getGoogleDocsGrant } from "@/server/google/tokens";
@@ -47,14 +46,12 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   };
 
   // Check authentication
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
-  const session = sessionToken ? await validateSession(sessionToken) : null;
-
-  if (!sessionToken || !session) {
+  const current = await getRequestSession();
+  if (!current) {
     // Not logged in or invalid session - redirect to login with return URL
     redirect(`/login?redirect=${encodeURIComponent(returnUrl)}`);
   }
+  const { session, token: sessionToken } = current;
 
   // Checked before the Google redirect below, which would otherwise loop when
   // the OAuth callback sends us back with an error
