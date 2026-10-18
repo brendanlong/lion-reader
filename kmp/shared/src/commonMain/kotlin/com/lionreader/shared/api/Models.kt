@@ -240,7 +240,9 @@ sealed interface SyncEvent {
                 row
                     ?: Subscription(
                         subscriptionId,
-                        type = feed?.type,
+                        // A server without [row] (only the previous release, mid-deploy)
+                        // always sent the feed's type.
+                        type = feed?.type ?: "web",
                         url = feed?.url,
                         title = subscription?.customTitle ?: feed?.title,
                         originalTitle = feed?.title,

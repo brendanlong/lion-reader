@@ -1237,7 +1237,11 @@ class SyncEngineTest {
                                 customTitle = "Also mine",
                                 tags = emptyList(),
                             ),
-                        feed = com.lionreader.shared.api.EventFeed(title = "Also theirs", type = "web"),
+                        feed =
+                            com.lionreader.shared.api.EventFeed(
+                                title = "Also theirs",
+                                type = "web",
+                            ),
                     )
                 )
         )
