@@ -97,24 +97,7 @@ function startPoolMonitor(): void {
 
 startPoolMonitor();
 
-export const db = drizzle(pool, {
-  schema,
-  logger: {
-    logQuery(query: string, params: unknown[]) {
-      // Create a Sentry span for each database query to help diagnose N+1 issues
-      const span = Sentry.startInactiveSpan({
-        name: "db.query",
-        op: "db.query",
-        attributes: {
-          "db.system.name": "postgresql",
-          "db.query.text": query.substring(0, 500), // Truncate long queries
-          "db.params_count": params.length, // Include param count for debugging
-        },
-      });
-      span?.end();
-    },
-  },
-});
+export const db = drizzle(pool, { schema });
 
 export type Database = typeof db;
 
