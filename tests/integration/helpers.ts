@@ -32,6 +32,7 @@ import {
   oauthAccessTokens,
   oauthAccounts,
   oauthClients,
+  oauthTokenGrants,
 } from "../../src/server/db/schema";
 import { createTokens } from "../../src/server/oauth/service";
 import { generateToken, hashToken } from "../../src/server/oauth/utils";
@@ -383,6 +384,25 @@ export async function createTestOAuthClient(
     ...overrides,
   });
   return clientId;
+}
+
+/**
+ * Inserts a token grant for seeding token rows directly. Tests of the token
+ * paths themselves mint through `createTokens` instead.
+ */
+export async function createTestTokenGrant(
+  userId: string,
+  overrides: Partial<typeof oauthTokenGrants.$inferInsert> = {}
+): Promise<string> {
+  const id = overrides.id ?? generateUuidv7();
+  await db.insert(oauthTokenGrants).values({
+    id,
+    userId,
+    clientId: "test-client",
+    scopes: ["mcp"],
+    ...overrides,
+  });
+  return id;
 }
 
 /**

@@ -12,7 +12,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { resolveClient, type ResolvedClient } from "@/server/oauth/clients";
-import { hasConsent } from "@/server/oauth/grants";
 import {
   validateAndConsumeAuthCode,
   createTokens,
@@ -193,22 +192,6 @@ async function handleAuthorizationCodeGrant(
     );
   }
 
-  // The consent grant is what /oauth/authorize checks before issuing a code, so
-  // it has to gate redemption too: otherwise a code minted moments before the
-  // user revoked the client in Settings still buys an hour-long access token and
-  // a 30-day refresh chain, silently undoing the revocation.
-  if (!(await hasConsent(authCodeData.userId, client_id, authCodeData.scopes))) {
-    logger.warn("OAuth code exchange rejected: user revoked this client's consent", {
-      component: "oauth",
-      clientId: client_id,
-      userId: authCodeData.userId,
-    });
-    return NextResponse.json(
-      createOAuthError(OAUTH_ERRORS.INVALID_GRANT, "Authorization was revoked"),
-      { status: 400 }
-    );
-  }
-
   // Create tokens
   const tokens = await createTokens({
     clientId: client_id,
@@ -278,12 +261,7 @@ async function handleRefreshTokenGrant(
   const secretError = validateClientSecret(client, client_secret);
   if (secretError) return secretError;
 
-  // Rotate refresh token. requireUserConsent is what stops a live rotation chain
-  // outliving a revocation from Settings (the Wallabag password grant shares
-  // rotateRefreshToken and has no consent grant, so it doesn't opt in).
-  const tokens = await rotateRefreshToken(refresh_token, client_id, {
-    requireUserConsent: true,
-  });
+  const tokens = await rotateRefreshToken(refresh_token, client_id);
 
   if (!tokens) {
     return NextResponse.json(

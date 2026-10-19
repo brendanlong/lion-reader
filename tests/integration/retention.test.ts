@@ -19,6 +19,7 @@ import {
   oauthClients,
   oauthConsentGrants,
   oauthRefreshTokens,
+  oauthTokenGrants,
   opmlImports,
   sessions,
   subscriptions,
@@ -28,7 +29,12 @@ import { runRetentionCleanup } from "../../src/server/services/retention";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { Temporal } from "temporal-polyfill";
 import { ENTRY_TOMBSTONE_RETENTION_MS } from "../../src/server/services/entry-tombstones";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestFeed,
+  createTestSubscription,
+  createTestTokenGrant,
+  createTestUser,
+} from "./helpers";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TEST_CLIENT_ID = "retention-test-client";
@@ -50,13 +56,15 @@ async function createSession(userId: string, expiresAt: Date, revokedAt?: Date):
 async function createAccessToken(
   userId: string,
   expiresAt: Date,
-  options: { clientId?: string; revokedAt?: Date } = {}
+  options: { clientId?: string; revokedAt?: Date; grantId?: string } = {}
 ): Promise<string> {
   const id = generateUuidv7();
+  const clientId = options.clientId ?? TEST_CLIENT_ID;
   await db.insert(oauthAccessTokens).values({
     id,
+    grantId: options.grantId ?? (await createTestTokenGrant(userId, { clientId })),
     tokenHash: `hash-${id}`,
-    clientId: options.clientId ?? TEST_CLIENT_ID,
+    clientId,
     userId,
     scopes: ["mcp"],
     expiresAt,
@@ -74,13 +82,16 @@ async function createRefreshToken(
     revokedAt?: Date;
     accessTokenId?: string;
     replacedById?: string;
+    grantId?: string;
   } = {}
 ): Promise<string> {
   const id = generateUuidv7();
+  const clientId = options.clientId ?? TEST_CLIENT_ID;
   await db.insert(oauthRefreshTokens).values({
     id,
+    grantId: options.grantId ?? (await createTestTokenGrant(userId, { clientId })),
     tokenHash: `hash-${id}`,
-    clientId: options.clientId ?? TEST_CLIENT_ID,
+    clientId,
     userId,
     scopes: ["mcp"],
     expiresAt,
@@ -160,6 +171,7 @@ async function createFeedJob(
 async function cleanupTables(): Promise<void> {
   await db.delete(oauthRefreshTokens);
   await db.delete(oauthAccessTokens);
+  await db.delete(oauthTokenGrants);
   await db.delete(oauthAuthorizationCodes);
   await db.delete(oauthConsentGrants);
   await db.delete(oauthClients);
@@ -302,6 +314,8 @@ describe("runRetentionCleanup", () => {
     expect(result.oauthAuthorizationCodes).toBe(1);
     expect(result.oauthAccessTokens).toBe(1);
     expect(result.oauthRefreshTokens).toBe(1);
+    // Each expired token was its grant's last.
+    expect(result.oauthTokenGrants).toBe(2);
 
     const codes = (
       await db.select({ id: oauthAuthorizationCodes.id }).from(oauthAuthorizationCodes)
@@ -320,6 +334,34 @@ describe("runRetentionCleanup", () => {
     );
     expect(refresh).toEqual([liveRefresh]);
     expect(refresh).not.toContain(expiredRefresh);
+  });
+
+  it("deletes long-revoked token grants with their tokens, and grants with no tokens left", async () => {
+    const userId = await createTestUser({ emailPrefix: "retention" });
+    const liveExpiry = new Date(Date.now() + 30 * DAY_MS);
+
+    const longRevoked = await createTestTokenGrant(userId, {
+      revokedAt: new Date(Date.now() - 31 * DAY_MS),
+    });
+    const cascaded = await createRefreshToken(userId, liveExpiry, { grantId: longRevoked });
+    const recentlyRevoked = await createTestTokenGrant(userId, {
+      revokedAt: new Date(Date.now() - DAY_MS),
+    });
+    await createRefreshToken(userId, liveExpiry, { grantId: recentlyRevoked });
+    const live = await createTestTokenGrant(userId);
+    await createAccessToken(userId, new Date(Date.now() + 60 * 60 * 1000), { grantId: live });
+    await createTestTokenGrant(userId);
+
+    const result = await runRetentionCleanup(db);
+
+    expect(result.oauthTokenGrants).toBe(2);
+    const grants = await db.select({ id: oauthTokenGrants.id }).from(oauthTokenGrants);
+    expect(grants.map((g) => g.id).sort()).toEqual([recentlyRevoked, live].sort());
+    const refresh = await db
+      .select({ id: oauthRefreshTokens.id })
+      .from(oauthRefreshTokens)
+      .where(eq(oauthRefreshTokens.id, cascaded));
+    expect(refresh).toEqual([]);
   });
 
   it("handles refresh-token rotation chains (replaced_by_id) without FK failures", async () => {

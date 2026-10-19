@@ -27,6 +27,7 @@ import {
   oauthClients,
   oauthConsentGrants,
   oauthRefreshTokens,
+  oauthTokenGrants,
   opmlImports,
   sessions,
 } from "../db/schema";
@@ -41,9 +42,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRY_GRACE_MS = DAY_MS;
 
 /**
- * How long revoked sessions and refresh tokens are retained after revocation.
- * Revoked refresh tokens are kept for a while so rotation reuse-detection
- * (spotting a stolen token being replayed) still has something to match.
+ * How long revoked sessions, refresh tokens and token grants are retained after
+ * revocation. Revoked refresh tokens are kept for a while so rotation
+ * reuse-detection (spotting a stolen token being replayed) still has something
+ * to match.
  */
 const REVOKED_RETENTION_MS = 30 * DAY_MS;
 
@@ -88,6 +90,7 @@ export interface RetentionCleanupResult {
   oauthAuthorizationCodes: number;
   oauthAccessTokens: number;
   oauthRefreshTokens: number;
+  oauthTokenGrants: number;
   oauthClients: number;
   opmlImports: number;
   deadFeedJobs: number;
@@ -123,9 +126,8 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     .delete(oauthAuthorizationCodes)
     .where(lt(oauthAuthorizationCodes.expiresAt, expiryCutoff));
 
-  // Refresh tokens reference access tokens with ON DELETE SET NULL, and the
-  // rotation chain (replaced_by_id) is also SET NULL, so bulk deletes can't
-  // fail on FK order.
+  // Refresh tokens reference access tokens with ON DELETE SET NULL, and
+  // replaced_by_id is also SET NULL, so bulk deletes can't fail on FK order.
   const expiredAccessTokens = await db
     .delete(oauthAccessTokens)
     .where(
@@ -143,6 +145,29 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
         lt(oauthRefreshTokens.revokedAt, revokedCutoff)
       )
     );
+
+  // A grant goes once it's long revoked (its tokens cascade) or its last token
+  // has been swept above. A grant commits together with its first tokens, so a
+  // live one is never seen empty.
+  const deadGrants = await db.delete(oauthTokenGrants).where(
+    or(
+      lt(oauthTokenGrants.revokedAt, revokedCutoff),
+      and(
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(oauthAccessTokens)
+            .where(eq(oauthAccessTokens.grantId, oauthTokenGrants.id))
+        ),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(oauthRefreshTokens)
+            .where(eq(oauthRefreshTokens.grantId, oauthTokenGrants.id))
+        )
+      )
+    )
+  );
 
   // Dead feed jobs (issue #1085): a `fetch_feed` job survives when its feed
   // loses its last active subscriber (unsubscribe soft-delete) or the feed is
@@ -241,6 +266,7 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     oauthAuthorizationCodes: expiredAuthCodes.rowCount ?? 0,
     oauthAccessTokens: expiredAccessTokens.rowCount ?? 0,
     oauthRefreshTokens: expiredRefreshTokens.rowCount ?? 0,
+    oauthTokenGrants: deadGrants.rowCount ?? 0,
     oauthClients: orphanedClients.rowCount ?? 0,
     opmlImports: oldOpmlImports.rowCount ?? 0,
     deadFeedJobs: deadFeedJobs.rowCount ?? 0,

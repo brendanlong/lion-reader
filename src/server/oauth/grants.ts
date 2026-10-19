@@ -9,25 +9,24 @@ import {
   oauthClients,
   oauthAuthorizationCodes,
   oauthAccessTokens,
-  oauthRefreshTokens,
   oauthConsentGrants,
+  oauthTokenGrants,
 } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { APP_CLIENT_ID, getAppClient } from "./app-client";
 import { cimdClientHost } from "./cimd";
+import { revokeTokenGrants } from "./service";
 import { logger } from "@/lib/logger";
 
 /**
  * Checks if user has already consented to the client with required scopes.
- * An empty `scopes` asks only whether an active grant exists.
  */
 export async function hasConsent(
   userId: string,
   clientId: string,
-  scopes: string[],
-  executor: DbOrTx = db
+  scopes: string[]
 ): Promise<boolean> {
-  const result = await executor
+  const result = await db
     .select({ scopes: oauthConsentGrants.scopes })
     .from(oauthConsentGrants)
     .where(
@@ -145,16 +144,12 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
  * Revokes the user's consent for a client and kills everything outstanding it
  * could still trade for access.
  *
- * Every half matters: dropping only the consent grant would leave live access
- * and refresh tokens (and the refresh chain renewing itself indefinitely),
- * dropping only the tokens would let the client walk back through
- * /oauth/authorize silently since consent is what suppresses the prompt, and
- * leaving an unredeemed authorization code would buy it a fresh hour-long
- * access token plus a 30-day refresh chain minutes after the user said no.
- *
- * The consent grant is revoked **first**, so the two token-redemption paths
- * that re-check it (`rotateRefreshToken({ requireUserConsent })` and the
- * authorization-code exchange) fail closed for anything racing this sweep.
+ * Every part matters: dropping only the consent grant would leave live token
+ * grants (and their refresh chains renewing themselves indefinitely), dropping
+ * only the token grants would let the client walk back through /oauth/authorize
+ * silently since consent is what suppresses the prompt, and leaving an
+ * unredeemed authorization code would buy it a fresh hour-long access token
+ * plus a 30-day refresh chain minutes after the user said no.
  *
  * Returns false if the user has no active grant for the client.
  */
@@ -196,7 +191,7 @@ export async function revokeUserConsentGrant(userId: string, clientId: string): 
 }
 
 /**
- * Revokes every live access and refresh token a user holds for one client.
+ * Revokes every grant a user holds for one client, and with them every token.
  */
 export async function revokeUserClientTokens(
   userId: string,
@@ -204,25 +199,9 @@ export async function revokeUserClientTokens(
   executor: DbOrTx = db,
   now: Date = new Date()
 ): Promise<void> {
-  await executor
-    .update(oauthRefreshTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthRefreshTokens.userId, userId),
-        eq(oauthRefreshTokens.clientId, clientId),
-        isNull(oauthRefreshTokens.revokedAt)
-      )
-    );
-
-  await executor
-    .update(oauthAccessTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthAccessTokens.userId, userId),
-        eq(oauthAccessTokens.clientId, clientId),
-        isNull(oauthAccessTokens.revokedAt)
-      )
-    );
+  await revokeTokenGrants(
+    and(eq(oauthTokenGrants.userId, userId), eq(oauthTokenGrants.clientId, clientId)),
+    executor,
+    now
+  );
 }

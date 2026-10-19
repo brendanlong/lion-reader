@@ -370,6 +370,27 @@ export const oauthAuthorizationCodes = pgTable(
 );
 
 /**
+ * One authorization: an authorization-code exchange or a Wallabag password
+ * grant. Every token minted from it, across rotations, belongs to it, and is
+ * valid only while it's unrevoked, so revoking the grant ends the whole chain.
+ */
+export const oauthTokenGrants = pgTable(
+  "oauth_token_grants",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull(),
+    scopes: text("scopes").array().notNull(),
+    resource: text("resource"), // RFC 8707 audience
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [index("idx_oauth_token_grants_user_client").on(table.userId, table.clientId)]
+);
+
+/**
  * OAuth access tokens table - short-lived tokens (~1 hour).
  * Used to authenticate API requests.
  */
@@ -383,6 +404,9 @@ export const oauthAccessTokens = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     scopes: text("scopes").array().notNull(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => oauthTokenGrants.id, { onDelete: "cascade" }),
     resource: text("resource"), // RFC 8707 audience
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -393,6 +417,7 @@ export const oauthAccessTokens = pgTable(
     index("idx_oauth_access_tokens_user").on(table.userId),
     index("idx_oauth_access_tokens_client").on(table.clientId),
     index("idx_oauth_access_tokens_expires").on(table.expiresAt),
+    index("idx_oauth_access_tokens_grant").on(table.grantId),
   ]
 );
 
@@ -410,6 +435,9 @@ export const oauthRefreshTokens = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     scopes: text("scopes").array().notNull(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => oauthTokenGrants.id, { onDelete: "cascade" }),
     resource: text("resource"), // RFC 8707 audience, carried through rotation
     accessTokenId: uuid("access_token_id").references(() => oauthAccessTokens.id, {
       onDelete: "set null",
@@ -417,13 +445,15 @@ export const oauthRefreshTokens = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    replacedById: uuid("replaced_by_id"), // Token rotation chain (self-reference added manually)
+    // Read only by the previous release's reuse detection; drop with it (#2053).
+    replacedById: uuid("replaced_by_id"),
   },
   (table) => [
     index("idx_oauth_refresh_tokens_user").on(table.userId),
     index("idx_oauth_refresh_tokens_client").on(table.clientId),
     index("idx_oauth_refresh_tokens_expires").on(table.expiresAt),
     index("idx_oauth_refresh_tokens_access").on(table.accessTokenId),
+    index("idx_oauth_refresh_tokens_grant").on(table.grantId),
   ]
 );
 
