@@ -232,18 +232,10 @@ export async function createTokens(
  * issuance and a credential change (which updates the row first, then revokes
  * the user's tokens) serialize: see {@link rotateRefreshToken}. Always lock the
  * user row before touching token rows, as credential changes do, so the two
- * can't deadlock. Returns the row's current password hash.
+ * can't deadlock.
  */
-export async function lockUserAgainstCredentialChange(
-  tx: DbOrTx,
-  userId: string
-): Promise<{ passwordHash: string | null } | undefined> {
-  const [row] = await tx
-    .select({ passwordHash: users.passwordHash })
-    .from(users)
-    .where(eq(users.id, userId))
-    .for("share");
-  return row;
+async function lockUserAgainstCredentialChange(tx: DbOrTx, userId: string): Promise<void> {
+  await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("share");
 }
 
 /**
