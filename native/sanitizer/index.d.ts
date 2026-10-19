@@ -58,10 +58,8 @@ export interface AbsolutizeOptions {
 }
 
 /**
- * Absolutizes relative URLs in `src`, `href`, `poster` and `srcset`, honoring
- * the first `<base href>` and leaving same-document `#fragment` links
- * relative. Markup outside rewritten start tags passes through byte-identical.
- * Not part of the sanitizer pipeline. Throws when lol_html rejects the input.
+ * See `absolutize_urls` in `core/src/absolutize.rs`. Throws when lol_html
+ * rejects the input.
  */
 export function absolutizeUrls(html: string, baseUrl: string, options?: AbsolutizeOptions): string;
 

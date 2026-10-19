@@ -28,7 +28,10 @@ pub struct Bases {
 /// that serve a document and the files it embeds from different origins. The
 /// root travels with its base, so a media base never inherits the document's
 /// root (#1422). The first `<base href>` replaces both for the elements after
-/// it, and restores origin-root semantics.
+/// it, and restores origin-root semantics. As in browsers, only the first one
+/// counts, and one that doesn't resolve or is `data:`/`javascript:` leaves the
+/// bases as they were; so does a fragment-only one, which means "this
+/// document".
 ///
 /// Errors only when lol_html rejects the input (e.g. a parsing ambiguity in
 /// strict mode); callers fall back to the input.
@@ -37,7 +40,7 @@ pub fn absolutize_urls(
     document: &Bases,
     media: Option<&Bases>,
 ) -> Result<String, String> {
-    let page_base = ResolveBase::plain(Url::parse(&document.url).ok());
+    let page_url = Url::parse(&document.url).ok();
     let document = ResolveBase::new(document);
     let state = RefCell::new(State {
         media: media.map_or_else(|| document.clone(), ResolveBase::new),
@@ -52,20 +55,19 @@ pub fn absolutize_urls(
                 if state.base_href_set {
                     return Ok(());
                 }
-                let Some(href) = el.get_attribute("href") else {
-                    return Ok(());
-                };
-                // A fragment-only <base href> means "this document", so it
-                // leaves the base unchanged — and `resolve_url` passes
-                // fragments through, which would otherwise make it the base.
+                state.base_href_set = true;
+                let href = el.get_attribute("href").unwrap_or_default();
+                let href = href.trim_matches(is_js_whitespace);
                 if href.is_empty() || href.starts_with('#') {
                     return Ok(());
                 }
-                if let Some(resolved) = resolve_url(&href, &page_base) {
-                    let base = ResolveBase::plain(Url::parse(&resolved).ok());
+                let resolved = Url::options().base_url(page_url.as_ref()).parse(href).ok();
+                if let Some(resolved) =
+                    resolved.filter(|u| !matches!(u.scheme(), "data" | "javascript"))
+                {
+                    let base = ResolveBase::plain(resolved);
                     state.document = base.clone();
                     state.media = base;
-                    state.base_href_set = true;
                 }
                 Ok(())
             }),
@@ -123,8 +125,11 @@ impl ResolveBase {
         }
     }
 
-    fn plain(url: Option<Url>) -> Self {
-        Self { url, root: None }
+    fn plain(url: Url) -> Self {
+        Self {
+            url: Some(url),
+            root: None,
+        }
     }
 }
 
@@ -150,9 +155,9 @@ fn rewrite(
 }
 
 /// JavaScript's `\s` / `String.prototype.trim` set: Unicode `White_Space`
-/// plus the BOM.
+/// minus U+0085, plus the BOM.
 fn is_js_whitespace(c: char) -> bool {
-    c.is_whitespace() || c == '\u{FEFF}'
+    (c.is_whitespace() && c != '\u{85}') || c == '\u{FEFF}'
 }
 
 /// Resolves `url` against `base`: the value unchanged when it must stay as
@@ -380,7 +385,16 @@ mod tests {
         for entry in ["a 1x", "a 480w", "a 1.5x", "a\t2x  "] {
             assert!(has_descriptor(entry), "{entry}");
         }
-        for entry in ["a1x", "a .5x", "a 1.x", "a 1.2.3x", "a 2", "x", "a x"] {
+        for entry in [
+            "a1x",
+            "a .5x",
+            "a 1.x",
+            "a 1.2.3x",
+            "a 2",
+            "x",
+            "a x",
+            "a\u{85}2x",
+        ] {
             assert!(!has_descriptor(entry), "{entry}");
         }
     }
@@ -425,12 +439,22 @@ mod tests {
     }
 
     #[test]
-    fn fragment_only_and_empty_base_href_are_ignored() {
-        let html = r##"<base href="#x"><base href=""><base href="/real/"><img src="a.png">"##;
-        assert_eq!(
-            abs(html, "https://example.com/docs/page.html"),
-            r##"<base href="#x"><base href=""><base href="/real/"><img src="https://example.com/real/a.png">"##
-        );
+    fn a_first_base_href_that_cannot_be_a_base_still_wins() {
+        for href in [
+            "#x",
+            " #x",
+            "",
+            "javascript:void(0)",
+            "data:text/html,x",
+            "http://[bad",
+        ] {
+            let html = format!(r#"<base href="{href}"><base href="/other/"><img src="a.png">"#);
+            assert_eq!(
+                abs(&html, "https://example.com/docs/page.html"),
+                html.replace("a.png", "https://example.com/docs/a.png"),
+                "{href:?}"
+            );
+        }
     }
 
     #[test]
