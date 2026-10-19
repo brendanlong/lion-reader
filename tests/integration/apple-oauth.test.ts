@@ -195,6 +195,15 @@ OF/2NxApJCzGCEDdfSp6VQO30hyhRANCAAQRWz+jn65BtOMvdyHKcvjBeBSDZH2r
       const stateData = JSON.parse(storedState!);
       expect(stateData).toEqual({});
     });
+
+    it("stores the sign-in's return path alongside the state", async () => {
+      const { createAppleAuthUrl } = await import("../../src/server/auth/oauth/apple");
+
+      const result = await createAppleAuthUrl({ returnPath: "/extension/save" });
+
+      const storedState = await redis.get(`oauth:apple:state:${result.state}`);
+      expect(JSON.parse(storedState!)).toEqual({ returnPath: "/extension/save" });
+    });
   });
 
   describe("validateAppleCallback", () => {

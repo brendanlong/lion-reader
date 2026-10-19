@@ -60,7 +60,7 @@ describe("processOAuthCallback email verification", () => {
       accessToken: "access-token",
     });
 
-    expect(result.isNewUser).toBe(false);
+    expect(result.signupConfirmed).toBe(true);
     expect(result.userId).toBe(victimId);
     expect(await countOAuthAccounts(victimId)).toBe(1);
 
@@ -105,7 +105,7 @@ describe("processOAuthCallback email verification", () => {
       accessToken: "new-token",
     });
 
-    expect(result.isNewUser).toBe(false);
+    expect(result.signupConfirmed).toBe(true);
     expect(result.userId).toBe(userId);
     // Existing link count unchanged (no new row).
     expect(

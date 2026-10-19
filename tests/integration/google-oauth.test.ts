@@ -17,7 +17,7 @@ import {
   OAUTH_STATE_COOKIE_NAME,
   OAUTH_STATE_TTL_SECONDS,
 } from "../../src/server/auth/oauth/state-cookie";
-import { createTestOAuthLink, createTestUser } from "./helpers";
+import { createTestOAuthLink, createTestUser, createUnauthContext } from "./helpers";
 
 const GOOGLE_ISSUER = "https://accounts.google.com";
 const GOOGLE_CLIENT_ID = "test-client-id";
@@ -309,6 +309,18 @@ describe("Google OAuth", () => {
       expect(locationOf(response)).toBe(
         `/auth/oauth/complete?redirect=${encodeURIComponent(returnPath)}`
       );
+    });
+
+    it.each([
+      [returnPath, returnPath],
+      ["https://evil.example/", "/all"],
+    ])("keeps only a same-origin redirect from the client (%s)", async (redirect, stored) => {
+      const { createCaller } = await import("../../src/server/trpc/root");
+      const caller = createCaller(createUnauthContext());
+      const { state } = await caller.auth.googleAuthUrl({ redirect });
+
+      const data = JSON.parse((await redis.get(`oauth:pkce:${state}`))!);
+      expect(data.returnPath).toBe(stored);
     });
 
     it("never sends the user off-site", async () => {

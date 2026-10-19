@@ -225,21 +225,19 @@ async function completeSignIn(
   provider: OAuthProviderName,
   identity: ProviderIdentity
 ): Promise<NextResponse> {
-  const { userId, isNewUser } = await processOAuthCallback({
+  const { userId, signupConfirmed } = await processOAuthCallback({
     ...identity,
     provider,
     inviteToken: flow.inviteToken,
   });
 
-  // New users need to complete signup confirmation first, which then continues to
-  // the return path. The completion page broadcasts the success for PWAs.
+  // Signup confirmation comes first, then continues to the return path. The
+  // completion page broadcasts the success for PWAs. `returnPath` was sanitized when
+  // the flow started; this is defense in depth.
   const returnPath = safeRedirectPath(flow.returnPath);
-  let redirectTo = returnPath;
-  if (isNewUser) {
-    redirectTo = flow.returnPath
-      ? `/complete-signup?redirect=${encodeURIComponent(returnPath)}`
-      : "/complete-signup";
-  }
+  const redirectTo = signupConfirmed
+    ? returnPath
+    : `/complete-signup?redirect=${encodeURIComponent(returnPath)}`;
   const response = redirect(`/auth/oauth/complete?redirect=${encodeURIComponent(redirectTo)}`);
   // Set after `redirect` cleared the state cookie through `response.cookies`,
   // whose every `set` rewrites the Set-Cookie headers from its own list.

@@ -16,6 +16,7 @@ import { db } from "@/server/db";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
+import { isSignupConfirmed } from "@/server/auth/confirmation";
 import type { OAuthProviderName } from "@/server/auth/oauth/config";
 import { oauthTokenColumns, type ProviderIdentity } from "@/server/auth/oauth/token-exchange";
 import { attachOAuthAccount } from "@/server/services/oauth-accounts";
@@ -44,8 +45,8 @@ export interface ProcessOAuthCallbackResult {
   email: string;
   /** When the user was created */
   createdAt: Date;
-  /** Whether this is a newly created user */
-  isNewUser: boolean;
+  /** Whether the user has finished signup confirmation (`isSignupConfirmed`) */
+  signupConfirmed: boolean;
 }
 
 /**
@@ -106,7 +107,7 @@ export async function processOAuthCallback(
       userId,
       email: userResult[0].email,
       createdAt: userResult[0].createdAt,
-      isNewUser: false,
+      signupConfirmed: isSignupConfirmed(userResult[0]),
     };
   }
 
@@ -160,7 +161,7 @@ export async function processOAuthCallback(
       userId,
       email: existingUser[0].email,
       createdAt: existingUser[0].createdAt,
-      isNewUser: false,
+      signupConfirmed: isSignupConfirmed(existingUser[0]),
     };
   }
 
@@ -195,6 +196,6 @@ export async function processOAuthCallback(
     userId: newUser.userId,
     email: newUser.email,
     createdAt: newUser.createdAt,
-    isNewUser: true,
+    signupConfirmed: false,
   };
 }
