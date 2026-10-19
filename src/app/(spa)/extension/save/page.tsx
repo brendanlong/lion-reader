@@ -7,7 +7,9 @@
  * 3. Saves the article
  * 4. Redirects to callback with API token
  *
- * URL format: /extension/save?url=...&title=...
+ * URL format: /extension/save?url=...&title=...&state=...
+ * `state` is the extension's one-time nonce for this sign-in, echoed to the
+ * callback so the extension only accepts a token from a flow it started.
  * Also accepts POST with html body for authenticated page content.
  */
 
@@ -24,20 +26,23 @@ interface PageProps {
   searchParams: Promise<{
     url?: string;
     title?: string;
+    state?: string;
     error?: string;
   }>;
 }
 
 export default async function ExtensionSavePage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const { url, title, error } = params;
+  const { url, title, state, error } = params;
 
   // Validate required parameters
   if (!url) {
     return <ExtensionSaveClient error="No URL provided" />;
   }
 
-  const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
+  const stateParam = state ? `&state=${encodeURIComponent(state)}` : "";
+  const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}${stateParam}`;
+  const retry = { url, retryHref: returnUrl };
   const redirectToGoogleDocsAuth = async (userId: string): Promise<never> => {
     const authResult = await createGoogleAuthUrl({
       docsAccess: { userId, mode: "extension-save", returnUrl },
@@ -56,7 +61,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   // Checked before the Google redirect below, which would otherwise loop when
   // the OAuth callback sends us back with an error
   if (error) {
-    return <ExtensionSaveClient error={decodeURIComponent(error)} url={url} />;
+    return <ExtensionSaveClient error={decodeURIComponent(error)} retry={retry} />;
   }
 
   // Check if this is a Google Doc and we need OAuth
@@ -93,11 +98,11 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
       return (
         <ExtensionSaveClient
           error="This is a private Google Doc. To save it, link your Google account in Lion Reader's account settings, then try again."
-          url={url}
+          retry={retry}
         />
       );
     } else {
-      return <ExtensionSaveClient error={errorMessage} url={url} />;
+      return <ExtensionSaveClient error={errorMessage} retry={retry} />;
     }
   }
 
@@ -117,6 +122,6 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   // saveResult is guaranteed to be assigned here - if NEEDS_GOOGLE_REAUTH, we redirected above
   const articleTitle = saveResult!.article.title || title || url;
   redirect(
-    `/extension/callback?status=success&token=${encodeURIComponent(token)}&title=${encodeURIComponent(articleTitle)}`
+    `/extension/callback?status=success&token=${encodeURIComponent(token)}&title=${encodeURIComponent(articleTitle)}${stateParam}`
   );
 }

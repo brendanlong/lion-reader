@@ -25,28 +25,22 @@ async function loadSettings() {
   const result = await chrome.storage.sync.get(["serverUrl"]);
   serverUrlInput.value = result.serverUrl || "";
   serverUrlInput.placeholder = DEFAULT_SERVER_URL;
-  permissionWarningEl.hidden = await hasServerPermission();
+  permissionWarningEl.hidden = await hasServerPermission(await getServerUrl());
 }
 
 /**
- * Store a new server URL, dropping the token issued by the old server so it's
- * never sent to the new one, and the old server's optional host permission.
+ * Store a new server URL, dropping the old server's optional host permission.
  */
 async function setServerUrl(url) {
-  const oldServerUrl = await getServerUrl();
+  const oldPattern = serverOriginPattern(await getServerUrl());
   await chrome.storage.sync.set({ serverUrl: url });
-  permissionWarningEl.hidden = true;
 
-  const oldOrigin = new URL(oldServerUrl).origin;
-  if (oldOrigin === new URL(url || DEFAULT_SERVER_URL).origin) {
-    return;
-  }
-  await chrome.storage.sync.remove(["apiToken"]);
+  const newServerUrl = url || DEFAULT_SERVER_URL;
   const manifestOrigins = chrome.runtime.getManifest().host_permissions;
-  const oldPattern = serverOriginPattern(oldServerUrl);
-  if (!manifestOrigins.includes(oldPattern)) {
+  if (oldPattern !== serverOriginPattern(newServerUrl) && !manifestOrigins.includes(oldPattern)) {
     await chrome.permissions.remove({ origins: [oldPattern] });
   }
+  permissionWarningEl.hidden = await hasServerPermission(newServerUrl);
 }
 
 /**

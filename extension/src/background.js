@@ -10,20 +10,20 @@
  */
 
 import { checkServerPermission, needsWebAuthFlow, saveArticle } from "./api.js";
-import { getApiToken, getWebAuthUrl, isServerCallbackUrl } from "./constants.js";
+import { consumeAuthState, createWebAuthUrl, getApiCredentials } from "./constants.js";
 
 /**
- * Store the API token.
+ * Store the API token along with the origin of the server that issued it.
  */
-async function setApiToken(token) {
-  await chrome.storage.sync.set({ apiToken: token });
+async function setApiToken(token, origin) {
+  await chrome.storage.sync.set({ apiToken: token, apiTokenOrigin: origin });
 }
 
 /**
  * Open the web auth flow to save an article and get a token.
  */
-async function openWebAuthFlow(url, title) {
-  await chrome.tabs.create({ url: await getWebAuthUrl(url, title) });
+async function openWebAuthFlow(serverUrl, url, title) {
+  await chrome.tabs.create({ url: await createWebAuthUrl(serverUrl, url, title) });
 }
 
 /**
@@ -45,27 +45,26 @@ async function setBadge(tabId, text, color, clearAfterMs) {
  * Google permission is needed.
  */
 async function saveWithBadge(tabId, url, title, failureLog) {
-  if (!(await checkServerPermission())) {
+  const { serverUrl, token } = await getApiCredentials();
+  if (!(await checkServerPermission(serverUrl))) {
     return;
   }
 
-  const token = await getApiToken();
-
   if (!token) {
-    await openWebAuthFlow(url, title);
+    await openWebAuthFlow(serverUrl, url, title);
     return;
   }
 
   await setBadge(tabId, "...", "#71717a");
 
   try {
-    await saveArticle(url, title, token);
+    await saveArticle(serverUrl, url, title, token);
     await setBadge(tabId, "\u2713", "#16a34a", 2000);
   } catch (err) {
     console.error(failureLog, err);
 
     if (needsWebAuthFlow(err)) {
-      await openWebAuthFlow(url, title);
+      await openWebAuthFlow(serverUrl, url, title);
       await chrome.action.setBadgeText({ text: "", tabId });
       return;
     }
@@ -122,16 +121,12 @@ chrome.webNavigation.onCompleted.addListener(
   async (details) => {
     try {
       const url = new URL(details.url);
-      if (!(await isServerCallbackUrl(url))) {
-        return;
-      }
-
       const token = url.searchParams.get("token");
       const status = url.searchParams.get("status");
+      const state = url.searchParams.get("state");
 
-      if (status === "success" && token) {
-        // Store the token
-        await setApiToken(token);
+      if (status === "success" && token && state && (await consumeAuthState(state, url.origin))) {
+        await setApiToken(token, url.origin);
         console.log("API token stored successfully");
 
         // Close the tab after a short delay to let the user see the success message

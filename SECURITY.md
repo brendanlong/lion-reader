@@ -198,6 +198,11 @@ fetches user-influenced URLs and must never be usable to reach internal services
   caller-supplied client_id would let it rotate or mint another client's tokens.
 - **Every resolver that reverses a client-supplied integer id takes a `userId` and
   scopes its lookup** (#1268) — never seek the shared `entries` table unscoped.
+- **The browser extension accepts a token only from an `/extension/callback` that
+  echoes a one-time `state` it issued, on the origin it issued it for, and sends a
+  token only to the origin that issued it** (`extension/src/constants.js`, #1771):
+  otherwise a link with an attacker's token, or a server-URL change, would send
+  the user's saves to someone else.
 
 ## 9. Webhooks & admin
 

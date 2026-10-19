@@ -2,7 +2,7 @@
  * Lion Reader API calls shared by the popup and the background worker.
  */
 
-import { getServerUrl, hasServerPermission } from "./constants.js";
+import { hasServerPermission } from "./constants.js";
 
 /**
  * Errors the server returns when saving a Google Doc needs the user to sign in
@@ -25,11 +25,11 @@ export function needsWebAuthFlow(err) {
 }
 
 /**
- * Open the options page if the configured server hasn't been granted its host
+ * Open the options page if `serverUrl` hasn't been granted its host
  * permission, which saving there needs. Returns whether it was granted.
  */
-export async function checkServerPermission() {
-  if (await hasServerPermission()) {
+export async function checkServerPermission(serverUrl) {
+  if (await hasServerPermission(serverUrl)) {
     return true;
   }
   await chrome.runtime.openOptionsPage();
@@ -37,10 +37,9 @@ export async function checkServerPermission() {
 }
 
 /**
- * Save an article using Bearer token auth.
+ * Save an article to `serverUrl` using Bearer token auth.
  */
-export async function saveArticle(url, title, token) {
-  const serverUrl = await getServerUrl();
+export async function saveArticle(serverUrl, url, title, token) {
   const apiUrl = `${serverUrl}/api/v1/saved`;
 
   const body = { url };

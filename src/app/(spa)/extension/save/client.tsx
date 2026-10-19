@@ -7,24 +7,21 @@
 
 interface Props {
   error?: string;
-  /** The URL being saved; when present, it's shown with a "Try Again" link. */
-  url?: string;
+  /** The URL being saved, shown with a "Try Again" link to `retryHref`. */
+  retry?: { url: string; retryHref: string };
 }
 
-export function ExtensionSaveClient({ error, url }: Props) {
+export function ExtensionSaveClient({ error, retry }: Props) {
   return (
     <div className="bg-canvas flex min-h-screen items-center justify-center">
       <div className="max-w-md p-8 text-center">
         <div className="text-danger mb-4 text-5xl">!</div>
         <h1 className="ui-text-xl text-body mb-2 font-semibold">Failed to Save</h1>
         <p className="text-muted mb-4">{error || "An error occurred while saving the article."}</p>
-        {url && (
+        {retry && (
           <>
-            <p className="ui-text-sm text-muted mb-4 break-all">{url}</p>
-            <a
-              href={`/extension/save?url=${encodeURIComponent(url)}`}
-              className="btn-primary inline-block rounded-lg px-4 py-2"
-            >
+            <p className="ui-text-sm text-muted mb-4 break-all">{retry.url}</p>
+            <a href={retry.retryHref} className="btn-primary inline-block rounded-lg px-4 py-2">
               Try Again
             </a>
           </>
