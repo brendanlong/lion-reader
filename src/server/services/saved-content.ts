@@ -4,7 +4,7 @@
  * database access: storage is `saved.ts`.
  */
 
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 import {
@@ -65,7 +65,7 @@ function extractMetadata(html: string, url: string): PageMetadata {
   let inTitle = false;
   let titleContent = "";
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         const tagName = name.toLowerCase();

@@ -1,7 +1,7 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { socialPostImage, socialPostTitle } from "./social-post";
 import { fetchPluginPage } from "./fetch-page";
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 import { plainTextToHtml } from "@/server/http/html";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { logger } from "@/lib/logger";
@@ -97,7 +97,7 @@ function extractThreadsOpenGraph(html: string): ThreadsOpenGraph {
   let image: string | null = null;
   let card: string | null = null;
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         if (name.toLowerCase() !== "meta") {

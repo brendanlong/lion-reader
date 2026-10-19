@@ -24,6 +24,13 @@ const NATIVE_MARKDOWN = {
     "Import markdownToHtmlAsync or processMarkdown from @/server/markdown instead — that module owns the app's Markdown dialect and its size budgets.",
 };
 
+// A bare htmlparser2 parse costs time proportional to the nesting depth on
+// every tag, so untrusted markup nested deep enough takes seconds (#2031).
+const HTMLPARSER2 = {
+  name: "htmlparser2",
+  message: "Parse with createSaxParser (@/server/html/sax), which bounds the nesting depth.",
+};
+
 // Shared code doesn't depend on the routes: src/server and src/lib import
 // nothing from src/app. Data a route and the server both need lives under
 // src/lib (the demo's articles are in src/lib/demo for that reason).
@@ -139,35 +146,42 @@ const eslintConfig = defineConfig([
   // paths instead of merging: each override re-lists the rules it keeps.
   {
     files: ["src/**/*.{ts,tsx}"],
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [NARRATION_INTERNALS]),
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2], [NARRATION_INTERNALS]),
   },
   {
     files: ["src/components/narration/**/*.{ts,tsx}"],
-    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN]),
+    rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2]),
   },
   {
     files: ["src/server/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    rules: restrictImports(
+      [NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
+      [APP_LAYER, NARRATION_INTERNALS]
+    ),
+  },
+  {
+    files: ["src/server/html/sax.ts"],
     rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, NARRATION_INTERNALS]),
   },
   {
     files: ["src/components/ui/page-link.tsx"],
-    rules: restrictImports([NATIVE_MARKDOWN], [NARRATION_INTERNALS]),
+    rules: restrictImports([NATIVE_MARKDOWN, HTMLPARSER2], [NARRATION_INTERNALS]),
   },
   {
     files: ["src/server/markdown/index.ts"],
-    rules: restrictImports([NEXT_LINK], [APP_LAYER, NARRATION_INTERNALS]),
+    rules: restrictImports([NEXT_LINK, HTMLPARSER2], [APP_LAYER, NARRATION_INTERNALS]),
   },
   {
     files: API_SURFACES.filter((glob) => glob.startsWith("src/app/")),
     rules: restrictImports(
-      [NEXT_LINK, NATIVE_MARKDOWN],
+      [NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
       [NARRATION_INTERNALS, ...RAW_CREDENTIAL_VALIDATORS]
     ),
   },
   {
     files: [...API_SURFACES.filter((glob) => glob.startsWith("src/server/")), ...REQUEST_AUTH],
     rules: restrictImports(
-      [NEXT_LINK, NATIVE_MARKDOWN],
+      [NEXT_LINK, NATIVE_MARKDOWN, HTMLPARSER2],
       [APP_LAYER, NARRATION_INTERNALS, ...RAW_CREDENTIAL_VALIDATORS]
     ),
   },

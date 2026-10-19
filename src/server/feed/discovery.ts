@@ -6,7 +6,7 @@
  * since feed links are only in the head section.
  */
 
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 
 /**
  * A discovered feed from an HTML page.
@@ -130,7 +130,7 @@ export function discoverFeeds(html: string, baseUrl: string): DiscoveredFeed[] {
   const feeds: DiscoveredFeed[] = [];
   const seenUrls = new Set<string>();
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         // Check for link tags (htmlparser2 lowercases tag and attribute names)

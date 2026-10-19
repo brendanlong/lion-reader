@@ -23,7 +23,7 @@
  */
 
 import JSZip from "jszip";
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 import { logger } from "@/lib/logger";
 
 export interface DocxCoreProperties {
@@ -71,7 +71,7 @@ function parseCoreXml(xml: string): DocxCoreProperties {
   let field: keyof DocxCoreProperties | null = null;
   let text = "";
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name) {
         switch (name.toLowerCase()) {

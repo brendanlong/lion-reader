@@ -111,7 +111,7 @@ Prefer SAX-style parsing unless the algorithm requires a DOM. Parse once and pas
 
 - Feeds (RSS/Atom/OPML): the native `@lion-reader/feed-parser` behind `src/server/feed/streaming/`; request paths use the `*Async` forms, background jobs the sync ones.
 - XML generation (OPML export): `fast-xml-parser`
-- HTML extraction: `htmlparser2` (streaming)
+- HTML extraction: htmlparser2 (streaming), always through `createSaxParser` (`src/server/html/sax.ts`)
 - DOM required: `linkedom`. Article extraction is the native `@lion-reader/readability`.
 - A DOM that must number elements exactly as the browser does: `src/lib/narration/parse-html.ts` (parse5 first; it says why). Nothing else needs it.
 - Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, so every source shares one dialect and the renderer's size budgets. A lint rule forbids importing `@lion-reader/markdown` directly.
