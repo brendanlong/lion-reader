@@ -5,6 +5,7 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "../db";
+import { databaseNow } from "../db/temporal";
 import { feeds, type Feed } from "../db/schema";
 import { parseFeedAsync } from "./parser";
 import { processEntries } from "./entry-processor";
@@ -35,11 +36,10 @@ export type WebsubIngestOutcome =
  * A push doesn't advance `feeds.last_fetched_at` (see `ingestWebsubNotification`),
  * so deferring to "now + 24h" on every push starves the backup poll of any feed
  * whose hub pushes more often than daily: the poll is deferred again before it
- * ever runs, and it never runs. That poll is load-bearing — it reconciles entries
- * the publisher removed (the reason the push nulls `body_hash`), refreshes
- * `last_fetched_at` so `shouldRefetchOnSubscribe` doesn't force a refetch for
- * every new subscriber, and is the only way a push miss gets tallied — so bound
- * the deferral by the last real poll instead of by "now".
+ * ever runs, and it never runs. That poll is load-bearing — it is what confirms
+ * or drops pushed entries for new subscribers (`currentEntryIdsSql`), and the only
+ * way a push miss gets tallied — so bound the deferral by the last real poll
+ * instead of by "now".
  *
  * A feed with no successful poll yet has no bound to compute, and its first poll
  * is what establishes one: leave its job alone rather than deferring it a day.
@@ -139,10 +139,13 @@ export async function ingestWebsubNotification(
     return "unparseable";
   }
 
-  const now = new Date();
   try {
+    // The database clock: the entries' pushed_at is compared with the poll's
+    // last_fetched_at (`currentEntryIdsSql`).
+    const now = new Date((await databaseNow(db)).epochMilliseconds);
     const result = await processEntries(feedId, parsedFeed, {
       fetchedAt: now,
+      pushed: true,
       // A push never advances last_fetched_at, so this stays the last full poll:
       // anything the hub announces that predates it by a wide margin is the
       // publisher replaying its archive, not news (issue #1500).
@@ -153,26 +156,14 @@ export async function ingestWebsubNotification(
       feedTitle: parsedFeed.title || feed.title,
     });
 
-    // Refresh feed metadata, but deliberately do NOT touch `last_fetched_at`: a
-    // push is not a full poll, so `last_fetched_at` must keep meaning "last time
-    // we fetched the whole feed". The subscribe-time staleness check keys off it
-    // (a WebSub feed becomes stale as its last real poll ages), and feed-health
-    // monitoring counts only real fetches. We also leave `last_entries_updated_at`
-    // untouched so pushed entries stay stamped above it and remain visible to new
-    // subscribers via the `>=` populate (issue #1078).
-    //
-    // Clear `body_hash`, though: it fingerprints the last full poll's body, and a
-    // push changed the feed. If the publisher later removes the pushed entry so
-    // the feed body returns byte-identical to that last poll, the next poll would
-    // otherwise short-circuit on the matching hash and never re-process — leaving
-    // the removed-but-push-stamped entry above the generation pointer and still
-    // visible to new subscribers. Nulling it forces the next poll to fully
-    // reconcile (re-stamp + disappeared detection), which drops the entry.
+    // Refresh feed metadata, but none of the poll state: `last_fetched_at`,
+    // `last_entries_updated_at` and `body_hash` describe the last poll, and
+    // which entries are current, subscribe-time staleness and feed-health
+    // monitoring key off them.
     await db
       .update(feeds)
       .set({
         updatedAt: now,
-        bodyHash: null,
         title: parsedFeed.title || feed.title,
         description: parsedFeed.description || feed.description,
         siteUrl: parsedFeed.siteUrl || feed.siteUrl,

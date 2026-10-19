@@ -1065,6 +1065,41 @@
       "when": 1782957300000,
       "tag": "0152_oauth_accounts_user_provider_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1782957300100,
+      "tag": "0153_entries_last_seen_unpolled",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1782957300200,
+      "tag": "0154_validate_entries_last_seen",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1782957300300,
+      "tag": "0155_feeds_stale_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1782957300400,
+      "tag": "0156_entries_pushed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1782957300500,
+      "tag": "0157_idx_entries_owner_feed_pushed",
+      "breakpoints": true
     }
   ]
 }

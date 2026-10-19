@@ -35,7 +35,7 @@ import {
   toSyncTag,
 } from "@/server/services/subscription-sync-events";
 import type { Database } from "@/server/db";
-import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
+import { databaseNow, parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
 import {
   getSubscriptionsByIds,
@@ -129,11 +129,6 @@ export async function currentSyncCursors(
  * reported on the next sync.
  */
 const DELETIONS_CURSOR_MARGIN_MS = 60 * 1000;
-
-async function databaseNow(db: Database): Promise<Temporal.Instant> {
-  const result = await db.execute<{ now: string }>(sql`SELECT now() AS now`);
-  return parseTimestamptz(result.rows[0].now);
-}
 
 /**
  * Each entry's (active) collections, empty for one in none. Membership is per-user

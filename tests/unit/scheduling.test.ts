@@ -536,6 +536,28 @@ describe("calculateNextFetch", () => {
     });
   });
 
+  describe("staleAt", () => {
+    it("is the next fetch for a feed without WebSub", () => {
+      const result = calculateNextFetch({
+        cacheControl: createCacheControl({ maxAge: 1200 }),
+        now: fixedNow,
+        randomSource: noJitter,
+      });
+      expect(result.staleAt).toEqual(result.nextFetchAt);
+    });
+
+    it("follows the feed's own cadence under WebSub, not the backup interval", () => {
+      const options = {
+        cacheControl: createCacheControl({ maxAge: 1200 }),
+        now: fixedNow,
+        randomSource: noJitter,
+      };
+      const result = calculateNextFetch({ ...options, websubActive: true });
+      expect(result.intervalSeconds).toBe(WEBSUB_BACKUP_POLL_INTERVAL_SECONDS);
+      expect(result.staleAt).toEqual(calculateNextFetch(options).nextFetchAt);
+    });
+  });
+
   describe("uses current time by default", () => {
     it("uses current time when now is not provided", () => {
       const before = new Date();
@@ -647,71 +669,30 @@ describe("calculateJitter", () => {
 
 describe("shouldRefetchOnSubscribe", () => {
   const now = new Date("2024-06-01T12:00:00Z");
+  /** Just past the floor below which a polled feed is never refetched. */
+  const pastFloor = new Date(now.getTime() - MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS * 1000);
+  const withinFloor = new Date(pastFloor.getTime() + 1);
+  const future = new Date(now.getTime() + 60 * 60 * 1000);
+  const past = new Date(now.getTime() - 1);
 
-  it("returns true for a feed that has never been fetched", () => {
-    expect(
-      shouldRefetchOnSubscribe({ lastFetchedAt: null, nextFetchAt: null, websubActive: false }, now)
-    ).toBe(true);
-  });
-
-  describe("normal (non-WebSub) feeds", () => {
-    it("is not stale before it is due for its next poll", () => {
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      const inThirtyMinutes = new Date(now.getTime() + 30 * 60 * 1000);
-      expect(
-        shouldRefetchOnSubscribe(
-          { lastFetchedAt: oneHourAgo, nextFetchAt: inThirtyMinutes, websubActive: false },
-          now
-        )
-      ).toBe(false);
-    });
-
-    it("is stale once it is due for its next poll", () => {
-      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-      const oneHourAgoDue = new Date(now.getTime() - 60 * 60 * 1000);
-      expect(
-        shouldRefetchOnSubscribe(
-          { lastFetchedAt: twoHoursAgo, nextFetchAt: oneHourAgoDue, websubActive: false },
-          now
-        )
-      ).toBe(true);
-    });
-
-    it("is stale when nextFetchAt is unknown", () => {
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      expect(
-        shouldRefetchOnSubscribe(
-          { lastFetchedAt: oneHourAgo, nextFetchAt: null, websubActive: false },
-          now
-        )
-      ).toBe(true);
-    });
-  });
-
-  describe("WebSub feeds", () => {
-    // WebSub feeds ignore nextFetchAt (24h backup) and key off time since the
-    // last real poll, bounded by the normal cache window.
-    const cacheWindowMs = MIN_FETCH_INTERVAL_SECONDS * 1000;
-    const backupNextFetch = new Date(now.getTime() + 20 * 60 * 60 * 1000); // 20h out
-
-    it("is not stale within the cache window of the last real poll", () => {
-      const justPolled = new Date(now.getTime() - cacheWindowMs / 2);
-      expect(
-        shouldRefetchOnSubscribe(
-          { lastFetchedAt: justPolled, nextFetchAt: backupNextFetch, websubActive: true },
-          now
-        )
-      ).toBe(false);
-    });
-
-    it("is stale once the last real poll is older than the cache window", () => {
-      const staleFetch = new Date(now.getTime() - cacheWindowMs - 1000);
-      expect(
-        shouldRefetchOnSubscribe(
-          { lastFetchedAt: staleFetch, nextFetchAt: backupNextFetch, websubActive: true },
-          now
-        )
-      ).toBe(true);
-    });
+  it.each([
+    { case: "never fetched", lastFetchedAt: null, staleAt: null, expected: true },
+    {
+      case: "not yet stale by its cadence",
+      lastFetchedAt: pastFloor,
+      staleAt: future,
+      expected: false,
+    },
+    { case: "stale by its cadence", lastFetchedAt: pastFloor, staleAt: past, expected: true },
+    { case: "of unknown staleness", lastFetchedAt: pastFloor, staleAt: null, expected: true },
+    // A failing feed is stale again as soon as its backoff passes.
+    {
+      case: "stale but polled within the floor",
+      lastFetchedAt: withinFloor,
+      staleAt: past,
+      expected: false,
+    },
+  ])("a feed $case: $expected", ({ lastFetchedAt, staleAt, expected }) => {
+    expect(shouldRefetchOnSubscribe({ lastFetchedAt, staleAt }, now)).toBe(expected);
   });
 });

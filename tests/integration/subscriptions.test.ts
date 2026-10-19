@@ -34,15 +34,14 @@ import {
 // ============================================================================
 
 /**
- * Wraps the shared feed factory with a feed that is not due for a poll, so the
+ * Wraps the shared feed factory with a feed that is not stale, so the
  * subscribe flow doesn't attempt a real network refresh
  * (shouldRefetchOnSubscribe → false). Tests that exercise the forced-refresh
- * path override nextFetchAt/websubActive.
+ * path override staleAt.
  */
 async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert>): Promise<string> {
   return createSharedTestFeed({
-    nextFetchAt: new Date(Date.now() + 60 * 60 * 1000),
-    websubActive: false,
+    staleAt: new Date(Date.now() + 60 * 60 * 1000),
     ...overrides,
   });
 }
@@ -156,14 +155,11 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
     });
 
     it("grants a backfilled entry already read to a new subscriber (#1500)", async () => {
-      // A WebSub push stamps last_seen_at above last_entries_updated_at and
-      // deliberately doesn't advance it, so an archive replay sits inside the
-      // current generation until the next backup poll — up to 24h during which a
+      // An archive replay a poll has seen is in the current generation, and a
       // new subscriber would otherwise be populated with hundreds of unread
       // years-old articles. The populate copies entries.is_backfill instead.
       const feedUrl = "https://example.com/backfill-feed.xml";
       const pollTime = new Date("2026-08-10T00:00:00Z");
-      const pushTime = new Date("2026-08-10T01:00:00Z");
 
       const feedId = await createTestFeed({
         url: feedUrl,
@@ -182,8 +178,8 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         guid: "archive-1",
         title: "Ukraine Post #5",
         publishedAt: new Date("2022-03-01T00:00:00Z"),
-        fetchedAt: pushTime,
-        lastSeenAt: pushTime,
+        fetchedAt: pollTime,
+        lastSeenAt: pollTime,
         isBackfill: true,
       });
 
@@ -203,53 +199,51 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(result.unreadCount).toBe(1);
     });
 
-    it("includes entries a WebSub hub pushed since the last poll (issue #1078)", async () => {
-      // A WebSub push stamps last_seen_at = pushTime but leaves the feed's
-      // last_entries_updated_at at the last poll, so a pushed entry sits *above*
-      // last_entries_updated_at. Strict equality would hide it (empty feed for a
-      // push-active feed); the `>=` populate must include it.
+    it.each([
+      {
+        case: "inserted by a push since the last poll",
+        lastSeenAt: null,
+        pushedAgoMin: 10,
+        granted: true,
+      },
+      {
+        case: "re-announced by a push since the last poll",
+        lastSeenAt: new Date("2024-01-01T09:00:00Z"),
+        pushedAgoMin: 10,
+        granted: true,
+      },
+      // That poll didn't list it, so the publisher has removed it (#1959).
+      {
+        case: "pushed before the last poll, which didn't list it",
+        lastSeenAt: null,
+        pushedAgoMin: 60,
+        granted: false,
+      },
+    ])("grants an entry $case: $granted", async ({ lastSeenAt, pushedAgoMin, granted }) => {
+      // A hub announcing an entry after the last poll says it's in the feed
+      // until the next poll, which stamps it or leaves it out.
       const userId = await createTestUser();
-
-      const feedUrl = "https://example.com/websub-feed.xml";
+      const feedUrl = `https://example.com/pushed-${generateUuidv7()}.xml`;
       const pollTime = new Date("2024-01-01T10:00:00Z");
-      const pushTime = new Date("2024-01-01T11:00:00Z"); // a hub push after the poll
-
-      // WebSub feed, freshly polled so the subscribe flow does NOT force a
-      // network refresh (shouldRefetchOnSubscribe → false).
+      const now = Date.now();
       const feedId = await createTestFeed({
         url: feedUrl,
-        lastFetchedAt: new Date(), // recent real poll
+        lastFetchedAt: new Date(now - 30 * 60 * 1000),
         lastEntriesUpdatedAt: pollTime,
         websubActive: true,
       });
-
-      // Entries present in the last poll.
-      const entryAId = await createTestEntry(feedId, {
-        guid: "entry-A",
+      const polledId = await createTestEntry(feedId, { fetchedAt: pollTime, lastSeenAt: pollTime });
+      const pushedId = await createTestEntry(feedId, {
         fetchedAt: pollTime,
-        lastSeenAt: pollTime,
-      });
-      const entryBId = await createTestEntry(feedId, {
-        guid: "entry-B",
-        fetchedAt: pollTime,
-        lastSeenAt: pollTime,
-      });
-      // Entry delivered by a hub push after the poll (last_seen_at > lastEntriesUpdatedAt).
-      const entryCId = await createTestEntry(feedId, {
-        guid: "entry-C",
-        fetchedAt: pushTime,
-        lastSeenAt: pushTime,
+        lastSeenAt,
+        pushedAt: new Date(now - pushedAgoMin * 60 * 1000),
       });
 
       const caller = createCaller(await createAuthContext(userId));
-      const result = await caller.subscriptions.create({ url: feedUrl });
+      await caller.subscriptions.create({ url: feedUrl });
 
-      expect(result.unreadCount).toBe(3);
       const entryIds = (await getUserEntries(userId)).map((e) => e.entryId).sort();
-      expect(entryIds).toHaveLength(3);
-      expect(entryIds).toContain(entryAId);
-      expect(entryIds).toContain(entryBId);
-      expect(entryIds).toContain(entryCId);
+      expect(entryIds).toEqual(granted ? [polledId, pushedId].sort() : [polledId]);
     });
   });
 
@@ -385,7 +379,7 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
         url: feedUrl,
         lastFetchedAt: fetchTime,
         lastEntriesUpdatedAt: fetchTime,
-        nextFetchAt: new Date("2024-01-01T11:00:00Z"), // long past → stale
+        staleAt: new Date("2024-01-01T11:00:00Z"), // long past
       });
       await createTestEntry(feedId, {
         guid: "known-stale-a",

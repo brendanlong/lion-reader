@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import { customType } from "drizzle-orm/pg-core";
 import { types as pgTypes, type CustomTypesConfig } from "pg";
 import { Temporal } from "temporal-polyfill";
+import type { DbOrTx } from "./index";
 
 /**
  * Full-precision timestamp handling for Postgres `timestamptz`.
@@ -50,6 +52,16 @@ export const timestamptzRawParserConfig: CustomTypesConfig = {
  */
 export function parseTimestamptz(value: unknown): Temporal.Instant {
   return Temporal.Instant.from(String(value));
+}
+
+/**
+ * The database clock. Use it for any timestamp compared with one another
+ * machine wrote (the worker, the web app and the Discord bot run on different
+ * hosts), so their clocks can't disagree.
+ */
+export async function databaseNow(db: DbOrTx): Promise<Temporal.Instant> {
+  const result = await db.execute<{ now: string }>(sql`SELECT now() AS now`);
+  return parseTimestamptz(result.rows[0].now);
 }
 
 /**

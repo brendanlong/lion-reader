@@ -161,6 +161,13 @@ export interface NextFetchResult {
   intervalSeconds: number;
   /** The reason for the chosen interval */
   reason: NextFetchReason;
+  /**
+   * When the feed's cached entries stop counting as its current contents: the
+   * fetch its own cadence would schedule. The same as `nextFetchAt` except under
+   * WebSub, whose longer backup interval relies on pushes for new entries, which
+   * say nothing about entries the publisher removed (`shouldRefetchOnSubscribe`).
+   */
+  staleAt: Date;
 }
 
 /**
@@ -338,10 +345,14 @@ export function calculateNextFetch(options: CalculateNextFetchOptions = {}): Nex
   const jitterSeconds = calculateJitter(intervalSeconds, randomSource());
   const totalSeconds = intervalSeconds + jitterSeconds;
 
+  const nextFetchAt = addSeconds(now, totalSeconds);
   return {
-    nextFetchAt: addSeconds(now, totalSeconds),
+    nextFetchAt,
     intervalSeconds: totalSeconds,
     reason,
+    staleAt: websubActive
+      ? calculateNextFetch({ ...options, websubActive: false }).nextFetchAt
+      : nextFetchAt,
   };
 }
 
@@ -424,41 +435,31 @@ export function calculateJitter(intervalSeconds: number, randomValue: number): n
  * Whether the interactive subscribe flow should force a fresh fetch of an
  * existing feed before granting a new subscriber visibility.
  *
- * The subscribe populate grants visibility to entries with
- * `last_seen_at >= last_entries_updated_at`. That is ground truth right after a
- * poll, but a WebSub feed's cached entries drift between polls: pushes add
- * entries (and the publisher can remove them) without a full fetch confirming
- * the current set. A forced refresh re-establishes ground truth; this decides
- * when it's worth doing.
+ * The subscribe populate grants the feed's current entries (`currentEntryIdsSql`):
+ * what the last poll saw, plus what a WebSub hub pushed since. They stay
+ * current until the feed is stale by its own cadence (`feeds.stale_at`, never
+ * the WebSub backup interval); after that only a fresh fetch says what the feed
+ * holds.
  *
- * - **Never fetched** → stale (nothing to show yet).
- * - **WebSub feed** → stale once the last *real poll* is older than the cache
- *   window. Pushes don't update `last_fetched_at`, so this measures time since
- *   we last confirmed the full feed, and it bounds how long an entry the hub
- *   pushed and the publisher then deleted could remain visible to a brand-new
- *   subscriber. A feed polled within the window (e.g. right after the 24h backup
- *   poll, or a popular feed another subscriber just refreshed) is skipped.
- * - **Normal feed** → stale only once it's due for its next scheduled poll, so
- *   an in-cadence feed is never refetched on subscribe. Normal feeds get no
- *   pushes, so their cached set is already current as of the last poll.
+ * A stale feed polled within the shortest interval we ever poll at
+ * (`MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS`) isn't refetched, so a failing
+ * feed, already stale again as soon as its backoff passes, isn't fetched on
+ * every subscribe.
  *
- * @param feed - Feed fetch-state fields
+ * @param feed - Feed fetch state
  * @param now - Reference time (defaults to now)
  */
 export function shouldRefetchOnSubscribe(
-  feed: {
-    lastFetchedAt: Date | null;
-    nextFetchAt: Date | null;
-    websubActive: boolean;
-  },
+  feed: { lastFetchedAt: Date | null; staleAt: Date | null },
   now: Date = new Date()
 ): boolean {
   if (feed.lastFetchedAt === null) {
     return true;
   }
-  if (feed.websubActive) {
-    const cacheWindowMs = MIN_FETCH_INTERVAL_SECONDS * 1000;
-    return now.getTime() - feed.lastFetchedAt.getTime() >= cacheWindowMs;
-  }
-  return feed.nextFetchAt === null || now.getTime() >= feed.nextFetchAt.getTime();
+  const stale = feed.staleAt === null || now.getTime() >= feed.staleAt.getTime();
+  return (
+    stale &&
+    now.getTime() - feed.lastFetchedAt.getTime() >=
+      MIN_FETCH_INTERVAL_WITH_CACHE_HINT_SECONDS * 1000
+  );
 }

@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "crypto";
-import { eq, and, gte, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { db } from "../db";
 import { entries, type Entry, type NewEntry } from "../db/schema";
 import { generateUuidv7 } from "../../lib/uuidv7";
@@ -86,9 +86,17 @@ export interface ProcessEntriesOptions {
   /**
    * `feeds.last_fetched_at` from *before* this fetch — the last time we pulled
    * the whole feed. Null/omitted on a feed's first fetch, which disables the
-   * backfill guard (see `isBackfilledEntry`).
+   * backfill guard (see `isBackfilledEntry`). A poll also uses it to tell which
+   * pushed entries were current (`currentEntryIdsSql`).
    */
   previousLastFetchedAt?: Date | null;
+  /**
+   * Treat no first sighting as a backfill, as on a feed's first fetch. The
+   * subscribe-time forced refresh sets it: it hands a brand-new subscriber the
+   * current feed, and that subscriber has no history to judge "already old when
+   * we last looked" against.
+   */
+  skipBackfillGuard?: boolean;
   /** The URL of the feed (for feed-specific content cleaning) */
   feedUrl?: string;
   /** The feed's title (feeds.title), carried on new_entry events for list display */
@@ -98,19 +106,58 @@ export interface ProcessEntriesOptions {
    * this fetch + fan out `user_entries`) even when nothing changed. A normal
    * poll skips this on an unchanged fetch to avoid rewriting every row of the
    * largest table on every poll (issue #1084), so `last_seen_at` only advances
-   * when entries actually change.
+   * when the feed's current entries change.
    *
    * The subscribe-time forced refresh (`handleFetchFeed`'s `forceReprocess`)
-   * sets this so that ALL entries currently in the feed are re-stamped to this
-   * fetch's timestamp, re-establishing a single visibility "generation". A new
-   * subscriber is then populated via `last_seen_at >= last_entries_updated_at`
-   * and sees exactly the current feed — including nothing a WebSub push left
-   * stranded above the last poll's timestamp, and excluding anything a push
-   * added and the publisher has since removed (it isn't re-stamped, so it falls
-   * below the new generation). Only used on the rare subscribe path, so the
-   * write churn is acceptable.
+   * sets this so the fanout reaches the new subscriber even when the feed is
+   * unchanged. Only used on the rare subscribe path, so the write churn is
+   * acceptable.
    */
   alwaysUpdateVisibility?: boolean;
+  /**
+   * The entries came from a WebSub push, not a poll. A push inserts, updates
+   * and fans out to current subscribers like a poll, but stamps `pushed_at`
+   * instead of `last_seen_at` on every entry it announces (one it inserts keeps
+   * `last_seen_at` NULL), which keeps them current until the next poll
+   * (`currentEntryIdsSql`). A push can't detect disappeared entries, so it never
+   * passes `previousLastEntriesUpdatedAt`.
+   */
+  pushed?: boolean;
+}
+
+/**
+ * The ids of a feed's current entries, the ones a new subscriber is granted
+ * ("Entry Visibility" in src/server/CLAUDE.md): `last_seen_at >=
+ * last_entries_updated_at` (the last poll that stamped the feed saw it) or
+ * `pushed_at > last_fetched_at` (a WebSub hub announced it after the last
+ * poll, which says it is in the feed until the next poll). An entry that poll
+ * doesn't list, and no push announces again, stops being current. A push's
+ * `pushed_at` and a poll's `last_fetched_at` both come from the database clock
+ * (`databaseNow`), so the comparison holds across machines.
+ *
+ * One range scan per arm (`idx_entries_owner_feed_last_seen`,
+ * `idx_entries_owner_feed_pushed`): written as an `OR`, the planner scans every
+ * entry the feed ever had.
+ *
+ * @param feedId - The feed
+ * @param feed - Its `last_entries_updated_at` and `last_fetched_at`, as values
+ *   or as SQL reading them
+ */
+export function currentEntryIdsSql(
+  feedId: string,
+  feed: {
+    lastEntriesUpdatedAt: SQLWrapper | Date | null;
+    lastFetchedAt: SQLWrapper | Date | null;
+  }
+): SQL {
+  const stamped = sql`last_seen_at >= ${feed.lastEntriesUpdatedAt}`;
+  return sql`
+    SELECT id FROM entries
+    WHERE owner_feed_id = ${feedId}::uuid AND type = 'web' AND ${stamped}
+    UNION ALL
+    SELECT id FROM entries
+    WHERE owner_feed_id = ${feedId}::uuid AND type = 'web' AND pushed_at > ${feed.lastFetchedAt}
+      AND (${stamped}) IS NOT TRUE`;
 }
 
 /**
@@ -272,6 +319,7 @@ function entryContentColumns(parsedEntry: ParsedEntry, contentHash: string, feed
  * @param feedUrl - The URL of the feed (for feed-specific cleaning)
  * @param previousLastFetchedAt - `feeds.last_fetched_at` from before this fetch,
  *   used to stamp `is_backfill` (see `isBackfilledEntry`)
+ * @param pushed - Whether a WebSub push delivered it (`ProcessEntriesOptions.pushed`)
  * @returns The created entry
  */
 export async function createEntry(
@@ -280,7 +328,8 @@ export async function createEntry(
   contentHash: string,
   fetchedAt: Date,
   feedUrl?: string,
-  previousLastFetchedAt?: Date | null
+  previousLastFetchedAt?: Date | null,
+  pushed = false
 ): Promise<Entry> {
   const guid = deriveGuid(parsedEntry);
   const publishedAt = clampPublishedAt(parsedEntry.pubDate, fetchedAt);
@@ -294,7 +343,8 @@ export async function createEntry(
     publishedAt,
     fetchedAt,
     // Tracks visibility on subscription (see processEntries)
-    lastSeenAt: fetchedAt,
+    lastSeenAt: pushed ? null : fetchedAt,
+    pushedAt: pushed ? fetchedAt : null,
     isBackfill: isBackfilledEntry(publishedAt, previousLastFetchedAt),
   };
 
@@ -352,6 +402,7 @@ interface CachedEntryInfo {
   id: string;
   guid: string;
   contentHash: string | null;
+  lastSeenAt: Date | null;
 }
 
 /**
@@ -370,8 +421,9 @@ async function processEntryWithCache(
   parsedEntry: ParsedEntry,
   fetchedAt: Date,
   existingEntriesMap: Map<string, CachedEntryInfo>,
-  feedUrl?: string,
-  previousLastFetchedAt?: Date | null
+  feedUrl: string | undefined,
+  previousLastFetchedAt: Date | null | undefined,
+  pushed: boolean
 ): Promise<ProcessedEntry> {
   const guid = deriveGuid(parsedEntry);
   const guidKey = canonicalGuid(guid);
@@ -393,11 +445,17 @@ async function processEntryWithCache(
       contentHash,
       fetchedAt,
       feedUrl,
-      previousLastFetchedAt
+      previousLastFetchedAt,
+      pushed
     );
 
     // Add to cache so duplicate GUIDs in same feed don't create duplicates
-    existingEntriesMap.set(guidKey, { id: entry.id, guid, contentHash });
+    existingEntriesMap.set(guidKey, {
+      id: entry.id,
+      guid,
+      contentHash,
+      lastSeenAt: entry.lastSeenAt,
+    });
 
     return {
       id: entry.id,
@@ -450,11 +508,9 @@ async function processEntryWithCache(
 }
 
 /**
- * Updates lastSeenAt for entries seen in the current fetch.
- * This is used to track which entries are currently in the feed,
- * enabling subscription without re-fetching.
- *
- * Only applies to rss/atom/json feeds - email/saved entries don't use lastSeenAt.
+ * Stamps `last_seen_at` on the entries a poll saw, marking them the feed's
+ * current entries for the subscribe populate. Only polls call this, and the job
+ * queue runs one poll of a feed at a time.
  *
  * Deliberately does NOT touch `updated_at`: that column is the "content changed"
  * signal (set only by createEntry/updateEntryContent) and drives every
@@ -463,20 +519,9 @@ async function processEntryWithCache(
  * feed that gained a single item — would re-ship `entry_updated` payloads for
  * entries whose content never changed and rewrite every wide row on the largest
  * table (MVCC/WAL/index churn). `last_seen_at` alone is what visibility needs.
- * The write is **monotonic** — it only advances `last_seen_at` forward
- * (`IS NULL OR < lastSeenAt`), never backward. That both preserves the #1084
- * optimization (an entry already at this timestamp isn't rewritten) and makes
- * the write safe under concurrency: a WebSub push (`ingestWebsubNotification`)
- * is processed in the hub's callback request, outside the job queue's per-feed
- * serialization, so it can run alongside a worker poll of the same feed. If an
- * earlier-timestamped writer could regress a stamp another writer already
- * advanced, entries could end up **below** the feed's `last_entries_updated_at`
- * (which only moves forward), making the `>=` subscribe populate match nothing —
- * the exact #1078 empty feed. Monotonic writes guarantee every current entry
- * ends at ≥ the max writer timestamp ≥ the final `last_entries_updated_at`.
  *
  * @param entryIds - Array of entry IDs seen in this fetch
- * @param lastSeenAt - Timestamp to set (only applied where it moves forward)
+ * @param lastSeenAt - The poll's timestamp, which becomes `last_entries_updated_at`
  */
 async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Promise<void> {
   if (entryIds.length === 0) {
@@ -487,19 +532,20 @@ async function updateEntriesLastSeenAt(entryIds: string[], lastSeenAt: Date): Pr
   const BATCH_SIZE = 1000;
   for (let i = 0; i < entryIds.length; i += BATCH_SIZE) {
     const batch = entryIds.slice(i, i + BATCH_SIZE);
-    await db
-      .update(entries)
-      .set({ lastSeenAt })
-      .where(
-        and(
-          inArray(entries.id, batch),
-          // Parenthesized: AND binds tighter than OR in SQL, so without the
-          // parens the id filter would only guard the first arm and the OR would
-          // match every row in the table.
-          sql`(${entries.lastSeenAt} IS NULL OR ${entries.lastSeenAt} < ${lastSeenAt})`
-        )
-      );
+    await db.update(entries).set({ lastSeenAt }).where(inArray(entries.id, batch));
   }
+}
+
+/**
+ * Stamps `pushed_at` on the existing entries a WebSub push announced, keeping
+ * them current until the next poll (`currentEntryIdsSql`). Like
+ * `updateEntriesLastSeenAt`, it leaves `updated_at` alone.
+ */
+async function updateEntriesPushedAt(entryIds: string[], pushedAt: Date): Promise<void> {
+  if (entryIds.length === 0) {
+    return;
+  }
+  await db.update(entries).set({ pushedAt }).where(inArray(entries.id, entryIds));
 }
 
 /**
@@ -560,9 +606,9 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
     `
     );
   // A WebSub push runs outside the feed's job, so two fan-outs of the same
-  // entries can deadlock (they insert many rows each). Retry the loser: its
-  // fetch has already stamped last_seen_at, so an unchanged next fetch
-  // wouldn't fan these entries out again.
+  // entries can deadlock (they insert many rows each). Retry the loser: a poll
+  // has already stamped last_seen_at, so an unchanged next poll wouldn't fan
+  // these entries out again, and a push's subscribers would wait for a poll.
   let added: Awaited<ReturnType<typeof fanOut>>;
   for (let attempt = 1; ; attempt++) {
     try {
@@ -587,8 +633,10 @@ export async function createUserEntriesForFeed(feedId: string, entryIds: string[
  * and tracks statistics. Also creates user_entries records
  * to make entries visible to all active subscribers.
  *
- * Detects entries that disappeared from the feed (entries that had
- * lastSeenAt = previousLastEntriesUpdatedAt but aren't in the current feed).
+ * Detects entries that disappeared from the feed (current before this poll,
+ * `currentEntryIdsSql`, but not in it), and entries this poll stamps that the
+ * previous poll didn't (pushed since, or back after disappearing); either
+ * changes the current set.
  *
  * New entries that are really an archive re-announcement rather than news are
  * fanned out already-read — see `isBackfilledEntry` and `previousLastFetchedAt`.
@@ -614,10 +662,13 @@ export async function processEntries(
     fetchedAt = new Date(),
     previousLastEntriesUpdatedAt,
     previousLastFetchedAt,
+    skipBackfillGuard = false,
     feedUrl,
     feedTitle,
     alwaysUpdateVisibility = false,
+    pushed = false,
   } = options;
+  const backfillReference = skipBackfillGuard ? null : previousLastFetchedAt;
 
   // Derive GUIDs from all items first, so we only query for entries we need.
   // Matching is http/https-insensitive (#1535), so look up every spelling a
@@ -647,6 +698,7 @@ export async function processEntries(
             id: entries.id,
             guid: entries.guid,
             contentHash: entries.contentHash,
+            lastSeenAt: entries.lastSeenAt,
           })
           .from(entries)
           .where(and(eq(entries.ownerFeedId, feedId), inArray(entries.guid, [...guidsToCheck])))
@@ -671,7 +723,8 @@ export async function processEntries(
         fetchedAt,
         existingEntriesMap,
         feedUrl,
-        previousLastFetchedAt
+        backfillReference,
+        pushed
       );
       results.push(result);
 
@@ -695,32 +748,21 @@ export async function processEntries(
     }
   }
 
-  // Detect entries that disappeared from the feed: entries that
-  // were visible (last_seen_at >= previousLastEntriesUpdatedAt) but whose guid is
-  // no longer in the current feed (compared scheme-insensitively, so a feed that
-  // flips http/https between polls doesn't report its whole contents gone).
+  // Detect entries that disappeared from the feed: entries that were current
+  // before this poll but whose guid is no longer in the current feed (compared
+  // scheme-insensitively, so a feed that flips http/https between polls doesn't
+  // report its whole contents gone).
   let disappearedCount = 0;
 
-  if (previousLastEntriesUpdatedAt) {
-    // `>=`, not `=`: an entry a WebSub hub pushed since the last poll sits ABOVE
-    // previousLastEntriesUpdatedAt (last_seen_at = pushTime). Strict equality
-    // missed those, so a poll that confirmed such an entry was gone never counted
-    // it disappeared — leaving it stamped above the pointer and still granted to
-    // new subscribers by the `>=` populate even though it's no longer in the feed
-    // (issue #1078). With `>=` the poll counts it disappeared → hasChanges → the
-    // generation (last_entries_updated_at) advances past it → it's excluded. For a
-    // non-WebSub feed nothing is stamped above the pointer, so `>=` is exactly `=`.
+  if (!pushed && (previousLastEntriesUpdatedAt || previousLastFetchedAt)) {
     const previouslyCurrentEntries = await db
       .select({ guid: entries.guid })
       .from(entries)
       .where(
-        and(
-          eq(entries.ownerFeedId, feedId),
-          // Every fetched entry is a web entry; saying so lets the partial
-          // idx_entries_owner_feed_last_seen serve the range.
-          eq(entries.type, "web"),
-          gte(entries.lastSeenAt, previousLastEntriesUpdatedAt)
-        )
+        sql`${entries.id} IN (${currentEntryIdsSql(feedId, {
+          lastEntriesUpdatedAt: previousLastEntriesUpdatedAt ?? null,
+          lastFetchedAt: previousLastFetchedAt ?? null,
+        })})`
       );
 
     for (const entry of previouslyCurrentEntries) {
@@ -730,19 +772,35 @@ export async function processEntries(
     }
   }
 
+  // An entry this poll stamps that the previous poll didn't: a pushed entry
+  // (last_seen_at NULL) or one back after disappearing. Stamping it changes the
+  // current set even though its content didn't change, and a pushed one stops
+  // being current once this poll advances last_fetched_at unless it's stamped.
+  const lastSeenBefore = new Map(existingEntries.map((e) => [e.id, e.lastSeenAt]));
+  const stampedByPreviousPoll = (lastSeenAt: Date | null | undefined): boolean =>
+    lastSeenAt != null &&
+    previousLastEntriesUpdatedAt != null &&
+    lastSeenAt.getTime() >= previousLastEntriesUpdatedAt.getTime();
+  const stampsNewlyCurrent =
+    !pushed && results.some((r) => !r.isNew && !stampedByPreviousPoll(lastSeenBefore.get(r.id)));
+
   const allEntryIds = results.map((r) => r.id);
-  const hasChanges = newCount > 0 || updatedCount > 0 || disappearedCount > 0;
+  const hasChanges = newCount > 0 || updatedCount > 0 || disappearedCount > 0 || stampsNewlyCurrent;
 
   // The visibility bookkeeping (re-stamp last_seen_at + fan out user_entries)
   // normally runs only when the feed changed, so steady-state feeds pay nothing.
   // The subscribe-time forced refresh sets alwaysUpdateVisibility to run it on an
-  // unchanged fetch too, re-stamping the whole current feed to this fetch's
-  // timestamp (see the option's doc comment).
+  // unchanged fetch too (see the option's doc comment).
   const shouldUpdateVisibility = hasChanges || alwaysUpdateVisibility;
 
   // Update lastSeenAt for all entries in this fetch
   // The timestamp used here should match feeds.lastEntriesUpdatedAt
-  if (shouldUpdateVisibility) {
+  if (pushed) {
+    await updateEntriesPushedAt(
+      results.filter((r) => !r.isNew).map((r) => r.id),
+      fetchedAt
+    );
+  } else if (shouldUpdateVisibility) {
     await updateEntriesLastSeenAt(allEntryIds, fetchedAt);
   }
 

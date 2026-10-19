@@ -447,14 +447,20 @@ export const feeds = pgTable(
     etag: text("etag"),
     lastModifiedHeader: text("last_modified_header"),
     bodyHash: text("body_hash"), // SHA-256 hash of raw feed body for change detection
+    // Database clock (`databaseNow`): compared with entries.pushed_at.
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
-    // Timestamp when entries last changed (new, updated, or removed from feed)
-    // This matches entries.lastSeenAt for entries currently in the feed
+    // The last poll that changed the feed's current entries (new, updated,
+    // removed, or seen again). entries.last_seen_at matches it for entries
+    // currently in the feed.
     lastEntriesUpdatedAt: timestamp("last_entries_updated_at", { withTimezone: true }),
     // Informational copy of the schedule for display surfaces (feed stats,
     // broken feeds, admin). The authoritative value is jobs.next_run_at —
     // job claiming never reads this column, and the two can drift.
     nextFetchAt: timestamp("next_fetch_at", { withTimezone: true }),
+    // When the last poll's entries stop counting as current for a new
+    // subscriber: the next poll by the feed's own cadence, ignoring the WebSub
+    // backup interval (`NextFetchResult.staleAt`, `shouldRefetchOnSubscribe`).
+    staleAt: timestamp("stale_at", { withTimezone: true }),
     // Scheduling hints the feed declares (RSS <ttl>, sy:updatePeriod/Frequency),
     // kept so fetches that skip parsing (304, unchanged body) still honor them.
     ttlMinutes: integer("ttl_minutes"),
@@ -539,11 +545,14 @@ export const entries = pgTable(
     // Timestamps
     publishedAt: timestamp("published_at", { withTimezone: true }), // from feed (may be null/inaccurate)
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(), // when we first saw it
-    // Last time this entry was seen in a feed fetch (web only, NULL for email/saved).
-    // Written monotonically. Used for subscribe-time visibility: an entry is
-    // current when last_seen_at >= feeds.last_entries_updated_at (see the
-    // subscribe populate and "Entry Visibility" in src/server/CLAUDE.md).
+    // The last poll that saw this entry in the feed (web only). NULL for
+    // email/saved, and for a web entry a WebSub push inserted that no poll has
+    // seen yet. Decides whether the entry is current for a new subscriber
+    // (`currentEntryIdsSql`, "Entry Visibility" in src/server/CLAUDE.md).
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    // The last WebSub push that announced this entry (web only, database
+    // clock). Keeps it current until the next poll (`currentEntryIdsSql`).
+    pushedAt: timestamp("pushed_at", { withTimezone: true }),
 
     // Version tracking
     contentHash: text("content_hash").notNull(), // for detecting updates
@@ -630,6 +639,11 @@ export const entries = pgTable(
     index("idx_entries_owner_user_updated_at")
       .on(table.ownerUserId, table.updatedAt)
       .where(sql`owner_user_id IS NOT NULL`),
+    // The pushed arm of currentEntryIdsSql. Partial: only WebSub feeds' entries
+    // are ever pushed.
+    index("idx_entries_owner_feed_pushed")
+      .on(table.ownerFeedId, table.pushedAt)
+      .where(sql`type = 'web' AND pushed_at IS NOT NULL`),
     check(
       "entries_owner_matches_type",
       sql`(type = 'web') = (owner_feed_id IS NOT NULL) AND (type = 'email') = (owner_subscription_id IS NOT NULL) AND (type = 'saved') = (owner_user_id IS NOT NULL)`
@@ -650,7 +664,7 @@ export const entries = pgTable(
     // - entries_spam_only_email: spam fields only for email entries
     // - entries_unsubscribe_only_email: unsubscribe fields only for email entries
     // - entries_saved_metadata_only_saved: site_name/image_url only for saved entries
-    // - entries_last_seen_only_fetched: last_seen_at required for web feeds, NULL for email/saved
+    // - entries_last_seen_only_fetched: last_seen_at only on web entries (migration 0153)
     // - entries_type_not_collection: no entry is a collection (migration 0121)
   ]
 );

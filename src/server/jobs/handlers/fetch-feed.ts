@@ -11,6 +11,7 @@
 import { createHash } from "crypto";
 import { eq, and, isNull, count, sql } from "drizzle-orm";
 import { db } from "../../db";
+import { databaseNow } from "../../db/temporal";
 import { feeds, subscriptions, type Feed } from "../../db/schema";
 import { fetchFullContentForNewEntries } from "../../services/full-content";
 import { fetchFeed, type FetchFeedResult, type RedirectInfo } from "../../feed/fetcher";
@@ -53,9 +54,8 @@ export interface HandleFetchFeedOptions {
    *
    * - fetches **unconditionally** (no If-None-Match / If-Modified-Since) and
    *   bypasses the body-hash short-circuit, so the feed is always parsed and
-   *   processed — even when the content is byte-identical to the last poll (a
-   *   WebSub feed that pushed then dropped an entry looks byte-identical, but
-   *   the drop must be applied);
+   *   processed — even when the content is byte-identical to the last poll —
+   *   and stamps any WebSub-pushed entry it still lists;
    * - re-stamps every current entry's `last_seen_at` to this fetch and advances
    *   `last_entries_updated_at` (`alwaysUpdateVisibility`), re-establishing a
    *   single visibility generation and fanning out `user_entries` to the new
@@ -264,11 +264,10 @@ async function processSuccessfulFetch(
     // Null on the feed's very first fetch, which is what disables the backfill
     // guard there: nothing this feed lists can be an archive re-announcement
     // when we've never seen the feed before. A forced subscribe-time refresh
-    // disables it the same way — it exists to hand a brand-new subscriber the
-    // current feed as ground truth, and that subscriber has no history to judge
-    // "already old when we last looked" against, so the fresh-feed and
-    // stale-feed subscribe paths must agree on what they deliver unread.
-    previousLastFetchedAt: forceReprocess ? null : feed.lastFetchedAt,
+    // skips the guard too, so the fresh-feed and stale-feed subscribe paths
+    // agree on what they deliver unread.
+    previousLastFetchedAt: feed.lastFetchedAt,
+    skipBackfillGuard: forceReprocess,
     feedUrl: feed.url ?? undefined,
     feedTitle: resolvedFeedTitle,
     // A forced (subscribe-time) refresh re-stamps all current entries' visibility
@@ -318,8 +317,8 @@ async function processSuccessfulFetch(
 
   // Update feed metadata including WebSub hub discovery
 
-  // Only update lastEntriesUpdatedAt when entries actually changed (new, updated,
-  // or disappeared), so unchanged polls don't churn. A forced subscribe-time
+  // Only update lastEntriesUpdatedAt when the current entries changed (new,
+  // updated, disappeared or seen again), so unchanged polls don't churn. A forced subscribe-time
   // refresh advances it unconditionally: it re-stamped every current entry's
   // last_seen_at to `now` (alwaysUpdateVisibility), so lastEntriesUpdatedAt must
   // move to `now` too to keep the "current generation" invariant those two share.
@@ -348,6 +347,7 @@ async function processSuccessfulFetch(
       lastFetchedAt: now,
       lastEntriesUpdatedAt,
       nextFetchAt: nextFetch.nextFetchAt,
+      staleAt: nextFetch.staleAt,
       ...feedHintColumns(feedHints),
       consecutiveFailures: 0,
       lastError: null,
@@ -510,6 +510,7 @@ async function processUnchangedFetch(
     .set({
       lastFetchedAt: now,
       nextFetchAt: nextFetch.nextFetchAt,
+      staleAt: nextFetch.staleAt,
       consecutiveFailures: 0,
       lastError: null,
       ...(result.status === "success"
@@ -541,17 +542,21 @@ async function processFetchResult(
   result: FetchFeedResult,
   forceReprocess = false
 ): Promise<JobHandlerResult> {
-  const now = new Date();
+  // The database clock, because `last_fetched_at` is compared with the
+  // `pushed_at` a push (on another machine) stamps (`currentEntryIdsSql`). Taken
+  // once the response is in, so it is never earlier than the fetch it records:
+  // a push landing during the request that the body lacks stops counting as
+  // current after this poll rather than surviving it.
+  const now = new Date((await databaseNow(db)).epochMilliseconds);
 
   switch (result.status) {
     case "success": {
       // Check if body is unchanged by comparing hashes
       const bodyHash = generateBodyHash(result.body);
 
-      // A forced subscribe-time refresh must always re-process so it can
-      // re-stamp the current entries' visibility (the body can be byte-identical
-      // to the last poll yet a WebSub push may have desynced last_seen_at, or an
-      // entry may need to be dropped from the current generation).
+      // A forced subscribe-time refresh must always re-process, so its fanout
+      // reaches the new subscriber even when the body is byte-identical to the
+      // last poll's.
       if (!forceReprocess && feed.bodyHash === bodyHash) {
         return processUnchangedFetch(feed, result, now);
       }
@@ -687,6 +692,7 @@ async function handleTemporaryError(
     .set({
       lastFetchedAt: now,
       nextFetchAt: nextFetch.nextFetchAt,
+      staleAt: nextFetch.staleAt,
       consecutiveFailures: newFailureCount,
       lastError: errorMessage,
       updatedAt: now,
@@ -716,7 +722,9 @@ async function updateFeedOnError(
     .update(feeds)
     .set({
       lastFetchedAt: now,
-      nextFetchAt: nextFetchAt,
+      nextFetchAt,
+      // A failure's backoff is the feed's own cadence either way.
+      staleAt: nextFetchAt,
       consecutiveFailures: sql`${feeds.consecutiveFailures} + 1`,
       lastError: errorMessage,
       updatedAt: now,

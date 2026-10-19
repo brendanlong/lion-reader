@@ -893,14 +893,13 @@ describe("WebSub Integration", () => {
     it("never defers the backup poll past 24h after the last real poll, however often the hub pushes", async () => {
       // A push doesn't advance last_fetched_at, so deferring to "now + 24h" on
       // every push would let a feed pushed more often than daily re-defer its
-      // backup poll forever - and that poll is the only thing that reconciles
-      // removed entries, refreshes last_fetched_at, and can spot a push miss.
+      // backup poll forever - and that poll is the only thing that makes pushed
+      // entries current for new subscribers and can spot a push miss.
       const lastFetchedAt = new Date(Date.now() - 20 * 60 * 60 * 1000);
       const feed = await createTestFeed({
         websubActive: true,
         lastFetchedAt,
         lastEntriesUpdatedAt: lastFetchedAt,
-        bodyHash: "hash-of-the-last-poll",
       });
       await ensureFeedJob(feed.id, new Date(Date.now() + 60 * 1000));
 
@@ -918,8 +917,6 @@ describe("WebSub Integration", () => {
       const [after] = await db.select().from(feeds).where(eq(feeds.id, feed.id)).limit(1);
       // The premise the bound rests on: a push is not a poll.
       expect(after.lastFetchedAt?.getTime()).toBe(lastFetchedAt.getTime());
-      // ...and it still clears the body hash so the next poll can't short-circuit.
-      expect(after.bodyHash).toBeNull();
       expect(await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id))).toHaveLength(
         5
       );
