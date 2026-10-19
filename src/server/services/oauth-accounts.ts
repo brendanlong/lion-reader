@@ -58,20 +58,17 @@ export async function attachOAuthAccount(
   const tokenColumns = oauthTokenColumns(params);
 
   return db.transaction(async (tx) => {
-    // Nothing enforces one link per (user_id, provider), so concurrent attaches for
-    // this user (two first sign-ins with different accounts, a link clicked twice)
-    // serialize on the user row: each then sees the link the other committed.
+    // The (user_id, provider) unique constraint guarantees one link per provider,
+    // but concurrent attaches for this user (two first sign-ins with different
+    // accounts, a link clicked twice) would hit it as a raw unique violation.
+    // Serializing on the user row lets each see the link the other committed and
+    // answer with the right error instead.
     await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
 
-    // Ordered so a user who already has two rows for one provider resolves to
-    // their oldest link deterministically, rather than to whichever row the
-    // planner returns.
     const existingLink = await tx
       .select({ id: oauthAccounts.id, providerAccountId: oauthAccounts.providerAccountId })
       .from(oauthAccounts)
-      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-      .orderBy(oauthAccounts.createdAt)
-      .limit(1);
+      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)));
 
     if (existingLink.length > 0) {
       if (existingLink[0].providerAccountId !== providerAccountId) {
