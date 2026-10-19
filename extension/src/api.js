@@ -66,7 +66,7 @@ export async function saveArticle(serverUrl, url, title, token) {
 
     if (response.status === 401) {
       // Token expired or revoked
-      await chrome.storage.sync.remove(["apiToken"]);
+      await chrome.storage.sync.remove("apiCredentials");
       throw new Error("TOKEN_EXPIRED");
     }
 

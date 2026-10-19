@@ -34,6 +34,8 @@ This extension uses Manifest V3 (WebExtensions API) and works on:
 3. Click "Load unpacked"
 4. Select the `extension` directory
 
+To use it against a local dev server, set the server URL to `http://localhost:3000` in its settings.
+
 **Firefox:**
 Firefox requires a modified manifest due to Manifest V3 differences. Run the build script first:
 

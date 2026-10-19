@@ -16,7 +16,7 @@ import { consumeAuthState, createWebAuthUrl, getApiCredentials } from "./constan
  * Store the API token along with the origin of the server that issued it.
  */
 async function setApiToken(token, origin) {
-  await chrome.storage.sync.set({ apiToken: token, apiTokenOrigin: origin });
+  await chrome.storage.sync.set({ apiCredentials: { token, origin } });
 }
 
 /**
@@ -87,6 +87,9 @@ async function saveCurrentTab(tab) {
 
 // Create context menu on install
 chrome.runtime.onInstalled.addListener(() => {
+  // Tokens stored before apiCredentials don't record which server issued them
+  chrome.storage.sync.remove("apiToken");
+
   chrome.contextMenus.create({
     id: "save-to-lion-reader",
     title: "Save to Lion Reader",

@@ -2,12 +2,7 @@
  * Options page script for Lion Reader browser extension.
  */
 
-import {
-  DEFAULT_SERVER_URL,
-  getServerUrl,
-  hasServerPermission,
-  serverOriginPattern,
-} from "./constants.js";
+import { DEFAULT_SERVER_URL, hasServerPermission, serverHostPattern } from "./constants.js";
 
 // DOM Elements
 const serverUrlInput = document.getElementById("server-url");
@@ -25,22 +20,7 @@ async function loadSettings() {
   const result = await chrome.storage.sync.get(["serverUrl"]);
   serverUrlInput.value = result.serverUrl || "";
   serverUrlInput.placeholder = DEFAULT_SERVER_URL;
-  permissionWarningEl.hidden = await hasServerPermission(await getServerUrl());
-}
-
-/**
- * Store a new server URL, dropping the old server's optional host permission.
- */
-async function setServerUrl(url) {
-  const oldPattern = serverOriginPattern(await getServerUrl());
-  await chrome.storage.sync.set({ serverUrl: url });
-
-  const newServerUrl = url || DEFAULT_SERVER_URL;
-  const manifestOrigins = chrome.runtime.getManifest().host_permissions;
-  if (oldPattern !== serverOriginPattern(newServerUrl) && !manifestOrigins.includes(oldPattern)) {
-    await chrome.permissions.remove({ origins: [oldPattern] });
-  }
-  permissionWarningEl.hidden = await hasServerPermission(newServerUrl);
+  permissionWarningEl.hidden = await hasServerPermission(result.serverUrl || DEFAULT_SERVER_URL);
 }
 
 /**
@@ -82,14 +62,15 @@ async function saveSettings() {
   // Firefox only shows the permission prompt if it's requested before the
   // handler for the click or keypress awaits anything.
   const granted = await chrome.permissions.request({
-    origins: [serverOriginPattern(url || DEFAULT_SERVER_URL)],
+    origins: [serverHostPattern(url || DEFAULT_SERVER_URL)],
   });
   if (!granted) {
     alert("Lion Reader needs access to your server to save articles there.");
     return;
   }
 
-  await setServerUrl(url);
+  await chrome.storage.sync.set({ serverUrl: url });
+  permissionWarningEl.hidden = true;
   showStatus("Saved!");
 }
 
@@ -98,7 +79,8 @@ async function saveSettings() {
  */
 async function resetSettings() {
   serverUrlInput.value = "";
-  await setServerUrl("");
+  await chrome.storage.sync.set({ serverUrl: "" });
+  permissionWarningEl.hidden = await hasServerPermission(DEFAULT_SERVER_URL);
   showStatus("Reset!");
 }
 
