@@ -33,7 +33,8 @@ const MAX_TEXT_READ = 20_000;
  * Elements whose text is a label around the prose rather than prose:
  * "Summary", "Abstract", column headers. Read inline they fuse into the
  * sentence that follows, so a summary leaves them out unless they're all there
- * is. Table cells stay, since emails lay out their whole body in tables.
+ * is. Table cells stay, `<th>` included: emails lay out their whole body in
+ * tables, and Foundation for Emails puts it in `<th class="columns">`.
  */
 const LABEL_TAGS: ReadonlySet<string> = new Set([
   "h1",
@@ -42,20 +43,21 @@ const LABEL_TAGS: ReadonlySet<string> = new Set([
   "h4",
   "h5",
   "h6",
-  "th",
   "caption",
   "figcaption",
 ]);
 
 /** A link to somewhere on the same page, which may be a footnote reference. */
 interface InPageLink {
-  /** Inside or around a `<sup>`, or `role="doc-noteref"`. */
-  noteContext: boolean;
+  /** `role="doc-noteref"`. */
+  noteRef: boolean;
 }
 
 /** One super- or subscript element; its runs are transliterated together. */
 interface Script {
   kind: "sup" | "sub";
+  /** The script this one is nested in. */
+  parent?: Script;
 }
 
 /** A text run and the markup it sits in. Context objects are shared by identity. */
@@ -75,7 +77,6 @@ interface Run {
 interface Context {
   hidden: boolean;
   label: boolean;
-  inSup: boolean;
   paragraph?: object;
   link?: InPageLink;
   script?: Script;
@@ -120,12 +121,18 @@ function parseRuns(html: string): ParsedSummary {
   let textRead = 0;
   const root: Frame = {
     tag: "",
-    context: { hidden: false, label: false, inSup: false },
+    context: { hidden: false, label: false },
     childCount: 0,
   };
   const stack: Frame[] = [root];
 
-  const emit = (text: string, context: Context, fraction?: Run["fraction"]) => {
+  const emit = (fullText: string, context: Context, fraction?: Run["fraction"]) => {
+    // One text event can be a whole paragraph; keep only what the budget can
+    // use, so no rule ever sees more than that.
+    const budget = context.label
+      ? MAX_TEXT_READ - textRead
+      : Math.min(MAX_TEXT_READ - textRead, SUMMARY_MAX_LENGTH + READ_AHEAD - proseRead);
+    const text = fullText.slice(0, Math.max(budget, 0) + 1);
     runs.push({
       text,
       block,
@@ -147,29 +154,26 @@ function parseRuns(html: string): ParsedSummary {
       onopentag(name, attribs) {
         const tag = name.toLowerCase();
         const parent = stack[stack.length - 1];
-        parent.childCount++;
         const inherited = parent.context;
         const context: Context = { ...inherited };
         const frame: Frame = { tag, context, childCount: 0 };
 
         if (BLOCK_TAGS.has(tag)) block++;
         if (SKIP_TAGS.has(tag)) context.hidden = true;
+        // Position among the visible children, which is what MathML means
+        if (!context.hidden) parent.childCount++;
         if (LABEL_TAGS.has(tag)) context.label = true;
         if (tag === "p") context.paragraph = {};
 
         if (tag === "a") {
           const href = attribs.href ?? "";
           context.link = href.startsWith("#")
-            ? { noteContext: inherited.inSup || attribs.role === "doc-noteref" }
+            ? { noteRef: attribs.role === "doc-noteref" }
             : undefined;
-        }
-        if (tag === "sup") {
-          context.inSup = true;
-          if (inherited.link) inherited.link.noteContext = true;
         }
         const kind =
           tag === "sup" || tag === "sub" ? tag : mathScriptKind(parent.tag, parent.childCount);
-        if (kind) context.script = { kind };
+        if (kind) context.script = { kind, parent: inherited.script };
 
         if (parent.tag === "mfrac" && parent.childCount <= 2 && !context.hidden) {
           frame.fractionOperand = {};
@@ -252,7 +256,8 @@ function dropGroups(
 /**
  * In-page links whose text is a footnote marker. `[12]`, `*` and `†` are
  * markers on their own, but a bare `1` is as likely a section link unless it's
- * set as a superscript or marked up as a note reference.
+ * set as a superscript (inside or around the link) or marked up as a note
+ * reference.
  */
 function dropFootnoteMarkers(runs: Run[]): Run[] {
   return dropGroups(
@@ -260,18 +265,25 @@ function dropFootnoteMarkers(runs: Run[]): Run[] {
     (run) => run.link,
     (text, group) =>
       /^(?:\[\d{1,3}\]|[*†‡§])$/.test(text) ||
-      (group[0].link!.noteContext && /^\d{1,3}$/.test(text))
+      ((group[0].link!.noteRef || group.some((run) => run.script?.kind === "sup")) &&
+        /^\d{1,3}$/.test(text))
   );
 }
 
 /** The footer Yoast/WordPress appends to every feed item. */
 const WORDPRESS_FEED_FOOTER = /^The post .+ appeared first on .+\.$/;
 
+/**
+ * Longest footer we test for: a title and a site name. Also keeps the
+ * backtracking regex off long paragraphs.
+ */
+const MAX_FOOTER_LENGTH = 500;
+
 function dropWordPressFooter(runs: Run[]): Run[] {
   return dropGroups(
     runs,
     (run) => run.paragraph,
-    (text) => WORDPRESS_FEED_FOOTER.test(text)
+    (text) => text.length <= MAX_FOOTER_LENGTH && WORDPRESS_FEED_FOOTER.test(text)
   );
 }
 
@@ -320,11 +332,17 @@ const MAX_SCRIPT_LENGTH = 8;
 
 /**
  * Rewrites each super/subscript in Unicode (`x²`, `H₂O`) when every character
- * has a form; anything else (`19th`) stays plain text.
+ * has a form; anything else (`19th`) stays plain text. Nested scripts stay
+ * too: `10²³` would read as one exponent.
  */
 function transliterateScripts(runs: Run[]): Run[] {
+  const nesting = new Set<Script>();
+  for (const run of runs) {
+    if (run.script?.parent) nesting.add(run.script.parent);
+  }
   const replaced = new Map<object, string>();
   for (const [script, group] of groupBy(runs, (run) => run.script)) {
+    if ((script as Script).parent || nesting.has(script as Script)) continue;
     const text = joinRuns(group);
     if (text.length === 0 || text.length > MAX_SCRIPT_LENGTH) continue;
     const table = (script as Script).kind === "sup" ? SUPERSCRIPTS : SUBSCRIPTS;
@@ -346,8 +364,12 @@ function transliterateScripts(runs: Run[]): Run[] {
   return result;
 }
 
-/** Longest fraction operand we check; longer ones keep their parentheses. */
-const MAX_OPERAND_LENGTH = 40;
+/**
+ * Longest fraction operand we check, in runs; longer ones keep their
+ * parentheses. Counting runs rather than characters also bounds operands of
+ * nested empty fractions, whose runs are all dropped parentheses.
+ */
+const MAX_OPERAND_RUNS = 40;
 
 /**
  * The parse wraps every fraction operand in parentheses (`(1)/(x+1)`); keep
@@ -362,27 +384,29 @@ function simplifyFractions(runs: Run[]): Run[] {
     if (fraction?.edge !== "close") continue;
     const open = opens.get(fraction.operand);
     if (open === undefined) continue;
+    opens.delete(fraction.operand);
     const operand = operandText(runs, open + 1, i, drop);
-    if (operand !== null && (operand.length <= 1 || /^\d+$/.test(operand))) {
+    if (operand !== null && ([...operand].length <= 1 || /^[\d.]+$/.test(operand))) {
       drop.add(open);
       drop.add(i);
     }
   }
+  // An operand the parse stopped inside never closed.
+  for (const open of opens.values()) drop.add(open);
   return drop.size === 0 ? runs : runs.filter((_, i) => !drop.has(i));
 }
 
-/** The operand's text, or null once it's past {@link MAX_OPERAND_LENGTH}. */
+/** The operand's text, or null when it spans more than {@link MAX_OPERAND_RUNS}. */
 function operandText(
   runs: readonly Run[],
   from: number,
   to: number,
   dropped: ReadonlySet<number>
 ): string | null {
+  if (to - from > MAX_OPERAND_RUNS) return null;
   let text = "";
   for (let i = from; i < to; i++) {
-    if (dropped.has(i)) continue;
-    text += runs[i].text;
-    if (text.length > MAX_OPERAND_LENGTH) return null;
+    if (!dropped.has(i)) text += runs[i].text;
   }
   return text.replace(/\s+/g, "");
 }

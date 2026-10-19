@@ -10,8 +10,8 @@ describe("generateSummary", () => {
     it.each([
       ["a heading", "<h2>Summary</h2><p>An AI assistant might recommend it.</p>"],
       [
-        "table headers and captions",
-        "<table><caption>Table 1</caption><tr><th>Type</th></tr></table><p>An AI assistant might recommend it.</p>",
+        "a table caption",
+        "<table><caption>Table 1: Results</caption></table><p>An AI assistant might recommend it.</p>",
       ],
       [
         "a fraction inside a heading",
@@ -28,6 +28,12 @@ describe("generateSummary", () => {
     it("keeps body text laid out in tables (emails)", () => {
       const html =
         '<table role="presentation"><tr><td><p>This week in the newsletter.</p></td></tr></table><p>Unsubscribe</p>';
+      expect(generateSummary(html)).toBe("This week in the newsletter. Unsubscribe");
+    });
+
+    it("keeps body text laid out in header cells (Foundation for Emails)", () => {
+      const html =
+        '<table class="row"><tr><th class="columns"><p>This week in the newsletter.</p></th></tr></table><table><tr><td><p>Unsubscribe</p></td></tr></table>';
       expect(generateSummary(html)).toBe("This week in the newsletter. Unsubscribe");
     });
 
@@ -113,14 +119,53 @@ describe("generateSummary", () => {
         "<p>f(x)=<math><mfrac><mn>1</mn><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></mfrac></math>.</p>",
         "f(x)=1/(x+1).",
       ],
+      [
+        "nested MathML fractions",
+        "<p><math><mfrac><mi>a</mi><mfrac><mi>b</mi><mi>c</mi></mfrac></mfrac> and <mfrac><mfrac><mi>a</mi><mi>b</mi></mfrac><mi>c</mi></mfrac></math></p>",
+        "a/(b/c) and (a/b)/c",
+      ],
     ])("transliterates %s", (_, html, expected) => {
       expect(generateSummary(html)).toBe(expected);
+    });
+
+    it("adds no fraction slash for MathML in a hidden annotation", () => {
+      const html =
+        '<p>Value <math><semantics><mi>x</mi><annotation-xml encoding="MathML-Presentation"><mfrac><mi>a</mi><mi>b</mi></mfrac></annotation-xml></semantics></math> here.</p>';
+      expect(generateSummary(html)).toBe("Value x here.");
+    });
+
+    it("leaves nested scripts as plain text rather than one exponent", () => {
+      expect(generateSummary("<p>10<sup>2<sup>3</sup></sup></p>")).toBe("1023");
     });
 
     it("leaves a script with no Unicode form as plain text", () => {
       expect(generateSummary("<p>The 19<sup>th</sup> century, e<sup>x+y</sup></p>")).toBe(
         "The 19th century, ex+y"
       );
+    });
+  });
+
+  describe("length", () => {
+    it("cuts long text at a word boundary with an ellipsis", () => {
+      const summary = generateSummary(`<p>${"word ".repeat(SUMMARY_MAX_LENGTH)}</p>`);
+      expect(summary.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH);
+      expect(summary.endsWith(" word...")).toBe(true);
+    });
+
+    // Untrusted input; both shapes were quadratic (seconds per entry).
+    it.each([
+      [
+        "one long paragraph near the footer pattern",
+        `<p>The post ${" appeared first on x".repeat(40_000)}</p>`,
+      ],
+      [
+        "nested empty fractions in a heading",
+        `<h1><math>${"<mfrac>".repeat(10_000)}<mi></mi>${"</mfrac>".repeat(10_000)}</math></h1>`,
+      ],
+    ])("stays fast on %s", (_, html) => {
+      const start = performance.now();
+      generateSummary(html);
+      expect(performance.now() - start).toBeLessThan(500);
     });
   });
 
