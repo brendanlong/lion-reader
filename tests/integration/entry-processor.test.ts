@@ -419,6 +419,20 @@ describe("Entry Processor", () => {
       expect(result2.entries[0].isUpdated).toBe(false);
       expect(result2.entries[0].id).toBe(result1.entries[0].id);
     });
+
+    it("matches an entry whose guid contains NUL on the next fetch", async () => {
+      const feed = await createTestFeed();
+      const parsedFeed: ParsedFeed = {
+        title: "Test Feed",
+        items: [{ guid: "nul\u0000guid", title: "Title", content: "Content" }],
+      };
+
+      const first = await processEntries(feed.id, parsedFeed);
+      const second = await processEntries(feed.id, parsedFeed);
+
+      expect(second.entries[0].isNew).toBe(false);
+      expect(second.entries[0].id).toBe(first.entries[0].id);
+    });
   });
 
   describe("processEntries", () => {

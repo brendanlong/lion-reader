@@ -17,6 +17,7 @@ import { newEntryAnnouncement, toEntryMetadata } from "@/server/services/entry-s
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { canonicalGuid, guidMatchCandidates } from "./guid-identity";
+import { replaceNul } from "../db/nul-safe-client";
 import {
   holdsRedirectTwin,
   insertUserEntriesWithMemberships,
@@ -264,19 +265,10 @@ export function isBackfilledEntry(
  * @throws Error if no suitable identifier can be derived
  */
 export function deriveGuid(entry: ParsedEntry): string {
-  // Use explicit GUID if available
-  if (entry.guid && entry.guid.trim()) {
-    return entry.guid.trim();
-  }
-
-  // Fall back to link
-  if (entry.link && entry.link.trim()) {
-    return entry.link.trim();
-  }
-
-  // Fall back to title
-  if (entry.title && entry.title.trim()) {
-    return entry.title.trim();
+  const guid = entry.guid?.trim() || entry.link?.trim() || entry.title?.trim();
+  if (guid) {
+    // Matches the stored guid, which the pool's NulSafeClient rewrote.
+    return replaceNul(guid);
   }
 
   throw new Error("Cannot derive GUID: entry has no guid, link, or title");
