@@ -74,7 +74,8 @@ async function resolveCredential<K extends CredentialKind>(
   // `accept` is a K[], so each credential built below is of an accepted kind.
   const accepted = (credential: Credential) => credential as Extract<Credential, { kind: K }>;
 
-  // An unprefixed credential still falls through to the OAuth lookup until #1955.
+  // Every OAuth access token carries the prefix (#1954): anything else is a
+  // session or an API token.
   if (!isOAuthAccessTokenFormat(token)) {
     if (accepts("session") || accepts("scoped_session")) {
       const session = await validateSession(token, { allowScoped: accepts("scoped_session") });
@@ -96,6 +97,7 @@ async function resolveCredential<K extends CredentialKind>(
         });
       }
     }
+    return null;
   }
 
   if (accepts("app_token") || accepts("wallabag_token") || accepts("mcp_token")) {
