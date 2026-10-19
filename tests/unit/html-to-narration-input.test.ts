@@ -15,7 +15,9 @@ import {
   EXTRA_ELEMENT_ALLOWANCE,
   MAX_ELEMENTS,
   MAX_TREE_DEPTH,
+  parseBodyAsBrowser,
 } from "../../src/lib/narration/parse-html";
+import { parse, serialize } from "parse5";
 import { LLM_INPUT_VOICE, narrationRuns } from "../../src/lib/narration/runs";
 
 /**
@@ -930,6 +932,39 @@ describe("htmlToNarrationInput", () => {
       expect(
         Math.abs(read - (html.length * MAX_ELEMENTS.attributeCharsPerChar) / copied)
       ).toBeLessThan(3);
+    });
+
+    it("reads a long post after a link left open", () => {
+      // Every block after the missing </a> reopens the link, copying its URL.
+      const href = `https://example.com/track?${"utm_x=campaign&".repeat(10)}id=1`;
+      const paragraphs = Array.from({ length: 3000 }, (_, i) => `<p>Short paragraph ${i}.</p>`);
+      const html = `<p><a href="${href}" rel="noopener" target="_blank">Link</p>${paragraphs.join("")}`;
+      expect(narrated(htmlToNarrationInput(html))).toHaveLength(3001);
+    });
+
+    it("stops only between tokens, keeping what a misnested tag moved", () => {
+      // The stop lands somewhere in the tail as `count` varies. The adoption
+      // agency's </a> moves the block holding SENTINEL; stopping partway
+      // through those moves dropped it, leaving a tree no prefix parses to.
+      const open =
+        "<p>" + "<b><i><u><s><em><strong><small><big><code><font><nobr><tt>".repeat(3) + "</p>";
+      const tail = '<object><a><div id="fb">SENTINEL</a><p>after</p>' + "trailing text";
+      const body = (markup: string) =>
+        parseHTML(serialize(parse(`<!DOCTYPE html><html><body>${markup}</body></html>`))).document
+          .body.innerHTML;
+      let stopsInTail = 0;
+      for (let count = 20; count < 60; count++) {
+        const head = open + "<p>x</p>".repeat(count);
+        const bounded = parseBodyAsBrowser(head + tail).innerHTML;
+        const stoppedInHead = bounded.split(">x<").length - 1 < count;
+        if (stoppedInHead || bounded === body(head + tail)) continue;
+        stopsInTail++;
+        const prefixes = Array.from({ length: tail.length }, (_, i) =>
+          body(head + tail.slice(0, i))
+        );
+        expect(prefixes).toContain(bounded);
+      }
+      expect(stopsInTail).toBeGreaterThan(0);
     });
 
     it("reads a long article after a few unclosed formatting tags", () => {

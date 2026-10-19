@@ -49,7 +49,8 @@ type Parse5Node = DefaultTreeAdapterMap["node"];
 type Parse5ParentNode = DefaultTreeAdapterMap["parentNode"];
 
 /**
- * Deepest element the normalizing parse builds, counting `<html>` as 1. Blink
+ * Deepest element the normalizing parse builds before it stops, counting
+ * `<html>` as 1 (the token that goes past it can go up to twice as deep). Blink
  * flattens its tree beyond the same depth, and nothing real comes near it.
  *
  * @testonly
@@ -70,11 +71,12 @@ export const MAX_TREE_DEPTH = 512;
  *
  * Each re-created element copies its attributes, so those are budgeted too:
  * `attributeCharsPerChar` characters of them per character of markup, enough
- * for an unclosed `<font face="…">` in every paragraph.
+ * for a missing `</a>` around a tracking URL before short paragraphs, each of
+ * which reopens the link.
  *
  * @testonly
  */
-export const MAX_ELEMENTS = { perToken: 3, perChar: 0.5, attributeCharsPerChar: 4 };
+export const MAX_ELEMENTS = { perToken: 3, perChar: 0.5, attributeCharsPerChar: 16 };
 
 /** @testonly */
 export const EXTRA_ELEMENT_ALLOWANCE = 1000;
@@ -116,7 +118,8 @@ class TreeTooBig extends Error {
  * the `<b>` a SAX count would leave open. The parse stops between tokens, never
  * inside one, because one token's tree changes (the adoption agency's moves)
  * leave content detached until they finish. One token's work stays within
- * bounds anyway: it re-creates no more than is already open.
+ * bounds anyway: it re-creates only formatting elements that were open
+ * together, so within the depth limit, at most doubling the tree's depth.
  */
 function parseBounded(markup: string): DefaultTreeAdapterMap["document"] {
   const parser = new BoundedParser(new TreeBounds(markup.length));
