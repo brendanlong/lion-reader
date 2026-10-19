@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SUMMARY_MAX_LENGTH } from "@/server/html/strip-html";
+import { SUMMARY_MAX_LENGTH } from "@/server/html/summary";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 
 describe("computeSavedArticleExcerpt", () => {

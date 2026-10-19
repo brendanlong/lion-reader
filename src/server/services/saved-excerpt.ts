@@ -1,9 +1,9 @@
+import { truncateText } from "@/server/html/strip-html";
 import {
   generateSummary,
   SUMMARY_MAX_LENGTH,
   summarizeCleanedContent,
-  truncateText,
-} from "@/server/html/strip-html";
+} from "@/server/html/summary";
 
 /**
  * Choose the plain-text excerpt for a saved article.

@@ -8,7 +8,8 @@
 import type { ParsedEntry } from "./types";
 import { absolutizeUrls } from "./content-cleaner";
 import { getFeedHooks } from "@/server/plugins";
-import { generateSummary, stripHtml } from "../html/strip-html";
+import { stripHtml } from "../html/strip-html";
+import { generateSummary } from "../html/summary";
 
 /**
  * WordPress ends its auto-generated excerpts with "[…]" (or "[...]"), followed

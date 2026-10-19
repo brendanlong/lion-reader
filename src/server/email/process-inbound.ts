@@ -8,7 +8,7 @@
 import { createHash } from "crypto";
 import { eq, and, isNotNull, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
-import { generateSummary } from "../html/strip-html";
+import { generateSummary } from "../html/summary";
 import { cleanContent } from "@/server/feed/content-cleaner";
 import { extractEmailUrl, extractUnsubscribeUrl } from "./extract-url";
 import { parseListUnsubscribeUrl } from "./parse-utils";
