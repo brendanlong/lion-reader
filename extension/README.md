@@ -34,6 +34,8 @@ This extension uses Manifest V3 (WebExtensions API) and works on:
 3. Click "Load unpacked"
 4. Select the `extension` directory
 
+To use it against a local dev server, set the server URL to `http://localhost:3000` in its settings.
+
 **Firefox:**
 Firefox requires a modified manifest due to Manifest V3 differences. Run the build script first:
 
@@ -64,7 +66,7 @@ This creates browser-specific packages:
 
 Click the extension icon and select "Settings" (or right-click the icon and choose "Options") to:
 
-- Set a custom server URL for self-hosted instances
+- Set a custom server URL for self-hosted instances. It must be https (http only for `localhost`), and your browser asks you to allow access to it
 - View and customize keyboard shortcuts
 
 ## Privacy

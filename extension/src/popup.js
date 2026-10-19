@@ -5,8 +5,8 @@
  * If no token exists, opens the web auth flow to get one.
  */
 
-import { needsWebAuthFlow, saveArticle } from "./api.js";
-import { getApiToken, getWebAuthUrl } from "./constants.js";
+import { checkServerPermission, needsWebAuthFlow, saveArticle } from "./api.js";
+import { createWebAuthUrl, getApiCredentials } from "./constants.js";
 
 // DOM Elements
 const loadingEl = document.getElementById("loading");
@@ -62,9 +62,9 @@ function startCountdown(seconds = 3) {
  * Open the web auth flow to get a new token.
  * The background script will detect the callback and store the token.
  */
-async function startWebAuthFlow(url, title) {
+async function startWebAuthFlow(serverUrl, url, title) {
   // Open the auth page in a new tab
-  await chrome.tabs.create({ url: await getWebAuthUrl(url, title) });
+  await chrome.tabs.create({ url: await createWebAuthUrl(serverUrl, url, title) });
 
   // Close the popup - the background script will handle the callback
   window.close();
@@ -77,6 +77,12 @@ async function save() {
   showState("loading");
 
   try {
+    const { serverUrl, token } = await getApiCredentials();
+    if (!(await checkServerPermission(serverUrl))) {
+      window.close();
+      return;
+    }
+
     // Get the current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -88,18 +94,15 @@ async function save() {
     currentTitle = tab.title || null;
     loadingUrlEl.textContent = currentUrl;
 
-    // Check if we have a token
-    const token = await getApiToken();
-
     if (!token) {
       // No token - start web auth flow
-      await startWebAuthFlow(currentUrl, currentTitle);
+      await startWebAuthFlow(serverUrl, currentUrl, currentTitle);
       return;
     }
 
     // Try to save with the token
     try {
-      const result = await saveArticle(currentUrl, currentTitle, token);
+      const result = await saveArticle(serverUrl, currentUrl, currentTitle, token);
 
       // Show success
       showState("success");
@@ -113,7 +116,7 @@ async function save() {
       startCountdown(3);
     } catch (err) {
       if (needsWebAuthFlow(err)) {
-        await startWebAuthFlow(currentUrl, currentTitle);
+        await startWebAuthFlow(serverUrl, currentUrl, currentTitle);
         return;
       }
       throw err;

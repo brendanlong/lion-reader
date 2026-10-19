@@ -2,7 +2,7 @@
  * Lion Reader API calls shared by the popup and the background worker.
  */
 
-import { getServerUrl } from "./constants.js";
+import { hasServerPermission } from "./constants.js";
 
 /**
  * Errors the server returns when saving a Google Doc needs the user to sign in
@@ -25,10 +25,21 @@ export function needsWebAuthFlow(err) {
 }
 
 /**
- * Save an article using Bearer token auth.
+ * Open the options page if `serverUrl` hasn't been granted its host
+ * permission, which saving there needs. Returns whether it was granted.
  */
-export async function saveArticle(url, title, token) {
-  const serverUrl = await getServerUrl();
+export async function checkServerPermission(serverUrl) {
+  if (await hasServerPermission(serverUrl)) {
+    return true;
+  }
+  await chrome.runtime.openOptionsPage();
+  return false;
+}
+
+/**
+ * Save an article to `serverUrl` using Bearer token auth.
+ */
+export async function saveArticle(serverUrl, url, title, token) {
   const apiUrl = `${serverUrl}/api/v1/saved`;
 
   const body = { url };
@@ -55,7 +66,7 @@ export async function saveArticle(url, title, token) {
 
     if (response.status === 401) {
       // Token expired or revoked
-      await chrome.storage.sync.remove(["apiToken"]);
+      await chrome.storage.sync.remove("apiCredentials");
       throw new Error("TOKEN_EXPIRED");
     }
 

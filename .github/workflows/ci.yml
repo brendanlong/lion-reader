@@ -206,8 +206,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - name: Build release extension
-        run: bash extension/build.sh --release
+      - name: Build extension
+        run: bash extension/build.sh
 
       - name: Upload Chrome extension
         uses: actions/upload-artifact@v7

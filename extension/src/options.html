@@ -19,6 +19,7 @@
         --text-muted: #71717a;
         --text-dim: #a1a1aa;
         --success: #16a34a;
+        --warning: #b45309;
         --primary: #18181b;
         --primary-hover: #27272a;
         --input-bg: #ffffff;
@@ -35,6 +36,7 @@
           --text-muted: #a1a1aa;
           --text-dim: #71717a;
           --success: #22c55e;
+          --warning: #f59e0b;
           --primary: #fafafa;
           --primary-hover: #e4e4e7;
           --input-bg: #27272a;
@@ -139,6 +141,10 @@
         background: var(--bg);
       }
 
+      .warning {
+        color: var(--warning);
+      }
+
       .status {
         font-size: 13px;
         color: var(--success);
@@ -209,6 +215,9 @@
         <label for="server-url">Server URL</label>
         <input type="url" id="server-url" placeholder="https://lionreader.com" />
         <p class="hint">Leave empty to use the default (https://lionreader.com)</p>
+        <p id="permission-warning" class="hint warning" hidden>
+          This browser hasn't been given access to this server yet. Click Save Settings to allow it.
+        </p>
       </div>
 
       <div class="buttons">

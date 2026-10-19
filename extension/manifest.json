@@ -33,11 +33,9 @@
     }
   },
 
-  "host_permissions": [
-    "https://lion-reader.fly.dev/*",
-    "https://lionreader.com/*",
-    "http://localhost:3000/*"
-  ],
+  "host_permissions": ["https://lionreader.com/*"],
+
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
 
   "background": {
     "service_worker": "src/background.js",

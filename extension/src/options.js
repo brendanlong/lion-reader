@@ -2,13 +2,19 @@
  * Options page script for Lion Reader browser extension.
  */
 
-import { DEFAULT_SERVER_URL } from "./constants.js";
+import {
+  DEFAULT_SERVER_URL,
+  hasServerPermission,
+  isAllowedServerUrl,
+  serverHostPattern,
+} from "./constants.js";
 
 // DOM Elements
 const serverUrlInput = document.getElementById("server-url");
 const saveBtn = document.getElementById("save-btn");
 const resetBtn = document.getElementById("reset-btn");
 const statusEl = document.getElementById("status");
+const permissionWarningEl = document.getElementById("permission-warning");
 const shortcutsLink = document.getElementById("shortcuts-link");
 const shortcutKeyEl = document.getElementById("shortcut-key");
 
@@ -19,6 +25,18 @@ async function loadSettings() {
   const result = await chrome.storage.sync.get(["serverUrl"]);
   serverUrlInput.value = result.serverUrl || "";
   serverUrlInput.placeholder = DEFAULT_SERVER_URL;
+  permissionWarningEl.hidden = await hasServerPermission(result.serverUrl || DEFAULT_SERVER_URL);
+}
+
+/**
+ * Show a status message next to the buttons for a couple of seconds.
+ */
+function showStatus(text) {
+  statusEl.textContent = text;
+  statusEl.classList.add("visible");
+  setTimeout(() => {
+    statusEl.classList.remove("visible");
+  }, 2000);
 }
 
 /**
@@ -32,23 +50,24 @@ async function saveSettings() {
     url = url.slice(0, -1);
   }
 
-  // Validate URL if provided
-  if (url) {
-    try {
-      new URL(url);
-    } catch {
-      alert("Please enter a valid URL");
-      return;
-    }
+  if (url && !isAllowedServerUrl(url)) {
+    alert("Please enter an https:// URL (http:// is only allowed for localhost)");
+    return;
   }
 
-  await chrome.storage.sync.set({ serverUrl: url || "" });
+  // Firefox only shows the permission prompt if it's requested before the
+  // handler for the click or keypress awaits anything.
+  const granted = await chrome.permissions.request({
+    origins: [serverHostPattern(url || DEFAULT_SERVER_URL)],
+  });
+  if (!granted) {
+    alert("Lion Reader needs access to your server to save articles there.");
+    return;
+  }
 
-  // Show saved status
-  statusEl.classList.add("visible");
-  setTimeout(() => {
-    statusEl.classList.remove("visible");
-  }, 2000);
+  await chrome.storage.sync.set({ serverUrl: url });
+  permissionWarningEl.hidden = true;
+  showStatus("Saved!");
 }
 
 /**
@@ -57,14 +76,8 @@ async function saveSettings() {
 async function resetSettings() {
   serverUrlInput.value = "";
   await chrome.storage.sync.set({ serverUrl: "" });
-
-  // Show saved status
-  statusEl.textContent = "Reset!";
-  statusEl.classList.add("visible");
-  setTimeout(() => {
-    statusEl.classList.remove("visible");
-    statusEl.textContent = "Saved!";
-  }, 2000);
+  permissionWarningEl.hidden = await hasServerPermission(DEFAULT_SERVER_URL);
+  showStatus("Reset!");
 }
 
 /**

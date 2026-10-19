@@ -9,21 +9,21 @@
  * - Badge updates
  */
 
-import { needsWebAuthFlow, saveArticle } from "./api.js";
-import { getApiToken, getWebAuthUrl } from "./constants.js";
+import { checkServerPermission, needsWebAuthFlow, saveArticle } from "./api.js";
+import { consumeAuthState, createWebAuthUrl, getApiCredentials } from "./constants.js";
 
 /**
- * Store the API token.
+ * Store the API token along with the origin of the server that issued it.
  */
-async function setApiToken(token) {
-  await chrome.storage.sync.set({ apiToken: token });
+async function setApiToken(token, origin) {
+  await chrome.storage.sync.set({ apiCredentials: { token, origin } });
 }
 
 /**
  * Open the web auth flow to save an article and get a token.
  */
-async function openWebAuthFlow(url, title) {
-  await chrome.tabs.create({ url: await getWebAuthUrl(url, title) });
+async function openWebAuthFlow(serverUrl, url, title) {
+  await chrome.tabs.create({ url: await createWebAuthUrl(serverUrl, url, title) });
 }
 
 /**
@@ -45,23 +45,26 @@ async function setBadge(tabId, text, color, clearAfterMs) {
  * Google permission is needed.
  */
 async function saveWithBadge(tabId, url, title, failureLog) {
-  const token = await getApiToken();
+  const { serverUrl, token } = await getApiCredentials();
+  if (!(await checkServerPermission(serverUrl))) {
+    return;
+  }
 
   if (!token) {
-    await openWebAuthFlow(url, title);
+    await openWebAuthFlow(serverUrl, url, title);
     return;
   }
 
   await setBadge(tabId, "...", "#71717a");
 
   try {
-    await saveArticle(url, title, token);
+    await saveArticle(serverUrl, url, title, token);
     await setBadge(tabId, "\u2713", "#16a34a", 2000);
   } catch (err) {
     console.error(failureLog, err);
 
     if (needsWebAuthFlow(err)) {
-      await openWebAuthFlow(url, title);
+      await openWebAuthFlow(serverUrl, url, title);
       await chrome.action.setBadgeText({ text: "", tabId });
       return;
     }
@@ -84,6 +87,9 @@ async function saveCurrentTab(tab) {
 
 // Create context menu on install
 chrome.runtime.onInstalled.addListener(() => {
+  // Tokens stored before apiCredentials don't record which server issued them
+  chrome.storage.sync.remove("apiToken");
+
   chrome.contextMenus.create({
     id: "save-to-lion-reader",
     title: "Save to Lion Reader",
@@ -120,10 +126,10 @@ chrome.webNavigation.onCompleted.addListener(
       const url = new URL(details.url);
       const token = url.searchParams.get("token");
       const status = url.searchParams.get("status");
+      const state = url.searchParams.get("state");
 
-      if (status === "success" && token) {
-        // Store the token
-        await setApiToken(token);
+      if (status === "success" && token && state && (await consumeAuthState(state, url.origin))) {
+        await setApiToken(token, url.origin);
         console.log("API token stored successfully");
 
         // Close the tab after a short delay to let the user see the success message
@@ -140,11 +146,5 @@ chrome.webNavigation.onCompleted.addListener(
       console.error("Error processing callback:", err);
     }
   },
-  {
-    url: [
-      { hostEquals: "lion-reader.fly.dev", pathPrefix: "/extension/callback" },
-      { hostEquals: "lionreader.com", pathPrefix: "/extension/callback" },
-      { hostEquals: "localhost", pathPrefix: "/extension/callback" },
-    ],
-  }
+  { url: [{ pathEquals: "/extension/callback" }] }
 );
