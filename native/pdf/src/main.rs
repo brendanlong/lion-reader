@@ -33,9 +33,11 @@ fn main() -> ExitCode {
 
     // RLIMIT_DATA covers the heap (brk and anonymous mmap), which is where a
     // runaway parse grows, without counting the binary or the stack the way
-    // RLIMIT_AS would. Allocation failure aborts the process.
+    // RLIMIT_AS would. Allocation failure aborts the process. No core dumps:
+    // each capped conversion would otherwise write one the size of its heap.
     if let Err(error) = set_limit(libc::RLIMIT_DATA, max_memory_bytes)
         .and_then(|()| set_limit(libc::RLIMIT_CPU, max_cpu_seconds))
+        .and_then(|()| set_limit(libc::RLIMIT_CORE, 0))
     {
         eprintln!("setrlimit failed: {error}");
         return ExitCode::from(71);
@@ -77,11 +79,20 @@ type Resource = libc::__rlimit_resource_t;
 #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
 type Resource = libc::c_int;
 
+/// Lowers both limits to `value`, or to the inherited hard limit if that is
+/// already lower (raising it would fail).
 fn set_limit(resource: Resource, value: u64) -> std::io::Result<()> {
-    let limit = libc::rlimit {
-        rlim_cur: value as libc::rlim_t,
-        rlim_max: value as libc::rlim_t,
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
     };
+    // SAFETY: getrlimit writes only to the struct we pass.
+    if unsafe { libc::getrlimit(resource, &mut limit) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let value = (value as libc::rlim_t).min(limit.rlim_max);
+    limit.rlim_cur = value;
+    limit.rlim_max = value;
     // SAFETY: setrlimit only reads the struct we pass.
     if unsafe { libc::setrlimit(resource, &limit) } == 0 {
         Ok(())

@@ -26,7 +26,11 @@ import JSZip from "jszip";
 import { logger } from "@/lib/logger";
 import { usageLimitsConfig } from "@/server/config/env";
 import { errors } from "@/server/errors";
-import { createConversionSlot, QueueTimeoutError } from "@/server/file/conversion-slot";
+import {
+  documentConversionSlot,
+  QueueTimeoutError,
+  type ConversionSlot,
+} from "@/server/file/conversion-slot";
 
 /**
  * Inflated-size budgets, as multiples of the saved-article size limit (5MB by
@@ -60,8 +64,6 @@ function youngGenerationMb(maxHeapMb: number): number {
 
 /** Counted from when the conversion is queued, not from when it starts. */
 const CONVERSION_DEADLINE_MS = 20_000;
-
-const MAX_QUEUED_CONVERSIONS = 4;
 
 /**
  * mammoth reads and base64-encodes an image once per reference, not once per
@@ -199,7 +201,7 @@ function isWorkerOutOfMemory(error: unknown): boolean {
 interface DocxConverterOptions {
   maxHeapMb: number;
   deadlineMs: number;
-  maxQueued: number;
+  slot: ConversionSlot;
   /** Path mammoth is resolved from (any file in the directory that holds node_modules). */
   resolveFrom: string;
 }
@@ -216,7 +218,7 @@ interface DocxConverter {
  * limits.
  */
 export function createDocxConverter(options: DocxConverterOptions): DocxConverter {
-  const slot = createConversionSlot(options.maxQueued, "document conversions");
+  const { slot } = options;
   let live = 0;
 
   /** Runs one worker to completion; resolves only once its thread has exited. */
@@ -356,7 +358,7 @@ export function createDocxConverter(options: DocxConverterOptions): DocxConverte
 const defaultConverter = createDocxConverter({
   maxHeapMb: usageLimitsConfig.docxWorkerMaxHeapMb,
   deadlineMs: CONVERSION_DEADLINE_MS,
-  maxQueued: MAX_QUEUED_CONVERSIONS,
+  slot: documentConversionSlot,
   resolveFrom: join(process.cwd(), "package.json"),
 });
 

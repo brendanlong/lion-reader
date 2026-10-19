@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { TRPCError } from "@trpc/server";
 import { convertUploadedFile } from "@/server/file/process-upload";
 import { createDocxConverter } from "@/server/file/docx-to-html";
+import { createConversionSlot } from "@/server/file/conversion-slot";
 import { usageLimitsConfig } from "@/server/config/env";
 import { getAppErrorCode } from "@/server/errors";
 import { buildMinimalDocx, buildZip, buildDocxWithRepeatedImage } from "../utils/docx";
@@ -116,14 +117,14 @@ describe("docx converter queue and worker lifecycle", () => {
     return createDocxConverter({
       maxHeapMb: 128,
       deadlineMs: 20_000,
-      maxQueued: 4,
+      slot: createConversionSlot(4, "document conversions"),
       resolveFrom: join(process.cwd(), "package.json"),
       ...overrides,
     });
   }
 
   it("runs one worker at a time and rejects work past the queue depth", async () => {
-    const docx = converter({ maxQueued: 1 });
+    const docx = converter({ slot: createConversionSlot(1, "document conversions") });
     let maxLive = 0;
     const sampler = setInterval(() => (maxLive = Math.max(maxLive, docx.liveWorkers())), 1);
 
@@ -190,7 +191,10 @@ describe("docx converter queue and worker lifecycle", () => {
   it("reports a worker that can't load mammoth as a server error, not a bad file", async () => {
     // No room to queue: if the failure leaked the slot, the second call would
     // be turned away as busy instead of reaching a worker.
-    const docx = converter({ resolveFrom: "/nonexistent/package.json", maxQueued: 0 });
+    const docx = converter({
+      resolveFrom: "/nonexistent/package.json",
+      slot: createConversionSlot(0, "document conversions"),
+    });
     for (const attempt of ["first", "second"]) {
       const error = await docx.convert(tiny(attempt)).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(TRPCError);

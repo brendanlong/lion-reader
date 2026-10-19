@@ -243,9 +243,13 @@ fn dehyphenate(text: &str) -> String {
         }
     }
 
+    let verbatim = verbatim_ranges(text);
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
     for (start, run) in letter_run_positions(text) {
+        if verbatim.iter().any(|range| range.contains(&start)) || in_url(text, start) {
+            continue;
+        }
         let Some((head, tail)) = two_part_split(run) else {
             continue;
         };
@@ -260,6 +264,48 @@ fn dehyphenate(text: &str) -> String {
     }
     out.push_str(&text[last..]);
     out
+}
+
+/// Byte ranges of link destinations (`](...)`) and code spans, which name
+/// things rather than spell words.
+fn verbatim_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find(['`', ']']) {
+        let start = from + offset;
+        let (open, close) = if text[start..].starts_with('`') {
+            ("`", '`')
+        } else if text[start..].starts_with("](") {
+            ("](", ')')
+        } else {
+            from = start + 1;
+            continue;
+        };
+        let body = start + open.len();
+        match text[body..].find(close) {
+            Some(end) => {
+                ranges.push(start..body + end);
+                from = body + end + 1;
+            }
+            // A stray opener: keep looking for later spans.
+            None => from = body,
+        }
+    }
+    ranges
+}
+
+/// Whether the whitespace-delimited token around `index` is a URL or email
+/// address, including a link's visible text (pdf_oxide writes a bare URL as
+/// `[https://…](https://…)`).
+fn in_url(text: &str, index: usize) -> bool {
+    let start = text[..index]
+        .rfind(char::is_whitespace)
+        .map_or(0, |i| i + 1);
+    let end = text[index..]
+        .find(char::is_whitespace)
+        .map_or(text.len(), |i| index + i);
+    let token = &text[start..end];
+    token.contains("://") || token.contains("www.") || token.contains('@')
 }
 
 /// `head-tail` where both sides are letters and the tail is lowercase, so
@@ -426,6 +472,17 @@ mod tests {
         assert_eq!(dehyphenate(text), text);
         // Compounds with a capitalised tail, and chains.
         let text = "English-German state-of-the-art englishgerman stateof";
+        assert_eq!(dehyphenate(text), text);
+    }
+
+    #[test]
+    fn dehyphenation_leaves_links_and_code_alone() {
+        let text = "To recover, see [the docs](https://x.org/re-cover) or run `re-cover`.";
+        assert_eq!(dehyphenate(text), text);
+        let text = "A stray ` then recover and [a](https://x.org/re-cover).";
+        assert_eq!(dehyphenate(text), text);
+        let text =
+            "recover at [https://re-cover.example](https://re-cover.example) or re-cover@x.org";
         assert_eq!(dehyphenate(text), text);
     }
 

@@ -1,6 +1,7 @@
 /**
  * Runs memory-heavy document conversions one at a time per process, so their
- * peaks never overlap on a 512MB VM. Each converter owns a slot.
+ * peaks never overlap on a 512MB VM. Every converter shares
+ * {@link documentConversionSlot}; tests make their own.
  */
 
 import { errors } from "@/server/errors";
@@ -25,9 +26,7 @@ export interface ConversionSlot {
 }
 
 /**
- * @param maxQueued - Conversions allowed to wait behind the running one. Each
- *   waiter holds its upload in memory, and one past a handful would likely
- *   miss its deadline anyway.
+ * @param maxQueued - Conversions allowed to wait behind the running one.
  * @param work - Plural noun for error messages ("document conversions").
  */
 export function createConversionSlot(maxQueued: number, work: string): ConversionSlot {
@@ -66,3 +65,15 @@ export function createConversionSlot(maxQueued: number, work: string): Conversio
 
   return { acquire, release };
 }
+
+/**
+ * Each waiter holds its upload (up to the saved-article limit) in memory, and
+ * one queued past this would likely miss its deadline anyway.
+ */
+const MAX_QUEUED_CONVERSIONS = 4;
+
+/** The slot every document converter in the process shares. */
+export const documentConversionSlot = createConversionSlot(
+  MAX_QUEUED_CONVERSIONS,
+  "document conversions"
+);

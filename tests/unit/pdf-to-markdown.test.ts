@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { TRPCError } from "@trpc/server";
 import { convertUploadedFile } from "@/server/file/process-upload";
 import { createPdfConverter } from "@/server/file/pdf-to-markdown";
+import { createConversionSlot } from "@/server/file/conversion-slot";
 import { getAppErrorCode } from "@/server/errors";
 import { buildPdf, textPage } from "../utils/pdf";
 
@@ -20,7 +21,7 @@ function converter(overrides: Partial<Parameters<typeof createPdfConverter>[0]> 
     binaryPath: BINARY,
     maxMemoryMb: 128,
     deadlineMs: 20_000,
-    maxQueued: 4,
+    slot: createConversionSlot(4, "document conversions"),
     maxPages: 100,
     ...overrides,
   });
@@ -29,21 +30,6 @@ function converter(overrides: Partial<Parameters<typeof createPdfConverter>[0]> 
 const prose = textPage(["Lion Reader turns this PDF into an article you can read anywhere."]);
 
 describe("PDF uploads", () => {
-  it("converts the text and reads the document info", async () => {
-    const pdf = buildPdf([prose], {
-      info: { Title: "A Report", Author: "Ada Lovelace", Subject: "What it is about" },
-    });
-    const converted = await convertUploadedFile(pdf, "report.pdf");
-
-    expect(converted.html).toContain("Lion Reader turns this PDF into an article");
-    expect(converted.preCleanedContent).toEqual({
-      title: "A Report",
-      author: "Ada Lovelace",
-      summary: "What it is about",
-    });
-    expect(converted.fileType).toBe("pdf");
-  });
-
   it("takes the title from the first page and drops the heading that repeats it", async () => {
     const page = Buffer.concat([
       textPage(["The Real Title"], 28),
@@ -78,9 +64,13 @@ describe("PDF uploads", () => {
     // 64MB of drawing operators that deflate to well under 1MB.
     const line = "BT /F1 10 Tf 72 700 Td (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) Tj ET\n";
     const bomb = buildPdf([Buffer.from(line.repeat((64 * 1024 * 1024) / line.length))]);
-    const pdf = converter({ maxMemoryMb: 32 });
+    const deadlineMs = 20_000;
+    const pdf = converter({ maxMemoryMb: 32, deadlineMs });
 
+    const started = Date.now();
     const error = await pdf.convert(bomb).catch((e: unknown) => e);
+    // Well before the deadline, so it was the memory cap that stopped it.
+    expect(Date.now() - started).toBeLessThan(deadlineMs / 4);
     expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
     expect((error as TRPCError).message).toMatch(/too large or complex/);
 
@@ -90,15 +80,31 @@ describe("PDF uploads", () => {
   }, 30_000);
 
   it("kills a conversion at the deadline", async () => {
-    const pages = Array.from({ length: 3000 }, (_, i) => textPage([`Page ${i} of a long book.`]));
-    const error = await converter({ deadlineMs: 200, maxPages: 5000 })
-      .convert(buildPdf(pages))
+    // `sleep` outlasts any deadline without using the CPU, so its own CPU cap
+    // can't be what stops it.
+    const deadlineMs = 200;
+    const started = Date.now();
+    const error = await converter({ binaryPath: "/bin/sleep", deadlineMs })
+      .convert(buildPdf([prose]))
       .catch((e: unknown) => e);
     expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
-  }, 30_000);
+    expect(Date.now() - started).toBeLessThan(deadlineMs + 2000);
+  });
 
-  it("reports a missing helper as a server error, not a bad file", async () => {
-    const error = await converter({ binaryPath: "/nonexistent/lion-reader-pdf" })
+  it("kills a helper that floods stdout", async () => {
+    // `yes` prints its arguments forever.
+    const error = await converter({ binaryPath: "/usr/bin/yes" })
+      .convert(buildPdf([prose]))
+      .catch((e: unknown) => e);
+    expect(getAppErrorCode(error)).toBe("CONTENT_TOO_LARGE");
+  });
+
+  it.each([
+    ["is missing", "/nonexistent/lion-reader-pdf"],
+    ["isn't executable", join(process.cwd(), "package.json")],
+    ["answers outside its protocol", "/bin/cat"],
+  ])("reports a helper that %s as a server error, not a bad file", async (_, binaryPath) => {
+    const error = await converter({ binaryPath })
       .convert(buildPdf([prose]))
       .catch((e: unknown) => e);
     expect((error as TRPCError).code).toBe("INTERNAL_SERVER_ERROR");

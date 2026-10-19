@@ -12,6 +12,10 @@ use pdf_oxide::object::Object;
 use pdf_oxide::optional_content::decode_pdf_text_string;
 use pdf_oxide::PdfDocument;
 
+/// Longest title, author or summary kept, in characters. The output budget
+/// only covers the Markdown, and a document-info string can be any size.
+const MAX_METADATA_CHARS: usize = 500;
+
 pub struct Limits {
     pub max_pages: usize,
     pub max_output_bytes: usize,
@@ -86,7 +90,7 @@ pub fn convert(bytes: Vec<u8>, limits: &Limits) -> Result<Converted, ConvertErro
         pages.push(page);
     }
 
-    let markdown = cleanup::assemble(pages);
+    let markdown = without_control_chars(&cleanup::assemble(pages));
     if !markdown.chars().any(char::is_alphanumeric) {
         return Err(ConvertError::NoText);
     }
@@ -95,10 +99,27 @@ pub fn convert(bytes: Vec<u8>, limits: &Limits) -> Result<Converted, ConvertErro
         markdown,
         title: info_string(&doc, "Title")
             .filter(|title| !title::is_junk_info_title(title))
-            .or_else(|| first_page_title(&doc)),
+            .or_else(|| first_page_title(&doc).and_then(|title| metadata_text(&title))),
         author: info_string(&doc, "Author"),
         summary: info_string(&doc, "Subject"),
     })
+}
+
+/// Postgres rejects NUL in text, and producers do NUL-terminate strings.
+fn without_control_chars(text: &str) -> String {
+    text.chars()
+        .filter(|&c| !c.is_control() || c == '\n' || c == '\t')
+        .collect()
+}
+
+/// One line of at most [`MAX_METADATA_CHARS`], or `None` if nothing is left.
+fn metadata_text(text: &str) -> Option<String> {
+    let text = without_control_chars(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let text: String = text.chars().take(MAX_METADATA_CHARS).collect();
+    (!text.is_empty()).then_some(text)
 }
 
 fn first_page_title(doc: &PdfDocument) -> Option<String> {
@@ -123,14 +144,33 @@ fn first_page_title(doc: &PdfDocument) -> Option<String> {
 fn info_string(doc: &PdfDocument, key: &str) -> Option<String> {
     let info = resolve(doc, doc.trailer().as_dict()?.get("Info")?)?;
     let value = resolve(doc, info.as_dict()?.get(key)?)?;
-    let text = decode_pdf_text_string(value.as_string()?);
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_string())
+    metadata_text(&decode_pdf_text_string(value.as_string()?))
 }
 
 fn resolve(doc: &PdfDocument, object: &Object) -> Option<Object> {
     match object.as_reference() {
         Some(reference) => doc.load_object(reference).ok(),
         None => Some(object.clone()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metadata_text_drops_control_characters_and_caps_length() {
+        assert_eq!(metadata_text("A\u{0}B\n  C\u{1}").as_deref(), Some("AB C"));
+        assert_eq!(metadata_text(" \u{0} "), None);
+        let long = "x".repeat(MAX_METADATA_CHARS + 1);
+        assert_eq!(
+            metadata_text(&long).map(|t| t.chars().count()),
+            Some(MAX_METADATA_CHARS)
+        );
+    }
+
+    #[test]
+    fn markdown_keeps_newlines_and_tabs_but_no_other_control_characters() {
+        assert_eq!(without_control_chars("a\u{0}b\n\tc\u{7f}"), "ab\n\tc");
     }
 }
