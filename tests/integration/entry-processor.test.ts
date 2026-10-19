@@ -1101,7 +1101,6 @@ describe("Entry Processor", () => {
           guid: entries.guid,
           read: userEntries.read,
           readChangedAt: userEntries.readChangedAt,
-          isBackfill: entries.isBackfill,
         })
         .from(userEntries)
         .innerJoin(entries, eq(entries.id, userEntries.entryId))
@@ -1109,10 +1108,6 @@ describe("Entry Processor", () => {
       expect(rows).toHaveLength(2);
       expect(rows.find((r) => r.guid === "fresh-1")?.read).toBe(false);
       expect(rows.find((r) => r.guid === "archive-1")?.read).toBe(true);
-      // The verdict is persisted on the entry, so every later path that grants
-      // visibility reads the same fact instead of re-deriving it.
-      expect(rows.find((r) => r.guid === "archive-1")?.isBackfill).toBe(true);
-      expect(rows.find((r) => r.guid === "fresh-1")?.isBackfill).toBe(false);
       // Left NULL so a later explicit mark-unread by the user wins the
       // last-writer-wins comparison in markEntriesRead.
       expect(rows.find((r) => r.guid === "archive-1")?.readChangedAt).toBeNull();
@@ -1152,9 +1147,9 @@ describe("Entry Processor", () => {
     it("keeps a backfill read when the same document repeats its GUID (#1500)", async () => {
       // deriveGuid falls back to link and then to title, so two archive posts
       // sharing a title collapse onto one entry: the second occurrence resolves
-      // to the already-created row and reports isNew/isBackfill false. Reading
-      // the read state off entries.is_backfill rather than off which list the id
-      // landed in is what keeps that from fanning the row out unread.
+      // to the already-created row and reports isNew/isBackfill false. Judging
+      // the read state from the entry's date at the link, rather than from
+      // which occurrence the id came from, keeps that from fanning it out unread.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "dupguid" });
       await createTestSubscription(userId, feed.id);
@@ -1181,8 +1176,8 @@ describe("Entry Processor", () => {
 
     it("heals a backfill orphaned by a crashed fetch to read, not unread (#1500)", async () => {
       // The #952 self-heal re-covers entries a crashed fetch never fanned out.
-      // It reports them isNew:false and has no memory of how they were
-      // classified, so the read state has to come from entries.is_backfill.
+      // It reports them isNew:false, so the read state has to be judged at the
+      // link rather than from what this fetch created.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "healbackfill" });
       await createTestSubscription(userId, feed.id);
@@ -1197,9 +1192,7 @@ describe("Entry Processor", () => {
         feed.id,
         archived,
         generateContentHash(archived),
-        new Date("2026-08-10T01:00:00Z"),
-        undefined,
-        new Date("2026-08-10T00:00:00Z")
+        new Date("2026-08-10T01:00:00Z")
       );
       expect(
         await db.select().from(userEntries).where(eq(userEntries.userId, userId))
@@ -1232,9 +1225,8 @@ describe("Entry Processor", () => {
     });
 
     it("leaves a backfilled entry read when a later fetch re-lists it (#1500)", async () => {
-      // The backfill classification only applies to entries created by that
-      // fetch; the ordinary fanout that re-covers the entry later must not flip
-      // it back to unread.
+      // The ordinary fanout that re-covers the entry later must not flip it
+      // back to unread.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "rebackfill" });
       await createTestSubscription(userId, feed.id);
@@ -1279,6 +1271,60 @@ describe("Entry Processor", () => {
         .where(eq(userEntries.userId, userId));
       expect(rows.find((r) => r.guid === "archive-1")?.read).toBe(true);
       expect(rows.find((r) => r.guid === "fresh-1")?.read).toBe(false);
+    });
+
+    it("judges an entry that reappears long after it was news at the new link (#2036)", async () => {
+      // Read state is decided per link, not once per entry: an article that was
+      // news when first seen and is re-announced months later is old news to
+      // whoever it reaches then, while existing holders keep their state.
+      const feed = await createTestFeed();
+      const earlyUserId = await createTestUser({ emailPrefix: "early2036" });
+      await createTestSubscription(earlyUserId, feed.id);
+
+      const article = {
+        guid: "article-1",
+        title: "Fresh at the time",
+        pubDate: new Date("2026-08-10T00:30:00Z"),
+      };
+      await processEntries(
+        feed.id,
+        { title: "Test Feed", items: [article] },
+        {
+          fetchedAt: new Date("2026-08-10T01:00:00Z"),
+          previousLastFetchedAt: new Date("2026-08-10T00:00:00Z"),
+        }
+      );
+
+      // Subscribed while the article was out of the feed, so it doesn't hold it.
+      const lateUserId = await createTestUser({ emailPrefix: "late2036" });
+      await createTestSubscription(lateUserId, feed.id);
+
+      const result = await processEntries(
+        feed.id,
+        {
+          title: "Test Feed",
+          items: [
+            article,
+            { guid: "fresh-1", title: "New", pubDate: new Date("2026-12-01T00:30:00Z") },
+          ],
+        },
+        {
+          fetchedAt: new Date("2026-12-01T01:00:00Z"),
+          previousLastFetchedAt: new Date("2026-12-01T00:00:00Z"),
+        }
+      );
+      expect(result.backfillCount).toBe(0);
+
+      const readState = async (userId: string) => {
+        const rows = await db
+          .select({ guid: entries.guid, read: userEntries.read })
+          .from(userEntries)
+          .innerJoin(entries, eq(entries.id, userEntries.entryId))
+          .where(eq(userEntries.userId, userId));
+        return Object.fromEntries(rows.map((r) => [r.guid, r.read]));
+      };
+      expect(await readState(lateUserId)).toEqual({ "article-1": true, "fresh-1": false });
+      expect(await readState(earlyUserId)).toEqual({ "article-1": false, "fresh-1": false });
     });
 
     it("does not publish new_entry for a backfilled entry (#1500)", async () => {

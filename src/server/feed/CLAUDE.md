@@ -16,7 +16,7 @@ Web entries are keyed on `(owner_feed_id, guid)` (#1846), but feed guids compare
 
 ## Backfill Guard
 
-A first-sighted entry published well before the previous full fetch is an archive re-announcement, not news (`isBackfilledEntry` explains the rule, threshold and accepted risk). The verdict is persisted as `entries.is_backfill`, and **every path that grants visibility copies it into `user_entries.read`** — the fetch fanout, its self-heal, and the subscribe-time populate. A new visibility path must do the same.
+An entry published well before the feed's previous full fetch is an archive re-announcement, not news, and is linked already read (`isBackfilledEntry` explains the rule, threshold and accepted risk). **The verdict belongs to the link, not the entry** (#2036): every path that links feed entries to a user judges it then, with `isBackfillSql`, for the `user_entries.read` it inserts — never store it on the entry, or an article re-announced long after it was first seen keeps its first verdict.
 
 ## WebSub
 

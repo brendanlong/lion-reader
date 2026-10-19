@@ -74,7 +74,6 @@ export interface ChangedEntryRow extends NewEntryListDataSource {
   url: string | null;
   publishedAt: Date | null;
   isSpam: boolean;
-  isBackfill: boolean;
   read: boolean;
   starred: boolean;
   readChangedAt: Date | null;
@@ -108,7 +107,9 @@ export function entryRowToSyncEvents(
   const stamps = { timestamp: row.updatedAt, updatedAt: row.updatedAt };
 
   if (row.metadataChanged && row.isNew) {
-    const announcement = newEntryAnnouncement(row, row.feedTitle, {
+    // Linked read without the user touching it: a backfill.
+    const isBackfill = row.read && row.readChangedAt === null;
+    const announcement = newEntryAnnouncement({ ...row, isBackfill }, row.feedTitle, {
       read: row.read,
       starred: row.starred,
       readChangedAt: row.readChangedAt,

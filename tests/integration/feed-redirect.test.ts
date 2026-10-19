@@ -830,7 +830,7 @@ describe("Feed Redirect Handling", () => {
       // Simulate the new feed syncing - this calls the actual sync code
       // which should NOT create user_entries for entries with GUIDs the user
       // already has from the old feed (sharedEntryNew has same GUID as sharedEntryOld)
-      await createUserEntriesForFeed(newFeedId, [sharedEntryNew, newOnlyEntry]);
+      await createUserEntriesForFeed(newFeedId, [sharedEntryNew, newOnlyEntry], null);
 
       // Query entries via the API
       const caller = createCaller(await createAuthContext(userId));
@@ -901,7 +901,7 @@ describe("Feed Redirect Handling", () => {
 
       // Simulate new feed sync - creates user_entries for all subscribers (A and B)
       // User B already has user_entry from before, ON CONFLICT DO NOTHING handles this
-      await createUserEntriesForFeed(newFeedId, [newEntry]);
+      await createUserEntriesForFeed(newFeedId, [newEntry], null);
 
       // Query entries for User A
       const ctxA = await createAuthContext(userA);
@@ -1114,7 +1114,7 @@ describe("Feed Redirect Handling", () => {
       });
 
       // First sync - should add newUniqueEntry but skip newSharedEntry (duplicate GUID)
-      await createUserEntriesForFeed(newFeedId, [newSharedEntry, newUniqueEntry]);
+      await createUserEntriesForFeed(newFeedId, [newSharedEntry, newUniqueEntry], null);
 
       const afterFirstSync = await getUserEntries(userId);
       // Should have: oldSharedEntry + newUniqueEntry = 2
@@ -1122,7 +1122,7 @@ describe("Feed Redirect Handling", () => {
       expect(afterFirstSync.length).toBe(2);
 
       // Second sync with same entries - should not change anything
-      await createUserEntriesForFeed(newFeedId, [newSharedEntry, newUniqueEntry]);
+      await createUserEntriesForFeed(newFeedId, [newSharedEntry, newUniqueEntry], null);
 
       const afterSecondSync = await getUserEntries(userId);
       expect(afterSecondSync.length).toBe(2);
@@ -1135,7 +1135,11 @@ describe("Feed Redirect Handling", () => {
         lastSeenAt: new Date("2024-01-03T10:00:00Z"),
       });
 
-      await createUserEntriesForFeed(newFeedId, [newSharedEntry, newUniqueEntry, anotherNewEntry]);
+      await createUserEntriesForFeed(
+        newFeedId,
+        [newSharedEntry, newUniqueEntry, anotherNewEntry],
+        null
+      );
 
       const afterThirdSync = await getUserEntries(userId);
       // Should have: oldSharedEntry + newUniqueEntry + anotherNewEntry = 3

@@ -103,7 +103,7 @@ async function seedPushFeed(
 
 async function getUserEntry(userId: string) {
   const [row] = await db
-    .select({ read: userEntries.read, guid: entries.guid, isBackfill: entries.isBackfill })
+    .select({ read: userEntries.read, guid: entries.guid })
     .from(userEntries)
     .innerJoin(entries, eq(entries.id, userEntries.entryId))
     .where(eq(userEntries.userId, userId));
@@ -183,7 +183,6 @@ describe("ingestWebsubNotification", () => {
     const row = await getUserEntry(userId);
     expect(row.guid).toBe("fresh-1");
     expect(row.read).toBe(false);
-    expect(row.isBackfill).toBe(false);
 
     const [subscription] = await db
       .select({ unreadCount: subscriptions.unreadCount })
@@ -213,7 +212,6 @@ describe("ingestWebsubNotification", () => {
     const row = await getUserEntry(userId);
     expect(row.guid).toBe("archive-1");
     expect(row.read).toBe(true);
-    expect(row.isBackfill).toBe(true);
 
     const [subscription] = await db
       .select({ unreadCount: subscriptions.unreadCount })

@@ -112,8 +112,8 @@ describe("membership write paths (#1846)", () => {
     const aliceSub = await createTestSubscription(alice, feedId);
     const bobSub = await createTestSubscription(bob, feedId);
 
-    await createUserEntriesForFeed(feedId, entryIds);
-    await createUserEntriesForFeed(feedId, entryIds);
+    await createUserEntriesForFeed(feedId, entryIds, null);
+    await createUserEntriesForFeed(feedId, entryIds, null);
 
     expect(await membershipsOf(alice)).toEqual(
       pairs([aliceSub, entryIds[0]], [aliceSub, entryIds[1]])
@@ -165,7 +165,7 @@ describe("membership write paths (#1846)", () => {
     const twin = await createTestEntry(newFeedId, { guid: "https://example.com/a" });
     const fresh = await createTestEntry(newFeedId);
 
-    await createUserEntriesForFeed(newFeedId, [twin, fresh]);
+    await createUserEntriesForFeed(newFeedId, [twin, fresh], null);
 
     const [{ id: survivor }] = await db
       .select({ id: subscriptions.id })

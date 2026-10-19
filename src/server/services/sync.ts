@@ -278,7 +278,6 @@ async function collectEntryEvents(
       siteName: entries.siteName,
       entryUpdatedAt: entries.updatedAt,
       isSpam: entries.isSpam,
-      isBackfill: entries.isBackfill,
       read: page.read,
       starred: page.starred,
       readChangedAt: page.readChangedAt,
