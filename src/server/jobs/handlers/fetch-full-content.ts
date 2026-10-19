@@ -13,8 +13,8 @@ import {
   fetchFullContentForNewEntries,
   MAX_FULL_CONTENT_ENTRIES_PER_BATCH,
 } from "../../services/full-content";
-import { enqueueFullContentFetch, ONE_TIME_JOB_PARK_MS, type JobPayloads } from "../queue";
-import type { JobHandlerResult } from "./types";
+import { enqueueFullContentFetch, type JobPayloads } from "../queue";
+import type { OneTimeJobHandlerResult } from "./types";
 
 /**
  * Attempts before a job gives up. Per-entry fetch failures don't throw (they're
@@ -26,7 +26,7 @@ const MAX_ATTEMPTS = 3;
 
 /**
  * Fetches full content for one batch of the job's entries, re-queues the rest
- * behind other feeds' pending jobs, and parks the job.
+ * behind other feeds' pending jobs.
  *
  * A retry redoes only the entries without a result yet — the helper skips any
  * that have one — so work finished before a failure isn't repeated.
@@ -37,9 +37,7 @@ const MAX_ATTEMPTS = 3;
 export async function handleFetchFullContent(
   payload: JobPayloads["fetch_full_content"],
   consecutiveFailures: number
-): Promise<JobHandlerResult> {
-  // A one-time job: park it whatever the outcome (see ONE_TIME_JOB_TYPES).
-  const parkedUntil = new Date(Date.now() + ONE_TIME_JOB_PARK_MS);
+): Promise<OneTimeJobHandlerResult> {
   const batch = payload.entryIds.slice(0, MAX_FULL_CONTENT_ENTRIES_PER_BATCH);
   const rest = payload.entryIds.slice(MAX_FULL_CONTENT_ENTRIES_PER_BATCH);
 
@@ -62,7 +60,6 @@ export async function handleFetchFullContent(
     // the database is unhealthy.
     return {
       success: false,
-      nextRunAt: parkedUntil,
       error: `Giving up after ${MAX_ATTEMPTS} attempts: ${
         error instanceof Error ? error.message : String(error)
       }`,
@@ -71,7 +68,6 @@ export async function handleFetchFullContent(
 
   return {
     success: true,
-    nextRunAt: parkedUntil,
     metadata: {
       feedId: payload.feedId,
       fullContentFetched: result.fetched,

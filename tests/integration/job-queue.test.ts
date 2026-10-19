@@ -19,10 +19,10 @@ import {
   scheduleFeedRefreshNow,
   claimFeedJob,
   claimSingletonJob,
-  renewJobLease,
+  STALE_JOB_THRESHOLD_MS,
   type JobType,
 } from "../../src/server/jobs/queue";
-import { startJobLeaseHeartbeat } from "../../src/server/jobs/worker";
+import { runJobHandler } from "../../src/server/jobs/worker";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
@@ -178,7 +178,7 @@ describe("Job Queue", () => {
       expect(claimed2).toBeNull();
     });
 
-    it("reclaims stale jobs (running > 5 minutes)", async () => {
+    it("reclaims stale jobs", async () => {
       const job = await createJob({
         type: "fetch_feed",
         payload: { feedId: "test-feed-id" },
@@ -187,8 +187,7 @@ describe("Job Queue", () => {
       // Claim the job
       await claimJob();
 
-      // Manually set running_since to 10 minutes ago
-      const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+      const staleTime = new Date(Date.now() - STALE_JOB_THRESHOLD_MS - 1000);
       await db
         .update(jobs)
         .set({ runningSince: staleTime })
@@ -299,99 +298,6 @@ describe("Job Queue", () => {
     });
   });
 
-  describe("renewJobLease", () => {
-    it("keeps a long-running job from being reclaimed as stale", async () => {
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-      });
-
-      // Worker claims the job, then it runs long enough that running_since would
-      // otherwise be considered stale.
-      await claimJob();
-      const staleTime = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
-      await db
-        .update(jobs)
-        .set({ runningSince: staleTime })
-        .where(sql`id = ${job.id}`);
-
-      // Heartbeat renews the lease before another worker can reclaim it. The
-      // worker's token is the running_since it last wrote (now back-dated).
-      const renewed = await renewJobLease(job.id, staleTime);
-      expect(renewed).not.toBeNull();
-      // The returned token is the fresh running_since to fence the next renewal.
-      expect(Date.now() - renewed!.getTime()).toBeLessThan(5000);
-
-      // The job is no longer stale, so a second worker cannot claim it.
-      const reclaimed = await claimJob();
-      expect(reclaimed).toBeNull();
-
-      // running_since should match the renewed token.
-      const after = await getJob(job.id);
-      expect(after!.runningSince!.getTime()).toBe(renewed!.getTime());
-    });
-
-    it("does not steal a job that another worker has reclaimed (fencing)", async () => {
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-      });
-
-      // Worker A claimed the job long ago and then stalled, so its lease token
-      // (the running_since it holds in memory) is now stale.
-      await claimJob();
-      const aToken = new Date(Date.now() - 10 * 60 * 1000);
-      await db
-        .update(jobs)
-        .set({ runningSince: aToken })
-        .where(sql`id = ${job.id}`);
-
-      // Worker B reclaims the now-stale job, taking ownership with a new token.
-      const workerB = await claimJob();
-      expect(workerB!.id).toBe(job.id);
-      const bToken = workerB!.runningSince!;
-      expect(bToken.getTime()).not.toBe(aToken.getTime());
-
-      // Worker A wakes up and tries to renew with its stale token — it must fail
-      // rather than overwrite Worker B's lease (no split-brain).
-      const aRenew = await renewJobLease(job.id, aToken);
-      expect(aRenew).toBeNull();
-
-      // The lease still belongs to Worker B, untouched.
-      const after = await getJob(job.id);
-      expect(after!.runningSince!.getTime()).toBe(bToken.getTime());
-
-      // Worker B can still renew its own lease.
-      const bRenew = await renewJobLease(job.id, bToken);
-      expect(bRenew).not.toBeNull();
-    });
-
-    it("does not resurrect the lease of a finished job", async () => {
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-      });
-
-      const claimed = await claimJob();
-      await finishJob(job.id, {
-        success: true,
-        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
-      });
-
-      // A heartbeat that races with finishJob must be a no-op.
-      const renewed = await renewJobLease(job.id, claimed!.runningSince!);
-      expect(renewed).toBeNull();
-
-      const after = await getJob(job.id);
-      expect(after!.runningSince).toBeNull();
-    });
-
-    it("returns null for a non-existent job", async () => {
-      const renewed = await renewJobLease(NON_EXISTENT_JOB_ID, new Date());
-      expect(renewed).toBeNull();
-    });
-  });
-
   describe("finishJob", () => {
     it("finishes a job successfully", async () => {
       await createJob({
@@ -493,44 +399,25 @@ describe("Job Queue", () => {
       expect(finished!.lastError).toBeNull();
     });
 
+    it("deletes a one-time job once its handler returns, whatever the outcome", async () => {
+      const job = await createJob({
+        type: "process_opml_import",
+        payload: { importId: generateUuidv7() },
+      });
+      const claimed = await claimJob();
+
+      // The import doesn't exist, so the handler reports a failure.
+      const result = await runJobHandler(claimed!, "process_opml_import", Date.now());
+      expect(result.success).toBe(false);
+
+      expect(await finishJob(job.id, result)).toBeNull();
+      expect(await getJob(job.id)).toBeNull();
+    });
+
     it("throws error for non-existent job", async () => {
       await expect(
         finishJob(NON_EXISTENT_JOB_ID, { success: true, nextRunAt: new Date() })
       ).rejects.toThrow(`Job not found: ${NON_EXISTENT_JOB_ID}`);
-    });
-
-    it("returns null without clobbering when the lease token no longer matches", async () => {
-      const job = await createJob({
-        type: "fetch_feed",
-        payload: { feedId: "test-feed-id" },
-      });
-
-      // Worker A claims, stalls, and Worker B reclaims the job.
-      const workerA = await claimJob();
-      const aToken = workerA!.runningSince!;
-      await db
-        .update(jobs)
-        .set({ runningSince: new Date(Date.now() - 10 * 60 * 1000) })
-        .where(sql`id = ${job.id}`);
-      const workerB = await claimJob();
-      const bNextRunAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-      await finishJob(workerB!.id, { success: true, nextRunAt: bNextRunAt });
-
-      // Worker A's late finish, fenced on its stale token, must not overwrite
-      // Worker B's result.
-      const stale = await finishJob(job.id, {
-        success: false,
-        nextRunAt: new Date(Date.now() + 60 * 1000),
-        error: "stale worker",
-        expectedRunningSince: aToken,
-      });
-      expect(stale).toBeNull();
-
-      // Worker B's scheduling/state is intact.
-      const after = await getJob(job.id);
-      expect(after!.nextRunAt!.getTime()).toBe(bNextRunAt.getTime());
-      expect(after!.lastError).toBeNull();
-      expect(after!.consecutiveFailures).toBe(0);
     });
   });
 
@@ -770,110 +657,6 @@ describe("Job Queue", () => {
       // Not due yet - job should not be claimed
       const claimed = await claimFeedJob();
       expect(claimed).toBeNull();
-    });
-  });
-
-  describe("startJobLeaseHeartbeat hard cap", () => {
-    // These tests inject tiny heartbeat/cap intervals to exercise the wedged-
-    // handler hard cap against the real database. The silent failure this
-    // guards: a handler stuck on a never-settling await heartbeating its lease
-    // forever, so the job is never reclaimed until a process restart.
-    const quietLogger = { info: () => {}, warn: () => {}, error: () => {} };
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-    const HEARTBEAT_MS = 30;
-    const CAP_MS = 150;
-
-    async function readRunningSince(jobId: string): Promise<Date | null> {
-      const job = await getJob(jobId);
-      return job?.runningSince ?? null;
-    }
-
-    it("renews until the cap, then stops so the job becomes reclaimable; a late finish on an unreclaimed job still commits", async () => {
-      const job = await claimSingletonJob("renew_websub");
-      expect(job?.runningSince).toBeInstanceOf(Date);
-
-      const lease = startJobLeaseHeartbeat(job!, quietLogger, CAP_MS, HEARTBEAT_MS);
-
-      // Before the cap: at least one renewal must advance running_since.
-      const original = job!.runningSince!;
-      let renewed: Date | null = null;
-      for (let i = 0; i < 40 && !renewed; i++) {
-        await sleep(25);
-        const current = await readRunningSince(job!.id);
-        if (current && current.getTime() > original.getTime()) {
-          renewed = current;
-        }
-      }
-      expect(renewed).not.toBeNull();
-
-      // Past the cap, renewals must stop. Assert that by waiting for
-      // running_since to go quiet rather than comparing two fixed samples: on
-      // a loaded runner a 30ms heartbeat tick can land late (Node timers slip
-      // under event-loop starvation), so a late renewal could fall between two
-      // arbitrary reads even though the cap is working. Poll until two reads a
-      // few heartbeats apart match — that's the settled, capped value — with a
-      // generous ceiling so a genuine never-stops bug still fails.
-      const stableDeadline = Date.now() + CAP_MS + HEARTBEAT_MS * 50;
-      let stable = await readRunningSince(job!.id);
-      for (;;) {
-        await sleep(HEARTBEAT_MS * 4);
-        const next = await readRunningSince(job!.id);
-        if (next && stable && next.getTime() === stable.getTime()) {
-          stable = next;
-          break;
-        }
-        stable = next;
-        if (Date.now() > stableDeadline) {
-          throw new Error("running_since never stabilized: heartbeat kept renewing past the cap");
-        }
-      }
-
-      // The controller keeps its last token (not nulled), so a handler that
-      // settles after the cap — before anyone reclaims — still finishes
-      // legitimately via the CAS fence.
-      await lease.stop();
-      const token = lease.currentToken();
-      expect(token).not.toBeNull();
-      expect(token!.getTime()).toBe(stable!.getTime());
-
-      const finished = await finishJob(job!.id, {
-        success: true,
-        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
-        expectedRunningSince: token!,
-      });
-      expect(finished).not.toBeNull();
-      expect((await getJob(job!.id))?.runningSince).toBeNull();
-    });
-
-    it("a post-cap finish no-ops when another worker has reclaimed the job", async () => {
-      const job = await claimSingletonJob("renew_websub");
-      expect(job?.runningSince).toBeInstanceOf(Date);
-
-      const lease = startJobLeaseHeartbeat(job!, quietLogger, CAP_MS, HEARTBEAT_MS);
-
-      // Wait until safely past the cap so the heartbeat has stopped renewing.
-      await sleep(CAP_MS + HEARTBEAT_MS * 4);
-      await lease.stop();
-      const staleToken = lease.currentToken();
-      expect(staleToken).not.toBeNull();
-
-      // Simulate another worker reclaiming the now-stale job.
-      const reclaimedAt = new Date(Date.now() + 1000);
-      await db
-        .update(jobs)
-        .set({ runningSince: reclaimedAt })
-        .where(sql`${jobs.id} = ${job!.id}`);
-
-      // The wedged handler finally settles: its finish must no-op (CAS fails),
-      // never clobbering the reclaimer's lease.
-      const finished = await finishJob(job!.id, {
-        success: true,
-        nextRunAt: new Date(Date.now() + 60 * 60 * 1000),
-        expectedRunningSince: staleToken!,
-      });
-      expect(finished).toBeNull();
-      expect((await readRunningSince(job!.id))?.getTime()).toBe(reclaimedAt.getTime());
     });
   });
 });

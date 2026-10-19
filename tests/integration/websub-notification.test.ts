@@ -27,6 +27,7 @@ import {
   getJobPayload,
   MAX_PENDING_FULL_CONTENT_ENTRIES,
   MAX_RUNNING_FULL_CONTENT_JOBS,
+  STALE_JOB_THRESHOLD_MS,
 } from "../../src/server/jobs/queue";
 import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
 import { MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../../src/server/services/full-content";
@@ -469,12 +470,10 @@ describe("ingestWebsubNotification", () => {
       await expect(handleFetchFullContent(broken, 1)).rejects.toThrow();
     });
 
-    it("parks the job when the last attempt fails", async () => {
-      const now = Date.now();
+    it("gives up without throwing when the last attempt fails", async () => {
       const result = await handleFetchFullContent(broken, 2);
       expect(result.success).toBe(false);
-      // Parked: far enough out for the retention sweep to treat it as finished.
-      expect(result.nextRunAt.getTime()).toBeGreaterThan(now + 180 * 24 * 60 * 60 * 1000);
+      expect(result.error).toMatch(/^Giving up/);
     });
   });
 
@@ -505,10 +504,10 @@ describe("ingestWebsubNotification", () => {
     // One is still due, but the running ones hold every allowed slot.
     expect(await claimFullContentJob()).toBeNull();
 
-    // A job whose worker stopped heartbeating no longer holds a slot.
+    // A stale job no longer holds a slot.
     await db
       .update(jobs)
-      .set({ runningSince: new Date(now - 10 * 60 * 1000) })
+      .set({ runningSince: new Date(now - STALE_JOB_THRESHOLD_MS - 1000) })
       .where(eq(jobs.id, running[0]));
     expect(await claimFullContentJob()).not.toBeNull();
   });

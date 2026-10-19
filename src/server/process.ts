@@ -161,7 +161,7 @@ export function superviseProcess(
       }
       // Work is still running against the DB pool and Redis, so leave them
       // open: closing them would only turn that work's last writes into errors.
-      // An interrupted job keeps its lease until it goes stale, then another
+      // An interrupted job stays claimed until it goes stale, then another
       // worker reclaims and retries it (STALE_JOB_THRESHOLD_MS in jobs/queue.ts).
       logger.warn(`${name} did not stop within ${runtime.drainTimeoutMs}ms; exiting anyway`);
       await runtime.flushSentry();
