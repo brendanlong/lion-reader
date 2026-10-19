@@ -13,7 +13,7 @@
  * fetching.
  */
 
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 
 // ============================================================================
 // URL Parsing
@@ -154,7 +154,7 @@ export function parseArxivAbsMetadata(html: string): ArxivPaperMetadata {
   let summary: string | null = null;
   const authors: string[] = [];
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         if (name.toLowerCase() !== "meta") return;

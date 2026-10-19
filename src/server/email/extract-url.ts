@@ -12,7 +12,7 @@
  * Uses htmlparser2 for SAX-style streaming parsing per project conventions.
  */
 
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 import { resolveEmailLink } from "@/server/plugins";
 
 /**
@@ -169,7 +169,7 @@ export function extractUnsubscribeUrl(html: string): string | null {
   let bestMatch: string | null = null;
   let hasPathMatch = false;
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         if (name.toLowerCase() === "a" && attribs.href) {
@@ -254,7 +254,7 @@ export function extractEmailUrl(html: string): string | null {
   let currentText = "";
   let inHeadingAnchor = false;
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentagname(name) {
         const tag = name.toLowerCase();

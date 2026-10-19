@@ -1,6 +1,6 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import type { ParsedEntry } from "@/server/feed/types";
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 import { plainTextToHtml } from "@/server/http/html";
 import { fetchHtmlPage } from "@/server/http/fetch";
 import { logger } from "@/lib/logger";
@@ -60,7 +60,7 @@ function extractYouTubeVideoMetadata(html: string): YouTubeVideoMetadata {
   let ogDescription: string | null = null;
   let itempropName: string | null = null;
 
-  const parser = new Parser({
+  const parser = createSaxParser({
     onopentag(name, attribs) {
       const tag = name.toLowerCase();
       if (tag === "meta") {

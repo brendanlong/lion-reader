@@ -9,7 +9,7 @@
  * instead of tracking parser state.
  */
 
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "./sax";
 import { BLOCK_TAGS, SKIP_TAGS, truncateAtWord, truncateText } from "./strip-html";
 
 /** Longest summary (entry preview text) we generate, in characters. */
@@ -149,7 +149,7 @@ function parseRuns(html: string): ParsedSummary {
     }
   };
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         const tag = name.toLowerCase();

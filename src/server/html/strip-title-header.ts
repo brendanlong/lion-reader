@@ -6,7 +6,7 @@
  * and removes such duplicate headers.
  */
 
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "./sax";
 
 /**
  * Normalizes text for comparison by removing extra whitespace and trimming.
@@ -42,7 +42,7 @@ function parseFirstHeader(html: string): FirstHeaderInfo | null {
   let headerText = "";
   let headerEndIndex = -1;
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentagname(name) {
         const tag = name.toLowerCase();

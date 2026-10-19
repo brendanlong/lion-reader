@@ -2,7 +2,7 @@
  * HTML text extraction utilities using SAX parsing.
  */
 
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "./sax";
 
 /**
  * Block-level elements that should have whitespace after them.
@@ -103,7 +103,7 @@ export function stripHtml(html: string, maxLength?: number): string {
   let lastWasSpace = true; // Start true to avoid leading spaces
   let skipDepth = 0; // Track depth inside script/style tags
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentagname(name) {
         const tag = name.toLowerCase();

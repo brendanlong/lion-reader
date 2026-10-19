@@ -1,7 +1,7 @@
 import type { UrlPlugin, SavedArticleContent } from "./types";
 import { socialPostImage, socialPostTitle } from "./social-post";
 import { fetchPluginPage } from "./fetch-page";
-import { Parser } from "htmlparser2";
+import { createSaxParser } from "@/server/html/sax";
 import { z } from "zod";
 import { escapeHtml, plainTextToHtml } from "@/server/http/html";
 import { safeDecodeURIComponent } from "@/lib/url";
@@ -168,7 +168,7 @@ function extractLinkedInJsonLd(html: string): JsonLdEntity[] {
   let inJsonLd = false;
   let scriptText = "";
 
-  const parser = new Parser(
+  const parser = createSaxParser(
     {
       onopentag(name, attribs) {
         const tag = name.toLowerCase();
