@@ -74,7 +74,13 @@ export function SubscriptionItem({
 
       {/* Action buttons — revealed on hover (and untappable while hidden, so an
           invisible button never swallows a click); on hover-less devices they
-          sit in-flow after the unread count, always visible. */}
+          sit in-flow after the unread count, always visible. There, an invisible
+          ::before stretches each 28px button toward a 44px touch target without
+          moving anything: vertically to the row's height, sideways to the middle
+          of the gap between them, and outward into the link's px-3 (edit) or
+          this wrapper's pr-1 plus most of the sidebar's p-3 (unsubscribe). Offsets
+          are 1px larger than that geometry: ::before is positioned inside
+          IconButton's control-outline border. */}
       <div className="hover-none:static hover-none:translate-y-0 hover-none:pr-1 hover-none:opacity-100 hover-none:pointer-events-auto pointer-events-none absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
         <IconButton
           icon={<EditIcon />}
@@ -82,6 +88,7 @@ export function SubscriptionItem({
           title={isCollection ? "Edit collection" : "Edit subscription"}
           size="sm"
           variant="subtle"
+          className="hover-none:before:absolute hover-none:before:-inset-y-[9px] hover-none:before:-right-[2px] hover-none:before:-left-[13px] relative"
           onClick={(e) => {
             e.stopPropagation();
             onEdit();
@@ -93,6 +100,7 @@ export function SubscriptionItem({
           title={isCollection ? "Delete collection" : "Unsubscribe"}
           size="sm"
           variant="subtle"
+          className="hover-none:before:absolute hover-none:before:-inset-y-[9px] hover-none:before:-right-[16px] hover-none:before:-left-[2px] relative"
           onClick={(e) => {
             e.stopPropagation();
             onUnsubscribe();
