@@ -17,7 +17,7 @@ import { newEntryAnnouncement, toEntryMetadata } from "@/server/services/entry-s
 import { deriveEntryUrl, type ParsedEntry, type ParsedFeed } from "./types";
 import { cleanEntryContent } from "./content-utils";
 import { canonicalGuid, guidMatchCandidates } from "./guid-identity";
-import { replaceNul } from "../db/nul-safe-client";
+import { replaceNul } from "../db/nul";
 import {
   holdsRedirectTwin,
   insertUserEntriesWithMemberships,

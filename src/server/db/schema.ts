@@ -6,7 +6,6 @@ import {
   foreignKey,
   index,
   integer,
-  jsonb,
   pgEnum,
   pgTable,
   pgView,
@@ -22,6 +21,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { ParagraphMapEntry } from "@/lib/narration/paragraph-map";
+import { replaceNul } from "./nul";
 import { temporalTimestamp } from "./temporal";
 import { SUBSCRIPTION_TYPES, type EntryType } from "@/lib/entry-types";
 
@@ -44,6 +44,26 @@ const citext = customType<{ data: string }>({
 const tsvector = customType<{ data: string }>({
   dataType() {
     return "tsvector";
+  },
+});
+
+/**
+ * `jsonb` with NUL replaced in string values (`replaceNul`): once
+ * stringified, a NUL is a JSON escape that `jsonb` rejects and that
+ * `NulSafeClient` can't tell apart from the same text in a `text` column.
+ * Object keys aren't rewritten; ours are fixed.
+ */
+const nulSafeJsonb = customType<{ data: unknown; driverData: string }>({
+  dataType() {
+    return "jsonb";
+  },
+  toDriver(value) {
+    return JSON.stringify(value, (_key, nested: unknown) =>
+      typeof nested === "string" ? replaceNul(nested) : nested
+    );
+  },
+  fromDriver(value) {
+    return typeof value === "string" ? (JSON.parse(value) as unknown) : value;
   },
 });
 
@@ -1042,7 +1062,7 @@ export const jobs = pgTable(
   {
     id: uuid("id").primaryKey(),
     type: text("type").notNull(), // a JobType (see JobPayloads in src/server/jobs/queue.ts)
-    payload: jsonb("payload").notNull().default({}).$type<Record<string, unknown>>(),
+    payload: nulSafeJsonb("payload").notNull().default({}).$type<Record<string, unknown>>(),
 
     // Scheduling state
     nextRunAt: timestamp("next_run_at", { withTimezone: true }),
@@ -1166,7 +1186,7 @@ export const narrationContent = pgTable("narration_content", {
   // Paragraph map for highlighting (narration paragraph index -> data-para-id),
   // persisted alongside the narration: it is the only map guaranteed to align
   // with this exact text.
-  paragraphMap: jsonb("paragraph_map").$type<ParagraphMapEntry[]>(),
+  paragraphMap: nulSafeJsonb("paragraph_map").$type<ParagraphMapEntry[]>(),
   generatedAt: timestamp("generated_at", { withTimezone: true }),
 
   // Error tracking for retry logic
@@ -1317,10 +1337,10 @@ export const opmlImports = pgTable(
     failedCount: integer("failed_count").notNull().default(0),
 
     // The parsed OPML feeds to import
-    feedsData: jsonb("feeds_data").$type<OpmlImportFeedData[]>().notNull(),
+    feedsData: nulSafeJsonb("feeds_data").$type<OpmlImportFeedData[]>().notNull(),
 
     // Results for each feed (populated as import progresses)
-    results: jsonb("results").$type<OpmlImportFeedResult[]>().notNull().default([]),
+    results: nulSafeJsonb("results").$type<OpmlImportFeedResult[]>().notNull().default([]),
 
     // Error message if the job itself failed
     error: text("error"),
