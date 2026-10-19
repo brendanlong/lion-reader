@@ -90,6 +90,15 @@ function normalizeArxivText(text: string): string {
 }
 
 /**
+ * Unwraps TeX text-formatting commands (`\emph{deception}` → `deception`), which
+ * authors leave in titles and abstracts. Math (`$O(n^2)$`) is left alone: it
+ * reads fine as TeX and has no plain-text equivalent.
+ */
+function stripTexFormatting(text: string): string {
+  return text.replace(/\\(?:emph|textit|textbf|texttt|textsc|textsf|underline)\{([^{}]*)\}/g, "$1");
+}
+
+/**
  * Convert a Highwire `citation_author` value to normal reading order.
  *
  * The abstract page emits authors surname-first ("Tay, Yi"), which is wrong for
@@ -140,10 +149,10 @@ export function parseArxivAbsMetadata(html: string): ArxivPaperMetadata {
 
         switch (attribs.name?.toLowerCase()) {
           case "citation_title":
-            title ??= normalizeArxivText(content) || null;
+            title ??= stripTexFormatting(normalizeArxivText(content)) || null;
             break;
           case "citation_abstract":
-            summary ??= normalizeArxivText(content) || null;
+            summary ??= stripTexFormatting(normalizeArxivText(content)) || null;
             break;
           case "citation_author": {
             const author = normalizeAuthorName(content);
