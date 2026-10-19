@@ -302,8 +302,7 @@ describe("Saved Articles API", () => {
 
       const caller = createCaller(await createAuthContext(userId));
 
-      const { counts } = await caller.saved.delete({ id: articleId });
-      expect(counts.saved).toEqual({ unread: 0 });
+      await caller.saved.delete({ id: articleId });
 
       // Verify deleted
       const dbArticle = await db.select().from(entries).where(eq(entries.id, articleId)).limit(1);

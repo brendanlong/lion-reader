@@ -165,17 +165,10 @@ export const savedRouter = createTRPCRouter({
     )
     .output(z.object({ counts: unreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const collectionIds = await savedService.deleteSavedArticle(ctx.db, userId, input.id);
-      if (collectionIds === null) {
+      const counts = await savedService.deleteSavedArticle(ctx.db, ctx.session.user.id, input.id);
+      if (counts === null) {
         throw errors.savedArticleNotFound();
       }
-      // The entry is gone, so its collections are named as subscriptions.
-      const counts = await getBulkEntryRelatedCounts(
-        ctx.db,
-        userId,
-        collectionIds.map((subscriptionId) => ({ subscriptionId }))
-      );
       return { counts };
     }),
 

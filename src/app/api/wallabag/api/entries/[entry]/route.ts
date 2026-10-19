@@ -89,8 +89,8 @@ export const DELETE = withClientErrors(async function (
   }
 
   // Try deleting as a saved article first
-  const leftCollections = await savedService.deleteSavedArticle(db, auth.userId, resolved.id);
-  if (leftCollections === null) {
+  const counts = await savedService.deleteSavedArticle(db, auth.userId, resolved.id);
+  if (counts === null) {
     return errorResponse("not_found", "Entry not found", 404);
   }
 
