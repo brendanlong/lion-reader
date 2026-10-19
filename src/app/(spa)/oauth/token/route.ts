@@ -12,11 +12,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { resolveClient, type ResolvedClient } from "@/server/oauth/clients";
-import {
-  validateAndConsumeAuthCode,
-  createTokens,
-  rotateRefreshToken,
-} from "@/server/oauth/service";
+import { exchangeAuthorizationCode, rotateRefreshToken } from "@/server/oauth/service";
 import {
   extractClientCredentials,
   clientSecretError,
@@ -174,15 +170,9 @@ async function handleAuthorizationCodeGrant(
   const secretError = validateClientSecret(client, client_secret);
   if (secretError) return secretError;
 
-  // Validate and consume authorization code
-  const authCodeData = await validateAndConsumeAuthCode(
-    code,
-    client_id,
-    redirect_uri,
-    code_verifier
-  );
+  const exchange = await exchangeAuthorizationCode(code, client_id, redirect_uri, code_verifier);
 
-  if (!authCodeData) {
+  if (!exchange) {
     return NextResponse.json(
       createOAuthError(
         OAUTH_ERRORS.INVALID_GRANT,
@@ -192,20 +182,14 @@ async function handleAuthorizationCodeGrant(
     );
   }
 
-  // Create tokens
-  const tokens = await createTokens({
-    clientId: client_id,
-    userId: authCodeData.userId,
-    scopes: authCodeData.scopes,
-    resource: authCodeData.resource,
-  });
+  const { tokens } = exchange;
 
   logger.info("OAuth token issued", {
     grantType: "authorization_code",
     clientId: client_id,
-    userId: authCodeData.userId,
+    userId: exchange.userId,
     scope: tokens.scope,
-    resource: authCodeData.resource,
+    resource: exchange.resource,
   });
 
   return NextResponse.json(

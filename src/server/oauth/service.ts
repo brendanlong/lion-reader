@@ -5,7 +5,7 @@
  * codes and tokens.
  */
 
-import { eq, and, isNull, gt, inArray, or, type SQL } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, gt, inArray, or, type SQL } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthAuthorizationCodes,
@@ -95,68 +95,78 @@ export async function createAuthorizationCode(params: CreateAuthCodeParams): Pro
   return code;
 }
 
-interface AuthCodeValidation {
+interface AuthCodeExchange {
   userId: string;
-  scopes: string[];
   resource: string | null;
+  tokens: TokenPair;
 }
 
 /**
- * Validates and consumes an authorization code.
- * Returns the code data if valid, null otherwise.
+ * Redeems an authorization code for a new grant and its first token pair.
+ * Returns null if the code isn't redeemable or PKCE fails.
  *
  * Consumption is a single atomic UPDATE ... WHERE used_at IS NULL, so of two
  * concurrent token requests presenting the same code exactly one succeeds
  * (OAuth 2.1 single-use requirement). The code is claimed before PKCE
  * verification, so a failed PKCE attempt also burns the code — that's the
  * safe direction (an attacker who stole a code can't retry verifiers).
+ *
+ * The claim and the grant commit together. A Connected Apps revoke burns
+ * unredeemed codes before it revokes grants, so it either finds this code
+ * claimed by a committed exchange, whose grant it then revokes, or burns the
+ * code first and the claim fails.
  */
-export async function validateAndConsumeAuthCode(
+export async function exchangeAuthorizationCode(
   code: string,
   clientId: string,
   redirectUri: string,
   codeVerifier: string
-): Promise<AuthCodeValidation | null> {
+): Promise<AuthCodeExchange | null> {
   const codeHash = hashToken(code);
 
-  // Atomically claim the code
-  const result = await db
-    .update(oauthAuthorizationCodes)
-    .set({ usedAt: new Date() })
-    .where(
-      and(
-        eq(oauthAuthorizationCodes.codeHash, codeHash),
-        eq(oauthAuthorizationCodes.clientId, clientId),
-        eq(oauthAuthorizationCodes.redirectUri, redirectUri),
-        isNull(oauthAuthorizationCodes.usedAt),
-        gt(oauthAuthorizationCodes.expiresAt, new Date())
+  return db.transaction(async (tx) => {
+    const [authCode] = await tx
+      .update(oauthAuthorizationCodes)
+      .set({ usedAt: new Date() })
+      .where(
+        and(
+          eq(oauthAuthorizationCodes.codeHash, codeHash),
+          eq(oauthAuthorizationCodes.clientId, clientId),
+          eq(oauthAuthorizationCodes.redirectUri, redirectUri),
+          isNull(oauthAuthorizationCodes.usedAt),
+          gt(oauthAuthorizationCodes.expiresAt, new Date())
+        )
       )
-    )
-    .returning();
+      .returning();
 
-  if (result.length === 0) {
-    // The atomic claim matched nothing: the code is unknown, already used,
-    // expired, or the client_id / redirect_uri don't match what was stored.
-    logger.warn("OAuth code exchange rejected: code claim failed", {
-      clientId,
-      redirectUri,
-    });
-    return null;
-  }
+    if (!authCode) {
+      // The atomic claim matched nothing: the code is unknown, already used,
+      // expired, or the client_id / redirect_uri don't match what was stored.
+      logger.warn("OAuth code exchange rejected: code claim failed", {
+        clientId,
+        redirectUri,
+      });
+      return null;
+    }
 
-  const authCode = result[0];
+    // Returning (not throwing) commits the claim, burning the code.
+    if (!validatePkceS256(codeVerifier, authCode.codeChallenge)) {
+      logger.warn("OAuth code exchange rejected: PKCE verification failed", { clientId });
+      return null;
+    }
 
-  // Validate PKCE
-  if (!validatePkceS256(codeVerifier, authCode.codeChallenge)) {
-    logger.warn("OAuth code exchange rejected: PKCE verification failed", { clientId });
-    return null;
-  }
+    const tokens = await createTokens(
+      {
+        clientId,
+        userId: authCode.userId,
+        scopes: authCode.scopes,
+        resource: authCode.resource,
+      },
+      tx
+    );
 
-  return {
-    userId: authCode.userId,
-    scopes: authCode.scopes,
-    resource: authCode.resource,
-  };
+    return { userId: authCode.userId, resource: authCode.resource, tokens };
+  });
 }
 
 // ============================================================================
@@ -176,7 +186,10 @@ type TokenGrant = Omit<typeof oauthTokenGrants.$inferSelect, "createdAt" | "revo
  * Starts a new authorization (a code exchange or a Wallabag password grant):
  * a grant and its first access/refresh token pair.
  */
-export async function createTokens(params: CreateTokensParams): Promise<TokenPair> {
+export async function createTokens(
+  params: CreateTokensParams,
+  executor: DbOrTx = db
+): Promise<TokenPair> {
   const grant: TokenGrant = {
     id: generateUuidv7(),
     clientId: params.clientId,
@@ -184,7 +197,7 @@ export async function createTokens(params: CreateTokensParams): Promise<TokenPai
     scopes: params.scopes,
     resource: params.resource ?? null,
   };
-  return db.transaction(async (tx) => {
+  return executor.transaction(async (tx) => {
     await tx.insert(oauthTokenGrants).values(grant);
     return (await insertTokenPair(tx, grant)).tokens;
   });
@@ -245,36 +258,45 @@ async function insertTokenPair(
  * including one a racing rotation commits afterwards. Returns how many grants
  * it revoked.
  *
- * The token rows are stamped too only because the previous release checks
- * nothing else (#2053).
+ * It also stamps the token rows of every matching revoked grant, not just the
+ * ones it revokes, only because the previous release checks nothing else
+ * (#2053): repeating a revoke then catches rows that release committed into an
+ * already-revoked grant.
  */
 export async function revokeTokenGrants(
-  condition: SQL | undefined,
+  condition: SQL,
   executor: DbOrTx = db,
   now: Date = new Date()
 ): Promise<number> {
-  const revoked = await executor
-    .update(oauthTokenGrants)
-    .set({ revokedAt: now })
-    .where(and(condition, isNull(oauthTokenGrants.revokedAt)))
-    .returning({ id: oauthTokenGrants.id });
-  if (revoked.length === 0) {
-    return 0;
-  }
+  return executor.transaction(async (tx) => {
+    const revoked = await tx
+      .update(oauthTokenGrants)
+      .set({ revokedAt: now })
+      .where(and(condition, isNull(oauthTokenGrants.revokedAt)))
+      .returning({ id: oauthTokenGrants.id });
 
-  const grantIds = revoked.map((grant) => grant.id);
-  await executor
-    .update(oauthAccessTokens)
-    .set({ revokedAt: now })
-    .where(and(inArray(oauthAccessTokens.grantId, grantIds), isNull(oauthAccessTokens.revokedAt)));
-  await executor
-    .update(oauthRefreshTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(inArray(oauthRefreshTokens.grantId, grantIds), isNull(oauthRefreshTokens.revokedAt))
-    );
+    const revokedGrants = tx
+      .select({ id: oauthTokenGrants.id })
+      .from(oauthTokenGrants)
+      .where(and(condition, isNotNull(oauthTokenGrants.revokedAt)));
+    await tx
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(inArray(oauthAccessTokens.grantId, revokedGrants), isNull(oauthAccessTokens.revokedAt))
+      );
+    await tx
+      .update(oauthRefreshTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          inArray(oauthRefreshTokens.grantId, revokedGrants),
+          isNull(oauthRefreshTokens.revokedAt)
+        )
+      );
 
-  return revoked.length;
+    return revoked.length;
+  });
 }
 
 /**
@@ -572,6 +594,6 @@ export async function revokeClientToken(clientId: string, token: string): Promis
             .where(eq(oauthRefreshTokens.tokenHash, tokenHash))
         )
       )
-    )
+    )!
   );
 }

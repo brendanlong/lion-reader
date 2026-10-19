@@ -172,6 +172,7 @@ export async function revokeUserConsentGrant(userId: string, clientId: string): 
     return false;
   }
 
+  // Before the token grants: see exchangeAuthorizationCode for why the order matters.
   await db
     .update(oauthAuthorizationCodes)
     .set({ usedAt: now })
@@ -200,7 +201,7 @@ export async function revokeUserClientTokens(
   now: Date = new Date()
 ): Promise<void> {
   await revokeTokenGrants(
-    and(eq(oauthTokenGrants.userId, userId), eq(oauthTokenGrants.clientId, clientId)),
+    and(eq(oauthTokenGrants.userId, userId), eq(oauthTokenGrants.clientId, clientId))!,
     executor,
     now
   );

@@ -205,12 +205,18 @@ CREATE FUNCTION public.oauth_refresh_tokens_join_predecessor_grant() RETURNS tri
 DECLARE
   successor_grant uuid;
   successor_access uuid;
+  grant_revoked_at timestamptz;
 BEGIN
   SELECT grant_id, access_token_id INTO successor_grant, successor_access
   FROM oauth_refresh_tokens WHERE id = NEW.replaced_by_id;
   IF successor_grant <> NEW.grant_id THEN
-    UPDATE oauth_refresh_tokens SET grant_id = NEW.grant_id WHERE id = NEW.replaced_by_id;
-    UPDATE oauth_access_tokens SET grant_id = NEW.grant_id WHERE id = successor_access;
+    SELECT revoked_at INTO grant_revoked_at FROM oauth_token_grants WHERE id = NEW.grant_id;
+    UPDATE oauth_refresh_tokens
+    SET grant_id = NEW.grant_id, revoked_at = COALESCE(revoked_at, grant_revoked_at)
+    WHERE id = NEW.replaced_by_id;
+    UPDATE oauth_access_tokens
+    SET grant_id = NEW.grant_id, revoked_at = COALESCE(revoked_at, grant_revoked_at)
+    WHERE id = successor_access;
   END IF;
   RETURN NULL;
 END;

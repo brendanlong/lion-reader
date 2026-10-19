@@ -5,6 +5,9 @@
 -- afterwards (#2042).
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
+-- Refresh tokens first, the order the previous release's rotation takes them.
+LOCK TABLE oauth_refresh_tokens, oauth_access_tokens IN ACCESS EXCLUSIVE MODE;
+--> statement-breakpoint
 CREATE TABLE oauth_token_grants (
   id uuid PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -57,16 +60,27 @@ UPDATE oauth_access_tokens SET grant_id = id WHERE grant_id IS NULL;
 
 -- A chain with no live token left was already revoked or has run out; marking
 -- it revoked keeps reuse detection from flagging a client that presents one of
--- its tokens.
+-- its tokens. A chain whose consent is gone could no longer rotate (only
+-- Wallabag's password grant has no consent), and the grant now stands in for
+-- that check.
 UPDATE oauth_token_grants g
 SET revoked_at = now()
-WHERE NOT EXISTS (
-    SELECT 1 FROM oauth_refresh_tokens r
-    WHERE r.grant_id = g.id AND r.revoked_at IS NULL AND r.expires_at > now()
+WHERE (
+    g.client_id <> 'wallabag'
+    AND NOT EXISTS (
+      SELECT 1 FROM oauth_consent_grants c
+      WHERE c.user_id = g.user_id AND c.client_id = g.client_id AND c.revoked_at IS NULL
+    )
   )
-  AND NOT EXISTS (
-    SELECT 1 FROM oauth_access_tokens a
-    WHERE a.grant_id = g.id AND a.revoked_at IS NULL AND a.expires_at > now()
+  OR (
+    NOT EXISTS (
+      SELECT 1 FROM oauth_refresh_tokens r
+      WHERE r.grant_id = g.id AND r.revoked_at IS NULL AND r.expires_at > now()
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM oauth_access_tokens a
+      WHERE a.grant_id = g.id AND a.revoked_at IS NULL AND a.expires_at > now()
+    )
   );
 --> statement-breakpoint
 ALTER TABLE oauth_access_tokens
@@ -89,7 +103,8 @@ CREATE INDEX idx_oauth_refresh_tokens_grant ON oauth_refresh_tokens (grant_id);
 -- triggers give its rows grants: a new access token gets a fresh grant, the
 -- refresh token inserted with it joins that grant, and once a rotation stamps
 -- replaced_by_id the successor pair moves into its predecessor's grant (the
--- emptied grant is left for retention). Dropped in #2053.
+-- emptied grant is left for retention), born revoked if that grant is, since
+-- the previous release reads only the rows. Dropped in #2053.
 CREATE FUNCTION oauth_access_tokens_default_grant() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -131,12 +146,18 @@ CREATE FUNCTION oauth_refresh_tokens_join_predecessor_grant() RETURNS trigger
 DECLARE
   successor_grant uuid;
   successor_access uuid;
+  grant_revoked_at timestamptz;
 BEGIN
   SELECT grant_id, access_token_id INTO successor_grant, successor_access
   FROM oauth_refresh_tokens WHERE id = NEW.replaced_by_id;
   IF successor_grant <> NEW.grant_id THEN
-    UPDATE oauth_refresh_tokens SET grant_id = NEW.grant_id WHERE id = NEW.replaced_by_id;
-    UPDATE oauth_access_tokens SET grant_id = NEW.grant_id WHERE id = successor_access;
+    SELECT revoked_at INTO grant_revoked_at FROM oauth_token_grants WHERE id = NEW.grant_id;
+    UPDATE oauth_refresh_tokens
+    SET grant_id = NEW.grant_id, revoked_at = COALESCE(revoked_at, grant_revoked_at)
+    WHERE id = NEW.replaced_by_id;
+    UPDATE oauth_access_tokens
+    SET grant_id = NEW.grant_id, revoked_at = COALESCE(revoked_at, grant_revoked_at)
+    WHERE id = successor_access;
   END IF;
   RETURN NULL;
 END;

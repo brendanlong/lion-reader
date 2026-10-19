@@ -28,7 +28,7 @@ import { revokeUserClientTokens } from "../../src/server/oauth/grants";
 import { createTestUser, createTestOAuthClient } from "./helpers";
 import {
   createAuthorizationCode,
-  validateAndConsumeAuthCode,
+  exchangeAuthorizationCode,
   createTokens,
   rotateRefreshToken,
   validateAccessToken,
@@ -94,18 +94,19 @@ afterAll(async () => {
   }
 });
 
-describe("validateAndConsumeAuthCode", () => {
+describe("exchangeAuthorizationCode", () => {
   it("redeems a valid code exactly once", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
-    const first = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
+    const first = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(first).not.toBeNull();
     expect(first?.userId).toBe(userId);
-    expect(first?.scopes).toEqual(["mcp"]);
+    expect(first?.tokens.scope).toBe("mcp");
+    expect(await validateAccessToken(first!.tokens.accessToken)).not.toBeNull();
 
-    const second = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
+    const second = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(second).toBeNull();
   });
 
@@ -116,7 +117,7 @@ describe("validateAndConsumeAuthCode", () => {
 
     const results = await Promise.all(
       Array.from({ length: 5 }, () =>
-        validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)
+        exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)
       )
     );
 
@@ -129,12 +130,12 @@ describe("validateAndConsumeAuthCode", () => {
     const clientId = await createTestClient();
     const code = await createTestAuthCode(userId, clientId);
 
-    const bad = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, "wrong-verifier");
+    const bad = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, "wrong-verifier");
     expect(bad).toBeNull();
 
     // The failed attempt consumed the code; a later attempt with the correct
     // verifier must not succeed (an attacker can't retry verifiers).
-    const retry = await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
+    const retry = await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER);
     expect(retry).toBeNull();
   });
 });
@@ -263,6 +264,22 @@ describe("rotateRefreshToken", () => {
     expect(await rotateRefreshToken(tokens.refreshToken, clientId)).toBeNull();
   });
 
+  it("stamps the revoked grant's token rows, which are all the previous release checks", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    await revokeUserClientTokens(userId, clientId);
+
+    const rows = await db.execute(sql`
+      SELECT revoked_at FROM oauth_access_tokens WHERE token_hash = ${hashToken(tokens.accessToken)}
+      UNION ALL
+      SELECT revoked_at FROM oauth_refresh_tokens WHERE token_hash = ${hashToken(tokens.refreshToken)}
+    `);
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows.every((row) => row.revoked_at !== null)).toBe(true);
+  });
+
   it("leaves nothing usable when a revocation races rotations", async () => {
     const userId = await createUser();
     const clientId = await createTestClient();
@@ -330,14 +347,14 @@ describe("rotateRefreshToken", () => {
 
 describe("revokeClientToken (RFC 7009)", () => {
   it.each(["accessToken", "refreshToken"] as const)(
-    "revokes the whole grant given its %s",
+    "revokes the whole grant given any %s in it, even a rotated-out one",
     async (presented) => {
       const userId = await createUser();
       const clientId = await createTestClient();
       const first = await createTokens({ clientId, userId, scopes: ["mcp"] });
       const current = (await rotateRefreshToken(first.refreshToken, clientId))!;
 
-      await revokeClientToken(clientId, current[presented]);
+      await revokeClientToken(clientId, first[presented]);
 
       expect(await validateAccessToken(current.accessToken)).toBeNull();
       expect(await rotateRefreshToken(current.refreshToken, clientId)).toBeNull();
@@ -398,6 +415,37 @@ describe("tokens written by the previous release", () => {
     ]);
     return new Set([...access, ...refresh].map((row) => row.grantId));
   }
+
+  it("stamps a successor moved into a revoked grant as revoked", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const first = await insertLegacyPair(userId, clientId);
+    const [{ grantId }] = await db
+      .select({ grantId: oauthRefreshTokens.grantId })
+      .from(oauthRefreshTokens)
+      .where(eq(oauthRefreshTokens.id, first.refreshId));
+    await db
+      .update(oauthTokenGrants)
+      .set({ revokedAt: new Date() })
+      .where(eq(oauthTokenGrants.id, grantId));
+
+    const second = await insertLegacyPair(userId, clientId);
+    await db.execute(sql`
+      UPDATE oauth_refresh_tokens SET replaced_by_id = ${second.refreshId}
+      WHERE id = ${first.refreshId}
+    `);
+
+    const [access] = await db
+      .select({ revokedAt: oauthAccessTokens.revokedAt })
+      .from(oauthAccessTokens)
+      .where(eq(oauthAccessTokens.id, second.accessId));
+    const [refresh] = await db
+      .select({ revokedAt: oauthRefreshTokens.revokedAt })
+      .from(oauthRefreshTokens)
+      .where(eq(oauthRefreshTokens.id, second.refreshId));
+    expect(access.revokedAt).not.toBeNull();
+    expect(refresh.revokedAt).not.toBeNull();
+  });
 
   it("puts a new pair in one grant, and a rotation's successor in its predecessor's", async () => {
     const userId = await createUser();

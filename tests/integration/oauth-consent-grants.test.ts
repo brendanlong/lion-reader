@@ -22,7 +22,7 @@ import {
   createTokens,
   rotateRefreshToken,
   validateAccessToken,
-  validateAndConsumeAuthCode,
+  exchangeAuthorizationCode,
 } from "../../src/server/oauth/service";
 import { hashToken, LAST_USED_REFRESH_MS } from "../../src/server/oauth/utils";
 
@@ -237,9 +237,31 @@ describe("oauthGrants.revoke closes the paths back in", () => {
     const caller = await callerFor(userId);
     await caller.oauthGrants.revoke({ clientId });
 
-    expect(
-      await validateAndConsumeAuthCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)
-    ).toBeNull();
+    expect(await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)).toBeNull();
+  });
+
+  it("leaves nothing usable when the revoke races a code exchange", async () => {
+    const userId = await createUser();
+    const clientId = await createRegisteredClient("Client Racing A Revoke");
+    await recordConsent(userId, clientId, ["mcp"]);
+    const code = await createAuthorizationCode({
+      clientId,
+      userId,
+      redirectUri: REDIRECT_URI,
+      scopes: ["mcp"],
+      codeChallenge: CODE_CHALLENGE,
+    });
+
+    const caller = await callerFor(userId);
+    const [exchange] = await Promise.all([
+      exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER),
+      caller.oauthGrants.revoke({ clientId }),
+    ]);
+
+    if (exchange) {
+      expect(await validateAccessToken(exchange.tokens.accessToken)).toBeNull();
+      expect(await rotateRefreshToken(exchange.tokens.refreshToken, clientId)).toBeNull();
+    }
   });
 });
 
