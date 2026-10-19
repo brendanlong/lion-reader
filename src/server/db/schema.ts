@@ -62,8 +62,14 @@ const nulSafeJsonb = customType<{ data: unknown; driverData: string }>({
       typeof nested === "string" ? replaceNul(nested) : nested
     );
   },
+  // Same as Drizzle's: pg already parses jsonb, so a string is a fallback.
   fromDriver(value) {
-    return typeof value === "string" ? (JSON.parse(value) as unknown) : value;
+    if (typeof value !== "string") return value;
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return value;
+    }
   },
 });
 

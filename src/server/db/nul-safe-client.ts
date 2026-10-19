@@ -22,8 +22,9 @@ function replaceNulInQueryArgs(args: unknown[]): unknown[] {
 
 /**
  * Replaces NUL in string query params (see `replaceNul`). Drizzle serializes
- * array params to `{...}` strings, so only top-level strings need checking;
- * `jsonb` values arrive already JSON-escaped and are handled by `nulSafeJsonb`.
+ * array params to `{...}` strings, so only top-level strings need checking.
+ * `jsonb` values arrive already JSON-escaped: columns written through Drizzle
+ * are handled by `nulSafeJsonb`, raw `JSON.stringify(...)::jsonb` params aren't.
  */
 export class NulSafeClient extends Client {
   constructor(config?: string | ClientConfig) {
