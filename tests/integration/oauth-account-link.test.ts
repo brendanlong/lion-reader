@@ -196,6 +196,24 @@ describe("linkOAuthAccount", () => {
     expect(rows[0].providerAccountId).toBe(`sub-a-${userId}`);
   });
 
+  it("lets only one of two overlapping links for one user and provider succeed", async () => {
+    const userId = await createUser();
+
+    // Asserts the invariant, not the interleaving (see the next race test). The
+    // user-row lock is what turns an overlapping second attach into CONFLICT
+    // rather than a raw (user_id, provider) unique violation.
+    const results = await Promise.allSettled([
+      link({ userId, provider: "google", providerAccountId: `sub-a-${userId}`, accessToken: "a" }),
+      link({ userId, provider: "google", providerAccountId: `sub-b-${userId}`, accessToken: "b" }),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatchObject({ code: "CONFLICT" });
+    expect(await readLink(userId, "google")).toHaveLength(1);
+  });
+
   it("refuses a provider account already linked to another user", async () => {
     const ownerId = await createUser();
     const otherId = await createUser();

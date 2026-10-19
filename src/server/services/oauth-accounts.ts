@@ -40,10 +40,8 @@ export interface AttachOAuthAccountParams extends OAuthTokens {
  * Re-attaching the *same* provider account is an update rather than an error, so
  * Google's incremental authorization (granting the Docs scope later) refreshes
  * the stored tokens and scopes in place. This holds for **every** provider, not
- * just Google: Apple and Discord used to reject any re-link, only because they
- * checked for an existing row before the callback gave them a
- * `providerAccountId` to compare against (#1467). Attaching a *different* account
- * for a provider the user already linked is refused.
+ * just Google (#1467). Attaching a *different* account for a provider the user
+ * already linked is refused.
  *
  * @returns `"updated"` when an existing link was refreshed, `"linked"` for a new one
  * @throws `oauthAlreadyLinked` when a different account of this provider is linked
@@ -58,20 +56,17 @@ export async function attachOAuthAccount(
   const tokenColumns = oauthTokenColumns(params);
 
   return db.transaction(async (tx) => {
-    // Nothing enforces one link per (user_id, provider), so concurrent attaches for
-    // this user (two first sign-ins with different accounts, a link clicked twice)
-    // serialize on the user row: each then sees the link the other committed.
+    // The (user_id, provider) unique constraint guarantees one link per provider,
+    // but concurrent attaches for this user (two first sign-ins with different
+    // accounts, a link clicked twice) would hit it as a raw unique violation.
+    // Serializing on the user row lets each see the link the other committed and
+    // answer with the right error instead.
     await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
 
-    // Ordered so a user who already has two rows for one provider resolves to
-    // their oldest link deterministically, rather than to whichever row the
-    // planner returns.
     const existingLink = await tx
       .select({ id: oauthAccounts.id, providerAccountId: oauthAccounts.providerAccountId })
       .from(oauthAccounts)
-      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-      .orderBy(oauthAccounts.createdAt)
-      .limit(1);
+      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)));
 
     if (existingLink.length > 0) {
       if (existingLink[0].providerAccountId !== providerAccountId) {
@@ -213,8 +208,7 @@ export async function unlinkOAuthAccount(
     const account = await tx
       .select({ id: oauthAccounts.id })
       .from(oauthAccounts)
-      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-      .limit(1);
+      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)));
 
     if (account.length === 0) {
       return false;

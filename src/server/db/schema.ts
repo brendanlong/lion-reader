@@ -283,8 +283,8 @@ export const oauthAccounts = pgTable(
   (table) => [
     // Unique constraint on provider + provider_account_id
     unique("uq_oauth_accounts_provider_account").on(table.provider, table.providerAccountId),
-    // Index for looking up OAuth accounts by user
-    index("idx_oauth_accounts_user").on(table.userId),
+    // One link per provider per user; also serves lookups by user
+    unique("uq_oauth_accounts_user_provider").on(table.userId, table.provider),
   ]
 );
 

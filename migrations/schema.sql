@@ -1028,6 +1028,9 @@ ALTER TABLE ONLY public.entries
 ALTER TABLE ONLY public.oauth_accounts
     ADD CONSTRAINT uq_oauth_accounts_provider_account UNIQUE (provider, provider_account_id);
 
+ALTER TABLE ONLY public.oauth_accounts
+    ADD CONSTRAINT uq_oauth_accounts_user_provider UNIQUE (user_id, provider);
+
 ALTER TABLE ONLY public.subscriptions
     ADD CONSTRAINT uq_subscriptions_user_feed UNIQUE (user_id, feed_id);
 
@@ -1109,8 +1112,6 @@ CREATE INDEX idx_oauth_access_tokens_expires ON public.oauth_access_tokens USING
 CREATE INDEX idx_oauth_access_tokens_user ON public.oauth_access_tokens USING btree (user_id);
 
 CREATE INDEX idx_oauth_accounts_scopes ON public.oauth_accounts USING gin (scopes);
-
-CREATE INDEX idx_oauth_accounts_user ON public.oauth_accounts USING btree (user_id);
 
 CREATE INDEX idx_oauth_auth_codes_expires ON public.oauth_authorization_codes USING btree (expires_at);
 
