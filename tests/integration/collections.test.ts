@@ -510,6 +510,26 @@ describe("collections", () => {
         [uploaded.id, written.id].sort()
       );
     });
+
+    it("returns the counts of the collections a deleted article left (#2018)", async () => {
+      const { userId, collectionId } = await setup();
+      const tagId = await createTestTag(userId, { subscriptionIds: [collectionId] });
+      const caller = createCaller(await createAuthContext(userId));
+      const saved = await uploadArticle(db, userId, {
+        content: "Body",
+        title: "Paper",
+        collectionIds: [collectionId],
+      });
+
+      const { counts } = await caller.saved.delete({ id: saved.id });
+
+      expect(counts).toMatchObject({
+        all: { unread: 2 },
+        saved: { unread: 0 },
+        subscriptions: [{ id: collectionId, unread: 0, tagIds: [tagId] }],
+        tags: [{ id: tagId, unread: 0 }],
+      });
+    });
   });
 
   it("counts a new collection's tags in the affected counts", async () => {

@@ -147,7 +147,7 @@ export const savedRouter = createTRPCRouter({
    * Deleting the entry will cascade to user_entries.
    *
    * @param id - The saved article ID to delete
-   * @returns Empty object on success
+   * @returns The counts of the lists it left
    */
   delete: readerProcedure
     .meta({
@@ -163,13 +163,20 @@ export const savedRouter = createTRPCRouter({
         id: uuidSchema,
       })
     )
-    .output(z.object({}))
+    .output(z.object({ counts: unreadCountsSchema }))
     .mutation(async ({ ctx, input }) => {
-      const deleted = await savedService.deleteSavedArticle(ctx.db, ctx.session.user.id, input.id);
-      if (!deleted) {
+      const userId = ctx.session.user.id;
+      const collectionIds = await savedService.deleteSavedArticle(ctx.db, userId, input.id);
+      if (collectionIds === null) {
         throw errors.savedArticleNotFound();
       }
-      return {};
+      // The entry is gone, so its collections are named as subscriptions.
+      const counts = await getBulkEntryRelatedCounts(
+        ctx.db,
+        userId,
+        collectionIds.map((subscriptionId) => ({ subscriptionId }))
+      );
+      return { counts };
     }),
 
   /**

@@ -785,13 +785,13 @@ export async function savePlaceholderArticle(
 /**
  * Delete a saved article.
  *
- * @returns true if deleted, false if not found
+ * @returns the collections it was removed from, or null if not found
  */
 export async function deleteSavedArticle(
   db: typeof dbType,
   userId: string,
   articleId: string
-): Promise<boolean> {
+): Promise<string[] | null> {
   // Verify the article exists and is one the user saved (owns, #1846).
   const existing = await db
     .select({ id: entries.id })
@@ -807,7 +807,7 @@ export async function deleteSavedArticle(
     .limit(1);
 
   if (existing.length === 0) {
-    return false;
+    return null;
   }
 
   // Delete the entry (will cascade to user_entries). Scope the DELETE to the
@@ -824,7 +824,7 @@ export async function deleteSavedArticle(
   });
   await publishEntryLeftCollections(db, userId, articleId, collectionIds);
 
-  return true;
+  return collectionIds;
 }
 
 export interface UploadFileParams extends CollectionsParam {
