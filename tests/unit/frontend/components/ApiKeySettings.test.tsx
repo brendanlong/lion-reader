@@ -3,13 +3,14 @@
  */
 
 /**
- * The Change/Save/Cancel/Reset flow of `EditablePreferenceField`, driven
- * through the summarization settings that use it.
+ * The AI settings sections: what the provider keys section says a key is
+ * needed for, and the Change/Save/Cancel/Reset flow of
+ * `EditablePreferenceField`, driven through the summarization settings.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
-import { SummarizationSettings } from "@/components/settings/ApiKeySettings";
+import { AiProviderKeySettings, SummarizationSettings } from "@/components/settings/ApiKeySettings";
 import { procedureError } from "@/lib/trpc/handler-link";
 import { renderWithTrpc, type ProcedureHandlers } from "../../../utils/component-test-helpers";
 
@@ -20,6 +21,7 @@ const PREFERENCES = {
   canConfigureApiKeys: true,
   apiKeyProviders: [],
   unreadableApiKeyProviders: [],
+  serverKeyProviders: [],
   summarizationModel: null,
   summarizationMaxWords: 120,
   summarizationPrompt: null,
@@ -118,5 +120,39 @@ describe("EditablePreferenceField (summarization max words)", () => {
     });
     // Nothing left to reset.
     expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+  });
+});
+
+describe("AiProviderKeySettings", () => {
+  const renderWithServerKeys = (serverKeyProviders: string[]) =>
+    renderWithTrpc(<AiProviderKeySettings />, {
+      handlers: handlers({
+        "users.me.preferences": () => ({ ...PREFERENCES, serverKeyProviders }),
+      }),
+    });
+
+  it.each([
+    [[], "AI features need an API key from one of these providers."],
+    [
+      ["cerebras"],
+      "You need your own key for cloud voices. Add one to use models that aren't available by default.",
+    ],
+    [
+      ["anthropic", "deepinfra"],
+      "You need your own key for narration. Add one to use models that aren't available by default.",
+    ],
+    [
+      ["openrouter"],
+      "AI features work without a key. Add your own to use models that aren't available by default.",
+    ],
+  ])("with server keys for %j, says: %s", async (serverKeyProviders, text) => {
+    renderWithServerKeys(serverKeyProviders);
+    expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
+  it("says what each provider is used for", async () => {
+    renderWithServerKeys([]);
+    expect(await screen.findByText("(summaries, narration, cloud voices)")).toBeInTheDocument();
+    expect(screen.getByText("(summaries)")).toBeInTheDocument();
   });
 });

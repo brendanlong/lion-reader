@@ -3232,7 +3232,6 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -3246,7 +3245,19 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
+                          "cerebras",
+                          "deepinfra",
+                          "openrouter",
+                          "breezeblue"
+                        ]
+                      }
+                    },
+                    "serverKeyProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "anthropic",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -3284,6 +3295,7 @@
                     "canConfigureApiKeys",
                     "apiKeyProviders",
                     "unreadableApiKeyProviders",
+                    "serverKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -3374,7 +3386,6 @@
                       "type": "string",
                       "enum": [
                         "anthropic",
-                        "groq",
                         "cerebras",
                         "deepinfra",
                         "openrouter",
@@ -3440,7 +3451,6 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -3454,7 +3464,19 @@
                         "type": "string",
                         "enum": [
                           "anthropic",
-                          "groq",
+                          "cerebras",
+                          "deepinfra",
+                          "openrouter",
+                          "breezeblue"
+                        ]
+                      }
+                    },
+                    "serverKeyProviders": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "anthropic",
                           "cerebras",
                           "deepinfra",
                           "openrouter",
@@ -3492,6 +3514,7 @@
                     "canConfigureApiKeys",
                     "apiKeyProviders",
                     "unreadableApiKeyProviders",
+                    "serverKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -10416,7 +10439,6 @@
                             "type": "string",
                             "enum": [
                               "anthropic",
-                              "groq",
                               "cerebras",
                               "openrouter"
                             ]
@@ -10869,7 +10891,6 @@
                             "type": "string",
                             "enum": [
                               "anthropic",
-                              "groq",
                               "cerebras",
                               "openrouter"
                             ]

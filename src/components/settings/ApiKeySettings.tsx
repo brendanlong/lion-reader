@@ -2,8 +2,7 @@
  * API Key Settings Components
  *
  * Settings sections for user-configured AI provider API keys and the model
- * settings that build on them. User keys override the server's global API
- * keys when set.
+ * settings that build on them.
  */
 
 "use client";
@@ -39,6 +38,37 @@ import { EditablePreferenceField } from "./EditablePreferenceField";
 import { ModelPicker } from "./ModelPicker";
 import { SettingsSection } from "./SettingsSection";
 
+const AI_FEATURES = [
+  { name: "summaries", providers: TEXT_AI_PROVIDERS },
+  { name: "narration", providers: NARRATION_PROVIDERS },
+  { name: "cloud voices", providers: SPEECH_PROVIDERS },
+] as const satisfies readonly { name: string; providers: readonly AiProvider[] }[];
+
+/** "summaries, narration" */
+function providerFeatures(provider: AiProvider): string {
+  return AI_FEATURES.filter(({ providers }) =>
+    (providers as readonly AiProvider[]).includes(provider)
+  )
+    .map(({ name }) => name)
+    .join(", ");
+}
+
+/** Which features need the user's own key, given the providers the server has keys for. */
+function keyRequirementText(serverKeyProviders: readonly AiProvider[]): string {
+  const needKey = AI_FEATURES.filter(
+    ({ providers }) => !providers.some((provider) => serverKeyProviders.includes(provider))
+  ).map(({ name }) => name);
+  if (needKey.length === AI_FEATURES.length) {
+    return "AI features need an API key from one of these providers.";
+  }
+  const unlock = "to use models that aren't available by default.";
+  if (needKey.length === 0) {
+    return `AI features work without a key. Add your own ${unlock}`;
+  }
+  const list = new Intl.ListFormat("en", { type: "conjunction" }).format(needKey);
+  return `You need your own key for ${list}. Add one ${unlock}`;
+}
+
 /**
  * Add/change/remove control for a single provider's API key.
  */
@@ -54,9 +84,12 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
     <EditablePreferenceField
       id={`${provider}-api-key-input`}
       label={
-        <TextLink href={keyUrl} external>
-          {providerName}
-        </TextLink>
+        <>
+          <TextLink href={keyUrl} external>
+            {providerName}
+          </TextLink>{" "}
+          <span className="text-muted font-normal">({providerFeatures(provider)})</span>
+        </>
       }
       status={
         !hasKey ? null : isUnreadable ? (
@@ -109,19 +142,12 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
  * AI provider API keys, shared by summaries, narration and cloud voices.
  */
 export function AiProviderKeySettings() {
+  const serverKeyProviders = trpc.users["me.preferences"].useQuery().data?.serverKeyProviders;
+
   return (
     <SettingsSection
       title="AI Provider API Keys"
-      description={
-        `Add an API key for one or more AI providers to enable AI features: ` +
-        `article summaries (${aiProviderNames(TEXT_AI_PROVIDERS)}), ` +
-        `narration text processing (${aiProviderNames(NARRATION_PROVIDERS)}), ` +
-        `and cloud voices (${aiProviderNames(SPEECH_PROVIDERS)}). ` +
-        `OpenRouter gives access to hundreds of models from many labs with one key. ` +
-        `Keys are stored encrypted and override the server's keys when set; ` +
-        `the server's keys may be limited to some models, but your own key can use ` +
-        `any model its provider offers.`
-      }
+      description={serverKeyProviders && keyRequirementText(serverKeyProviders)}
     >
       <div className="space-y-4">
         {AI_PROVIDERS.map((provider) => (
