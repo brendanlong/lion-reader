@@ -245,11 +245,7 @@ const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
  * The verdict belongs to the link, not the entry (#2036): it is judged against
  * the feed's previous full fetch *at the moment of linking*, so an article that
  * was news when first seen and comes back years later is old news to whoever
- * it reaches then. Each linking path applies it in SQL ({@link isBackfillSql}):
- * the fetch fanout and its self-heal against the fetch's
- * `previousLastFetchedAt`, and the subscribe populate to the entries a push
- * announced since the last poll. A new subscriber gets the entries the last
- * poll listed unread: the whole listing is news to them.
+ * it reaches then. Linking paths apply it in SQL ({@link isBackfillSql}).
  *
  * The month threshold only has to clear ordinary syndication noise (stale CDN
  * copies, clock skew, mild backdating); archive replays miss it by years. The
