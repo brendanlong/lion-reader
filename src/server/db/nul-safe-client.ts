@@ -8,21 +8,25 @@ import { Client, type ClientConfig } from "pg";
  * the one boundary every source passes through, with U+FFFD — what browsers
  * substitute for it in scripts and attributes.
  *
- * Array and JSON params arrive already serialized to strings (drizzle builds
- * `{...}` literals), so only top-level strings need checking. A `\u0000`
- * *escape* in a `jsonb` value is untouched (and still rejected).
+ * Drizzle serializes array params to `{...}` strings, so only top-level
+ * strings need checking. `jsonb` isn't covered: `JSON.stringify` turns a NUL
+ * into a `\u0000` escape, which `jsonb` also rejects.
  */
 const NUL = "\u0000";
 const REPLACEMENT_CHARACTER = "\uFFFD";
 
-function replaceNul(value: unknown): unknown {
-  return typeof value === "string" && value.includes(NUL)
-    ? value.replaceAll(NUL, REPLACEMENT_CHARACTER)
-    : value;
+/**
+ * Apply to a value compared in JS against one read back from the database, so
+ * both sides match (e.g. feed guids).
+ */
+export function replaceNul(value: string): string {
+  return value.includes(NUL) ? value.replaceAll(NUL, REPLACEMENT_CHARACTER) : value;
 }
 
 function replaceNulInValues(values: unknown): unknown {
-  return Array.isArray(values) ? values.map(replaceNul) : values;
+  return Array.isArray(values)
+    ? values.map((value: unknown) => (typeof value === "string" ? replaceNul(value) : value))
+    : values;
 }
 
 /** Normalizes `client.query(text | config, values?, callback?)` arguments. */
