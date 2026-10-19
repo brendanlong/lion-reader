@@ -696,7 +696,9 @@ function isFastRescheduler(type: JobType): boolean {
 /**
  * Creates the row of every singleton job type that doesn't have one yet, due
  * now. The worker runs this before its first claim; concurrent workers are
- * safe, since `jobs_singleton_type_unique` keeps one row per type.
+ * safe, since `jobs_singleton_type_unique` keeps one row per type. A new
+ * singleton type must be added to that index (by migration), or every worker
+ * start inserts another row.
  */
 export async function seedSingletonJobs(): Promise<void> {
   const now = new Date();

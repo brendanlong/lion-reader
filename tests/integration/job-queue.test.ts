@@ -258,6 +258,7 @@ describe("Job Queue", () => {
       await seedSingletonJobs();
       const job = await claimSingletonJob("monitor_feed_health");
 
+      expect(job).not.toBeNull();
       expect(job!.type).toBe("monitor_feed_health");
       expect(job!.runningSince).not.toBeNull();
     });

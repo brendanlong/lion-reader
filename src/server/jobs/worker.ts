@@ -288,7 +288,8 @@ export function createWorker(config: WorkerConfig = {}): Worker {
   // maintenance read is cached in-process, so this adds no per-claim Redis load.
   let maintenancePaused = false;
   // Seeded before the first claim rather than at start, so it waits out
-  // maintenance too; a failure surfaces as a claim error and is retried.
+  // maintenance too, and again after maintenance, whose migrations may have
+  // touched the rows. A failure surfaces as a claim error and is retried.
   let singletonsSeeded = false;
   const guardedClaimJob = async (): Promise<Job | null> => {
     const { enabled } = await getMaintenance();
@@ -301,6 +302,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
     }
     if (maintenancePaused) {
       maintenancePaused = false;
+      singletonsSeeded = false;
       logger.info("Maintenance mode cleared — worker resumed");
     }
     if (!singletonsSeeded) {
