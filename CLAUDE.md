@@ -46,7 +46,7 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Commands
 
-- `pnpm build:native` - builds the native Rust modules (`native/`). **Required once per checkout before tests or the app** ("Failed to load the native …" means it hasn't run). Needs `cargo` (try `~/.cargo/bin`) and a C++ compiler. The SessionStart hook starts it in the background (log: `build-native.log` in the worktree); after that, git hooks rebuild them whenever a checkout or merge changes `native/`.
+- `pnpm build:native` - builds the native Rust modules (`native/`). **Required once per checkout before tests or the app** ("Failed to load the native …" means it hasn't run). Needs `cargo` (try `~/.cargo/bin`) and a C++ compiler. The SessionStart hook starts it in the background (log: `build-native.log` in the worktree); after that, git hooks rebuild them whenever a checkout, merge or rebase changes `native/`.
 - `pnpm typecheck` - run before committing (no `any`, no `@ts-ignore`)
 - `pnpm test:unit` / `pnpm test:integration` / `pnpm test:e2e` - see `tests/CLAUDE.md`
 - `pnpm test:native` / `pnpm lint:native` / `pnpm format:native` - cargo test / clippy / fmt across the native crates

@@ -1,1 +1,1 @@
-bash scripts/rebuild-native-if-changed.sh "$1" "$2"
+bash scripts/rebuild-native-if-changed.sh
