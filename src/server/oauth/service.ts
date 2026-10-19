@@ -5,11 +5,12 @@
  * codes and tokens.
  */
 
-import { eq, and, isNull, isNotNull, gt, inArray, or, type SQL } from "drizzle-orm";
+import { eq, and, arrayContains, isNull, isNotNull, gt, inArray, or, type SQL } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
   oauthAuthorizationCodes,
   oauthAccessTokens,
+  oauthConsentGrants,
   oauthRefreshTokens,
   oauthTokenGrants,
   users,
@@ -111,10 +112,12 @@ interface AuthCodeExchange {
  * verification, so a failed PKCE attempt also burns the code — that's the
  * safe direction (an attacker who stole a code can't retry verifiers).
  *
- * The claim and the grant commit together. A Connected Apps revoke burns
- * unredeemed codes before it revokes grants, so it either finds this code
- * claimed by a committed exchange, whose grant it then revokes, or burns the
- * code first and the claim fails.
+ * The exchange holds a share lock on the user's consent grant until the new
+ * grant commits, and a Connected Apps revoke updates that row first and kills
+ * codes and grants in the same transaction, so the two serialize: the revoke
+ * either sees this exchange's grant or commits before it, and the exchange then
+ * finds no consent. Checking consent at /oauth/authorize alone isn't enough,
+ * since a code issued just after a revoke would outlive it.
  */
 export async function exchangeAuthorizationCode(
   code: string,
@@ -125,6 +128,34 @@ export async function exchangeAuthorizationCode(
   const codeHash = hashToken(code);
 
   return db.transaction(async (tx) => {
+    const [pending] = await tx
+      .select({ userId: oauthAuthorizationCodes.userId, scopes: oauthAuthorizationCodes.scopes })
+      .from(oauthAuthorizationCodes)
+      .where(eq(oauthAuthorizationCodes.codeHash, codeHash))
+      .limit(1);
+    const consent =
+      pending &&
+      (await tx
+        .select({ id: oauthConsentGrants.id })
+        .from(oauthConsentGrants)
+        .where(
+          and(
+            eq(oauthConsentGrants.userId, pending.userId),
+            eq(oauthConsentGrants.clientId, clientId),
+            isNull(oauthConsentGrants.revokedAt),
+            arrayContains(oauthConsentGrants.scopes, pending.scopes)
+          )
+        )
+        .for("share"));
+    if (pending && consent?.length === 0) {
+      logger.warn("OAuth code exchange rejected: user revoked this client's consent", {
+        component: "oauth",
+        clientId,
+        userId: pending.userId,
+      });
+      return null;
+    }
+
     const [authCode] = await tx
       .update(oauthAuthorizationCodes)
       .set({ usedAt: new Date() })
@@ -280,12 +311,6 @@ export async function revokeTokenGrants(
       .from(oauthTokenGrants)
       .where(and(condition, isNotNull(oauthTokenGrants.revokedAt)));
     await tx
-      .update(oauthAccessTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(inArray(oauthAccessTokens.grantId, revokedGrants), isNull(oauthAccessTokens.revokedAt))
-      );
-    await tx
       .update(oauthRefreshTokens)
       .set({ revokedAt: now })
       .where(
@@ -293,6 +318,12 @@ export async function revokeTokenGrants(
           inArray(oauthRefreshTokens.grantId, revokedGrants),
           isNull(oauthRefreshTokens.revokedAt)
         )
+      );
+    await tx
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(inArray(oauthAccessTokens.grantId, revokedGrants), isNull(oauthAccessTokens.revokedAt))
       );
 
     return revoked.length;
@@ -384,6 +415,23 @@ async function updateAccessTokenLastUsed(tokenId: string): Promise<void> {
 }
 
 /**
+ * Serializes a rotation with anything that could revoke the chain while its
+ * successor is uncommitted, for the previous release's sake only (#2053): that
+ * release validates only token rows, so a sweep must not miss the successor.
+ * The user row is what that release's password change and Wallabag sign-out
+ * lock before sweeping, and the grant row is what `revokeTokenGrants` updates
+ * before stamping rows. Lock order: user, grant, refresh token, access token.
+ */
+async function lockForRotation(tx: DbOrTx, userId: string, grantId: string): Promise<void> {
+  await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("share");
+  await tx
+    .select({ id: oauthTokenGrants.id })
+    .from(oauthTokenGrants)
+    .where(eq(oauthTokenGrants.id, grantId))
+    .for("share");
+}
+
+/**
  * Validates a refresh token and rotates it: the presented token and its access
  * token are revoked and a new pair is minted in the same grant.
  *
@@ -394,8 +442,9 @@ async function updateAccessTokenLastUsed(tokenId: string): Promise<void> {
  * revokes its grant (see handlePossibleRefreshTokenReuse).
  *
  * The claim and the new pair commit together, so a failure leaves the presented
- * token valid to retry. Nothing else needs to be serialized: a revocation that
- * lands mid-rotation revokes the grant the successor is born into.
+ * token valid to retry. A revocation that lands mid-rotation revokes the grant
+ * the successor is born into, so on this release nothing else needs to be
+ * serialized (see lockForRotation for the previous release).
  */
 export async function rotateRefreshToken(
   refreshToken: string,
@@ -404,7 +453,17 @@ export async function rotateRefreshToken(
   const tokenHash = hashToken(refreshToken);
   const now = new Date();
 
+  const [owner] = await db
+    .select({ userId: oauthRefreshTokens.userId, grantId: oauthRefreshTokens.grantId })
+    .from(oauthRefreshTokens)
+    .where(eq(oauthRefreshTokens.tokenHash, tokenHash))
+    .limit(1);
+
   const tokens = await db.transaction(async (tx): Promise<TokenPair | null> => {
+    if (owner) {
+      await lockForRotation(tx, owner.userId, owner.grantId);
+    }
+
     const [claimed] = await tx
       .update(oauthRefreshTokens)
       .set({ revokedAt: now })

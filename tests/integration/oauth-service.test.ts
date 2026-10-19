@@ -24,7 +24,7 @@ import {
   oauthRefreshTokens,
   oauthTokenGrants,
 } from "../../src/server/db/schema";
-import { revokeUserClientTokens } from "../../src/server/oauth/grants";
+import { recordConsent, revokeUserClientTokens } from "../../src/server/oauth/grants";
 import { createTestUser, createTestOAuthClient } from "./helpers";
 import {
   createAuthorizationCode,
@@ -37,6 +37,21 @@ import {
 import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { hashToken, isOAuthAccessTokenFormat } from "../../src/server/oauth/utils";
+
+/** Resolves once some query on `table` is waiting for a row lock. */
+async function waitForLockWaiter(table: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await db.execute(sql`
+      SELECT count(*)::int AS waiting FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND wait_event_type = 'Lock'
+        AND query ILIKE ${"%" + table + "%for share%"}
+    `);
+    if ((result.rows[0] as { waiting: number }).waiting > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("nothing ever waited on the lock");
+}
 
 /**
  * Backdate a refresh token's revocation so a subsequent replay falls outside the
@@ -75,6 +90,7 @@ async function createTestClient(): Promise<string> {
 }
 
 async function createTestAuthCode(userId: string, clientId: string): Promise<string> {
+  await recordConsent(userId, clientId, ["mcp"]);
   return createAuthorizationCode({
     clientId,
     userId,
@@ -278,6 +294,33 @@ describe("rotateRefreshToken", () => {
     `);
     expect(rows.rows).toHaveLength(2);
     expect(rows.rows.every((row) => row.revoked_at !== null)).toBe(true);
+  });
+
+  it("waits out an uncommitted grant revoke, so its sweep sees no successor to miss", async () => {
+    const userId = await createUser();
+    const clientId = await createTestClient();
+    const tokens = await createTokens({ clientId, userId, scopes: ["mcp"] });
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let revoked!: () => void;
+    const grantRevoked = new Promise<void>((resolve) => (revoked = resolve));
+    const revoke = db.transaction(async (tx) => {
+      await tx
+        .update(oauthTokenGrants)
+        .set({ revokedAt: new Date() })
+        .where(eq(oauthTokenGrants.userId, userId));
+      revoked();
+      await gate;
+    });
+    await grantRevoked;
+
+    const rotation = rotateRefreshToken(tokens.refreshToken, clientId);
+    await waitForLockWaiter("oauth_token_grants");
+    release();
+    await revoke;
+
+    expect(await rotation).toBeNull();
   });
 
   it("leaves nothing usable when a revocation races rotations", async () => {

@@ -240,6 +240,25 @@ describe("oauthGrants.revoke closes the paths back in", () => {
     expect(await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)).toBeNull();
   });
 
+  it("refuses a code issued after the revoke", async () => {
+    // /oauth/authorize checked consent, then issued its code only after the
+    // revoke had already burned the outstanding ones.
+    const userId = await createUser();
+    const clientId = await createRegisteredClient("Client Issuing Late");
+    await recordConsent(userId, clientId, ["mcp"]);
+    const caller = await callerFor(userId);
+    await caller.oauthGrants.revoke({ clientId });
+
+    const code = await createAuthorizationCode({
+      clientId,
+      userId,
+      redirectUri: REDIRECT_URI,
+      scopes: ["mcp"],
+      codeChallenge: CODE_CHALLENGE,
+    });
+    expect(await exchangeAuthorizationCode(code, clientId, REDIRECT_URI, CODE_VERIFIER)).toBeNull();
+  });
+
   it("leaves nothing usable when the revoke races a code exchange", async () => {
     const userId = await createUser();
     const clientId = await createRegisteredClient("Client Racing A Revoke");

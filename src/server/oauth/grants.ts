@@ -156,39 +156,44 @@ export async function listUserConsentGrants(userId: string): Promise<UserConsent
 export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
   const now = new Date();
 
-  const revokedGrants = await db
-    .update(oauthConsentGrants)
-    .set({ revokedAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(oauthConsentGrants.userId, userId),
-        eq(oauthConsentGrants.clientId, clientId),
-        isNull(oauthConsentGrants.revokedAt)
+  // One transaction, consent row first: exchangeAuthorizationCode relies on it.
+  const revoked = await db.transaction(async (tx) => {
+    const revokedConsent = await tx
+      .update(oauthConsentGrants)
+      .set({ revokedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(oauthConsentGrants.userId, userId),
+          eq(oauthConsentGrants.clientId, clientId),
+          isNull(oauthConsentGrants.revokedAt)
+        )
       )
-    )
-    .returning({ id: oauthConsentGrants.id });
+      .returning({ id: oauthConsentGrants.id });
 
-  if (revokedGrants.length === 0) {
-    return false;
+    if (revokedConsent.length === 0) {
+      return false;
+    }
+
+    await tx
+      .update(oauthAuthorizationCodes)
+      .set({ usedAt: now })
+      .where(
+        and(
+          eq(oauthAuthorizationCodes.userId, userId),
+          eq(oauthAuthorizationCodes.clientId, clientId),
+          isNull(oauthAuthorizationCodes.usedAt)
+        )
+      );
+
+    await revokeUserClientTokens(userId, clientId, tx, now);
+    return true;
+  });
+
+  if (revoked) {
+    logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
   }
 
-  // Before the token grants: see exchangeAuthorizationCode for why the order matters.
-  await db
-    .update(oauthAuthorizationCodes)
-    .set({ usedAt: now })
-    .where(
-      and(
-        eq(oauthAuthorizationCodes.userId, userId),
-        eq(oauthAuthorizationCodes.clientId, clientId),
-        isNull(oauthAuthorizationCodes.usedAt)
-      )
-    );
-
-  await revokeUserClientTokens(userId, clientId, db, now);
-
-  logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
-
-  return true;
+  return revoked;
 }
 
 /**
