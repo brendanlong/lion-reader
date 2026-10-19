@@ -2,7 +2,8 @@
 //!
 //! This crate is pure Rust (no N-API) so it can be unit-tested with plain
 //! `cargo test`. The thin napi wrapper crate in the parent directory exposes
-//! [`sanitize_entry_html`] and [`embeds::normalize_embed`] to Node.
+//! [`sanitize_entry_html`], [`embeds::normalize_embed`] and
+//! [`attributes::rewrite_attributes`] to Node.
 //!
 //! The pipeline:
 //!
@@ -17,6 +18,7 @@
 //! sanitized copy, so the next read of every entry uses the new rules (see
 //! `src/server/html/CLAUDE.md`).
 
+pub mod attributes;
 pub mod embeds;
 pub mod idrefs;
 pub mod limits;

@@ -6,7 +6,7 @@
 extern crate napi_derive;
 
 use napi::bindgen_prelude::AsyncTask;
-use napi::{Env, Error, Result, Status, Task};
+use napi::{Env, Error, JsFunction, Result, Status, Task, ValueType};
 
 use lion_reader_sanitizer_core as core;
 
@@ -93,5 +93,43 @@ pub fn normalize_embed(src: String) -> Option<NormalizedEmbed> {
         provider: embed.provider.to_string(),
         sandbox: embed.sandbox.to_string(),
         allow: embed.allow.to_string(),
+    })
+}
+
+/// Calls `rewrite(tagName, name, value)` for each of `names` present on each
+/// element, in document order, and writes back a returned string that
+/// differs; `null`/`undefined` leaves the value alone. Values are raw (not
+/// entity-decoded). Throws if `rewrite` throws or lol_html rejects the input.
+#[napi(
+    ts_args_type = "html: string, names: string[], rewrite: (tagName: string, name: string, value: string) => string | null | undefined"
+)]
+pub fn rewrite_attributes(
+    env: Env,
+    html: String,
+    names: Vec<String>,
+    rewrite: JsFunction,
+) -> Result<String> {
+    core::attributes::rewrite_attributes(&html, &names, |tag, name, value| {
+        let args = [
+            env.create_string(tag)?,
+            env.create_string(name)?,
+            env.create_string(value)?,
+        ];
+        let result = rewrite.call(None, &args)?;
+        match result.get_type()? {
+            ValueType::String => Ok(Some(result.coerce_to_string()?.into_utf8()?.into_owned()?)),
+            ValueType::Null | ValueType::Undefined => Ok(None),
+            _ => Err(Error::new(
+                Status::InvalidArg,
+                "rewriteAttributes callback must return a string, null or undefined".to_string(),
+            )),
+        }
+    })
+    .map_err(|e| match e {
+        core::attributes::RewriteError::Callback(e) => e,
+        core::attributes::RewriteError::Rewriter(message) => Error::new(
+            Status::GenericFailure,
+            format!("rewriteAttributes failed: {message}"),
+        ),
     })
 }

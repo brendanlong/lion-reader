@@ -48,3 +48,17 @@ export interface NormalizedEmbed {
  * tests and for TS callers that synthesize embeds (YouTube plugin).
  */
 export function normalizeEmbed(src: string): NormalizedEmbed | null;
+
+/**
+ * Calls `rewrite(tagName, name, value)` for each of `names` present on each
+ * element, in document order, and writes back a returned string that
+ * differs; `null`/`undefined` leaves the value alone. Values are raw (not
+ * entity-decoded), and markup outside rewritten start tags passes through
+ * byte-identical. Runs on lol_html (not part of the sanitizer pipeline).
+ * Throws if `rewrite` throws or lol_html rejects the input.
+ */
+export function rewriteAttributes(
+  html: string,
+  names: string[],
+  rewrite: (tagName: string, name: string, value: string) => string | null | undefined
+): string;

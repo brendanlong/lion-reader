@@ -117,7 +117,7 @@ const nextConfig: NextConfig = {
   // Our custom server (dist/server.js) keeps `next` external and resolves it
   // from the standalone node_modules at runtime; deps only needed by the
   // worker/discord bundles are bundled by esbuild, and their few runtime
-  // externals (argon2, html-rewriter-wasm, @lion-reader/*) are all also in the
+  // externals (argon2, @lion-reader/*) are all also in the
   // Next server graph, so the trace covers them.
   output: "standalone",
   // Disable Next.js's built-in gzip compression. Our custom server applies
@@ -222,13 +222,11 @@ const nextConfig: NextConfig = {
     ];
   },
   // Packages that should be loaded from node_modules at runtime, not bundled
-  // - html-rewriter-wasm contains a WASM file that can't be bundled by Next.js
   // - trpc-to-openapi must not be bundled: webpack tree-shakes zod's `coerce`
   //   export (only referenced via `'coerce' in z`), which flips the library's
   //   `zodSupportsCoerce` check to false and makes it reject numeric query
   //   params (e.g. `limit`) when generating the OpenAPI document.
   serverExternalPackages: [
-    "html-rewriter-wasm",
     "trpc-to-openapi",
     "@lion-reader/sanitizer",
     "@lion-reader/readability",

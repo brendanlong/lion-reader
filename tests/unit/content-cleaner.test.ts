@@ -695,6 +695,23 @@ describe("absolutizeUrls", () => {
       // Should not throw, returns original
       expect(() => absolutizeUrls(html, "not-a-valid-url")).not.toThrow();
     });
+
+    it("should leave markup byte-identical outside rewritten attributes", () => {
+      const html =
+        "<!DOCTYPE html><P CLASS=x>a&amp;b<img src='https://cdn.example.com/a.png' " +
+        'srcset="https://cdn.example.com/a.png 1x, https://cdn.example.com/b.png 2x"/>' +
+        "<a href=rel title=t/></P><!-- c -->";
+      const result = absolutizeUrls(html, baseUrl);
+      expect(result).toBe(html.replace("href=rel", 'href="https://example.com/articles/rel"'));
+    });
+
+    it("should return input the parser rejects unchanged, and keep working after", () => {
+      const rejected = '<select><xmp><img src="a.png"></xmp></select>';
+      expect(absolutizeUrls(rejected, baseUrl)).toBe(rejected);
+      expect(absolutizeUrls('<img src="a.png">', baseUrl)).toBe(
+        '<img src="https://example.com/articles/a.png">'
+      );
+    });
   });
 
   describe("integration with cleanContent", () => {

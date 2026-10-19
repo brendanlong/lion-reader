@@ -6,13 +6,10 @@
  * minimal node_modules, which the Dockerfile ships instead of the full pruned
  * tree (issue #1305). The trace misses a few things our runtime needs:
  *
- * 1. Packages with dynamic requires nft can't follow statically:
- *    - html-rewriter-wasm: dist/html_rewriter.js requires ./asyncify.js at
- *      runtime; the trace only picks up the wasm + entry file.
- *    - argon2: the prebuild is resolved per-platform/libc at runtime
- *      (prebuilds/linux-x64/argon2.{glibc,musl}.node); the trace only includes
- *      the variant matching the machine the build ran on.
- *    Copy the whole (small) packages over the traced subset.
+ * 1. argon2, whose prebuild is resolved per-platform/libc at runtime
+ *    (prebuilds/linux-x64/argon2.{glibc,musl}.node), a dynamic require nft
+ *    can't follow: the trace only includes the variant matching the machine
+ *    the build ran on. Copy the whole (small) package over the traced subset.
  *
  * 2. next's top-level subpath shims (constants.js etc., one-line re-exports
  *    into dist/): dist/server.js requires `next/constants`, whose target IS
@@ -62,15 +59,15 @@ function standalonePath(realDir) {
   return join(standaloneDir, relative(rootDir, realDir));
 }
 
-// 1. Copy whole packages whose dynamic requires the trace misses. Remove the
-// traced subset first: cpSync's `force` doesn't overwrite when the file type
-// differs (e.g. symlink vs regular file) and throws EEXIST instead.
-for (const pkg of ["html-rewriter-wasm", "argon2"]) {
-  const realDir = packageDir(pkg);
+// 1. Copy the whole argon2 package. Remove the traced subset first: cpSync's
+// `force` doesn't overwrite when the file type differs (e.g. symlink vs regular
+// file) and throws EEXIST instead.
+{
+  const realDir = packageDir("argon2");
   const dest = standalonePath(realDir);
   rmSync(dest, { recursive: true, force: true });
   cpSync(realDir, dest, { recursive: true });
-  console.log(`Copied full package: ${pkg}`);
+  console.log("Copied full package: argon2");
 }
 
 // 2. Copy next's top-level subpath shims (constants.js etc.).

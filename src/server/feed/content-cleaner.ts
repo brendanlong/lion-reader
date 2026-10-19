@@ -10,12 +10,11 @@
 
 import { extractArticle, extractArticleAsync } from "@lion-reader/readability";
 import type { ExtractedArticle, ExtractOptions } from "@lion-reader/readability";
-import { HTMLRewriter } from "html-rewriter-wasm";
+import { rewriteAttributes } from "@lion-reader/sanitizer";
 import { logger } from "@/lib/logger";
 import { startReadabilityTimer } from "@/server/metrics/metrics";
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const URL_ATTRIBUTES = ["src", "href", "poster", "srcset"];
 
 /**
  * Absolutizes all relative URLs in HTML content.
@@ -23,7 +22,7 @@ const decoder = new TextDecoder();
  * Converts relative URLs in src, href, poster, and srcset attributes
  * to absolute URLs using the provided base URL.
  *
- * Uses html-rewriter-wasm for streaming transformation (much faster than DOM parsing).
+ * Streams through the native lol_html rewriter (much faster than DOM parsing).
  *
  * @param html - The HTML content to process
  * @param baseUrl - The base URL for resolving relative URLs
@@ -50,35 +49,26 @@ export function absolutizeUrls(
     media?: { baseUrl: string; rootBaseUrl?: string };
   } = {}
 ): string {
+  // Effective bases - may be overridden by a <base href="..."> tag. The
+  // rewriter visits elements in document order, so <base> in <head> is seen
+  // before any body elements. Per the HTML spec, only the first <base> with an
+  // href is used.
+  let documentBase: ResolveBase = { url: baseUrl, root: options.rootBaseUrl };
+  let mediaBase: ResolveBase = options.media
+    ? { url: options.media.baseUrl, root: options.media.rootBaseUrl }
+    : documentBase;
+  let baseHrefSet = false;
+
   try {
-    let output = "";
-    const rewriter = new HTMLRewriter((chunk) => {
-      output += decoder.decode(chunk);
-    });
-
-    // Effective bases - may be overridden by a <base href="..."> tag.
-    // Since html-rewriter-wasm processes elements in document order,
-    // <base> in <head> will be seen before any body elements.
-    // Per the HTML spec, only the first <base> with an href is used.
-    let documentBase: ResolveBase = { url: baseUrl, root: options.rootBaseUrl };
-    let mediaBase: ResolveBase = options.media
-      ? { url: options.media.baseUrl, root: options.media.rootBaseUrl }
-      : documentBase;
-    let baseHrefSet = false;
-
-    // Check for <base> tag and use its href as the base URL
-    rewriter.on("base[href]", {
-      element(el) {
-        if (baseHrefSet) return;
-
-        const href = el.getAttribute("href");
+    return rewriteAttributes(html, URL_ATTRIBUTES, (tagName, name, value) => {
+      if (tagName === "base" && name === "href") {
         // A fragment-only <base href> means "this document", so it leaves the
-        // base unchanged — and `resolveUrl` now passes fragments through, which
+        // base unchanged — and `resolveUrl` passes fragments through, which
         // would otherwise make it the base and break every later resolution.
-        if (href && !href.startsWith("#")) {
+        if (!baseHrefSet && value && !value.startsWith("#")) {
           // Resolve the <base> href against the provided baseUrl,
           // in case <base href> itself is relative
-          const resolved = resolveUrl(href, { url: baseUrl });
+          const resolved = resolveUrl(value, { url: baseUrl });
           if (resolved) {
             // <base href> governs both kinds of URL, so it replaces the media
             // bases too — but only for the elements that follow it, since this
@@ -90,65 +80,19 @@ export function absolutizeUrls(
             baseHrefSet = true;
           }
         }
-      },
-    });
-
-    // Handle elements with URL attributes
-    rewriter.on("[src]", {
-      element(el) {
-        const value = el.getAttribute("src");
-        if (value) {
-          const absolute = resolveUrl(value, mediaBase);
-          if (absolute && absolute !== value) {
-            el.setAttribute("src", absolute);
-          }
-        }
-      },
-    });
-
-    rewriter.on("[href]", {
-      element(el) {
         // Don't rewrite the <base> tag's own href
-        if (el.tagName === "base") return;
-        const value = el.getAttribute("href");
-        if (value) {
-          const absolute = resolveUrl(value, documentBase);
-          if (absolute && absolute !== value) {
-            el.setAttribute("href", absolute);
-          }
-        }
-      },
+        return null;
+      }
+      if (!value) return null;
+      switch (name) {
+        case "href":
+          return resolveUrl(value, documentBase);
+        case "srcset":
+          return absolutizeSrcset(value, mediaBase);
+        default:
+          return resolveUrl(value, mediaBase);
+      }
     });
-
-    rewriter.on("[poster]", {
-      element(el) {
-        const value = el.getAttribute("poster");
-        if (value) {
-          const absolute = resolveUrl(value, mediaBase);
-          if (absolute && absolute !== value) {
-            el.setAttribute("poster", absolute);
-          }
-        }
-      },
-    });
-
-    rewriter.on("[srcset]", {
-      element(el) {
-        const value = el.getAttribute("srcset");
-        if (value) {
-          el.setAttribute("srcset", absolutizeSrcset(value, mediaBase));
-        }
-      },
-    });
-
-    try {
-      rewriter.write(encoder.encode(html));
-      rewriter.end();
-    } finally {
-      rewriter.free();
-    }
-
-    return output;
   } catch (error) {
     logger.warn("Failed to absolutize URLs in content", {
       baseUrl,
