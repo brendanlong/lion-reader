@@ -41,12 +41,10 @@ function formatSize(bytes) {
 /**
  * Packages every bundle leaves as runtime requires, because bundling breaks
  * them: native addons (argon2's node-gyp binding and our own `native/` crates,
- * whose loaders resolve the binary relative to themselves) and
- * html-rewriter-wasm (WASM files and internal requires).
+ * whose loaders resolve the binary relative to themselves).
  */
 const NATIVE_EXTERNALS = [
   "argon2",
-  "html-rewriter-wasm",
   "@lion-reader/sanitizer",
   "@lion-reader/readability",
   "@lion-reader/feed-parser",

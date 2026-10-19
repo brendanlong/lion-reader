@@ -95,3 +95,88 @@ pub fn normalize_embed(src: String) -> Option<NormalizedEmbed> {
         allow: embed.allow.to_string(),
     })
 }
+
+#[napi(object)]
+pub struct MediaBases {
+    pub base_url: String,
+    pub root_base_url: Option<String>,
+}
+
+#[napi(object)]
+pub struct AbsolutizeOptions {
+    pub root_base_url: Option<String>,
+    pub media: Option<MediaBases>,
+}
+
+fn run_absolutize(
+    html: &str,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
+) -> Result<String> {
+    let options = options.unwrap_or(AbsolutizeOptions {
+        root_base_url: None,
+        media: None,
+    });
+    let document = core::absolutize::Bases {
+        url: base_url,
+        root: options.root_base_url,
+    };
+    let media = options.media.map(|media| core::absolutize::Bases {
+        url: media.base_url,
+        root: media.root_base_url,
+    });
+    core::absolutize::absolutize_urls(html, &document, media.as_ref()).map_err(|message| {
+        Error::new(
+            Status::GenericFailure,
+            format!("absolutizeUrls failed: {message}"),
+        )
+    })
+}
+
+/// Absolutizes relative URLs in `src`/`href`/`poster`/`srcset` (see
+/// `core/src/absolutize.rs`). Throws when lol_html rejects the input.
+#[napi]
+pub fn absolutize_urls(
+    html: String,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
+) -> Result<String> {
+    run_absolutize(&html, base_url, options)
+}
+
+pub struct AbsolutizeJob {
+    html: String,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
+}
+
+impl Task for AbsolutizeJob {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        run_absolutize(
+            &self.html,
+            std::mem::take(&mut self.base_url),
+            self.options.take(),
+        )
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// Async form of `absolutizeUrls`, on the libuv thread pool.
+#[napi(ts_return_type = "Promise<string>")]
+pub fn absolutize_urls_async(
+    html: String,
+    base_url: String,
+    options: Option<AbsolutizeOptions>,
+) -> AsyncTask<AbsolutizeJob> {
+    AsyncTask::new(AbsolutizeJob {
+        html,
+        base_url,
+        options,
+    })
+}

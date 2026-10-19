@@ -6,7 +6,12 @@
  * Readability runs or which copy gets its URLs absolutized.
  */
 
-import { absolutizeUrls, cleanContent, cleanContentAsync } from "@/server/feed/content-cleaner";
+import {
+  absolutizeUrls,
+  absolutizeUrlsAsync,
+  cleanContent,
+  cleanContentAsync,
+} from "@/server/feed/content-cleaner";
 import type { CleanedContent } from "@/server/feed/content-cleaner";
 import { processMarkdown } from "@/server/markdown";
 import type { AcquiredArticle } from "@/server/plugins";
@@ -118,8 +123,8 @@ export interface ProcessedArticleContent {
  * A plugin's content is the article even when Readability can't improve on it,
  * so a failed extraction falls back to it.
  *
- * @param options.offload - Run Readability on the libuv thread pool (request
- *   paths); background jobs pass false.
+ * @param options.offload - Run URL absolutization and Readability on the libuv
+ *   thread pool (request paths); background jobs pass false.
  * @param options.minCleanedLength - Passed to Readability (uploads, being
  *   trusted user content, accept a shorter extraction than a web page).
  */
@@ -129,7 +134,8 @@ export async function processArticleContent(
   options: { offload: boolean; minCleanedLength?: number }
 ): Promise<ProcessedArticleContent> {
   const { html, pluginContent, preCleanedContent } = bundle;
-  const contentOriginal = baseUrl ? absolutizeUrls(html, baseUrl) : html;
+  const absolutize = options.offload ? absolutizeUrlsAsync : absolutizeUrls;
+  const contentOriginal = baseUrl ? await absolutize(html, baseUrl) : html;
 
   if (preCleanedContent || pluginContent?.skipReadability) {
     return { contentOriginal, contentCleaned: contentOriginal, readability: null };

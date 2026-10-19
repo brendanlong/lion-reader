@@ -48,3 +48,24 @@ export interface NormalizedEmbed {
  * tests and for TS callers that synthesize embeds (YouTube plugin).
  */
 export function normalizeEmbed(src: string): NormalizedEmbed | null;
+
+/** See `Bases` in `core/src/absolutize.rs`. */
+export interface AbsolutizeOptions {
+  /** The document's root base. */
+  rootBaseUrl?: string;
+  /** Bases for `src`, `poster` and `srcset`; defaults to the document's pair. */
+  media?: { baseUrl: string; rootBaseUrl?: string };
+}
+
+/**
+ * See `absolutize_urls` in `core/src/absolutize.rs`. Throws when lol_html
+ * rejects the input.
+ */
+export function absolutizeUrls(html: string, baseUrl: string, options?: AbsolutizeOptions): string;
+
+/** Async form of `absolutizeUrls`, on the libuv thread pool. */
+export function absolutizeUrlsAsync(
+  html: string,
+  baseUrl: string,
+  options?: AbsolutizeOptions
+): Promise<string>;
