@@ -1345,7 +1345,7 @@ RETURNING user_entries.entry_id`,
             label: "readback",
             sql: `SELECT user_entries.entry_id, subscriptions.id,
   entry_memberships.subscription_ids, user_entries.read,
-  user_entries.starred, entries.type, GREATEST(entries.updated_at, user_entries.updated_at),
+  user_entries.starred, entries.type, user_entries.changed_at,
   user_entries.read_changed_at
 FROM user_entries INNER JOIN entries ON entries.id = user_entries.entry_id
 ${membershipJoins("user_entries.user_id", "user_entries.entry_id")}

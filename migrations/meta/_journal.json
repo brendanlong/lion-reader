@@ -1051,6 +1051,13 @@
       "when": 1782957100000,
       "tag": "0150_user_entries_changed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1782957200000,
+      "tag": "0151_drop_idx_user_entries_updated_at",
+      "breakpoints": true
     }
   ]
 }

@@ -1164,8 +1164,6 @@ CREATE INDEX idx_user_entries_starred_timeline ON public.user_entries USING btre
 
 CREATE INDEX idx_user_entries_unread_timeline ON public.user_entries USING btree (user_id, published_or_fetched_at DESC, entry_id DESC) WHERE (NOT read);
 
-CREATE INDEX idx_user_entries_updated_at ON public.user_entries USING btree (user_id, updated_at);
-
 CREATE INDEX idx_users_getting_started_pending ON public.users USING btree (id) WHERE (getting_started_at IS NULL);
 
 CREATE INDEX idx_users_last_active_at ON public.users USING btree (last_active_at DESC NULLS LAST, id DESC);
