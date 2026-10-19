@@ -149,11 +149,11 @@ describe("useEntryMutations markRead", () => {
     });
 
     await waitFor(() => expect(callsFor("entries.markRead")).toHaveLength(1));
-    await waitFor(() => expect(storedCount(queryClient, {})).toEqual({ unread: 5 }));
-    expect(storedCount(queryClient, { starredOnly: true })).toEqual({
+    await waitFor(() => expect(storedCount(queryClient, { all: true })).toEqual({ unread: 5 }));
+    expect(storedCount(queryClient, { starred: true })).toEqual({
       unread: 3,
     });
-    expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 });
+    expect(storedCount(queryClient, { saved: true })).toEqual({ unread: 2 });
   });
 
   it("writes the server's read state to the entry store on success", async () => {
@@ -229,7 +229,7 @@ describe("useEntryMutations markAllRead", () => {
       result.current.mutations.markAllRead();
     });
 
-    await waitFor(() => expect(storedCount(queryClient, {})).toEqual({ unread: 5 }));
+    await waitFor(() => expect(storedCount(queryClient, { all: true })).toEqual({ unread: 5 }));
   });
 
   it("still refreshes the entry lists when nothing was marked", async () => {
@@ -295,11 +295,11 @@ describe("useEntryMutations setStarred", () => {
 
     // onSuccess ran setBulkCounts against the real cache with the server's numbers.
     await waitFor(() =>
-      expect(storedCount(queryClient, { starredOnly: true })).toEqual({
+      expect(storedCount(queryClient, { starred: true })).toEqual({
         unread: 7,
       })
     );
-    expect(storedCount(queryClient, {})).toEqual({ unread: 4 });
+    expect(storedCount(queryClient, { all: true })).toEqual({ unread: 4 });
   });
 
   it("shows a star-specific toast when the mutation fails", async () => {

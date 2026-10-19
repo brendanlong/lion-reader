@@ -200,6 +200,21 @@ export const entriesRouter = createTRPCRouter({
       return entriesService.countEntries(ctx.db, ctx.session.user.id, { ...input });
     }),
 
+  /** The All, Starred, Saved and Uncategorized badges at once (`countUserLists`). */
+  countLists: protectedProcedure
+    .output(
+      z.object({
+        all: z.number(),
+        starred: z.number(),
+        saved: z.number(),
+        uncategorized: z.number(),
+        asOf: countsAsOfSchema,
+      })
+    )
+    .query(async ({ ctx }) => {
+      return entriesService.countUserLists(ctx.db, ctx.session.user.id);
+    }),
+
   /**
    * Get a single entry by ID with full content.
    *

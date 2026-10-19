@@ -287,7 +287,7 @@ describe("Entry counts service", () => {
 
       const stamps = [
         (await getBulkEntryRelatedCounts(db, userId, [{ subscriptionId: subId1 }])).asOf,
-        (await caller.entries.count({})).asOf,
+        (await caller.entries.countLists()).asOf,
         (await caller.tags.list()).asOf,
         (await caller.subscriptions.get({ id: subId1 })).unreadCountAsOf,
       ];

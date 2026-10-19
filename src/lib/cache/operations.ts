@@ -79,7 +79,7 @@ function applySubscriptionCounts(
     applyUnreadCounts(utils, queryClient, counts);
   } else {
     utils.tags.list.invalidate();
-    utils.entries.count.invalidate();
+    utils.entries.countLists.invalidate();
   }
 }
 

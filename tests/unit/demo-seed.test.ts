@@ -28,7 +28,7 @@ function seeded(pathname: string, search: string) {
 describe("buildDemoDehydratedState", () => {
   it("seeds the sidebar queries and the route's list for a list page", () => {
     const { byPath } = seeded("/tag/features", "");
-    expect(byPath.get("entries.count:{}")).toMatchObject({ unread: DEMO_ENTRIES.length });
+    expect(byPath.get("entries.countLists:null")).toMatchObject({ all: DEMO_ENTRIES.length });
     expect(byPath.get("tags.list:null")).toMatchObject({ items: expect.any(Array) });
     expect(byPath.get("summarization.isAvailable:null")).toEqual({ available: true });
 
@@ -58,7 +58,9 @@ describe("buildDemoDehydratedState", () => {
       entry: { id: "welcome", read: true },
     });
     // Counts reflect the read (matching what the reader shows after mount)…
-    expect(byPath.get("entries.count:{}")).toMatchObject({ unread: DEMO_ENTRIES.length - 1 });
+    expect(byPath.get("entries.countLists:null")).toMatchObject({
+      all: DEMO_ENTRIES.length - 1,
+    });
     // …and the store itself was updated, so later queries agree.
     expect(store.procedures["entries.get"]({ id: "welcome" }).entry.read).toBe(true);
     // Deterministic stamps (no clock), so server and client seed identical data.

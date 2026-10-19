@@ -731,7 +731,7 @@ WHERE subscriptions.user_id = ${q(U0)} AND subscriptions.unsubscribed_at IS NULL
   {
     name: "ssr.entries_count",
     kind: "read",
-    source: "services/counts.ts getUserUnreadCounts (entries.count, run 3× per SSR)",
+    source: "services/counts.ts getUserUnreadCounts (entries.countLists, once per SSR)",
     prepare: async () => ({ statements: [userCountsSql(U0)] }),
   },
   {

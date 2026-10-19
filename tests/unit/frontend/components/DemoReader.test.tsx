@@ -84,7 +84,7 @@ describe("demo reader tree", () => {
 
     const welcome = await screen.findByRole("link", { name: "Welcome to Lion Reader" });
     expect(welcome).toHaveAttribute("href", "/demo/all?entry=welcome");
-    // Sidebar counts come from the store through entries.count.
+    // Sidebar counts come from the store through entries.countLists.
     const allItems = screen.getByRole("link", { name: /^All Items/ });
     expect(allItems).toHaveAttribute("href", "/demo/all");
     expect(await within(allItems).findByText(`(${DEMO_ENTRIES.length})`)).toBeVisible();

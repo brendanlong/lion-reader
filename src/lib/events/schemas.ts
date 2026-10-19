@@ -360,7 +360,7 @@ export const subscriptionDeletedEventSchema = z.object({
   // subscription's former tags / Uncategorized), computed at delete time. The
   // live mutation/SSE path includes these; the sync.events catch-up path can't
   // (the tag associations are already gone server-side), so it omits them and
-  // the client falls back to invalidating tags.list + entries.count.
+  // the client falls back to invalidating tags.list + entries.countLists.
   counts: unreadCountsSchema.optional(),
 });
 

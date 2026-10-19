@@ -89,12 +89,10 @@ export function buildDemoDehydratedState(store: DemoStore, location: AppLocation
     getQueryKey(trpc.tags.list, undefined, "query"),
     procedures["tags.list"]()
   );
-  for (const input of [{}, { starredOnly: true }, { type: "saved" as const }]) {
-    queryClient.setQueryData(
-      getQueryKey(trpc.entries.count, input, "query"),
-      procedures["entries.count"](input)
-    );
-  }
+  queryClient.setQueryData(
+    getQueryKey(trpc.entries.countLists, undefined, "query"),
+    procedures["entries.countLists"]()
+  );
   queryClient.setQueryData(
     getQueryKey(trpc.subscriptions.list, SAVED_SUBSCRIPTION_LIST_INPUT, "query"),
     procedures["subscriptions.list"](SAVED_SUBSCRIPTION_LIST_INPUT)

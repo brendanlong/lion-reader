@@ -64,7 +64,7 @@ export function useUnsubscribeMutation(options?: UseUnsubscribeMutationOptions) 
       }
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
-      utils.entries.count.invalidate();
+      utils.entries.countLists.invalidate();
       options?.onError?.();
     },
   });

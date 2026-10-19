@@ -5,7 +5,7 @@
 /**
  * Component integration tests for Sidebar.
  *
- * The Sidebar renders its feed tree from real tRPC queries (`entries.count` for
+ * The Sidebar renders its feed tree from real tRPC queries (`entries.countLists` for
  * the nav counts, `tags.list` for tag sections, `subscriptions.list` for the
  * feeds inside an expanded section) and owns the `subscriptions.delete`
  * mutation behind the unsubscribe flow. These tests drive the real UI through
@@ -67,12 +67,7 @@ function trpcError(code: string, message: string): TRPCClientError<never> {
  */
 function baseHandlers(overrides: ProcedureHandlers = {}): ProcedureHandlers {
   return {
-    "entries.count": (input) => {
-      const filter = input as { starredOnly?: boolean; type?: string };
-      if (filter.starredOnly) return { unread: 2 };
-      if (filter.type === "saved") return { unread: 1 };
-      return { unread: 18 };
-    },
+    "entries.countLists": () => ({ all: 18, starred: 2, saved: 1, uncategorized: 0 }),
     "tags.list": () => ({
       items: [{ id: "tag-1", name: "Tech", color: "#ff0000", feedCount: 1, unreadCount: 5 }],
       uncategorized: { feedCount: 0, unreadCount: 0 },
@@ -109,7 +104,7 @@ describe("Sidebar", () => {
 
     // Tag from tags.list.
     expect(await screen.findByText("Tech")).toBeInTheDocument();
-    // "All Items" nav count from entries.count (rendered as "(18)").
+    // "All Items" nav count from entries.countLists (rendered as "(18)").
     expect(await screen.findByText("(18)")).toBeInTheDocument();
   });
 

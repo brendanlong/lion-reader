@@ -184,8 +184,8 @@ describe("FileUploadButton upload response", () => {
 
     const savedList = screen.getByLabelText("Saved list");
     await waitFor(() => expect(savedList).toHaveTextContent("entry-1"));
-    expect(storedCount(queryClient, { type: "saved" })).toEqual({ unread: 2 });
-    expect(storedCount(queryClient, {})).toEqual({ unread: 3 });
+    expect(storedCount(queryClient, { saved: true })).toEqual({ unread: 2 });
+    expect(storedCount(queryClient, { all: true })).toEqual({ unread: 3 });
     expect(invalidatedProcedures(invalidate)).toEqual([]);
 
     // The upload's own new_entry, arriving after the response, changes nothing.
