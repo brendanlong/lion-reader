@@ -37,12 +37,28 @@
  */
 
 import { parseHTML } from "linkedom";
-import { parse, serialize } from "parse5";
-import { logger } from "@/lib/logger";
+import { defaultTreeAdapter, parse, serialize, type DefaultTreeAdapterMap } from "parse5";
+
+type Parse5Node = DefaultTreeAdapterMap["node"];
+
+/**
+ * Deepest element the normalizing parse builds, counting `<html>` as 1. Blink
+ * flattens its tree beyond the same depth, and nothing real comes near it.
+ *
+ * @testonly
+ */
+export const MAX_TREE_DEPTH = 512;
 
 /**
  * Parses entry HTML into a `<body>` element holding the tree a browser builds
  * from the same string.
+ *
+ * Markup past the point where the tree would nest deeper than
+ * {@link MAX_TREE_DEPTH} is left out (#2039): parse5 searches its open
+ * elements for many tags, and the sanitizer keeps feed-controlled nesting, so
+ * an entry nested tens of thousands deep took about a minute to parse. Where
+ * the browser's tree differs past that point (a foster-parented element moves
+ * before a table), numbering can differ from there on.
  *
  * @param html - The (already sanitized) entry HTML
  * @returns The body element of the parsed document
@@ -50,33 +66,95 @@ import { logger } from "@/lib/logger";
 export function parseBodyAsBrowser(html: string): Element {
   // Wrapped in a document so the content parses in "in body" insertion mode —
   // the mode the client's `DOMParser` call uses for the same string.
-  const wrapped = `<!DOCTYPE html><html><body>${html}</body></html>`;
+  return parseHTML(serialize(parseDepthCapped(`<!DOCTYPE html><html><body>${html}</body></html>`)))
+    .document.body;
+}
 
-  return parseHTML(normalize(wrapped) ?? wrapped).document.body;
+/** Where to cut the markup so the tree stays within {@link MAX_TREE_DEPTH}. */
+class TooDeep extends Error {
+  constructor(readonly offset: number) {
+    super("Markup nests too deep");
+  }
 }
 
 /**
- * The markup in tree-construction normal form, or null if parse5 couldn't
- * produce it.
+ * parse5's tree of the longest prefix of `markup` that stays within
+ * {@link MAX_TREE_DEPTH}, cut at a start tag.
  *
- * parse5's serializer recurses per element, so markup nested a few thousand
- * elements deep overflows the stack — and entry HTML is feed-controlled, which
- * is why the walk itself uses an explicit stack and a depth cap (`./runs`,
- * `./block-elements`). Falling back to linkedom's own parse costs the numbering
- * agreement for that one document, which is what narration did before any of
- * this; throwing would cost the whole request, and on the LLM path it would
- * also record an error that suppresses retries for an hour.
+ * The depth is measured on the tree parse5 builds, not on the markup: a
+ * browser ignores `</span>` across an open `<div>`, so `<span><div></span>`
+ * nests two levels per repeat while closing every element it opens, and
+ * `<p><b>` closes the `<b>` a SAX count would leave open. The over-deep
+ * element's start tag (or, for an implied element, the last one the parse
+ * placed) is where the cut goes. Everything before it parsed without reaching
+ * the limit, so the second parse of the prefix stays within it.
  */
-function normalize(wrapped: string): string | null {
-  try {
-    // `scriptingEnabled: false` matches `DOMParser`, whose documents have
-    // scripting disabled (it decides how `<noscript>` content is parsed).
-    return serialize(parse(wrapped, { scriptingEnabled: false }));
-  } catch (error) {
-    logger.warn("Falling back to a non-spec parse of entry HTML for narration", {
-      bytes: wrapped.length,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
+function parseDepthCapped(markup: string): DefaultTreeAdapterMap["document"] {
+  for (;;) {
+    try {
+      return parse(markup, {
+        // `scriptingEnabled: false` matches `DOMParser`, whose documents have
+        // scripting disabled (it decides how `<noscript>` content is parsed).
+        scriptingEnabled: false,
+        sourceCodeLocationInfo: true,
+        treeAdapter: boundedTreeAdapter(),
+      });
+    } catch (error) {
+      if (!(error instanceof TooDeep)) throw error;
+      markup = markup.slice(0, error.offset);
+    }
   }
+}
+
+/**
+ * parse5's default tree, built within {@link MAX_TREE_DEPTH} (throwing
+ * {@link TooDeep}). The parse also inserts and detaches at a table's position
+ * (foster parenting, the adoption agency), which is at or near the end of its
+ * parent's children; the default adapter finds it searching from the start,
+ * which took seconds on a megabyte of `<table><div>`, so this searches from
+ * the end.
+ */
+function boundedTreeAdapter(): typeof defaultTreeAdapter {
+  // A template's content is a fragment with no parent; nesting goes on there.
+  const templateHosts = new WeakMap<Parse5Node, Parse5Node>();
+  let lastPlaced = 0;
+
+  const check = (parent: Parse5Node, node: Parse5Node) => {
+    if (!defaultTreeAdapter.isElementNode(node)) return;
+    const start = node.sourceCodeLocation?.startOffset;
+    if (start !== undefined) lastPlaced = start;
+    let depth = 0;
+    for (let n: Parse5Node | null | undefined = parent; n;) {
+      if (++depth > MAX_TREE_DEPTH) throw new TooDeep(start ?? lastPlaced);
+      n = ("parentNode" in n ? n.parentNode : null) ?? templateHosts.get(n);
+    }
+  };
+
+  return {
+    ...defaultTreeAdapter,
+    appendChild(parent, node) {
+      check(parent, node);
+      defaultTreeAdapter.appendChild(parent, node);
+    },
+    insertBefore(parent, node, reference) {
+      check(parent, node);
+      parent.childNodes.splice(parent.childNodes.lastIndexOf(reference), 0, node);
+      node.parentNode = parent;
+    },
+    insertTextBefore(parent, text, reference) {
+      const previous = parent.childNodes[parent.childNodes.lastIndexOf(reference) - 1];
+      if (previous && defaultTreeAdapter.isTextNode(previous)) previous.value += text;
+      else this.insertBefore(parent, defaultTreeAdapter.createTextNode(text), reference);
+    },
+    detachNode(node) {
+      if (!node.parentNode) return;
+      const siblings = node.parentNode.childNodes;
+      siblings.splice(siblings.lastIndexOf(node), 1);
+      node.parentNode = null;
+    },
+    setTemplateContent(template, content) {
+      templateHosts.set(content, template);
+      defaultTreeAdapter.setTemplateContent(template, content);
+    },
+  };
 }
