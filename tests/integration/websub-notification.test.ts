@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   entries,
@@ -31,7 +31,13 @@ import {
 } from "../../src/server/jobs/queue";
 import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
 import { MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../../src/server/services/full-content";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestEntry,
+  createTestFeed,
+  createTestMembership,
+  createTestSubscription,
+  createTestUser,
+} from "./helpers";
 
 const HUB_URL = "https://hub.example.com/";
 
@@ -97,11 +103,7 @@ async function seedPushFeed(
     lastEntriesUpdatedAt: lastPoll,
   });
   const userId = await createTestUser({ emailPrefix });
-  // Already watching at the last poll, so the backfill guard applies to them.
-  const subscriptionId = await createTestSubscription(userId, feedId, {
-    subscribedAt: new Date(lastPoll.getTime() - 24 * 60 * 60 * 1000),
-    ...subscriptionOverrides,
-  });
+  const subscriptionId = await createTestSubscription(userId, feedId, subscriptionOverrides);
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
   return { feed, userId, subscriptionId };
 }
@@ -207,6 +209,9 @@ describe("ingestWebsubNotification", () => {
       "pusharchive",
       new Date(Date.now() - 60 * 60 * 1000)
     );
+    // Past its first grant, so the guard applies.
+    const heldId = await createTestEntry(feed.id, { lastSeenAt: null });
+    await createTestMembership(subscriptionId, userId, heldId, { read: true });
 
     const outcome = await ingestWebsubNotification(
       feed,
@@ -214,9 +219,12 @@ describe("ingestWebsubNotification", () => {
     );
     expect(outcome).toBe("processed");
 
-    const row = await getUserEntry(userId);
-    expect(row.guid).toBe("archive-1");
-    expect(row.read).toBe(true);
+    const rows = await db
+      .select({ read: userEntries.read })
+      .from(userEntries)
+      .innerJoin(entries, eq(entries.id, userEntries.entryId))
+      .where(and(eq(userEntries.userId, userId), eq(entries.guid, "archive-1")));
+    expect(rows).toEqual([{ read: true }]);
 
     const [subscription] = await db
       .select({ unreadCount: subscriptions.unreadCount })

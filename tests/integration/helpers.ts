@@ -299,6 +299,23 @@ export async function createTestMembership(
   );
 }
 
+/**
+ * A web subscription that has had its first grant (it holds an entry), so the
+ * backfill guard applies to what the fan-out gives it next. The entry it holds
+ * is read, its guid starts `held-before-`, and is not among the feed's current entries.
+ */
+export async function createWatchingSubscription(userId: string, feedId: string): Promise<string> {
+  const subscriptionId = await createTestSubscription(userId, feedId);
+  const longAgo = new Date("2000-01-01T00:00:00Z");
+  const entryId = await createTestEntry(feedId, {
+    guid: `held-before-${subscriptionId}`,
+    fetchedAt: longAgo,
+    lastSeenAt: null,
+  });
+  await createTestMembership(subscriptionId, userId, entryId, { read: true });
+  return subscriptionId;
+}
+
 // ============================================================================
 // Tags
 // ============================================================================

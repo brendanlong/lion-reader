@@ -26,7 +26,7 @@ An entry is visible iff a `user_entries` row exists for `(user, entry)` and it's
 **The insert paths, not the view, keep pre-subscription content private**, so any new path that creates `user_entries` rows must only cover entries currently in the feed:
 
 - **Subscribe time** (`populateInitialUserEntries`, for `createSubscription` and a redirect merge's survivor): the feed's current entries, `currentEntryIdsSql` (what the last poll stamped, plus what a WebSub hub announced since; a poll's disappeared check uses the same rule). A feed that is stale by its own poll cadence (`feeds.stale_at`, not the WebSub backup interval) or was never fetched instead gets a forced background refresh that fans out from a fresh fetch (`shouldRefetchOnSubscribe`).
-- **Fetch time** (`entry-processor.ts`): every entry in the current fetch, idempotently, so a crash between insert and fanout self-heals on the next fetch. Archive re-announcements fan out already read ("Backfill Guard" in `feed/CLAUDE.md`).
+- **Fetch time** (`entry-processor.ts`): every entry in the current fetch, idempotently, so a crash between insert and fanout self-heals on the next fetch. Archive re-announcements may fan out already read ("Backfill Guard" in `feed/CLAUDE.md`).
 
 Starring is itself a visibility arm, so **never read a star write back through `visible_entries`** — unstarring an entry from an unsubscribed feed drops it from the view and the write looks like "not found". Read back from `user_entries` (`selectStarredEntryStates`).
 

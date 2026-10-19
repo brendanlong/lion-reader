@@ -1182,7 +1182,7 @@ WHERE entries.id IN (${list(allIds)})
       `WITH missing AS MATERIALIZED (
   SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
          COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
-         e.is_spam, COALESCE(s.subscribed_at < ${ts(feed.last_fetched_at)}
+         e.is_spam, COALESCE(EXISTS (SELECT 1 FROM subscription_entries held WHERE held.subscription_id = s.id)
            AND e.published_at < ${ts(feed.last_fetched_at)} - interval '30 days', false) AS read,
          e.guid, e.owner_feed_id
   FROM subscriptions s

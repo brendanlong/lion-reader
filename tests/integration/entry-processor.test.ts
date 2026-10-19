@@ -26,6 +26,7 @@ import {
   createTestMembership,
   createTestSubscription,
   createTestUser,
+  createWatchingSubscription,
   createTestFeed as insertTestFeed,
 } from "./helpers";
 
@@ -46,6 +47,9 @@ async function createTestFeed(overrides: Partial<typeof feeds.$inferInsert> = {}
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
   return feed;
 }
+
+/** Leaves out the entry `createWatchingSubscription` gives a subscription. */
+const notHeld = sql`${entries.guid} NOT LIKE 'held-before-%'`;
 
 describe("Entry Processor", () => {
   async function cleanup(): Promise<void> {
@@ -161,9 +165,6 @@ describe("Entry Processor", () => {
       expect(clampPublishedAt(pubDate, fetchedAt)).toBe(fetchedAt);
     });
   });
-
-  /** Subscribed well before any fetch these tests judge backfill against. */
-  const WATCHING_SINCE = new Date("2026-01-01T00:00:00Z");
 
   describe("isBackfilledEntry", () => {
     const previousFetch = new Date("2026-08-10T00:00:00Z");
@@ -1105,9 +1106,7 @@ describe("Entry Processor", () => {
       // news, so they must not land in anyone's unread count.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "backfill" });
-      const subscriptionId = await createTestSubscription(userId, feed.id, {
-        subscribedAt: WATCHING_SINCE,
-      });
+      const subscriptionId = await createWatchingSubscription(userId, feed.id);
 
       const previousLastFetchedAt = new Date("2026-08-10T00:00:00Z");
       const fetchedAt = new Date("2026-08-10T01:00:00Z");
@@ -1139,7 +1138,7 @@ describe("Entry Processor", () => {
         })
         .from(userEntries)
         .innerJoin(entries, eq(entries.id, userEntries.entryId))
-        .where(eq(userEntries.userId, userId));
+        .where(and(eq(userEntries.userId, userId), notHeld));
       expect(rows).toHaveLength(2);
       expect(rows.find((r) => r.guid === "fresh-1")?.read).toBe(false);
       expect(rows.find((r) => r.guid === "archive-1")?.read).toBe(true);
@@ -1155,16 +1154,14 @@ describe("Entry Processor", () => {
       expect(subscription.unreadCount).toBe(1);
     });
 
-    it("links an archive re-announcement unread to someone who subscribed since the previous fetch (#2036)", async () => {
-      // Everything is news to a subscriber who hasn't seen the feed before,
-      // however old; the guard is only for those who were already watching.
+    it("links an archive re-announcement unread in a subscription's first grant (#2036)", async () => {
+      // Everything is news to a subscriber who hasn't been given the feed yet,
+      // however old; the guard is only for those who have.
       const feed = await createTestFeed();
       const watcherId = await createTestUser({ emailPrefix: "watcher" });
-      await createTestSubscription(watcherId, feed.id, { subscribedAt: WATCHING_SINCE });
+      await createWatchingSubscription(watcherId, feed.id);
       const newcomerId = await createTestUser({ emailPrefix: "newcomer" });
-      await createTestSubscription(newcomerId, feed.id, {
-        subscribedAt: new Date("2026-08-10T00:10:00Z"),
-      });
+      await createTestSubscription(newcomerId, feed.id);
 
       await processEntries(
         feed.id,
@@ -1194,7 +1191,7 @@ describe("Entry Processor", () => {
       // current window is legitimately new to us however old it is.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "firstfetch" });
-      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
+      await createTestSubscription(userId, feed.id);
 
       const result = await processEntries(
         feed.id,
@@ -1221,7 +1218,7 @@ describe("Entry Processor", () => {
       // which occurrence the id came from, keeps that from fanning it out unread.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "dupguid" });
-      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
+      await createWatchingSubscription(userId, feed.id);
 
       const item = { title: "Ukraine Post #5", pubDate: new Date("2022-03-01T00:00:00Z") };
       const result = await processEntries(
@@ -1238,9 +1235,9 @@ describe("Entry Processor", () => {
       const rows = await db
         .select({ read: userEntries.read })
         .from(userEntries)
-        .where(eq(userEntries.userId, userId));
-      expect(rows).toHaveLength(1);
-      expect(rows[0].read).toBe(true);
+        .innerJoin(entries, eq(entries.id, userEntries.entryId))
+        .where(and(eq(userEntries.userId, userId), notHeld));
+      expect(rows).toEqual([{ read: true }]);
     });
 
     it("heals a backfill orphaned by a crashed fetch to read, not unread (#1500)", async () => {
@@ -1249,7 +1246,7 @@ describe("Entry Processor", () => {
       // link rather than from what this fetch created.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "healbackfill" });
-      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
+      await createWatchingSubscription(userId, feed.id);
 
       const archived: ParsedEntry = {
         guid: "archive-1",
@@ -1263,10 +1260,6 @@ describe("Entry Processor", () => {
         generateContentHash(archived),
         new Date("2026-08-10T01:00:00Z")
       );
-      expect(
-        await db.select().from(userEntries).where(eq(userEntries.userId, userId))
-      ).toHaveLength(0);
-
       // A later fetch brings a genuinely new entry, so the fanout runs over
       // every current entry and heals the orphan.
       await processEntries(
@@ -1298,7 +1291,7 @@ describe("Entry Processor", () => {
       // back to unread.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "rebackfill" });
-      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
+      await createWatchingSubscription(userId, feed.id);
 
       const archived = {
         guid: "archive-1",
@@ -1348,7 +1341,7 @@ describe("Entry Processor", () => {
       // whoever it reaches then, while existing holders keep their state.
       const feed = await createTestFeed();
       const earlyUserId = await createTestUser({ emailPrefix: "early2036" });
-      await createTestSubscription(earlyUserId, feed.id, { subscribedAt: WATCHING_SINCE });
+      await createWatchingSubscription(earlyUserId, feed.id);
 
       const article = {
         guid: "article-1",
@@ -1366,9 +1359,7 @@ describe("Entry Processor", () => {
 
       // Subscribed while the article was out of the feed, so it doesn't hold it.
       const lateUserId = await createTestUser({ emailPrefix: "late2036" });
-      await createTestSubscription(lateUserId, feed.id, {
-        subscribedAt: new Date("2026-10-01T00:00:00Z"),
-      });
+      await createWatchingSubscription(lateUserId, feed.id);
 
       const result = await processEntries(
         feed.id,
@@ -1391,7 +1382,7 @@ describe("Entry Processor", () => {
           .select({ guid: entries.guid, read: userEntries.read })
           .from(userEntries)
           .innerJoin(entries, eq(entries.id, userEntries.entryId))
-          .where(eq(userEntries.userId, userId));
+          .where(and(eq(userEntries.userId, userId), notHeld));
         return Object.fromEntries(rows.map((r) => [r.guid, r.read]));
       };
       expect(await readState(lateUserId)).toEqual({ "article-1": true, "fresh-1": false });
@@ -1403,7 +1394,7 @@ describe("Entry Processor", () => {
       // for a connected client to insert or count.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "backfillevent" });
-      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
+      await createWatchingSubscription(userId, feed.id);
 
       const newEntryIds: string[] = [];
       const handle = createPubSubSubscription((_channel, message) => {

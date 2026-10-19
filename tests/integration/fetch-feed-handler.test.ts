@@ -26,7 +26,12 @@ import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
 import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
 import { handleFetchFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { subscribeToUrl } from "../../src/server/services/subscribe";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+  createWatchingSubscription,
+} from "./helpers";
 
 /** What the loopback origin should answer with on the next request. */
 interface FeedResponse {
@@ -295,9 +300,7 @@ describe("handleFetchFeed", () => {
         lastEntriesUpdatedAt: lastPoll,
       });
       const userId = await createTestUser({ emailPrefix: "ff-backfill" });
-      const subscriptionId = await createTestSubscription(userId, feed.id, {
-        subscribedAt: new Date(lastPoll.getTime() - 24 * 60 * 60 * 1000),
-      });
+      const subscriptionId = await createWatchingSubscription(userId, feed.id);
 
       nextResponse = {
         body: rss([
@@ -323,17 +326,15 @@ describe("handleFetchFeed", () => {
 
     it("on a forced subscribe-time refresh, delivers the archive unread only to the new subscriber (#2036)", async () => {
       // `forceReprocess` hands a brand-new subscriber the current feed as ground
-      // truth, and all of it is news to them. Subscribers who were already
-      // watching still get an archive re-announcement read.
+      // truth: its first grant, all news to them. Subscribers who already had
+      // theirs still get an archive re-announcement read.
       const lastPoll = new Date(Date.now() - 60 * 60 * 1000);
       const feed = await createLoopbackFeed({
         lastFetchedAt: lastPoll,
         lastEntriesUpdatedAt: lastPoll,
       });
       const watcherId = await createTestUser({ emailPrefix: "ff-forced-watcher" });
-      await createTestSubscription(watcherId, feed.id, {
-        subscribedAt: new Date(lastPoll.getTime() - 24 * 60 * 60 * 1000),
-      });
+      await createWatchingSubscription(watcherId, feed.id);
       const newcomerId = await createTestUser({ emailPrefix: "ff-forced-new" });
       await createTestSubscription(newcomerId, feed.id);
 
@@ -341,9 +342,10 @@ describe("handleFetchFeed", () => {
         body: rss([{ guid: "old", title: "From 2022", pubDate: new Date("2022-03-01T00:00:00Z") }]),
       };
 
-      await handleFetchFeed({ feedId: feed.id }, { forceReprocess: true });
+      const result = await handleFetchFeed({ feedId: feed.id }, { forceReprocess: true });
 
-      expect((await readUserEntries(watcherId))[0].read).toBe(true);
+      expect(result.metadata).toMatchObject({ newEntries: 1, backfilledEntries: 1 });
+      expect((await readUserEntries(watcherId)).find((r) => r.guid === "old")?.read).toBe(true);
       expect((await readUserEntries(newcomerId))[0].read).toBe(false);
     });
   });

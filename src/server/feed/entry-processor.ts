@@ -231,14 +231,14 @@ const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
  * Backfilled entries are linked already read, but stay in lists and search.
  *
  * The verdict belongs to the link, not the entry (#2036), and only applies to
- * subscribers who were subscribed at that previous fetch ({@link linksReadSql}).
- * Everything is news to anyone who subscribed since — the subscribe populate,
- * a forced subscribe-time refresh, the next poll — however old.
+ * deliveries after a subscription's first grant ({@link linksReadSql}): what
+ * a new subscriber is first given — by the subscribe populate or a forced
+ * subscribe-time refresh — is all news to them, however old.
  *
  * The month threshold only has to clear ordinary syndication noise (stale CDN
  * copies, clock skew, mild backdating); archive replays miss it by years. The
- * guard is inert on a feed's first fetch, on a dormant feed polled again, and
- * on entries with no date. Accepted risk: a feed whose dates are
+ * guard is inert on a feed's first fetch and on entries with no date, and
+ * never fires on articles published since the previous fetch. Accepted risk: a feed whose dates are
  * systematically wrong or old has every new article linked read, visible only
  * in the fetch's `backfilledEntries` metadata.
  *
@@ -261,12 +261,13 @@ export function isBackfilledEntry(
 
 /**
  * The `read` a fan-out links entry `e` to subscription `s` with: whether it is
- * a backfill ({@link isBackfilledEntry}) to a subscriber who was already
- * subscribed at the feed's previous full fetch. Never NULL.
+ * a backfill ({@link isBackfilledEntry}) and `s` already had its first grant,
+ * i.e. holds any entry. Memberships outlive an unsubscribe, so a returning
+ * subscriber counts as having had it. Never NULL.
  */
 function linksReadSql(previousLastFetchedAt: Date | null): SQL {
   return sql`COALESCE(
-    s.subscribed_at < ${previousLastFetchedAt}::timestamptz
+    EXISTS (SELECT 1 FROM subscription_entries held WHERE held.subscription_id = s.id)
       AND e.published_at < ${previousLastFetchedAt}::timestamptz - ${BACKFILL_MIN_AGE_MS} * interval '1 millisecond',
     false)`;
 }
