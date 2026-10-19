@@ -15,7 +15,7 @@
  * This router only handles:
  * - saved.save: Save a URL (content extraction in services/saved.ts)
  * - saved.delete: Hard delete a saved article (entries use soft delete)
- * - saved.uploadFile: Upload a file (.docx/.html/.md) as a saved article
+ * - saved.uploadFile: Upload a file (.docx/.pdf/.html/.md) as a saved article
  *
  * Business logic lives in the saved service (`@/server/services/saved`),
  * shared with the MCP save_article/delete_saved_article/upload_article tools.
@@ -175,10 +175,12 @@ export const savedRouter = createTRPCRouter({
   /**
    * Upload a file to save for later reading.
    *
-   * Supports Word documents (.docx), HTML files, and Markdown files.
+   * Supports Word documents (.docx), PDFs, HTML files, and Markdown files.
    * Files are processed and converted to HTML for consistent rendering:
    * - .docx: Converted via mammoth; title/author/summary read from the document's
    *   `docProps/core.xml`; Readability skipped (already clean content)
+   * - .pdf: Text and layout extracted to Markdown; title/author/summary read
+   *   from the document info; Readability skipped
    * - .html: Cleaned with Readability
    * - .md: Rendered to HTML (preserved as-is semantically)
    *

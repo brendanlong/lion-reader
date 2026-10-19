@@ -2,7 +2,7 @@
  * FileUploadButton Component
  *
  * Button and dialog for uploading files to save for later reading.
- * Supports .docx, .html, .md, and .txt files.
+ * Supports .docx, .pdf, .html, .md, and .txt files.
  */
 
 "use client";
@@ -187,8 +187,8 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
         <DialogHeader>
           <DialogTitle>Upload File</DialogTitle>
           <DialogDescription>
-            Upload a document to save for later reading. Supported formats: Word (.docx), HTML, and
-            Markdown (.md).
+            Upload a document to save for later reading. Supported formats: Word (.docx), PDF, HTML,
+            and Markdown (.md).
           </DialogDescription>
         </DialogHeader>
 
@@ -233,7 +233,7 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
               <div className="pointer-events-none flex flex-col items-center">
                 <UploadIcon className="text-faint h-10 w-10" />
                 <p className="text-body mt-2 font-medium">Drop file here or click to browse</p>
-                <p className="ui-text-sm text-muted">.docx, .html, .md, .txt up to 10MB</p>
+                <p className="ui-text-sm text-muted">.docx, .pdf, .html, .md, .txt up to 10MB</p>
               </div>
             )}
           </div>

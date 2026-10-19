@@ -5,6 +5,7 @@
  */
 export const UPLOAD_FILE_TYPES = {
   ".docx": "docx",
+  ".pdf": "pdf",
   ".html": "html",
   ".htm": "html",
   ".md": "markdown",

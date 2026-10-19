@@ -367,6 +367,12 @@ export const usageLimitsConfig = {
    * says what it bounds.
    */
   docxWorkerMaxHeapMb: positiveIntegerFromEnv("DOCX_WORKER_MAX_HEAP_MB", 64),
+
+  /**
+   * Heap cap, in MB, for the child process that converts `.pdf` files
+   * (`src/server/file/pdf-to-markdown.ts`).
+   */
+  pdfConverterMaxMemoryMb: positiveIntegerFromEnv("PDF_CONVERTER_MAX_MEMORY_MB", 128),
 };
 
 export const storageConfig = {

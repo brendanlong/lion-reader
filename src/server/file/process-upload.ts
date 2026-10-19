@@ -10,6 +10,8 @@
  * - .docx files → mammoth conversion + `docProps/core.xml` metadata (Readability
  *   skipped downstream — mammoth output is already clean, chrome-free content, so
  *   running Readability only risks over-stripping; like a Markdown URL save)
+ * - .pdf files → text and layout via `lion-reader-pdf`, rendered as Markdown,
+ *   with document-info metadata (Readability skipped downstream, as for .docx)
  * - .html files → passthrough (Readability runs downstream)
  * - .md/.txt files → Markdown rendering (Readability skipped downstream, like a
  *   Markdown URL save)
@@ -17,9 +19,11 @@
 
 import { decodeBody } from "@/server/http/charset";
 import { logger } from "@/lib/logger";
-import { processMarkdown as convertMarkdown } from "@/server/markdown";
+import { markdownToHtmlAsync, processMarkdown as convertMarkdown } from "@/server/markdown";
+import { stripTitleHeader } from "@/server/html/strip-title-header";
 import { extractDocxCoreProperties } from "@/server/file/docx-core-props";
 import { convertDocxToHtml } from "@/server/file/docx-to-html";
+import { convertPdfToMarkdown } from "@/server/file/pdf-to-markdown";
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
   UPLOAD_FILE_TYPES,
@@ -38,10 +42,11 @@ export interface ConvertedUpload {
   /** Raw article HTML (content_original, absolutized; Readability runs on it downstream). */
   html: string;
   /**
-   * Pre-cleaned content — set for .md/.txt (Markdown) and .docx (mammoth +
-   * core.xml), null for .html. A non-null value tells `buildArticleFields` to
+   * Pre-cleaned content — set for .md/.txt (Markdown), .docx (mammoth +
+   * core.xml) and .pdf, null for .html. A non-null value tells `buildArticleFields` to
    * skip Readability (the content is already clean) and use the supplied
-   * title/summary/author (Markdown frontmatter, or docx `docProps/core.xml`).
+   * title/summary/author (Markdown frontmatter, docx `docProps/core.xml`, or
+   * the PDF's document info).
    */
   preCleanedContent: {
     title: string | null;
@@ -76,7 +81,7 @@ export function detectFileType(filename: string): SupportedFileType | null {
  */
 export function titleFromFilename(filename: string): string {
   // Remove extension
-  let title = filename.replace(/\.(docx|html?|md|markdown|txt)$/i, "");
+  let title = filename.replace(/\.(docx|pdf|html?|md|markdown|txt)$/i, "");
 
   // Clean up common patterns
   title = title
@@ -118,6 +123,22 @@ async function convertDocx(buffer: Buffer, filename: string): Promise<ConvertedU
       author: coreProps.author,
     },
     fileType: "docx",
+    filename,
+  };
+}
+
+/**
+ * Converts a PDF via its extracted Markdown. Not through `processMarkdown`: PDF
+ * text is never frontmatter, and the title comes from the document, so the
+ * first heading is only dropped when it repeats that title.
+ */
+async function convertPdf(buffer: Buffer, filename: string): Promise<ConvertedUpload> {
+  const pdf = await convertPdfToMarkdown(buffer);
+  const html = await markdownToHtmlAsync(pdf.markdown);
+  return {
+    html: pdf.title ? stripTitleHeader(html, pdf.title) : html,
+    preCleanedContent: { title: pdf.title, summary: pdf.summary, author: pdf.author },
+    fileType: "pdf",
     filename,
   };
 }
@@ -166,6 +187,9 @@ export async function convertUploadedFile(
     case "docx":
       return convertDocx(content, filename);
 
+    case "pdf":
+      return convertPdf(content, filename);
+
     case "html":
       // Readability runs downstream. No Content-Type, so the file's own
       // <meta charset> (or BOM) decides its encoding.
@@ -186,5 +210,5 @@ export async function convertUploadedFile(
  * Gets a human-readable description of supported file types.
  */
 export function getSupportedTypesDescription(): string {
-  return "Word documents (.docx), HTML files (.html), Markdown files (.md), and text files (.txt)";
+  return "Word documents (.docx), PDFs (.pdf), HTML files (.html), Markdown files (.md), and text files (.txt)";
 }

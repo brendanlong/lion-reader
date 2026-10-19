@@ -320,6 +320,7 @@ async function insertSavedEntry(
 /** Display site name for an uploaded file, by type. */
 const UPLOAD_SITE_NAMES: Record<SupportedFileType, string> = {
   docx: "Uploaded Document",
+  pdf: "Uploaded PDF",
   html: "Uploaded HTML",
   markdown: "Uploaded Text",
 };
@@ -854,7 +855,7 @@ function assertUploadSize(resource: string, bytes: number): void {
 }
 
 /**
- * Save an uploaded file (.docx, .html, .md, .txt; see `convertUploadedFile`).
+ * Save an uploaded file (.docx, .pdf, .html, .md, .txt; see `convertUploadedFile`).
  *
  * The converted content runs through the same {@link buildArticleFields} pipeline
  * as a URL save — Readability, excerpt, and title/author/site-name precedence —

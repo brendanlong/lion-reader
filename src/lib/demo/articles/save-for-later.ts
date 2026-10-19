@@ -22,7 +22,7 @@ const article: DemoArticle = {
     <ul>
       <li><strong>In your browser</strong> &mdash; one click with the <a href="/demo/all?entry=browser-extension">browser extension</a>, or a bookmarklet in any browser</li>
       <li><strong>On your phone</strong> &mdash; from the share menu: on Android, <a href="/demo/all?entry=pwa">install Lion Reader like an app</a>; on iPhone and iPad, use the free <a href="/demo/all?entry=wallabag-api">Wallabag app</a></li>
-      <li><strong>From a file</strong> &mdash; <a href="/demo/all?entry=file-upload">upload</a> a Word document, Markdown, or HTML file</li>
+      <li><strong>From a file</strong> &mdash; <a href="/demo/all?entry=file-upload">upload</a> a Word document, PDF, Markdown, or HTML file</li>
       <li><strong>In Discord</strong> &mdash; react to a link with the <a href="/demo/all?entry=discord-bot">Discord bot</a></li>
       <li><strong>By asking</strong> &mdash; tell your <a href="/demo/all?entry=mcp-server">AI assistant</a> to save it for you</li>
     </ul>

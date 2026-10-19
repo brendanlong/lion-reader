@@ -115,6 +115,7 @@ Prefer SAX-style parsing unless the algorithm requires a DOM. Parse once and pas
 - HTML extraction: htmlparser2 (streaming), always through `createSaxParser` (`src/server/html/sax.ts`)
 - DOM required: `linkedom`. Article extraction is the native `@lion-reader/readability`.
 - A DOM that must number elements exactly as the browser does: `src/lib/narration/parse-html.ts` (parse5 first; it says why). Nothing else needs it.
+- PDF: the `native/pdf` helper (pdf_oxide), spawned per file by `src/server/file/pdf-to-markdown.ts`. Never parse PDFs in-process: one hostile page can take gigabytes, and only a separate process lets the kernel cap that.
 - Markdown: **always** `markdownToHtmlAsync`/`processMarkdown` from `src/server/markdown`, so every source shares one dialect and the renderer's size budgets. A lint rule forbids importing `@lion-reader/markdown` directly.
 
 ## Module System (ESM)

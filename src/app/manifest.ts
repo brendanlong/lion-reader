@@ -57,6 +57,7 @@ export default function manifest(): MetadataRoute.Manifest {
               "text/markdown",
               "text/html",
               "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              "application/pdf",
             ],
           },
         ],

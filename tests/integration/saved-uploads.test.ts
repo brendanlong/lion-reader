@@ -17,6 +17,7 @@ import { getUserEventsChannel } from "../../src/server/redis/pubsub";
 import { uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { getSavedSubscriptionId } from "../../src/server/services/subscriptions";
 import { buildMinimalDocx } from "../utils/docx";
+import { buildPdf, textPage } from "../utils/pdf";
 import { waitForMessage } from "../utils/pubsub";
 import { createTestUser } from "./helpers";
 
@@ -258,6 +259,35 @@ describe("uploadFile (.docx)", () => {
     const article = await upload(userId, docx, "notes.docx", "Caller Title");
 
     expect(article.title).toBe("Caller Title");
+  });
+});
+
+describe("uploadFile (.pdf)", () => {
+  const PDF_PAGE = textPage([
+    "This is the opening paragraph of an uploaded PDF. It has enough prose to be",
+    "treated as a real article body rather than boilerplate.",
+  ]);
+
+  it("uses the document info, skips Readability, and labels the source", async () => {
+    const userId = await createUser();
+    const pdf = buildPdf([PDF_PAGE], {
+      info: { Title: "The Document Info Title", Author: "Ada Lovelace", Subject: "A summary." },
+    });
+    const article = await upload(userId, pdf, "some-file-name.pdf");
+
+    expect(article.title).toBe("The Document Info Title");
+    expect(article.author).toBe("Ada Lovelace");
+    expect(article.excerpt).toBe("A summary.");
+    expect(article.siteName).toBe("Uploaded PDF");
+    const stored = await readStored(article.id);
+    expect(stored.contentCleaned).toContain("opening paragraph of an uploaded PDF");
+  });
+
+  it("falls back to the filename-derived title when the PDF has none", async () => {
+    const userId = await createUser();
+    const article = await upload(userId, buildPdf([PDF_PAGE]), "My_Weekly-Report.pdf");
+
+    expect(article.title).toBe("My Weekly Report");
   });
 });
 
