@@ -161,7 +161,7 @@ describe("sync.events", () => {
     it("doesn't announce a backfilled entry, as the live path doesn't", async () => {
       const userId = await createTestUser();
       const feedId = await createTestFeed({ url: "https://example.com/sync-backfill.xml" });
-      await createTestSubscription(userId, feedId);
+      await createTestSubscription(userId, feedId, { subscribedAt: new Date("2025-01-01") });
       const baseCursor = new Date(Date.now() - 1000).toISOString();
 
       const entryId = await createTestEntry(feedId, {

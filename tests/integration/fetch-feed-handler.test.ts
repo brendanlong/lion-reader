@@ -295,7 +295,9 @@ describe("handleFetchFeed", () => {
         lastEntriesUpdatedAt: lastPoll,
       });
       const userId = await createTestUser({ emailPrefix: "ff-backfill" });
-      const subscriptionId = await createTestSubscription(userId, feed.id);
+      const subscriptionId = await createTestSubscription(userId, feed.id, {
+        subscribedAt: new Date(lastPoll.getTime() - 24 * 60 * 60 * 1000),
+      });
 
       nextResponse = {
         body: rss([
@@ -319,28 +321,30 @@ describe("handleFetchFeed", () => {
       expect(subscription.unreadCount).toBe(1);
     });
 
-    it("keeps everything unread on a forced subscribe-time refresh", async () => {
-      // `forceReprocess` exists to hand a brand-new subscriber the current feed
-      // as ground truth. That subscriber has no history to judge "already old
-      // when we last looked" against, so the guard is suppressed and the
-      // stale-feed subscribe path delivers what the fresh-feed one would.
+    it("on a forced subscribe-time refresh, delivers the archive unread only to the new subscriber (#2036)", async () => {
+      // `forceReprocess` hands a brand-new subscriber the current feed as ground
+      // truth, and all of it is news to them. Subscribers who were already
+      // watching still get an archive re-announcement read.
       const lastPoll = new Date(Date.now() - 60 * 60 * 1000);
       const feed = await createLoopbackFeed({
         lastFetchedAt: lastPoll,
         lastEntriesUpdatedAt: lastPoll,
       });
-      const userId = await createTestUser({ emailPrefix: "ff-forced" });
-      await createTestSubscription(userId, feed.id);
+      const watcherId = await createTestUser({ emailPrefix: "ff-forced-watcher" });
+      await createTestSubscription(watcherId, feed.id, {
+        subscribedAt: new Date(lastPoll.getTime() - 24 * 60 * 60 * 1000),
+      });
+      const newcomerId = await createTestUser({ emailPrefix: "ff-forced-new" });
+      await createTestSubscription(newcomerId, feed.id);
 
       nextResponse = {
         body: rss([{ guid: "old", title: "From 2022", pubDate: new Date("2022-03-01T00:00:00Z") }]),
       };
 
-      const result = await handleFetchFeed({ feedId: feed.id }, { forceReprocess: true });
+      await handleFetchFeed({ feedId: feed.id }, { forceReprocess: true });
 
-      expect(result.metadata).toMatchObject({ newEntries: 1, backfilledEntries: 0 });
-      const rows = await readUserEntries(userId);
-      expect(rows[0].read).toBe(false);
+      expect((await readUserEntries(watcherId))[0].read).toBe(true);
+      expect((await readUserEntries(newcomerId))[0].read).toBe(false);
     });
   });
 

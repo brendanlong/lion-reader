@@ -97,7 +97,11 @@ async function seedPushFeed(
     lastEntriesUpdatedAt: lastPoll,
   });
   const userId = await createTestUser({ emailPrefix });
-  const subscriptionId = await createTestSubscription(userId, feedId, subscriptionOverrides);
+  // Already watching at the last poll, so the backfill guard applies to them.
+  const subscriptionId = await createTestSubscription(userId, feedId, {
+    subscribedAt: new Date(lastPoll.getTime() - 24 * 60 * 60 * 1000),
+    ...subscriptionOverrides,
+  });
   const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
   return { feed, userId, subscriptionId };
 }

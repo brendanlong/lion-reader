@@ -162,6 +162,9 @@ describe("Entry Processor", () => {
     });
   });
 
+  /** Subscribed well before any fetch these tests judge backfill against. */
+  const WATCHING_SINCE = new Date("2026-01-01T00:00:00Z");
+
   describe("isBackfilledEntry", () => {
     const previousFetch = new Date("2026-08-10T00:00:00Z");
 
@@ -1102,7 +1105,9 @@ describe("Entry Processor", () => {
       // news, so they must not land in anyone's unread count.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "backfill" });
-      const subscriptionId = await createTestSubscription(userId, feed.id);
+      const subscriptionId = await createTestSubscription(userId, feed.id, {
+        subscribedAt: WATCHING_SINCE,
+      });
 
       const previousLastFetchedAt = new Date("2026-08-10T00:00:00Z");
       const fetchedAt = new Date("2026-08-10T01:00:00Z");
@@ -1150,12 +1155,46 @@ describe("Entry Processor", () => {
       expect(subscription.unreadCount).toBe(1);
     });
 
+    it("links an archive re-announcement unread to someone who subscribed since the previous fetch (#2036)", async () => {
+      // Everything is news to a subscriber who hasn't seen the feed before,
+      // however old; the guard is only for those who were already watching.
+      const feed = await createTestFeed();
+      const watcherId = await createTestUser({ emailPrefix: "watcher" });
+      await createTestSubscription(watcherId, feed.id, { subscribedAt: WATCHING_SINCE });
+      const newcomerId = await createTestUser({ emailPrefix: "newcomer" });
+      await createTestSubscription(newcomerId, feed.id, {
+        subscribedAt: new Date("2026-08-10T00:10:00Z"),
+      });
+
+      await processEntries(
+        feed.id,
+        {
+          title: "Test Feed",
+          items: [{ guid: "archive-1", title: "Old", pubDate: new Date("2022-03-01T00:00:00Z") }],
+        },
+        {
+          fetchedAt: new Date("2026-08-10T01:00:00Z"),
+          previousLastFetchedAt: new Date("2026-08-10T00:00:00Z"),
+        }
+      );
+
+      const readOf = async (userId: string) => {
+        const [row] = await db
+          .select({ read: userEntries.read })
+          .from(userEntries)
+          .where(eq(userEntries.userId, userId));
+        return row.read;
+      };
+      expect(await readOf(watcherId)).toBe(true);
+      expect(await readOf(newcomerId)).toBe(false);
+    });
+
     it("keeps old entries unread on a feed's first fetch (#1500)", async () => {
       // Without a previous fetch we were never watching the feed, so its whole
       // current window is legitimately new to us however old it is.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "firstfetch" });
-      await createTestSubscription(userId, feed.id);
+      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
 
       const result = await processEntries(
         feed.id,
@@ -1182,7 +1221,7 @@ describe("Entry Processor", () => {
       // which occurrence the id came from, keeps that from fanning it out unread.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "dupguid" });
-      await createTestSubscription(userId, feed.id);
+      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
 
       const item = { title: "Ukraine Post #5", pubDate: new Date("2022-03-01T00:00:00Z") };
       const result = await processEntries(
@@ -1210,7 +1249,7 @@ describe("Entry Processor", () => {
       // link rather than from what this fetch created.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "healbackfill" });
-      await createTestSubscription(userId, feed.id);
+      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
 
       const archived: ParsedEntry = {
         guid: "archive-1",
@@ -1259,7 +1298,7 @@ describe("Entry Processor", () => {
       // back to unread.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "rebackfill" });
-      await createTestSubscription(userId, feed.id);
+      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
 
       const archived = {
         guid: "archive-1",
@@ -1309,7 +1348,7 @@ describe("Entry Processor", () => {
       // whoever it reaches then, while existing holders keep their state.
       const feed = await createTestFeed();
       const earlyUserId = await createTestUser({ emailPrefix: "early2036" });
-      await createTestSubscription(earlyUserId, feed.id);
+      await createTestSubscription(earlyUserId, feed.id, { subscribedAt: WATCHING_SINCE });
 
       const article = {
         guid: "article-1",
@@ -1327,7 +1366,9 @@ describe("Entry Processor", () => {
 
       // Subscribed while the article was out of the feed, so it doesn't hold it.
       const lateUserId = await createTestUser({ emailPrefix: "late2036" });
-      await createTestSubscription(lateUserId, feed.id);
+      await createTestSubscription(lateUserId, feed.id, {
+        subscribedAt: new Date("2026-10-01T00:00:00Z"),
+      });
 
       const result = await processEntries(
         feed.id,
@@ -1362,7 +1403,7 @@ describe("Entry Processor", () => {
       // for a connected client to insert or count.
       const feed = await createTestFeed();
       const userId = await createTestUser({ emailPrefix: "backfillevent" });
-      await createTestSubscription(userId, feed.id);
+      await createTestSubscription(userId, feed.id, { subscribedAt: WATCHING_SINCE });
 
       const newEntryIds: string[] = [];
       const handle = createPubSubSubscription((_channel, message) => {

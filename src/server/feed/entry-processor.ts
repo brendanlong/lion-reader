@@ -144,7 +144,7 @@ export function currentEntryIdsSql(
     lastFetchedAt: SQLWrapper | Date | null;
   }
 ): SQL {
-  const stamped = listedByLastPollSql("entries", feed.lastEntriesUpdatedAt);
+  const stamped = sql`last_seen_at >= ${feed.lastEntriesUpdatedAt}`;
   return sql`
     SELECT id FROM entries
     WHERE owner_feed_id = ${feedId}::uuid AND type = 'web' AND ${stamped}
@@ -152,18 +152,6 @@ export function currentEntryIdsSql(
     SELECT id FROM entries
     WHERE owner_feed_id = ${feedId}::uuid AND type = 'web' AND pushed_at > ${feed.lastFetchedAt}
       AND (${stamped}) IS NOT TRUE`;
-}
-
-/**
- * Whether the last poll that stamped the feed listed the entry aliased `entry`
- * (the first arm of {@link currentEntryIdsSql}); NULL when the feed was never
- * stamped.
- */
-export function listedByLastPollSql(
-  entry: string,
-  lastEntriesUpdatedAt: SQLWrapper | Date | null
-): SQL {
-  return sql`${sql.raw(`${entry}.last_seen_at`)} >= ${lastEntriesUpdatedAt}`;
 }
 
 /**
@@ -233,27 +221,29 @@ export function clampPublishedAt(pubDate: Date | undefined, fetchedAt: Date): Da
 const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Decides whether an article being linked to a subscriber is a **backfill**:
- * something the publisher re-announced out of its archive rather than news
- * (issue #1500: one WordPress bulk edit put ~600 four-year-old articles into
- * subscribers' unread counts). A replay can arrive one WebSub push at a time,
- * so the signal has to be per entry: an entry is a backfill when it was
- * published well before the feed's previous full fetch — it was already old
- * when we last saw the whole feed, and it wasn't there. Backfilled entries are
- * linked already read and publish no `new_entry`, but stay in lists and search.
+ * Decides whether an article reaching a subscriber who was already watching
+ * the feed is a **backfill**: something the publisher re-announced out of its
+ * archive rather than news (issue #1500: one WordPress bulk edit put ~600
+ * four-year-old articles into subscribers' unread counts). A replay can arrive
+ * one WebSub push at a time, so the signal has to be per entry: an entry is a
+ * backfill when it was published well before the feed's previous full fetch —
+ * it was already old when we last saw the whole feed, and it wasn't there.
+ * Backfilled entries are linked already read, but stay in lists and search.
  *
- * The verdict belongs to the link, not the entry (#2036): it is judged against
- * the feed's previous full fetch *at the moment of linking*, so an article that
- * was news when first seen and comes back years later is old news to whoever
- * it reaches then. Linking paths apply it in SQL ({@link isBackfillSql}).
+ * The verdict belongs to the link, not the entry (#2036), and only applies to
+ * subscribers who were subscribed at that previous fetch ({@link linksReadSql}).
+ * Everything is news to anyone who subscribed since — the subscribe populate,
+ * a forced subscribe-time refresh, the next poll — however old.
  *
  * The month threshold only has to clear ordinary syndication noise (stale CDN
  * copies, clock skew, mild backdating); archive replays miss it by years. The
- * guard is inert with no history to judge against: a feed's first fetch, a
- * subscribe-time forced refresh, a dormant feed polled again, and entries with
- * no date. Accepted risk: a feed whose dates are systematically wrong or old
- * has every new article linked read, visible only in the fetch's
- * `backfilledEntries` metadata.
+ * guard is inert on a feed's first fetch, on a dormant feed polled again, and
+ * on entries with no date. Accepted risk: a feed whose dates are
+ * systematically wrong or old has every new article linked read, visible only
+ * in the fetch's `backfilledEntries` metadata.
+ *
+ * Judged per fetch, this is the verdict for existing subscribers: a backfill
+ * publishes no `new_entry`.
  *
  * @param publishedAt - The entry's (clamped) publication date, or null
  * @param previousLastFetchedAt - The feed's previous full fetch; null disables
@@ -270,12 +260,15 @@ export function isBackfilledEntry(
 }
 
 /**
- * {@link isBackfilledEntry} for the entry aliased `entry`, as a SQL boolean
- * (never NULL) for the `read` column of a link's candidate rows.
+ * The `read` a fan-out links entry `e` to subscription `s` with: whether it is
+ * a backfill ({@link isBackfilledEntry}) to a subscriber who was already
+ * subscribed at the feed's previous full fetch. Never NULL.
  */
-export function isBackfillSql(entry: string, previousLastFetchedAt: SQLWrapper | Date | null): SQL {
-  const publishedAt = sql.raw(`${entry}.published_at`);
-  return sql`COALESCE(${publishedAt} < ${previousLastFetchedAt}::timestamptz - ${BACKFILL_MIN_AGE_MS} * interval '1 millisecond', false)`;
+function linksReadSql(previousLastFetchedAt: Date | null): SQL {
+  return sql`COALESCE(
+    s.subscribed_at < ${previousLastFetchedAt}::timestamptz
+      AND e.published_at < ${previousLastFetchedAt}::timestamptz - ${BACKFILL_MIN_AGE_MS} * interval '1 millisecond',
+    false)`;
 }
 
 /**
@@ -579,8 +572,9 @@ async function updateEntriesPushedAt(entryIds: string[], pushedAt: Date): Promis
  * an entry is "new"), callers can safely pass *every* entry in the current fetch
  * to self-heal entries orphaned by an earlier crash — see `processEntries`.
  *
- * A row's initial read state is judged at this link (`isBackfilledEntry`), so
- * an archive re-announcement never reaches an unread badge. `read_changed_at` stays NULL:
+ * A row's initial read state is judged at this link, per subscription
+ * (`linksReadSql`), so an archive re-announcement never reaches an existing
+ * subscriber's unread badge. `read_changed_at` stays NULL:
  * the user hasn't touched the entry, so any later explicit change of theirs wins
  * the last-writer-wins comparison.
  *
@@ -614,7 +608,7 @@ export async function createUserEntriesForFeed(
       WITH missing AS MATERIALIZED (
         SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
                COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
-               e.is_spam, ${isBackfillSql("e", previousLastFetchedAt)} AS read,
+               e.is_spam, ${linksReadSql(previousLastFetchedAt)} AS read,
                e.guid, e.owner_feed_id
         FROM subscriptions s
         INNER JOIN entries e ON e.owner_feed_id = s.feed_id
