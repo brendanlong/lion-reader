@@ -3,7 +3,7 @@
 import { Dialog, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { TextLink } from "@/components/ui/text-link";
-import { CONTACT_EMAIL } from "@/lib/contact";
+import { CONTACT_EMAIL, FEEDBACK_FORM_URL } from "@/lib/contact";
 import { LION_READER_ISSUES_URL } from "@/lib/github-issue";
 
 interface FeedbackDialogProps {
@@ -21,6 +21,16 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
           We&apos;d love to hear what you think of Lion Reader — what works, what doesn&apos;t, and
           what you wish it did.
         </p>
+        <div>
+          <p className="ui-text-sm text-body font-medium">Share your thoughts</p>
+          <p className="ui-text-sm text-muted">
+            Fill out our{" "}
+            <TextLink href={FEEDBACK_FORM_URL} external>
+              feedback form
+            </TextLink>{" "}
+            (hosted by Google Forms).
+          </p>
+        </div>
         <div>
           <p className="ui-text-sm text-body font-medium">Report a bug or request a feature</p>
           <p className="ui-text-sm text-muted">

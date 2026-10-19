@@ -17,7 +17,7 @@ import { Card } from "@/components/ui/card";
 import { PageLink } from "@/components/ui/page-link";
 import { TextLink } from "@/components/ui/text-link";
 import { AI_PROVIDER_INFO } from "@/lib/ai/providers";
-import { CONTACT_EMAIL } from "@/lib/contact";
+import { CONTACT_EMAIL, FEEDBACK_FORM_URL } from "@/lib/contact";
 
 export const metadata: Metadata = {
   title: "Privacy Policy - Lion Reader",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="October 12, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="October 19, 2026">
       <LegalSection id="overview" title="Overview">
         <LegalParagraph>
           Lion Reader is committed to protecting your privacy. We collect only the data necessary to
@@ -414,6 +414,22 @@ export default function PrivacyPolicyPage() {
               You can revoke this access at any time in your Google account settings. Unlinking
               Google in Lion Reader&apos;s settings also deletes the stored tokens; if Google is
               your only way to sign in, set a password or link another sign-in method first.
+            </LegalParagraph>
+            <p className="mt-2">
+              <TextLink href="https://policies.google.com/privacy" external className="ui-text-sm">
+                View Google&apos;s Privacy Policy &rarr;
+              </TextLink>
+            </p>
+          </LegalSubsection>
+
+          <LegalSubsection id="feedback-form" title="Feedback Form (Google Forms) — Optional">
+            <LegalParagraph tight>
+              <strong>Only if you fill it out.</strong> Our{" "}
+              <TextLink href={FEEDBACK_FORM_URL} external>
+                feedback form
+              </TextLink>{" "}
+              is hosted by Google Forms, so Google stores whatever you submit through it. Lion
+              Reader doesn&apos;t send any of your account data to the form.
             </LegalParagraph>
             <p className="mt-2">
               <TextLink href="https://policies.google.com/privacy" external className="ui-text-sm">
