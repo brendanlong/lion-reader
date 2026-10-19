@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/nextjs";
 import { logger } from "@/lib/logger";
 import { trackDbPoolClientError } from "@/server/metrics/metrics";
 import { isDisconnectError } from "./errors";
+import { NulSafeClient } from "./nul-safe-client";
 import * as schema from "./schema";
 import { timestamptzRawParserConfig } from "./temporal";
 
@@ -23,6 +24,7 @@ if (!connectionString) {
 // pool's clients, not global, so unrelated pg consumers keep the default behaviour.
 export const pool = new Pool({
   connectionString,
+  Client: NulSafeClient,
   types: timestamptzRawParserConfig,
   // Default pg pool is 10, which can cause request queuing under moderate concurrency.
   // Fly.io managed Postgres allows 300 connections; with 2 app + 1 worker + 1 discord
