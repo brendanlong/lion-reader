@@ -8,8 +8,10 @@
  * we test the subscription record management and callback handlers directly.
  */
 
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createHmac } from "crypto";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
@@ -106,6 +108,24 @@ async function createTestSubscription(
     .returning();
   return { subscription, secret };
 }
+
+// A hub that refuses every request at once, for tests whose hub POST must fail.
+// (A real unresolvable host can outlast the test timeout under load, #1991.)
+let failingHub: Server;
+let failingHubUrl: string;
+
+beforeAll(async () => {
+  failingHub = createServer((_req, res) => {
+    res.writeHead(500);
+    res.end();
+  });
+  await new Promise<void>((resolve) => failingHub.listen(0, "127.0.0.1", resolve));
+  failingHubUrl = `http://127.0.0.1:${(failingHub.address() as AddressInfo).port}/`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => failingHub.close(() => resolve()));
+});
 
 describe("WebSub Integration", () => {
   async function cleanup(): Promise<void> {
@@ -726,14 +746,14 @@ describe("WebSub Integration", () => {
       try {
         const feed = await createTestFeed({
           websubActive: true,
-          hubUrl: "https://hub.invalid.example/",
+          hubUrl: failingHubUrl,
           selfUrl: "https://example.com/feed-sweep-downtime.xml",
         });
         // Expired well past the grace window, with the last write to the row
         // predating the expiry - i.e. no renewal was ever attempted for it.
         const expiresAt = new Date(Date.now() - RENEWAL_STALL_GRACE_MS - 2 * 60 * 60 * 1000);
         const { subscription } = await createTestSubscription(feed.id, {
-          hubUrl: "https://hub.invalid.example/",
+          hubUrl: failingHubUrl,
           topicUrl: "https://example.com/feed-sweep-downtime.xml",
           state: "active",
           expiresAt,
@@ -788,12 +808,12 @@ describe("WebSub Integration", () => {
       try {
         const feed = await createTestFeed({
           websubActive: true,
-          hubUrl: "https://hub.invalid.example/",
+          hubUrl: failingHubUrl,
           selfUrl: "https://example.com/feed-post-fail.xml",
         });
         const workingSecret = generateCallbackSecret();
         const { subscription } = await createTestSubscription(feed.id, {
-          hubUrl: "https://hub.invalid.example/",
+          hubUrl: failingHubUrl,
           topicUrl: "https://example.com/feed-post-fail.xml",
           state: "active",
           callbackSecret: workingSecret,
@@ -829,12 +849,12 @@ describe("WebSub Integration", () => {
       process.env.NEXT_PUBLIC_APP_URL = "https://reader.example.com";
       try {
         const feed = await createTestFeed({
-          hubUrl: "https://hub.invalid.example/",
+          hubUrl: failingHubUrl,
           selfUrl: "https://example.com/feed-resub.xml",
         });
         const secret = generateCallbackSecret();
         const { subscription } = await createTestSubscription(feed.id, {
-          hubUrl: "https://hub.invalid.example/",
+          hubUrl: failingHubUrl,
           topicUrl: "https://example.com/feed-resub.xml",
           state: "unsubscribed",
           callbackSecret: secret,

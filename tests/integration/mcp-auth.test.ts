@@ -14,7 +14,7 @@ import { createTokens } from "../../src/server/oauth/service";
 import { getResourceIdentifier } from "../../src/server/oauth/config";
 import { getAppResourceIdentifier } from "../../src/server/oauth/app-client";
 import { hashToken } from "../../src/server/oauth/utils";
-import { createTestOAuthClient, createTestUnprefixedAccessToken, createTestUser } from "./helpers";
+import { createTestOAuthClient, createTestUser } from "./helpers";
 
 const createdUserIds: string[] = [];
 const createdClientIds: string[] = [];
@@ -60,11 +60,7 @@ function initialize(token: string): Promise<Response> {
   );
 }
 
-type TokenKind =
-  | "API token"
-  | "OAuth token"
-  | "OAuth token without the prefix"
-  | "OAuth token from before audience binding";
+type TokenKind = "API token" | "OAuth token" | "OAuth token from before audience binding";
 
 async function mcpToken(kind: TokenKind): Promise<string> {
   const { userId, clientId } = await createUserAndClient();
@@ -74,22 +70,18 @@ async function mcpToken(kind: TokenKind): Promise<string> {
       return (await createApiToken(userId, ["mcp"])).token;
     case "OAuth token":
       return (await createTokens(oauth)).accessToken;
-    case "OAuth token without the prefix":
-      return createTestUnprefixedAccessToken(oauth);
     case "OAuth token from before audience binding":
       return (await createTokens({ ...oauth, resource: null })).accessToken;
   }
 }
 
 describe("/api/mcp authentication", () => {
-  it.each<TokenKind>([
-    "API token",
-    "OAuth token",
-    "OAuth token without the prefix",
-    "OAuth token from before audience binding",
-  ])("accepts an mcp-scoped %s", async (kind) => {
-    expect((await initialize(await mcpToken(kind))).status).toBe(200);
-  });
+  it.each<TokenKind>(["API token", "OAuth token", "OAuth token from before audience binding"])(
+    "accepts an mcp-scoped %s",
+    async (kind) => {
+      expect((await initialize(await mcpToken(kind))).status).toBe(200);
+    }
+  );
 
   it("rejects a revoked API token and a revoked OAuth token", async () => {
     const apiToken = await mcpToken("API token");

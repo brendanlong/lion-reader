@@ -292,13 +292,16 @@ async function listCollectionMemberships(
 const USER_ROW = { userId: userEntries.userId, entryId: userEntries.entryId };
 const USER_MEMBERSHIPS = entryMemberships(USER_ROW);
 
+/** Sorts below every entry id: the keyset tiebreaker of a cursor before any entry. */
+const NO_ENTRY_ID = "00000000-0000-0000-0000-000000000000";
+
 /** Per-entity-type cursors, as a client sends them back. */
 interface SyncCursorsInput {
   entries?: string;
   /**
    * Id tiebreaker for the entries cursor (keyset pagination within a
-   * tied-timestamp group). Optional for backward compatibility: when absent the
-   * server falls back to a strict timestamp comparison.
+   * tied-timestamp group, #1080). A cursor without one (an app that started
+   * syncing before it had any entries) pages from {@link NO_ENTRY_ID}.
    */
   entriesAfterId?: string;
   /**
@@ -399,22 +402,19 @@ export async function collectSyncEvents(
   // by µs precision yet then emit no event (leaving the cursor stuck). #1080
   // ========================================================================
   if (entriesCursor) {
-    const entriesAfterId = cursors.entriesAfterId ?? null;
+    const entriesAfterId = cursors.entriesAfterId ?? NO_ENTRY_ID;
 
     // `col` is "after" the keyset cursor when it is past the timestamp, or at
-    // the timestamp with a larger entry id. Without an id tiebreaker (legacy
-    // clients / first sync) fall back to a strict timestamp comparison.
-    const afterKeyset = (col: SQLWrapper, ts: string, afterId: string | null): SQL =>
-      afterId
-        ? sql`(${col} > ${ts}::timestamptz OR (${col} = ${ts}::timestamptz AND ${entries.id} > ${afterId}::uuid))`
-        : sql`${col} > ${ts}::timestamptz`;
+    // the timestamp with a larger entry id.
+    const afterKeyset = (col: SQLWrapper, ts: string, afterId: string): SQL =>
+      sql`(${col} > ${ts}::timestamptz OR (${col} = ${ts}::timestamptz AND ${entries.id} > ${afterId}::uuid))`;
     const afterCursor = (col: SQLWrapper): SQL => afterKeyset(col, entriesCursor, entriesAfterId);
     // Selection pages on the cursor; categorization is against the catch-up's
     // start (see SyncCursorsInput.entriesSince). OR-ing in the cursor keeps
     // every selected row eventful even if a client sends a start past it.
     const afterSince = (col: SQLWrapper): SQL =>
       cursors.entriesSince
-        ? sql`(${afterCursor(col)} OR ${afterKeyset(col, cursors.entriesSince, cursors.entriesSinceAfterId ?? null)})`
+        ? sql`(${afterCursor(col)} OR ${afterKeyset(col, cursors.entriesSince, cursors.entriesSinceAfterId ?? NO_ENTRY_ID)})`
         : afterCursor(col);
 
     const greatest = sql`GREATEST(${entries.updatedAt}, ${userEntries.updatedAt})`;
@@ -822,7 +822,7 @@ export async function collectSyncChanges(
       hasMore: false,
       cursors: {
         entries: current.entries ?? epoch,
-        entriesAfterId: current.entriesAfterId ?? undefined,
+        entriesAfterId: current.entriesAfterId ?? NO_ENTRY_ID,
         subscriptions: current.subscriptions ?? epoch,
         tags: current.tags ?? epoch,
         deletions: safeDeletionsCursor.toString(),

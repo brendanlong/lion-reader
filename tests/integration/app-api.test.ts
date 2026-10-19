@@ -199,7 +199,8 @@ describe("app token authentication", () => {
     }
   });
 
-  it("still accepts an app token minted without the access-token prefix", async () => {
+  // Every OAuth access token minted since #1954 carries the prefix (#1955).
+  it("rejects an app token without the access-token prefix", async () => {
     const userId = await createUser();
     const token = await createTestUnprefixedAccessToken({
       clientId: APP_CLIENT_ID,
@@ -207,12 +208,7 @@ describe("app token authentication", () => {
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
       resource: getAppResourceIdentifier(),
     });
-    expect((await rest(token, "GET", "/entries")).status).toBe(200);
-    const events = await eventsGet(
-      new Request(`${API}/events`, { headers: { authorization: `Bearer ${token}` } })
-    );
-    expect(events.status).toBe(200);
-    await events.body?.cancel();
+    expect((await rest(token, "GET", "/entries")).status).toBe(401);
   });
 
   it("rejects the app's token without reader:full-access", async () => {
