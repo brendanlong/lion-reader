@@ -82,12 +82,23 @@ const SKIP_TAGS = new Set([
 ]);
 
 /**
- * Elements a summary skips: headings, tables and captions are labels and
- * scaffolding around the prose ("Summary", "Abstract", column headers), and
- * reading them inline fuses them into the sentence that follows. A document
- * with no other text keeps them (see {@link generateSummary}).
+ * Elements a summary skips: headings, table headers and captions are labels
+ * around the prose ("Summary", "Abstract", column headers), and reading them
+ * inline fuses them into the sentence that follows. Table cells stay, since
+ * emails and older sites lay out their whole body in tables. A document with
+ * no other text keeps them (see {@link generateSummary}).
  */
-const SUMMARY_SKIP_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "table", "figcaption"]);
+const SUMMARY_SKIP_TAGS = new Set([
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "th",
+  "caption",
+  "figcaption",
+]);
 
 /** In-page links whose text is only a footnote marker: `1`, `[12]`, `*`, `†`. */
 const FOOTNOTE_MARKER = /^\[?(?:\d{1,3}|[*†‡§])\]?$/;
@@ -95,6 +106,12 @@ const FOOTNOTE_MARKER = /^\[?(?:\d{1,3}|[*†‡§])\]?$/;
 /** The footer Yoast/WordPress appends to every feed item. */
 const WORDPRESS_FEED_FOOTER = /^The post .+ appeared first on .+\.$/;
 const MAX_FOOTER_LENGTH = 500;
+
+/**
+ * Longest comments link we drop ("Discuss", "12 comments"); longer link text
+ * is more likely an unclosed link swallowing the article.
+ */
+const MAX_COMMENTS_LINK_LENGTH = 40;
 
 const SUPERSCRIPTS: Record<string, string> = {
   "0": "⁰",
@@ -181,9 +198,10 @@ interface OpenElement {
   /** `result.length` when the element opened. */
   start: number;
   childCount: number;
-  /** Set on links whose text we may drop: in-page footnote refs and comment links. */
+  /** An in-page link, dropped if its text is a footnote marker. */
   dropIfMarker?: boolean;
-  dropAlways?: boolean;
+  /** A link to comments, dropped if nothing but whitespace follows it. */
+  dropIfTrailing?: boolean;
   rawText?: string;
 }
 
@@ -206,6 +224,12 @@ function extractText(html: string, options: ExtractOptions): Extracted {
   let imageAlt: string | null = null;
   const stack: OpenElement[] = [];
   let openLink: OpenElement | null = null;
+  let paused = false;
+  /** Where a comments link started, while no text has followed it. */
+  let trailingLinkStart: number | null = null;
+  // Summary rules apply when an element closes, so read past `maxLength` far
+  // enough for one that straddles it (e.g. a footer paragraph) to close.
+  const pauseAfter = maxLength && (summary ? maxLength + MAX_FOOTER_LENGTH : maxLength);
 
   const truncateTo = (length: number) => {
     result = result.slice(0, length);
@@ -232,7 +256,12 @@ function extractText(html: string, options: ExtractOptions): Extracted {
         const parent = stack.at(-1);
         if (parent) {
           parent.childCount++;
-          if (parent.tag === "mfrac" && parent.childCount === 2) {
+          if (
+            parent.tag === "mfrac" &&
+            parent.childCount === 2 &&
+            skipDepth === 0 &&
+            labelDepth === 0
+          ) {
             result += "/";
             lastWasSpace = false;
           }
@@ -241,12 +270,12 @@ function extractText(html: string, options: ExtractOptions): Extracted {
         if (tag === "a" && !openLink) {
           const href = attribs.href ?? "";
           if (href.endsWith("#comments")) {
-            element.dropAlways = true;
+            element.dropIfTrailing = true;
           } else if (href.startsWith("#")) {
             element.dropIfMarker = true;
             element.rawText = "";
           }
-          if (element.dropAlways || element.dropIfMarker) openLink = element;
+          if (element.dropIfTrailing || element.dropIfMarker) openLink = element;
         }
         if (tag === "img" && skipDepth === 0) {
           const alt = attribs.alt?.trim().replace(/\s+/g, " ") ?? "";
@@ -269,11 +298,13 @@ function extractText(html: string, options: ExtractOptions): Extracted {
           } else {
             result += char;
             lastWasSpace = false;
+            trailingLinkStart = null;
           }
         }
 
         // Exit early if we have enough text
-        if (maxLength && result.length >= maxLength) {
+        if (pauseAfter && result.length > pauseAfter) {
+          paused = true;
           parser.pause();
         }
       },
@@ -301,7 +332,9 @@ function extractText(html: string, options: ExtractOptions): Extracted {
   function closeSummaryElement(element: OpenElement) {
     if (element === openLink) {
       openLink = null;
-      if (element.dropAlways || FOOTNOTE_MARKER.test(element.rawText?.trim() ?? "")) {
+      if (element.dropIfTrailing && result.length - element.start <= MAX_COMMENTS_LINK_LENGTH) {
+        trailingLinkStart = element.start;
+      } else if (element.dropIfMarker && FOOTNOTE_MARKER.test(element.rawText?.trim() ?? "")) {
         truncateTo(element.start);
         return;
       }
@@ -333,6 +366,9 @@ function extractText(html: string, options: ExtractOptions): Extracted {
 
   parser.write(html);
   parser.end();
+  if (trailingLinkStart !== null && !paused) {
+    truncateTo(trailingLinkStart);
+  }
 
   return { text: result.trim(), imageAlt };
 }

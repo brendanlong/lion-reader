@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { generateSummary, stripHtml, summarizeCleanedContent } from "@/server/html/strip-html";
+import {
+  generateSummary,
+  stripHtml,
+  summarizeCleanedContent,
+  SUMMARY_MAX_LENGTH,
+} from "@/server/html/strip-html";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 
 describe("stripHtml", () => {
@@ -241,8 +246,12 @@ describe("generateSummary", () => {
     it.each([
       ["a heading", "<h2>Summary</h2><p>An AI assistant might recommend it.</p>"],
       [
-        "a table",
-        "<table><tr><th>Type</th><td>Purpose</td></tr></table><p>An AI assistant might recommend it.</p>",
+        "table headers and captions",
+        "<table><caption>Table 1</caption><tr><th>Type</th></tr></table><p>An AI assistant might recommend it.</p>",
+      ],
+      [
+        "a fraction inside a heading",
+        "<h1>Ratio <math><mfrac><mi>a</mi><mi>b</mi></mfrac></math></h1><p>An AI assistant might recommend it.</p>",
       ],
       [
         "a figure caption",
@@ -250,6 +259,12 @@ describe("generateSummary", () => {
       ],
     ])("skips %s so it doesn't run into the prose", (_, html) => {
       expect(generateSummary(html)).toBe("An AI assistant might recommend it.");
+    });
+
+    it("keeps body text laid out in tables (emails)", () => {
+      const html =
+        '<table role="presentation"><tr><td><p>This week in the newsletter.</p></td></tr></table><p>Unsubscribe</p>';
+      expect(generateSummary(html)).toBe("This week in the newsletter. Unsubscribe");
     });
 
     it("keeps headings when there is no other text", () => {
@@ -290,6 +305,18 @@ describe("generateSummary", () => {
         '<p>Is anyone working on this?</p><br/><br/><a href="https://www.lesswrong.com/posts/abc/x#comments">Discuss</a>';
       expect(generateSummary(html)).toBe("Is anyone working on this?");
     });
+
+    it("keeps a comments link that text follows", () => {
+      const html =
+        '<p>As argued in <a href="https://other.com/post#comments">this thread</a>, we disagree.</p>';
+      expect(generateSummary(html)).toBe("As argued in this thread, we disagree.");
+    });
+
+    it("keeps the article when a comments link is never closed", () => {
+      const html =
+        '<a href="https://x.com/p#comments">3 comments<p>The article body text, which runs on.</p>';
+      expect(generateSummary(html)).toBe("3 comments The article body text, which runs on.");
+    });
   });
 
   describe("WordPress feed footer", () => {
@@ -297,6 +324,12 @@ describe("generateSummary", () => {
       const html =
         '<p>New to the comic? Catch up here.</p><p>The post <a href="https://x.com/1">DC Minis #33</a> appeared first on <a href="https://x.com">Dresden Codak</a>.</p>';
       expect(generateSummary(html)).toBe("New to the comic? Catch up here.");
+    });
+
+    it("drops the footer when it straddles the summary length", () => {
+      const excerpt = "word ".repeat(SUMMARY_MAX_LENGTH / 5 - 10).trim();
+      const html = `<p>${excerpt}</p><p>The post <a href="https://x.com/1">A Title</a> appeared first on <a href="https://x.com">Example Engineering</a>.</p>`;
+      expect(generateSummary(html)).toBe(excerpt);
     });
 
     it("keeps a paragraph that merely mentions the phrase", () => {

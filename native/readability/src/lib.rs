@@ -101,7 +101,9 @@ fn extract_inner(html: &str, options: Option<&ExtractOptions>) -> Result<Option<
     }
     // Without a description, dom_smoothie falls back to the first paragraph's
     // raw text; callers summarize the article HTML themselves instead, so only
-    // pass through a description the page actually declared.
+    // pass through a description the page actually declared. This repeats the
+    // metadata pass `parse()` makes (with JSON-LD, which our config leaves on),
+    // since `Article` doesn't say where its excerpt came from.
     let has_description = reader
         .get_article_metadata(reader.parse_json_ld())
         .excerpt

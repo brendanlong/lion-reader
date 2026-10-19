@@ -127,7 +127,7 @@ describe("parseArxivAbsMetadata", () => {
 
   it("unwraps TeX formatting commands but leaves math alone", () => {
     const html = `<head>
-      <meta name="citation_title" content="\\textbf{Bold} Claims" />
+      <meta name="citation_title" content="\\textbf{\\emph{Bold}} Claims" />
       <meta name="citation_abstract" content="A theory of \\emph{deception} in $O(n^2)$ time." />
     </head>`;
     const result = parseArxivAbsMetadata(html);

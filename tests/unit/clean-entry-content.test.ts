@@ -87,6 +87,10 @@ describe("cleanEntryContent", () => {
       // WordPress's auto-excerpt: the content's opening, tag-stripped.
       ["WordPress's auto-excerpt", "Like most European monarchs,1 Philippe reigns [&#8230;]"],
       [
+        "WordPress's auto-excerpt with the Yoast footer",
+        '<p>Like most European monarchs,1 Philippe reigns [&#8230;]</p><p>The post <a href="https://example.com/entry/">Entry</a> appeared first on <a href="https://example.com">Example</a>.</p>',
+      ],
+      [
         "only the WordPress footer",
         '<p>The post <a href="https://example.com/entry/">Entry</a> appeared first on <a href="https://example.com">Example</a>.</p>',
       ],

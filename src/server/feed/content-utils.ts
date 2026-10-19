@@ -10,8 +10,11 @@ import { absolutizeUrls } from "./content-cleaner";
 import { getFeedHooks } from "@/server/plugins";
 import { generateSummary, stripHtml } from "../html/strip-html";
 
-/** WordPress ends its auto-generated excerpts with "[…]" (or "[...]"). */
-const WORDPRESS_AUTO_EXCERPT = /\[(?:…|\.\.\.)\]$/;
+/**
+ * WordPress ends its auto-generated excerpts with "[…]" (or "[...]"), followed
+ * by Yoast's "The post X appeared first on Y." when that plugin is installed.
+ */
+const WORDPRESS_AUTO_EXCERPT = /\[(?:…|\.\.\.)\](?:\s*The post .+ appeared first on .+\.)?$/;
 
 /**
  * Summarizes a feed's separate summary, or returns "" when summarizing the

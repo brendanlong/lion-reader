@@ -89,13 +89,22 @@ function normalizeArxivText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+const TEX_FORMATTING_COMMAND =
+  /\\(?:emph|textit|textbf|texttt|textsc|textsf|underline)\{([^{}]*)\}/g;
+
 /**
  * Unwraps TeX text-formatting commands (`\emph{deception}` → `deception`), which
  * authors leave in titles and abstracts. Math (`$O(n^2)$`) is left alone: it
  * reads fine as TeX and has no plain-text equivalent.
  */
 function stripTexFormatting(text: string): string {
-  return text.replace(/\\(?:emph|textit|textbf|texttt|textsc|textsf|underline)\{([^{}]*)\}/g, "$1");
+  // Each pass unwraps the innermost commands, so nested ones take several.
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(TEX_FORMATTING_COMMAND, "$1");
+  } while (text !== previous);
+  return text;
 }
 
 /**
