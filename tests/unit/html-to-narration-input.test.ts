@@ -919,17 +919,33 @@ describe("htmlToNarrationInput", () => {
       expect(Math.abs(read - budget / (unclosed + 1))).toBeLessThan(3);
     });
 
+    it("budgets the attributes re-created elements copy", () => {
+      const title = "t".repeat(1000);
+      const open = [0, 1, 2].map((i) => `<b title="${i}${title}">`).join("");
+      const paragraph = `<p>${"Text of an ordinary paragraph. ".repeat(2)}</p>`;
+      const html = `<p>${open}</p>${paragraph.repeat(3000)}`;
+      const copied = 3 * (title.length + "title".length + 1);
+      const read = narrated(htmlToNarrationInput(html)).length;
+
+      expect(
+        Math.abs(read - (html.length * MAX_ELEMENTS.attributeCharsPerChar) / copied)
+      ).toBeLessThan(3);
+    });
+
     it("reads a long article after a few unclosed formatting tags", () => {
       const paragraphs = Array.from({ length: 3000 }, (_, i) => `<p>Paragraph ${i}.</p>`);
       const html = `<p><b><i><u><s><strong>Intro</p>${paragraphs.join("")}`;
       expect(narrated(htmlToNarrationInput(html))).toHaveLength(3001);
     });
 
-    it("keeps what came before the element that went too deep", () => {
-      // The element past the limit is a re-created <b> from the first line.
+    it("finishes the token that goes too deep, and stops after it", () => {
+      // The text re-creates the <b> from the first line past the limit.
       const html =
-        "<p><b>intro</p>" + "<p>more</p>".repeat(100) + "<div>".repeat(MAX_TREE_DEPTH - 2) + "x";
-      expect(narrated(htmlToNarrationInput(html))).toHaveLength(101);
+        "<p><b>intro</p>" +
+        "<p>more</p>".repeat(100) +
+        "<div>".repeat(MAX_TREE_DEPTH - 2) +
+        "x<p>after</p>";
+      expect(narrated(htmlToNarrationInput(html)).slice(-2)).toEqual(["more", "x"]);
     });
 
     it.each(["</br>", "</p>"])("doesn't count what a stray %s implies against it", (tag) => {
