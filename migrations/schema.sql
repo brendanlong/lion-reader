@@ -505,7 +505,8 @@ CREATE TABLE public.entries (
     is_backfill boolean DEFAULT false NOT NULL,
     owner_subscription_id uuid,
     owner_user_id uuid,
-    CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) = (last_seen_at IS NOT NULL))),
+    pushed_at timestamp with time zone,
+    CONSTRAINT entries_last_seen_only_fetched CHECK (((type = 'web'::public.feed_type) OR (last_seen_at IS NULL))),
     CONSTRAINT entries_owner_matches_type CHECK ((((type = 'web'::public.feed_type) = (owner_feed_id IS NOT NULL)) AND ((type = 'email'::public.feed_type) = (owner_subscription_id IS NOT NULL)) AND ((type = 'saved'::public.feed_type) = (owner_user_id IS NOT NULL)))),
     CONSTRAINT entries_saved_metadata_only_saved CHECK (((type = 'saved'::public.feed_type) OR ((site_name IS NULL) AND (image_url IS NULL)))),
     CONSTRAINT entries_spam_only_email CHECK (((type = 'email'::public.feed_type) OR ((spam_score IS NULL) AND (is_spam = false)))),
@@ -580,7 +581,8 @@ CREATE TABLE public.feeds (
     greader_stream_id bigint DEFAULT nextval('public.greader_id_seq'::regclass) NOT NULL,
     ttl_minutes integer,
     syndication_update_period text,
-    syndication_update_frequency integer
+    syndication_update_frequency integer,
+    stale_at timestamp with time zone
 );
 
 CREATE TABLE public.ingest_addresses (
@@ -1072,6 +1074,8 @@ CREATE INDEX idx_entries_owner_feed_fetched ON public.entries USING btree (owner
 CREATE INDEX idx_entries_owner_feed_last_seen ON public.entries USING btree (owner_feed_id, last_seen_at) WHERE (type = 'web'::public.feed_type);
 
 CREATE INDEX idx_entries_owner_feed_published_coalesce ON public.entries USING btree (owner_feed_id, COALESCE(published_at, fetched_at) DESC, id DESC);
+
+CREATE INDEX idx_entries_owner_feed_pushed ON public.entries USING btree (owner_feed_id, pushed_at) WHERE ((type = 'web'::public.feed_type) AND (pushed_at IS NOT NULL));
 
 CREATE INDEX idx_entries_owner_feed_spam ON public.entries USING btree (owner_feed_id, is_spam);
 

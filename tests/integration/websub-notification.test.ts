@@ -226,22 +226,23 @@ describe("ingestWebsubNotification", () => {
     expect(await getHubStats()).toBeUndefined();
   });
 
-  it("leaves last_fetched_at and last_entries_updated_at alone, and clears body_hash", async () => {
+  it("leaves the poll state alone, and stamps the entry pushed rather than seen", async () => {
+    // pushed_at keeps it current for new subscribers until the next poll, which
+    // alone stamps last_seen_at; current subscribers get it now.
     const lastPoll = new Date(Date.now() - 60 * 60 * 1000);
     const { feed, userId } = await seedPushFeed("pushmeta", lastPoll);
-    await db.update(feeds).set({ bodyHash: "stale-hash" }).where(eq(feeds.id, feed.id));
+    await db.update(feeds).set({ bodyHash: "hash-of-the-last-poll" }).where(eq(feeds.id, feed.id));
 
     await ingestWebsubNotification(feed, pushBody("fresh-1", "New", new Date()));
 
     const [after] = await db.select().from(feeds).where(eq(feeds.id, feed.id));
     expect(after.lastFetchedAt?.toISOString()).toBe(lastPoll.toISOString());
     expect(after.lastEntriesUpdatedAt?.toISOString()).toBe(lastPoll.toISOString());
-    expect(after.bodyHash).toBeNull();
+    expect(after.bodyHash).toBe("hash-of-the-last-poll");
 
-    // The pushed entry is stamped above the (unmoved) generation pointer, which
-    // is what keeps it visible to a new subscriber via the `>=` populate.
     const [entry] = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
-    expect(entry.lastSeenAt!.getTime()).toBeGreaterThan(lastPoll.getTime());
+    expect(entry.lastSeenAt).toBeNull();
+    expect(entry.pushedAt!.getTime()).toBeGreaterThan(lastPoll.getTime());
     expect(await getUserEntry(userId)).toBeDefined();
   });
 

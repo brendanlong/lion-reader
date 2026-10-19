@@ -14,9 +14,18 @@ import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
-import { entries, feeds, subscriptions, userEntries, users } from "../../src/server/db/schema";
+import {
+  entries,
+  feeds,
+  jobs,
+  subscriptions,
+  userEntries,
+  users,
+} from "../../src/server/db/schema";
 import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
+import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
 import { handleFetchFeed } from "../../src/server/jobs/handlers/fetch-feed";
+import { subscribeToUrl } from "../../src/server/services/subscribe";
 import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 /** What the loopback origin should answer with on the next request. */
@@ -36,6 +45,8 @@ let routes: Record<string, FeedResponse>;
 let receivedHeaders: IncomingHttpHeaders[];
 /** Paths of the article pages (`/post/...`) the server was asked for. */
 let articleRequests: string[];
+/** Runs once, while the next feed request is in flight, before it's answered. */
+let duringNextFeedRequest: (() => Promise<void>) | undefined;
 
 /** What the loopback origin serves for any `/post/...` article page. */
 const ARTICLE_HTML = `<!DOCTYPE html>
@@ -101,7 +112,7 @@ async function readUserEntries(userId: string) {
 }
 
 beforeAll(async () => {
-  server = createServer((req, res) => {
+  server = createServer(async (req, res) => {
     if (req.url?.startsWith("/post/")) {
       articleRequests.push(req.url);
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -109,6 +120,9 @@ beforeAll(async () => {
       return;
     }
     receivedHeaders.push(req.headers);
+    const during = duringNextFeedRequest;
+    duringNextFeedRequest = undefined;
+    await during?.();
     const { status = 200, body = "", headers = {} } = routes[req.url ?? ""] ?? nextResponse;
     res.writeHead(status, { "Content-Type": "application/rss+xml; charset=utf-8", ...headers });
     res.end(status === 304 ? undefined : body);
@@ -127,6 +141,7 @@ beforeEach(async () => {
   articleRequests = [];
   nextResponse = { body: rss([]) };
   routes = {};
+  duringNextFeedRequest = undefined;
 });
 
 afterAll(async () => {
@@ -473,8 +488,8 @@ describe("handleFetchFeed", () => {
     });
 
     it("re-processes an identical body on a forced refresh", async () => {
-      // A byte-identical body can still need reconciling: a WebSub push may have
-      // desynced last_seen_at, or an entry may need dropping from the generation.
+      // A forced refresh fans a new subscriber out from the feed, and stamps any
+      // pushed entry it lists, even when the body is unchanged.
       const feed = await createLoopbackFeed();
       nextResponse = { body: rss([{ guid: "a", title: "A", pubDate: new Date() }]) };
       await handleFetchFeed({ feedId: feed.id });
@@ -486,24 +501,76 @@ describe("handleFetchFeed", () => {
     });
   });
 
+  describe("WebSub pushes", () => {
+    // A push makes an entry current for new subscribers until the next poll,
+    // which stamps it if the feed lists it and otherwise drops it. Pinned by
+    // subscribing afterwards.
+    const A = { guid: "a", title: "A", pubDate: new Date(Date.now() - 60 * 60 * 1000) };
+    const B = { guid: "b", title: "B", pubDate: new Date(Date.now() - 10 * 60 * 1000) };
+    const C = { guid: "c", title: "C", pubDate: new Date(Date.now() - 20 * 60 * 1000) };
+    const pushC = async (feedId: string) => {
+      expect(await ingestWebsubNotification(await readFeed(feedId), rss([C]))).toBe("processed");
+    };
+    const subscribe = async (feedUrl: string, emailPrefix: string) => {
+      const userId = await createTestUser({ emailPrefix });
+      await subscribeToUrl(db, userId, feedUrl);
+      return (await readUserEntries(userId)).map((e) => e.guid).sort();
+    };
+
+    afterEach(async () => {
+      vi.useRealTimers();
+      await db.delete(jobs);
+    });
+
+    it("doesn't grant a push that landed during a poll which never listed it (#1959)", async () => {
+      // Stops the JS clock, as if the push and the poll stamped the same time
+      // on their own machines. Both read the database clock, which keeps going.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.now());
+      const feed = await createLoopbackFeed();
+      nextResponse = { body: rss([A]) };
+      await handleFetchFeed({ feedId: feed.id });
+
+      // The hub pushes C while the next poll's request is in flight; the body
+      // that poll gets (A, plus a new B) doesn't have it.
+      nextResponse = { body: rss([A, B]) };
+      duringNextFeedRequest = () => pushC(feed.id);
+      await handleFetchFeed({ feedId: feed.id });
+
+      // C is gone from the feed, which hashes like the last poll's body.
+      expect((await handleFetchFeed({ feedId: feed.id })).metadata).toMatchObject({
+        bodyUnchanged: true,
+      });
+
+      expect(await subscribe(feed.url!, "ff-1959")).toEqual(["a", "b"]);
+    });
+
+    it("grants a pushed entry until a poll that doesn't list it", async () => {
+      const feed = await createLoopbackFeed();
+      nextResponse = { body: rss([A]) };
+      await handleFetchFeed({ feedId: feed.id });
+      await pushC(feed.id);
+
+      // The feed isn't stale, so the subscribe links it without polling.
+      expect(await subscribe(feed.url!, "ff-pushed")).toEqual(["a", "c"]);
+      expect(receivedHeaders).toHaveLength(1);
+
+      // An identical-body poll still advances last_fetched_at past the push.
+      expect((await handleFetchFeed({ feedId: feed.id })).metadata).toMatchObject({
+        bodyUnchanged: true,
+      });
+      expect(await subscribe(feed.url!, "ff-after-poll")).toEqual(["a"]);
+    });
+  });
+
   describe("permanent redirects", () => {
     // The feed URL 301s to /moved.xml, which serves the feed.
     const movedTo = () => `${baseUrl}/moved.xml`;
     const redirectFeedUrl = (status = 301) => {
       routes["/feed.xml"] = { status, headers: { Location: "/moved.xml" } };
     };
-    // Freezes only `Date`, so the handler's clock is pinnable while timers, the
-    // HTTP server and Postgres run normally.
-    const NOW = new Date("2026-06-01T12:00:00Z");
-    const freezeClock = () => {
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(NOW);
-    };
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
+    // The handler reads the database clock, so the wait is measured from a
+    // first sighting relative to the real time.
     it("starts tracking a new permanent redirect without moving the feed", async () => {
       const feed = await createLoopbackFeed();
       redirectFeedUrl();
@@ -521,8 +588,7 @@ describe("handleFetchFeed", () => {
     });
 
     it("keeps waiting while the same redirect is younger than the wait period", async () => {
-      freezeClock();
-      const firstSeen = new Date(NOW.getTime() - REDIRECT_WAIT_PERIOD_MS + 1);
+      const firstSeen = new Date(Date.now() - REDIRECT_WAIT_PERIOD_MS + 60 * 1000);
       const feed = await createLoopbackFeed({
         redirectUrl: `${baseUrl}/moved.xml`,
         redirectFirstSeenAt: firstSeen,
@@ -545,11 +611,11 @@ describe("handleFetchFeed", () => {
     ])(
       "moves the feed in place once the wait period has passed ($name)",
       async ({ destination }) => {
-        freezeClock();
+        const before = Date.now();
         const feed = await createLoopbackFeed({
           etag: '"v1"',
           redirectUrl: `${baseUrl}/moved.xml`,
-          redirectFirstSeenAt: new Date(NOW.getTime() - REDIRECT_WAIT_PERIOD_MS),
+          redirectFirstSeenAt: new Date(before - REDIRECT_WAIT_PERIOD_MS),
         });
         redirectFeedUrl();
         nextResponse = destination();
@@ -559,7 +625,8 @@ describe("handleFetchFeed", () => {
         expect(result.success).toBe(true);
         expect(result.metadata).toMatchObject({ redirectApplied: true, newUrl: movedTo() });
         // Refetch straight away from the new URL.
-        expect(result.nextRunAt).toEqual(NOW);
+        expect(result.nextRunAt!.getTime()).toBeGreaterThanOrEqual(before);
+        expect(result.nextRunAt!.getTime()).toBeLessThanOrEqual(Date.now());
         const after = await readFeed(feed.id);
         expect(after.url).toBe(movedTo());
         expect(after.redirectUrl).toBeNull();

@@ -34,6 +34,7 @@ import { errors } from "@/server/errors";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
+import { currentEntryIdsSql } from "@/server/feed/entry-processor";
 
 /**
  * Gives a new or reactivated subscriber the entries currently in the feed
@@ -48,25 +49,17 @@ async function populateInitialUserEntries(
   subscriptionId: string,
   feedId: string
 ): Promise<void> {
-  // feeds.last_entries_updated_at is read inside the INSERT (via the JOIN), not
+  // The feed's poll state is read inside the INSERT, not
   // passed in: a feed fetch completing after the caller read the feed bumps it,
   // so a stale captured value would match zero rows and the new subscriber
   // would see an empty feed until the next new entry (issue #952).
   //
-  // `last_seen_at >= last_entries_updated_at` (not `=`) grants visibility to
-  // entries currently in the feed. A forced refresh re-stamps every current
-  // entry to a single generation, so there `>=` behaves like `=`. The `>` arm
-  // covers entries a WebSub hub pushed *since* the last poll: a push stamps
-  // last_seen_at = pushTime but leaves last_entries_updated_at at the last
-  // poll, so those entries would be invisible under strict equality (issue
-  // #1078). Disappeared entries (not re-stamped by a later poll) fall below
-  // last_entries_updated_at and stay excluded.
+  // `currentEntryIdsSql` grants the entries the last poll that stamped the feed
+  // saw, plus those a WebSub hub announced since the last poll.
   //
   // An entry stamped `is_backfill` is granted already read, matching the
-  // fetch-time fanout: a WebSub push leaves `last_entries_updated_at` where it
-  // was, so an archive replay sits inside the current generation until the next
-  // backup poll and would otherwise reach a subscriber who joins in that window
-  // as hundreds of unread articles (issue #1500).
+  // fetch-time fanout, so a subscriber who joins after a poll confirmed an
+  // archive replay doesn't get hundreds of unread articles (issue #1500).
   //
   // Skips an entry whose twin from another feed the subscription already
   // holds, as the fetch-time fanout does (`holdsRedirectTwin`): a redirect
@@ -79,11 +72,10 @@ async function populateInitialUserEntries(
              COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
              e.is_spam, e.is_backfill AS read
       FROM entries e
-      JOIN feeds f ON f.id = e.owner_feed_id
-      WHERE e.owner_feed_id = ${feedId}
-        AND e.type = 'web' -- lets the partial idx_entries_owner_feed_last_seen serve the range
-        AND f.last_entries_updated_at IS NOT NULL
-        AND e.last_seen_at >= f.last_entries_updated_at
+      WHERE e.id IN (${currentEntryIdsSql(feedId, {
+        lastEntriesUpdatedAt: sql`(SELECT last_entries_updated_at FROM feeds WHERE id = ${feedId}::uuid)`,
+        lastFetchedAt: sql`(SELECT last_fetched_at FROM feeds WHERE id = ${feedId}::uuid)`,
+      })})
         AND NOT ${holdsRedirectTwin(sql`${subscriptionId}::uuid`, "e")}
     `
   );
@@ -363,8 +355,7 @@ export async function subscribeToUrl(
     .select({
       id: feeds.id,
       lastFetchedAt: feeds.lastFetchedAt,
-      nextFetchAt: feeds.nextFetchAt,
-      websubActive: feeds.websubActive,
+      staleAt: feeds.staleAt,
     })
     .from(feeds)
     .where(eq(feeds.url, feedUrl))
@@ -379,9 +370,8 @@ export async function subscribeToUrl(
     return createSubscription(db, userId, await fetchAndResolveFeed(feedUrl));
   }
 
-  // A known feed's cached entries may be stale (a WebSub feed whose last real
-  // poll has aged out, or a feed past its poll cadence), and we can't know the
-  // current set without re-fetching. Rather than fetch on the request path,
+  // A known feed's cached entries may be stale (past its own poll cadence), and
+  // we can't know the current set without re-fetching. Rather than fetch on the request path,
   // skip the synchronous populate and force a background refresh, whose fanout
   // populates this subscriber from ground truth, excluding anything the
   // publisher has since removed (#1078).

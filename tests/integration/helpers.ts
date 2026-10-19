@@ -183,9 +183,9 @@ export interface CreateTestEntryOptions extends Partial<typeof entries.$inferIns
  * The owner is the entry's type's (#1846): a web entry's feed id, an email's
  * subscription id, a saved article's user id.
  *
- * `lastSeenAt` defaults to `fetchedAt` on web entries and is forced to null
- * otherwise, because `entries_last_seen_only_fetched` makes both mismatch
- * directions illegal.
+ * `lastSeenAt` defaults to `fetchedAt` on web entries (pass `null` for one a
+ * WebSub push inserted that no poll has seen) and is forced to null otherwise,
+ * because `entries_last_seen_only_fetched` forbids it there.
  *
  * Note this alone does NOT make the entry visible to a new subscriber: the
  * subscribe-time populate also needs the feed's `lastEntriesUpdatedAt` set and
@@ -220,7 +220,12 @@ export async function createTestEntry(
     // `lastSeenAt` is only permitted on web entries, so it can't come straight
     // from the overrides: a caller passing `type: "saved"` alongside the
     // default would violate the check constraint.
-    lastSeenAt: type === "web" ? (overrides.lastSeenAt ?? fetchedAt) : null,
+    lastSeenAt:
+      type === "web"
+        ? overrides.lastSeenAt === undefined
+          ? fetchedAt
+          : overrides.lastSeenAt
+        : null,
   });
 
   if (userIds?.length) {
