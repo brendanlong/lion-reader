@@ -14,7 +14,6 @@
  */
 
 import { join } from "node:path";
-import { logger } from "@/lib/logger";
 import {
   isPrerecordedSpeechKey,
   prerecordedSpeechObjectKey,
@@ -22,13 +21,7 @@ import {
 import { USER_AGENT } from "@/server/http/user-agent";
 import { demoNarrationCatalog } from "@/server/services/demo-narration";
 import { createPrerecordedSpeech } from "@/server/services/prerecorded-speech";
-import { ProviderBusyError } from "@/server/services/provider-errors";
-import {
-  SpeechRejectedError,
-  SpeechRequestError,
-  SpeechUnavailableError,
-  streamSpeech,
-} from "@/server/services/speech";
+import { speechErrorAnswer, streamSpeech } from "@/server/services/speech";
 import { getPublicObjectUrl, isStorageAvailable, uploadObject } from "@/server/storage/s3";
 
 const READ_TIMEOUT_MS = 30_000;
@@ -104,20 +97,10 @@ export async function GET(
   try {
     audio = await getPrerecordedSpeech(key);
   } catch (error) {
-    if (error instanceof ProviderBusyError || error instanceof SpeechUnavailableError) {
-      return errorResponse(503, "The voice is busy; try again shortly", { "Retry-After": "5" });
-    }
-    // Shown as is: in development, where these are likely, they say what to
-    // fix ("Cloud voices require an API key …").
-    if (error instanceof SpeechRequestError || error instanceof SpeechRejectedError) {
-      logger.warn("Recorded narration refused", { key, error: error.message });
-      return errorResponse(422, error.message);
-    }
-    logger.error("Recorded narration failed", {
-      key,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return errorResponse(502, "Couldn't get the narration");
+    // A refusal's message is shown as is: in development, where these are
+    // likely, it says what to fix ("Cloud voices require an API key …").
+    const answer = speechErrorAnswer(error, { prerecordedKey: key });
+    return errorResponse(answer.status, answer.message, answer.headers);
   }
   if (!audio) return errorResponse(404, "This narration isn't available");
 

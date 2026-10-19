@@ -193,7 +193,15 @@ export function EntryListContainer({ emptyMessage }: EntryListContainerProps) {
   }, [previousEntryId, setOpenEntryId]);
 
   // Entry mutations
-  const { toggleRead, toggleStar } = useEntryMutations();
+  const { markRead, setStarred } = useEntryMutations();
+  const toggleRead = useCallback(
+    (entryId: string, read: boolean) => markRead([entryId], !read),
+    [markRead]
+  );
+  const toggleStar = useCallback(
+    (entryId: string, starred: boolean) => setStarred(entryId, !starred),
+    [setStarred]
+  );
 
   // Entry click handler
   const handleEntryClick = useCallback(

@@ -1,18 +1,16 @@
 /**
  * OAuth 2.1 Service
  *
- * Database operations for OAuth authorization server.
- * Handles clients, authorization codes, tokens, and consent.
+ * Database operations for the OAuth authorization server's authorization
+ * codes and tokens.
  */
 
-import { eq, and, isNull, gt, inArray, sql, desc, max } from "drizzle-orm";
+import { eq, and, isNull, gt, inArray, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import {
-  oauthClients,
   oauthAuthorizationCodes,
   oauthAccessTokens,
   oauthRefreshTokens,
-  oauthConsentGrants,
   users,
   type User,
 } from "@/server/db/schema";
@@ -26,44 +24,13 @@ import {
   getAccessTokenExpiry,
   getRefreshTokenExpiry,
   getAuthCodeExpiry,
-  isValidRedirectUriFormat,
-  parseScopes,
-  OAUTH_SCOPES,
-  SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS,
 } from "./utils";
-import { getRegistrationClientUri } from "./config";
-import { APP_CLIENT_ID, getAppClient } from "./app-client";
+import { hasConsent } from "./grants";
 import { logger } from "@/lib/logger";
-import { USER_AGENT } from "@/server/http/user-agent";
-import { fetchWithSsrfProtection } from "@/server/http/ssrf";
-import { readResponseBufferWithSizeLimit } from "@/server/http/fetch";
-
-import {
-  cimdClientHost,
-  isValidClientIdMetadataUrl,
-  validateClientMetadataDocument,
-  selectClientMetadata,
-  type CimdFetchOutcome,
-  type ClientMetadata,
-} from "./cimd";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Resolved client information (from DB or CIMD)
- */
-export interface ResolvedClient {
-  clientId: string;
-  name: string;
-  redirectUris: string[];
-  grantTypes: string[];
-  scopes: string[] | null;
-  isPublic: boolean;
-  clientSecretHash: string | null;
-  fromDatabase: boolean;
-}
 
 /**
  * Token pair returned after authorization
@@ -71,6 +38,8 @@ export interface ResolvedClient {
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
+  /** Row id of the refresh token, which rotation links its predecessor to. */
+  refreshTokenId: string;
   tokenType: "Bearer";
   expiresIn: number;
   scope: string;
@@ -87,184 +56,6 @@ export interface OAuthTokenData {
   scopes: string[];
   resource: string | null;
   user: User;
-}
-
-// ============================================================================
-// Client Resolution
-// ============================================================================
-
-/**
- * Resolves a client by ID: the built-in app client, then the database, then a
- * CIMD fetch if the ID is a URL.
- */
-export async function resolveClient(clientId: string): Promise<ResolvedClient | null> {
-  if (clientId === APP_CLIENT_ID) {
-    return getAppClient();
-  }
-
-  // Then try the database
-  const dbClient = await db
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, clientId))
-    .limit(1);
-
-  if (dbClient.length > 0) {
-    const client = dbClient[0];
-    return {
-      clientId: client.clientId,
-      name: client.name,
-      redirectUris: client.redirectUris,
-      grantTypes: client.grantTypes,
-      scopes: client.scopes,
-      isPublic: client.isPublic,
-      clientSecretHash: client.clientSecretHash,
-      fromDatabase: true,
-    };
-  }
-
-  if (isValidClientIdMetadataUrl(clientId)) {
-    const metadata = await fetchClientMetadata(clientId);
-    if (metadata) {
-      return {
-        clientId: metadata.client_id,
-        name: metadata.client_name ?? "Unknown Application",
-        // redirectUris is a security allowlist and cached/pinned metadata is
-        // shared by reference — hand out copies.
-        redirectUris: [...metadata.redirect_uris],
-        grantTypes: metadata.grant_types
-          ? [...metadata.grant_types]
-          : ["authorization_code", "refresh_token"],
-        // parseScopes drops unrecognized scopes (same policy as DCR). A
-        // document offering only unknown scopes yields [] — fails closed with
-        // invalid_scope — never null, which would mean "no restriction".
-        scopes: metadata.scope !== undefined ? parseScopes(metadata.scope) : null,
-        isPublic: true, // CIMD clients are always public
-        clientSecretHash: null,
-        fromDatabase: false,
-      };
-    }
-  }
-
-  return null;
-}
-
-/**
- * Timeout for Client ID Metadata Document fetches (10 seconds).
- */
-const CLIENT_METADATA_TIMEOUT_MS = 10000;
-
-/**
- * Maximum Client ID Metadata Document size. The spec recommends documents stay
- * under ~5 KB; 16 KiB is generous headroom while bounding what one cache entry
- * can retain of attacker-supplied bytes.
- */
-const CLIENT_METADATA_MAX_BYTES = 16 * 1024;
-
-/**
- * CIMD resolution results are cached in-process — claude.ai re-runs discovery
- * on every connect, and each authorize + consent + token round trip would
- * otherwise refetch the same document three times. Successes cache for 5
- * minutes (matching the `max-age=300` Anthropic serves). Failures cache as
- * `null` for 60 seconds — NOT as a document (the spec forbids caching
- * errors/invalid documents as metadata), but as a short negative entry so an
- * unauthenticated attacker hammering /oauth/authorize with a failing URL
- * client_id can't turn us into a fetch amplifier against a third party. (A
- * transport failure that falls back to a pin caches the pin, under the
- * positive TTL.)
- *
- * The cache is capped because client_id URLs are attacker-suppliable via
- * unauthenticated requests; eviction deletes-before-set so refreshing a hot
- * key (claude.ai's document) moves it to the back of the FIFO instead of
- * leaving it permanently first in line for eviction.
- */
-const CLIENT_METADATA_CACHE_TTL_MS = 5 * 60 * 1000;
-const CLIENT_METADATA_NEGATIVE_TTL_MS = 60 * 1000;
-const CLIENT_METADATA_CACHE_MAX_ENTRIES = 100;
-const clientMetadataCache = new Map<
-  string,
-  { metadata: ClientMetadata | null; expiresAt: number }
->();
-
-function cacheClientMetadata(url: string, metadata: ClientMetadata | null): void {
-  clientMetadataCache.delete(url);
-  if (clientMetadataCache.size >= CLIENT_METADATA_CACHE_MAX_ENTRIES) {
-    const oldest = clientMetadataCache.keys().next().value;
-    if (oldest !== undefined) clientMetadataCache.delete(oldest);
-  }
-  clientMetadataCache.set(url, {
-    metadata,
-    expiresAt:
-      Date.now() + (metadata ? CLIENT_METADATA_CACHE_TTL_MS : CLIENT_METADATA_NEGATIVE_TTL_MS),
-  });
-}
-
-/**
- * Resolves a Client ID Metadata Document for `url`: cache → live fetch →
- * pinned fallback (`selectClientMetadata`).
- */
-async function fetchClientMetadata(url: string): Promise<ClientMetadata | null> {
-  const cached = clientMetadataCache.get(url);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.metadata;
-  }
-
-  const outcome = await fetchClientMetadataLive(url);
-  const metadata = selectClientMetadata(url, outcome);
-  if (outcome.kind !== "ok") {
-    logger.warn("CIMD client metadata fetch did not return a usable document", {
-      url,
-      kind: outcome.kind,
-      usingPinnedFallback: metadata !== null,
-    });
-  }
-  cacheClientMetadata(url, metadata);
-  return metadata;
-}
-
-/**
- * The URL is an arbitrary client_id reachable via unauthenticated
- * /oauth/authorize requests, so the fetch is SSRF-protected, time- and
- * size-limited — and **never follows redirects**: the document ↔ client_id
- * binding is a string comparison against the URL we resolved, so an open
- * redirect on any trusted HTTPS host could otherwise serve an attacker's
- * document while the consent screen displays the trusted hostname.
- */
-async function fetchClientMetadataLive(url: string): Promise<CimdFetchOutcome> {
-  let response: Response;
-  try {
-    response = await fetchWithSsrfProtection(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": USER_AGENT,
-      },
-      redirect: "manual",
-      signal: AbortSignal.timeout(CLIENT_METADATA_TIMEOUT_MS),
-    });
-  } catch {
-    return { kind: "transport-failure" };
-  }
-
-  // 404/410 = the origin withdrawing the document; any other non-2xx is not
-  // authoritative.
-  if (response.status === 404 || response.status === 410) {
-    return { kind: "rejected" };
-  }
-  if (!response.ok) {
-    return { kind: "transport-failure" };
-  }
-
-  let parsed: unknown;
-  try {
-    const body = await readResponseBufferWithSizeLimit(response, CLIENT_METADATA_MAX_BYTES, url);
-    parsed = JSON.parse(body.toString());
-  } catch {
-    // Unreadable or non-JSON body (e.g. a challenge page served with a 200).
-    return { kind: "transport-failure" };
-  }
-
-  const metadata = validateClientMetadataDocument(url, parsed);
-  return metadata ? { kind: "ok", metadata } : { kind: "rejected" };
 }
 
 // ============================================================================
@@ -429,6 +220,7 @@ export async function createTokens(
   return {
     accessToken,
     refreshToken,
+    refreshTokenId,
     tokenType: "Bearer",
     expiresIn: Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000),
     scope: params.scopes.join(" "),
@@ -601,25 +393,15 @@ export async function rotateRefreshToken(
     // rather than in the revocation sweep because a rotation racing the sweep
     // can commit a successor the sweep's snapshot never sees; that successor is
     // then born unusable. Only for OAuth-server flows — the Wallabag password
-    // grant shares this rotation path and has no consent grant to check.
-    if (options.requireUserConsent) {
-      const activeGrant = await tx
-        .select({ id: oauthConsentGrants.id })
-        .from(oauthConsentGrants)
-        .where(
-          and(
-            eq(oauthConsentGrants.userId, oldRefreshToken.userId),
-            eq(oauthConsentGrants.clientId, clientId),
-            isNull(oauthConsentGrants.revokedAt)
-          )
-        )
-        .limit(1);
-
-      if (activeGrant.length === 0) {
-        // The claim stands (the presented token is revoked): consent is gone,
-        // so the whole chain should be dead anyway.
-        return { rejected: "no_consent" };
-      }
+    // grant shares this rotation path and has no consent grant to check. Any
+    // active grant will do: the scopes test is the code exchange's job.
+    if (
+      options.requireUserConsent &&
+      !(await hasConsent(oldRefreshToken.userId, clientId, [], tx))
+    ) {
+      // The claim stands (the presented token is revoked): consent is gone,
+      // so the whole chain should be dead anyway.
+      return { rejected: "no_consent" };
     }
 
     // Revoke the old access token if it exists
@@ -645,19 +427,10 @@ export async function rotateRefreshToken(
     );
 
     // Link the rotation chain on the old token
-    const newRefreshTokenHash = hashToken(created.refreshToken);
-    const [newRefreshToken] = await tx
-      .select({ id: oauthRefreshTokens.id })
-      .from(oauthRefreshTokens)
-      .where(eq(oauthRefreshTokens.tokenHash, newRefreshTokenHash))
-      .limit(1);
-
-    if (newRefreshToken) {
-      await tx
-        .update(oauthRefreshTokens)
-        .set({ replacedById: newRefreshToken.id })
-        .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
-    }
+    await tx
+      .update(oauthRefreshTokens)
+      .set({ replacedById: created.refreshTokenId })
+      .where(eq(oauthRefreshTokens.id, oldRefreshToken.id));
 
     return { tokens: created };
   });
@@ -869,485 +642,4 @@ export async function revokeClientToken(clientId: string, token: string): Promis
         )
       );
   }
-}
-
-// ============================================================================
-// Consent Management
-// ============================================================================
-
-/**
- * Checks if user has already consented to the client with required scopes.
- */
-export async function hasConsent(
-  userId: string,
-  clientId: string,
-  scopes: string[]
-): Promise<boolean> {
-  const result = await db
-    .select()
-    .from(oauthConsentGrants)
-    .where(
-      and(
-        eq(oauthConsentGrants.userId, userId),
-        eq(oauthConsentGrants.clientId, clientId),
-        isNull(oauthConsentGrants.revokedAt)
-      )
-    )
-    .limit(1);
-
-  if (result.length === 0) {
-    return false;
-  }
-
-  // Check if all requested scopes are in the granted scopes
-  const grantedScopes = result[0].scopes;
-  return scopes.every((scope) => grantedScopes.includes(scope));
-}
-
-/**
- * Records user consent for a client.
- */
-export async function recordConsent(
-  userId: string,
-  clientId: string,
-  scopes: string[]
-): Promise<void> {
-  await db
-    .insert(oauthConsentGrants)
-    .values({
-      id: generateUuidv7(),
-      userId,
-      clientId,
-      scopes,
-    })
-    .onConflictDoUpdate({
-      target: [oauthConsentGrants.userId, oauthConsentGrants.clientId],
-      set: {
-        scopes,
-        updatedAt: new Date(),
-        revokedAt: null, // Clear any previous revocation
-      },
-    });
-}
-
-/**
- * A consent grant as presented to the user in Settings.
- *
- * CIMD clients are never stored in `oauth_clients`, so a grant to one has no
- * name here: `clientHost` (the client_id URL's hostname) is its only identity
- * we can vouch for, matching what the consent screen leads with. We
- * deliberately don't re-fetch metadata documents to label a list — that would
- * be one outbound fetch per row, on a page render, for a self-asserted name.
- */
-export interface UserConsentGrantSummary {
-  clientId: string;
-  /** Name from our own client registry; null for CIMD clients. */
-  clientName: string | null;
-  /** Hostname of a CIMD client's client_id URL; null for registered clients. */
-  clientHost: string | null;
-  scopes: string[];
-  /** When consent was last recorded — re-consenting refreshes it. */
-  grantedAt: Date;
-  /**
-   * Most recent use of an access token for this client. Null once the tokens
-   * that recorded it have been reaped, so "no recent use", not "never used".
-   */
-  lastUsedAt: Date | null;
-}
-
-/**
- * Lists the user's active consent grants for the Settings UI.
- */
-export async function listUserConsentGrants(userId: string): Promise<UserConsentGrantSummary[]> {
-  const grants = await db
-    .select({
-      clientId: oauthConsentGrants.clientId,
-      clientName: oauthClients.name,
-      scopes: oauthConsentGrants.scopes,
-      grantedAt: oauthConsentGrants.updatedAt,
-    })
-    .from(oauthConsentGrants)
-    .leftJoin(oauthClients, eq(oauthClients.clientId, oauthConsentGrants.clientId))
-    .where(and(eq(oauthConsentGrants.userId, userId), isNull(oauthConsentGrants.revokedAt)))
-    .orderBy(desc(oauthConsentGrants.updatedAt));
-
-  const lastUsed = await db
-    .select({
-      clientId: oauthAccessTokens.clientId,
-      lastUsedAt: max(oauthAccessTokens.lastUsedAt),
-    })
-    .from(oauthAccessTokens)
-    .where(eq(oauthAccessTokens.userId, userId))
-    .groupBy(oauthAccessTokens.clientId);
-
-  const lastUsedByClient = new Map(lastUsed.map((row) => [row.clientId, row.lastUsedAt]));
-
-  return grants.map((grant) => {
-    // The built-in app client has no oauth_clients row.
-    const builtIn = grant.clientId === APP_CLIENT_ID ? getAppClient() : null;
-    const clientName = builtIn?.name ?? grant.clientName;
-    return {
-      clientId: grant.clientId,
-      clientName,
-      clientHost: cimdClientHost(grant.clientId, { fromDatabase: clientName !== null }),
-      scopes: grant.scopes,
-      grantedAt: grant.grantedAt,
-      lastUsedAt: lastUsedByClient.get(grant.clientId) ?? null,
-    };
-  });
-}
-
-/**
- * Revokes the user's consent for a client and kills everything outstanding it
- * could still trade for access.
- *
- * Every half matters: dropping only the consent grant would leave live access
- * and refresh tokens (and the refresh chain renewing itself indefinitely),
- * dropping only the tokens would let the client walk back through
- * /oauth/authorize silently since consent is what suppresses the prompt, and
- * leaving an unredeemed authorization code would buy it a fresh hour-long
- * access token plus a 30-day refresh chain minutes after the user said no.
- *
- * The consent grant is revoked **first**, so the two token-redemption paths
- * that re-check it (`rotateRefreshToken({ requireUserConsent })` and the
- * authorization-code exchange) fail closed for anything racing this sweep.
- *
- * Returns false if the user has no active grant for the client.
- */
-export async function revokeUserConsentGrant(userId: string, clientId: string): Promise<boolean> {
-  const now = new Date();
-
-  const revokedGrants = await db
-    .update(oauthConsentGrants)
-    .set({ revokedAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(oauthConsentGrants.userId, userId),
-        eq(oauthConsentGrants.clientId, clientId),
-        isNull(oauthConsentGrants.revokedAt)
-      )
-    )
-    .returning({ id: oauthConsentGrants.id });
-
-  if (revokedGrants.length === 0) {
-    return false;
-  }
-
-  await db
-    .update(oauthAuthorizationCodes)
-    .set({ usedAt: now })
-    .where(
-      and(
-        eq(oauthAuthorizationCodes.userId, userId),
-        eq(oauthAuthorizationCodes.clientId, clientId),
-        isNull(oauthAuthorizationCodes.usedAt)
-      )
-    );
-
-  await revokeUserClientTokens(userId, clientId, db, now);
-
-  logger.info("User revoked OAuth consent grant", { component: "oauth", userId, clientId });
-
-  return true;
-}
-
-/**
- * Revokes every live access and refresh token a user holds for one client.
- */
-export async function revokeUserClientTokens(
-  userId: string,
-  clientId: string,
-  executor: DbOrTx = db,
-  now: Date = new Date()
-): Promise<void> {
-  await executor
-    .update(oauthRefreshTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthRefreshTokens.userId, userId),
-        eq(oauthRefreshTokens.clientId, clientId),
-        isNull(oauthRefreshTokens.revokedAt)
-      )
-    );
-
-  await executor
-    .update(oauthAccessTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthAccessTokens.userId, userId),
-        eq(oauthAccessTokens.clientId, clientId),
-        isNull(oauthAccessTokens.revokedAt)
-      )
-    );
-}
-
-// ============================================================================
-// Dynamic Client Registration (RFC 7591)
-// ============================================================================
-
-/**
- * Client registration request as defined in RFC 7591
- */
-export interface ClientRegistrationRequest {
-  redirect_uris: string[];
-  token_endpoint_auth_method?: string;
-  grant_types?: string[];
-  response_types?: string[];
-  client_name?: string;
-  client_uri?: string;
-  logo_uri?: string;
-  scope?: string;
-  contacts?: string[];
-  tos_uri?: string;
-  policy_uri?: string;
-  jwks_uri?: string;
-  jwks?: object;
-  software_id?: string;
-  software_version?: string;
-  software_statement?: string;
-}
-
-/**
- * Client registration response as defined in RFC 7591
- */
-export interface ClientRegistrationResponse {
-  client_id: string;
-  client_secret?: string;
-  client_id_issued_at?: number;
-  client_secret_expires_at?: number;
-  client_secret_issued_at?: number;
-  registration_client_uri?: string;
-  redirect_uris: string[];
-  token_endpoint_auth_method: string;
-  grant_types: string[];
-  response_types: string[];
-  client_name?: string;
-  client_uri?: string;
-  logo_uri?: string;
-  scope?: string;
-  contacts?: string[];
-  tos_uri?: string;
-  policy_uri?: string;
-  jwks_uri?: string;
-  jwks?: object;
-  software_id?: string;
-  software_version?: string;
-}
-
-/**
- * Error returned from client registration
- */
-export interface ClientRegistrationError {
-  error: string;
-  error_description?: string;
-}
-
-/**
- * Generates a unique client ID for dynamic registration.
- */
-function generateClientId(): string {
-  // Use UUIDv7 for time-ordered client IDs
-  return generateUuidv7();
-}
-
-/**
- * Registers a new OAuth client dynamically (RFC 7591).
- * Supports open registration (no initial access token required).
- *
- * @param request - Client registration request
- * @returns Client registration response or error
- */
-export async function registerClient(
-  request: ClientRegistrationRequest
-): Promise<
-  | { success: true; data: ClientRegistrationResponse }
-  | { success: false; error: ClientRegistrationError }
-> {
-  // Validate required fields
-  if (
-    !request.redirect_uris ||
-    !Array.isArray(request.redirect_uris) ||
-    request.redirect_uris.length === 0
-  ) {
-    return {
-      success: false,
-      error: {
-        error: "invalid_redirect_uri",
-        error_description: "redirect_uris is required and must be a non-empty array",
-      },
-    };
-  }
-
-  // Validate all redirect URIs
-  for (const uri of request.redirect_uris) {
-    if (!isValidRedirectUriFormat(uri)) {
-      return {
-        success: false,
-        error: {
-          error: "invalid_redirect_uri",
-          error_description: `Invalid redirect URI: ${uri}. Must be HTTPS (or HTTP for localhost) and must not contain fragments.`,
-        },
-      };
-    }
-  }
-
-  // Validate token_endpoint_auth_method. When omitted, RFC 7591 §2 defines the
-  // default as client_secret_basic (a confidential client) — the working remote
-  // MCP servers (Linear, Sentry, Notion) all follow this, so clients that omit
-  // the field demonstrably handle receiving a secret.
-  const authMethod = request.token_endpoint_auth_method ?? "client_secret_basic";
-  if (!SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.includes(authMethod)) {
-    return {
-      success: false,
-      error: {
-        error: "invalid_client_metadata",
-        error_description: `Unsupported token_endpoint_auth_method: ${authMethod}. Supported methods: ${SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS.join(", ")}`,
-      },
-    };
-  }
-
-  // Determine if client is public or confidential
-  const isPublic = authMethod === "none";
-
-  // Generate client secret for confidential clients
-  let clientSecret: string | undefined;
-  let clientSecretHash: string | null = null;
-  if (!isPublic) {
-    clientSecret = generateToken();
-    clientSecretHash = hashToken(clientSecret);
-  }
-
-  // Validate and normalize grant_types
-  const requestedGrantTypes = request.grant_types ?? ["authorization_code"];
-  const supportedGrantTypes = ["authorization_code", "refresh_token"];
-  const grantTypes = requestedGrantTypes.filter((gt) => supportedGrantTypes.includes(gt));
-  if (grantTypes.length === 0) {
-    return {
-      success: false,
-      error: {
-        error: "invalid_client_metadata",
-        error_description: `No supported grant types. Supported: ${supportedGrantTypes.join(", ")}`,
-      },
-    };
-  }
-
-  // Validate response_types match grant_types (per RFC 7591 Section 2.1)
-  const requestedResponseTypes = request.response_types ?? ["code"];
-  const responseTypes: string[] = [];
-  if (grantTypes.includes("authorization_code") && requestedResponseTypes.includes("code")) {
-    responseTypes.push("code");
-  }
-  // Note: We don't support "implicit" grant type, so "token" response type is not allowed
-  if (responseTypes.length === 0 && grantTypes.includes("authorization_code")) {
-    responseTypes.push("code");
-  }
-
-  // Validate scope. A client that requests scopes gets exactly the supported
-  // subset of those scopes. If none of the requested scopes are recognized we
-  // reject the registration rather than silently broadening to "all scopes"
-  // (defaulting unknown scopes to null/all is a privilege-escalation footgun).
-  // When no scope is requested, scopes stays null (client may later request any
-  // supported scope at authorization time, subject to user consent).
-  const supportedScopes = Object.values(OAUTH_SCOPES);
-  let scopes: string[] | null = null;
-  if (request.scope) {
-    const requestedScopes = request.scope.split(" ");
-    const validScopes = Array.from(
-      new Set(
-        requestedScopes.filter((s) =>
-          supportedScopes.includes(s as (typeof supportedScopes)[number])
-        )
-      )
-    );
-    if (validScopes.length === 0) {
-      return {
-        success: false,
-        error: {
-          error: "invalid_client_metadata",
-          error_description: `None of the requested scopes are supported. Supported scopes: ${supportedScopes.join(", ")}`,
-        },
-      };
-    }
-    scopes = validScopes;
-  }
-
-  // Generate client ID
-  const clientId = generateClientId();
-  const clientName = request.client_name ?? "Unknown Application";
-
-  // Store client in database
-  const now = new Date();
-  await db.insert(oauthClients).values({
-    id: generateUuidv7(),
-    clientId,
-    name: clientName,
-    redirectUris: request.redirect_uris,
-    grantTypes,
-    scopes,
-    isPublic,
-    clientSecretHash,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // Build response
-  const response: ClientRegistrationResponse = {
-    client_id: clientId,
-    client_id_issued_at: Math.floor(now.getTime() / 1000),
-    redirect_uris: request.redirect_uris,
-    token_endpoint_auth_method: authMethod,
-    grant_types: grantTypes,
-    response_types: responseTypes,
-    // Response-shape parity with the working remote MCP servers (Linear, Sentry,
-    // Notion), which all include this field. RFC 7592 client management is not
-    // implemented (theirs isn't either — Linear's URI 404s), and per RFC 7592 a
-    // client can't use it anyway without a registration_access_token, which we
-    // don't issue.
-    registration_client_uri: getRegistrationClientUri(clientId),
-  };
-
-  // Add client_secret for confidential clients
-  if (clientSecret) {
-    response.client_secret = clientSecret;
-    response.client_secret_expires_at = 0; // 0 means it doesn't expire
-    // Not an RFC 7591 field, but BOTH Notion and Linear include it in
-    // confidential-client registrations and they are the reference targets the
-    // claude.ai connector demonstrably works against — a strict client response
-    // model built against them could require it whenever client_secret is
-    // present. Cheap parity; observed during the #986 subdomain debugging.
-    response.client_secret_issued_at = Math.floor(now.getTime() / 1000);
-  }
-
-  // Add optional fields if provided
-  if (request.client_name) {
-    response.client_name = request.client_name;
-  }
-  if (request.client_uri) {
-    response.client_uri = request.client_uri;
-  }
-  if (request.logo_uri) {
-    response.logo_uri = request.logo_uri;
-  }
-  if (scopes) {
-    response.scope = scopes.join(" ");
-  }
-  if (request.contacts) {
-    response.contacts = request.contacts;
-  }
-  if (request.tos_uri) {
-    response.tos_uri = request.tos_uri;
-  }
-  if (request.policy_uri) {
-    response.policy_uri = request.policy_uri;
-  }
-  if (request.software_id) {
-    response.software_id = request.software_id;
-  }
-  if (request.software_version) {
-    response.software_version = request.software_version;
-  }
-
-  return { success: true, data: response };
 }

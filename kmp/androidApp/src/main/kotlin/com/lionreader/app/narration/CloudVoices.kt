@@ -2,7 +2,7 @@ package com.lionreader.app.narration
 
 import android.net.Uri
 import com.lionreader.shared.api.LionReaderApi
-import com.lionreader.shared.api.MAX_CLOUD_SPEECH_CHARS
+import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.narration.CloudSpeechAnswers
 import com.lionreader.shared.narration.cloudSpeechCacheKey
 import com.lionreader.shared.narration.streamCloudSpeech
@@ -69,7 +69,7 @@ class CloudVoices(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val cacheBytes: Long = 50L * 1024 * 1024,
 ) : SpeechEngine {
-    override val maxChunkChars = MAX_CLOUD_SPEECH_CHARS
+    override val maxChunkChars = ServerLimits.CLOUD_SPEECH_CHARS
     // Requests take anywhere from under a second to many (the server waits up to 15 s for a busy
     // provider), so 30 seconds ahead. One is started at a time, once the one before's first audio
     // is in; see [CloudSpeechRequests.streams] for how many run at once.

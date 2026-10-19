@@ -10,15 +10,15 @@ class EntryDecodingTest {
         val page =
             ApiJson.decodeFromString(
                 EntryListPage.serializer(),
-                """{"items": [{"id": "a", "type": "web", "fetchedAt": "2026-09-29T12:00:00Z",
+                """{"items": [{"id": "a", "subscriptionIds": [], "type": "web", "fetchedAt": "2026-09-29T12:00:00Z",
                     "read": false, "starred": false}]}""",
             )
         val entries =
             ApiJson.decodeFromString(
                 GetManyResponse.serializer(),
-                """{"entries": [{"id": "b", "feedId": null, "type": "web",
+                """{"entries": [{"id": "b", "feedId": null, "subscriptionIds": [], "type": "web",
                     "fetchedAt": "2026-09-29T12:00:00Z", "read": true, "starred": false,
-                    "fetchFullContent": false}]}""",
+                    "content": null}]}""",
             )
 
         assertEquals("a", page.items.single().id)

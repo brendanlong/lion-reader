@@ -1,36 +1,41 @@
 /**
- * Client-side Telemetry
- *
- * Utility for sending metrics events from the browser to the server.
- * Events are sent to the /api/v1/telemetry endpoint which records
- * them in Prometheus.
- *
- * All telemetry functions are fire-and-forget - errors are silently ignored
- * to avoid impacting the user experience.
+ * Client-side telemetry: browser events, sent to `/api/v1/telemetry`, which
+ * validates them with {@link telemetryEventSchema} and records them in
+ * Prometheus. Sending is fire-and-forget: a failure never reaches the user.
  *
  * @module lib/telemetry
  */
 
-import type { TTSProviderId } from "@/lib/narration/types";
-
-// ============================================================================
-// Types
-// ============================================================================
+import { z } from "zod";
+import { isEnhancedVoice } from "@/lib/narration/enhanced-voices";
+import { TTS_PROVIDER_IDS, type TTSProviderId } from "@/lib/narration/types";
 
 /**
- * Error types for voice download failures.
+ * voiceId becomes a Prometheus label on an unauthenticated endpoint, so only
+ * known voices are accepted — a free-form string would let anyone grow label
+ * cardinality (and server memory) without bound.
  */
-export type VoiceDownloadErrorType = "network" | "storage" | "unknown";
+const voiceIdSchema = z.string().refine(isEnhancedVoice, { message: "Unknown voice" });
 
-// ============================================================================
-// Internal
-// ============================================================================
+const voiceDownloadErrorTypeSchema = z.enum(["network", "storage", "unknown"]);
 
-/**
- * Sends a telemetry event to the server.
- * Silently ignores any errors.
- */
-async function sendTelemetryEvent(event: Record<string, unknown>): Promise<void> {
+/** Why an enhanced voice download failed: a `fetch`, or the origin private file system or quota. */
+export type VoiceDownloadErrorType = z.infer<typeof voiceDownloadErrorTypeSchema>;
+
+export const telemetryEventSchema = z.discriminatedUnion("event", [
+  z.object({ event: z.literal("enhanced_voice_selected"), voiceId: voiceIdSchema }),
+  z.object({ event: z.literal("enhanced_voice_download_completed"), voiceId: voiceIdSchema }),
+  z.object({
+    event: z.literal("enhanced_voice_download_failed"),
+    voiceId: voiceIdSchema,
+    errorType: voiceDownloadErrorTypeSchema,
+  }),
+  z.object({ event: z.literal("narration_playback_started"), provider: z.enum(TTS_PROVIDER_IDS) }),
+]);
+
+type TelemetryEvent = z.infer<typeof telemetryEventSchema>;
+
+async function sendTelemetryEvent(event: TelemetryEvent): Promise<void> {
   try {
     await fetch("/api/v1/telemetry", {
       method: "POST",
@@ -46,69 +51,26 @@ async function sendTelemetryEvent(event: Record<string, unknown>): Promise<void>
   }
 }
 
-// ============================================================================
-// Public API
-// ============================================================================
-
-/**
- * Tracks when a user selects an enhanced voice.
- *
- * @param voiceId - The ID of the selected voice.
- */
 export function trackEnhancedVoiceSelected(voiceId: string): void {
-  void sendTelemetryEvent({
-    event: "enhanced_voice_selected",
-    voiceId,
-  });
+  void sendTelemetryEvent({ event: "enhanced_voice_selected", voiceId });
 }
 
-/**
- * Tracks when an enhanced voice download completes successfully.
- *
- * @param voiceId - The ID of the downloaded voice.
- */
 export function trackEnhancedVoiceDownloadCompleted(voiceId: string): void {
-  void sendTelemetryEvent({
-    event: "enhanced_voice_download_completed",
-    voiceId,
-  });
+  void sendTelemetryEvent({ event: "enhanced_voice_download_completed", voiceId });
 }
 
-/**
- * Tracks when an enhanced voice download fails.
- *
- * @param voiceId - The ID of the voice that failed to download.
- * @param errorType - The type of error that occurred.
- */
 export function trackEnhancedVoiceDownloadFailed(
   voiceId: string,
   errorType: VoiceDownloadErrorType
 ): void {
-  void sendTelemetryEvent({
-    event: "enhanced_voice_download_failed",
-    voiceId,
-    errorType,
-  });
+  void sendTelemetryEvent({ event: "enhanced_voice_download_failed", voiceId, errorType });
 }
 
-/**
- * Tracks when narration playback starts.
- *
- * @param provider - The TTS provider being used.
- */
 export function trackNarrationPlaybackStarted(provider: TTSProviderId): void {
-  void sendTelemetryEvent({
-    event: "narration_playback_started",
-    provider,
-  });
+  void sendTelemetryEvent({ event: "narration_playback_started", provider });
 }
 
-/**
- * Classifies an error into a download error type.
- *
- * @param error - The error to classify.
- * @returns The error type.
- */
+/** What kind of failure a voice download's error is, by its name and message. */
 export function classifyDownloadError(error: unknown): VoiceDownloadErrorType {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();

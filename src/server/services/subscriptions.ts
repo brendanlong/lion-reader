@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, gt, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { eq, and, gt, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { db as dbType, DbOrTx } from "@/server/db";
 import {
   subscriptionEntries,
@@ -22,36 +22,20 @@ import {
 import { countsAsOfColumn, formatCountsAsOf } from "@/server/services/counts";
 import { createCursorCodec, cursorUuid } from "@/server/services/cursor";
 import { errors } from "@/server/errors";
+import { containsPattern } from "@/server/db/like";
 import { generateOpml, type OpmlSubscription } from "@/server/feed/opml";
-import { countsAsOfSchema } from "@/lib/events/schemas";
-import { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
+import { syncSubscriptionSchema } from "@/lib/events/schemas";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 /**
- * A subscription merged with its feed's metadata. Its id is the subscription's:
- * clients never see feed ids.
+ * A subscription merged with its feed's metadata, from
+ * {@link buildSubscriptionBaseQuery}: what every subscription read, mutation
+ * and event returns. The fields are documented on `syncSubscriptionSchema`.
  */
-export const subscriptionSchema = z.object({
-  id: z.string(),
-  type: z.enum(SUBSCRIPTION_TYPES),
-  url: z.string().nullable(),
-  /** The custom title if set, else the feed's. */
-  title: z.string().nullable(),
-  /** The feed's own title, for the rename UI. */
-  originalTitle: z.string().nullable(),
-  description: z.string().nullable(),
-  siteUrl: z.string().nullable(),
-  subscribedAt: z.date(),
-  unreadCount: z.number(),
-  /** When `unreadCount` was read. */
-  unreadCountAsOf: countsAsOfSchema,
-  tags: z.array(z.object({ id: z.string(), name: z.string(), color: z.string().nullable() })),
-  /** Whether to fetch each entry's full article from its URL. */
-  fetchFullContent: z.boolean(),
-});
+export const subscriptionSchema = syncSubscriptionSchema.extend({ subscribedAt: z.date() });
 
 export type Subscription = z.infer<typeof subscriptionSchema>;
 
@@ -121,7 +105,7 @@ export function isUserManagedSubscription(
  * option existed because the count was a scan over visible_entries that
  * scaled with the unread backlog, issue #1074). Spam never counts.
  */
-export function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undefined) {
+function buildSubscriptionBaseQuery(db: DbOrTx, where: SQL | undefined) {
   return db
     .select({
       // From user_feeds view - subscription fields
@@ -142,11 +126,12 @@ export function buildSubscriptionBaseQuery(db: typeof dbType, where: SQL | undef
       // doesn't serialize): see listAllSubscriptionsWithStreamIds.
       greaderStreamId: userFeeds.greaderStreamId,
       unreadCountAsOf: countsAsOfColumn(),
-      // Tags aggregated as JSON array
+      // The one query that reads a subscription's tags, in a stable order.
       tags: sql<Array<{ id: string; name: string; color: string | null }>>`
         COALESCE(
           json_agg(
             json_build_object('id', ${tags.id}, 'name', ${tags.name}, 'color', ${tags.color})
+            ORDER BY ${tags.name}, ${tags.id}
           ) FILTER (WHERE ${tags.id} IS NOT NULL),
           '[]'::json
         )
@@ -304,8 +289,7 @@ export async function listSubscriptions(
 
   // Title search (case-insensitive)
   if (query && query.length > 0) {
-    const likePattern = `%${query}%`;
-    conditions.push(sql`COALESCE(${userFeeds.title}, '') ILIKE ${likePattern}`);
+    conditions.push(sql`COALESCE(${userFeeds.title}, '') ILIKE ${containsPattern(query)}`);
   }
 
   // Tag filter
@@ -452,21 +436,30 @@ export async function exportSubscriptionsOpml(
 }
 
 /**
- * Gets a single subscription by ID.
+ * Gets one of the user's active subscriptions by ID.
  */
 export async function getSubscription(
-  db: typeof dbType,
+  db: DbOrTx,
   userId: string,
   subscriptionId: string
 ): Promise<Subscription> {
-  const results = await buildSubscriptionBaseQuery(
-    db,
-    and(eq(userFeeds.id, subscriptionId), eq(userFeeds.userId, userId))
-  ).limit(1);
-
-  if (results.length === 0) {
+  const [subscription] = await getSubscriptionsByIds(db, userId, [subscriptionId]);
+  if (!subscription) {
     throw errors.subscriptionNotFound();
   }
+  return subscription;
+}
 
-  return formatSubscriptionRow(results[0]);
+/** The user's active subscriptions among `subscriptionIds`, in no particular order. */
+export async function getSubscriptionsByIds(
+  db: DbOrTx,
+  userId: string,
+  subscriptionIds: string[]
+): Promise<Subscription[]> {
+  if (subscriptionIds.length === 0) return [];
+  const rows = await buildSubscriptionBaseQuery(
+    db,
+    and(inArray(userFeeds.id, subscriptionIds), eq(userFeeds.userId, userId))
+  );
+  return rows.map(formatSubscriptionRow);
 }

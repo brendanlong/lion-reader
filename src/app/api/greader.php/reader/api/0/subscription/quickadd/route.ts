@@ -53,12 +53,12 @@ export const POST = withClientErrors(async (request: Request): Promise<Response>
   const [{ greaderStreamId }] = await db
     .select({ greaderStreamId: subscriptions.greaderStreamId })
     .from(subscriptions)
-    .where(eq(subscriptions.id, result.subscriptionId));
+    .where(eq(subscriptions.id, result.subscription.id));
 
   return jsonResponse({
     query: rawUrl,
     numResults: 1,
     streamId: feedStreamId(greaderStreamId),
-    streamName: result.customTitle ?? result.feed.title ?? result.feed.url ?? rawUrl,
+    streamName: result.subscription.title ?? result.subscription.url ?? rawUrl,
   });
 });

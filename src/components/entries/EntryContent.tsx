@@ -126,7 +126,7 @@ function EntryContentInner({
   trpc.entries.get.useQuery({ id: previousEntryId! }, { enabled: !!previousEntryId, ...UNBATCHED });
 
   // Entry mutations for marking read, starring, etc.
-  const { markRead, star, unstar } = useEntryMutations();
+  const { markRead, setStarred } = useEntryMutations();
 
   // Full content is a feed subscription's setting; the saved subscription
   // (a saved article's origin) has none.
@@ -238,12 +238,7 @@ function EntryContentInner({
   // Handle star toggle
   const handleStarToggle = () => {
     if (!entry) return;
-
-    if (entry.starred) {
-      unstar(entryId);
-    } else {
-      star(entryId);
-    }
+    setStarred(entryId, !entry.starred);
   };
 
   // Handle read toggle from entry view

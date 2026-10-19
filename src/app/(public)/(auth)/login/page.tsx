@@ -59,6 +59,8 @@ function LoginAlerts() {
       invite_invalid: "The invite link is invalid. Please request a new invite.",
       invite_expired: "The invite link has expired. Please request a new invite.",
       invite_already_used: "This invite has already been used. Please request a new invite.",
+      provider_already_linked:
+        "Your account is linked to a different account from this provider. Sign in with that one, or another way.",
       link_requires_login:
         "You need to be signed in to link an account. Sign in and try again from Settings.",
     };

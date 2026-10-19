@@ -10,6 +10,7 @@ import { users, feeds, entries, subscriptions, userEntries } from "../../src/ser
 import { createCaller } from "../../src/server/trpc/root";
 import { publishFeedEvent, publishUserEvent } from "../../src/server/redis/pubsub";
 import { subscriptionCreatedEvent } from "../../src/server/services/subscription-sync-events";
+import { getSubscription } from "../../src/server/services/subscriptions";
 import {
   createAuthContext,
   createTestEntry,
@@ -101,23 +102,7 @@ describe("feed IDs never reach clients", () => {
         () => stream.events("new_entry").length > 0
       );
       await publishUserEvent({
-        ...subscriptionCreatedEvent(
-          {
-            id: otherSubscriptionId,
-            type: "web",
-            customTitle: null,
-            subscribedAt: new Date(),
-            unreadCount: 0,
-            fetchFullContent: false,
-          },
-          [],
-          {
-            url: "https://example.com/other.xml",
-            title: null,
-            description: null,
-            siteUrl: null,
-          }
-        ),
+        ...subscriptionCreatedEvent(await getSubscription(db, userId, otherSubscriptionId)),
         userId,
         feedId: otherFeedId,
         updatedAt: new Date(),

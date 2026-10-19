@@ -24,7 +24,7 @@ import { AppearanceProvider } from "@/lib/appearance/AppearanceProvider";
 import { KeyboardShortcutsProvider } from "@/components/keyboard/KeyboardShortcutsProvider";
 import { EntryContentOptionsProvider } from "@/components/entries/EntryContentOptions";
 import { AppLocationProvider } from "@/lib/hooks/useAppLocation";
-import { createDemoStore } from "@/app/(public)/demo/store";
+import { createDemoStore } from "@/lib/demo/store";
 import { renderWithTrpc, stubMemoryLocalStorage } from "../../../utils/component-test-helpers";
 
 vi.mock("sonner", () => ({

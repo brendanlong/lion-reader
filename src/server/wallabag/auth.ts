@@ -17,10 +17,10 @@ import { users } from "@/server/db/schema";
 import { verifyEmailPassword } from "@/server/auth/password";
 import { extractBearerToken } from "@/server/auth/bearer";
 import { authenticateCredential } from "@/server/auth/credential";
+import { revokeUserClientTokens } from "@/server/oauth/grants";
 import {
   createTokens,
   lockUserAgainstCredentialChange,
-  revokeUserClientTokens,
   rotateRefreshToken,
 } from "@/server/oauth/service";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";

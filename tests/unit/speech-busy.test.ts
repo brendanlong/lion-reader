@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { BUSY_FIRST_WAIT_MS, speakWhenFree } from "@/server/services/speech";
+import {
+  BUSY_FIRST_WAIT_MS,
+  BUSY_RETRY_AFTER_SECONDS,
+  KEPT_VOICE_FAILURE_TTL_MS,
+  speakWhenFree,
+  speechErrorAnswer,
+  SpeechRejectedError,
+  SpeechRequestError,
+  SpeechUnavailableError,
+} from "@/server/services/speech";
 import {
   classifyProviderError,
   classifyProviderStatus,
@@ -185,5 +194,44 @@ describe("retryAfterSeconds", () => {
     expect(retryAfterSeconds(new Date(10_000).toUTCString(), 4_000)).toBe(6);
     expect(retryAfterSeconds("soon")).toBeNull();
     expect(retryAfterSeconds(null)).toBeNull();
+  });
+});
+
+describe("speechErrorAnswer", () => {
+  it("tells the client to come back when the provider asked, or when the catalog may be back", () => {
+    expect(speechErrorAnswer(new ProviderBusyError("busy", 2.5), {})).toMatchObject({
+      status: 503,
+      headers: { "Retry-After": "3" },
+    });
+    expect(speechErrorAnswer(new ProviderBusyError("busy", null), {})).toMatchObject({
+      status: 503,
+      headers: { "Retry-After": String(Math.ceil(BUSY_RETRY_AFTER_SECONDS)) },
+    });
+    expect(speechErrorAnswer(new SpeechUnavailableError("try again shortly"), {})).toMatchObject({
+      status: 503,
+      message: "try again shortly",
+      headers: { "Retry-After": String(Math.ceil(KEPT_VOICE_FAILURE_TTL_MS / 1000)) },
+    });
+  });
+
+  it("ends narration with the message a refusal is written to show", () => {
+    expect(speechErrorAnswer(new SpeechRequestError("No such model"), {})).toEqual({
+      status: 400,
+      code: "BAD_REQUEST",
+      message: "No such model",
+      headers: {},
+    });
+    expect(speechErrorAnswer(new SpeechRejectedError("Check your key"), {})).toEqual({
+      status: 422,
+      code: "UNPROCESSABLE_CONTENT",
+      message: "Check your key",
+      headers: {},
+    });
+  });
+
+  it("doesn't show anything else's message", () => {
+    const answer = speechErrorAnswer(new Error("bucket password is hunter2"), {});
+    expect(answer.status).toBe(500);
+    expect(answer.message).not.toContain("hunter2");
   });
 });

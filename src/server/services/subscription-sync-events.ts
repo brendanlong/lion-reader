@@ -7,8 +7,12 @@
  */
 
 import type { z } from "zod";
-import { type serverSyncEventSchema, type syncTagSchema } from "@/lib/events/schemas";
-import type { SUBSCRIPTION_TYPES } from "@/lib/entry-types";
+import {
+  type serverSyncEventSchema,
+  type SyncSubscription,
+  type syncTagSchema,
+} from "@/lib/events/schemas";
+import type { Subscription } from "@/server/services/subscriptions";
 
 type ServerSyncEvent = z.infer<typeof serverSyncEventSchema>;
 /** An event without the stamps (and counts) its publisher or catch-up adds. */
@@ -22,62 +26,57 @@ export function toSyncTag(tag: SyncTag): SyncTag {
   return { id: tag.id, name: tag.name, color: tag.color };
 }
 
-/**
- * A subscription_created event. `feed` is null for a subscription without
- * one (#1846), which has only its own name; the feed title falls back to the
- * custom title as `user_feeds.original_title` does.
- */
-export function subscriptionCreatedEvent(
-  subscription: {
-    id: string;
-    type: (typeof SUBSCRIPTION_TYPES)[number];
-    customTitle: string | null;
-    subscribedAt: Date;
-    unreadCount: number;
-    fetchFullContent: boolean;
-  },
-  tags: SyncTag[],
-  feed: {
-    url: string | null;
-    title: string | null;
-    description: string | null;
-    siteUrl: string | null;
-  } | null
-): EventBody<"subscription_created"> {
+function toSyncSubscription(row: Subscription): SyncSubscription {
+  return {
+    id: row.id,
+    type: row.type,
+    url: row.url,
+    title: row.title,
+    originalTitle: row.originalTitle,
+    description: row.description,
+    siteUrl: row.siteUrl,
+    subscribedAt: row.subscribedAt.toISOString(),
+    unreadCount: row.unreadCount,
+    unreadCountAsOf: row.unreadCountAsOf,
+    tags: row.tags.map(toSyncTag),
+    fetchFullContent: row.fetchFullContent,
+  };
+}
+
+/** A subscription_created event: the subscription's row and the deprecated fields. */
+export function subscriptionCreatedEvent(row: Subscription): EventBody<"subscription_created"> {
+  const syncRow = toSyncSubscription(row);
   return {
     type: "subscription_created",
-    subscriptionId: subscription.id,
+    subscriptionId: row.id,
+    row: syncRow,
     subscription: {
-      id: subscription.id,
-      customTitle: subscription.customTitle,
-      subscribedAt: subscription.subscribedAt.toISOString(),
-      unreadCount: subscription.unreadCount,
-      tags: tags.map(toSyncTag),
-      fetchFullContent: subscription.fetchFullContent,
+      id: syncRow.id,
+      customTitle: syncRow.title,
+      subscribedAt: syncRow.subscribedAt,
+      unreadCount: syncRow.unreadCount,
+      tags: syncRow.tags,
+      fetchFullContent: syncRow.fetchFullContent,
     },
     feed: {
-      type: subscription.type,
-      url: feed?.url ?? null,
-      title: feed?.title ?? subscription.customTitle,
-      description: feed?.description ?? null,
-      siteUrl: feed?.siteUrl ?? null,
+      type: syncRow.type,
+      url: syncRow.url,
+      title: syncRow.originalTitle,
+      description: syncRow.description,
+      siteUrl: syncRow.siteUrl,
     },
   };
 }
 
-/**
- * A subscription_updated event: the subscription's current tags and settings
- * (`fetchFullContent` undefined only when the subscription row is gone).
- */
-export function subscriptionUpdatedEvent(
-  subscription: { id: string; customTitle: string | null; fetchFullContent: boolean | undefined },
-  tags: SyncTag[]
-): EventBody<"subscription_updated"> {
+/** A subscription_updated event: the subscription's row and the deprecated fields. */
+export function subscriptionUpdatedEvent(row: Subscription): EventBody<"subscription_updated"> {
+  const syncRow = toSyncSubscription(row);
   return {
     type: "subscription_updated",
-    subscriptionId: subscription.id,
-    tags: tags.map(toSyncTag),
-    customTitle: subscription.customTitle,
-    fetchFullContent: subscription.fetchFullContent,
+    subscriptionId: row.id,
+    row: syncRow,
+    tags: syncRow.tags,
+    customTitle: syncRow.title,
+    fetchFullContent: syncRow.fetchFullContent,
   };
 }

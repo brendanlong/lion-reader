@@ -14,6 +14,7 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { passwordLengthError } from "@/lib/password";
 import { clientReplace } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -207,10 +208,12 @@ function PasswordForm({ mode, onSuccess }: { mode: "set" | "change"; onSuccess: 
       newErrors.currentPassword = "Current password is required";
     }
 
-    if (!newPassword) {
-      newErrors.newPassword = `${isSetMode ? "Password" : "New password"} is required`;
-    } else if (newPassword.length < 8) {
-      newErrors.newPassword = `${isSetMode ? "Password" : "New password"} must be at least 8 characters`;
+    const label = isSetMode ? "Password" : "New password";
+    const newPasswordError = newPassword
+      ? passwordLengthError(newPassword, label)
+      : `${label} is required`;
+    if (newPasswordError) {
+      newErrors.newPassword = newPasswordError;
     }
 
     if (!confirmPassword) {

@@ -9,13 +9,20 @@
  */
 
 import * as client from "openid-client";
-import { getGoogleConfig, getRedirectUri, isProviderEnabled, type OAuthLinkTarget } from "./config";
+import { GOOGLE_DOCS_SCOPES } from "@/server/google/tokens";
+import { getGoogleConfig, getRedirectUri } from "./config";
 import {
-  accessTokenExpiresAt,
-  consumeOAuthState,
+  beginOAuthCallback,
   exchangeAuthorizationCode,
   fetchUserInfo,
+  OAuthStateError,
+  signInOrLinkFlow,
   storeOAuthState,
+  tokensFromResponse,
+  type OAuthAuthUrl,
+  type OAuthFlow,
+  type PendingOAuthCallback,
+  type SignInOrLinkState,
 } from "./token-exchange";
 
 // ============================================================================
@@ -35,11 +42,6 @@ const PKCE_VERIFIER_PREFIX = "oauth:pkce:";
  */
 const GOOGLE_SCOPES = ["openid", "email", "profile"];
 
-/**
- * Google Docs readonly scope (for incremental authorization)
- */
-export const GOOGLE_DOCS_READONLY_SCOPE = "https://www.googleapis.com/auth/documents.readonly";
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -54,139 +56,69 @@ interface GoogleUserInfo {
   email: string;
   /** Whether the email has been verified */
   email_verified: boolean;
-  /** User's full name */
-  name?: string;
-  /** User's given name (first name) */
-  given_name?: string;
-  /** User's family name (last name) */
-  family_name?: string;
-  /** URL to user's profile picture */
-  picture?: string;
 }
 
 /**
- * Result of generating an authorization URL
+ * Incremental authorization for Google Docs, re-authorizing the flow user's existing
+ * link. `save` returns to /save, `extension-save` to the extension save page.
  */
-export interface GoogleAuthUrlResult {
-  /** The authorization URL to redirect the user to */
-  url: string;
-  /** The state parameter for CSRF protection */
-  state: string;
-}
+type DocsAccess =
+  { userId: string; mode: "save" } | { userId: string; mode: "extension-save"; returnUrl: string };
+
+/** A sign-in or link (the default), or a Docs-access re-authorization. */
+export type GoogleAuthUrlOptions = SignInOrLinkState | { docsAccess: DocsAccess };
 
 /**
- * Result of validating a Google OAuth callback
+ * Data stored in Redis for PKCE verification. `mode` is "login" for a sign-in or a
+ * link; the Docs-access modes carry their user.
  */
-export interface GoogleAuthResult {
-  /** Google user information */
-  userInfo: GoogleUserInfo;
-  /** OAuth tokens */
-  tokens: {
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt?: Date;
-  };
-  /**
-   * Every scope the token carries: Google reports earlier grants too, because the
-   * authorization request sets `include_granted_scopes`. Undefined when Google
-   * omits the list: the requested scopes would understate an earlier grant (#1803).
-   */
-  scopes?: string[];
-  /** OAuth flow mode */
-  mode: OAuthMode;
-  /** Set when this flow is a link: the account it attaches to */
-  link?: OAuthLinkTarget;
-  /** Optional return URL for extension-save mode */
-  returnUrl?: string;
-  /** Optional invite token for new user registration */
-  inviteToken?: string;
-}
-
-// ============================================================================
-// PKCE Verifier Storage
-// ============================================================================
-
-/**
- * OAuth flow mode - determines redirect behavior after callback. `save` and
- * `extension-save` re-authorize an already-linked account for the Docs scopes,
- * so neither signs anyone in. A link flow is marked by its `link` target
- * instead, not by a mode.
- */
-export type OAuthMode = "login" | "save" | "extension-save";
-
-/**
- * Data stored in Redis for PKCE verification
- */
-interface PkceData {
+interface PkceData extends SignInOrLinkState {
   verifier: string;
-  scopes: string[];
-  mode: OAuthMode;
-  /** Present when this flow is a link (see `OAuthLinkTarget`) */
-  link?: OAuthLinkTarget;
-  /** Optional return URL for modes that need to redirect back to a specific page */
+  mode: "login" | DocsAccess["mode"];
+  /** The user whose link a Docs-access flow re-authorizes */
+  userId?: string;
+  /** Where `extension-save` returns the user afterwards */
   returnUrl?: string;
-  /** Optional invite token for new user registration */
-  inviteToken?: string;
 }
 
 // ============================================================================
 // Google OAuth Functions
 // ============================================================================
 
-export interface CreateGoogleAuthUrlOptions {
-  /** Extra scopes to request on top of the sign-in ones (incremental auth) */
-  additionalScopes?: string[];
-  /** What the callback should do with the result (defaults to "login") */
-  mode?: OAuthMode;
-  /** Link this Google account to the given account instead of signing in */
-  link?: OAuthLinkTarget;
-  /** Where extension-save mode returns the user afterwards */
-  returnUrl?: string;
-  /** Invite token for new user registration */
-  inviteToken?: string;
-}
-
 /**
- * Generates a Google OAuth authorization URL with PKCE
+ * Generates a Google OAuth authorization URL with PKCE, storing the code verifier
+ * and the flow in Redis under the returned `state`.
  *
- * This creates:
- * 1. A random state parameter for CSRF protection
- * 2. A PKCE code verifier (stored in Redis)
- * 3. The authorization URL with all parameters
- *
- * @returns The authorization URL and state
  * @throws Error if Google OAuth is not configured
  */
 export async function createGoogleAuthUrl(
-  options: CreateGoogleAuthUrlOptions = {}
-): Promise<GoogleAuthUrlResult> {
-  const { additionalScopes, mode = "login", returnUrl, inviteToken, link } = options;
+  options: GoogleAuthUrlOptions = {}
+): Promise<OAuthAuthUrl> {
   const config = getGoogleConfig();
 
   if (!config) {
     throw new Error("Google OAuth is not configured");
   }
 
-  // Generate PKCE and state parameters
   const state = client.randomState();
   const codeVerifier = client.randomPKCECodeVerifier();
 
-  // Combine base scopes with additional scopes (if any)
-  const scopes = additionalScopes
-    ? [...GOOGLE_SCOPES, ...additionalScopes.filter((s) => !GOOGLE_SCOPES.includes(s))]
-    : GOOGLE_SCOPES;
+  let scopes = GOOGLE_SCOPES;
+  let data: PkceData;
+  if ("docsAccess" in options) {
+    const { docsAccess } = options;
+    scopes = [...GOOGLE_SCOPES, ...GOOGLE_DOCS_SCOPES];
+    data = {
+      verifier: codeVerifier,
+      mode: docsAccess.mode,
+      userId: docsAccess.userId,
+      returnUrl: docsAccess.mode === "extension-save" ? docsAccess.returnUrl : undefined,
+    };
+  } else {
+    data = { verifier: codeVerifier, mode: "login", ...options };
+  }
+  await storeOAuthState(PKCE_VERIFIER_PREFIX + state, data);
 
-  // Store the code verifier, scopes, mode, return URL, and invite token for later use
-  await storeOAuthState(PKCE_VERIFIER_PREFIX + state, {
-    verifier: codeVerifier,
-    scopes,
-    mode,
-    returnUrl,
-    inviteToken,
-    link,
-  });
-
-  // Create the authorization URL
   const url = client.buildAuthorizationUrl(config, {
     redirect_uri: getRedirectUri("google"),
     scope: scopes.join(" "),
@@ -198,67 +130,71 @@ export async function createGoogleAuthUrl(
     include_granted_scopes: "true",
   });
 
+  return { url: url.toString(), state };
+}
+
+function flowFromPkceData(data: PkceData): OAuthFlow {
+  if (data.mode === "login") {
+    return signInOrLinkFlow(data);
+  }
+
+  // A Docs-access flow without its user can't be honoured, and must not become a
+  // sign-in.
+  const returnPath = data.mode === "save" ? "/save" : data.returnUrl;
+  if (!data.userId || !returnPath) {
+    throw new OAuthStateError();
+  }
+
   return {
-    url: url.toString(),
-    state,
+    kind: "reauthorize",
+    userId: data.userId,
+    returnPath,
+    // `extension-save` is exempt from the state cookie (SECURITY.md §4) because its
+    // auth URL is generated in a Server Component (src/app/(spa)/extension/save/page.tsx),
+    // which Next.js forbids from setting cookies. It only refreshes the tokens on the
+    // flow user's own link and signs no one in, so it isn't the login-CSRF vector. If
+    // that flow ever moves to a Route Handler (which can set cookies), drop this.
+    browserBound: data.mode !== "extension-save",
   };
 }
 
 /**
- * Validates a Google OAuth callback and retrieves user information
+ * Reads a Google callback's state: the PKCE verifier and the flow.
  *
- * This:
- * 1. Retrieves the PKCE verifier from Redis
- * 2. Exchanges the authorization code for tokens
- * 3. Fetches the user's Google profile
- *
- * @param code - The authorization code from Google
- * @param state - The state parameter for verification
- * @returns The user info and tokens
- * @throws Error if Google OAuth is not configured, state is invalid, or code exchange fails
+ * @throws OAuthStateError if the state is unknown, expired or already used
  */
-export async function validateGoogleCallback(
-  code: string,
-  state: string
-): Promise<GoogleAuthResult> {
-  const config = getGoogleConfig();
+export async function beginGoogleCallback(state: string): Promise<PendingOAuthCallback> {
+  return beginOAuthCallback<PkceData>(PKCE_VERIFIER_PREFIX + state, (pkceData) => {
+    // An empty verifier must fail closed: the client treats a falsy `pkceCodeVerifier` as
+    // "this flow used no PKCE" and would silently drop the proof from the token request.
+    if (!pkceData.verifier) {
+      throw new OAuthStateError();
+    }
 
-  if (!config) {
-    throw new Error("Google OAuth is not configured");
-  }
+    return {
+      flow: flowFromPkceData(pkceData),
+      async exchange(code) {
+        const config = getGoogleConfig();
+        if (!config) {
+          throw new Error("Google OAuth is not configured");
+        }
 
-  // Retrieve and consume the PKCE data (verifier + scopes)
-  const pkceData = await consumeOAuthState<PkceData>(PKCE_VERIFIER_PREFIX + state);
+        const tokens = await exchangeAuthorizationCode(config, getRedirectUri("google"), {
+          code,
+          state,
+          codeVerifier: pkceData.verifier,
+        });
+        const userInfo = await fetchGoogleUserInfo(tokens.access_token);
 
-  // An empty verifier must fail closed: the client treats a falsy `pkceCodeVerifier` as
-  // "this flow used no PKCE" and would silently drop the proof from the token request.
-  if (!pkceData?.verifier) {
-    throw new Error("Invalid or expired OAuth state");
-  }
-
-  // Exchange the authorization code for tokens
-  const tokens = await exchangeAuthorizationCode(config, getRedirectUri("google"), {
-    code,
-    state,
-    codeVerifier: pkceData.verifier,
+        return {
+          providerAccountId: userInfo.sub,
+          email: userInfo.email,
+          emailVerified: userInfo.email_verified === true,
+          ...tokensFromResponse(tokens),
+        };
+      },
+    };
   });
-
-  // Fetch user info from Google
-  const userInfo = await fetchGoogleUserInfo(tokens.access_token);
-
-  return {
-    userInfo,
-    tokens: {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: accessTokenExpiresAt(tokens),
-    },
-    scopes: tokens.scope?.split(" ").filter(Boolean),
-    mode: pkceData.mode,
-    link: pkceData.link,
-    returnUrl: pkceData.returnUrl,
-    inviteToken: pkceData.inviteToken,
-  };
 }
 
 /**
@@ -281,13 +217,4 @@ async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUserInfo>
   }
 
   return userInfo;
-}
-
-/**
- * Checks if Google OAuth is available
- *
- * @returns Whether Google OAuth is configured and enabled
- */
-export function isGoogleOAuthEnabled(): boolean {
-  return isProviderEnabled("google");
 }

@@ -4,7 +4,9 @@
  * One chunk of narration spoken by a cloud voice, streamed as AAC in
  * fragmented MP4 while the provider generates it (see `speech-encoding.ts`),
  * so playback can start on the first bytes. It's a route handler because tRPC
- * (and so the generated REST API) can't stream a binary body.
+ * (and so the generated REST API) can't stream a binary body; the OpenAPI
+ * document describes it by hand (`src/server/trpc/openapi.ts`), so keep its
+ * statuses there in step.
  *
  * Takes the web's session or the app's token (see `route-auth.ts`). Browser
  * requests are CSRF-safe the way tRPC's are: the session cookie is
@@ -17,23 +19,15 @@
  * started cuts the stream short.
  */
 
-import { z } from "zod";
-import { logger } from "@/lib/logger";
-import { MAX_CLOUD_SPEECH_CHARS, MAX_CLOUD_SPEECH_PAUSE_SECONDS } from "@/lib/narration/constants";
+import { MAX_CLOUD_SPEECH_CHARS } from "@/lib/narration/constants";
 import { authenticateRouteRequest } from "@/server/auth/route-auth";
 import {
   BodyReadTimeoutError,
   ContentTooLargeError,
   readRequestBufferWithSizeLimit,
 } from "@/server/http/fetch";
-import { getUserApiKeys } from "@/server/auth/session";
-import {
-  SpeechRejectedError,
-  SpeechRequestError,
-  SpeechUnavailableError,
-  streamSpeech,
-} from "@/server/services/speech";
-import { ProviderBusyError } from "@/server/services/provider-errors";
+import { getUserApiKeys } from "@/server/services/user-api-keys";
+import { speechErrorAnswer, speechRequestSchema, streamSpeech } from "@/server/services/speech";
 import {
   checkRateLimit,
   getClientIdentifier,
@@ -44,16 +38,6 @@ import {
 
 /** Far more than the largest valid body (UTF-8 and JSON escapes included). */
 const MAX_BODY_BYTES = 8 * MAX_CLOUD_SPEECH_CHARS + 1024;
-
-const speechRequestSchema = z.object({
-  /** `provider:model` ref; null means the default model. */
-  model: z.string().max(200).nullable(),
-  /** Null means the model's default voice. */
-  voice: z.string().max(200).nullable(),
-  text: z.string().min(1).max(MAX_CLOUD_SPEECH_CHARS),
-  /** Silence after the speech, so chunks played back to back pause like sentences do. */
-  pauseSeconds: z.number().min(0).max(MAX_CLOUD_SPEECH_PAUSE_SECONDS).default(0),
-});
 
 function errorResponse(
   status: number,
@@ -133,35 +117,10 @@ export async function POST(req: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    if (error instanceof ProviderBusyError) {
-      logger.warn("Speech provider busy", { model: input.model, error: error.message });
-      return errorResponse(
-        503,
-        "SERVICE_UNAVAILABLE",
-        "The cloud voice is busy; try again shortly",
-        {
-          ...limitHeaders,
-          "Retry-After": String(Math.ceil(error.retryAfterSeconds ?? 5)),
-        }
-      );
-    }
-    if (error instanceof SpeechRequestError) {
-      return errorResponse(400, "BAD_REQUEST", error.message, limitHeaders);
-    }
-    if (error instanceof SpeechRejectedError) {
-      return errorResponse(422, "UNPROCESSABLE_CONTENT", error.message, limitHeaders);
-    }
-    if (error instanceof SpeechUnavailableError) {
-      logger.warn("Speech models unavailable", { model: input.model, error: error.message });
-      return errorResponse(503, "SERVICE_UNAVAILABLE", error.message, {
-        ...limitHeaders,
-        "Retry-After": "30",
-      });
-    }
-    logger.error("Speech synthesis failed", {
-      model: input.model,
-      error: error instanceof Error ? error.message : String(error),
+    const answer = speechErrorAnswer(error, { model: input.model });
+    return errorResponse(answer.status, answer.code, answer.message, {
+      ...limitHeaders,
+      ...answer.headers,
     });
-    return errorResponse(500, "INTERNAL_SERVER_ERROR", "Speech synthesis failed", limitHeaders);
   }
 }

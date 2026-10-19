@@ -809,6 +809,21 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].title).toBe("Ruby Programming Tips");
     });
+
+    it.each([
+      ["%", "100% Real", "100 Real"],
+      ["_", "snake_case", "snakeXcase"],
+    ])("matches a %s in the query literally", async (_wildcard, literal, lookalike) => {
+      const userId = await createTestUser();
+      for (const title of [literal, lookalike]) {
+        await createTestSubscription(userId, await createTestFeed({ title }));
+      }
+
+      const caller = createCaller(await createAuthContext(userId));
+      const result = await caller.subscriptions.list({ query: literal });
+
+      expect(result.items.map((s) => s.title)).toEqual([literal]);
+    });
   });
 });
 

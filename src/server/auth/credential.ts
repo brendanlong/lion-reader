@@ -11,6 +11,7 @@
 import { validateSession, type SessionData } from "@/server/auth/session";
 import { validateApiToken, type ApiTokenData } from "@/server/auth/api-token";
 import { extractBearerToken } from "@/server/auth/bearer";
+import { SESSION_COOKIE_NAME } from "@/server/auth/session-cookie";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { validateAccessToken, type OAuthTokenData } from "@/server/oauth/service";
 import { APP_CLIENT_ID, getAppResourceIdentifier } from "@/server/oauth/app-client";
@@ -155,5 +156,5 @@ export function getBearerOrSessionCookie(headers: Headers): string | null {
       return [key, value.join("=")];
     })
   );
-  return cookies.session ?? null;
+  return cookies[SESSION_COOKIE_NAME] || null;
 }

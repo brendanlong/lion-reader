@@ -7,12 +7,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import { users, sessions, oauthAccounts } from "../../src/server/db/schema";
 import { generateUuidv7 } from "../../src/lib/uuidv7";
 import { processOAuthCallback } from "../../src/server/auth/oauth/callback";
-import { createTestUser } from "./helpers";
+import { createSession } from "../../src/server/auth/session";
+import { createTestOAuthLink, createTestUser } from "./helpers";
 
 const VICTIM_EMAIL = "victim@example.com";
 
@@ -152,5 +153,57 @@ describe("processOAuthCallback email verification", () => {
     expect(account.refreshToken).toBe("stored-refresh-token");
     // The scope list is Google's report of the token, so it replaces the stored one
     expect(account.scopes).toEqual(["openid"]);
+  });
+
+  describe("signing in by email to an existing account", () => {
+    function signInByEmail(providerAccountId: string) {
+      return processOAuthCallback({
+        provider: "google",
+        providerAccountId,
+        email: VICTIM_EMAIL,
+        emailVerified: true,
+        accessToken: `token-${providerAccountId}`,
+      });
+    }
+
+    it("refuses a second account for a provider the user already linked", async () => {
+      const userId = await createTestUser({ email: VICTIM_EMAIL });
+      await createTestOAuthLink(userId, "google", { providerAccountId: "first-google-id" });
+
+      await expect(signInByEmail("second-google-id")).rejects.toMatchObject({
+        cause: { code: "OAUTH_ALREADY_LINKED" },
+      });
+
+      const links = await db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, userId));
+      expect(links.map((link) => link.providerAccountId)).toEqual(["first-google-id"]);
+    });
+
+    it("links only one of several concurrent first sign-ins with different accounts", async () => {
+      const userId = await createTestUser({ email: VICTIM_EMAIL });
+      const attempts = 5;
+      // Open a pool connection per attempt first, so connection setup doesn't
+      // stagger the attempts past the window between the lookup and the insert.
+      await Promise.all(Array.from({ length: attempts }, () => db.execute(sql`SELECT 1`)));
+
+      const results = await Promise.allSettled(
+        Array.from({ length: attempts }, (_, i) => signInByEmail(`racing-google-id-${i}`))
+      );
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const links = await db.select().from(oauthAccounts).where(eq(oauthAccounts.userId, userId));
+      expect(links).toHaveLength(1);
+    });
+
+    it("leaves the user's other sessions signed in", async () => {
+      // An ordinary sign-in, not a credential change made from Settings
+      // (see processOAuthCallback).
+      const userId = await createTestUser({ email: VICTIM_EMAIL });
+      const { sessionId } = await createSession(db, { userId });
+
+      await signInByEmail("new-device-google-id");
+
+      const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId));
+      expect(session.revokedAt).toBeNull();
+    });
   });
 });

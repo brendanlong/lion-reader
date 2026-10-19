@@ -9,9 +9,15 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { z } from "zod";
-import type { unreadCountsSchema } from "@/lib/events/schemas";
+import type { NewEntryListData, NewEntryListItem, unreadCountsSchema } from "@/lib/events/schemas";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
-import { addServerEntryToLists, getLocalDb, insertEntryIntoLists } from "@/lib/local-db/local-db";
+import {
+  addServerEntryToLists,
+  getLocalDb,
+  insertEntryIntoLists,
+  type LocalDb,
+} from "@/lib/local-db/local-db";
+import { SAVED_SUBSCRIPTION_LIST_INPUT } from "@/lib/queries/saved-subscription";
 import {
   removeStoredEntryMemberships,
   setServerEntryState,
@@ -28,6 +34,7 @@ import {
   writeSubscriptionCount,
   sidebarSectionOf,
   type SubscriptionListInput,
+  type StampedSubscriptionRow,
   type SubscriptionRow,
 } from "@/lib/local-db/subscriptions";
 import { UNCATEGORIZED_SECTION } from "@/lib/sidebar-sections";
@@ -89,7 +96,7 @@ function applySubscriptionCounts(
  */
 export function handleSubscriptionCreated(
   utils: TRPCClientUtils,
-  subscription: SubscriptionRow,
+  subscription: StampedSubscriptionRow,
   queryClient: QueryClient,
   counts?: UnreadCounts
 ): void {
@@ -109,64 +116,31 @@ export function handleSubscriptionCreated(
 }
 
 /**
- * A subscription's new settings: the whole row from an update/setTags
- * response, or what a subscription_updated event carries. An undefined field
- * is unknown and left as it is.
- */
-type SubscriptionUpdate = Pick<SubscriptionRow, "id" | "tags"> &
-  Partial<Pick<SubscriptionRow, "title" | "fetchFullContent">>;
-
-/**
- * Applies a subscription's new tags, title and settings, from its mutation
- * response or its event. Idempotent, so the acting tab can apply both.
+ * Applies a subscription's new row (tags, title and settings), from its
+ * mutation response or its event. Idempotent, so the acting tab can apply both.
  */
 export function applySubscriptionUpdate(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  update: SubscriptionUpdate
+  row: StampedSubscriptionRow
 ): void {
-  const { id, tags, title, fetchFullContent } = update;
   const db = getLocalDb(queryClient);
-  const stored = db.subscriptions.rows.getSynced(id);
+  const stored = db.subscriptions.rows.getSynced(row.id);
   // Its entries show the same title (the server sends it as their
   // feedTitle), so a rename carries over to the ones already loaded.
-  if (title !== undefined) setSubscriptionEntriesFeedTitle(db.entries, id, title);
-  // The reader reads the setting from the stored subscription, else from the
-  // entry's copy, which only a refetch updates.
-  if (!stored && fetchFullContent !== undefined && !isFullSubscriptionRow(update)) {
-    void utils.entries.get.invalidate();
-  }
+  setSubscriptionEntriesFeedTitle(db.entries, row.id, row.title);
   // The stored row moves between sidebar sections with its tags.
-  if (stored) {
-    patchLiveSubscription(db.subscriptions, id, {
-      tags,
-      ...(title !== undefined && { title }),
-      ...(fetchFullContent !== undefined && { fetchFullContent }),
-    });
-  } else if (isFullSubscriptionRow(update)) {
-    writeLiveSubscriptions(db.subscriptions, [update]);
-  } else {
-    loadSubscriptionForSidebar(
-      utils,
-      queryClient,
-      id,
-      tags.map((tag) => tag.id)
-    );
-  }
-  const tagIds = (row: Pick<SubscriptionRow, "tags">) =>
-    row.tags
+  writeLiveSubscriptions(db.subscriptions, [row]);
+  const tagIds = (subscription: Pick<SubscriptionRow, "tags">) =>
+    subscription.tags
       .map((tag) => tag.id)
       .sort()
       .join();
   // Tag feed counts change with the tags, and the collection picker searches by title.
-  if (!stored || tagIds(stored) !== tagIds(update)) utils.tags.list.invalidate();
-  if (!stored || (title !== undefined && title !== stored.title)) {
+  if (!stored || tagIds(stored) !== tagIds(row)) utils.tags.list.invalidate();
+  if (!stored || row.title !== stored.title) {
     void utils.subscriptions.list.invalidate({ type: "collection" });
   }
-}
-
-function isFullSubscriptionRow(update: SubscriptionUpdate): update is SubscriptionRow {
-  return "originalTitle" in update;
 }
 
 /**
@@ -291,6 +265,86 @@ export function applyEntryStateChanges(
   if (change.counts) applyUnreadCounts(utils, queryClient, change.counts);
 }
 
+/** Builds the entry row for a list-item payload. */
+export function toEntryRow(
+  event: {
+    entryId: string;
+    subscriptionId?: string | null;
+    subscriptionIds: string[];
+    updatedAt: string;
+  },
+  entry: NewEntryListData,
+  state: { read: boolean; starred: boolean }
+): EntryRow {
+  return {
+    id: event.entryId,
+    subscriptionId: event.subscriptionId ?? null,
+    subscriptionIds: event.subscriptionIds,
+    type: entry.type,
+    url: entry.url,
+    title: entry.title,
+    author: entry.author,
+    summary: entry.summary,
+    publishedAt: entry.publishedAt ? new Date(entry.publishedAt) : null,
+    fetchedAt: new Date(entry.fetchedAt),
+    updatedAt: new Date(event.updatedAt),
+    ...(entry.entryUpdatedAt && { entryUpdatedAt: new Date(entry.entryUpdatedAt) }),
+    read: state.read,
+    starred: state.starred,
+    feedTitle: entry.feedTitle,
+    siteName: entry.siteName,
+  };
+}
+
+/**
+ * A saved article was created while the client knows of no saved subscription:
+ * this save created it (the user's first), so look its id up, then place the
+ * entry. Keyed on the entry's type, the one thing a first save's list item surely
+ * says (it may be read already, so its counts needn't show it), and done at
+ * most once per page load, so a server answering null can't make every save
+ * refetch.
+ */
+function learnNewSavedSubscription(utils: TRPCClientUtils, db: LocalDb, entry: EntryRow): void {
+  if (entry.type !== "saved" || db.saved.id !== null || db.saved.lookedUp) return;
+  db.saved.lookedUp = true;
+  // The cached null is still fresh by the staleTime, but out of date now.
+  void utils.subscriptions.list.fetch(SAVED_SUBSCRIPTION_LIST_INPUT, { staleTime: 0 }).then(
+    () => {
+      const stored = db.entries.getSynced(entry.id);
+      if (stored) insertEntryIntoLists(db, stored);
+    },
+    () => {
+      // Lists pick the entry up on their next refresh.
+    }
+  );
+}
+
+/**
+ * Places a new entry, whether from the response of the mutation that created
+ * it or its `new_entry` event, and applies the counts that came with it.
+ * Idempotent (absolute counts, insert deduped by id), so the acting tab can
+ * apply both, and a reconnect catch-up can re-deliver the event. `read`/
+ * `starred` are set only by the catch-up (the entry may have changed state on
+ * another device while this client was offline): a brand-new entry is
+ * unread and unstarred.
+ */
+export function applyNewEntry(
+  utils: TRPCClientUtils,
+  queryClient: QueryClient,
+  item: NewEntryListItem | undefined,
+  counts: UnreadCounts | undefined
+): void {
+  if (counts) applyUnreadCounts(utils, queryClient, counts);
+  if (!item) return;
+  const db = getLocalDb(queryClient);
+  const row = toEntryRow(item, item.entry, {
+    read: item.entry.read ?? false,
+    starred: item.entry.starred ?? false,
+  });
+  addServerEntryToLists(db, row);
+  learnNewSavedSubscription(utils, db, row);
+}
+
 /**
  * Handles a subscription being deleted: removes it from the local store,
  * applies the counts, and invalidates `entries.list` (its entries drop out).
@@ -330,14 +384,16 @@ export function handleSubscriptionDeleted(
 /**
  * Applies a mark-all-read, from its mutation response or its event: the
  * absolute counts it carries, and a refetch of the entry lists, whose read
- * state it changed for possibly thousands of entries.
+ * state it changed for possibly thousands of entries. A response that marked
+ * nothing has no counts (none changed), but the lists still refetch: they may
+ * show entries read elsewhere.
  */
 export function handleMarkAllRead(
   utils: TRPCClientUtils,
   queryClient: QueryClient,
-  counts: UnreadCounts
+  counts?: UnreadCounts
 ): void {
-  applyUnreadCounts(utils, queryClient, counts);
+  if (counts) applyUnreadCounts(utils, queryClient, counts);
   utils.entries.list.invalidate();
 }
 

@@ -6,13 +6,12 @@
  * Redirects unauthenticated users to login and already-confirmed users to /all.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { TRPCProvider } from "@/lib/trpc/provider";
 import { AuthErrorHandler } from "@/components/app/AuthErrorHandler";
 import { AuthLayoutContent } from "@/components/auth/AuthLayoutContent";
-import { validateSession } from "@/server/auth/session";
+import { getRequestSession } from "@/server/auth/request-session";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 
 interface CompleteSignupLayoutProps {
@@ -20,16 +19,13 @@ interface CompleteSignupLayoutProps {
 }
 
 export default async function CompleteSignupLayout({ children }: CompleteSignupLayoutProps) {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
-  const session = sessionToken ? await validateSession(sessionToken) : null;
-
-  if (!session) {
+  const current = await getRequestSession();
+  if (!current) {
     redirect("/login");
   }
 
   // Already confirmed, go to app
-  if (isSignupConfirmed(session.user)) {
+  if (isSignupConfirmed(current.session.user)) {
     redirect("/all");
   }
 

@@ -10,7 +10,7 @@
  * - entries.list({ type: 'saved' }) for listing
  * - entries.get for fetching single articles
  * - entries.count({ type: 'saved' }) for counts
- * - entries.markRead, entries.star, entries.unstar for mutations
+ * - entries.markRead, entries.setStarred for mutations
  *
  * This router only handles:
  * - saved.save: Save a URL (content extraction in services/saved.ts)
@@ -30,42 +30,12 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { savedArticleUrlSchema, saveCollectionIdsSchema, uuidSchema } from "../validation";
 import { usageLimitsConfig } from "@/server/config/env";
-import type { db as dbType } from "@/server/db";
-import { getGlobalUnreadCounts } from "@/server/services/counts";
+import { newEntryListItemSchema, unreadCountsSchema } from "@/lib/events/schemas";
+import { getBulkEntryRelatedCounts, type BulkUnreadCounts } from "@/server/services/counts";
 import * as savedService from "@/server/services/saved";
 
 // Saved-article management is part of the MCP tool surface, which the app shares.
 const readerProcedure = scopedProtectedProcedure(READER_SCOPES);
-
-// ============================================================================
-// Output Schemas
-// ============================================================================
-
-/**
- * Schema for unread counts returned from saved article mutations.
- * Saved articles only affect all, starred, and saved counts (no subscription/tags).
- */
-const savedUnreadCountsSchema = z.object({
-  all: z.object({ unread: z.number() }),
-  starred: z.object({ unread: z.number() }),
-  saved: z.object({ unread: z.number() }),
-});
-
-/**
- * The absolute counts a saved-article mutation affects: saved articles have no
- * subscription or tags, so only the global counters move.
- */
-async function getSavedUnreadCounts(
-  db: typeof dbType,
-  userId: string
-): Promise<z.infer<typeof savedUnreadCountsSchema>> {
-  const counts = await getGlobalUnreadCounts(db, userId);
-  return {
-    all: { unread: counts.allUnread },
-    starred: { unread: counts.starredUnread },
-    saved: { unread: counts.savedUnread },
-  };
-}
 
 /**
  * Changing collections needs a reader scope; the save-only `saved:write`
@@ -82,6 +52,15 @@ function assertMayChangeCollections(
       message: "Adding to collections requires the 'mcp' or 'reader:full-access' scope",
     });
   }
+}
+
+/** The counts of the lists a saved article is in: the global ones and its collections. */
+function savedArticleCounts(
+  db: Parameters<typeof getBulkEntryRelatedCounts>[0],
+  userId: string,
+  articleId: string
+): Promise<BulkUnreadCounts> {
+  return getBulkEntryRelatedCounts(db, userId, [{ id: articleId, subscriptionId: null }]);
 }
 
 // ============================================================================
@@ -143,7 +122,7 @@ export const savedRouter = createTRPCRouter({
     .output(
       z.object({
         article: savedService.savedArticleMetadataSchema,
-        counts: savedUnreadCountsSchema,
+        counts: unreadCountsSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -158,7 +137,7 @@ export const savedRouter = createTRPCRouter({
         userAuth: ctx.authType === "app_token" ? "non-interactive" : "interactive",
       });
 
-      return { article, counts: await getSavedUnreadCounts(ctx.db, userId) };
+      return { article, counts: await savedArticleCounts(ctx.db, userId, article.id) };
     }),
 
   /**
@@ -238,11 +217,18 @@ export const savedRouter = createTRPCRouter({
     .output(
       z.object({
         article: savedService.savedArticleMetadataSchema,
-        counts: savedUnreadCountsSchema,
+        // The article's list item, as its new_entry event carries it.
+        listItem: newEntryListItemSchema,
+        counts: unreadCountsSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const article = await savedService.uploadFile(ctx.db, ctx.session.user.id, input);
-      return { article, counts: await getSavedUnreadCounts(ctx.db, ctx.session.user.id) };
+      const userId = ctx.session.user.id;
+      const { article, listItem } = await savedService.uploadFile(ctx.db, userId, input);
+      return {
+        article,
+        listItem,
+        counts: await savedArticleCounts(ctx.db, userId, article.id),
+      };
     }),
 });

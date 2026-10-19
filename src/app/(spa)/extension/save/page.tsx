@@ -11,22 +11,14 @@
  * Also accepts POST with html body for authenticated page content.
  */
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { validateSession } from "@/server/auth/session";
+import { getRequestSession } from "@/server/auth/request-session";
 import { createApiToken, API_TOKEN_SCOPES } from "@/server/auth/api-token";
-import { createGoogleAuthUrl, GOOGLE_DOCS_READONLY_SCOPE } from "@/server/auth/oauth/google";
-import { GOOGLE_DRIVE_SCOPE } from "@/server/google/docs";
+import { createGoogleAuthUrl } from "@/server/auth/oauth/google";
+import { getGoogleDocsGrant } from "@/server/google/tokens";
 import { db } from "@/server/db";
-import { oauthAccounts } from "@/server/db/schema";
-import { eq, and } from "drizzle-orm";
 import { createCaller } from "@/server/trpc/root";
 import { ExtensionSaveClient } from "./client";
-
-// Both scopes are needed for full Google Docs support:
-// - documents.readonly for native Google Docs via Docs API
-// - drive.readonly for uploaded .docx files via Drive API
-const GOOGLE_DOCS_SCOPES = [GOOGLE_DOCS_READONLY_SCOPE, GOOGLE_DRIVE_SCOPE];
 
 interface PageProps {
   searchParams: Promise<{
@@ -46,24 +38,20 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
   }
 
   const returnUrl = `/extension/save?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ""}`;
-  const redirectToGoogleDocsAuth = async (): Promise<never> => {
+  const redirectToGoogleDocsAuth = async (userId: string): Promise<never> => {
     const authResult = await createGoogleAuthUrl({
-      additionalScopes: GOOGLE_DOCS_SCOPES,
-      mode: "extension-save",
-      returnUrl,
+      docsAccess: { userId, mode: "extension-save", returnUrl },
     });
     redirect(authResult.url);
   };
 
   // Check authentication
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("session")?.value;
-  const session = sessionToken ? await validateSession(sessionToken) : null;
-
-  if (!sessionToken || !session) {
+  const current = await getRequestSession();
+  if (!current) {
     // Not logged in or invalid session - redirect to login with return URL
     redirect(`/login?redirect=${encodeURIComponent(returnUrl)}`);
   }
+  const { session, token: sessionToken } = current;
 
   // Checked before the Google redirect below, which would otherwise loop when
   // the OAuth callback sends us back with an error
@@ -73,23 +61,10 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
   // Check if this is a Google Doc and we need OAuth
   const isGoogleDoc = url.includes("docs.google.com");
-  if (isGoogleDoc) {
-    // Check if user has Google OAuth with both required scopes
-    const googleAccount = await db
-      .select()
-      .from(oauthAccounts)
-      .where(and(eq(oauthAccounts.userId, session.user.id), eq(oauthAccounts.provider, "google")))
-      .limit(1);
-
-    // The Google callback only adds scopes to an already-linked account, so
-    // without one, just try the save (public docs need no auth)
-    const userScopes = googleAccount[0]?.scopes ?? [];
-    const hasAllScopes = GOOGLE_DOCS_SCOPES.every((scope) => userScopes.includes(scope));
-
-    if (googleAccount.length > 0 && !hasAllScopes) {
-      // Need to request Google Docs scopes; redirect to Google with return to this page
-      await redirectToGoogleDocsAuth();
-    }
+  // The Google callback only adds scopes to an already-linked account, so
+  // without one, just try the save (public docs need no auth)
+  if (isGoogleDoc && (await getGoogleDocsGrant(session.user.id)).status === "missing-scopes") {
+    await redirectToGoogleDocsAuth(session.user.id);
   }
 
   // All auth is complete - save the article
@@ -128,7 +103,7 @@ export default async function ExtensionSavePage({ searchParams }: PageProps) {
 
   // Handle Google reauth redirect outside try/catch (redirect throws)
   if (needsGoogleReauth) {
-    await redirectToGoogleDocsAuth();
+    await redirectToGoogleDocsAuth(session.user.id);
   }
 
   // Create an API token for the extension

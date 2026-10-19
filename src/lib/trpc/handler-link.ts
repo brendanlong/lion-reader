@@ -3,7 +3,7 @@
  * handler map instead of the network.
  *
  * Used wherever the real tRPC React client should run against canned data:
- * the public demo (`src/app/(public)/demo/store.ts`) and the component tests
+ * the public demo (`src/lib/demo/store.ts`) and the component tests
  * (`tests/utils/component-test-helpers.tsx`). Because there is no HTTP layer,
  * no transformer runs: handler return values reach the hooks as-is (Dates stay
  * Dates), which is what the superjson-decoded client would produce.

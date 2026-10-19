@@ -23,6 +23,7 @@ import {
   Routes,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
+  type ClientEvents,
   type GatewayMessageCreateDispatchData,
   type Message,
   type User,
@@ -140,15 +141,54 @@ function extractUrls(content: string): string[] {
 
 let client: Client | null = null;
 
-export async function startDiscordBot(): Promise<void> {
+/** A logged-in bot. */
+interface DiscordBot {
+  /** Stops handling events, waits for the running handlers, then disconnects. */
+  stop: () => Promise<void>;
+}
+
+/**
+ * The bot's running event handlers, so a stopping bot can let them finish
+ * instead of having the process close the DB pool under a save.
+ */
+export interface HandlerTracker {
+  /** Runs `handler` and tracks it until it settles; does nothing once draining. */
+  run: (handler: () => Promise<void>) => void;
+  /** Stops accepting handlers and resolves once the running ones settle. */
+  drain: () => Promise<void>;
+}
+
+export function createHandlerTracker(): HandlerTracker {
+  const running = new Set<Promise<void>>();
+  let draining = false;
+  return {
+    run: (handler) => {
+      if (draining) return;
+      const work = handler();
+      running.add(work);
+      void work.finally(() => running.delete(work));
+    },
+    drain: async () => {
+      draining = true;
+      await Promise.allSettled(running);
+    },
+  };
+}
+
+/**
+ * Logs the bot in. Resolves to null if the bot is disabled (no
+ * DISCORD_BOT_TOKEN: the discord process group runs on every deploy of
+ * fly.toml, Discord or not), and rejects if it is misconfigured, so the process
+ * fails instead of reporting itself alive.
+ */
+export async function startDiscordBot(): Promise<DiscordBot | null> {
   if (!DISCORD_BOT_TOKEN) {
     logger.info("Discord bot disabled (DISCORD_BOT_TOKEN not set)");
-    return;
+    return null;
   }
 
   if (!DISCORD_CLIENT_ID) {
-    logger.error("DISCORD_CLIENT_ID is required for Discord bot");
-    return;
+    throw new Error("DISCORD_BOT_TOKEN is set but DISCORD_CLIENT_ID is not");
   }
 
   client = new Client({
@@ -169,8 +209,8 @@ export async function startDiscordBot(): Promise<void> {
   // Gateway diagnostics. `client.login()` resolves as soon as the token
   // handshake starts, long before the gateway is actually connected, so a bot
   // that authenticates but never reaches `clientReady` would silently receive
-  // zero reaction events while still logging "started successfully". These
-  // handlers make that failure mode visible instead of invisible.
+  // zero reaction events while the process reports itself started (and pings
+  // its heartbeat). These handlers make that failure mode visible.
   client.on("error", (error) => {
     logger.error("Discord client error", { error });
   });
@@ -201,11 +241,22 @@ export async function startDiscordBot(): Promise<void> {
   // Register slash commands
   await registerCommands();
 
+  // Listeners that do work (DB, replies) register through `on`, so stop() can
+  // wait for them.
+  const handlers = createHandlerTracker();
+  const eventClient = client;
+  const on = <E extends keyof ClientEvents>(
+    event: E,
+    handler: (...args: ClientEvents[E]) => Promise<void>
+  ): void => {
+    eventClient.on(event, (...args) => handlers.run(() => handler(...args)));
+  };
+
   // Handle slash commands.
   // A rejection from an async event listener is an unhandled promise rejection,
   // which kills the whole process (Sentry's global handler captures then exits)
   // — so one failed reply or DB hiccup must not take the bot down.
-  client.on("interactionCreate", async (interaction) => {
+  on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName, user } = interaction;
@@ -232,7 +283,7 @@ export async function startDiscordBot(): Promise<void> {
   });
 
   // Handle reactions
-  client.on("messageReactionAdd", async (reaction, user) => {
+  on("messageReactionAdd", async (reaction, user) => {
     if (user.bot) return;
 
     // Users can't react with application emojis (they're only usable by the
@@ -261,7 +312,7 @@ export async function startDiscordBot(): Promise<void> {
 
   // Handle direct messages: a URL sent (or forwarded) to the bot in a DM is
   // saved just like a save-emoji reaction, and the DM is reacted to the same way.
-  client.on("messageCreate", async (message) => {
+  on("messageCreate", async (message) => {
     if (message.author?.bot) return;
     // Only DMs — guild messages are handled via the save-emoji reaction, not by
     // treating every posted link as a save.
@@ -307,14 +358,14 @@ export async function startDiscordBot(): Promise<void> {
       // a cache miss here reliably means messageCreate was (or will be) dropped.
       if (dmRecoveryClient.channels.cache.has(data.channel_id)) return;
 
-      void recoverUncachedDirectMessage(dmRecoveryClient, data);
+      handlers.run(() => recoverUncachedDirectMessage(dmRecoveryClient, data));
     }
   );
 
   // Watchdog: `client.login()` below resolves on token handshake, not on a live
   // gateway. If `clientReady` hasn't fired within this window the bot is logged
   // in but not receiving events (stuck handshake, network, disallowed intents),
-  // so log loudly rather than sitting silently "started successfully".
+  // so log loudly rather than sitting silently "started".
   const readyWatchdog = setTimeout(() => {
     logger.error("Discord gateway not ready after login", {
       timeoutMs: READY_WATCHDOG_MS,
@@ -356,6 +407,16 @@ export async function startDiscordBot(): Promise<void> {
     clearTimeout(readyWatchdog);
     throw error;
   }
+
+  const loggedIn = client;
+  return {
+    stop: async () => {
+      clearTimeout(readyWatchdog);
+      // Drain first: destroy() clears the REST token the handlers reply with.
+      await handlers.drain();
+      await loggedIn.destroy();
+    },
+  };
 }
 
 async function registerCommands(): Promise<void> {

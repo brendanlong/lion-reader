@@ -24,8 +24,6 @@ export async function register() {
     // Initialize plugins (happens at module import time)
     await import("./server/plugins");
 
-    const { logger } = await import("./lib/logger");
-
     // Start the internal Prometheus metrics server (port 9091) HERE, in the
     // Next.js runtime module graph — NOT in the custom server (scripts/server.ts).
     // The HTTP request metrics (http_requests_total / http_request_duration_seconds)
@@ -37,8 +35,8 @@ export async function register() {
     // to work because they're collected inside the scrape handler itself.
     // Colocating the server with the route handlers means one registry holds
     // everything the app process emits. The worker/discord processes are single
-    // bundles and keep starting their own metrics servers in their scripts.
-    const { startMetricsServer, stopMetricsServer } = await import("./server/metrics/server");
+    // bundles and start theirs in runProcess (src/server/process.ts).
+    const { startMetricsServer } = await import("./server/metrics/server");
     startMetricsServer(9091);
 
     // Register resource cleanup for graceful shutdown. The custom server
@@ -47,31 +45,8 @@ export async function register() {
     // its connections (including SSE streams), so in-flight requests never
     // see a closed pool.
     const { registerResourceCleanup } = await import("./server/shutdown");
-    registerResourceCleanup(async () => {
-      logger.info("Closing shared resources...");
-
-      // Stop serving metrics scrapes first — a scrape reads the DB pool
-      // (collectAllMetrics), so it must stop before the pool below closes.
-      await stopMetricsServer();
-
-      // Flush buffered Sentry events first (errors captured during the
-      // connection drain are the ones most worth keeping). No-op without a
-      // DSN.
-      await Sentry.close(2000);
-
-      // Close Redis connection. QUIT times out if Redis is unreachable; that
-      // must not skip closing the database pool.
-      const { redis } = await import("./server/redis");
-      try {
-        await redis.quit();
-      } catch {
-        redis.disconnect();
-      }
-
-      // Close database pool
-      const { pool } = await import("./server/db");
-      await pool.end();
-    });
+    const { closeSharedResources } = await import("./server/process");
+    registerResourceCleanup(closeSharedResources);
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {

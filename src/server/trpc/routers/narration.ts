@@ -36,7 +36,7 @@ import { aiProviderName, SPEECH_PROVIDERS } from "@/lib/ai/providers";
 import { NARRATION_PROVIDERS } from "@/lib/narration/constants";
 import { defaultSpeechModelId, defaultVoiceFor, listSpeechModels } from "@/server/services/speech";
 import { selectDisplayedContent } from "@/lib/entry-content";
-import { getApiKeyProviders, getUserApiKeys } from "@/server/auth/session";
+import { getApiKeyProviders, getUserApiKeys } from "@/server/services/user-api-keys";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
 import { logger } from "@/lib/logger";
 import { OAUTH_SCOPES } from "@/server/oauth/utils";

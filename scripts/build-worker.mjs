@@ -15,18 +15,4 @@ await buildBundle({
   label: "Worker",
   entryPoint: "scripts/worker.ts",
   outfile: "dist/worker.js",
-
-  // External packages that can't/shouldn't be bundled:
-  // - Native modules (argon2 uses node-gyp bindings)
-  // - html-rewriter-wasm has WASM files and internal requires that break when bundled
-  // We bundle everything else for a smaller, faster deployment
-  external: [
-    "argon2",
-    "html-rewriter-wasm",
-    "@lion-reader/sanitizer",
-    "@lion-reader/readability",
-    "@lion-reader/feed-parser",
-    "@lion-reader/markdown",
-    "@lion-reader/speech-encoder",
-  ],
 });

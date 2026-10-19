@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { BUSY_ATTEMPTS, BUSY_FIRST_WAIT_MS, fetchWhenFree } from "@/lib/narration/cloud-speech";
 
 function answers(...statuses: Array<[number, string?]>) {
@@ -15,7 +15,13 @@ function answers(...statuses: Array<[number, string?]>) {
 }
 
 describe("fetchWhenFree", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("waits out a busy voice, as long as it asks", async () => {
+    // Jitter's midpoint: the wait unspread.
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
     const waits: number[] = [];
     const response = await fetchWhenFree(
       answers([503, "2"], [429], [200]),
@@ -27,6 +33,18 @@ describe("fetchWhenFree", () => {
     expect(response.status).toBe(200);
     // The asked-for 2 s, then the backoff, which has doubled once already.
     expect(waits).toEqual([2000, 2 * BUSY_FIRST_WAIT_MS]);
+  });
+
+  it("spreads out the waits of listeners turned away together", async () => {
+    const waits: number[] = [];
+    for (const random of [0, 0.99]) {
+      vi.spyOn(Math, "random").mockReturnValue(random);
+      await fetchWhenFree(answers([503, "2"], [200]), new AbortController().signal, async (ms) => {
+        waits.push(ms);
+      });
+    }
+    expect(waits[0]).toBeLessThan(2000);
+    expect(waits[1]).toBeGreaterThan(2000);
   });
 
   it("gives up after a few tries, and doesn't retry other failures", async () => {

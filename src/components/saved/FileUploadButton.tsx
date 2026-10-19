@@ -8,8 +8,10 @@
 "use client";
 
 import { useState, useCallback, type ChangeEvent, type DragEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc/client";
+import { applyNewEntry } from "@/lib/cache/operations";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { UploadIcon, DocumentIcon } from "@/components/ui/icons";
@@ -67,12 +69,11 @@ export function FileUploadButton({ className = "", onSuccess }: FileUploadButton
   const [error, setError] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const uploadMutation = trpc.saved.uploadFile.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success("File uploaded successfully");
-      // Invalidate queries to refresh the saved list and count
-      utils.entries.list.invalidate({ type: "saved" });
-      utils.entries.count.invalidate({ type: "saved" });
+      applyNewEntry(utils, queryClient, data.listItem, data.counts);
       onSuccess?.();
       handleClose();
     },

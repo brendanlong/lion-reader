@@ -28,7 +28,7 @@ import {
   markEntriesRead,
   updateEntryStarred,
 } from "../../src/server/services/entry-state";
-import { getBulkEntryRelatedCounts, getGlobalUnreadCounts } from "../../src/server/services/counts";
+import { getBulkEntryRelatedCounts, getUserUnreadCounts } from "../../src/server/services/counts";
 import { reconcileCounters } from "../../src/server/services/reconcile-counters";
 import { deleteSavedArticle, uploadArticle, uploadFile } from "../../src/server/services/saved";
 import { createCaller } from "../../src/server/trpc/root";
@@ -112,7 +112,7 @@ describe("collections", () => {
       await markEntriesRead(db, userId, [{ id: entryA }], true);
       await updateEntryStarred(db, userId, entryB, true);
       expect(await counters(collectionId)).toEqual({ unread: 1 });
-      expect((await getGlobalUnreadCounts(db, userId)).starredUnread).toBe(1);
+      expect((await getUserUnreadCounts(db, userId)).starredUnread).toBe(1);
 
       await removeEntriesFromCollection(db, userId, collectionId, [entryB]);
       expect(await counters(collectionId)).toEqual({ unread: 0 });
@@ -138,7 +138,7 @@ describe("collections", () => {
 
       await addEntriesToCollection(db, userId, collectionId, [entryA]);
 
-      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(2);
+      expect((await getUserUnreadCounts(db, userId)).allUnread).toBe(2);
     });
 
     it("moves a tag holding the article's feed and collection by one per read", async () => {
@@ -174,7 +174,7 @@ describe("collections", () => {
 
       await db.delete(users).where(eq(users.id, userId));
 
-      expect((await getGlobalUnreadCounts(db, other.userId)).allUnread).toBe(2);
+      expect((await getUserUnreadCounts(db, other.userId)).allUnread).toBe(2);
       await expectNoDrift();
     });
 
@@ -205,12 +205,12 @@ describe("collections", () => {
 
       expect((await getEntries(db, userId, [entryA, entryB])).map((e) => e.id)).toEqual([entryA]);
       expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([entryA]);
-      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(1);
+      expect((await getUserUnreadCounts(db, userId)).allUnread).toBe(1);
 
       await removeEntriesFromCollection(db, userId, collectionId, [entryA]);
 
       expect(await getEntries(db, userId, [entryA])).toEqual([]);
-      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(0);
+      expect((await getUserUnreadCounts(db, userId)).allUnread).toBe(0);
     });
 
     it("deleting a collection keeps its memberships and hides members of unsubscribed sources", async () => {
@@ -234,7 +234,7 @@ describe("collections", () => {
       ).toEqual([{ entryId: entryA }]);
       expect(await getEntries(db, userId, [entryA])).toEqual([]);
       expect(await counters(collectionId)).toEqual({ unread: 1 });
-      expect((await getGlobalUnreadCounts(db, userId)).allUnread).toBe(0);
+      expect((await getUserUnreadCounts(db, userId)).allUnread).toBe(0);
       await expectNoDrift();
     });
   });
@@ -463,12 +463,18 @@ describe("collections", () => {
         saveOnly.saved.save({ url: "https://example.com/b", html, collectionIds: [collectionId] })
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
-      const { article } = await caller.saved.save({
+      const { article, counts } = await caller.saved.save({
         url: "https://example.com/c",
         html,
         collectionIds: [collectionId],
       });
       expect(await listIds(userId, { subscriptionId: collectionId })).toEqual([article.id]);
+      // The counts cover the collections it joined, not just the global lists.
+      expect(counts).toMatchObject({
+        all: { unread: 3 },
+        saved: { unread: 1 },
+        subscriptions: [{ id: collectionId, unread: 1 }],
+      });
     });
 
     it("checks an upload's collections before saving, and files it into them", async () => {
@@ -485,7 +491,17 @@ describe("collections", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
       expect(await savedEntryCount(userId)).toBe(0);
 
-      const uploaded = await uploadFile(db, userId, { ...file, collectionIds: [collectionId] });
+      const caller = createCaller(await createAuthContext(userId));
+      const { article: uploaded, counts } = await caller.saved.uploadFile({
+        ...file,
+        collectionIds: [collectionId],
+      });
+      // The counts cover the collections it joined, not just the global lists.
+      expect(counts).toMatchObject({
+        all: { unread: 3 },
+        saved: { unread: 1 },
+        subscriptions: [{ id: collectionId, unread: 1 }],
+      });
       const written = await uploadArticle(db, userId, {
         ...markdown,
         collectionIds: [collectionId],

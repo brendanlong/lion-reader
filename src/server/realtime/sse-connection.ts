@@ -23,6 +23,7 @@ import {
 import { eq, and, isNull } from "drizzle-orm";
 import type {
   NewEntryListData,
+  SyncSubscription,
   entryUpdatedEventSchema,
   newEntryEventSchema,
 } from "@/lib/events/schemas";
@@ -60,7 +61,11 @@ export async function getUserFeedSubscriptionMap(userId: string): Promise<Map<st
   return map;
 }
 
-/** subscriptionId -> custom title for the user's active subscriptions. */
+/**
+ * subscriptionId -> custom title for the user's active subscriptions. Only
+ * custom titles: a feed's own title can change mid-connection (a rename, or a
+ * first fetch), and the publisher's stamp is always current.
+ */
 async function getUserCustomTitles(userId: string): Promise<Map<string, string | null>> {
   const rows = await db
     .select({ id: subscriptions.id, customTitle: subscriptions.customTitle })
@@ -77,10 +82,23 @@ async function getUserCustomTitles(userId: string): Promise<Map<string, string |
 }
 
 /**
+ * A subscription event's custom title: its row's title, unless that's just the
+ * feed's own. A previous release's events (during a deploy) have no row, and
+ * their deprecated `customTitle` is the raw custom title.
+ */
+function eventCustomTitle(
+  row: SyncSubscription | undefined,
+  deprecated: { customTitle: string | null }
+): string | null {
+  if (!row) return deprecated.customTitle;
+  return row.title === row.originalTitle ? null : row.title;
+}
+
+/**
  * A new_entry list-item payload as this user sees it: publishers stamp the
- * feed's own title (a web feed's channel is shared, and email ingestion
- * doesn't look the title up), so the user's custom title for the subscription
- * replaces it here, matching what `entries.list` returns for the same entry.
+ * feed's own title (a web feed's channel is shared), so the user's custom
+ * title for the subscription replaces it here, matching what `entries.list`
+ * returns for the same entry.
  */
 function withCustomFeedTitle(
   entry: NewEntryListData,
@@ -296,12 +314,11 @@ export function startSseConnection({
       // behind pending count queries.)
       if (event.type === "subscription_created") {
         // Email entries need the title too, though they come on this channel.
-        setCustomTitle(event.subscriptionId, event.subscription.customTitle);
-        if (event.feed.type === "web" && event.feedId !== null) {
-          subscribeToFeed(event.feedId, event.subscriptionId);
-        }
+        setCustomTitle(event.subscriptionId, eventCustomTitle(event.row, event.subscription));
+        // Only a web subscription has a feed channel.
+        if (event.feedId !== null) subscribeToFeed(event.feedId, event.subscriptionId);
       } else if (event.type === "subscription_updated") {
-        setCustomTitle(event.subscriptionId, event.customTitle);
+        setCustomTitle(event.subscriptionId, eventCustomTitle(event.row, event));
       } else if (event.type === "subscription_deleted") {
         setCustomTitle(event.subscriptionId, null);
         if (event.feedId !== null) unsubscribeFromFeed(event.feedId);

@@ -1058,8 +1058,6 @@ CREATE INDEX idx_entries_type ON public.entries USING btree (type);
 
 CREATE INDEX idx_entries_web_guid_canonical ON public.entries USING btree (regexp_replace(guid, '^https?://'::text, 'https://'::text)) WHERE (type = 'web'::public.feed_type);
 
-CREATE INDEX idx_entry_summaries_prompt_version ON public.entry_summaries USING btree (prompt_version) WHERE (summary_text IS NOT NULL);
-
 CREATE INDEX idx_entry_tombstones_deleted_at ON public.entry_tombstones USING btree (deleted_at);
 
 CREATE INDEX idx_entry_tombstones_user_deleted_at ON public.entry_tombstones USING btree (user_id, deleted_at);

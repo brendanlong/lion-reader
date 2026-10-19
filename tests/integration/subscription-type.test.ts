@@ -63,7 +63,7 @@ describe("subscriptions.type", () => {
       insert: async (userId) => {
         const url = `https://example.com/${generateUuidv7()}.xml`;
         await createTestFeed({ url, lastEntriesUpdatedAt: new Date() });
-        return (await createSubscription(db, userId, { url })).subscriptionId;
+        return (await createSubscription(db, userId, { url })).subscription.id;
       },
     },
     {

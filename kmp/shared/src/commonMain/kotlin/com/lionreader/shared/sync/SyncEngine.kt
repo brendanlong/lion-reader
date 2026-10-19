@@ -6,6 +6,7 @@ import com.lionreader.shared.api.COLLECTION_TYPE
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.ListFilter
 import com.lionreader.shared.api.MarkReadRequest
+import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.api.Subscription
@@ -21,9 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private const val FLUSH_BATCH = 1000
 private const val CONTENT_BATCH = 50
-private const val RECENTLY_READ_PAGE = 100
 private const val RECENTLY_READ_REFRESH = 20
 
 /**
@@ -137,7 +136,7 @@ class SyncEngine(
         val ops = outboxQueries.selectStates().executeAsList()
         for ((key, group) in ops.groupBy { it.field_ to (it.value_ == 1L) }) {
             val (field, value) = key
-            for (batch in group.chunked(FLUSH_BATCH)) {
+            for (batch in group.chunked(ServerLimits.STATE_WRITE_ENTRIES)) {
                 val changes = batch.map { StateChange(it.entry_id, formatMillis(it.changed_at)) }
                 val response = sendOrReject {
                     if (field == "read") {
@@ -245,7 +244,7 @@ class SyncEngine(
         var fetched = 0
         var cursor: String? = null
         do {
-            val limit = if (fetched == 0) RECENTLY_READ_REFRESH else RECENTLY_READ_PAGE
+            val limit = if (fetched == 0) RECENTLY_READ_REFRESH else ServerLimits.ENTRIES_PAGE_SIZE
             val page = api.listRecentlyRead(cursor, limit)
             val times = page.items.mapNotNull { it.readChangedAt?.let(::parseMillis) }
             writer.saveRecentlyRead(page.items, windowStart)
@@ -311,7 +310,7 @@ class SyncEngine(
                     }
                 }
                 .toSet()
-        // A new-entry event with its data and type is complete for an entry
+        // A new-entry event with its data is complete for an entry
         // the device lacks. One it already has was listed by a bootstrap that
         // began before the entry was created, and may have been edited since
         // its body was downloaded (#1680), so it's fetched whole.
@@ -320,7 +319,7 @@ class SyncEngine(
             events
                 .filterIsInstance<SyncEvent.NewEntry>()
                 .filter {
-                    it.entry != null && it.entryType != null && !writer.entryExists(it.entryId)
+                    it.entry != null && !writer.entryExists(it.entryId)
                 }
                 .map { it.entryId }
         val ids =
@@ -328,9 +327,10 @@ class SyncEngine(
                 it !in spam && it !in complete && (it in newIds || !writer.entryExists(it))
             }
         val created = events.filterIsInstance<SyncEvent.SubscriptionCreated>()
+        if (created.any { it.subscriptionRow == null }) listSubscriptions()
         val fetched = api.getEntries(ids)
         val resubscribed = created.flatMap {
-            api.listEntries(ListFilter.ALL, null, it.subscription.id).items
+            api.listEntries(ListFilter.ALL, null, it.subscriptionId).items
         }
         // A subscription the device doesn't know is the Saved subscription created since it last
         // listed them (by the first save): listing them again tells its id, so the page's saved
@@ -340,14 +340,14 @@ class SyncEngine(
             val memberships =
                 events.flatMap {
                     when (it) {
-                        is SyncEvent.NewEntry -> it.subscriptionIds.orEmpty()
-                        is SyncEvent.EntryStateChanged -> it.subscriptionIds.orEmpty()
+                        is SyncEvent.NewEntry -> it.subscriptionIds
+                        is SyncEvent.EntryStateChanged -> it.subscriptionIds
                         else -> emptyList()
                     }
                 } +
-                    fetched.flatMap { it.subscriptionIds.orEmpty() } +
-                    resubscribed.flatMap { it.subscriptionIds.orEmpty() }
-            val known = writer.subscriptionIds() + created.map { it.subscription.id }
+                    fetched.flatMap { it.subscriptionIds } +
+                    resubscribed.flatMap { it.subscriptionIds }
+            val known = writer.subscriptionIds() + created.map { it.subscriptionId }
             val unknown = memberships.toSet() - known
             if ((unknown - listedForUnknown).isNotEmpty()) {
                 listSubscriptions()
@@ -357,7 +357,6 @@ class SyncEngine(
         return PulledPage(
             events = events,
             deletedIds = changes.deletions.map { it.entryId },
-            collectionMemberships = changes.collectionMemberships,
             cursors = changes.cursors,
             hasMore = changes.hasMore,
             catchUpStart = start,

@@ -12,11 +12,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { db as dbType } from "@/server/db";
 import { subscriptions } from "@/server/db/schema";
 import * as subscriptionsService from "@/server/services/subscriptions";
-import {
-  countsAsOfColumn,
-  formatCountsAsOf,
-  getGlobalUnreadCounts,
-} from "@/server/services/counts";
+import { countsAsOfColumn, formatCountsAsOf, getUserUnreadCounts } from "@/server/services/counts";
 import type { ListEntriesParams } from "@/server/services/entries";
 import { SAVED_ARTICLES_TITLE } from "@/lib/entry-types";
 import { resolveFeedStream } from "./id";
@@ -203,6 +199,6 @@ export async function getGreaderUnreadCounts(
     if (row.newest) newestItemAtByStreamId.set(row.stream_id, new Date(row.newest));
   }
 
-  const { allUnread } = await getGlobalUnreadCounts(db, userId);
+  const { allUnread } = await getUserUnreadCounts(db, userId);
   return { subscriptions, newestItemAtByStreamId, readingListUnread: allUnread };
 }

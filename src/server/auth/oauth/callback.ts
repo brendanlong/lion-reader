@@ -7,7 +7,7 @@
  * - Linking OAuth to existing user by email
  * - New user creation with invite validation
  *
- * Used by both tRPC endpoints and API routes.
+ * Called by the shared callback flow (`callback-helpers.ts`) for sign-in flows.
  */
 
 import { eq, and } from "drizzle-orm";
@@ -16,45 +16,20 @@ import { db } from "@/server/db";
 import { users, oauthAccounts } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
+import type { OAuthProviderName } from "@/server/auth/oauth/config";
+import { oauthTokenColumns, type ProviderIdentity } from "@/server/auth/oauth/token-exchange";
+import { attachOAuthAccount } from "@/server/services/oauth-accounts";
 
 /**
- * OAuth provider type
+ * Parameters for processing an OAuth callback.
+ *
+ * `email` is required for new accounts and optional for returning users (Apple only
+ * sends it on first auth; they're matched by `providerAccountId`). OAuth sign-in is
+ * the only way an email gets verified in this app, so linking by email or creating
+ * an account with it requires `emailVerified === true`.
  */
-type OAuthProvider = "google" | "apple" | "discord";
-
-/**
- * Parameters for processing an OAuth callback
- */
-export interface ProcessOAuthCallbackParams {
-  /** OAuth provider */
-  provider: OAuthProvider;
-  /** Provider's unique user ID (sub claim) */
-  providerAccountId: string;
-  /**
-   * User's email from the provider.
-   * Required for new accounts. Optional for returning users (e.g., Apple only
-   * sends email on first auth, but we can look up the user by providerAccountId).
-   */
-  email?: string;
-  /**
-   * Whether the provider asserts this email address is verified.
-   *
-   * OAuth sign-in is currently the only way an email gets verified in this app, so
-   * we refuse to trust an unverified provider email: linking by email or creating a
-   * new account with it requires `emailVerified === true`. Returning users matched
-   * by `providerAccountId` (no email needed) are unaffected. Each provider maps its
-   * own claim onto this (`email_verified` for Google, `email_verified` in Apple's
-   * id_token, `verified` for Discord).
-   */
-  emailVerified: boolean;
-  /** OAuth access token */
-  accessToken: string;
-  /** OAuth refresh token (if provided) */
-  refreshToken?: string;
-  /** Token expiration time */
-  expiresAt?: Date;
-  /** Every scope the token carries (Google only); replaces the stored list */
-  scopes?: string[];
+export interface ProcessOAuthCallbackParams extends ProviderIdentity {
+  provider: OAuthProviderName;
   /** Invite token for new user registration */
   inviteToken?: string;
 }
@@ -88,17 +63,8 @@ export interface ProcessOAuthCallbackResult {
 export async function processOAuthCallback(
   params: ProcessOAuthCallbackParams
 ): Promise<ProcessOAuthCallbackResult> {
-  const {
-    provider,
-    providerAccountId,
-    email: rawEmail,
-    emailVerified,
-    accessToken,
-    refreshToken,
-    expiresAt,
-    scopes,
-    inviteToken,
-  } = params;
+  const { provider, providerAccountId, email: rawEmail, emailVerified, inviteToken } = params;
+  const tokenColumns = oauthTokenColumns(params);
 
   const now = new Date();
 
@@ -133,12 +99,7 @@ export async function processOAuthCallback(
     // sign-in usually doesn't, and the stored one still works (#1803).
     await db
       .update(oauthAccounts)
-      .set({
-        accessToken,
-        ...(refreshToken ? { refreshToken } : {}),
-        expiresAt: expiresAt ?? null,
-        ...(scopes !== undefined ? { scopes } : {}),
-      })
+      .set(tokenColumns)
       .where(eq(oauthAccounts.id, existingOAuthAccount[0].id));
 
     return {
@@ -173,26 +134,16 @@ export async function processOAuthCallback(
     // Link OAuth to existing user account.
     //
     // This adds a way to sign in, which SECURITY.md §4 would otherwise have
-    // revoke the user's other sessions — `oauth-accounts.ts` does exactly that
-    // for a link from the settings page (mode "link", which identifies the
-    // account by session instead). It deliberately doesn't here: this branch
-    // *is* an ordinary first social sign-in, so revoking would log every device
-    // out of an account whose owner just proved control of its verified email
-    // address and is signing in on this one.
+    // revoke the user's other sessions — `linkOAuthAccount` does exactly that
+    // for a link from the settings page (which identifies the account by
+    // session instead). It deliberately doesn't here: this branch *is* an
+    // ordinary first social sign-in, so revoking would log every device out of
+    // an account whose owner just proved control of its verified email address
+    // and is signing in on this one. The link itself is the same one-per-provider
+    // attach, so a user who already linked another account of this provider is
+    // refused rather than given a second one.
     const userId = existingUser[0].id;
-
-    // Create OAuth account link
-    await db.insert(oauthAccounts).values({
-      id: generateUuidv7(),
-      userId,
-      provider,
-      providerAccountId,
-      accessToken,
-      refreshToken: refreshToken ?? null,
-      expiresAt: expiresAt ?? null,
-      ...(scopes !== undefined ? { scopes } : {}),
-      createdAt: now,
-    });
+    await attachOAuthAccount(db, { ...params, userId });
 
     // Mark email as verified if not already (OAuth provider verified it)
     if (!existingUser[0].emailVerifiedAt) {
@@ -230,10 +181,7 @@ export async function processOAuthCallback(
       userId: user.userId,
       provider,
       providerAccountId,
-      accessToken,
-      refreshToken: refreshToken ?? null,
-      expiresAt: expiresAt ?? null,
-      ...(scopes !== undefined ? { scopes } : {}),
+      ...tokenColumns,
       createdAt: user.createdAt,
     });
 

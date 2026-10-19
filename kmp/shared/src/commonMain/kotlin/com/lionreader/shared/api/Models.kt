@@ -16,12 +16,12 @@ data class EntryListItem(
     val subscriptionId: String? = null,
     /**
      * Every active subscription holding the entry (its feed, its collections, Saved for a saved
-     * article). Null from a server that predates it; see `LocalStore.upsertEntry`.
+     * article): the lists it's in.
      */
-    val subscriptionIds: List<String>? = null,
+    val subscriptionIds: List<String>,
     /**
-     * `web`, `email` or `saved`; a string, so a type newer than this app still decodes. Only
-     * stored: what's saved is decided by [subscriptionIds].
+     * `web`, `email` or `saved`; a string, so a type newer than this app still decodes. What's
+     * saved is decided by [subscriptionIds]; the type only picks the shown source.
      */
     val type: String,
     val url: String? = null,
@@ -46,7 +46,7 @@ data class FullEntry(
     val id: String,
     val subscriptionId: String? = null,
     /** As [EntryListItem.subscriptionIds]. */
-    val subscriptionIds: List<String>? = null,
+    val subscriptionIds: List<String>,
     val type: String,
     val url: String? = null,
     val title: String? = null,
@@ -58,27 +58,10 @@ data class FullEntry(
     val starred: Boolean,
     val feedTitle: String? = null,
     val siteName: String? = null,
-    val contentOriginal: String? = null,
-    val contentCleaned: String? = null,
-    val fullContentCleaned: String? = null,
-    val fullContentOriginal: String? = null,
-    /**
-     * Set when the latest full-content fetch failed; the full-content fields then hold stale
-     * content.
-     */
-    val fullContentError: String? = null,
-    val fetchFullContent: Boolean,
+    /** The sanitized body the web's entry view shows by default; null when there's none. */
+    val content: String?,
     val readChangedAt: String? = null,
-) {
-    /** The body the web reader shows by default for this entry. */
-    val displayContent: String?
-        get() =
-            (if (fetchFullContent && fullContentError == null) {
-                fullContentCleaned ?: fullContentOriginal
-            } else {
-                null
-            }) ?: contentCleaned ?: contentOriginal ?: summary
-}
+)
 
 @Serializable data class GetManyRequest(val ids: List<String>)
 
@@ -103,7 +86,6 @@ data class SetStarredRequest(
 @Serializable
 data class EntryState(
     val id: String,
-    val subscriptionId: String? = null,
     val read: Boolean,
     val starred: Boolean,
     val readChangedAt: String? = null,
@@ -121,7 +103,7 @@ const val COLLECTION_TYPE = "collection"
 
 /**
  * [Subscription.type] of the user's Saved subscription, which the server lists once the first save
- * creates it: the app learns its id from that row.
+ * creates it: the app learns its id from that row. Also [EntryListItem.type] of a saved article.
  */
 const val SAVED_TYPE = "saved"
 
@@ -129,7 +111,7 @@ const val SAVED_TYPE = "saved"
 data class Subscription(
     val id: String,
     /** A string, so a type newer than this app still decodes (like [EntryListItem.type]). */
-    val type: String? = null,
+    val type: String,
     val url: String? = null,
     /** The custom title if there is one, else [originalTitle]. */
     val title: String? = null,
@@ -139,12 +121,7 @@ data class Subscription(
 )
 
 @Serializable
-data class SubscriptionPage(
-    val items: List<Subscription>,
-    val nextCursor: String? = null,
-    /** The user's Saved subscription, from a server that named it here instead of listing it. */
-    val savedSubscriptionId: String? = null,
-)
+data class SubscriptionPage(val items: List<Subscription>, val nextCursor: String? = null)
 
 @Serializable data class Tag(val id: String, val name: String, val color: String? = null)
 
@@ -161,13 +138,6 @@ data class SyncCursors(
 
 @Serializable data class Deletion(val entryId: String, val deletedAt: String)
 
-/**
- * The collections holding an entry now; empty when it's in none. Only a server that predates
- * entries' `subscriptionIds` needs it (see `SyncWriter`).
- */
-@Serializable
-data class CollectionMembership(val entryId: String, val subscriptionIds: List<String>)
-
 @Serializable
 data class SyncChanges(
     /** Raw, so an event type newer than this app is skipped; see [parseSyncEvent]. */
@@ -176,14 +146,12 @@ data class SyncChanges(
     val cursors: SyncCursors,
     val deletions: List<Deletion>,
     val resyncRequired: Boolean,
-    /** For every entry whose state the page re-delivers (membership is part of it). */
-    val collectionMemberships: List<CollectionMembership> = emptyList(),
 )
 
 @Serializable
 data class EventEntry(
-    /** The entry's type, when the server sends it (see [SyncEvent.NewEntry.entryType]). */
-    val type: String? = null,
+    /** As [EntryListItem.type]. */
+    val type: String,
     val title: String? = null,
     val author: String? = null,
     val summary: String? = null,
@@ -206,6 +174,9 @@ data class EntryMetadata(
     val publishedAt: String? = null,
 )
 
+/**
+ * What `subscription_created` carried before its `row`: a server that predates it sends only this.
+ */
 @Serializable
 data class EventSubscription(
     val id: String,
@@ -213,12 +184,13 @@ data class EventSubscription(
     val tags: List<TagRef>,
 )
 
+/** As [EventSubscription]. */
 @Serializable
 data class EventFeed(
     val url: String? = null,
     val title: String? = null,
     /** The subscription's type, as [Subscription.type]. */
-    val type: String? = null,
+    val type: String,
 )
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
@@ -230,19 +202,11 @@ sealed interface SyncEvent {
     data class NewEntry(
         val entryId: String,
         val subscriptionId: String? = null,
-        val feedType: String? = null,
+        /** As [EntryListItem.subscriptionIds]. */
+        val subscriptionIds: List<String>,
         /** Absent for spam, which the server's lists leave out. */
         val entry: EventEntry? = null,
-        /** As [EntryListItem.subscriptionIds]. */
-        val subscriptionIds: List<String>? = null,
-    ) : SyncEvent {
-        /**
-         * The entry's type, from the event or else its [entry]; null when neither says, and then
-         * the event can't stand in for the entry (it's fetched whole instead).
-         */
-        val entryType: String?
-            get() = feedType ?: entry?.type
-    }
+    ) : SyncEvent
 
     @Serializable
     @SerialName("entry_updated")
@@ -255,29 +219,48 @@ sealed interface SyncEvent {
         val read: Boolean,
         val starred: Boolean,
         val readChangedAt: String? = null,
-        val subscriptionId: String? = null,
-        val feedType: String? = null,
-        val entry: EventEntry? = null,
         /** As [EntryListItem.subscriptionIds]; sent with or without [entry]. */
-        val subscriptionIds: List<String>? = null,
-    ) : SyncEvent {
-        /** As [NewEntry.entryType]. */
-        val entryType: String?
-            get() = feedType ?: entry?.type
-    }
+        val subscriptionIds: List<String>,
+        val subscriptionId: String? = null,
+        val entry: EventEntry? = null,
+    ) : SyncEvent
 
     @Serializable
     @SerialName("subscription_created")
     data class SubscriptionCreated(
-        val subscription: EventSubscription,
-        val feed: EventFeed,
-    ) : SyncEvent
+        val subscriptionId: String,
+        /** The subscription as the server lists it; null from a server that predates it. */
+        val row: Subscription? = null,
+        val subscription: EventSubscription? = null,
+        val feed: EventFeed? = null,
+    ) : SyncEvent {
+        /**
+         * [row], or else what an older server (only the previous release, mid-deploy) sent in its
+         * place. Null with neither, since the subscription's type is unknown: the sync lists
+         * subscriptions instead.
+         */
+        val subscriptionRow: Subscription?
+            get() =
+                row
+                    ?: feed?.let {
+                        Subscription(
+                            subscriptionId,
+                            type = it.type,
+                            url = it.url,
+                            title = subscription?.customTitle ?: it.title,
+                            originalTitle = it.title,
+                            tags = subscription?.tags.orEmpty(),
+                        )
+                    }
+    }
 
     @Serializable
     @SerialName("subscription_updated")
     data class SubscriptionUpdated(
         val subscriptionId: String,
-        val tags: List<TagRef>,
+        /** As [SubscriptionCreated.row]; without it, [tags] and [customTitle] say what changed. */
+        val row: Subscription? = null,
+        val tags: List<TagRef> = emptyList(),
         val customTitle: String? = null,
     ) : SyncEvent
 
@@ -295,9 +278,6 @@ sealed interface SyncEvent {
 @Serializable data class AccountUser(val id: String, val email: String)
 
 @Serializable data class Me(val user: AccountUser)
-
-/** The server's limit on one speech request. */
-const val MAX_CLOUD_SPEECH_CHARS = 1000
 
 /** [id] is what speech requests take; [name] is for showing. */
 @Serializable data class CloudVoice(val id: String, val name: String)

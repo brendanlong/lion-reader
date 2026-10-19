@@ -83,18 +83,19 @@ describe("Google Reader subscription/edit", () => {
     {
       edit: "a rename",
       form: { t: "Renamed" },
-      expected: { customTitle: "Renamed", tags: [{ name: "Tech" }] },
+      expected: { title: "Renamed", tags: [{ name: "Tech" }] },
     },
     {
       edit: "an added label",
-      form: { a: "user/-/label/News" },
-      expected: { tags: expect.arrayContaining([{ name: "News" }, { name: "Tech" }]) },
+      form: { a: "user/-/label/World" },
+      // Sorted by name, though World was created first.
+      expected: { tags: [{ name: "Tech" }, { name: "World" }] },
     },
     { edit: "a removed label", form: { r: "user/-/label/Tech" }, expected: { tags: [] } },
   ])("publishes $edit and moves the sync cursor", async ({ form, expected }) => {
     const { userId, token } = await createReader();
     const { subscriptionId, stream } = await createSubscriptionStream(userId);
-    await createTestTag(userId, { name: "News" });
+    await createTestTag(userId, { name: "World" });
     const techId = await createTestTag(userId, { name: "Tech" });
     await db.insert(subscriptionTags).values({ subscriptionId, tagId: techId });
     const channel = getUserEventsChannel(userId);
@@ -107,10 +108,11 @@ describe("Google Reader subscription/edit", () => {
 
     expect(res.status).toBe(200);
     const event = JSON.parse(await updated);
+    expect(event).toMatchObject({ type: "subscription_updated", subscriptionId });
     expect({
-      ...event,
-      tags: event.tags.map((t: { name: string }) => ({ name: t.name })),
-    }).toMatchObject({ type: "subscription_updated", subscriptionId, ...expected });
+      ...event.row,
+      tags: event.row.tags.map((t: { name: string }) => ({ name: t.name })),
+    }).toMatchObject(expected);
     expect(await subscriptionUpdatedAt(subscriptionId)).not.toEqual(SUBSCRIPTION_UPDATED_AT);
   });
 

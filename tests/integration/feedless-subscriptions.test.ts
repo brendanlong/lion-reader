@@ -179,17 +179,13 @@ describe("subscriptions without a feed (#1846)", () => {
     expect(
       events.find((e) => e.type === "subscription_created" && e.subscriptionId === collectionId)
     ).toMatchObject({
-      subscription: {
+      row: {
         id: collectionId,
-        customTitle: "Reading",
-        unreadCount: 1,
-      },
-      feed: {
         type: "collection",
         url: null,
         title: "Reading",
-        description: null,
-        siteUrl: null,
+        originalTitle: "Reading",
+        unreadCount: 1,
       },
     });
   });
@@ -229,6 +225,20 @@ describe("subscriptions without a feed (#1846)", () => {
         subscriptionId: laterId,
         timestamp: expect.any(String),
         updatedAt: expect.any(String),
+        row: {
+          id: laterId,
+          type: "collection",
+          url: null,
+          title: "Later",
+          originalTitle: "Later",
+          description: null,
+          siteUrl: null,
+          subscribedAt: expect.any(String),
+          unreadCount: 0,
+          unreadCountAsOf: expect.any(String),
+          tags: [],
+          fetchFullContent: false,
+        },
         subscription: {
           id: laterId,
           customTitle: "Later",

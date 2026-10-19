@@ -6,7 +6,6 @@
  * - Immediately fills slots when jobs complete (no polling delay)
  * - Falls back to polling when queue is empty
  * - Supports concurrent job processing up to configurable limit
- * - Graceful shutdown on SIGTERM/SIGINT
  * - Stale job recovery (handled automatically in claim query)
  *
  * See src/server/jobs/CLAUDE.md for the overall architecture.
@@ -415,7 +414,7 @@ const defaultLogger: WorkerLogger = {
  * @param config - Worker configuration
  * @returns Worker instance
  */
-function createWorker(config: WorkerConfig = {}): Worker {
+export function createWorker(config: WorkerConfig = {}): Worker {
   const {
     pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
     concurrency = DEFAULT_CONCURRENCY,
@@ -629,54 +628,4 @@ function createWorker(config: WorkerConfig = {}): Worker {
       onLoopExit?.(error);
     },
   });
-}
-
-/**
- * Creates and starts a worker with signal handling for graceful shutdown.
- * Useful for running as a standalone process.
- *
- * @param config - Worker configuration
- * @returns The worker instance
- */
-export async function startWorkerWithSignalHandling(config: WorkerConfig = {}): Promise<Worker> {
-  const logger = config.logger ?? defaultLogger;
-
-  // Guard against re-entrant exits if both onLoopExit and a signal fire.
-  let exiting = false;
-
-  const worker = createWorker({
-    ...config,
-    onLoopExit: (error) => {
-      config.onLoopExit?.(error);
-      if (exiting) return;
-      exiting = true;
-      // The run loop should never exit on its own. If it does, the process is a
-      // zombie (alive but claiming no jobs), so exit non-zero and let Fly restart
-      // the machine — a clean restart beats lingering with a dead loop until the
-      // 10-minute liveness health check eventually trips.
-      logger.error("Worker run loop exited; restarting process", {
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-      void Sentry.close(2000).finally(() => process.exit(1));
-    },
-  });
-
-  // Handle graceful shutdown
-  const shutdown = async (signal: string) => {
-    logger.info(`Received ${signal}, initiating graceful shutdown...`);
-
-    await worker.stop();
-    // Flush buffered Sentry events (e.g. failures captured from the jobs that
-    // just wound down) before the process exits. No-op if Sentry never
-    // initialized.
-    await Sentry.close(2000);
-    process.exit(0);
-  };
-
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-
-  await worker.start();
-
-  return worker;
 }

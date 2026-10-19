@@ -5,7 +5,6 @@
  */
 
 import { z } from "zod";
-import * as argon2 from "argon2";
 import { eq, and, isNull, gt, desc } from "drizzle-orm";
 
 import {
@@ -13,21 +12,26 @@ import {
   confirmedProtectedProcedure as protectedProcedure,
   expensiveProtectedProcedure,
   expensiveConfirmedProtectedProcedure,
+  consumePasswordAttempt,
 } from "../trpc";
 import { errors } from "@/server/errors";
-import { sessions, users, oauthAccounts, userApiKeys } from "@/server/db/schema";
+import { sessions, users, oauthAccounts } from "@/server/db/schema";
 import {
-  getApiKeyProviders,
-  getUnreadableApiKeyProviders,
-  revokeSession,
+  revokeUserSession,
   revokeOtherUserSessionsOrReport,
   invalidateUserSessionCaches,
 } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
-import { encryptApiKey, isEncryptionConfigured } from "@/lib/encryption";
+import { hashPassword, passwordSchema, verifyUserPassword } from "@/server/auth/password";
+import { isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
-import { revokeUserClientTokens } from "@/server/oauth/service";
+import {
+  getApiKeyProviders,
+  getUnreadableApiKeyProviders,
+  setUserApiKeys,
+} from "@/server/services/user-api-keys";
+import { revokeUserClientTokens } from "@/server/oauth/grants";
 import { WALLABAG_CLIENT_ID } from "@/server/wallabag/client";
 
 // ============================================================================
@@ -153,21 +157,9 @@ export const usersRouter = createTRPCRouter({
         throw errors.validation("Cannot revoke current session. Use logout instead.");
       }
 
-      // Verify the session belongs to the current user
-      const sessionResult = await ctx.db
-        .select({ id: sessions.id, userId: sessions.userId })
-        .from(sessions)
-        .where(
-          and(eq(sessions.id, sessionId), eq(sessions.userId, userId), isNull(sessions.revokedAt))
-        )
-        .limit(1);
-
-      if (sessionResult.length === 0) {
+      if (!(await revokeUserSession(userId, sessionId))) {
         throw errors.notFound("Session");
       }
-
-      // Revoke the session
-      await revokeSession(sessionId);
 
       return { success: true };
     }),
@@ -189,10 +181,7 @@ export const usersRouter = createTRPCRouter({
     })
     .input(
       z.object({
-        newPassword: z
-          .string()
-          .min(8, "Password must be at least 8 characters")
-          .max(128, "Password must be less than 128 characters"),
+        newPassword: passwordSchema(),
       })
     )
     .output(z.object({ success: z.boolean() }))
@@ -201,8 +190,7 @@ export const usersRouter = createTRPCRouter({
       const currentSessionId = ctx.session.session.id;
       const { newPassword } = input;
 
-      // Hash the new password
-      const passwordHash = await argon2.hash(newPassword);
+      const passwordHash = await hashPassword(newPassword);
 
       // Attempt to set password only if user doesn't already have one
       const updated = await ctx.db.transaction(async (tx) => {
@@ -249,10 +237,7 @@ export const usersRouter = createTRPCRouter({
     .input(
       z.object({
         currentPassword: z.string().min(1, "Current password is required"),
-        newPassword: z
-          .string()
-          .min(8, "New password must be at least 8 characters")
-          .max(128, "New password must be less than 128 characters"),
+        newPassword: passwordSchema("New password"),
       })
     )
     .output(z.object({ success: z.boolean() }))
@@ -261,25 +246,18 @@ export const usersRouter = createTRPCRouter({
       const currentSessionId = ctx.session.session.id;
       const { currentPassword, newPassword } = input;
 
-      // Get the user's current password hash
-      const user = await ctx.db
-        .select({ passwordHash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (user.length === 0 || !user[0].passwordHash) {
+      // A password check, so it spends the account's password bucket like a
+      // login (SECURITY.md §4), and verifies through the shared helper.
+      await consumePasswordAttempt(ctx.session.user.email);
+      const current = await verifyUserPassword(ctx.db, userId, currentPassword);
+      if (!current.hasPassword) {
         throw errors.validation("Cannot change password for this account");
       }
-
-      // Verify current password
-      const isValidPassword = await argon2.verify(user[0].passwordHash, currentPassword);
-      if (!isValidPassword) {
+      if (!current.valid) {
         throw errors.validation("Current password is incorrect");
       }
 
-      // Hash the new password
-      const newPasswordHash = await argon2.hash(newPassword);
+      const newPasswordHash = await hashPassword(newPassword);
 
       // Wallabag tokens are minted from the password (password grant), so they
       // must not outlive it.
@@ -417,15 +395,9 @@ export const usersRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
-      // Reject API key storage if encryption is not configured
       const apiKeys = Object.entries(input.apiKeys ?? {}).filter(
         (entry): entry is [AiProvider, string] => entry[1] !== undefined
       );
-      if (apiKeys.some(([, key]) => key !== "") && !isEncryptionConfigured()) {
-        throw errors.validation(
-          "API key encryption is not configured on this server. Contact your administrator."
-        );
-      }
 
       // Build update object with only provided fields
       const updateData: {
@@ -461,22 +433,7 @@ export const usersRouter = createTRPCRouter({
 
       await ctx.db.transaction(async (tx) => {
         await tx.update(users).set(updateData).where(eq(users.id, userId));
-        for (const [provider, key] of apiKeys) {
-          if (key) {
-            const encryptedKey = encryptApiKey(key);
-            await tx
-              .insert(userApiKeys)
-              .values({ userId, provider, encryptedKey })
-              .onConflictDoUpdate({
-                target: [userApiKeys.userId, userApiKeys.provider],
-                set: { encryptedKey, updatedAt: new Date() },
-              });
-          } else {
-            await tx
-              .delete(userApiKeys)
-              .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.provider, provider)));
-          }
-        }
+        await setUserApiKeys(tx, userId, apiKeys);
       });
 
       // Invalidate all session caches for this user so they get fresh data

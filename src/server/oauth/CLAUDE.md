@@ -20,7 +20,7 @@ The claude.ai **web** connector's OAuth flow is broken client-side (#986, upstre
 
 ## Clients
 
-- **CIMD** (an HTTPS URL as `client_id`): validation in `cimd.ts`, fetch and cache in `service.ts`. **The fetch never follows redirects**, and the vendored pins cover **transport failures only**, never a withdrawn (404/410) or invalid document, which would defeat revocation. The consent screen leads with the client_id's hostname, not the self-asserted `client_name`. The advertising gate is at `client_id_metadata_document_supported` in `config.ts`.
+- **CIMD** (an HTTPS URL as `client_id`): validation in `cimd.ts`, fetch and cache in `clients.ts`. **The fetch never follows redirects**, and the vendored pins cover **transport failures only**, never a withdrawn (404/410) or invalid document, which would defeat revocation. The consent screen leads with the client_id's hostname, not the self-asserted `client_name`. The advertising gate is at `client_id_metadata_document_supported` in `config.ts`.
 - **Dynamic registration** stores only recognized scopes and rejects a registration with none (never falls back to "all scopes"). `SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS` (`utils.ts`) is the one list behind both the metadata and registration, so they can't disagree (strict clients abort on a mismatch).
 
 ## Revocation

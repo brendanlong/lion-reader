@@ -36,7 +36,7 @@ export function EntryContentFallback({
 }: EntryContentFallbackProps) {
   const cachedEntry = useLocalEntry(entryId);
   // Star/read work optimistically even while the full entry loads
-  const { markRead, star, unstar } = useEntryMutations();
+  const { markRead, setStarred } = useEntryMutations();
   const [narrationSettings] = useNarrationSettings();
 
   return (
@@ -56,7 +56,7 @@ export function EntryContentFallback({
             <div className={ENTRY_ACTION_BAR_CLASSES}>
               <StarButton
                 starred={cachedEntry.starred}
-                onToggle={() => (cachedEntry.starred ? unstar(entryId) : star(entryId))}
+                onToggle={() => setStarred(entryId, !cachedEntry.starred)}
               />
               <ReadToggleButton
                 read={cachedEntry.read}

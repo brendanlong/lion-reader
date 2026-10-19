@@ -3,7 +3,6 @@ package com.lionreader.shared.sync
 import com.lionreader.shared.api.ApiJson
 import com.lionreader.shared.api.BulkStateResponse
 import com.lionreader.shared.api.COLLECTION_TYPE
-import com.lionreader.shared.api.CollectionMembership
 import com.lionreader.shared.api.Deletion
 import com.lionreader.shared.api.EntryListItem
 import com.lionreader.shared.api.EntryListPage
@@ -15,6 +14,7 @@ import com.lionreader.shared.api.GetManyResponse
 import com.lionreader.shared.api.LionReaderApi
 import com.lionreader.shared.api.MarkReadRequest
 import com.lionreader.shared.api.SAVED_TYPE
+import com.lionreader.shared.api.ServerLimits
 import com.lionreader.shared.api.SetStarredRequest
 import com.lionreader.shared.api.StateChange
 import com.lionreader.shared.api.Subscription
@@ -255,6 +255,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                             subscriptions.map { sub ->
                                 Subscription(
                                     sub,
+                                    type = "web",
                                     title = sub,
                                     originalTitle = sub,
                                     tags = emptyList(),
@@ -282,7 +283,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 "/tags" -> encode(TagList.serializer(), TagList(emptyList()))
                 "/entries" -> {
                     val limit = params["limit"]?.toInt() ?: 100
-                    if (limit !in 1..ServerLimits.LIST_LIMIT) return@run badRequest(request)
+                    if (limit !in 1..ServerLimits.ENTRIES_PAGE_SIZE) return@run badRequest(request)
                     list(
                         params["sortBy"] == "readChanged",
                         params["starredOnly"] == "true",
@@ -294,7 +295,8 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 }
                 "/entries/batch" -> {
                     val ids = body(request, GetManyRequest.serializer()).ids
-                    if (ids.size !in 1..ServerLimits.BATCH_IDS) return@run badRequest(request)
+                    if (ids.size !in 1..ServerLimits.ENTRIES_PAGE_SIZE)
+                        return@run badRequest(request)
                     encode(
                         GetManyResponse.serializer(),
                         GetManyResponse(
@@ -352,15 +354,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
         val events = page.flatMap { e ->
             buildList {
                 if (e.createdSeq > since) {
-                    add(
-                        SyncEvent.NewEntry(
-                            e.id,
-                            e.origin,
-                            e.type,
-                            e.eventEntry(),
-                            e.memberships,
-                        )
-                    )
+                    add(SyncEvent.NewEntry(e.id, e.origin, e.memberships, e.eventEntry()))
                 } else {
                     if (e.metadataSeq > since) {
                         add(
@@ -377,10 +371,9 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                                 e.read,
                                 e.starred,
                                 e.readChangedAt?.let { e.time(it) },
-                                e.origin,
-                                e.type,
-                                if (e.read) null else e.eventEntry(),
                                 e.memberships,
+                                e.origin,
+                                if (e.read) null else e.eventEntry(),
                             )
                         )
                     }
@@ -404,10 +397,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                     ),
                 deletions = deleted.map { Deletion(it.id, "${it.deletedSeq}") },
                 resyncRequired = false,
-                collectionMemberships =
-                    page
-                        .filter { it.stateSeq > since }
-                        .map { CollectionMembership(it.id, it.collections.sorted()) },
             ),
         )
     }
@@ -458,7 +447,6 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
                 .map {
                     EntryState(
                         it.id,
-                        it.origin,
                         it.read,
                         it.starred,
                         it.readChangedAt?.let { t -> it.time(t) },
@@ -474,6 +462,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
 
     private fun Entry.eventEntry() =
         EventEntry(
+            type = type,
             title = id,
             publishedAt = time(published),
             fetchedAt = time(published),
@@ -507,8 +496,7 @@ class ModelServer(private val clock: () -> Long, private val random: Random) {
             fetchedAt = time(published),
             read = read,
             starred = starred,
-            contentCleaned = content,
-            fetchFullContent = false,
+            content = content,
             readChangedAt = readChangedAt?.let { time(it) },
         )
 

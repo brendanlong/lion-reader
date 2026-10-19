@@ -6,14 +6,12 @@
  * and the OAuth endpoints under `/oauth/*`.
  */
 
+import { readAppUrl } from "@/server/config/env";
 import { OAUTH_SCOPES, SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS } from "./utils";
 
-/**
- * The OAuth issuer URL (base URL of the authorization server). Read at call
- * time (not cached) so tests can override NEXT_PUBLIC_APP_URL per case.
- */
+/** The OAuth issuer URL (base URL of the authorization server). */
 export function getIssuer(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  return readAppUrl();
 }
 
 /**

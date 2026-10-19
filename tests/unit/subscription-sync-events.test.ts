@@ -3,50 +3,55 @@ import {
   subscriptionCreatedEvent,
   subscriptionUpdatedEvent,
 } from "@/server/services/subscription-sync-events";
+import type { Subscription } from "@/server/services/subscriptions";
 
 const FEED_ID = "feed-uuid-never-sent";
 
-// A whole subscription row, as sync and the merge path pass it: its feed id
-// and user id must not reach the client.
-const subscription = {
+const subscription: Subscription = {
   id: "sub-1",
-  userId: "user-1",
-  feedId: FEED_ID,
-  type: "web" as const,
-  customTitle: "My name",
-  subscribedAt: new Date("2026-10-01T12:00:00Z"),
-  unreadCount: 2,
-  fetchFullContent: true,
-};
-const tag = { id: "tag-1", name: "News", color: null, userId: "user-1" };
-const feed = {
-  id: FEED_ID,
+  type: "web",
   url: "https://example.com/feed.xml",
-  title: null,
+  title: "My name",
+  originalTitle: "Feed title",
   description: null,
   siteUrl: null,
+  subscribedAt: new Date("2026-10-01T12:00:00Z"),
+  unreadCount: 2,
+  unreadCountAsOf: "2026-10-01T12:00:00.000000Z",
+  tags: [{ id: "tag-1", name: "News", color: null }],
+  fetchFullContent: true,
 };
 
 describe("subscription events", () => {
+  // A row with its internal columns, as the base query returns it: its feed
+  // id and stream serial must not reach the client.
   it("send only wire fields from whole rows", () => {
-    const events = [
-      subscriptionCreatedEvent(subscription, [tag], feed),
-      subscriptionUpdatedEvent(subscription, [tag]),
-    ];
-    for (const event of events) {
+    const row = { ...subscription, feedId: FEED_ID, greaderStreamId: 12345n };
+    for (const event of [subscriptionCreatedEvent(row), subscriptionUpdatedEvent(row)]) {
       const wire = JSON.stringify(event);
       expect(wire).not.toContain(FEED_ID);
-      expect(wire).not.toContain("user-1");
+      expect(wire).not.toContain("greaderStreamId");
     }
   });
 
-  // As user_feeds.original_title, which the client keeps as the title a
-  // cleared custom title falls back to.
-  it.each([
-    ["a titled feed's own title", { ...feed, title: "Feed title" }, "Feed title"],
-    ["the custom title for an untitled feed", feed, "My name"],
-    ["the custom title without a feed", null, "My name"],
-  ])("titles the feed with %s", (_, source, expected) => {
-    expect(subscriptionCreatedEvent(subscription, [], source).feed.title).toBe(expected);
+  // App builds that predate the row read these: created shows
+  // `customTitle ?? feed.title`, updated stores `customTitle ?? original title`.
+  it("fill the deprecated fields so older apps show the row's title", () => {
+    const created = subscriptionCreatedEvent(subscription);
+    expect(created.subscription.customTitle ?? created.feed.title).toBe("My name");
+    expect(created.feed).toEqual({
+      type: "web",
+      url: "https://example.com/feed.xml",
+      title: "Feed title",
+      description: null,
+      siteUrl: null,
+    });
+
+    const updated = subscriptionUpdatedEvent(subscription);
+    expect(updated).toMatchObject({
+      customTitle: "My name",
+      tags: subscription.tags,
+      fetchFullContent: true,
+    });
   });
 });

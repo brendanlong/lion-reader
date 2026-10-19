@@ -10,7 +10,8 @@ import type { db as dbType } from "@/server/db";
 import { entries, feeds, subscriptions, userEntries, visibleEntries } from "@/server/db/schema";
 import { sanitizeEntryContentFamily } from "@/server/html/sanitize-entry";
 import { sanitizeEntryHtmlAsync } from "@/server/html/sanitize";
-import { showsFullContent } from "@/lib/entry-content";
+import { selectDisplayedContent, showsFullContent } from "@/lib/entry-content";
+import { escapeHtml } from "@/server/http/html";
 import { errors } from "@/server/errors";
 import {
   entryFeedTitleSql,
@@ -41,6 +42,17 @@ export const fullEntrySchema = entryListItemSchema.extend({
 });
 
 export type FullEntry = z.infer<typeof fullEntrySchema>;
+
+/**
+ * The native app's offline entry (`entries.getMany`): the full entry plus
+ * `content`, the body a reader without content toggles shows
+ * ({@link defaultShownContent}), so the app doesn't copy the web's choice.
+ */
+export const offlineEntrySchema = fullEntrySchema.extend({
+  content: z.string().nullable(),
+});
+
+type OfflineEntry = z.infer<typeof offlineEntrySchema>;
 
 /**
  * The external APIs' full entry (MCP, Google Reader, Wallabag): the app's,
@@ -322,15 +334,34 @@ export async function getFullEntry(
 }
 
 /**
- * {@link getFullEntry}'s entries for many ids at once (the native app's offline
- * download). Ids the user can't see are skipped; order follows the input.
+ * What the entry view shows before any toggle, as sanitized HTML: the variant
+ * `selectDisplayedContent` picks (full content when `showsFullContent`, never
+ * "show original"), or failing that (none, or empty) the summary as a
+ * paragraph of text, as `EntryContentRenderer` falls back.
+ */
+function defaultShownContent(entry: FullEntry): string | null {
+  const shown = selectDisplayedContent(entry, {
+    showFullContent: showsFullContent(entry),
+    showOriginal: false,
+  });
+  if (shown) return shown;
+  return entry.summary ? `<p>${escapeHtml(entry.summary)}</p>` : null;
+}
+
+/**
+ * {@link getFullEntry}'s entries for many ids at once, with the content they
+ * show (the native app's offline download). Ids the user can't see are
+ * skipped; order follows the input.
  */
 export async function getFullEntries(
   db: typeof dbType,
   userId: string,
   entryIds: string[]
-): Promise<FullEntry[]> {
-  return readEntries(db, userId, entryIds, "all", toFullEntry);
+): Promise<OfflineEntry[]> {
+  return readEntries(db, userId, entryIds, "all", async (row) => {
+    const entry = await toFullEntry(row);
+    return { ...entry, content: defaultShownContent(entry) };
+  });
 }
 
 export interface ExportableEntry {

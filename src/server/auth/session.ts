@@ -11,17 +11,13 @@
 
 import { eq, and, isNull, ne, gt, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
-import { sessions, userApiKeys, users, type User, type Session } from "@/server/db/schema";
-import { isAiProvider, type AiProvider } from "@/lib/ai/providers";
-import type { AiProviderKeys } from "@/server/services/ai-providers";
+import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
 import { getRedisClient } from "@/server/redis";
-import * as Sentry from "@sentry/nextjs";
-import { assertEncryptionConfigured, decryptApiKey } from "@/lib/encryption";
-import { UNREADABLE_API_KEY } from "@/server/services/unreadable-api-key";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
-import { SESSION_MAX_AGE_SECONDS } from "@/server/auth/session-cookie";
+import { SESSION_MAX_AGE_SECONDS, setSessionCookie } from "@/server/auth/session-cookie";
+import { extractClientInfo } from "@/server/http/client-ip";
 
 /**
  * Scopes a session may be restricted to. A scoped session is a fail-closed
@@ -146,9 +142,6 @@ export interface CreateSessionResult {
 /**
  * Creates a new session for a user.
  *
- * This centralizes session creation logic that was previously duplicated
- * across 6 different places (register, login, OAuth callbacks).
- *
  * @param dbOrTx - Database or transaction context
  * @param params - Session creation parameters
  * @returns The session ID and raw token (token should be returned to client)
@@ -185,6 +178,21 @@ export async function createSession(
   });
 
   return { sessionId, token };
+}
+
+/**
+ * Sign a user in: create a full-access browser session recording the request's
+ * client, and set its cookie on `resHeaders` (absent on the REST/OpenAPI path,
+ * whose clients take the returned token from the response body).
+ */
+export async function startSession(
+  dbOrTx: DbOrTx,
+  params: { userId: string; requestHeaders: Headers; resHeaders: Headers | undefined }
+): Promise<CreateSessionResult> {
+  const { userAgent, ipAddress } = extractClientInfo(params.requestHeaders);
+  const result = await createSession(dbOrTx, { userId: params.userId, userAgent, ipAddress });
+  setSessionCookie(params.resHeaders, result.token);
+  return result;
 }
 
 // ============================================================================
@@ -467,87 +475,6 @@ export async function updateLastActiveAt(
   }
 }
 
-// ============================================================================
-// API Key Retrieval
-// ============================================================================
-
-/** The providers `userId` has their own API key for (not the keys). */
-export async function getApiKeyProviders(userId: string): Promise<AiProvider[]> {
-  const rows = await db
-    .select({ provider: userApiKeys.provider })
-    .from(userApiKeys)
-    .where(eq(userApiKeys.userId, userId))
-    .orderBy(userApiKeys.provider);
-  return rows.map((row) => row.provider).filter(isAiProvider);
-}
-
-/**
- * Fetches and decrypts a user's API keys from the database.
- *
- * API keys are intentionally not cached in the Redis session cache to prevent
- * exposure if Redis is compromised. This function should be called only when
- * the actual key values are needed (e.g., narration, summarization endpoints).
- *
- * A missing or malformed `API_KEY_ENCRYPTION_KEY` throws. A key that doesn't
- * decrypt under it is reported and comes back as `UNREADABLE_API_KEY`, so
- * the user's other keys still work and that provider doesn't quietly move
- * onto the server's key. The row stays: a wrong (but well-formed) encryption
- * key fails every row, and fixing it should bring them all back.
- */
-export async function getUserApiKeys(userId: string): Promise<AiProviderKeys> {
-  const rows = await db
-    .select({ provider: userApiKeys.provider, encryptedKey: userApiKeys.encryptedKey })
-    .from(userApiKeys)
-    .where(eq(userApiKeys.userId, userId));
-  if (rows.length > 0) {
-    assertEncryptionConfigured();
-  }
-  const keys: AiProviderKeys = {};
-  for (const { provider, encryptedKey } of rows) {
-    if (!isAiProvider(provider)) continue;
-    try {
-      keys[provider] = decryptApiKey(encryptedKey);
-    } catch (err) {
-      Sentry.captureException(err, {
-        tags: { source: "api-key-decrypt", provider },
-        extra: { userId },
-      });
-      keys[provider] = UNREADABLE_API_KEY;
-    }
-  }
-  return keys;
-}
-
-/**
- * The providers whose saved key {@link getUserApiKeys} would find unreadable,
- * for Settings to ask for again. Never throws and reports nothing — that's for
- * actual use — and finds none when encryption isn't configured, where the
- * settings page hides keys altogether.
- */
-export async function getUnreadableApiKeyProviders(userId: string): Promise<AiProvider[]> {
-  try {
-    assertEncryptionConfigured();
-  } catch {
-    return [];
-  }
-  const rows = await db
-    .select({ provider: userApiKeys.provider, encryptedKey: userApiKeys.encryptedKey })
-    .from(userApiKeys)
-    .where(eq(userApiKeys.userId, userId))
-    .orderBy(userApiKeys.provider);
-  return rows
-    .filter(({ encryptedKey }) => {
-      try {
-        decryptApiKey(encryptedKey);
-        return false;
-      } catch {
-        return true;
-      }
-    })
-    .map((row) => row.provider)
-    .filter(isAiProvider);
-}
-
 /**
  * Whether a session is still usable — the same "not revoked, not expired" rule
  * `validateSession` applies, by id and without bumping `last_active_at`: for a
@@ -577,31 +504,21 @@ export async function isSessionActive(sessionId: string): Promise<boolean> {
 // ============================================================================
 
 /**
- * Revokes a session by its ID.
- * Also removes the session from Redis cache.
+ * Revokes one of `userId`'s active sessions and evicts it from the Redis cache.
  *
- * @param sessionId - The session ID to revoke
- * @returns true if the session was revoked, false if not found
+ * @returns false if `userId` has no active session with that id
  */
-export async function revokeSession(sessionId: string): Promise<boolean> {
-  // Get the session to find its token hash for cache invalidation
-  const sessionResult = await db
-    .select({ tokenHash: sessions.tokenHash })
-    .from(sessions)
-    .where(eq(sessions.id, sessionId))
-    .limit(1);
+export async function revokeUserSession(userId: string, sessionId: string): Promise<boolean> {
+  const revoked = await db
+    .update(sessions)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), isNull(sessions.revokedAt)))
+    .returning({ tokenHash: sessions.tokenHash });
 
-  if (sessionResult.length === 0) {
+  if (revoked.length === 0) {
     return false;
   }
-
-  const { tokenHash } = sessionResult[0];
-
-  // Revoke in database
-  await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, sessionId));
-
-  await evictSessionCaches([tokenHash]);
-
+  await evictSessionCaches(revoked.map((row) => row.tokenHash));
   return true;
 }
 

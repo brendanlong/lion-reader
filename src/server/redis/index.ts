@@ -103,6 +103,17 @@ export function getRedisClient(): Redis | null {
   return redisClient;
 }
 
+/** Closes the client if one was ever created. */
+export async function closeRedisClient(): Promise<void> {
+  if (!redisClient) return;
+  // QUIT times out if Redis is unreachable; that must not fail the shutdown.
+  try {
+    await redisClient.quit();
+  } catch {
+    redisClient.disconnect();
+  }
+}
+
 /**
  * Legacy export for backwards compatibility.
  * @deprecated Use getRedisClient() instead to handle null case.

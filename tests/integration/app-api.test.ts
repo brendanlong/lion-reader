@@ -31,12 +31,9 @@ import { AI_PROVIDER_ENV_KEYS } from "../../src/server/services/ai-providers";
 import { GET as eventsGet } from "../../src/app/api/v1/events/route";
 import { POST as speechPost } from "../../src/app/api/v1/narration/speech/route";
 import { MAX_CLOUD_SPEECH_CHARS } from "../../src/lib/narration/constants";
-import { createSession, revokeSession } from "../../src/server/auth/session";
-import {
-  createTokens,
-  recordConsent,
-  revokeUserClientTokens,
-} from "../../src/server/oauth/service";
+import { createSession, revokeUserSession } from "../../src/server/auth/session";
+import { recordConsent, revokeUserClientTokens } from "../../src/server/oauth/grants";
+import { createTokens } from "../../src/server/oauth/service";
 import {
   APP_CLIENT_ID,
   getAppRedirectUri,
@@ -270,7 +267,7 @@ describe("SSE credential re-check", () => {
     );
     expect(res.status).toBe(200);
     const ended = await streamEndsAfterHeartbeats(res.body!, async () => {
-      await revokeSession(sessionId);
+      await revokeUserSession(userId, sessionId);
     });
     expect(ended).toBe(true);
   });
@@ -634,6 +631,48 @@ describe("entries.getMany", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.entries.map((e: { id: string }) => e.id)).toEqual([b, a]);
+  });
+
+  // The app shows `content` as is, so it must be what the web's entry view shows by default.
+  it.each([
+    {
+      shows: "fetched full content",
+      entry: { fullContentCleaned: "<p>Full</p>", fullContentFetchedAt: new Date() },
+      content: "<p>Full</p>",
+    },
+    {
+      shows: "the feed content when full content was never fetched successfully",
+      entry: { fullContentCleaned: "<p>Full</p>" },
+      content: "<p>Feed</p>",
+    },
+    {
+      shows: "the feed content when the latest full-content fetch failed",
+      entry: {
+        fullContentCleaned: "<p>Full</p>",
+        fullContentFetchedAt: new Date(),
+        fullContentError: "HTTP 500",
+      },
+      content: "<p>Feed</p>",
+    },
+    {
+      shows: "the summary as text when the shown variant is empty",
+      entry: { contentCleaned: "", summary: "a <b> c" },
+      content: "<p>a &lt;b&gt; c</p>",
+    },
+  ])("returns the content the entry view shows: $shows", async ({ entry, content }) => {
+    const userId = await createUser();
+    const token = await appToken(userId);
+    const feedId = await createTestFeed();
+    await createTestSubscription(userId, feedId, { fetchFullContent: true });
+    const id = await createTestEntry(feedId, {
+      userIds: [userId],
+      contentCleaned: "<p>Feed</p>",
+      ...entry,
+    });
+
+    const body = await (await rest(token, "POST", "/entries/batch", { ids: [id] })).json();
+
+    expect(body.entries[0].content).toBe(content);
   });
 });
 

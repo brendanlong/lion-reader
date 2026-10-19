@@ -5,33 +5,23 @@
  * and prefetching data for React Query hydration.
  */
 
-import { cookies } from "next/headers";
 import { cache } from "react";
 import { createHydrationHelpers } from "@trpc/react-query/rsc";
 import { db } from "@/server/db";
-import { validateSession } from "@/server/auth/session";
+import { getRequestSession } from "@/server/auth/request-session";
 import { isSignupConfirmed } from "@/server/auth/confirmation";
 import { createCaller, type AppRouter } from "@/server/trpc/root";
 import type { Context } from "@/server/trpc/context";
 import { getQueryClient } from "./query-client";
 
 /**
- * Gets the session token from cookies.
- * Uses Next.js cookies() API which works in server components.
- */
-async function getSessionToken(): Promise<string | null> {
-  const cookieStore = await cookies();
-  return cookieStore.get("session")?.value ?? null;
-}
-
-/**
  * Creates a server-side tRPC context with session from cookies.
  * Cached per request to avoid redundant session validation.
  */
 const createServerContext = cache(async (): Promise<Context> => {
-  const sessionToken = await getSessionToken();
+  const current = await getRequestSession();
 
-  if (!sessionToken) {
+  if (!current) {
     return {
       db,
       session: null,
@@ -43,20 +33,7 @@ const createServerContext = cache(async (): Promise<Context> => {
     };
   }
 
-  const session = await validateSession(sessionToken);
-
-  if (!session) {
-    return {
-      db,
-      session: null,
-      apiToken: null,
-      authType: null,
-      scopes: [],
-      sessionToken: null,
-      headers: new Headers(),
-    };
-  }
-
+  const { session, token: sessionToken } = current;
   return {
     db,
     session,

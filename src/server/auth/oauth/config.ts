@@ -17,6 +17,7 @@
 
 import { importPKCS8, SignJWT } from "jose";
 import * as client from "openid-client";
+import { appUrl } from "@/server/config/env";
 
 // ============================================================================
 // Types
@@ -138,11 +139,6 @@ const APPLE_PRIVATE_KEY = process.env.APPLE_PRIVATE_KEY;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 
-/**
- * Base URL for OAuth callbacks
- */
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
 // ============================================================================
 // Provider Configurations
 // ============================================================================
@@ -194,7 +190,7 @@ const oauthProviders: Record<OAuthProviderName, OAuthProviderConfig | AppleOAuth
  * request must carry an identical value, so both take it from here.
  */
 export function getRedirectUri(provider: OAuthProviderName): string {
-  return `${APP_URL}/api/v1/auth/oauth/${provider}/callback`;
+  return `${appUrl}/api/v1/auth/oauth/${provider}/callback`;
 }
 
 // ============================================================================

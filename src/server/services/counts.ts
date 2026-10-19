@@ -122,15 +122,6 @@ export async function getUserUnreadCounts(db: CountsDb, userId: string): Promise
   );
 }
 
-/** Global unread counts (all + starred + saved) for a user. */
-export async function getGlobalUnreadCounts(
-  db: CountsDb,
-  userId: string
-): Promise<{ allUnread: number; starredUnread: number; savedUnread: number }> {
-  const { allUnread, starredUnread, savedUnread } = await getUserUnreadCounts(db, userId);
-  return { allUnread, starredUnread, savedUnread };
-}
-
 /**
  * Per-tag unread counts. Every requested tag is returned, zero-filled: the
  * client sets these counts absolutely, so an omitted tag would keep its stale
@@ -155,8 +146,6 @@ async function getTagUnreadCounts(
 
 /**
  * Counts for multiple entries, with subscription and tag counts aggregated.
- * Used by markRead, star/unstar, and new_entry events to return counts for all
- * affected lists.
  */
 export type BulkUnreadCounts = z.infer<typeof unreadCountsSchema>;
 
@@ -168,12 +157,16 @@ export type BulkUnreadCounts = z.infer<typeof unreadCountsSchema>;
  * @param userId - User ID
  * @param entries - Entries (by id: every subscription but Saved holding them),
  *   or subscriptions (by subscriptionId, for an entry-less change)
+ * @param options.formerTagIds - The former tags of each subscription the change
+ *   moved out of lists (empty: it was in Uncategorized), whose lists it also
+ *   moved. Those associations are gone by then, so the caller says them.
  * @returns Aggregated unread counts for all affected lists
  */
 export async function getBulkEntryRelatedCounts(
   db: CountsDb,
   userId: string,
-  entries: Array<{ id?: string; subscriptionId: string | null }>
+  entries: Array<{ id?: string; subscriptionId: string | null }>,
+  { formerTagIds = [] }: { formerTagIds?: string[][] } = {}
 ): Promise<BulkUnreadCounts> {
   const entryIds = entries.map((e) => e.id).filter((id) => id !== undefined);
   // The active subscriptions holding the entries (#1846) but Saved, whose
@@ -242,11 +235,6 @@ export async function getBulkEntryRelatedCounts(
     ),
   };
 
-  // If no subscriptions affected (all saved entries), return base counts
-  if (subscriptionIds.length === 0) {
-    return baseCounts;
-  }
-
   // Zero-fill: a requested subscription the counter query didn't return (e.g.
   // deleted out from under us) must still appear — the client sets these
   // counts absolutely, so omitting a subscription would leave a stale badge.
@@ -257,54 +245,16 @@ export async function getBulkEntryRelatedCounts(
     tagIds: subTags.filter((t) => t.subscriptionId === id).map((t) => t.tagId),
   }));
 
-  const tagIds = [...new Set(subTags.map((t) => t.tagId))];
+  const tagIds = [...new Set([...subTags.map((t) => t.tagId), ...formerTagIds.flat()])];
   const subscriptionsWithTags = new Set(subTags.map((t) => t.subscriptionId));
-  const hasUncategorized = subscriptionIds.some((id) => !subscriptionsWithTags.has(id));
+  const hasUncategorized =
+    subscriptionIds.some((id) => !subscriptionsWithTags.has(id)) ||
+    formerTagIds.some((ids) => ids.length === 0);
 
   baseCounts.tags = await getTagUnreadCounts(db, userId, tagIds);
   if (hasUncategorized) {
     baseCounts.uncategorized = { unread: userCounts.uncategorizedUnread };
   }
 
-  return baseCounts;
-}
-
-/**
- * Computes absolute counts for the lists affected when a subscription is
- * removed: All Articles (+ starred/saved globals) plus either the
- * subscription's former tags or Uncategorized.
- *
- * Driven by explicit `formerTagIds` rather than a subscription ID because the
- * subscription's tag associations are deleted before this runs. Must be called
- * after the subscription is soft-deleted. `subscriptions` is always empty (the
- * subscription is gone).
- *
- * @param db - Database instance
- * @param userId - User ID
- * @param formerTagIds - Tag IDs the subscription belonged to (empty = it was uncategorized)
- */
-export async function getSubscriptionDeletionCounts(
-  db: typeof dbType,
-  userId: string,
-  formerTagIds: string[]
-): Promise<BulkUnreadCounts> {
-  const userCounts = await getUserUnreadCounts(db, userId);
-  const baseCounts: BulkUnreadCounts = {
-    all: { unread: userCounts.allUnread },
-    starred: { unread: userCounts.starredUnread },
-    saved: { unread: userCounts.savedUnread },
-    subscriptions: [],
-    tags: [],
-    asOf: formatCountsAsOf(userCounts.asOf),
-  };
-
-  if (formerTagIds.length === 0) {
-    // Subscription was uncategorized — only Uncategorized's unread changed.
-    baseCounts.uncategorized = { unread: userCounts.uncategorizedUnread };
-    return baseCounts;
-  }
-
-  // Subscription had tags — recompute unread for each former tag.
-  baseCounts.tags = await getTagUnreadCounts(db, userId, formerTagIds);
   return baseCounts;
 }

@@ -131,8 +131,7 @@ export const syncTagSchema = z.object({
 export const countsAsOfSchema = z.string();
 
 /**
- * Orders two `countsAsOfSchema` stamps; an unstamped value (a subscription row
- * from an event, which carries no stamp) counts as newest.
+ * Orders two `countsAsOfSchema` stamps; an unstamped value counts as newest.
  */
 export function isCountsAsOfNewer(
   incoming: string | undefined,
@@ -165,28 +164,62 @@ export const unreadCountsSchema = z.object({
 });
 
 /**
- * Subscription data for subscription_created events.
+ * A subscription as `subscriptions.get` returns it (`subscriptionSchema` in
+ * `services/subscriptions.ts` is this with a `Date`), as the subscription
+ * events carry it. Its id is the subscription's: clients never see feed ids.
  */
-const subscriptionCreatedDataSchema = z.object({
+export const syncSubscriptionSchema = z.object({
   id: z.string(),
-  customTitle: z.string().nullable(),
-  subscribedAt: z.string(),
-  unreadCount: z.number(),
-  tags: z.array(syncTagSchema),
-  // Absent from a previous release's events, which means off.
-  fetchFullContent: z.boolean().optional(),
-});
-
-/**
- * Feed data for subscription_created events.
- */
-const feedCreatedDataSchema = z.object({
   type: z.enum(SUBSCRIPTION_TYPES),
   url: z.string().nullable(),
+  /** The custom title if set, else the feed's. */
   title: z.string().nullable(),
+  /** The feed's own title, for the rename UI. */
+  originalTitle: z.string().nullable(),
   description: z.string().nullable(),
   siteUrl: z.string().nullable(),
+  subscribedAt: z.string(),
+  unreadCount: z.number(),
+  /** When `unreadCount` was read. */
+  unreadCountAsOf: countsAsOfSchema,
+  /** Sorted by name, then id. */
+  tags: z.array(syncTagSchema),
+  /** Whether to fetch each entry's full article from its URL. */
+  fetchFullContent: z.boolean(),
 });
+
+export type SyncSubscription = z.infer<typeof syncSubscriptionSchema>;
+
+/**
+ * A subscription event's `row`. Absent from a previous release's events, whose
+ * subscription the client then fetches.
+ */
+const eventSubscriptionRowSchema = syncSubscriptionSchema.optional();
+
+// What subscription events carried before `row`, for app builds that predate
+// it: don't read these. `customTitle` is the row's title, which those builds
+// show as `customTitle ?? feed.title`.
+const deprecated = { deprecated: true };
+const deprecatedCustomTitleSchema = z.string().nullable().meta(deprecated);
+const deprecatedCreatedSubscriptionSchema = z
+  .object({
+    id: z.string(),
+    customTitle: deprecatedCustomTitleSchema,
+    subscribedAt: z.string(),
+    unreadCount: z.number(),
+    tags: z.array(syncTagSchema),
+    fetchFullContent: z.boolean().optional(),
+  })
+  .meta(deprecated);
+const deprecatedCreatedFeedSchema = z
+  .object({
+    type: z.enum(SUBSCRIPTION_TYPES),
+    url: z.string().nullable(),
+    title: z.string().nullable(),
+    description: z.string().nullable(),
+    siteUrl: z.string().nullable(),
+  })
+  .meta(deprecated);
 
 // ============================================================================
 // Timestamp Helpers
@@ -238,6 +271,17 @@ export const newEntryEventSchema = z.object({
   // entries.list filters out.
   entry: newEntryListDataSchema.optional(),
 });
+
+/**
+ * What a client places a new entry in its lists from: a new_entry event's
+ * list fields. The mutation that created the entry returns it too, so the
+ * acting tab needn't wait for the event.
+ */
+export const newEntryListItemSchema = newEntryEventSchema
+  .pick({ entryId: true, subscriptionId: true, subscriptionIds: true, updatedAt: true })
+  .extend({ entry: newEntryListDataSchema });
+
+export type NewEntryListItem = z.infer<typeof newEntryListItemSchema>;
 
 export const entryUpdatedEventSchema = z.object({
   type: z.literal("entry_updated"),
@@ -296,8 +340,9 @@ export const subscriptionCreatedEventSchema = z.object({
   subscriptionId: z.string(),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
-  subscription: subscriptionCreatedDataSchema,
-  feed: feedCreatedDataSchema,
+  row: eventSubscriptionRowSchema,
+  subscription: deprecatedCreatedSubscriptionSchema,
+  feed: deprecatedCreatedFeedSchema,
   // Absolute unread counts for the lists the new (untagged) subscription
   // affects — All Articles, Uncategorized, and the subscription itself. The
   // client sets these directly instead of adding deltas. Absent when an email
@@ -322,10 +367,10 @@ export const subscriptionDeletedEventSchema = z.object({
 export const subscriptionUpdatedEventSchema = z.object({
   type: z.literal("subscription_updated"),
   subscriptionId: z.string(),
-  tags: z.array(syncTagSchema),
-  customTitle: z.string().nullable(),
-  // Absent when the publisher didn't read it.
-  fetchFullContent: z.boolean().optional(),
+  row: eventSubscriptionRowSchema,
+  tags: z.array(syncTagSchema).meta(deprecated),
+  customTitle: deprecatedCustomTitleSchema,
+  fetchFullContent: z.boolean().optional().meta(deprecated),
   timestamp: timestampWithDefault,
   updatedAt: z.string(),
 });

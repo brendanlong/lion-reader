@@ -6133,6 +6133,12 @@
                           },
                           "fetchFullContent": {
                             "type": "boolean"
+                          },
+                          "content": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -6161,7 +6167,8 @@
                           "fullContentCleaned",
                           "fullContentFetchedAt",
                           "fullContentError",
-                          "fetchFullContent"
+                          "fetchFullContent",
+                          "content"
                         ],
                         "additionalProperties": false
                       }
@@ -9415,12 +9422,75 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread",
+                              "tagIds"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "all",
                         "starred",
-                        "saved"
+                        "saved",
+                        "subscriptions",
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
@@ -9691,6 +9761,122 @@
                       ],
                       "additionalProperties": false
                     },
+                    "listItem": {
+                      "type": "object",
+                      "properties": {
+                        "entryId": {
+                          "type": "string"
+                        },
+                        "subscriptionId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "subscriptionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "entry": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "author": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "summary": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "url": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "publishedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "web",
+                                "email",
+                                "saved"
+                              ]
+                            },
+                            "fetchedAt": {
+                              "type": "string"
+                            },
+                            "siteName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "feedTitle": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "read": {
+                              "type": "boolean"
+                            },
+                            "starred": {
+                              "type": "boolean"
+                            },
+                            "readChangedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "entryUpdatedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "author",
+                            "summary",
+                            "url",
+                            "publishedAt",
+                            "type",
+                            "fetchedAt",
+                            "siteName",
+                            "feedTitle"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "entryId",
+                        "subscriptionId",
+                        "subscriptionIds",
+                        "updatedAt",
+                        "entry"
+                      ],
+                      "additionalProperties": false
+                    },
                     "counts": {
                       "type": "object",
                       "properties": {
@@ -9729,18 +9915,82 @@
                             "unread"
                           ],
                           "additionalProperties": false
+                        },
+                        "subscriptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              },
+                              "tagIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread",
+                              "tagIds"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "unread": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "unread"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "uncategorized": {
+                          "type": "object",
+                          "properties": {
+                            "unread": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unread"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "asOf": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "all",
                         "starred",
-                        "saved"
+                        "saved",
+                        "subscriptions",
+                        "tags",
+                        "asOf"
                       ],
                       "additionalProperties": false
                     }
                   },
                   "required": [
                     "article",
+                    "listItem",
                     "counts"
                   ],
                   "additionalProperties": false
@@ -12755,6 +13005,106 @@
                               "updatedAt": {
                                 "type": "string"
                               },
+                              "row": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "web",
+                                      "email",
+                                      "saved",
+                                      "collection"
+                                    ]
+                                  },
+                                  "url": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "title": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "originalTitle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "description": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "siteUrl": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "subscribedAt": {
+                                    "type": "string"
+                                  },
+                                  "unreadCount": {
+                                    "type": "number"
+                                  },
+                                  "unreadCountAsOf": {
+                                    "type": "string"
+                                  },
+                                  "tags": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "color": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "name",
+                                        "color"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "fetchFullContent": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "type",
+                                  "url",
+                                  "title",
+                                  "originalTitle",
+                                  "description",
+                                  "siteUrl",
+                                  "subscribedAt",
+                                  "unreadCount",
+                                  "unreadCountAsOf",
+                                  "tags",
+                                  "fetchFullContent"
+                                ],
+                                "additionalProperties": false
+                              },
                               "subscription": {
                                 "type": "object",
                                 "properties": {
@@ -12762,6 +13112,7 @@
                                     "type": "string"
                                   },
                                   "customTitle": {
+                                    "deprecated": true,
                                     "type": [
                                       "string",
                                       "null"
@@ -12810,7 +13161,8 @@
                                   "unreadCount",
                                   "tags"
                                 ],
-                                "additionalProperties": false
+                                "additionalProperties": false,
+                                "deprecated": true
                               },
                               "feed": {
                                 "type": "object",
@@ -12856,7 +13208,8 @@
                                   "description",
                                   "siteUrl"
                                 ],
-                                "additionalProperties": false
+                                "additionalProperties": false,
+                                "deprecated": true
                               },
                               "counts": {
                                 "type": "object",
@@ -13126,6 +13479,106 @@
                               "subscriptionId": {
                                 "type": "string"
                               },
+                              "row": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "web",
+                                      "email",
+                                      "saved",
+                                      "collection"
+                                    ]
+                                  },
+                                  "url": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "title": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "originalTitle": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "description": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "siteUrl": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "subscribedAt": {
+                                    "type": "string"
+                                  },
+                                  "unreadCount": {
+                                    "type": "number"
+                                  },
+                                  "unreadCountAsOf": {
+                                    "type": "string"
+                                  },
+                                  "tags": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "color": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "name",
+                                        "color"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "fetchFullContent": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "type",
+                                  "url",
+                                  "title",
+                                  "originalTitle",
+                                  "description",
+                                  "siteUrl",
+                                  "subscribedAt",
+                                  "unreadCount",
+                                  "unreadCountAsOf",
+                                  "tags",
+                                  "fetchFullContent"
+                                ],
+                                "additionalProperties": false
+                              },
                               "tags": {
                                 "type": "array",
                                 "items": {
@@ -13150,15 +13603,18 @@
                                     "color"
                                   ],
                                   "additionalProperties": false
-                                }
+                                },
+                                "deprecated": true
                               },
                               "customTitle": {
+                                "deprecated": true,
                                 "type": [
                                   "string",
                                   "null"
                                 ]
                               },
                               "fetchFullContent": {
+                                "deprecated": true,
                                 "type": "boolean"
                               },
                               "timestamp": {
@@ -13429,6 +13885,434 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/error.INTERNAL_SERVER_ERROR"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/narration/speech": {
+      "post": {
+        "operationId": "narration-speech",
+        "summary": "Speak a chunk of narration",
+        "description": "Streams the text spoken by a cloud voice as AAC in fragmented MP4 while it's generated. A failure after audio has started cuts the stream short.",
+        "tags": [
+          "Narration"
+        ],
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "voice": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "pauseSeconds": {
+                    "default": 0,
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 2
+                  }
+                },
+                "required": [
+                  "model",
+                  "voice",
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The speech, streamed",
+            "content": {
+              "audio/mp4": {
+                "schema": {
+                  "type": "string",
+                  "contentMediaType": "audio/mp4"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or no cloud voice can speak it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authorization not provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signup not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The body took too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The body is too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The body isn't JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The voice's provider refused the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Speech synthesis failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The cloud voice is busy or unavailable; try again",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "appErrorCode": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "appErrorCode"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }

@@ -6,11 +6,11 @@
  * identity decides which account you get — lives in
  * `src/server/auth/oauth/callback.ts` instead.
  *
- * Both functions add or remove a way to sign in, so both revoke the user's other
- * sessions (SECURITY.md §4) via `revokeOtherUserSessionsOrReport`, which owns what
- * happens when that revoke fails. The revoke lives here rather than in the
- * per-provider tRPC procedures so a fourth provider can't forget it, and it fires
- * only when a credential really changed — see each function for what doesn't count.
+ * Linking and unlinking add or remove a way to sign in, so both revoke the user's
+ * other sessions (SECURITY.md §4) via `revokeOtherUserSessionsOrReport`, which owns
+ * what happens when that revoke fails. The revoke lives here rather than in the
+ * callers so a fourth provider can't forget it, and it fires only when a credential
+ * really changed — see each function for what doesn't count.
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -21,32 +21,103 @@ import { generateUuidv7 } from "@/lib/uuidv7";
 import { revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { errors } from "@/server/errors";
 import { PROVIDER_LABELS, type OAuthProviderName } from "@/server/auth/oauth/config";
+import { oauthTokenColumns, type OAuthTokens } from "@/server/auth/oauth/token-exchange";
 
-export interface LinkOAuthAccountParams {
-  /** The signed-in user the provider account is being attached to. */
+export interface AttachOAuthAccountParams extends OAuthTokens {
+  /** The user the provider account is being attached to. */
   userId: string;
-  /** The caller's session, kept alive when the credential change revokes the rest. */
-  currentSessionId: string;
   provider: OAuthProviderName;
   /** The provider's stable id for the account (`sub` / Discord user id). */
   providerAccountId: string;
-  accessToken: string;
-  refreshToken?: string | null;
-  expiresAt?: Date | null;
-  /** Granted scopes, where the provider reports them (Google). */
-  scopes?: string[];
 }
 
 /**
- * Link a provider account to a signed-in user.
+ * Attach a provider account to a user, one link per provider. Every path that
+ * adds a link to an existing user goes through here: a link from Settings
+ * (`linkOAuthAccount`) and a sign-in that matched the user by email
+ * (`processOAuthCallback`). It revokes nothing; that's the caller's decision.
  *
- * Re-linking the *same* provider account is an update rather than an error, so
+ * Re-attaching the *same* provider account is an update rather than an error, so
  * Google's incremental authorization (granting the Docs scope later) refreshes
  * the stored tokens and scopes in place. This holds for **every** provider, not
  * just Google: Apple and Discord used to reject any re-link, only because they
  * checked for an existing row before the callback gave them a
- * `providerAccountId` to compare against (#1467). Linking a *different* account
- * for a provider the user already linked is refused — one link per provider.
+ * `providerAccountId` to compare against (#1467). Attaching a *different* account
+ * for a provider the user already linked is refused.
+ *
+ * @returns `"updated"` when an existing link was refreshed, `"linked"` for a new one
+ * @throws `oauthAlreadyLinked` when a different account of this provider is linked
+ * @throws `oauthCallbackFailed` when this provider account belongs to another user
+ */
+export async function attachOAuthAccount(
+  db: Database,
+  params: AttachOAuthAccountParams
+): Promise<"linked" | "updated"> {
+  const { userId, provider, providerAccountId } = params;
+  const label = PROVIDER_LABELS[provider];
+  const tokenColumns = oauthTokenColumns(params);
+
+  return db.transaction(async (tx) => {
+    // Nothing enforces one link per (user_id, provider), so concurrent attaches for
+    // this user (two first sign-ins with different accounts, a link clicked twice)
+    // serialize on the user row: each then sees the link the other committed.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
+
+    // Ordered so a user who already has two rows for one provider resolves to
+    // their oldest link deterministically, rather than to whichever row the
+    // planner returns.
+    const existingLink = await tx
+      .select({ id: oauthAccounts.id, providerAccountId: oauthAccounts.providerAccountId })
+      .from(oauthAccounts)
+      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
+      .orderBy(oauthAccounts.createdAt)
+      .limit(1);
+
+    if (existingLink.length > 0) {
+      if (existingLink[0].providerAccountId !== providerAccountId) {
+        throw errors.oauthAlreadyLinked(label);
+      }
+
+      await tx
+        .update(oauthAccounts)
+        .set(tokenColumns)
+        .where(eq(oauthAccounts.id, existingLink[0].id));
+
+      return "updated";
+    }
+
+    // Insert, letting the (provider, provider_account_id) unique constraint decide
+    // whether another user holds this provider account (the user lock doesn't
+    // cover them). The conflict must *not* update that user's row, or one user
+    // could take over another's link.
+    const inserted = await tx
+      .insert(oauthAccounts)
+      .values({
+        id: generateUuidv7(),
+        userId,
+        provider,
+        providerAccountId,
+        ...tokenColumns,
+        createdAt: new Date(),
+      })
+      .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
+      .returning({ id: oauthAccounts.id });
+
+    if (inserted.length === 0) {
+      throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
+    }
+    return "linked";
+  });
+}
+
+export interface LinkOAuthAccountParams extends AttachOAuthAccountParams {
+  /** The caller's session, kept alive when the credential change revokes the rest. */
+  currentSessionId: string;
+}
+
+/**
+ * Link a provider account to a signed-in user from Settings (`attachOAuthAccount`
+ * says what's refused).
  *
  * Identity comes from the caller's **session**, not from the provider's email,
  * so — unlike `processOAuthCallback`, which picks the account by email — there
@@ -56,88 +127,55 @@ export interface LinkOAuthAccountParams {
  *
  * Only a new link revokes other sessions. Re-linking the account the user already
  * has grants no new way in, so it leaves them alone.
- *
- * @returns `"updated"` when an existing link was refreshed, `"linked"` for a new one
- * @throws `oauthAlreadyLinked` when a different account of this provider is linked
- * @throws `oauthCallbackFailed` when this provider account belongs to another user
  */
 export async function linkOAuthAccount(
   db: Database,
   params: LinkOAuthAccountParams
 ): Promise<"linked" | "updated"> {
-  const {
-    userId,
-    currentSessionId,
-    provider,
-    providerAccountId,
-    accessToken,
-    refreshToken,
-    expiresAt,
-    scopes,
-  } = params;
-  const label = PROVIDER_LABELS[provider];
-
-  // What the provider omits is not the same as what it cleared. A re-consent
-  // typically returns no refresh token, Apple and Discord report no scope list,
-  // and dropping either would lose access we still hold — so both are only
-  // written when present (the same rule `refreshGoogleToken` follows).
-  // `expiresAt` is the exception and is always written: it belongs to the access
-  // token in this response, so keeping a stale one next to a fresh token would
-  // re-refresh forever.
-  const tokenColumns = {
-    accessToken,
-    expiresAt: expiresAt ?? null,
-    ...(refreshToken ? { refreshToken } : {}),
-    ...(scopes !== undefined ? { scopes } : {}),
-  };
-
-  // Ordered so a user who somehow has two rows for one provider (nothing
-  // enforces uniqueness on (user_id, provider)) resolves to their oldest link
-  // deterministically, rather than to whichever row the planner returns.
-  const existingLink = await db
-    .select({ id: oauthAccounts.id, providerAccountId: oauthAccounts.providerAccountId })
-    .from(oauthAccounts)
-    .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-    .orderBy(oauthAccounts.createdAt)
-    .limit(1);
-
-  if (existingLink.length > 0) {
-    if (existingLink[0].providerAccountId !== providerAccountId) {
-      throw errors.oauthAlreadyLinked(label);
-    }
-
-    await db
-      .update(oauthAccounts)
-      .set(tokenColumns)
-      .where(eq(oauthAccounts.id, existingLink[0].id));
-
-    return "updated";
+  const result = await attachOAuthAccount(db, params);
+  if (result === "linked") {
+    await revokeOtherUserSessionsOrReport(
+      params.userId,
+      params.currentSessionId,
+      `${PROVIDER_LABELS[params.provider]} linked`
+    );
   }
+  return result;
+}
 
-  // Insert, letting the (provider, provider_account_id) unique constraint decide
-  // whether this provider account is already spoken for. Checking with a SELECT
-  // first would leave a window where two concurrent links both see it free; the
-  // conflict must *not* update, or one user could take over another's link.
-  const inserted = await db
-    .insert(oauthAccounts)
-    .values({
-      id: generateUuidv7(),
-      userId,
-      provider,
-      providerAccountId,
-      ...tokenColumns,
-      createdAt: new Date(),
-    })
-    .onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerAccountId] })
+export interface ReauthorizeOAuthAccountParams extends OAuthTokens {
+  /** The user who started the re-authorization. */
+  userId: string;
+  provider: OAuthProviderName;
+  providerAccountId: string;
+}
+
+/**
+ * Store the tokens from a re-authorization of a link the user already has (Google's
+ * incremental authorization for Docs). Changes no credential, so revokes nothing.
+ *
+ * Matches the row by the flow's user as well as the provider account, so the
+ * provider account the browser returned with can only update the flow user's own
+ * link, never another user's.
+ *
+ * @returns whether that link existed (and was updated)
+ */
+export async function reauthorizeOAuthAccount(
+  db: Database,
+  params: ReauthorizeOAuthAccountParams
+): Promise<boolean> {
+  const updated = await db
+    .update(oauthAccounts)
+    .set(oauthTokenColumns(params))
+    .where(
+      and(
+        eq(oauthAccounts.userId, params.userId),
+        eq(oauthAccounts.provider, params.provider),
+        eq(oauthAccounts.providerAccountId, params.providerAccountId)
+      )
+    )
     .returning({ id: oauthAccounts.id });
-
-  if (inserted.length === 0) {
-    throw errors.oauthCallbackFailed(`This ${label} account is already linked to another user`);
-  }
-
-  await revokeOtherUserSessionsOrReport(userId, currentSessionId, `${label} linked`);
-
-  return "linked";
+  return updated.length > 0;
 }
 
 export interface UnlinkOAuthAccountParams {

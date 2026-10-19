@@ -53,7 +53,7 @@ export interface SubscriptionPages {
 }
 
 /** A row and, when its source has one, its count's stamp. */
-type StampedSubscriptionRow = SubscriptionRow & { unreadCountAsOf?: string };
+export type StampedSubscriptionRow = SubscriptionRow & { unreadCountAsOf?: string };
 
 /**
  * The row to store for `row`: it keeps the stored count when that's newer, and

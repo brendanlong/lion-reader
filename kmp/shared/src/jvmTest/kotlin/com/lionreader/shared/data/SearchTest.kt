@@ -35,6 +35,7 @@ class SearchTest {
             FullEntry(
                 id = id,
                 subscriptionId = "sub-1",
+                subscriptionIds = listOf("sub-1"),
                 type = "web",
                 title = title,
                 author = "Ada Lovelace",
@@ -44,8 +45,7 @@ class SearchTest {
                 fetchedAt = at,
                 read = false,
                 starred = false,
-                contentCleaned = body,
-                fetchFullContent = false,
+                content = body,
             )
     }
 
@@ -151,6 +151,7 @@ class SearchTest {
         server.subscriptions +=
             Subscription(
                 "sub-1",
+                type = "web",
                 title = "Rust Weekly",
                 originalTitle = "Rust Weekly",
                 tags = emptyList(),
@@ -168,7 +169,10 @@ class SearchTest {
         assertEquals(emptyList(), search("weekly"))
 
         server.queueChanges(
-            events = listOf(SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = null))
+            events =
+                listOf(
+                    SyncEvent.SubscriptionUpdated("sub-1", tags = emptyList(), customTitle = null)
+                )
         )
         engine.sync()
         assertEquals("Rust Weekly", source())

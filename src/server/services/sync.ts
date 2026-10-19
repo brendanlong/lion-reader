@@ -17,12 +17,11 @@ import {
   entries,
   feeds,
   subscriptions,
-  subscriptionTags,
   userEntries,
   tags,
   entryTombstones,
 } from "@/server/db/schema";
-import { syncTagSchema, serverSyncEventSchema } from "@/lib/events/schemas";
+import { serverSyncEventSchema } from "@/lib/events/schemas";
 import {
   entryFeedTitleSql,
   entryMemberships,
@@ -39,44 +38,10 @@ import type { Database } from "@/server/db";
 import { parseTimestamptz, parseTimestamptzOrNull } from "@/server/db/temporal";
 import { getBulkEntryRelatedCounts } from "@/server/services/counts";
 import {
+  getSubscriptionsByIds,
   isCollectionSubscription,
   isUserManagedSubscription,
 } from "@/server/services/subscriptions";
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * Batch-fetch tags grouped by subscription ID.
- * Used by sync.events to avoid N+1 queries.
- */
-async function fetchTagsBySubscriptionIds(
-  db: Database,
-  subscriptionIds: string[]
-): Promise<Map<string, Array<z.infer<typeof syncTagSchema>>>> {
-  const result = new Map<string, Array<z.infer<typeof syncTagSchema>>>();
-  if (subscriptionIds.length === 0) return result;
-
-  const rows = await db
-    .select({
-      subscriptionId: subscriptionTags.subscriptionId,
-      tagId: tags.id,
-      tagName: tags.name,
-      tagColor: tags.color,
-    })
-    .from(subscriptionTags)
-    .innerJoin(tags, eq(tags.id, subscriptionTags.tagId))
-    .where(inArray(subscriptionTags.subscriptionId, subscriptionIds));
-
-  for (const row of rows) {
-    const existing = result.get(row.subscriptionId) ?? [];
-    existing.push({ id: row.tagId, name: row.tagName, color: row.tagColor });
-    result.set(row.subscriptionId, existing);
-  }
-
-  return result;
-}
 
 // ============================================================================
 // Constants
@@ -86,7 +51,7 @@ async function fetchTagsBySubscriptionIds(
  * Maximum number of entries to return in a single sync response.
  * Prevents extremely large responses for initial syncs.
  */
-const MAX_ENTRIES = 500;
+export const MAX_SYNC_PAGE_ENTRIES = 500;
 
 /**
  * Sync cursor schema.
@@ -291,6 +256,9 @@ async function databaseNow(db: Database): Promise<Temporal.Instant> {
  * Each entry's (active) collections, empty for one in none. Membership is per-user
  * entry state (changing it moves `user_entries.updated_at`), so an offline
  * store replaces an entry's memberships whenever its state is re-delivered.
+ * Only Android builds android-v0.6.0 through v0.8.0 read it (later ones use
+ * the events' `subscriptionIds`): without it they stop seeing articles join
+ * and leave collections, so it stays while those builds are installed.
  */
 async function listCollectionMemberships(
   db: Database,
@@ -421,7 +389,7 @@ export async function collectSyncEvents(
   // Keyset pagination on (GREATEST(...), entry_id): markAllEntriesRead (and
   // the subscribe-time insert) stamp one identical timestamp onto hundreds
   // of rows, so a strict timestamp `>` cursor would drop every tied row past
-  // the MAX_ENTRIES boundary permanently. Carrying the entry id as a
+  // the MAX_SYNC_PAGE_ENTRIES boundary permanently. Carrying the entry id as a
   // tiebreaker (same pattern as listEntries) lets the client page within a
   // tied-timestamp group. See #1080.
   //
@@ -482,7 +450,7 @@ export async function collectSyncEvents(
     //            `last_entries_updated_at >= cursor` pre-filter would then
     //            wrongly prune a feed once the cursor advances past
     //            last_entries_updated_at but not past the entries — silently
-    //            and permanently dropping the tail of a >MAX_ENTRIES same-poll
+    //            and permanently dropping the tail of a >MAX_SYNC_PAGE_ENTRIES same-poll
     //            content burst from the delta. The per-feed index seek already
     //            bounds the work; no pre-filter is needed.
     //   Arm B2 — same, for emails, driven from the email subscriptions that
@@ -624,9 +592,9 @@ export async function collectSyncEvents(
       )
       // The origin join yields at most one subscription per row.
       .orderBy(greatest, entries.id)
-      .limit(MAX_ENTRIES + 1);
+      .limit(MAX_SYNC_PAGE_ENTRIES + 1);
 
-    if (changedEntryResults.length > MAX_ENTRIES) {
+    if (changedEntryResults.length > MAX_SYNC_PAGE_ENTRIES) {
       hasMore = true;
       changedEntryResults.pop();
     }
@@ -692,12 +660,12 @@ export async function collectSyncEvents(
   if (subscriptionsCursor) {
     const subscriptionResults = await db
       .select({
-        subscription: subscriptions,
-        feed: feeds,
+        id: subscriptions.id,
+        subscribedAt: subscriptions.subscribedAt,
+        unsubscribedAt: subscriptions.unsubscribedAt,
         updatedAtInstant: sql`${subscriptions.updatedAt}`.mapWith(parseTimestamptz),
       })
       .from(subscriptions)
-      .leftJoin(feeds, eq(subscriptions.feedId, feeds.id))
       .where(
         and(
           eq(subscriptions.userId, userId),
@@ -709,15 +677,14 @@ export async function collectSyncEvents(
       )
       .orderBy(subscriptions.updatedAt);
 
-    // Collect active subscription IDs for batch tag fetching
-    const activeSubscriptions = subscriptionResults.filter(
-      ({ subscription }) => subscription.unsubscribedAt === null
-    );
-
-    // Batch-fetch tags for all active subscriptions in one query
-    const tagsBySubscription = await fetchTagsBySubscriptionIds(
-      db,
-      activeSubscriptions.map(({ subscription }) => subscription.id)
+    const activeRows = new Map(
+      (
+        await getSubscriptionsByIds(
+          db,
+          userId,
+          subscriptionResults.flatMap((row) => (row.unsubscribedAt === null ? [row.id] : []))
+        )
+      ).map((row) => [row.id, row])
     );
 
     const lastSubscription = subscriptionResults.at(-1);
@@ -726,31 +693,25 @@ export async function collectSyncEvents(
     }
 
     const subscriptionsCursorDate = new Date(subscriptionsCursor);
-    for (const { subscription, feed, updatedAtInstant } of subscriptionResults) {
+    for (const { id, subscribedAt, unsubscribedAt, updatedAtInstant } of subscriptionResults) {
       const updatedAtIso = updatedAtInstant.toString();
       const stamps = {
         timestamp: updatedAtIso,
         updatedAt: updatedAtIso,
         _sortTime: updatedAtInstant,
       };
-      const subscriptionTagList = tagsBySubscription.get(subscription.id) ?? [];
-      if (subscription.unsubscribedAt !== null) {
-        allEvents.push({
-          type: "subscription_deleted" as const,
-          subscriptionId: subscription.id,
-          ...stamps,
-        });
-      } else if (subscription.subscribedAt > subscriptionsCursorDate) {
+      // Missing when unsubscribed since the first read: that unsubscribe moved
+      // its updated_at past this page's cursor, so the next sync deletes it.
+      const row = activeRows.get(id);
+      if (unsubscribedAt !== null) {
+        allEvents.push({ type: "subscription_deleted" as const, subscriptionId: id, ...stamps });
+      } else if (!row) {
+        continue;
+      } else if (subscribedAt > subscriptionsCursorDate) {
         // Subscribed since the cursor: new, not changed.
-        allEvents.push({
-          ...subscriptionCreatedEvent(subscription, subscriptionTagList, feed),
-          ...stamps,
-        });
+        allEvents.push({ ...subscriptionCreatedEvent(row), ...stamps });
       } else {
-        allEvents.push({
-          ...subscriptionUpdatedEvent(subscription, subscriptionTagList),
-          ...stamps,
-        });
+        allEvents.push({ ...subscriptionUpdatedEvent(row), ...stamps });
       }
     }
   }
@@ -909,9 +870,9 @@ export async function collectSyncChanges(
           )
         )
         .orderBy(entryTombstones.deletedAt)
-        .limit(MAX_ENTRIES + 1)
+        .limit(MAX_SYNC_PAGE_ENTRIES + 1)
     : [];
-  const moreTombstones = tombstones.length > MAX_ENTRIES;
+  const moreTombstones = tombstones.length > MAX_SYNC_PAGE_ENTRIES;
   if (moreTombstones) {
     tombstones.pop();
   }

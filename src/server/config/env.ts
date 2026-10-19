@@ -99,8 +99,24 @@ export const signupConfig = {
   },
 };
 
-/** Public-facing app URL. Used for sitemap, robots.txt, metadata, and User-Agent header. */
-export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://lionreader.com";
+/**
+ * The public-facing app URL, `NEXT_PUBLIC_APP_URL` when set. Otherwise, in a
+ * production build it's lionreader.com: production sets the variable at
+ * runtime (fly.toml) but not as a build arg, so the pages `next build`
+ * prerenders (sitemap, robots.txt, metadata) rely on this. Elsewhere it's the
+ * local dev server, so dev OAuth callbacks and invite links stay local.
+ *
+ * Read at call time (not cached) so tests can override it per case.
+ */
+export function readAppUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.NODE_ENV === "production" ? "https://lionreader.com" : "http://localhost:3000")
+  );
+}
+
+/** {@link readAppUrl} at startup. */
+export const appUrl = readAppUrl();
 
 /**
  * Security configuration.

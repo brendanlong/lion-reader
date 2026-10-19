@@ -1,5 +1,5 @@
 /**
- * The demo store (`src/app/(public)/demo/store.ts`) stands in for the server
+ * The demo store (`src/lib/demo/store.ts`) stands in for the server
  * in the public demo, so the client's cache code sees its outputs as if they
  * were real. These scenarios run the same calls against the demo store and
  * against the real tRPC caller seeded with the same fixtures, and compare the
@@ -19,11 +19,7 @@ import {
   users,
 } from "../../src/server/db/schema";
 import { createCaller } from "../../src/server/trpc/root";
-import {
-  createDemoStore,
-  type DemoFixtures,
-  type DemoProcedures,
-} from "../../src/app/(public)/demo/store";
+import { createDemoStore, type DemoFixtures, type DemoProcedures } from "../../src/lib/demo/store";
 import { DEMO_ENTRIES, DEMO_SUBSCRIPTIONS, DEMO_TAGS } from "../../src/lib/demo/data";
 import {
   createAuthContext,

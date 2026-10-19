@@ -55,14 +55,14 @@ class SyncEngineTest {
         FullEntry(
             id = id,
             subscriptionId = subscriptionId,
+            subscriptionIds = listOfNotNull(subscriptionId),
             type = type,
             title = "Title $id",
             publishedAt = Instant.fromEpochMilliseconds(NOW - ageDays * DAY).toString(),
             fetchedAt = Instant.fromEpochMilliseconds(NOW - ageDays * DAY).toString(),
             read = read,
             starred = starred,
-            contentCleaned = "<p>Body $id</p>",
-            fetchFullContent = false,
+            content = "<p>Body $id</p>",
         )
 
     /** A saved article, as the server sends it: its subscription is Saved. */
@@ -70,7 +70,7 @@ class SyncEngineTest {
         entry(id, ageDays, read, subscriptionId = SAVED_SUBSCRIPTION, type = "saved")
 
     private fun subscription(id: String, title: String? = null, tags: List<TagRef> = emptyList()) =
-        Subscription(id, title = title, originalTitle = title, tags = tags)
+        Subscription(id, type = "web", title = title, originalTitle = title, tags = tags)
 
     private fun serve(vararg entries: FullEntry) {
         entries.forEach { server.entries[it.id] = it }
@@ -277,7 +277,7 @@ class SyncEngineTest {
         engine.sync()
         server.entries["s"] = entry("s", starred = true)
         server.queueChanges(
-            events = listOf(SyncEvent.EntryStateChanged("s", read = true, starred = true)),
+            events = listOf(server.stateChanged("s", read = true, starred = true)),
             times = 2,
         )
         server.batchFailure = HttpStatusCode.ServiceUnavailable
@@ -292,7 +292,7 @@ class SyncEngineTest {
     fun anEditLeavesTheOldBodyInPlace() = runTest {
         serve(entry("a"))
         engine.sync()
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -308,7 +308,7 @@ class SyncEngineTest {
         engine.sync()
         // Full, with the one body (and its search text).
         policy = RetentionPolicy(contentBudgetBytes = ("<p>Body a</p>" + "Body a").length.toLong())
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Body A</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Body A</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -324,7 +324,7 @@ class SyncEngineTest {
         serve(entry("a", read = true))
         engine.sync()
         engine.ensureContent("a")
-        server.entries["a"] = entry("a", read = true).copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a", read = true).copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -380,13 +380,17 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.NewEntry(
+                    server.newEntry(
                         entryId = "c",
                         subscriptionId = "sub-1",
-                        feedType = "web",
-                        entry = EventEntry(title = "New", fetchedAt = "2026-09-29T11:00:00Z"),
+                        entry =
+                            EventEntry(
+                                type = "web",
+                                title = "New",
+                                fetchedAt = "2026-09-29T11:00:00Z",
+                            ),
                     ),
-                    SyncEvent.EntryStateChanged(
+                    server.stateChanged(
                         entryId = "a",
                         read = true,
                         starred = true,
@@ -409,15 +413,19 @@ class SyncEngineTest {
         // which time it may have been edited (#1680).
         serve(entry("a"))
         engine.sync()
-        serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+        serve(entry("a").copy(content = "<p>Edited</p>"))
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.NewEntry(
+                    server.newEntry(
                         entryId = "a",
                         subscriptionId = "sub-1",
-                        feedType = "web",
-                        entry = EventEntry(title = "Title a", fetchedAt = "2026-09-28T12:00:00Z"),
+                        entry =
+                            EventEntry(
+                                type = "web",
+                                title = "Title a",
+                                fetchedAt = "2026-09-28T12:00:00Z",
+                            ),
                     )
                 )
         )
@@ -444,7 +452,7 @@ class SyncEngineTest {
         assertTrue(engine.ensureContent("a"))
         assertEquals("<p>Body a</p>", reader.entry("a").first()?.content)
 
-        serve(entry("a").copy(contentCleaned = "<p>Edited</p>"))
+        serve(entry("a").copy(content = "<p>Edited</p>"))
         engine.sync()
         assertEquals("<p>Edited</p>", reader.entry("a").first()?.content)
     }
@@ -520,7 +528,7 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf("a", "b").map {
-                    SyncEvent.EntryStateChanged(it, read = false, starred = false)
+                    server.stateChanged(it, read = false, starred = false)
                 }
         )
         engine.sync(downloadContent = false)
@@ -528,30 +536,6 @@ class SyncEngineTest {
         assertEquals(listOf("b", "c"), unread(ListScope.Subscription("col-1")))
         assertEquals(listOf("a", "b"), unread(ListScope.Subscription("sub-1")))
         assertEquals(3, reader.navigation().first().tags.single().unread)
-    }
-
-    @Test
-    fun aServerWithoutSubscriptionIdsStillMovesArticlesBetweenCollections() = runTest {
-        server.legacy = true
-        serveCollection()
-        serve(saved("s"))
-        engine.sync()
-        assertEquals(listOf("s"), timeline(ListScope.Saved))
-
-        server.collections["col-1"] = mutableSetOf("b", "c", "s")
-        server.queueChanges(
-            events =
-                listOf("a", "b", "s").map {
-                    SyncEvent.EntryStateChanged(it, read = false, starred = false)
-                }
-        )
-        engine.sync(downloadContent = false)
-
-        // Collections follow; each article's feed, and Saved, stay.
-        assertEquals(listOf("s", "b", "c"), unread(ListScope.Subscription("col-1")))
-        assertEquals(listOf("a", "b"), unread(ListScope.Subscription("sub-1")))
-        assertEquals(listOf("s"), timeline(ListScope.Saved))
-        assertEquals(1, reader.navigation().first().savedUnread)
     }
 
     @Test
@@ -564,7 +548,7 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.EntryStateChanged("b", read = false, starred = false),
+                    server.stateChanged("b", read = false, starred = false),
                     SyncEvent.SubscriptionDeleted("sub-1"),
                 )
         )
@@ -818,7 +802,7 @@ class SyncEngineTest {
         engine.sync()
         assertEquals("<p>Short version</p>", reader.entry("a").first()?.summary)
 
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -831,7 +815,7 @@ class SyncEngineTest {
         server.subscriptions += subscription("sub-1")
         serve(entry("a"))
         engine.sync()
-        server.entries["a"] = entry("a").copy(contentCleaned = "<p>Revised</p>")
+        server.entries["a"] = entry("a").copy(content = "<p>Revised</p>")
         server.queueChanges(
             events = listOf(SyncEvent.EntryUpdated("a", EntryMetadata(title = "Revised")))
         )
@@ -929,7 +913,7 @@ class SyncEngineTest {
         val ids = (0 until 150).map { "m%03d".format(it) }
         ids.forEach { server.entries[it] = entry(it, read = true, starred = true) }
         server.queueChanges(
-            events = ids.map { SyncEvent.EntryStateChanged(it, read = true, starred = true) }
+            events = ids.map { server.stateChanged(it, read = true, starred = true) }
         )
 
         engine.sync(downloadContent = false)
@@ -944,7 +928,7 @@ class SyncEngineTest {
         engine.sync()
         val start = server.cursors.entries
         server.queueChanges(
-            events = listOf(SyncEvent.EntryStateChanged("a", read = true, starred = false)),
+            events = listOf(server.stateChanged("a", read = true, starred = false)),
             hasMore = true,
             entriesCursor = "2026-02-01T00:00:00Z",
         )
@@ -953,8 +937,8 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.EntryStateChanged("a", read = false, starred = true),
-                    SyncEvent.EntryStateChanged("b", read = true, starred = true),
+                    server.stateChanged("a", read = false, starred = true),
+                    server.stateChanged("b", read = true, starred = true),
                 ),
             entriesCursor = "2026-03-01T00:00:00Z",
             times = 2,
@@ -992,8 +976,8 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.NewEntry("spam", "sub-1", "web", entry = null),
-                    SyncEvent.EntryStateChanged("spam-changed", read = false, starred = false),
+                    server.newEntry("spam", "sub-1", entry = null),
+                    server.stateChanged("spam-changed", read = false, starred = false),
                 )
         )
 
@@ -1015,6 +999,25 @@ class SyncEngineTest {
         assertEquals(setOf("new-type", "saved"), timeline().toSet())
         assertEquals(listOf("saved"), timeline(ListScope.Saved))
         assertEquals(1, reader.navigation().first().savedUnread)
+    }
+
+    /** The server's feed title for every saved article is "Saved Articles". */
+    @Test
+    fun aSavedArticlesSourceIsItsSiteAndAFeedEntrysIsItsFeed() = runTest {
+        serve(
+            saved("saved").copy(feedTitle = "Saved Articles", siteName = "Example"),
+            saved("no-site").copy(feedTitle = "Saved Articles"),
+            entry("web").copy(feedTitle = "Rust Weekly", siteName = "rust.example"),
+        )
+
+        engine.sync()
+
+        val sources = reader.timeline(ListScope.All, false, false, emptySet(), 10).first()
+        assertEquals(
+            mapOf("saved" to "Example", "no-site" to "Saved Articles", "web" to "Rust Weekly"),
+            sources.associate { it.id to it.source },
+        )
+        assertEquals("Example", reader.entry("saved").first()?.source)
     }
 
     @Test
@@ -1067,11 +1070,10 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.NewEntry(
+                    server.newEntry(
                         "t",
                         SAVED_SUBSCRIPTION,
-                        "saved",
-                        EventEntry(title = "t", fetchedAt = "2026-09-28T12:00:00Z"),
+                        EventEntry(type = "saved", title = "t", fetchedAt = "2026-09-28T12:00:00Z"),
                     )
                 )
         )
@@ -1088,7 +1090,7 @@ class SyncEngineTest {
         engine.sync()
         serve(entry("a", subscriptionId = "unlisted"))
         server.queueChanges(
-            events = listOf(SyncEvent.EntryStateChanged("a", read = false, starred = false)),
+            events = listOf(server.stateChanged("a", read = false, starred = false)),
             times = 3,
         )
 
@@ -1096,21 +1098,6 @@ class SyncEngineTest {
 
         // The bootstrap's, and one more for the unknown subscription.
         assertEquals(2, requests("/subscriptions").size)
-    }
-
-    @Test
-    fun aListingWithoutTypesKeepsCollectionsArticles() = runTest {
-        serveCollection()
-        engine.sync()
-        // An older server, whose listing doesn't say which subscriptions are collections.
-        server.legacy = true
-        server.subscriptions.replaceAll { it.copy(type = null) }
-        db.appMetadataQueries.delete("collections_listed")
-
-        engine.sync()
-
-        // c, older than the window, is still kept as a collection's article.
-        assertEquals(listOf("a", "c"), timeline(ListScope.Subscription("col-1")))
     }
 
     @Test
@@ -1128,71 +1115,16 @@ class SyncEngineTest {
     }
 
     @Test
-    fun entryEventsWithoutAFeedTypeTakeTheEntrysOwnType() = runTest {
-        engine.sync()
-        // Not on the server any more, so only the events can add them.
-        server.queueChanges(
-            events =
-                listOf(
-                    SyncEvent.NewEntry(
-                        "new",
-                        subscriptionId = SAVED_SUBSCRIPTION,
-                        feedType = null,
-                        entry = EventEntry(type = "saved", fetchedAt = "2026-09-29T11:00:00Z"),
-                    ),
-                    SyncEvent.EntryStateChanged(
-                        "unread-again",
-                        read = false,
-                        starred = false,
-                        subscriptionId = "sub-1",
-                        feedType = null,
-                        entry = EventEntry(type = "web", fetchedAt = "2026-09-29T10:00:00Z"),
-                    ),
-                )
-        )
-
-        engine.sync(downloadContent = false)
-
-        assertEquals(listOf("new", "unread-again"), timeline())
-        assertEquals(listOf("new"), timeline(ListScope.Saved))
-    }
-
-    @Test
-    fun aNewEntryEventWithoutAnyTypeFetchesTheEntryWhole() = runTest {
-        engine.sync()
-        serve(saved("untyped"))
-        val fetched = mutableListOf<String>()
-        server.duringBatch = { fetched += it }
-        server.queueChanges(
-            events =
-                listOf(
-                    SyncEvent.NewEntry(
-                        "untyped",
-                        SAVED_SUBSCRIPTION,
-                        feedType = null,
-                        entry = EventEntry(fetchedAt = "2026-09-29T11:00:00Z"),
-                    )
-                )
-        )
-
-        engine.sync(downloadContent = false)
-
-        assertEquals(listOf("untyped"), fetched)
-        assertEquals(listOf("untyped"), timeline(ListScope.Saved))
-    }
-
-    @Test
     fun aFailedSendStillPullsAndThenFails() = runTest {
         serve(entry("a"))
         engine.sync()
         reader.setRead(listOf("a"), true)
         server.stateWriteFailure = HttpStatusCode.ServiceUnavailable
         fun newEntry(id: String) =
-            SyncEvent.NewEntry(
+            server.newEntry(
                 id,
                 "sub-1",
-                "web",
-                EventEntry(title = id, fetchedAt = "2026-09-29T11:00:00Z"),
+                EventEntry(type = "web", title = id, fetchedAt = "2026-09-29T11:00:00Z"),
             )
 
         server.queueChanges(events = listOf(newEntry("b")))
@@ -1236,20 +1168,80 @@ class SyncEngineTest {
     }
 
     @Test
+    fun subscriptionEventsStoreTheirRow() = runTest {
+        serve()
+        engine.sync()
+        val tech = TagRef("tag-1", "Tech")
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.SubscriptionCreated(
+                        "sub-2",
+                        row =
+                            Subscription(
+                                "sub-2",
+                                type = "web",
+                                title = "Mine",
+                                originalTitle = "Theirs",
+                                tags = emptyList(),
+                            ),
+                    )
+                )
+        )
+        engine.sync(downloadContent = false)
+        suspend fun sub2() = reader.navigation().first().subscriptions.single { it.id == "sub-2" }
+        assertEquals("Mine", sub2().title)
+
+        server.queueChanges(
+            events =
+                listOf(
+                    SyncEvent.SubscriptionUpdated(
+                        "sub-2",
+                        row =
+                            Subscription(
+                                "sub-2",
+                                type = "web",
+                                title = "Theirs",
+                                originalTitle = "Theirs",
+                                tags = listOf(tech),
+                            ),
+                    )
+                )
+        )
+        engine.sync(downloadContent = false)
+
+        assertEquals("Theirs", sub2().title)
+        assertEquals(listOf("tag-1"), sub2().tagIds)
+    }
+
+    /** A server that predates subscription events' `row`. */
+    @Test
     fun clearingACustomTitleShowsTheFeedsOwn() = runTest {
         server.subscriptions +=
-            Subscription("sub-1", title = "Mine", originalTitle = "Theirs", tags = emptyList())
+            Subscription(
+                "sub-1",
+                type = "web",
+                title = "Mine",
+                originalTitle = "Theirs",
+                tags = emptyList(),
+            )
         engine.sync()
         server.queueChanges(
             events =
                 listOf(
                     SyncEvent.SubscriptionCreated(
-                        com.lionreader.shared.api.EventSubscription(
-                            "sub-2",
-                            customTitle = "Also mine",
-                            tags = emptyList(),
-                        ),
-                        com.lionreader.shared.api.EventFeed(title = "Also theirs"),
+                        "sub-2",
+                        subscription =
+                            com.lionreader.shared.api.EventSubscription(
+                                "sub-2",
+                                customTitle = "Also mine",
+                                tags = emptyList(),
+                            ),
+                        feed =
+                            com.lionreader.shared.api.EventFeed(
+                                title = "Also theirs",
+                                type = "web",
+                            ),
                     )
                 )
         )
@@ -1260,13 +1252,34 @@ class SyncEngineTest {
         server.queueChanges(
             events =
                 listOf(
-                    SyncEvent.SubscriptionUpdated("sub-1", emptyList(), customTitle = null),
-                    SyncEvent.SubscriptionUpdated("sub-2", emptyList(), customTitle = null),
+                    SyncEvent.SubscriptionUpdated("sub-1", tags = emptyList(), customTitle = null),
+                    SyncEvent.SubscriptionUpdated("sub-2", tags = emptyList(), customTitle = null),
                 )
         )
         engine.sync(downloadContent = false)
 
         assertEquals(listOf("Also theirs", "Theirs"), titles())
+    }
+
+    /** Neither a row nor a feed doesn't say the subscription's type; the server's listing does. */
+    @Test
+    fun aCreatedSubscriptionWithoutItsRowOrFeedIsListed() = runTest {
+        engine.sync()
+        server.subscriptions +=
+            Subscription(
+                "sub-2",
+                type = "email",
+                title = "Newsletter",
+                originalTitle = "Newsletter",
+                tags = emptyList(),
+            )
+        server.queueChanges(events = listOf(SyncEvent.SubscriptionCreated("sub-2")))
+
+        engine.sync(downloadContent = false)
+
+        val sub2 =
+            db.subscriptionQueries.selectSubscriptions().executeAsList().single { it.id == "sub-2" }
+        assertEquals("email", sub2.type)
     }
 
     @Test
