@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { PageLink } from "@/components/ui/page-link";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { EuRestrictionReason } from "@/components/auth/EuRestrictionNotice";
 
 export default function CompleteSignupPage() {
@@ -33,7 +34,8 @@ export default function CompleteSignupPage() {
 
   const confirmMutation = trpc.auth.confirmSignup.useMutation({
     onSuccess: () => {
-      router.push("/all");
+      // The OAuth callback passes on the login page's `?redirect=`.
+      router.push(safeRedirectPath(new URLSearchParams(window.location.search).get("redirect")));
       router.refresh();
     },
     onError: (err) => {

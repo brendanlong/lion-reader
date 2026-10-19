@@ -296,6 +296,49 @@ describe("Google OAuth", () => {
     );
   });
 
+  describe("return path (#2029)", () => {
+    const returnPath = "/extension/save?url=https%3A%2F%2Fexample.com%2Fa";
+
+    it("returns a signed-in user to it", async () => {
+      const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
+
+      await createTestUser({ email: mockGoogleUserInfo.email });
+      const { state } = await createGoogleAuthUrl({ returnPath });
+      const response = await callback(state);
+
+      expect(locationOf(response)).toBe(
+        `/auth/oauth/complete?redirect=${encodeURIComponent(returnPath)}`
+      );
+    });
+
+    it("never sends the user off-site", async () => {
+      const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
+
+      await createTestUser({ email: mockGoogleUserInfo.email });
+      const { state } = await createGoogleAuthUrl({ returnPath: "//evil.example" });
+      const response = await callback(state);
+
+      expect(locationOf(response)).toBe("/auth/oauth/complete?redirect=%2Fall");
+    });
+
+    it("carries it through signup confirmation for a new user", async () => {
+      const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");
+
+      vi.stubEnv("ALLOWED_PUBLIC_SIGNUP_PROVIDERS", "google");
+      try {
+        const { state } = await createGoogleAuthUrl({ returnPath });
+        const response = await callback(state);
+
+        const completeSignup = `/complete-signup?redirect=${encodeURIComponent(returnPath)}`;
+        expect(locationOf(response)).toBe(
+          `/auth/oauth/complete?redirect=${encodeURIComponent(completeSignup)}`
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  });
+
   describe("state cookie (#1263)", () => {
     it("rejects a sign-in callback from a browser that didn't start the flow", async () => {
       const { createGoogleAuthUrl } = await import("../../src/server/auth/oauth/google");

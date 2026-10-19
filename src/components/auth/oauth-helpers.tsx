@@ -32,22 +32,26 @@ export function ProviderIcon({
   return <Icon muted={muted} className={className} />;
 }
 
-/**
- * Hook that returns the auth URL query for a given provider.
- * All three queries are always created (React hook rules), but only
- * the matching one is used.
- */
-export function useAuthUrlQuery(provider: OAuthProvider, inviteToken?: string) {
-  const google = trpc.auth.googleAuthUrl.useQuery({ inviteToken }, { enabled: false });
-  const apple = trpc.auth.appleAuthUrl.useQuery({ inviteToken }, { enabled: false });
-  const discord = trpc.auth.discordAuthUrl.useQuery({ inviteToken }, { enabled: false });
+interface AuthUrlInput {
+  inviteToken?: string;
+  /** Where to land after signing in; the server keeps it only if it's same-origin */
+  redirect?: string;
+}
 
-  switch (provider) {
-    case "google":
-      return google;
-    case "apple":
-      return apple;
-    case "discord":
-      return discord;
-  }
+/**
+ * Returns a function that starts a sign-in with the provider and resolves to the
+ * URL to send the browser to. Never cached: each URL's state is single-use.
+ */
+export function useFetchAuthUrl(provider: OAuthProvider) {
+  const { client } = trpc.useUtils();
+  return (input: AuthUrlInput): Promise<{ url: string }> => {
+    switch (provider) {
+      case "google":
+        return client.auth.googleAuthUrl.query(input);
+      case "apple":
+        return client.auth.appleAuthUrl.query(input);
+      case "discord":
+        return client.auth.discordAuthUrl.query(input);
+    }
+  };
 }

@@ -43,7 +43,7 @@ export interface ProviderIdentity extends OAuthTokens {
  * flow user's existing link and signs no one in.
  */
 export type OAuthFlow =
-  | { kind: "sign-in"; inviteToken?: string }
+  | { kind: "sign-in"; inviteToken?: string; returnPath?: string }
   | { kind: "link"; target: OAuthLinkTarget }
   | {
       kind: "reauthorize";
@@ -74,6 +74,8 @@ export interface PendingOAuthCallback {
 export interface SignInOrLinkState {
   /** Invite token for new user registration */
   inviteToken?: string;
+  /** Where a sign-in returns the user, already passed through `safeRedirectPath` */
+  returnPath?: string;
   /** Present when this flow is a link (see `OAuthLinkTarget`) */
   link?: OAuthLinkTarget;
 }
@@ -81,7 +83,7 @@ export interface SignInOrLinkState {
 export function signInOrLinkFlow(state: SignInOrLinkState): OAuthFlow {
   return state.link
     ? { kind: "link", target: state.link }
-    : { kind: "sign-in", inviteToken: state.inviteToken };
+    : { kind: "sign-in", inviteToken: state.inviteToken, returnPath: state.returnPath };
 }
 
 /** The callback's `state` was never issued, has expired, or was already used. */

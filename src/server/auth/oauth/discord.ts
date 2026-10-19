@@ -75,6 +75,7 @@ export async function createDiscordAuthUrl(options: SignInOrLinkState = {}): Pro
 
   await storeOAuthState(STATE_PREFIX + state, {
     inviteToken: options.inviteToken,
+    returnPath: options.returnPath,
     link: options.link,
   } satisfies SignInOrLinkState);
 

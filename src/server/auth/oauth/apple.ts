@@ -153,6 +153,7 @@ export async function createAppleAuthUrl(options: SignInOrLinkState = {}): Promi
 
   await storeOAuthState(STATE_PREFIX + state, {
     inviteToken: options.inviteToken,
+    returnPath: options.returnPath,
     link: options.link,
   } satisfies SignInOrLinkState);
 

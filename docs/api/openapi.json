@@ -1727,6 +1727,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "redirect",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1825,6 +1832,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "redirect",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1920,6 +1934,13 @@
           {
             "in": "query",
             "name": "inviteToken",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "redirect",
             "schema": {
               "type": "string"
             }

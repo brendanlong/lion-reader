@@ -39,6 +39,7 @@ import {
 } from "@/server/auth/oauth/config";
 import { createGoogleAuthUrl } from "@/server/auth/oauth/google";
 import { startOAuthFlow } from "@/server/auth/oauth/providers";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { createUser, runPostSignupTasks } from "@/server/auth/signup";
 import { unlinkOAuthAccount } from "@/server/services/oauth-accounts";
 import { getGoogleDocsGrant } from "@/server/google/tokens";
@@ -93,7 +94,13 @@ const sessionOutputSchema = z.object({
   sessionToken: z.string(),
 });
 
-const authUrlInputSchema = z.object({ inviteToken: z.string().optional() }).optional();
+const authUrlInputSchema = z
+  .object({
+    inviteToken: z.string().optional(),
+    /** The login page's `?redirect=`, where the user lands after signing in */
+    redirect: z.string().optional(),
+  })
+  .optional();
 
 const authUrlOutputSchema = z.object({ url: z.string(), state: z.string() });
 
@@ -115,7 +122,10 @@ function authUrlProcedure(provider: OAuthProviderName) {
     .input(authUrlInputSchema)
     .output(authUrlOutputSchema)
     .query(({ ctx, input }) =>
-      startOAuthFlow(ctx.resHeaders, provider, { inviteToken: input?.inviteToken })
+      startOAuthFlow(ctx.resHeaders, provider, {
+        inviteToken: input?.inviteToken,
+        returnPath: input?.redirect ? safeRedirectPath(input.redirect) : undefined,
+      })
     );
 }
 
