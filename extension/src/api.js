@@ -2,7 +2,7 @@
  * Lion Reader API calls shared by the popup and the background worker.
  */
 
-import { getServerUrl } from "./constants.js";
+import { getServerUrl, hasServerPermission } from "./constants.js";
 
 /**
  * Errors the server returns when saving a Google Doc needs the user to sign in
@@ -22,6 +22,18 @@ const GOOGLE_PERMISSION_ERRORS = new Set([
  */
 export function needsWebAuthFlow(err) {
   return err.message === "TOKEN_EXPIRED" || GOOGLE_PERMISSION_ERRORS.has(err.message);
+}
+
+/**
+ * Open the options page if the configured server hasn't been granted its host
+ * permission, which saving there needs. Returns whether it was granted.
+ */
+export async function checkServerPermission() {
+  if (await hasServerPermission()) {
+    return true;
+  }
+  await chrome.runtime.openOptionsPage();
+  return false;
 }
 
 /**

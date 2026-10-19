@@ -64,7 +64,7 @@ This creates browser-specific packages:
 
 Click the extension icon and select "Settings" (or right-click the icon and choose "Options") to:
 
-- Set a custom server URL for self-hosted instances
+- Set a custom server URL for self-hosted instances (your browser asks you to allow access to it)
 - View and customize keyboard shortcuts
 
 ## Privacy

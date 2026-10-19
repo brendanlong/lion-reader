@@ -2,13 +2,19 @@
  * Options page script for Lion Reader browser extension.
  */
 
-import { DEFAULT_SERVER_URL } from "./constants.js";
+import {
+  DEFAULT_SERVER_URL,
+  getServerUrl,
+  hasServerPermission,
+  serverOriginPattern,
+} from "./constants.js";
 
 // DOM Elements
 const serverUrlInput = document.getElementById("server-url");
 const saveBtn = document.getElementById("save-btn");
 const resetBtn = document.getElementById("reset-btn");
 const statusEl = document.getElementById("status");
+const permissionWarningEl = document.getElementById("permission-warning");
 const shortcutsLink = document.getElementById("shortcuts-link");
 const shortcutKeyEl = document.getElementById("shortcut-key");
 
@@ -19,6 +25,39 @@ async function loadSettings() {
   const result = await chrome.storage.sync.get(["serverUrl"]);
   serverUrlInput.value = result.serverUrl || "";
   serverUrlInput.placeholder = DEFAULT_SERVER_URL;
+  permissionWarningEl.hidden = await hasServerPermission();
+}
+
+/**
+ * Store a new server URL, dropping the token issued by the old server so it's
+ * never sent to the new one, and the old server's optional host permission.
+ */
+async function setServerUrl(url) {
+  const oldServerUrl = await getServerUrl();
+  await chrome.storage.sync.set({ serverUrl: url });
+  permissionWarningEl.hidden = true;
+
+  const oldOrigin = new URL(oldServerUrl).origin;
+  if (oldOrigin === new URL(url || DEFAULT_SERVER_URL).origin) {
+    return;
+  }
+  await chrome.storage.sync.remove(["apiToken"]);
+  const manifestOrigins = chrome.runtime.getManifest().host_permissions;
+  const oldPattern = serverOriginPattern(oldServerUrl);
+  if (!manifestOrigins.includes(oldPattern)) {
+    await chrome.permissions.remove({ origins: [oldPattern] });
+  }
+}
+
+/**
+ * Show a status message next to the buttons for a couple of seconds.
+ */
+function showStatus(text) {
+  statusEl.textContent = text;
+  statusEl.classList.add("visible");
+  setTimeout(() => {
+    statusEl.classList.remove("visible");
+  }, 2000);
 }
 
 /**
@@ -34,21 +73,30 @@ async function saveSettings() {
 
   // Validate URL if provided
   if (url) {
+    let protocol;
     try {
-      new URL(url);
+      protocol = new URL(url).protocol;
     } catch {
-      alert("Please enter a valid URL");
+      protocol = null;
+    }
+    if (protocol !== "https:" && protocol !== "http:") {
+      alert("Please enter a valid http:// or https:// URL");
       return;
     }
   }
 
-  await chrome.storage.sync.set({ serverUrl: url || "" });
+  // Firefox only shows the permission prompt if it's requested before the
+  // handler for the click or keypress awaits anything.
+  const granted = await chrome.permissions.request({
+    origins: [serverOriginPattern(url || DEFAULT_SERVER_URL)],
+  });
+  if (!granted) {
+    alert("Lion Reader needs access to your server to save articles there.");
+    return;
+  }
 
-  // Show saved status
-  statusEl.classList.add("visible");
-  setTimeout(() => {
-    statusEl.classList.remove("visible");
-  }, 2000);
+  await setServerUrl(url);
+  showStatus("Saved!");
 }
 
 /**
@@ -56,15 +104,8 @@ async function saveSettings() {
  */
 async function resetSettings() {
   serverUrlInput.value = "";
-  await chrome.storage.sync.set({ serverUrl: "" });
-
-  // Show saved status
-  statusEl.textContent = "Reset!";
-  statusEl.classList.add("visible");
-  setTimeout(() => {
-    statusEl.classList.remove("visible");
-    statusEl.textContent = "Saved!";
-  }, 2000);
+  await setServerUrl("");
+  showStatus("Reset!");
 }
 
 /**

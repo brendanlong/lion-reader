@@ -9,8 +9,8 @@
  * - Badge updates
  */
 
-import { needsWebAuthFlow, saveArticle } from "./api.js";
-import { getApiToken, getWebAuthUrl } from "./constants.js";
+import { checkServerPermission, needsWebAuthFlow, saveArticle } from "./api.js";
+import { getApiToken, getWebAuthUrl, isServerCallbackUrl } from "./constants.js";
 
 /**
  * Store the API token.
@@ -45,6 +45,10 @@ async function setBadge(tabId, text, color, clearAfterMs) {
  * Google permission is needed.
  */
 async function saveWithBadge(tabId, url, title, failureLog) {
+  if (!(await checkServerPermission())) {
+    return;
+  }
+
   const token = await getApiToken();
 
   if (!token) {
@@ -118,6 +122,10 @@ chrome.webNavigation.onCompleted.addListener(
   async (details) => {
     try {
       const url = new URL(details.url);
+      if (!(await isServerCallbackUrl(url))) {
+        return;
+      }
+
       const token = url.searchParams.get("token");
       const status = url.searchParams.get("status");
 
@@ -140,11 +148,5 @@ chrome.webNavigation.onCompleted.addListener(
       console.error("Error processing callback:", err);
     }
   },
-  {
-    url: [
-      { hostEquals: "lion-reader.fly.dev", pathPrefix: "/extension/callback" },
-      { hostEquals: "lionreader.com", pathPrefix: "/extension/callback" },
-      { hostEquals: "localhost", pathPrefix: "/extension/callback" },
-    ],
-  }
+  { url: [{ pathEquals: "/extension/callback" }] }
 );

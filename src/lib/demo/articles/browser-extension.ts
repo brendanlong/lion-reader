@@ -19,6 +19,8 @@ const article: DemoArticle = {
 
     <p>The first time you save, the extension asks you to sign in to your Lion Reader account. After that, saving is a single click with no new tabs. As with any <a href="/demo/all?entry=save-for-later">save</a>, paywalled articles keep only their public part. Private Google Docs are the exception: the first time you save one from the toolbar button, Lion Reader asks for permission to read your Google Docs, so you get the real document instead of a sign-in page.</p>
 
+    <p>Running your own Lion Reader server? Enter its address in the extension&rsquo;s settings and allow access when your browser asks, and the extension saves there instead.</p>
+
     <p>Want every new post from a site instead of just this page? <a href="/demo/all?entry=rss-atom">Follow the site</a> in Lion Reader. On your phone, save from the <a href="/demo/all?entry=pwa">share menu</a> instead.</p>
 
     <h3>Install</h3>

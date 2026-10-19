@@ -5,7 +5,7 @@
  * If no token exists, opens the web auth flow to get one.
  */
 
-import { needsWebAuthFlow, saveArticle } from "./api.js";
+import { checkServerPermission, needsWebAuthFlow, saveArticle } from "./api.js";
 import { getApiToken, getWebAuthUrl } from "./constants.js";
 
 // DOM Elements
@@ -77,6 +77,11 @@ async function save() {
   showState("loading");
 
   try {
+    if (!(await checkServerPermission())) {
+      window.close();
+      return;
+    }
+
     // Get the current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 

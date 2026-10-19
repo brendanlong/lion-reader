@@ -34,3 +34,29 @@ export async function getWebAuthUrl(url, title) {
   }
   return authUrl;
 }
+
+/**
+ * Host permission pattern covering every URL on `serverUrl`'s origin.
+ */
+export function serverOriginPattern(serverUrl) {
+  return `${new URL(serverUrl).origin}/*`;
+}
+
+/**
+ * Whether the extension may talk to the configured server. A self-hosted server
+ * is an optional host permission the options page requests, and permissions
+ * don't sync between browsers the way the server URL does.
+ */
+export async function hasServerPermission() {
+  const serverUrl = await getServerUrl();
+  return chrome.permissions.contains({ origins: [serverOriginPattern(serverUrl)] });
+}
+
+/**
+ * Whether `url` is the configured server's extension callback page. Only that
+ * server may hand us a token: any other site could otherwise plant its own.
+ */
+export async function isServerCallbackUrl(url) {
+  const serverUrl = await getServerUrl();
+  return url.origin === new URL(serverUrl).origin && url.pathname === "/extension/callback";
+}
