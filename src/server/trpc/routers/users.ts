@@ -16,11 +16,7 @@ import {
 } from "../trpc";
 import { errors } from "@/server/errors";
 import { sessions, users, oauthAccounts } from "@/server/db/schema";
-import {
-  revokeUserSession,
-  revokeOtherUserSessionsOrReport,
-  invalidateUserSessionCaches,
-} from "@/server/auth/session";
+import { revokeUserSession, revokeOtherUserSessionsOrReport } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { hashPassword, passwordSchema, verifyUserPassword } from "@/server/auth/password";
 import { isEncryptionConfigured } from "@/lib/encryption";
@@ -391,8 +387,6 @@ export const usersRouter = createTRPCRouter({
 
   /**
    * Update user preferences.
-   *
-   * Updates preferences and invalidates session cache to reflect changes immediately.
    */
   "me.updatePreferences": protectedProcedure
     .meta({
@@ -459,9 +453,6 @@ export const usersRouter = createTRPCRouter({
         await tx.update(users).set(updateData).where(eq(users.id, userId));
         await setUserApiKeys(tx, userId, apiKeys);
       });
-
-      // Invalidate all session caches for this user so they get fresh data
-      await invalidateUserSessionCaches(userId);
 
       // Fetch updated preferences to return
       const updatedUser = await ctx.db

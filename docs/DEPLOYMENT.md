@@ -98,7 +98,7 @@ This automatically:
 
 ## Redis Provisioning (Upstash)
 
-Lion Reader uses Redis for session caching, rate limiting, and pub/sub for real-time updates.
+Lion Reader uses Redis for rate limiting, OAuth state, and pub/sub for real-time updates.
 
 ### Option A: Fly.io Upstash Redis (Recommended)
 

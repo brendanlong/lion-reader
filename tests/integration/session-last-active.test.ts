@@ -81,37 +81,18 @@ describe("updateLastActiveAt", () => {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 200));
 
 describe("validateSession", () => {
-  it("records activity when it reads the session from Postgres, not from the cache", async () => {
+  it("records activity whenever the row it reads is stale", async () => {
     const stale = LAST_ACTIVE_REFRESH_MS + 5_000;
     const { userId, sessionId, token, lastActiveAt } = await createActiveSession(stale);
     const sessionLastActive = async () => (await lastActive(userId, sessionId)).session;
 
-    // Cache miss: read from Postgres, so activity is recorded.
     expect(await validateSession(token)).not.toBeNull();
     await expect.poll(sessionLastActive).not.toEqual(lastActiveAt);
 
-    // Cache hit: no write, however stale the row.
     const restaled = new Date(Date.now() - stale);
     await db.update(sessions).set({ lastActiveAt: restaled }).where(eq(sessions.id, sessionId));
     expect(await validateSession(token)).not.toBeNull();
-    await settle();
-    expect(await sessionLastActive()).toEqual(restaled);
-  });
-
-  it("records a scoped session's activity even after a full-access caller rejected it", async () => {
-    const { userId, sessionId, lastActiveAt } = await createActiveSession(
-      LAST_ACTIVE_REFRESH_MS + 5_000
-    );
-    await db.delete(sessions).where(eq(sessions.id, sessionId));
-    const scoped = await createSession(db, { userId, scopes: ["reader:full-access"] });
-    await db.update(sessions).set({ lastActiveAt }).where(eq(sessions.id, scoped.sessionId));
-
-    // A rejecting caller mustn't leave a cached copy whose hits record nothing.
-    expect(await validateSession(scoped.token)).toBeNull();
-    expect(await validateSession(scoped.token, { allowScoped: true })).not.toBeNull();
-    await expect
-      .poll(async () => (await lastActive(userId, scoped.sessionId)).session)
-      .not.toEqual(lastActiveAt);
+    await expect.poll(sessionLastActive).not.toEqual(restaled);
   });
 });
 

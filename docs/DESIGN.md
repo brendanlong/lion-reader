@@ -85,7 +85,7 @@ Canonical `feeds`/`entries` rows are shared across users; `subscriptions` and `u
 
 ## Authentication
 
-Custom auth from established primitives: `openid-client` (Google/Apple/Discord sign-in, each enabled by its env vars), `argon2` (passwords), and token sessions stored in Postgres behind a Redis cache. Details: `src/server/auth/CLAUDE.md`; the OAuth 2.1 server that issues tokens to MCP clients and the native app: `src/server/oauth/CLAUDE.md`.
+Custom auth from established primitives: `openid-client` (Google/Apple/Discord sign-in, each enabled by its env vars), `argon2` (passwords), and token sessions stored in Postgres. Details: `src/server/auth/CLAUDE.md`; the OAuth 2.1 server that issues tokens to MCP clients and the native app: `src/server/oauth/CLAUDE.md`.
 
 ---
 

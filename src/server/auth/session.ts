@@ -1,19 +1,14 @@
 /**
  * Session Management
  *
- * Handles session token generation, validation, and caching.
- * Sessions are stored in Postgres with a Redis cache for fast lookups.
- *
  * Token format: 32 random bytes, base64url encoded
  * Storage: SHA-256 hash in database (never store raw tokens)
- * Cache: Redis with 5 minute TTL
  */
 
 import { eq, and, isNull, ne, gt, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/server/db";
 import { sessions, users, type User, type Session } from "@/server/db/schema";
 import { generateUuidv7 } from "@/lib/uuidv7";
-import { getRedisClient } from "@/server/redis";
 import { OAUTH_SCOPES, generateToken, hashToken } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { SESSION_MAX_AGE_SECONDS, setSessionCookie } from "@/server/auth/session-cookie";
@@ -28,29 +23,6 @@ import { extractClientInfo } from "@/server/http/client-ip";
 const VALID_SESSION_SCOPES = new Set<string>(Object.values(OAUTH_SCOPES));
 
 // ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Redis cache TTL for sessions (5 minutes). Must not slide: activity is
- * recorded only on a fill (`updateLastActiveAt`).
- */
-const SESSION_CACHE_TTL_SECONDS = 300;
-
-/**
- * Redis key prefix for session cache.
- *
- * The version suffix namespaces the cached payload format; releases share
- * Redis during a rolling deploy. Bump it whenever a change to
- * {@link CachedSession} is security-relevant — e.g. adding the `scopes` field,
- * where a missing field would deserialize to a default (`scopes` → `null` →
- * full access), a fail-open for a scoped session — or removes a field the
- * previous release needs. Old-format entries under the previous prefix are
- * simply left to expire via TTL.
- */
-const SESSION_CACHE_PREFIX = "session:v3:";
-
-// ============================================================================
 // Types
 // ============================================================================
 
@@ -59,40 +31,7 @@ const SESSION_CACHE_PREFIX = "session:v3:";
  */
 export interface SessionData {
   session: Session;
-  // Two columns are deliberately absent. greaderUserId is a bigint (uncacheable
-  // in the Redis session JSON, and with no nullable placeholder) that only the
-  // Google Reader user-info route needs — and it reads that straight from the
-  // DB. gettingStartedAt is an onboarding bookkeeping marker with no request-path
-  // reader at all, so caching it would only mean stale data to invalidate.
-  user: Omit<User, "greaderUserId" | "gettingStartedAt">;
-}
-
-/**
- * Cached session data structure stored in Redis
- */
-interface CachedSession {
-  sessionId: string;
-  userId: string;
-  userEmail: string;
-  expiresAt: string;
-  revokedAt: string | null;
-  createdAt: string;
-  lastActiveAt: string;
-  scopes: string[] | null;
-  userAgent: string | null;
-  ipAddress: string | null;
-  userCreatedAt: string;
-  userUpdatedAt: string;
-  userEmailVerifiedAt: string | null;
-  userInviteId: string | null;
-  userShowSpam: boolean;
-  userSummarizationModel: string | null;
-  userSummarizationMaxWords: number | null;
-  userSummarizationPrompt: string | null;
-  userNarrationModel: string | null;
-  userTosAgreedAt: string | null;
-  userPrivacyPolicyAgreedAt: string | null;
-  userNotEuAgreedAt: string | null;
+  user: User;
 }
 
 // ============================================================================
@@ -200,107 +139,6 @@ export async function startSession(
 // ============================================================================
 
 /**
- * Gets the Redis cache key for a token hash
- */
-function getCacheKey(tokenHash: string): string {
-  return `${SESSION_CACHE_PREFIX}${tokenHash}`;
-}
-
-/**
- * Evicts cached sessions (the cached copy still validates until its key is
- * deleted). Failures are logged, not thrown. `tokenHashes` must be non-empty.
- */
-async function evictSessionCaches(tokenHashes: string[]): Promise<void> {
-  const redis = getRedisClient();
-  if (!redis) {
-    return;
-  }
-  try {
-    await redis.del(...tokenHashes.map(getCacheKey));
-  } catch (err) {
-    console.error("Failed to invalidate session cache:", err);
-  }
-}
-
-/**
- * Serializes session data for Redis cache
- */
-function serializeForCache(data: SessionData): string {
-  const cached: CachedSession = {
-    sessionId: data.session.id,
-    userId: data.user.id,
-    userEmail: data.user.email,
-    expiresAt: data.session.expiresAt.toISOString(),
-    revokedAt: data.session.revokedAt?.toISOString() ?? null,
-    createdAt: data.session.createdAt.toISOString(),
-    lastActiveAt: data.session.lastActiveAt.toISOString(),
-    scopes: data.session.scopes,
-    userAgent: data.session.userAgent,
-    ipAddress: data.session.ipAddress,
-    userCreatedAt: data.user.createdAt.toISOString(),
-    userUpdatedAt: data.user.updatedAt.toISOString(),
-    userEmailVerifiedAt: data.user.emailVerifiedAt?.toISOString() ?? null,
-    userInviteId: data.user.inviteId ?? null,
-    userShowSpam: data.user.showSpam,
-    userSummarizationModel: data.user.summarizationModel ?? null,
-    userSummarizationMaxWords: data.user.summarizationMaxWords ?? null,
-    userSummarizationPrompt: data.user.summarizationPrompt ?? null,
-    userNarrationModel: data.user.narrationModel ?? null,
-    userTosAgreedAt: data.user.tosAgreedAt?.toISOString() ?? null,
-    userPrivacyPolicyAgreedAt: data.user.privacyPolicyAgreedAt?.toISOString() ?? null,
-    userNotEuAgreedAt: data.user.notEuAgreedAt?.toISOString() ?? null,
-  };
-  return JSON.stringify(cached);
-}
-
-/**
- * Deserializes session data from Redis cache
- */
-function deserializeFromCache(data: string): SessionData {
-  const cached = JSON.parse(data) as CachedSession;
-  return {
-    session: {
-      id: cached.sessionId,
-      userId: cached.userId,
-      tokenHash: "", // Not needed after validation
-      scopes: cached.scopes,
-      expiresAt: new Date(cached.expiresAt),
-      revokedAt: cached.revokedAt ? new Date(cached.revokedAt) : null,
-      createdAt: new Date(cached.createdAt),
-      lastActiveAt: new Date(cached.lastActiveAt),
-      userAgent: cached.userAgent,
-      ipAddress: cached.ipAddress,
-    },
-    user: {
-      id: cached.userId,
-      email: cached.userEmail,
-      createdAt: new Date(cached.userCreatedAt),
-      updatedAt: new Date(cached.userUpdatedAt),
-      emailVerifiedAt: cached.userEmailVerifiedAt ? new Date(cached.userEmailVerifiedAt) : null,
-      passwordHash: null, // Not cached in Redis for security; query DB when needed
-      inviteId: cached.userInviteId,
-      showSpam: cached.userShowSpam,
-      summarizationModel: cached.userSummarizationModel,
-      summarizationMaxWords: cached.userSummarizationMaxWords,
-      summarizationPrompt: cached.userSummarizationPrompt,
-      narrationModel: cached.userNarrationModel,
-      tosAgreedAt: cached.userTosAgreedAt ? new Date(cached.userTosAgreedAt) : null,
-      privacyPolicyAgreedAt: cached.userPrivacyPolicyAgreedAt
-        ? new Date(cached.userPrivacyPolicyAgreedAt)
-        : null,
-      notEuAgreedAt: cached.userNotEuAgreedAt ? new Date(cached.userNotEuAgreedAt) : null,
-      // Not cached in Redis; only the admin activity view reads it, from the DB.
-      lastActiveAt: null,
-      // Not cached in Redis; the badge queries read these from the DB directly,
-      // never through the session user.
-      starredUnreadCount: 0,
-      uncategorizedUnreadCount: 0,
-      allUnreadCount: 0,
-    },
-  };
-}
-
-/**
  * Options for {@link validateSession}.
  */
 export interface ValidateSessionOptions {
@@ -316,8 +154,11 @@ export interface ValidateSessionOptions {
 
 /**
  * Validates a session token and returns the session with user data.
- * Uses Redis cache for fast lookups, falls back to database on cache miss.
  * Returns null if the token is invalid, expired, or revoked.
+ *
+ * Deliberately uncached: in production a Redis round trip costs more than this
+ * indexed lookup (#2046), and reading Postgres means revocations, preference
+ * changes and account deletion take effect on the next request.
  *
  * By default a restricted (non-NULL `scopes`) session is treated as invalid —
  * see {@link ValidateSessionOptions.allowScoped}.
@@ -327,37 +168,7 @@ export async function validateSession(
   options?: ValidateSessionOptions
 ): Promise<SessionData | null> {
   const allowScoped = options?.allowScoped ?? false;
-  const tokenHash = hashToken(token);
-  const cacheKey = getCacheKey(tokenHash);
-  const redis = getRedisClient();
-
-  // Try Redis cache first (if available)
-  if (redis) {
-    try {
-      const cached = await redis.get(cacheKey);
-      if (cached) {
-        const data = deserializeFromCache(cached);
-
-        // Verify session is still valid (not expired, not revoked)
-        if (data.session.expiresAt > new Date() && data.session.revokedAt === null) {
-          // Reject a restricted session for full-access use (fail closed).
-          if (data.session.scopes !== null && !allowScoped) {
-            return null;
-          }
-          // No last_active_at write here: the fill that cached this entry recorded activity.
-          return data;
-        }
-
-        // Session expired or revoked - remove from cache
-        await redis.del(cacheKey);
-      }
-    } catch (err) {
-      // Redis error - fall through to database lookup
-      console.error("Redis cache error:", err);
-    }
-  }
-
-  // Cache miss, Redis unavailable, or error - query database
+  const now = new Date();
   const result = await db
     .select({
       session: sessions,
@@ -367,9 +178,9 @@ export async function validateSession(
     .innerJoin(users, eq(sessions.userId, users.id))
     .where(
       and(
-        eq(sessions.tokenHash, tokenHash),
+        eq(sessions.tokenHash, hashToken(token)),
         isNull(sessions.revokedAt),
-        gt(sessions.expiresAt, new Date())
+        gt(sessions.expiresAt, now)
       )
     )
     .limit(1);
@@ -378,34 +189,22 @@ export async function validateSession(
     return null;
   }
 
-  const dbResult = result[0];
+  const sessionData = result[0];
+  const isScoped = sessionData.session.scopes !== null;
 
-  const sessionData: SessionData = {
-    session: dbResult.session,
-    user: dbResult.user,
-  };
-
-  // Reject a restricted session for full-access use (fail closed), before
-  // caching it: activity is recorded only on a fill, so a fill by a caller
-  // that rejects the session would leave its cached hits recording nothing.
-  if (sessionData.session.scopes !== null && !allowScoped) {
+  // Reject a restricted session for full-access use (fail closed).
+  if (isScoped && !allowScoped) {
     return null;
   }
 
-  if (redis) {
-    try {
-      await redis.setex(cacheKey, SESSION_CACHE_TTL_SECONDS, serializeForCache(sessionData));
-    } catch (err) {
-      // Redis error - continue without caching
-      console.error("Failed to cache session:", err);
-    }
+  const staleCutoff = now.getTime() - LAST_ACTIVE_REFRESH_MS;
+  const userIsStale =
+    !isScoped &&
+    (sessionData.user.lastActiveAt === null ||
+      sessionData.user.lastActiveAt.getTime() < staleCutoff);
+  if (sessionData.session.lastActiveAt.getTime() < staleCutoff || userIsStale) {
+    void updateLastActiveAt(sessionData.session.id, sessionData.session.userId, isScoped);
   }
-
-  void updateLastActiveAt(
-    sessionData.session.id,
-    sessionData.session.userId,
-    sessionData.session.scopes !== null
-  );
 
   return sessionData;
 }
@@ -436,13 +235,11 @@ export const LAST_ACTIVE_REFRESH_MS = 60 * 1000;
  * looking perpetually "active" (and inflate the active-users stats) despite
  * never opening the reader.
  *
- * Called only when a session is read from Postgres, which with Redis is once
- * per {@link SESSION_CACHE_TTL_SECONDS} per active session, not per request:
- * that bounds how far behind both timestamps run, and is close enough for what
- * reads them. Without Redis every request lands here, so each row is still
- * only written when stale (also keeping one user's several sessions from each
- * rewriting the user row). For a full-access (browser) session both rows go in
- * one round trip via a writable CTE.
+ * `validateSession` calls it only when the row it read is stale, so most
+ * requests send no write; the statement re-checks staleness so concurrent
+ * requests (or one user's several sessions) don't each rewrite the rows. For a
+ * full-access (browser) session both rows go in one round trip via a writable
+ * CTE.
  *
  * @testonly
  */
@@ -504,7 +301,7 @@ export async function isSessionActive(sessionId: string): Promise<boolean> {
 // ============================================================================
 
 /**
- * Revokes one of `userId`'s active sessions and evicts it from the Redis cache.
+ * Revokes one of `userId`'s active sessions.
  *
  * @returns false if `userId` has no active session with that id
  */
@@ -513,40 +310,29 @@ export async function revokeUserSession(userId: string, sessionId: string): Prom
     .update(sessions)
     .set({ revokedAt: new Date() })
     .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), isNull(sessions.revokedAt)))
-    .returning({ tokenHash: sessions.tokenHash });
+    .returning({ id: sessions.id });
 
-  if (revoked.length === 0) {
-    return false;
-  }
-  await evictSessionCaches(revoked.map((row) => row.tokenHash));
-  return true;
+  return revoked.length > 0;
 }
 
 /**
  * Revokes a session by its token.
- * Also removes the session from Redis cache.
  *
  * @param token - The session token to revoke
  * @returns true if the session was revoked, false if not found
  */
 export async function revokeSessionByToken(token: string): Promise<boolean> {
-  const tokenHash = hashToken(token);
-
-  // Revoke in database
   const result = await db
     .update(sessions)
     .set({ revokedAt: new Date() })
-    .where(and(eq(sessions.tokenHash, tokenHash), isNull(sessions.revokedAt)));
-
-  await evictSessionCaches([tokenHash]);
+    .where(and(eq(sessions.tokenHash, hashToken(token)), isNull(sessions.revokedAt)));
 
   // Drizzle returns affected row count
   return result.rowCount !== null && result.rowCount > 0;
 }
 
 /**
- * Revokes all of a user's active sessions except one, and clears their Redis
- * caches. Used after a password change so a stolen/lingering session on another
+ * Revokes all of a user's active sessions except one. Used after a password change so a stolen/lingering session on another
  * device can't outlive the credential it was created under — the current session
  * (the one performing the change) is kept alive.
  *
@@ -561,27 +347,15 @@ export async function revokeSessionByToken(token: string): Promise<boolean> {
  * @returns The number of sessions revoked
  */
 async function revokeOtherUserSessions(userId: string, exceptSessionId: string): Promise<number> {
-  const revokeFilter = and(
-    eq(sessions.userId, userId),
-    isNull(sessions.revokedAt),
-    ne(sessions.id, exceptSessionId)
-  );
+  const revoked = await db
+    .update(sessions)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(eq(sessions.userId, userId), isNull(sessions.revokedAt), ne(sessions.id, exceptSessionId))
+    )
+    .returning({ id: sessions.id });
 
-  // Capture the token hashes first so we can evict their cache entries after
-  // the DB revoke (the cached copy still validates until its key is deleted).
-  const toRevoke = await db
-    .select({ tokenHash: sessions.tokenHash })
-    .from(sessions)
-    .where(revokeFilter);
-
-  if (toRevoke.length === 0) {
-    return 0;
-  }
-
-  await db.update(sessions).set({ revokedAt: new Date() }).where(revokeFilter);
-  await evictSessionCaches(toRevoke.map((session) => session.tokenHash));
-
-  return toRevoke.length;
+  return revoked.length;
 }
 
 /**
@@ -610,28 +384,5 @@ export async function revokeOtherUserSessionsOrReport(
   } catch (err) {
     console.error("Failed to revoke other sessions after a credential change:", err);
     throw errors.sessionRevokeFailed(change);
-  }
-}
-
-/**
- * Invalidates all session caches for a user without revoking the sessions.
- * Useful when user preferences are updated and cached session data needs refresh.
- *
- * @param userId - The user ID whose session caches to invalidate
- */
-export async function invalidateUserSessionCaches(userId: string): Promise<void> {
-  // If Redis is not available, nothing to invalidate
-  if (!getRedisClient()) {
-    return;
-  }
-
-  // Get all active sessions for this user
-  const activeSessions = await db
-    .select({ tokenHash: sessions.tokenHash })
-    .from(sessions)
-    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
-
-  if (activeSessions.length > 0) {
-    await evictSessionCaches(activeSessions.map((session) => session.tokenHash));
   }
 }

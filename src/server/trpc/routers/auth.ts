@@ -24,11 +24,7 @@ import { OAUTH_SCOPES } from "@/server/oauth/utils";
 import { errors } from "@/server/errors";
 import { users } from "@/server/db/schema";
 import { signupConfig, ALL_SIGNUP_PROVIDERS } from "@/server/config/env";
-import {
-  invalidateUserSessionCaches,
-  revokeSessionByToken,
-  startSession,
-} from "@/server/auth/session";
+import { revokeSessionByToken, startSession } from "@/server/auth/session";
 import { clearSessionCookie } from "@/server/auth/session-cookie";
 import { setOAuthStateCookie } from "@/server/auth/oauth/state-cookie";
 import {
@@ -468,9 +464,6 @@ export const authRouter = createTRPCRouter({
         })
         .where(eq(users.id, userId));
 
-      // Invalidate session cache so the confirmed state is reflected immediately
-      await invalidateUserSessionCaches(userId);
-
       return { success: true };
     }),
 
@@ -478,7 +471,6 @@ export const authRouter = createTRPCRouter({
    * Logout the current session.
    *
    * Revokes the current session token, invalidating it for future requests.
-   * Also clears the session from Redis cache.
    *
    * This is a public procedure so that logout works even if the session is
    * already expired or invalid. If there's no valid session, this just

@@ -140,7 +140,7 @@ export const narrationRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const userNarrationModel = ctx.session.user.narrationModel;
 
-      // Fetch API keys from DB on demand (not cached in session for security)
+      // Fetch API keys from DB on demand (not loaded with the session user)
       const keys = await getUserApiKeys(userId);
 
       // Fetch the entry with the same visibility rule the entry list applies.
@@ -374,7 +374,7 @@ export const narrationRouter = createTRPCRouter({
     .input(z.void())
     .output(aiModelListSchema)
     .query(async ({ ctx }) => {
-      // Fetch API keys from DB on demand (not cached in session for security)
+      // Fetch API keys from DB on demand (not loaded with the session user)
       const keys = await getUserApiKeys(ctx.session.user.id);
       const models = (await listAllModels(keys, NARRATION_PROVIDERS, { jsonObject: true })).filter(
         (model) => isModelAllowed(model.id, keys, model)

@@ -5,9 +5,7 @@
  * it, linking a provider, unlinking one — must leave only the calling session
  * alive, and the changes that only look like one must leave every session alone.
  *
- * The sessions here are real rows validated through `validateSession`, so the
- * test covers the Redis cache eviction too: a cached session still validates
- * until its key is deleted, so revoking in Postgres alone would not be enough.
+ * The sessions here are real rows validated through `validateSession`.
  */
 
 import { describe, it, expect, afterAll } from "vitest";
@@ -67,8 +65,7 @@ describe("credential changes revoke other sessions", () => {
     const current = await createSession(db, { userId });
     const other = await createSession(db, { userId });
 
-    // Warm both through the real validation path (this also fills the Redis
-    // cache, so the revoke has to evict it to take effect).
+    // Both are live through the real validation path.
     expect(await validateSession(current.token)).not.toBeNull();
     expect(await validateSession(other.token)).not.toBeNull();
 
@@ -306,7 +303,7 @@ describe("password changes sign out Wallabag apps", () => {
 });
 
 describe("me.revokeSession", () => {
-  it("revokes one of the caller's other sessions, including its cached copy", async () => {
+  it("revokes one of the caller's other sessions", async () => {
     const userId = await createUser();
     const current = await createSession(db, { userId });
     const other = await createSession(db, { userId });
