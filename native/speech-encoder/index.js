@@ -41,7 +41,8 @@ for (const key of Object.keys(exports)) {
   if (exports[key] === undefined) {
     throw new Error(
       `@lion-reader/speech-encoder: re-exported "${key}" is undefined — speech-encoder.node has no ` +
-        `such export. Update the re-export list in index.js to match the built binary.`
+        `such export. The binary is probably stale: rerun \`pnpm build:native\`. If a fresh build ` +
+        `still fails, update the re-export list in index.js to match the binary.`
     );
   }
 }

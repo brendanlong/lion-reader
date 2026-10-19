@@ -9,7 +9,7 @@
  * TRIGGER), so the delta is purely trigger cost.
  *
  * Skipped by default. Run with:
- *   RUN_PERF_TESTS=1 pnpm test:integration:local -- tests/integration/counters-perf.test.ts
+ *   RUN_PERF_TESTS=1 pnpm test:integration:local tests/integration/counters-perf.test.ts
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";

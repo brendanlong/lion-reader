@@ -1,0 +1,1 @@
+bash scripts/rebuild-native-if-changed.sh ORIG_HEAD HEAD
