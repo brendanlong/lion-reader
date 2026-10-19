@@ -16,9 +16,10 @@ export const MAX_SAX_DEPTH = 512;
 
 /**
  * An htmlparser2 parser that stops for good, as if paused, when an element
- * would nest deeper than {@link MAX_SAX_DEPTH}. That element isn't reported,
- * and neither is anything after it, including the implied closes at the end;
- * the handlers keep what they've collected so far.
+ * would nest deeper than {@link MAX_SAX_DEPTH} (a void element directly at
+ * the limit counts). Handlers may still see the rest of that tag, but nothing
+ * after it, including the implied closes at the end; they keep what they've
+ * collected so far.
  */
 export function createSaxParser(handlers: Partial<Handler>, options?: ParserOptions): Parser {
   let depth = 0;
