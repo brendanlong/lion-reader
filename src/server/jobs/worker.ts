@@ -23,6 +23,7 @@ import {
   getJobPayload,
   isFixedIntervalJobType,
   isJobType,
+  seedSingletonJobs,
   GENERIC_CLAIM_JOB_TYPES,
   SINGLETON_JOB_TYPES,
   type FinishJobOptions,
@@ -95,7 +96,7 @@ export interface WorkerClaimDeps {
   claimRegular: () => Promise<Job | null>;
   /** Data-driven fetch_feed claim (only feeds with active subscribers). */
   claimFeed: () => Promise<Job | null>;
-  /** Due-gated singleton claim (self-creates the row on first ever run). */
+  /** Due-gated singleton claim. */
   claimSingleton: (type: JobType) => Promise<Job | null>;
   /** Concurrency-capped fetch_full_content claim (see `claimFullContentJob`). */
   claimFullContent: () => Promise<Job | null>;
@@ -286,6 +287,9 @@ export function createWorker(config: WorkerConfig = {}): Worker {
   // process stays alive and resumes automatically when the flag clears. The
   // maintenance read is cached in-process, so this adds no per-claim Redis load.
   let maintenancePaused = false;
+  // Seeded before the first claim rather than at start, so it waits out
+  // maintenance too; a failure surfaces as a claim error and is retried.
+  let singletonsSeeded = false;
   const guardedClaimJob = async (): Promise<Job | null> => {
     const { enabled } = await getMaintenance();
     if (enabled) {
@@ -298,6 +302,10 @@ export function createWorker(config: WorkerConfig = {}): Worker {
     if (maintenancePaused) {
       maintenancePaused = false;
       logger.info("Maintenance mode cleared — worker resumed");
+    }
+    if (!singletonsSeeded) {
+      await seedSingletonJobs();
+      singletonsSeeded = true;
     }
     return claimJob();
   };

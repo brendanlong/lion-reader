@@ -19,6 +19,8 @@ import {
   scheduleFeedRefreshNow,
   claimFeedJob,
   claimSingletonJob,
+  seedSingletonJobs,
+  SINGLETON_JOB_TYPES,
   STALE_JOB_THRESHOLD_MS,
   type JobType,
 } from "../../src/server/jobs/queue";
@@ -252,16 +254,12 @@ describe("Job Queue", () => {
   });
 
   describe("claimSingletonJob", () => {
-    it("self-creates and claims a singleton job when none exists", async () => {
+    it("claims a seeded singleton job", async () => {
+      await seedSingletonJobs();
       const job = await claimSingletonJob("monitor_feed_health");
 
-      expect(job).not.toBeNull();
       expect(job!.type).toBe("monitor_feed_health");
       expect(job!.runningSince).not.toBeNull();
-
-      // Exactly one row should exist for the type
-      const rows = await listJobs({ type: "monitor_feed_health" });
-      expect(rows).toHaveLength(1);
     });
 
     it("rejects non-singleton job types", async () => {
@@ -270,20 +268,14 @@ describe("Job Queue", () => {
       );
     });
 
-    it("creates only one row when workers race to self-create", async () => {
-      // Simulate many workers all observing "no row exists" at once. The partial
-      // unique index on jobs.type means only one INSERT can win; the losers fall
-      // into the catch and either claim the row or get null (it's running).
-      const claimPromises = Array.from({ length: 5 }, () => claimSingletonJob("renew_websub"));
-      const results = await Promise.all(claimPromises);
+    it("seeds one row per singleton type, even when workers seed concurrently", async () => {
+      await createJob({ type: "renew_websub", payload: {}, nextRunAt: new Date(0) });
+      await Promise.all(Array.from({ length: 5 }, () => seedSingletonJobs()));
 
-      // Exactly one worker should have claimed the (newly created) job.
-      const successfulClaims = results.filter((r) => r !== null);
-      expect(successfulClaims).toHaveLength(1);
-
-      // And crucially, only one row exists — no duplicate singleton rows.
-      const rows = await listJobs({ type: "renew_websub" });
-      expect(rows).toHaveLength(1);
+      const rows = await listJobs({ limit: 100 });
+      expect(rows.map((r) => r.type).sort()).toEqual([...SINGLETON_JOB_TYPES].sort());
+      // An existing row is left alone.
+      expect(rows.find((r) => r.type === "renew_websub")!.nextRunAt).toEqual(new Date(0));
     });
 
     it("returns null when an existing job is not yet due", async () => {
