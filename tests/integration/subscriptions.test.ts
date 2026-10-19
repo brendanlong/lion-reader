@@ -154,10 +154,10 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       expect(userBEntryIds).not.toContain(entry1Id); // Old entry should not be visible
     });
 
-    it("grants a new subscriber the listing unread and a pushed archive replay read (#1500, #2036)", async () => {
-      // A subscriber joining during an archive replay over WebSub would
-      // otherwise get hundreds of unread years-old articles the feed doesn't
-      // even list. What the last poll listed is all news to them, however old.
+    it("grants a new subscriber everything current unread, however old (#2036)", async () => {
+      // Everything is news to someone who hasn't seen the feed before: the
+      // backfill guard is only for subscribers who were already watching, even
+      // for an archive replay a push vouches for.
       const feedUrl = `https://example.com/backfill-${generateUuidv7()}.xml`;
       const now = Date.now();
       const lastPoll = new Date(now - 30 * 60 * 1000);
@@ -199,10 +199,10 @@ describe("Subscriptions - Subscribe to Existing Feed", () => {
       const readById = Object.fromEntries(rows.map((r) => [r.entryId, r.read]));
       expect(readById).toEqual({
         [listedOldId]: false,
-        [pushedOldId]: true,
+        [pushedOldId]: false,
         [pushedFreshId]: false,
       });
-      expect(result.unreadCount).toBe(2);
+      expect(result.unreadCount).toBe(3);
     });
 
     it.each([

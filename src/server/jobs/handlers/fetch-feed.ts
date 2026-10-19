@@ -263,10 +263,8 @@ async function processSuccessfulFetch(
     previousLastEntriesUpdatedAt: feed.lastEntriesUpdatedAt,
     // Null on the feed's very first fetch, which is what disables the backfill
     // guard there: nothing this feed lists can be an archive re-announcement
-    // when we've never seen the feed before. A forced subscribe-time refresh
-    // skips the guard too, so the fresh-feed and stale-feed subscribe paths
-    // agree on what they deliver unread.
-    previousLastFetchedAt: forceReprocess ? null : feed.lastFetchedAt,
+    // when we've never seen the feed before.
+    previousLastFetchedAt: feed.lastFetchedAt,
     feedUrl: feed.url ?? undefined,
     feedTitle: resolvedFeedTitle,
     // A forced (subscribe-time) refresh re-stamps all current entries' visibility

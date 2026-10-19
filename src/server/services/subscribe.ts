@@ -34,11 +34,7 @@ import { errors } from "@/server/errors";
 import { fetchUrl, isHtmlContent } from "@/server/http/fetch";
 import { parseFeedAsync } from "@/server/feed/parser";
 import { discoverFeeds } from "@/server/feed/discovery";
-import {
-  currentEntryIdsSql,
-  isBackfillSql,
-  listedByLastPollSql,
-} from "@/server/feed/entry-processor";
+import { currentEntryIdsSql } from "@/server/feed/entry-processor";
 
 /**
  * Gives a new or reactivated subscriber the entries currently in the feed
@@ -53,8 +49,6 @@ async function populateInitialUserEntries(
   subscriptionId: string,
   feedId: string
 ): Promise<void> {
-  const lastEntriesUpdatedAt = sql`(SELECT last_entries_updated_at FROM feeds WHERE id = ${feedId}::uuid)`;
-  const lastFetchedAt = sql`(SELECT last_fetched_at FROM feeds WHERE id = ${feedId}::uuid)`;
   // The feed's poll state is read inside the INSERT, not
   // passed in: a feed fetch completing after the caller read the feed bumps it,
   // so a stale captured value would match zero rows and the new subscriber
@@ -63,11 +57,8 @@ async function populateInitialUserEntries(
   // `currentEntryIdsSql` grants the entries the last poll that stamped the feed
   // saw, plus those a WebSub hub announced since the last poll.
   //
-  // The last poll's listing is all news to a new subscriber. An entry only a
-  // push vouches for gets the push fanout's backfill verdict
-  // (`isBackfilledEntry`): no poll has run since, so `last_fetched_at` is still
-  // what the push judged against. Otherwise a subscriber joining during an
-  // archive replay over WebSub would get hundreds of unread articles (#1500).
+  // Granted unread, however old: everything is news to a new subscriber
+  // ("Backfill Guard" in `src/server/feed/CLAUDE.md`).
   //
   // Skips an entry whose twin from another feed the subscription already
   // holds, as the fetch-time fanout does (`holdsRedirectTwin`): a redirect
@@ -78,11 +69,12 @@ async function populateInitialUserEntries(
     sql`
       SELECT ${subscriptionId}::uuid AS subscription_id, ${userId}::uuid AS user_id, e.id AS entry_id,
              COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
-             e.is_spam,
-             (${listedByLastPollSql("e", lastEntriesUpdatedAt)}) IS NOT TRUE
-               AND ${isBackfillSql("e", lastFetchedAt)} AS read
+             e.is_spam, false AS read
       FROM entries e
-      WHERE e.id IN (${currentEntryIdsSql(feedId, { lastEntriesUpdatedAt, lastFetchedAt })})
+      WHERE e.id IN (${currentEntryIdsSql(feedId, {
+        lastEntriesUpdatedAt: sql`(SELECT last_entries_updated_at FROM feeds WHERE id = ${feedId}::uuid)`,
+        lastFetchedAt: sql`(SELECT last_fetched_at FROM feeds WHERE id = ${feedId}::uuid)`,
+      })})
         AND NOT ${holdsRedirectTwin(sql`${subscriptionId}::uuid`, "e")}
     `
   );

@@ -34,6 +34,7 @@ import {
   createTestEntry,
   createTestFeed,
   createTestSubscription,
+  createWatchingSubscription,
   createTestTag,
   createTestUser,
 } from "./helpers";
@@ -296,7 +297,10 @@ describe("unread counters under concurrent writes", () => {
       // nothing it inserts is unread (a backfill).
       const userId = await createTestUser();
       const feedId = await createTestFeed();
-      const subscriptionId = await createTestSubscription(userId, feedId);
+      const subscriptionId = await (read ? createWatchingSubscription : createTestSubscription)(
+        userId,
+        feedId
+      );
       const entryId = await createTestEntry(
         feedId,
         read ? { publishedAt: new Date("2020-01-01T00:00:00Z") } : {}

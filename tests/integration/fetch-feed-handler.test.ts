@@ -26,7 +26,12 @@ import { REDIRECT_WAIT_PERIOD_MS } from "../../src/server/feed/redirect-utils";
 import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
 import { handleFetchFeed } from "../../src/server/jobs/handlers/fetch-feed";
 import { subscribeToUrl } from "../../src/server/services/subscribe";
-import { createTestFeed, createTestSubscription, createTestUser } from "./helpers";
+import {
+  createTestFeed,
+  createTestSubscription,
+  createTestUser,
+  createWatchingSubscription,
+} from "./helpers";
 
 /** What the loopback origin should answer with on the next request. */
 interface FeedResponse {
@@ -295,7 +300,7 @@ describe("handleFetchFeed", () => {
         lastEntriesUpdatedAt: lastPoll,
       });
       const userId = await createTestUser({ emailPrefix: "ff-backfill" });
-      const subscriptionId = await createTestSubscription(userId, feed.id);
+      const subscriptionId = await createWatchingSubscription(userId, feed.id);
 
       nextResponse = {
         body: rss([
@@ -319,18 +324,19 @@ describe("handleFetchFeed", () => {
       expect(subscription.unreadCount).toBe(1);
     });
 
-    it("keeps everything unread on a forced subscribe-time refresh", async () => {
-      // `forceReprocess` exists to hand a brand-new subscriber the current feed
-      // as ground truth. That subscriber has no history to judge "already old
-      // when we last looked" against, so the guard is suppressed and the
-      // stale-feed subscribe path delivers what the fresh-feed one would.
+    it("on a forced subscribe-time refresh, delivers the archive unread only to the new subscriber (#2036)", async () => {
+      // `forceReprocess` hands a brand-new subscriber the current feed as ground
+      // truth: its first grant, all news to them. Subscribers who already had
+      // theirs still get an archive re-announcement read.
       const lastPoll = new Date(Date.now() - 60 * 60 * 1000);
       const feed = await createLoopbackFeed({
         lastFetchedAt: lastPoll,
         lastEntriesUpdatedAt: lastPoll,
       });
-      const userId = await createTestUser({ emailPrefix: "ff-forced" });
-      await createTestSubscription(userId, feed.id);
+      const watcherId = await createTestUser({ emailPrefix: "ff-forced-watcher" });
+      await createWatchingSubscription(watcherId, feed.id);
+      const newcomerId = await createTestUser({ emailPrefix: "ff-forced-new" });
+      await createTestSubscription(newcomerId, feed.id);
 
       nextResponse = {
         body: rss([{ guid: "old", title: "From 2022", pubDate: new Date("2022-03-01T00:00:00Z") }]),
@@ -338,9 +344,9 @@ describe("handleFetchFeed", () => {
 
       const result = await handleFetchFeed({ feedId: feed.id }, { forceReprocess: true });
 
-      expect(result.metadata).toMatchObject({ newEntries: 1, backfilledEntries: 0 });
-      const rows = await readUserEntries(userId);
-      expect(rows[0].read).toBe(false);
+      expect(result.metadata).toMatchObject({ newEntries: 1, backfilledEntries: 1 });
+      expect((await readUserEntries(watcherId)).find((r) => r.guid === "old")?.read).toBe(true);
+      expect((await readUserEntries(newcomerId))[0].read).toBe(false);
     });
   });
 
