@@ -238,9 +238,9 @@ const BACKFILL_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
  * The month threshold only has to clear ordinary syndication noise (stale CDN
  * copies, clock skew, mild backdating); archive replays miss it by years. The
  * guard is inert on a feed's first fetch and on entries with no date, and
- * never fires on articles published since the previous fetch. Accepted risk: a feed whose dates are
- * systematically wrong or old has every new article linked read, visible only
- * in the fetch's `backfilledEntries` metadata.
+ * never fires on articles published since the previous fetch. Accepted risk: a
+ * feed whose dates are systematically wrong or old has every new article
+ * linked read, visible only in the fetch's `backfilledEntries` metadata.
  *
  * Judged per fetch, this is the verdict for existing subscribers: a backfill
  * publishes no `new_entry`.
@@ -262,13 +262,19 @@ export function isBackfilledEntry(
 /**
  * The `read` a fan-out links entry `e` to subscription `s` with: whether it is
  * a backfill ({@link isBackfilledEntry}) and `s` already had its first grant,
- * i.e. holds any entry. Memberships outlive an unsubscribe, so a returning
- * subscriber counts as having had it. Never NULL.
+ * i.e. holds any entry. Never NULL. The date check goes first so the probe
+ * only runs for old entries.
+ *
+ * Accepted imprecision, all rare: memberships outlive an unsubscribe and a
+ * redirect merge copies them, so a returning or merged subscriber is judged
+ * at once; a delivery landing between subscribe and the forced refresh
+ * becomes the first grant; and a populate that grants nothing leaves the
+ * next delivery exempt.
  */
 function linksReadSql(previousLastFetchedAt: Date | null): SQL {
   return sql`COALESCE(
-    EXISTS (SELECT 1 FROM subscription_entries held WHERE held.subscription_id = s.id)
-      AND e.published_at < ${previousLastFetchedAt}::timestamptz - ${BACKFILL_MIN_AGE_MS} * interval '1 millisecond',
+    e.published_at < ${previousLastFetchedAt}::timestamptz - ${BACKFILL_MIN_AGE_MS} * interval '1 millisecond'
+      AND EXISTS (SELECT 1 FROM subscription_entries held WHERE held.subscription_id = s.id),
     false)`;
 }
 

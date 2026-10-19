@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo } from "node:net";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/server/db";
 import {
   entries,
@@ -22,6 +22,7 @@ import {
   websubHubStats,
 } from "../../src/server/db/schema";
 import { ingestWebsubNotification } from "../../src/server/feed/websub-notification";
+import { createSubscription } from "../../src/server/services/subscribe";
 import {
   claimFullContentJob,
   getJobPayload,
@@ -31,13 +32,7 @@ import {
 } from "../../src/server/jobs/queue";
 import { handleFetchFullContent } from "../../src/server/jobs/handlers/fetch-full-content";
 import { MAX_FULL_CONTENT_ENTRIES_PER_BATCH } from "../../src/server/services/full-content";
-import {
-  createTestEntry,
-  createTestFeed,
-  createTestMembership,
-  createTestSubscription,
-  createTestUser,
-} from "./helpers";
+import { createTestEntry, createTestFeed, createTestSubscription, createTestUser } from "./helpers";
 
 const HUB_URL = "https://hub.example.com/";
 
@@ -205,13 +200,23 @@ describe("ingestWebsubNotification", () => {
     // per touched post, each carrying an article we've never seen, dated years
     // ago. A push doesn't advance last_fetched_at, so it stays the last real
     // poll — which is exactly the "were we watching?" reference the guard needs.
-    const { feed, userId, subscriptionId } = await seedPushFeed(
-      "pusharchive",
-      new Date(Date.now() - 60 * 60 * 1000)
-    );
-    // Past its first grant, so the guard applies.
-    const heldId = await createTestEntry(feed.id, { lastSeenAt: null });
-    await createTestMembership(subscriptionId, userId, heldId, { read: true });
+    // The subscriber subscribed for real, so the populate's grant of the
+    // listing is what puts them past their first grant (#2036).
+    const lastPoll = new Date(Date.now() - 60 * 60 * 1000);
+    const feedUrl = "https://example.com/pusharchive.xml";
+    const feedId = await createTestFeed({
+      url: feedUrl,
+      hubUrl: HUB_URL,
+      websubActive: true,
+      lastFetchedAt: lastPoll,
+      lastEntriesUpdatedAt: lastPoll,
+    });
+    await createTestEntry(feedId, { guid: "listed-1", fetchedAt: lastPoll });
+    const userId = await createTestUser({ emailPrefix: "pusharchive" });
+    const {
+      subscription: { id: subscriptionId },
+    } = await createSubscription(db, userId, { url: feedUrl });
+    const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId));
 
     const outcome = await ingestWebsubNotification(
       feed,
@@ -220,17 +225,20 @@ describe("ingestWebsubNotification", () => {
     expect(outcome).toBe("processed");
 
     const rows = await db
-      .select({ read: userEntries.read })
+      .select({ guid: entries.guid, read: userEntries.read })
       .from(userEntries)
       .innerJoin(entries, eq(entries.id, userEntries.entryId))
-      .where(and(eq(userEntries.userId, userId), eq(entries.guid, "archive-1")));
-    expect(rows).toEqual([{ read: true }]);
+      .where(eq(userEntries.userId, userId));
+    expect(Object.fromEntries(rows.map((r) => [r.guid, r.read]))).toEqual({
+      "listed-1": false,
+      "archive-1": true,
+    });
 
     const [subscription] = await db
       .select({ unreadCount: subscriptions.unreadCount })
       .from(subscriptions)
       .where(eq(subscriptions.id, subscriptionId));
-    expect(subscription.unreadCount).toBe(0);
+    expect(subscription.unreadCount).toBe(1);
 
     // The tally is about how new articles first reach us; an archive replay
     // isn't one, so the hub gets no credit for it.

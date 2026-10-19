@@ -1260,6 +1260,14 @@ describe("Entry Processor", () => {
         generateContentHash(archived),
         new Date("2026-08-10T01:00:00Z")
       );
+      expect(
+        await db
+          .select()
+          .from(userEntries)
+          .innerJoin(entries, eq(entries.id, userEntries.entryId))
+          .where(and(eq(userEntries.userId, userId), notHeld))
+      ).toHaveLength(0);
+
       // A later fetch brings a genuinely new entry, so the fanout runs over
       // every current entry and heals the orphan.
       await processEntries(
