@@ -8,7 +8,22 @@
 import type { ParsedEntry } from "./types";
 import { absolutizeUrls } from "./content-cleaner";
 import { getFeedHooks } from "@/server/plugins";
-import { generateSummary } from "../html/strip-html";
+import { generateSummary, stripHtml } from "../html/strip-html";
+
+/** WordPress ends its auto-generated excerpts with "[…]" (or "[...]"). */
+const WORDPRESS_AUTO_EXCERPT = /\[(?:…|\.\.\.)\]$/;
+
+/**
+ * Summarizes a feed's separate summary, or returns "" when summarizing the
+ * content ourselves is better: it has no text of its own (some WordPress feeds
+ * put only the featured image or the "appeared first on" footer there), or it's
+ * WordPress's auto-excerpt, a tag-stripped copy of the content's opening that
+ * keeps footnote markers and loses super/subscripts.
+ */
+function summarizeWrittenSummary(html: string): string {
+  if (WORDPRESS_AUTO_EXCERPT.test(stripHtml(html))) return "";
+  return generateSummary(html, { imageAlt: false });
+}
 
 /**
  * Content processing result for an entry.
@@ -92,9 +107,9 @@ export function cleanEntryContent(
   const contentForSummary = contentCleaned ?? absolutizedOriginal ?? "";
   const { content: entryContent, summary: entrySummary } = parsedEntry;
   const hasSeparateSummary = entryContent && entrySummary && entryContent !== entrySummary;
-  const summary = hasSeparateSummary
-    ? generateSummary(entrySummary)
-    : generateSummary(contentForSummary);
+  const summary =
+    (hasSeparateSummary && summarizeWrittenSummary(entrySummary)) ||
+    generateSummary(contentForSummary);
 
   return {
     contentOriginal: absolutizedOriginal,
