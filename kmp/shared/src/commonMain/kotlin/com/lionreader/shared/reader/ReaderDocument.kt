@@ -125,13 +125,14 @@ fun readerDocument(
         code { font-size: 0.9em; }
         table { display: block; overflow-x: auto; border-collapse: collapse; }
         th, td { border: 1px solid ${colors.border}; padding: 0.3em 0.6em; }
-        /* Email layout tables (#1966); see "Reader Prose Layout Tables" in globals.css. */
-        table[role="none"], table[role="none"] > *, table[role="none"] > * > tr,
-        table[role="none"] > * > tr > *,
-        table[role="presentation"], table[role="presentation"] > *,
-        table[role="presentation"] > * > tr, table[role="presentation"] > * > tr > * {
-          display: block; width: auto; max-width: 100%; margin: 0; padding: 0; border: 0;
-          overflow: visible; text-align: inherit;
+        /* Email layout tables (#1966); see "Reader Prose Layout Tables" in globals.css.
+           No :is(), which e-reader WebViews may predate. */
+        table[role~="none"], table[role~="none"] > *, table[role~="none"] > * > tr,
+        table[role~="none"] > * > tr > *,
+        table[role~="presentation"], table[role~="presentation"] > *,
+        table[role~="presentation"] > * > tr, table[role~="presentation"] > * > tr > * {
+          display: block; width: auto; height: auto; margin: 0; padding: 0; border: 0;
+          overflow: visible;
         }
         hr { border: 0; border-top: 1px solid ${colors.border}; }
         details { border: 1px solid ${colors.border}; border-radius: 6px; padding: 0.5em 0.75em; }

@@ -1049,25 +1049,24 @@ img.content-img-loading {
    Email newsletters lay out the whole message with nested tables, marked
    `role="none"`/`"presentation"` (#1966). Typography's data-table styling
    draws a rule under every row and shrinks the font again at every nesting
-   level, so flatten them into plain blocks, the way reader views do; that also
-   keeps fixed-width columns from overflowing a phone. Child combinators so a
-   real data table nested in a layout cell keeps its styling. Mirrored in the
-   Android reader (ReaderDocument.kt).
+   level, so flatten them into plain blocks; that also keeps fixed-width
+   columns from overflowing a phone. Child combinators so a real data table
+   nested in a layout cell keeps its styling. Mirrored in the Android reader
+   (ReaderDocument.kt).
    ================================= */
 
-.reader-prose :is(table[role="none"], table[role="presentation"]),
-.reader-prose :is(table[role="none"], table[role="presentation"]) > *,
-.reader-prose :is(table[role="none"], table[role="presentation"]) > * > tr,
-.reader-prose :is(table[role="none"], table[role="presentation"]) > * > tr > * {
+.reader-prose :is(table[role~="none"], table[role~="presentation"]),
+.reader-prose :is(table[role~="none"], table[role~="presentation"]) > *,
+.reader-prose :is(table[role~="none"], table[role~="presentation"]) > * > tr,
+.reader-prose :is(table[role~="none"], table[role~="presentation"]) > * > tr > * {
   display: block;
   width: auto;
-  max-width: 100%;
+  height: auto;
   margin: 0;
   padding: 0;
   border: 0;
   font-size: inherit;
   line-height: inherit;
-  text-align: inherit;
 }
 
 /* =================================
