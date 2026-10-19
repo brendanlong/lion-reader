@@ -363,7 +363,9 @@ const populateSql = (userId: string, subscriptionId: string, feedId: string): St
     "populate",
     `SELECT ${q(subscriptionId)}::uuid AS subscription_id, ${q(userId)}::uuid AS user_id, e.id AS entry_id,
        COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
-       e.is_spam, e.is_backfill AS read
+       e.is_spam,
+       (e.last_seen_at >= f.last_entries_updated_at) IS NOT TRUE
+         AND COALESCE(e.published_at < f.last_fetched_at - interval '30 days', false) AS read
 FROM entries e
 JOIN feeds f ON f.id = e.owner_feed_id
 WHERE e.owner_feed_id = ${q(feedId)}
@@ -606,7 +608,7 @@ ORDER BY updated_at DESC OFFSET 5 LIMIT 1`
   LIMIT 501
 )
 SELECT entries.id, entries.title, entries.author, entries.summary, entries.url, entries.published_at,
-  entries.fetched_at, entries.site_name, entries.updated_at, entries.is_spam, entries.is_backfill,
+  entries.fetched_at, entries.site_name, entries.updated_at, entries.is_spam,
   page.read, page.starred, page.read_changed_at, subscriptions.id AS subscription_id,
   entry_memberships.subscription_ids, entries.type,
   ${FEED_TITLE} AS feed_title, page.visible,
@@ -1129,9 +1131,9 @@ WHERE subscriptions.user_id = ${q(U0)}::uuid AND subscriptions.unsubscribed_at I
  */
 async function fetchStatements(db: ClientBase, fresh: number, kept: number): Promise<Statement[]> {
   const feedId = webFeedId(WEB.popular);
-  const feed = await one<{ last_entries_updated_at: string }>(
+  const feed = await one<{ last_entries_updated_at: string; last_fetched_at: string }>(
     db,
-    `SELECT last_entries_updated_at::text FROM feeds WHERE id = ${q(feedId)}`
+    `SELECT last_entries_updated_at::text, last_fetched_at::text FROM feeds WHERE id = ${q(feedId)}`
   );
   const current = await rows<{ id: string; guid: string }>(
     db,
@@ -1159,10 +1161,10 @@ WHERE entries.owner_feed_id = ${q(feedId)} AND entries.guid IN (${list(candidate
     ...created.map((e, i) => ({
       label: `create_entry.${i}`,
       sql: `INSERT INTO entries (id, owner_feed_id, type, guid, url, title, author, content_original, content_cleaned,
-  summary, content_hash, published_at, fetched_at, last_seen_at, is_backfill)
+  summary, content_hash, published_at, fetched_at, last_seen_at)
 VALUES (${q(e.id)}, ${q(feedId)}, 'web', ${q(e.guid)}, ${q(e.guid)}, ${q(e.title)}, 'Author 1',
   ${q(`<article>${e.html}</article>`)}, ${q(e.html)}, ${q(e.summary)}, ${q(benchUuid(e.guid))},
-  ${ts(fetchedAt)}, ${ts(fetchedAt)}, ${ts(fetchedAt)}, false)
+  ${ts(fetchedAt)}, ${ts(fetchedAt)}, ${ts(fetchedAt)})
 RETURNING *`,
     })),
     {
@@ -1182,7 +1184,8 @@ WHERE entries.id IN (${list(allIds)})
       `WITH missing AS MATERIALIZED (
   SELECT s.id AS subscription_id, s.user_id, e.id AS entry_id,
          COALESCE(e.published_at, e.fetched_at) AS published_or_fetched_at,
-         e.is_spam, e.is_backfill AS read, e.guid, e.owner_feed_id
+         e.is_spam, COALESCE(e.published_at < ${ts(feed.last_fetched_at)} - interval '30 days', false) AS read,
+         e.guid, e.owner_feed_id
   FROM subscriptions s
   INNER JOIN entries e ON e.owner_feed_id = s.feed_id
   WHERE s.feed_id = ${q(feedId)}::uuid

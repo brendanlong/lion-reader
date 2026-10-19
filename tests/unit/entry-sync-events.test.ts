@@ -32,7 +32,6 @@ function row(overrides: Partial<ChangedEntryRow> = {}): ChangedEntryRow {
     siteName: "Example",
     entryUpdatedAt: new Date(entryUpdatedAt),
     isSpam: false,
-    isBackfill: false,
     read: false,
     starred: false,
     readChangedAt: null,
@@ -82,7 +81,12 @@ describe("entryRowToSyncEvents", () => {
 
   it.each<[string, Partial<ChangedEntryRow>, string[]]>([
     ["a new entry", {}, ["new_entry", "entry_state_changed"]],
-    ["a new backfilled entry", { isBackfill: true, read: true }, ["entry_state_changed"]],
+    ["a new entry linked read (a backfill)", { read: true }, ["entry_state_changed"]],
+    [
+      "a new entry the user has read since",
+      { read: true, readChangedAt: new Date("2026-10-01T12:00:00.000Z") },
+      ["new_entry", "entry_state_changed"],
+    ],
     ["an edited entry", { isNew: false, stateChanged: false }, ["entry_updated"]],
     ["an entry read since", { isNew: false, metadataChanged: false }, ["entry_state_changed"]],
     ["an entry edited and read since", { isNew: false }, ["entry_updated", "entry_state_changed"]],
@@ -127,7 +131,7 @@ describe("entryRowToSyncEvents", () => {
 
   it("sends the list payload the live path sends, plus the entry's state", () => {
     const changed = row();
-    const live = newEntryAnnouncement(changed, changed.feedTitle);
+    const live = newEntryAnnouncement({ ...changed, isBackfill: false }, changed.feedTitle);
     const [catchUp] = entryRowToSyncEvents(changed, allCounts);
     expect(catchUp.type).toBe("new_entry");
     const entry = catchUp.type === "new_entry" ? catchUp.entry : undefined;

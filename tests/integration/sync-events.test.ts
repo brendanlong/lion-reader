@@ -164,9 +164,11 @@ describe("sync.events", () => {
       await createTestSubscription(userId, feedId);
       const baseCursor = new Date(Date.now() - 1000).toISOString();
 
-      // Fanned out already read, like every backfill.
-      const entryId = await createTestEntry(feedId, { title: "Old post", isBackfill: true });
-      await createUserEntry(userId, entryId, { read: true });
+      const entryId = await createTestEntry(feedId, {
+        title: "Old post",
+        publishedAt: new Date("2020-01-01T00:00:00Z"),
+      });
+      await createUserEntriesForFeed(feedId, [entryId], new Date());
 
       const result = await createCaller(await createAuthContext(userId)).sync.events({
         cursors: { entries: baseCursor },
@@ -1392,7 +1394,7 @@ describe("sync.events", () => {
           refetchedAt,
           entryId,
         ]);
-        const fanOut = createUserEntriesForFeed(feedId, [entryId]);
+        const fanOut = createUserEntriesForFeed(feedId, [entryId], null);
         await expect
           .poll(
             async () =>

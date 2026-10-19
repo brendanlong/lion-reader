@@ -602,7 +602,7 @@ OPS.push(
       // A fetch of the shared feed: one statement fanning out to every world
       // still subscribed (createUserEntriesForFeed, as the fetch job does).
       const entryId = await createTestEntry(sharedFeedId);
-      await createUserEntriesForFeed(sharedFeedId, [entryId]);
+      await createUserEntriesForFeed(sharedFeedId, [entryId], null);
       for (const world of currentWorlds) world.entryIds.push(entryId);
       return `fan out ${entryId}`;
     },
