@@ -78,6 +78,29 @@ export async function consumeAuthState(state, origin) {
 }
 
 /**
+ * Loopback hosts, which may use plain http since their traffic never leaves
+ * the machine. Must match the http entries in manifest.json's
+ * optional_host_permissions.
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+/**
+ * Whether `serverUrl` may be used as a server: https, or http on a loopback
+ * host, so the API token is never sent unencrypted over the network.
+ */
+export function isAllowedServerUrl(serverUrl) {
+  let url;
+  try {
+    url = new URL(serverUrl);
+  } catch {
+    return false;
+  }
+  return (
+    url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname))
+  );
+}
+
+/**
  * Host permission pattern covering `serverUrl`'s host. Without the port, which
  * Firefox match patterns don't support.
  */
@@ -92,5 +115,8 @@ export function serverHostPattern(serverUrl) {
  * don't sync between browsers the way the server URL does.
  */
 export async function hasServerPermission(serverUrl) {
+  if (!isAllowedServerUrl(serverUrl)) {
+    return false;
+  }
   return chrome.permissions.contains({ origins: [serverHostPattern(serverUrl)] });
 }

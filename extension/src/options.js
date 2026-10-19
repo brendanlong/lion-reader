@@ -2,7 +2,12 @@
  * Options page script for Lion Reader browser extension.
  */
 
-import { DEFAULT_SERVER_URL, hasServerPermission, serverHostPattern } from "./constants.js";
+import {
+  DEFAULT_SERVER_URL,
+  hasServerPermission,
+  isAllowedServerUrl,
+  serverHostPattern,
+} from "./constants.js";
 
 // DOM Elements
 const serverUrlInput = document.getElementById("server-url");
@@ -45,18 +50,9 @@ async function saveSettings() {
     url = url.slice(0, -1);
   }
 
-  // Validate URL if provided
-  if (url) {
-    let protocol;
-    try {
-      protocol = new URL(url).protocol;
-    } catch {
-      protocol = null;
-    }
-    if (protocol !== "https:" && protocol !== "http:") {
-      alert("Please enter a valid http:// or https:// URL");
-      return;
-    }
+  if (url && !isAllowedServerUrl(url)) {
+    alert("Please enter an https:// URL (http:// is only allowed for localhost)");
+    return;
   }
 
   // Firefox only shows the permission prompt if it's requested before the
