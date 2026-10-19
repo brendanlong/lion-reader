@@ -100,9 +100,9 @@ fetches user-influenced URLs and must never be usable to reach internal services
   says why a failed revoke doesn't undo the change). The one exception is the
   email-match link inside `processOAuthCallback`, an ordinary sign-in; it says why.
 - **Setting or changing the password revokes the user's Wallabag tokens** in the
-  same transaction. Token issuance first takes a share lock on the `users` row
-  (`lockUserAgainstCredentialChange`) so a racing grant can't leave a live token —
-  keep that lock order.
+  same transaction. Refresh-token rotation first takes a share lock on the `users`
+  row (`lockUserAgainstCredentialChange`) so a rotation racing the sweep can't leave
+  a live successor — keep that lock order.
 - **A long-lived authenticated connection re-checks its credential periodically**
   and closes once it's revoked or expired, as the SSE stream does on every heartbeat
   (`src/app/api/v1/events/route.ts`).

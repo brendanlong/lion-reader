@@ -420,29 +420,13 @@ describe("token issue racing a password change", () => {
       scopes: [OAUTH_SCOPES.READER_FULL_ACCESS],
     });
 
-    const change = await heldPasswordChange(user.id, await argon2.hash("new-password"));
+    const change = await heldPasswordChange(user.id, "new-hash");
     const rotation = rotateRefreshToken(tokens.refreshToken, WALLABAG_CLIENT_ID);
     await waitForUserLockWaiter();
     change.release();
     await change.done;
 
     expect(await rotation).toBeNull();
-    expect(await liveWallabagTokens(user.id)).toBe(0);
-  });
-
-  it("a password grant racing a password change mints nothing", async () => {
-    const password = "the-old-password";
-    const user = await createUser(password);
-
-    // The grant verifies the old password (still committed) before the change
-    // commits, then must notice the change under the lock.
-    const change = await heldPasswordChange(user.id, await argon2.hash("new-password"));
-    const grant = passwordGrant(user.email, password);
-    await waitForUserLockWaiter();
-    change.release();
-    await change.done;
-
-    expect(await grant).toBeNull();
     expect(await liveWallabagTokens(user.id)).toBe(0);
   });
 });

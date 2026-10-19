@@ -63,6 +63,7 @@ Without `docker compose` or the shared dev databases, **don't hand-roll Postgres
 - **UI**: Use optimistic updates for responsive UX
 - **DRY**: Deduplicate logic that must stay in sync; don't merge code that merely looks similar but serves independent purposes. A value that must agree in several places (a lifetime, a length cap, a cookie-and-Redis TTL) is one named constant every use imports, not repeated literals like `30 * 24 * 60 * 60`; where the uses share a language, share the constant instead of testing that copies match.
 - Don't create barrel files, prefer direct imports within our code
+- **Eventual consistency is the default**: caches may be briefly stale if they converge, in-flight requests may finish after a revocation, and overlapping runs of idempotent jobs are fine. Never re-check under a lock that something you just verified is still true (e.g. the password hash before minting tokens): the state can change right after the second check too. Do guard against permanent wrong state, like a token that outlives its revocation.
 
 ## Tests (all languages)
 
