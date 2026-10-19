@@ -76,6 +76,13 @@ const NARRATION_INTERNALS = {
     "Outside src/components/narration, import @/components/narration, useEntryNarration or NarrationSettings, not narration internals.",
 };
 
+// Drizzle's jsonb stores a NUL as an escape that Postgres rejects.
+const DRIZZLE_JSONB = {
+  name: "drizzle-orm/pg-core",
+  importNames: ["jsonb"],
+  message: "Use nulSafeJsonb (src/server/db/schema.ts), which replaces NUL before stringifying.",
+};
+
 function restrictImports(paths, patterns = []) {
   return { "no-restricted-imports": ["error", { paths, patterns }] };
 }
@@ -162,6 +169,13 @@ const eslintConfig = defineConfig([
   {
     files: ["src/server/html/sax.ts"],
     rules: restrictImports([NEXT_LINK, NATIVE_MARKDOWN], [APP_LAYER, NARRATION_INTERNALS]),
+  },
+  {
+    files: ["src/server/db/**/*.ts"],
+    rules: restrictImports(
+      [NEXT_LINK, NATIVE_MARKDOWN, DRIZZLE_JSONB],
+      [APP_LAYER, NARRATION_INTERNALS]
+    ),
   },
   {
     files: ["src/components/ui/page-link.tsx"],

@@ -1,27 +1,6 @@
 import { Client, type ClientConfig } from "pg";
 
-/**
- * Postgres `text` can't hold U+0000 ("invalid byte sequence for encoding
- * UTF8: 0x00"), yet it reaches us from untrusted content: HTML allows it as a
- * recoverable parse error (TanStack Router pages put it in inline scripts),
- * and `JSON.parse` turns `"\u0000"` escapes into it. We replace it here, at
- * the one boundary every source passes through, with U+FFFD — what browsers
- * substitute for it in scripts and attributes.
- *
- * Drizzle serializes array params to `{...}` strings, so only top-level
- * strings need checking. `jsonb` isn't covered: `JSON.stringify` turns a NUL
- * into a `\u0000` escape, which `jsonb` also rejects.
- */
-const NUL = "\u0000";
-const REPLACEMENT_CHARACTER = "\uFFFD";
-
-/**
- * Apply to a value compared in JS against one read back from the database, so
- * both sides match (e.g. feed guids).
- */
-export function replaceNul(value: string): string {
-  return value.includes(NUL) ? value.replaceAll(NUL, REPLACEMENT_CHARACTER) : value;
-}
+import { replaceNul } from "./nul";
 
 function replaceNulInValues(values: unknown): unknown {
   return Array.isArray(values)
@@ -41,6 +20,12 @@ function replaceNulInQueryArgs(args: unknown[]): unknown[] {
   return [config, replaceNulInValues(values), ...rest];
 }
 
+/**
+ * Replaces NUL in string query params (see `replaceNul`). Drizzle serializes
+ * array params to `{...}` strings, so only top-level strings need checking.
+ * `jsonb` values arrive already JSON-escaped: columns written through Drizzle
+ * are handled by `nulSafeJsonb`, raw `JSON.stringify(...)::jsonb` params aren't.
+ */
 export class NulSafeClient extends Client {
   constructor(config?: string | ClientConfig) {
     super(config);
