@@ -131,7 +131,7 @@ describe("handleMonitorFeedHealth", () => {
     const result = await runJobHandler(job!, "monitor_feed_health", startedAt);
 
     expect(result.success).toBe(true);
-    expect(result.nextRunAt.getTime()).toBe(startedAt + getJobIntervalMs("monitor_feed_health"));
+    expect(result.nextRunAt?.getTime()).toBe(startedAt + getJobIntervalMs("monitor_feed_health"));
     expect(result.metadata?.status).toBe("healthy");
   });
 

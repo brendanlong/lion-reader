@@ -325,7 +325,8 @@ function entryContentColumns(parsedEntry: ParsedEntry, contentHash: string, feed
  * @param fetchedAt - Timestamp when the entry was fetched
  * @param feedUrl - The URL of the feed (for feed-specific cleaning)
  * @param pushed - Whether a WebSub push delivered it (`ProcessEntriesOptions.pushed`)
- * @returns The created entry
+ * @returns The created entry, or null if the feed already has an entry with this
+ *   guid (a concurrent run of the same feed inserted it first)
  */
 export async function createEntry(
   feedId: string,
@@ -334,7 +335,7 @@ export async function createEntry(
   fetchedAt: Date,
   feedUrl?: string,
   pushed = false
-): Promise<Entry> {
+): Promise<Entry | null> {
   const guid = deriveGuid(parsedEntry);
   const publishedAt = clampPublishedAt(parsedEntry.pubDate, fetchedAt);
 
@@ -351,9 +352,9 @@ export async function createEntry(
     pushedAt: pushed ? fetchedAt : null,
   };
 
-  const [entry] = await db.insert(entries).values(newEntry).returning();
+  const [entry] = await db.insert(entries).values(newEntry).onConflictDoNothing().returning();
 
-  return entry;
+  return entry ?? null;
 }
 
 /**
@@ -407,6 +408,25 @@ interface CachedEntryInfo {
   lastSeenAt: Date | null;
 }
 
+const existingEntryColumns = {
+  id: entries.id,
+  guid: entries.guid,
+  contentHash: entries.contentHash,
+  lastSeenAt: entries.lastSeenAt,
+};
+
+async function loadExistingEntry(feedId: string, guid: string): Promise<CachedEntryInfo> {
+  const [existing] = await db
+    .select(existingEntryColumns)
+    .from(entries)
+    .where(and(eq(entries.ownerFeedId, feedId), inArray(entries.guid, guidMatchCandidates(guid))))
+    .limit(1);
+  if (!existing) {
+    throw new Error(`Entry insert conflicted but no entry matches guid ${guid}`);
+  }
+  return existing;
+}
+
 /**
  * Processes a single entry using a pre-loaded cache of existing entries.
  * This avoids N+1 queries by using a Map lookup instead of a database query.
@@ -434,7 +454,7 @@ async function processEntryWithCache(
   // Use cached lookup instead of database query. Keyed on the canonical guid so
   // an http/https re-spelling of a known guid resolves to the existing row
   // (#1535); the row keeps whatever spelling it was created with.
-  const existing = existingEntriesMap.get(guidKey);
+  let existing = existingEntriesMap.get(guidKey);
 
   if (!existing) {
     // New entry - create it.
@@ -443,23 +463,30 @@ async function processEntryWithCache(
     // per-user count computation sees the entry in visible_entries.
     const entry = await createEntry(feedId, parsedEntry, contentHash, fetchedAt, feedUrl, pushed);
 
-    // Add to cache so duplicate GUIDs in same feed don't create duplicates
-    existingEntriesMap.set(guidKey, {
-      id: entry.id,
-      guid,
-      contentHash,
-      lastSeenAt: entry.lastSeenAt,
-    });
+    if (entry) {
+      // Add to cache so duplicate GUIDs in same feed don't create duplicates
+      existingEntriesMap.set(guidKey, {
+        id: entry.id,
+        guid,
+        contentHash,
+        lastSeenAt: entry.lastSeenAt,
+      });
 
-    return {
-      id: entry.id,
-      guid,
-      isNew: true,
-      isUpdated: false,
-      isBackfill: isBackfilledEntry(entry.publishedAt, previousLastFetchedAt),
-      updatedAt: entry.updatedAt,
-      newEntryData: toNewEntryData(entry),
-    };
+      return {
+        id: entry.id,
+        guid,
+        isNew: true,
+        isUpdated: false,
+        isBackfill: isBackfilledEntry(entry.publishedAt, previousLastFetchedAt),
+        updatedAt: entry.updatedAt,
+        newEntryData: toNewEntryData(entry),
+      };
+    }
+
+    // A concurrent run of this feed (e.g. a push during a poll) created it
+    // after we loaded the cache; carry on with that row as an existing entry.
+    existing = await loadExistingEntry(feedId, guid);
+    existingEntriesMap.set(guidKey, existing);
   }
 
   // Entry exists - check if content changed
@@ -503,8 +530,8 @@ async function processEntryWithCache(
 
 /**
  * Stamps `last_seen_at` on the entries a poll saw, marking them the feed's
- * current entries for the subscribe populate. Only polls call this, and the job
- * queue runs one poll of a feed at a time.
+ * current entries for the subscribe populate. Only polls call this. Polls of a
+ * feed rarely overlap, and when they do they only over-stamp until the next poll.
  *
  * Deliberately does NOT touch `updated_at`: that column is the "content changed"
  * signal (set only by createEntry/updateEntryContent) and drives every
@@ -691,12 +718,7 @@ export async function processEntries(
   const existingEntries =
     guidsToCheck.size > 0
       ? await db
-          .select({
-            id: entries.id,
-            guid: entries.guid,
-            contentHash: entries.contentHash,
-            lastSeenAt: entries.lastSeenAt,
-          })
+          .select(existingEntryColumns)
           .from(entries)
           .where(and(eq(entries.ownerFeedId, feedId), inArray(entries.guid, [...guidsToCheck])))
       : [];

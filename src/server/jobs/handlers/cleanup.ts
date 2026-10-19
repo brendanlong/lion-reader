@@ -13,7 +13,7 @@ import type { JobMetadata } from "./types";
  * Deletes rows that expire but were never deleted anywhere (issue #953):
  * expired sessions, expired OAuth authorization codes / access tokens /
  * refresh tokens, long-revoked credentials, orphaned Dynamic Client
- * Registration clients (issue #975), parked one-time jobs, and
+ * Registration clients (issue #975), and
  * subscriber-less fetch_feed jobs (issue #1085). See
  * src/server/services/retention.ts.
  */

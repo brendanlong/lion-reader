@@ -3,10 +3,10 @@
  *
  * Run by the `cleanup` singleton job once a day. Every row deleted here is
  * already dead to the application — expired/revoked credentials all fail
- * validation on their read paths, parked one-time jobs never run again, and
- * subscriber-less `fetch_feed` jobs are permanently ineligible for claiming
- * (issue #1085) — so deletion only reclaims space and index bloat (and, for
- * dead feed jobs, un-drags the claim scan), never changes behavior.
+ * validation on their read paths, and subscriber-less `fetch_feed` jobs are
+ * permanently ineligible for claiming (issue #1085) — so deletion only reclaims
+ * space and index bloat (and, for dead feed jobs, un-drags the claim scan),
+ * never changes behavior.
  *
  * Terminal OPML imports are the exception to "dead credential": they remain
  * valid history but hold the full parsed OPML as JSONB, so they're aged out
@@ -30,7 +30,6 @@ import {
   opmlImports,
   sessions,
 } from "../db/schema";
-import { ONE_TIME_JOB_TYPES } from "../jobs/queue";
 import { pruneEntryTombstones } from "./entry-tombstones";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -47,13 +46,6 @@ const EXPIRY_GRACE_MS = DAY_MS;
  * (spotting a stolen token being replayed) still has something to match.
  */
 const REVOKED_RETENTION_MS = 30 * DAY_MS;
-
-/**
- * One-time jobs are "parked" after completion by scheduling them
- * `ONE_TIME_JOB_PARK_MS` into the future. Anything scheduled further out than
- * this threshold is such a parked job and can be deleted.
- */
-const PARKED_JOB_THRESHOLD_MS = 180 * DAY_MS;
 
 /**
  * Grace period before a subscriber-less `fetch_feed` job is deleted (issue #1085).
@@ -98,21 +90,19 @@ export interface RetentionCleanupResult {
   oauthRefreshTokens: number;
   oauthClients: number;
   opmlImports: number;
-  parkedJobs: number;
   deadFeedJobs: number;
   entryTombstones: number;
 }
 
 /**
- * Deletes expired/revoked credentials, orphaned DCR clients, and parked
- * one-time jobs.
+ * Deletes expired/revoked credentials, orphaned DCR clients, old OPML imports
+ * and dead feed jobs.
  */
 export async function runRetentionCleanup(db: Database): Promise<RetentionCleanupResult> {
   const now = Date.now();
   const nowDate = new Date(now);
   const expiryCutoff = new Date(now - EXPIRY_GRACE_MS);
   const revokedCutoff = new Date(now - REVOKED_RETENTION_MS);
-  const parkedCutoff = new Date(now + PARKED_JOB_THRESHOLD_MS);
   const deadFeedJobCutoff = new Date(now - DEAD_FEED_JOB_GRACE_MS);
   const orphanedClientCutoff = new Date(now - ORPHANED_CLIENT_RETENTION_MS);
   const opmlImportCutoff = new Date(now - OPML_IMPORT_RETENTION_MS);
@@ -151,18 +141,6 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
       or(
         lt(oauthRefreshTokens.expiresAt, expiryCutoff),
         lt(oauthRefreshTokens.revokedAt, revokedCutoff)
-      )
-    );
-
-  // Completed one-time jobs park themselves by scheduling next_run_at a year
-  // out. running_since IS NULL guards against deleting anything in flight.
-  const parkedJobs = await db
-    .delete(jobs)
-    .where(
-      and(
-        inArray(jobs.type, [...ONE_TIME_JOB_TYPES]),
-        isNull(jobs.runningSince),
-        gt(jobs.nextRunAt, parkedCutoff)
       )
     );
 
@@ -265,7 +243,6 @@ export async function runRetentionCleanup(db: Database): Promise<RetentionCleanu
     oauthRefreshTokens: expiredRefreshTokens.rowCount ?? 0,
     oauthClients: orphanedClients.rowCount ?? 0,
     opmlImports: oldOpmlImports.rowCount ?? 0,
-    parkedJobs: parkedJobs.rowCount ?? 0,
     deadFeedJobs: deadFeedJobs.rowCount ?? 0,
     entryTombstones: await pruneEntryTombstones(db, nowDate),
   };

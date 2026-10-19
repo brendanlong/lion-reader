@@ -256,7 +256,7 @@ describe("Entry Processor", () => {
       };
 
       const contentHash = generateContentHash(parsedEntry);
-      const entry = await createEntry(feed.id, parsedEntry, contentHash, fetchedAt);
+      const entry = (await createEntry(feed.id, parsedEntry, contentHash, fetchedAt))!;
 
       expect(entry.id).toBeDefined();
       expect(entry.ownerFeedId).toBe(feed.id);
@@ -288,7 +288,18 @@ describe("Entry Processor", () => {
       );
 
       // Should use link as GUID
-      expect(entry.guid).toBe("https://example.com/article-no-guid");
+      expect(entry?.guid).toBe("https://example.com/article-no-guid");
+    });
+
+    it("returns null when the feed already has the guid", async () => {
+      const feed = await createTestFeed();
+      const parsedEntry: ParsedEntry = { guid: "https://example.com/dup", title: "Dup" };
+      const hash = generateContentHash(parsedEntry);
+
+      expect(await createEntry(feed.id, parsedEntry, hash, new Date())).not.toBeNull();
+      // Matched scheme-insensitively, like the rest of guid identity (#1535).
+      const respelled = { ...parsedEntry, guid: "http://example.com/dup" };
+      expect(await createEntry(feed.id, respelled, hash, new Date())).toBeNull();
     });
   });
 
@@ -303,12 +314,12 @@ describe("Entry Processor", () => {
         content: "Original content",
       };
 
-      const createdEntry = await createEntry(
+      const createdEntry = (await createEntry(
         feed.id,
         initialEntry,
         generateContentHash(initialEntry),
         new Date()
-      );
+      ))!;
 
       // Update with new content
       const updatedParsedEntry: ParsedEntry = {
@@ -418,6 +429,25 @@ describe("Entry Processor", () => {
       expect(result2.entries[0].isNew).toBe(false);
       expect(result2.entries[0].isUpdated).toBe(false);
       expect(result2.entries[0].id).toBe(result1.entries[0].id);
+    });
+
+    it("lets overlapping runs of a feed both process a new entry", async () => {
+      const feed = await createTestFeed();
+      const parsedFeed: ParsedFeed = {
+        title: "Test Feed",
+        items: [{ guid: "overlap", title: "Title", content: "Content" }],
+      };
+
+      const results = await Promise.all([
+        processEntries(feed.id, parsedFeed),
+        processEntries(feed.id, parsedFeed, { pushed: true }),
+      ]);
+
+      const [row] = await db.select().from(entries).where(eq(entries.ownerFeedId, feed.id));
+      for (const result of results) {
+        expect(result.entries.map((e) => e.id)).toEqual([row.id]);
+      }
+      expect(results.filter((r) => r.newCount === 1)).toHaveLength(1);
     });
 
     it("matches an entry whose guid contains NUL on the next fetch", async () => {
@@ -952,12 +982,12 @@ describe("Entry Processor", () => {
           title: "P",
           content: "A",
         };
-        const oldEntry = await createEntry(
+        const oldEntry = (await createEntry(
           oldFeed.id,
           oldParsed,
           generateContentHash(oldParsed),
           new Date()
-        );
+        ))!;
         // As a merge leaves it: the old feed's article in this subscription.
         await createTestMembership(subscriptionId, userId, oldEntry.id, { read: true });
 
@@ -991,12 +1021,12 @@ describe("Entry Processor", () => {
         await createTestSubscription(userId, feed.id);
 
         const otherParsed: ParsedEntry = { guid: "http://example.com/?p=1", title: "P" };
-        const otherEntry = await createEntry(
+        const otherEntry = (await createEntry(
           otherFeed.id,
           otherParsed,
           generateContentHash(otherParsed),
           new Date()
-        );
+        ))!;
         await createTestMembership(otherSubscriptionId, userId, otherEntry.id);
 
         const result = await processEntries(feed.id, {
@@ -1392,12 +1422,12 @@ describe("Entry Processor", () => {
         title: "Orphan",
         content: "Orphan content",
       };
-      const orphan = await createEntry(
+      const orphan = (await createEntry(
         feed.id,
         orphanParsed,
         generateContentHash(orphanParsed),
         new Date()
-      );
+      ))!;
 
       const before = await db.select().from(userEntries).where(eq(userEntries.userId, userId));
       expect(before).toHaveLength(0);

@@ -6,8 +6,8 @@
 
 import { db } from "../../db";
 import { processOpmlImport } from "../../services/imports";
-import { ONE_TIME_JOB_PARK_MS, type JobPayloads } from "../queue";
-import type { JobHandlerResult } from "./types";
+import type { JobPayloads } from "../queue";
+import type { OneTimeJobHandlerResult } from "./types";
 
 /**
  * Handler for process_opml_import jobs.
@@ -19,28 +19,24 @@ import type { JobHandlerResult } from "./types";
  */
 export async function handleProcessOpmlImport(
   payload: JobPayloads["process_opml_import"]
-): Promise<JobHandlerResult> {
+): Promise<OneTimeJobHandlerResult> {
   const { importId } = payload;
 
   const result = await processOpmlImport(db, importId);
-  // A one-time job: park it whatever the outcome (see ONE_TIME_JOB_TYPES).
-  const nextRunAt = new Date(Date.now() + ONE_TIME_JOB_PARK_MS);
 
   switch (result.status) {
     case "not_found":
       return {
         success: false,
-        nextRunAt,
         error: `Import record not found: ${importId}`,
       };
 
     case "already_finished":
-      return { success: true, nextRunAt };
+      return { success: true };
 
     case "completed":
       return {
         success: true,
-        nextRunAt,
         metadata: {
           ...(result.recovered ? { recovered: true } : {}),
           ...result.counts,
@@ -48,7 +44,7 @@ export async function handleProcessOpmlImport(
       };
 
     case "failed":
-      return { success: false, nextRunAt, error: result.error };
+      return { success: false, error: result.error };
 
     default:
       return result satisfies never;

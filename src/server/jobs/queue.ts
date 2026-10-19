@@ -6,7 +6,9 @@
  * fetch_feed job that gets updated after each run.
  *
  * Uses row locking (SELECT FOR UPDATE SKIP LOCKED) for concurrent job claiming,
- * ensuring only one worker can process a job at a time.
+ * so two workers never claim the same job at once. A job still running past
+ * {@link STALE_JOB_THRESHOLD_MS} can be claimed again, so every handler must be
+ * idempotent.
  *
  * Job eligibility is data-driven: instead of an "enabled" flag, jobs are
  * claimed based on the actual data state. For example, feed jobs are only
@@ -15,7 +17,7 @@
  * See src/server/jobs/CLAUDE.md for the overall architecture.
  */
 
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { jobs, type Job } from "../db/schema";
 import { isUniqueViolation } from "../db/errors";
@@ -68,8 +70,9 @@ const emptyPayload = z.object({});
  * - `feed`: the data-driven fetch_feed claim (only feeds with subscribers).
  * - `singleton`: exactly one row, self-created on first run (see
  *   {@link SINGLETON_JOB_TYPES}).
- * - `one_time`: the generic due-job claim. Each row is a single task; see
- *   {@link ONE_TIME_JOB_TYPES}.
+ * - `one_time`: the generic due-job claim. Each row is a single task, deleted
+ *   when its handler returns, whatever the outcome; only a throw keeps the row,
+ *   for the worker's backed-off retry.
  * - `full_content`: the concurrency-capped {@link claimFullContentJob}. Also
  *   one-time.
  */
@@ -125,8 +128,8 @@ const JOB_DEFINITIONS = {
   // owned by the external healthchecks.io monitor, so no state is carried
   // across runs.
   monitor_feed_health: { payload: emptyPayload, lane: "singleton", intervalMs: 15 * 60 * 1000 },
-  // Daily retention cleanup of expired/revoked credentials and parked
-  // one-time jobs. See src/server/services/retention.ts.
+  // Daily retention cleanup of expired/revoked credentials and dead feed
+  // jobs. See src/server/services/retention.ts.
   cleanup: { payload: emptyPayload, lane: "singleton", intervalMs: 24 * 60 * 60 * 1000 },
   // Daily self-healing sweep of the denormalized unread counters (issue
   // #1117), by the membership rules of #1846: the triggers should keep them
@@ -188,41 +191,23 @@ export function isJobType(type: string): type is JobType {
   return Object.hasOwn(JOB_DEFINITIONS, type);
 }
 
-/**
- * One-time job types: each row is a single task, parked `ONE_TIME_JOB_PARK_MS`
- * out when done — whatever the outcome, it must not run again. The retention
- * cleanup sweeps parked rows (see src/server/services/retention.ts).
- */
-export const ONE_TIME_JOB_TYPES = jobTypesInLanes("one_time", "full_content");
-
 /** The one-time job types the generic {@link claimJob} handles. */
 export const GENERIC_CLAIM_JOB_TYPES = jobTypesInLanes("one_time");
 
-/** How far out a finished one-time job parks itself (see {@link ONE_TIME_JOB_TYPES}). */
-export const ONE_TIME_JOB_PARK_MS = 365 * 24 * 60 * 60 * 1000;
+/**
+ * How long the worker waits on a handler before freeing its slot. Prevents a
+ * hung job (e.g., stuck DB query, pathological XML parsing) from blocking the
+ * worker loop forever. The handler itself isn't aborted and may keep running.
+ */
+export const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
- * Stale job threshold in milliseconds.
- * Jobs running longer than this are assumed to have crashed and can be reclaimed.
- *
- * A running job is not reclaimed merely because it is slow: its worker renews
- * the lease (`running_since`) via {@link renewJobLease} every
- * {@link JOB_LEASE_HEARTBEAT_MS}, so this threshold is only crossed when the
- * worker process has actually stopped heartbeating (crashed/killed). That keeps
- * stale-job recovery from running a still-executing, non-idempotent handler in a
- * second worker concurrently (issue #871).
+ * How long after its claim a job is assumed to have crashed and can be claimed
+ * again. Well above the worker's handler timeout, so only a crashed worker or a
+ * handler hung far past that timeout gets a second run — harmless, since every
+ * handler is idempotent (#2043).
  */
-const STALE_JOB_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-
-/**
- * How often a worker renews the lease on a job it is actively running.
- *
- * Must be comfortably smaller than {@link STALE_JOB_THRESHOLD_MS} so that a few
- * missed heartbeats (GC pause, slow DB write) don't cause a live job to be
- * reclaimed. At 1 minute vs. the 5-minute threshold, ~5 consecutive renewals
- * must fail before a job becomes reclaimable.
- */
-export const JOB_LEASE_HEARTBEAT_MS = 60 * 1000; // 1 minute
+export const STALE_JOB_THRESHOLD_MS = 20 * 60 * 1000;
 
 /**
  * Base delay before retrying a job whose handler threw: 1 minute.
@@ -278,7 +263,8 @@ export interface ClaimJobOptions {
  */
 export interface FinishJobOptions {
   success: boolean;
-  nextRunAt: Date;
+  /** Null for a finished one-time job, which is deleted (see `JobLane`). */
+  nextRunAt: Date | null;
   error?: string;
   /**
    * On a **successful** fetch_feed finish, consume the one-shot
@@ -298,14 +284,6 @@ export interface FinishJobOptions {
    * Omit for non-fetch_feed jobs.
    */
   consumeForceReprocess?: { claimedAt: string | null };
-  /**
-   * The `running_since` value this worker last held (its lease token). When
-   * provided, the finish is fenced on it: if another worker has since reclaimed
-   * the job (different `running_since`), the update applies to no rows and
-   * {@link finishJob} returns null instead of clobbering the new owner's state.
-   * Omit only for callers that aren't holding a lease (e.g. tests).
-   */
-  expectedRunningSince?: Date;
 }
 
 /**
@@ -339,7 +317,7 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
 
 /**
  * Claims the earliest-due job of `types` (any type if omitted); see
- * {@link leaseDueJob} for the lease. The worker passes
+ * {@link claimDueJob}. The worker passes
  * {@link GENERIC_CLAIM_JOB_TYPES}: feed, singleton and full-content jobs have
  * their own claims.
  *
@@ -355,21 +333,19 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
         )}]::text[])`
       : sql`TRUE`;
 
-  return leaseDueJob(() => typeFilter);
+  return claimDueJob(() => typeFilter);
 }
 
 /**
- * Leases the earliest-due job (alias `j`) matching `eligible`: due, not held
- * by a live worker (`running_since` unset or older than
- * {@link STALE_JOB_THRESHOLD_MS}), and not row-locked by a concurrent claim.
- * Stamps `running_since` (the lease token) and returns the job.
+ * Claims the earliest-due job (alias `j`) matching `eligible`: due, not claimed
+ * within {@link STALE_JOB_THRESHOLD_MS}, and not row-locked by a concurrent
+ * claim. Stamps `running_since` and returns the job.
  *
  * @param eligible - The caller's extra predicate on `j`, given the claim time
- *   and the stale cutoff
  * @param extraSet - Further `SET` assignments on the claimed row
  */
-async function leaseDueJob(
-  eligible: (claim: { now: Date; staleThreshold: Date }) => SQL,
+async function claimDueJob(
+  eligible: (claim: { now: Date }) => SQL,
   extraSet: SQL = sql``
 ): Promise<Job | null> {
   const now = new Date();
@@ -385,7 +361,7 @@ async function leaseDueJob(
       SELECT j.id FROM jobs j
       WHERE j.next_run_at <= ${now}
         AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
-        AND ${eligible({ now, staleThreshold })}
+        AND ${eligible({ now })}
       ORDER BY j.next_run_at ASC
       LIMIT 1
       FOR UPDATE OF j SKIP LOCKED
@@ -413,25 +389,23 @@ async function leaseDueJob(
  * - last_error = provided error
  * - consecutive_failures++
  *
- * When `expectedRunningSince` is supplied (the worker's lease token), the write
- * is fenced on it so a worker that lost its lease — it stalled past the stale
- * threshold and another worker reclaimed the job — can't clobber the new owner's
- * row or clear `running_since` out from under a job that's actively running
- * elsewhere. In that case no row matches and this returns null.
+ * With `nextRunAt: null` (a one-time job that's done), the row is deleted.
+ *
+ * If the job ran past {@link STALE_JOB_THRESHOLD_MS} and was claimed again, this
+ * late finish still applies; it writes a reasonable `next_run_at` either way,
+ * and is a no-op if the other run already deleted a one-time job.
  *
  * @param jobId The ID of the job to finish
  * @param options Finish options
- * @returns The updated job, or null if the lease was lost (only possible when
- *   `expectedRunningSince` is supplied)
+ * @returns The updated job, or null if it was or had been deleted
  */
 export async function finishJob(jobId: string, options: FinishJobOptions): Promise<Job | null> {
-  const { success, nextRunAt, error, consumeForceReprocess, expectedRunningSince } = options;
+  const { success, nextRunAt, error, consumeForceReprocess } = options;
+  if (nextRunAt === null) {
+    await db.delete(jobs).where(eq(jobs.id, jobId));
+    return null;
+  }
   const now = new Date();
-
-  // Fence on the lease token when the caller holds one (see FinishJobOptions).
-  const whereClause = expectedRunningSince
-    ? and(eq(jobs.id, jobId), eq(jobs.runningSince, expectedRunningSince))
-    : eq(jobs.id, jobId);
 
   // On a successful fetch_feed finish, optimistically consume the one-shot
   // forceReprocess request (see FinishJobOptions.consumeForceReprocess). The
@@ -468,58 +442,10 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
             consecutiveFailures: sql`${jobs.consecutiveFailures} + 1`,
           }),
     })
-    .where(whereClause)
+    .where(eq(jobs.id, jobId))
     .returning();
 
-  if (!job) {
-    // A fenced write that matches no row means the lease was lost to another
-    // worker — expected, not an error. An unfenced miss means the job is gone.
-    if (expectedRunningSince) {
-      return null;
-    }
-    throw new Error(`Job not found: ${jobId}`);
-  }
-
-  return job;
-}
-
-/**
- * Renews the lease on a running job by bumping `running_since` to now.
- *
- * Workers call this on a heartbeat (every {@link JOB_LEASE_HEARTBEAT_MS}) while a
- * handler is in flight. Because the lease keeps moving forward, stale-job
- * recovery (which reclaims jobs whose `running_since` is older than
- * {@link STALE_JOB_THRESHOLD_MS}) only fires once the worker stops heartbeating —
- * i.e. the worker process has died or frozen — never while the handler is still
- * actively heartbeating. This is what prevents a slow or
- * timed-out-but-still-running handler from being reclaimed and executed
- * concurrently in a second worker (issue #871).
- *
- * The `running_since` value the worker last wrote acts as a **fencing token**:
- * the update only applies if the row still holds `expectedRunningSince`. If a
- * worker stalls past the stale threshold and a second worker reclaims the job
- * (overwriting `running_since` with its own value), the first worker's delayed
- * heartbeat finds the token no longer matches and returns null — so it can't
- * steal the lease back from the new owner (no split-brain). A heartbeat racing
- * with {@link finishJob} (which clears `running_since`) likewise no-ops.
- *
- * @param jobId The ID of the running job
- * @param expectedRunningSince The `running_since` value this worker last wrote
- * @returns The new `running_since` on success, or null if the lease was lost
- */
-export async function renewJobLease(
-  jobId: string,
-  expectedRunningSince: Date
-): Promise<Date | null> {
-  const now = new Date();
-
-  const renewed = await db
-    .update(jobs)
-    .set({ runningSince: now, updatedAt: now })
-    .where(and(eq(jobs.id, jobId), eq(jobs.runningSince, expectedRunningSince)))
-    .returning({ runningSince: jobs.runningSince });
-
-  return renewed.length > 0 ? renewed[0].runningSince : null;
+  return job ?? null;
 }
 
 /**
@@ -731,17 +657,18 @@ export async function enqueueFullContentFetch(
  */
 export async function claimFullContentJob(): Promise<Job | null> {
   // A running job is still due (next_run_at is only advanced when it finishes),
-  // so bounding the count by next_run_at <= now keeps it on idx_jobs_polling
-  // instead of scanning the parked rows, and the inner LIMIT stops it at the cap.
-  return leaseDueJob(
-    ({ now, staleThreshold }) => sql`
+  // so bounding the count by next_run_at <= now keeps it on idx_jobs_polling,
+  // and the inner LIMIT stops it at the cap. The cap is on worker slots, which
+  // free at the job timeout, so an older claim no longer counts.
+  return claimDueJob(
+    ({ now }) => sql`
       j.type = 'fetch_full_content'
       AND (
         SELECT count(*) FROM (
           SELECT 1 FROM jobs r
           WHERE r.type = 'fetch_full_content'
             AND r.next_run_at <= ${now}
-            AND r.running_since >= ${staleThreshold}
+            AND r.running_since >= ${new Date(now.getTime() - DEFAULT_JOB_TIMEOUT_MS)}
           LIMIT ${MAX_RUNNING_FULL_CONTENT_JOBS}
         ) running
       ) < ${MAX_RUNNING_FULL_CONTENT_JOBS}
@@ -781,7 +708,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
     throw new Error(`${type} is not a singleton job type`);
   }
 
-  const tryClaim = () => leaseDueJob(() => sql`j.type = ${type}`);
+  const tryClaim = () => claimDueJob(() => sql`j.type = ${type}`);
 
   // First, try to claim an existing job
   const claimed = await tryClaim();
@@ -847,7 +774,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
  */
 export async function claimFeedJob(): Promise<Job | null> {
   // EXISTS rather than JOIN + GROUP BY, which FOR UPDATE can't lock through.
-  return leaseDueJob(
+  return claimDueJob(
     () => sql`
       j.type = 'fetch_feed'
       AND EXISTS (

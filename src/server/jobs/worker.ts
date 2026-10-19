@@ -17,13 +17,12 @@ import {
   claimSingletonJob,
   claimFeedJob,
   claimFullContentJob,
+  DEFAULT_JOB_TIMEOUT_MS,
   finishJob,
   getJobIntervalMs,
   getJobPayload,
   isFixedIntervalJobType,
   isJobType,
-  renewJobLease,
-  JOB_LEASE_HEARTBEAT_MS,
   GENERIC_CLAIM_JOB_TYPES,
   SINGLETON_JOB_TYPES,
   type FinishJobOptions,
@@ -39,7 +38,7 @@ import { handleMonitorFeedHealth } from "./handlers/monitor-feed-health";
 import { handleCleanup } from "./handlers/cleanup";
 import { handleReconcileCounters } from "./handlers/reconcile-counters";
 import { handleBackfillGettingStarted } from "./handlers/backfill-getting-started";
-import type { JobHandlerResult, JobMetadata } from "./handlers/types";
+import type { JobHandlerResult, JobMetadata, OneTimeJobHandlerResult } from "./handlers/types";
 import type { Job } from "../db/schema";
 import { logger as appLogger } from "@/lib/logger";
 import * as Sentry from "@sentry/nextjs";
@@ -48,13 +47,6 @@ import { getMaintenance } from "../services/site-status";
 import { createWorkerCore, type WorkerLogger, type Worker } from "./worker-core";
 
 export type { WorkerLogger, Worker } from "./worker-core";
-
-/**
- * Default job timeout: 5 minutes.
- * Prevents a hung job (e.g., stuck DB query, pathological XML parsing)
- * from blocking the worker loop forever.
- */
-const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * How often the claim loop checks singleton jobs *before* feed jobs. Feed jobs
@@ -66,28 +58,6 @@ const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
  * claim cycles regardless of backlog depth.
  */
 export const SINGLETON_PRIORITY_INTERVAL = 4;
-
-/**
- * Hard cap on how long a single handler's lease is heartbeated, as a multiple of
- * `jobTimeoutMs`. The worker-loop timeout frees the slot at `jobTimeoutMs` but
- * intentionally does not abort the handler (issue #871), and the heartbeat keeps
- * the lease alive so the still-running work isn't double-executed. A handler
- * stuck on a never-settling await would otherwise hold its lease until the
- * process restarts. Past this cap we stop heartbeating and alert, so the job
- * becomes reclaimable at the stale threshold — bounding the "wedged forever"
- * case while giving legitimately-slow handlers enormous margin over the timeout.
- */
-const LEASE_HARD_CAP_MULTIPLIER = 6;
-
-/**
- * Floor on the lease hard cap. The cap is only checked on heartbeat ticks, so a
- * cap below one heartbeat interval would trip on the FIRST tick — no renewal
- * would ever happen, the job would go reclaimable at the stale threshold while
- * its handler is legitimately running, and the anti-double-execution lease
- * (issue #871) would be silently disabled. A misconfigured tiny `jobTimeoutMs`
- * must not be able to do that, so the cap never drops below a few heartbeats.
- */
-const LEASE_HARD_CAP_MIN_MS = 3 * JOB_LEASE_HEARTBEAT_MS;
 
 export const DEFAULT_POLL_INTERVAL_MS = 5000;
 
@@ -102,7 +72,7 @@ export interface WorkerConfig {
   pollIntervalMs?: number;
   /** Maximum concurrent jobs to process (default: {@link DEFAULT_CONCURRENCY}) */
   concurrency?: number;
-  /** Maximum time a single job can run before being timed out (default: 5 minutes) */
+  /** Maximum time a single job can run before being timed out (default: {@link DEFAULT_JOB_TIMEOUT_MS}) */
   jobTimeoutMs?: number;
   /** Logger function for worker events */
   logger?: WorkerLogger;
@@ -113,137 +83,6 @@ export interface WorkerConfig {
    * leaving a live process with a dead loop.
    */
   onLoopExit?: (error: unknown) => void;
-}
-
-/**
- * Tracks a job lease that a background heartbeat keeps renewing.
- */
-export interface JobLeaseController {
-  /**
-   * Stops the heartbeat and waits for any in-flight renewal to settle, so that
-   * {@link JobLeaseController.currentToken} reflects the final committed lease.
-   */
-  stop: () => Promise<void>;
-  /**
-   * The lease token (the `running_since` value this worker last wrote), or null
-   * once the lease has been lost to another worker.
-   */
-  currentToken: () => Date | null;
-}
-
-/**
- * Starts a heartbeat that periodically renews a running job's lease.
- *
- * The heartbeat is tied to the handler's actual lifetime, deliberately *not* to
- * the worker-core timeout wrapper. If a handler exceeds `jobTimeoutMs` the worker
- * loop abandons the promise and frees the slot, but the underlying work keeps
- * running (we don't forcibly abort fetches/DB writes). Without a lease that work
- * would become reclaimable at the stale threshold and run a second time in
- * another worker (issue #871). By renewing `running_since` until the handler
- * truly settles, the job stays leased for as long as it is actively heartbeating,
- * and is only reclaimed once this worker process dies or freezes.
- *
- * The lease is fenced: each renewal expects the `running_since` it last wrote.
- * If the worker stalls past the stale threshold and another worker reclaims the
- * job, the next renewal finds the token changed, gives up the lease (so it can't
- * steal the job back — no split-brain), and stops the heartbeat.
- *
- * Renewal failures (transient DB hiccups) are logged but never throw and don't
- * drop the lease — at worst they cost one heartbeat of margin.
- *
- * Exported for integration tests (which inject a small `heartbeatMs` to exercise
- * the hard cap against a real database); production code calls it only from
- * `processJob` below.
- */
-export function startJobLeaseHeartbeat(
-  job: Job,
-  logger: WorkerLogger,
-  maxLeaseDurationMs: number,
-  // Injectable for tests only — production always uses the shared constant.
-  heartbeatMs: number = JOB_LEASE_HEARTBEAT_MS
-): JobLeaseController {
-  let token: Date | null = job.runningSince;
-  // The single in-flight renewal, awaited by stop() so the token is final.
-  let pending: Promise<void> = Promise.resolve();
-  let renewing = false;
-  const startTime = Date.now();
-  let hardCapped = false;
-
-  // A claimed job always has running_since set; guard defensively so we never
-  // renew with a null token.
-  if (token === null) {
-    return { stop: async () => {}, currentToken: () => null };
-  }
-
-  const interval = setInterval(() => {
-    // Hard cap: a handler that has heartbeated far past its timeout is wedged on
-    // a never-settling await. Stop renewing (and alert) so the job can be
-    // reclaimed by another worker at the stale threshold instead of being pinned
-    // until this process restarts. We leave `token` intact rather than nulling
-    // it: if the handler does eventually settle before another worker reclaims,
-    // finishJob is still fenced on this token and either commits legitimately or
-    // no-ops against the new owner.
-    if (!hardCapped && Date.now() - startTime > maxLeaseDurationMs) {
-      hardCapped = true;
-      clearInterval(interval);
-      logger.error("Job lease hard cap reached; handler appears wedged, stopping heartbeat", {
-        jobId: job.id,
-        type: job.type,
-        maxLeaseDurationMs,
-      });
-      Sentry.captureMessage("Job handler exceeded lease hard cap (wedged)", {
-        level: "error",
-        tags: { jobType: job.type },
-        extra: { jobId: job.id, maxLeaseDurationMs },
-      });
-      return;
-    }
-
-    // Skip if the previous renewal hasn't finished (pathologically slow DB) so
-    // `pending` always refers to exactly one renewal.
-    if (renewing || token === null) {
-      return;
-    }
-    renewing = true;
-    const expected = token;
-    pending = renewJobLease(job.id, expected)
-      .then((renewed) => {
-        if (token === null) {
-          return;
-        }
-        if (renewed) {
-          token = renewed;
-        } else {
-          token = null;
-          clearInterval(interval);
-          logger.warn("Job lease lost; another worker reclaimed it, stopping heartbeat", {
-            jobId: job.id,
-            type: job.type,
-          });
-        }
-      })
-      .catch((error) => {
-        logger.warn("Failed to renew job lease", {
-          jobId: job.id,
-          type: job.type,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      })
-      .finally(() => {
-        renewing = false;
-      });
-  }, heartbeatMs);
-
-  // Don't let the heartbeat timer keep the process alive during shutdown.
-  interval.unref();
-
-  return {
-    async stop() {
-      clearInterval(interval);
-      await pending;
-    },
-    currentToken: () => token,
-  };
 }
 
 /**
@@ -343,7 +182,12 @@ export function createWorkerClaimJob(deps: WorkerClaimDeps): () => Promise<Job |
 
 const UNKNOWN_JOB_TYPE_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 
-type WorkerJobResult = JobHandlerResult & Pick<FinishJobOptions, "consumeForceReprocess">;
+type WorkerJobResult = Omit<JobHandlerResult, "nextRunAt"> &
+  Pick<FinishJobOptions, "nextRunAt" | "consumeForceReprocess">;
+
+function finishOneTime(result: OneTimeJobHandlerResult): WorkerJobResult {
+  return { ...result, nextRunAt: null };
+}
 
 type SelfSchedulingJobType = Exclude<JobType, FixedIntervalJobType>;
 
@@ -363,8 +207,9 @@ const JOB_HANDLERS: {
     return { ...result, consumeForceReprocess: { claimedAt } };
   },
   backfill_getting_started: handleBackfillGettingStarted,
-  process_opml_import: handleProcessOpmlImport,
-  fetch_full_content: (payload, job) => handleFetchFullContent(payload, job.consecutiveFailures),
+  process_opml_import: async (payload) => finishOneTime(await handleProcessOpmlImport(payload)),
+  fetch_full_content: async (payload, job) =>
+    finishOneTime(await handleFetchFullContent(payload, job.consecutiveFailures)),
 };
 
 /** Handlers of the jobs the worker schedules (`intervalMs` in queue.ts). */
@@ -463,46 +308,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
   async function processJob(job: Job): Promise<void> {
     const startTime = Date.now();
 
-    // Keep the job's lease alive for as long as this handler actually runs so a
-    // slow (or timed-out-but-still-running) job can't be reclaimed and executed
-    // concurrently by another worker (issue #871), up to a hard cap that bounds a
-    // permanently-wedged handler.
-    const lease = startJobLeaseHeartbeat(
-      job,
-      logger,
-      Math.max(jobTimeoutMs * LEASE_HARD_CAP_MULTIPLIER, LEASE_HARD_CAP_MIN_MS)
-    );
-
-    // Finishes the job fenced on our lease token. Stops the heartbeat first so
-    // the token is final, then writes only if we still hold the lease — if a
-    // stalled worker was reclaimed, the write no-ops instead of clobbering the
-    // new owner. Returns whether we still owned the job.
-    const finishWithLease = async (opts: {
-      success: boolean;
-      nextRunAt: Date;
-      error?: string;
-      consumeForceReprocess?: { claimedAt: string | null };
-    }): Promise<boolean> => {
-      await lease.stop();
-      const expectedRunningSince = lease.currentToken();
-      if (expectedRunningSince === null) {
-        logger.warn("Skipping job finish: lease lost to another worker", {
-          jobId: job.id,
-          type: job.type,
-        });
-        return false;
-      }
-      const finished = await finishJob(job.id, { ...opts, expectedRunningSince });
-      if (finished === null) {
-        logger.warn("Skipping job finish: lease lost to another worker", {
-          jobId: job.id,
-          type: job.type,
-        });
-        return false;
-      }
-      return true;
-    };
-
     try {
       logger.info(`Processing job ${job.id}`, {
         type: job.type,
@@ -521,7 +326,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
 
       const duration = Date.now() - startTime;
 
-      await finishWithLease({
+      await finishJob(job.id, {
         success: result.success,
         nextRunAt: result.nextRunAt,
         error: result.error,
@@ -534,7 +339,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
         logger.info(`Job ${job.id} completed`, {
           type: job.type,
           durationMs: duration,
-          nextRunAt: result.nextRunAt.toISOString(),
+          nextRunAt: result.nextRunAt?.toISOString(),
           metadata: result.metadata,
         });
       } else {
@@ -544,7 +349,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
           type: job.type,
           durationMs: duration,
           error: result.error,
-          nextRunAt: result.nextRunAt.toISOString(),
+          nextRunAt: result.nextRunAt?.toISOString(),
           metadata: result.metadata,
         });
       }
@@ -559,7 +364,7 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       );
 
       try {
-        await finishWithLease({
+        await finishJob(job.id, {
           success: false,
           nextRunAt,
           error: errorMessage,
@@ -584,10 +389,6 @@ export function createWorker(config: WorkerConfig = {}): Worker {
       // Re-throw so the core worker counts it as a failure and reports it via
       // onJobError (the single Sentry reporter for job failures — see below).
       throw error;
-    } finally {
-      // Safety net: ensure the heartbeat is stopped even if finishWithLease was
-      // never reached (idempotent with the stop() inside it).
-      await lease.stop();
     }
   }
 

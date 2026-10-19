@@ -21,3 +21,6 @@ export interface JobHandlerResult {
   /** Any additional metadata about the job execution */
   metadata?: JobMetadata;
 }
+
+/** A one-time job's result. The worker deletes the job whatever the outcome. */
+export type OneTimeJobHandlerResult = Omit<JobHandlerResult, "nextRunAt">;

@@ -373,7 +373,7 @@ A release whose migration the previous release can't run against (`migrations/CL
 
 1. Run the release PR's read-only pre-flight queries, if it has any, and note the time and `SELECT pg_current_wal_lsn();` (a point-in-time-recovery target).
 2. Turn maintenance on in `/admin` → Status. Within a few seconds the app serves the maintenance page (except the demo, `/admin` and health checks), the worker stops claiming jobs and the Discord bot stops touching the database. Open SSE streams stay up but only re-check their credential (sessions and tokens), and jobs already running finish.
-3. Wait for those: `SELECT type, running_since FROM jobs WHERE running_since > now() - interval '5 minutes';` must return nothing. A slow handler keeps renewing its lease for up to 30 minutes; an older `running_since` is a crashed worker's, not a running job.
+3. Wait for those: `SELECT type, running_since FROM jobs WHERE running_since > now() - interval '20 minutes';` (`STALE_JOB_THRESHOLD_MS`) must return nothing. A handler that hits the worker's 5-minute timeout keeps running until it settles, so a recent `running_since` may still be writing; an older one is a crashed worker's.
 4. Merge. The auto-deploy runs the migration in `release_command`, and the new machines start in maintenance. (Or deploy the commit with the workflow's manual `workflow_dispatch` trigger before merging.)
 5. Run whatever the release's PR lists (backfills, checks), then turn maintenance off.
 
