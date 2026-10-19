@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ClientLink } from "@/components/ui/client-link";
 import { PlusIcon, UserIcon, ChevronDownIcon } from "@/components/ui/icons";
 import { Toaster, toast } from "sonner";
@@ -17,6 +17,7 @@ import { UserEmail } from "@/components/layout/UserEmail";
 import { RealtimeProvider } from "@/components/layout/RealtimeProvider";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import { LayoutShell } from "@/components/layout/LayoutShell";
+import { FeedbackDialog } from "@/components/layout/FeedbackDialog";
 import {
   ScrollContainerProvider,
   MainScrollContainer,
@@ -33,6 +34,10 @@ interface AppLayoutContentProps {
 
 export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // The menu item that opens the feedback dialog unmounts with the menu, so
+  // return focus to the menu button when the dialog closes.
+  const userMenuButtonRef = useRef<HTMLButtonElement>(null);
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
@@ -62,6 +67,13 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
         <KeyboardShortcutsProvider>
           <ScrollContainerProvider>
             <Toaster position="bottom-right" richColors closeButton />
+            <FeedbackDialog
+              isOpen={feedbackOpen}
+              onClose={() => {
+                setFeedbackOpen(false);
+                userMenuButtonRef.current?.focus();
+              }}
+            />
             <LayoutShell
               headerRight={
                 <div className="flex items-center gap-2">
@@ -80,6 +92,7 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                   {/* User menu */}
                   <div className="relative">
                     <button
+                      ref={userMenuButtonRef}
                       onClick={() => setUserMenuOpen(!userMenuOpen)}
                       className="ui-text-sm border-edge-strong bg-surface text-body hover:bg-surface-muted flex min-h-[40px] items-center gap-2 rounded-md border px-3 transition-colors active:bg-zinc-100 dark:active:bg-zinc-700"
                       aria-expanded={userMenuOpen}
@@ -118,6 +131,15 @@ export function AppLayoutContent({ initialCursors }: AppLayoutContentProps) {
                           >
                             Sessions
                           </ClientLink>
+                          <button
+                            onClick={() => {
+                              setUserMenuOpen(false);
+                              setFeedbackOpen(true);
+                            }}
+                            className="ui-text-sm text-body hover:bg-surface-muted flex min-h-[44px] w-full items-center px-4 text-left active:bg-zinc-200 dark:active:bg-zinc-700"
+                          >
+                            Send feedback
+                          </button>
                           <hr className="border-edge-strong my-1" />
                           <button
                             onClick={() => {
