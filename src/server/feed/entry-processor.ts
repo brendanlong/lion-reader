@@ -530,8 +530,8 @@ async function processEntryWithCache(
 
 /**
  * Stamps `last_seen_at` on the entries a poll saw, marking them the feed's
- * current entries for the subscribe populate. Only polls call this, and the job
- * queue runs one poll of a feed at a time.
+ * current entries for the subscribe populate. Only polls call this. Polls of a
+ * feed rarely overlap, and when they do they only over-stamp until the next poll.
  *
  * Deliberately does NOT touch `updated_at`: that column is the "content changed"
  * signal (set only by createEntry/updateEntryContent) and drives every

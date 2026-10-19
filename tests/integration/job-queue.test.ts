@@ -399,7 +399,7 @@ describe("Job Queue", () => {
       expect(finished!.lastError).toBeNull();
     });
 
-    it("deletes a one-time job once its handler returns, whatever the outcome", async () => {
+    it("deletes a one-time job once its handler returns, even on failure", async () => {
       const job = await createJob({
         type: "process_opml_import",
         payload: { importId: generateUuidv7() },
@@ -414,10 +414,10 @@ describe("Job Queue", () => {
       expect(await getJob(job.id)).toBeNull();
     });
 
-    it("throws error for non-existent job", async () => {
-      await expect(
-        finishJob(NON_EXISTENT_JOB_ID, { success: true, nextRunAt: new Date() })
-      ).rejects.toThrow(`Job not found: ${NON_EXISTENT_JOB_ID}`);
+    it("is a no-op for a job that's already gone", async () => {
+      expect(
+        await finishJob(NON_EXISTENT_JOB_ID, { success: true, nextRunAt: new Date() })
+      ).toBeNull();
     });
   });
 

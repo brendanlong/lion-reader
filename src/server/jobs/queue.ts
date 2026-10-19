@@ -195,6 +195,13 @@ export function isJobType(type: string): type is JobType {
 export const GENERIC_CLAIM_JOB_TYPES = jobTypesInLanes("one_time");
 
 /**
+ * How long the worker waits on a handler before freeing its slot. Prevents a
+ * hung job (e.g., stuck DB query, pathological XML parsing) from blocking the
+ * worker loop forever. The handler itself isn't aborted and may keep running.
+ */
+export const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
  * How long after its claim a job is assumed to have crashed and can be claimed
  * again. Well above the worker's handler timeout, so only a crashed worker or a
  * handler hung far past that timeout gets a second run — harmless, since every
@@ -310,7 +317,7 @@ export async function createJob<T extends JobType>(options: CreateJobOptions<T>)
 
 /**
  * Claims the earliest-due job of `types` (any type if omitted); see
- * {@link leaseDueJob} for the lease. The worker passes
+ * {@link claimDueJob}. The worker passes
  * {@link GENERIC_CLAIM_JOB_TYPES}: feed, singleton and full-content jobs have
  * their own claims.
  *
@@ -326,21 +333,19 @@ export async function claimJob(options: ClaimJobOptions = {}): Promise<Job | nul
         )}]::text[])`
       : sql`TRUE`;
 
-  return leaseDueJob(() => typeFilter);
+  return claimDueJob(() => typeFilter);
 }
 
 /**
- * Leases the earliest-due job (alias `j`) matching `eligible`: due, not held
- * by a live worker (`running_since` unset or older than
- * {@link STALE_JOB_THRESHOLD_MS}), and not row-locked by a concurrent claim.
- * Stamps `running_since` and returns the job.
+ * Claims the earliest-due job (alias `j`) matching `eligible`: due, not claimed
+ * within {@link STALE_JOB_THRESHOLD_MS}, and not row-locked by a concurrent
+ * claim. Stamps `running_since` and returns the job.
  *
  * @param eligible - The caller's extra predicate on `j`, given the claim time
- *   and the stale cutoff
  * @param extraSet - Further `SET` assignments on the claimed row
  */
-async function leaseDueJob(
-  eligible: (claim: { now: Date; staleThreshold: Date }) => SQL,
+async function claimDueJob(
+  eligible: (claim: { now: Date }) => SQL,
   extraSet: SQL = sql``
 ): Promise<Job | null> {
   const now = new Date();
@@ -356,7 +361,7 @@ async function leaseDueJob(
       SELECT j.id FROM jobs j
       WHERE j.next_run_at <= ${now}
         AND (j.running_since IS NULL OR j.running_since < ${staleThreshold})
-        AND ${eligible({ now, staleThreshold })}
+        AND ${eligible({ now })}
       ORDER BY j.next_run_at ASC
       LIMIT 1
       FOR UPDATE OF j SKIP LOCKED
@@ -387,11 +392,12 @@ async function leaseDueJob(
  * With `nextRunAt: null` (a one-time job that's done), the row is deleted.
  *
  * If the job ran past {@link STALE_JOB_THRESHOLD_MS} and was claimed again, this
- * late finish still applies; it writes a reasonable `next_run_at` either way.
+ * late finish still applies; it writes a reasonable `next_run_at` either way,
+ * and is a no-op if the other run already deleted a one-time job.
  *
  * @param jobId The ID of the job to finish
  * @param options Finish options
- * @returns The updated job, or null if it was deleted
+ * @returns The updated job, or null if it was or had been deleted
  */
 export async function finishJob(jobId: string, options: FinishJobOptions): Promise<Job | null> {
   const { success, nextRunAt, error, consumeForceReprocess } = options;
@@ -439,11 +445,7 @@ export async function finishJob(jobId: string, options: FinishJobOptions): Promi
     .where(eq(jobs.id, jobId))
     .returning();
 
-  if (!job) {
-    throw new Error(`Job not found: ${jobId}`);
-  }
-
-  return job;
+  return job ?? null;
 }
 
 /**
@@ -656,16 +658,17 @@ export async function enqueueFullContentFetch(
 export async function claimFullContentJob(): Promise<Job | null> {
   // A running job is still due (next_run_at is only advanced when it finishes),
   // so bounding the count by next_run_at <= now keeps it on idx_jobs_polling,
-  // and the inner LIMIT stops it at the cap.
-  return leaseDueJob(
-    ({ now, staleThreshold }) => sql`
+  // and the inner LIMIT stops it at the cap. The cap is on worker slots, which
+  // free at the job timeout, so an older claim no longer counts.
+  return claimDueJob(
+    ({ now }) => sql`
       j.type = 'fetch_full_content'
       AND (
         SELECT count(*) FROM (
           SELECT 1 FROM jobs r
           WHERE r.type = 'fetch_full_content'
             AND r.next_run_at <= ${now}
-            AND r.running_since >= ${staleThreshold}
+            AND r.running_since >= ${new Date(now.getTime() - DEFAULT_JOB_TIMEOUT_MS)}
           LIMIT ${MAX_RUNNING_FULL_CONTENT_JOBS}
         ) running
       ) < ${MAX_RUNNING_FULL_CONTENT_JOBS}
@@ -705,7 +708,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
     throw new Error(`${type} is not a singleton job type`);
   }
 
-  const tryClaim = () => leaseDueJob(() => sql`j.type = ${type}`);
+  const tryClaim = () => claimDueJob(() => sql`j.type = ${type}`);
 
   // First, try to claim an existing job
   const claimed = await tryClaim();
@@ -771,7 +774,7 @@ export async function claimSingletonJob(type: JobType): Promise<Job | null> {
  */
 export async function claimFeedJob(): Promise<Job | null> {
   // EXISTS rather than JOIN + GROUP BY, which FOR UPDATE can't lock through.
-  return leaseDueJob(
+  return claimDueJob(
     () => sql`
       j.type = 'fetch_feed'
       AND EXISTS (

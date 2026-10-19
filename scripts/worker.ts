@@ -84,8 +84,8 @@ runProcess({
 
     return {
       // Stops claiming and waits for in-flight jobs. A job still running when
-      // the drain times out is abandoned with its lease, and retried once the
-      // lease goes stale.
+      // the drain times out stays claimed, and is retried once the claim goes
+      // stale.
       stop: () => worker.stop(),
       checkHealth: () => {
         const { stale, staleDurationMs, stats } = checkLoopLiveness(worker);

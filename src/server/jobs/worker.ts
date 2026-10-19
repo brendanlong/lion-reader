@@ -17,6 +17,7 @@ import {
   claimSingletonJob,
   claimFeedJob,
   claimFullContentJob,
+  DEFAULT_JOB_TIMEOUT_MS,
   finishJob,
   getJobIntervalMs,
   getJobPayload,
@@ -48,14 +49,6 @@ import { createWorkerCore, type WorkerLogger, type Worker } from "./worker-core"
 export type { WorkerLogger, Worker } from "./worker-core";
 
 /**
- * Default job timeout: 5 minutes.
- * Prevents a hung job (e.g., stuck DB query, pathological XML parsing)
- * from blocking the worker loop forever. Must stay well below
- * `STALE_JOB_THRESHOLD_MS`, past which the job is claimed again.
- */
-const DEFAULT_JOB_TIMEOUT_MS = 5 * 60 * 1000;
-
-/**
  * How often the claim loop checks singleton jobs *before* feed jobs. Feed jobs
  * normally win the race for throughput, but a large `fetch_feed` backlog (after
  * downtime or an OPML import) would otherwise starve the singleton maintenance
@@ -79,7 +72,7 @@ export interface WorkerConfig {
   pollIntervalMs?: number;
   /** Maximum concurrent jobs to process (default: {@link DEFAULT_CONCURRENCY}) */
   concurrency?: number;
-  /** Maximum time a single job can run before being timed out (default: 5 minutes) */
+  /** Maximum time a single job can run before being timed out (default: {@link DEFAULT_JOB_TIMEOUT_MS}) */
   jobTimeoutMs?: number;
   /** Logger function for worker events */
   logger?: WorkerLogger;
