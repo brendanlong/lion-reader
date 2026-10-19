@@ -124,7 +124,10 @@ describe("Discord OAuth", () => {
     it("exchanges the code and returns user info and tokens", async () => {
       const { createDiscordAuthUrl } = await import("../../src/server/auth/oauth/discord");
 
-      const { state } = await createDiscordAuthUrl({ inviteToken: "invite-abc" });
+      const { state } = await createDiscordAuthUrl({
+        inviteToken: "invite-abc",
+        returnPath: "/extension/save",
+      });
 
       const result = await validateDiscordCallback("mock-auth-code", state);
 
@@ -136,7 +139,11 @@ describe("Discord OAuth", () => {
         refreshToken: "mock-discord-refresh-token",
       });
       expect(result.identity.expiresAt?.getTime()).toBeGreaterThan(Date.now());
-      expect(result.flow).toEqual({ kind: "sign-in", inviteToken: "invite-abc" });
+      expect(result.flow).toEqual({
+        kind: "sign-in",
+        inviteToken: "invite-abc",
+        returnPath: "/extension/save",
+      });
     });
 
     it("consumes the state (one-time use)", async () => {

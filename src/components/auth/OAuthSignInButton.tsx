@@ -15,7 +15,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { STATIC_CONFIG_QUERY_OPTIONS } from "@/lib/trpc/query-client";
 import { SpinnerIcon } from "@/components/ui/icons";
-import { type OAuthProvider, providerNames, ProviderIcon, useAuthUrlQuery } from "./oauth-helpers";
+import { type OAuthProvider, providerNames, ProviderIcon, useFetchAuthUrl } from "./oauth-helpers";
 
 interface OAuthSignInButtonProps {
   provider: OAuthProvider;
@@ -44,7 +44,7 @@ export function OAuthSignInButton({
     STATIC_CONFIG_QUERY_OPTIONS
   );
 
-  const authUrlQuery = useAuthUrlQuery(provider, inviteToken);
+  const fetchAuthUrl = useFetchAuthUrl(provider);
 
   const isEnabled = providersData?.providers.includes(provider) ?? false;
 
@@ -61,12 +61,11 @@ export function OAuthSignInButton({
 
     setIsLoading(true);
     try {
-      const result = await authUrlQuery.refetch();
-      if (result.error) {
-        fail(result.error);
-      } else if (result.data) {
-        window.location.href = result.data.url;
-      }
+      // Like the password form, return to the page's `?redirect=` (read at click
+      // time so the page can stay statically prerendered).
+      const redirect = new URLSearchParams(window.location.search).get("redirect") ?? undefined;
+      const { url } = await fetchAuthUrl({ inviteToken, redirect });
+      window.location.href = url;
     } catch (error) {
       fail(error);
     }

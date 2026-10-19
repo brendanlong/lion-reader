@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { appUrl } from "@/server/config/env";
 import { isSessionActive, startSession } from "@/server/auth/session";
 import { db } from "@/server/db";
@@ -131,7 +132,7 @@ export async function handleOAuthCallback(
       case "reauthorize":
         return await completeReauthorize(redirect, appUrl, flow, provider, identity);
       case "sign-in":
-        return await completeSignIn(redirect, request, flow.inviteToken, provider, identity);
+        return await completeSignIn(redirect, request, flow, provider, identity);
     }
   } catch (error) {
     if (error instanceof OAuthStateError) {
@@ -220,19 +221,23 @@ async function completeReauthorize(
 async function completeSignIn(
   redirect: Redirect,
   request: NextRequest,
-  inviteToken: string | undefined,
+  flow: Extract<OAuthFlow, { kind: "sign-in" }>,
   provider: OAuthProviderName,
   identity: ProviderIdentity
 ): Promise<NextResponse> {
-  const { userId, isNewUser } = await processOAuthCallback({
+  const { userId, signupConfirmed } = await processOAuthCallback({
     ...identity,
     provider,
-    inviteToken,
+    inviteToken: flow.inviteToken,
   });
 
-  // New users need to complete signup confirmation first. The completion page
-  // broadcasts the success for PWAs.
-  const redirectTo = isNewUser ? "/complete-signup" : "/all";
+  // Signup confirmation comes first, then continues to the return path. The
+  // completion page broadcasts the success for PWAs. `returnPath` was sanitized when
+  // the flow started; this is defense in depth.
+  const returnPath = safeRedirectPath(flow.returnPath);
+  const redirectTo = signupConfirmed
+    ? returnPath
+    : `/complete-signup?redirect=${encodeURIComponent(returnPath)}`;
   const response = redirect(`/auth/oauth/complete?redirect=${encodeURIComponent(redirectTo)}`);
   // Set after `redirect` cleared the state cookie through `response.cookies`,
   // whose every `set` rewrites the Set-Cookie headers from its own list.

@@ -28,11 +28,10 @@ export function isSignupConfirmed(
 
 /**
  * Where a *validated* session belongs when it lands on a public/entry surface
- * (`/`, `/login`, `/register`, the OAuth transition pages): the app for a
- * confirmed user, the confirmation flow otherwise. Single source of truth for
- * the proxy redirect (`maybeSessionRedirect` in `src/proxy.ts`) and the
- * server-side fallbacks (`(spa)/page.tsx`, `(spa)/auth/layout.tsx`) so they
- * can't drift.
+ * (`/`, `/login`, `/register`): the app for a confirmed user, the confirmation
+ * flow otherwise. Single source of truth for the proxy redirect
+ * (`maybeSessionRedirect` in `src/proxy.ts`) and the server-side fallback
+ * (`(spa)/page.tsx`) so they can't drift.
  */
 export function sessionHomePath(
   user: Pick<User, "tosAgreedAt" | "privacyPolicyAgreedAt" | "notEuAgreedAt">
