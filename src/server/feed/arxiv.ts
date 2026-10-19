@@ -89,6 +89,30 @@ function normalizeArxivText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+const TEX_FORMATTING_COMMAND =
+  /\\(?:emph|textit|textbf|texttt|textsc|textsf|underline)\{([^{}]*)\}/g;
+
+/** Deepest nesting we unwrap; each level costs a pass over the text. */
+const MAX_TEX_NESTING = 3;
+
+/**
+ * Unwraps TeX text-formatting commands (`\emph{deception}` → `deception`), which
+ * authors leave in titles and abstracts. Math (`$O(n^2)$`, `$\textbf{x}$`) is
+ * left alone: it reads fine as TeX, and there formatting carries meaning.
+ */
+function stripTexFormatting(text: string): string {
+  return text
+    .split(/(\$[^$]*\$)/)
+    .map((part, i) => {
+      if (i % 2 === 1) return part; // a math span
+      for (let pass = 0; pass < MAX_TEX_NESTING; pass++) {
+        part = part.replace(TEX_FORMATTING_COMMAND, "$1");
+      }
+      return part;
+    })
+    .join("");
+}
+
 /**
  * Convert a Highwire `citation_author` value to normal reading order.
  *
@@ -140,10 +164,10 @@ export function parseArxivAbsMetadata(html: string): ArxivPaperMetadata {
 
         switch (attribs.name?.toLowerCase()) {
           case "citation_title":
-            title ??= normalizeArxivText(content) || null;
+            title ??= stripTexFormatting(normalizeArxivText(content)) || null;
             break;
           case "citation_abstract":
-            summary ??= normalizeArxivText(content) || null;
+            summary ??= stripTexFormatting(normalizeArxivText(content)) || null;
             break;
           case "citation_author": {
             const author = normalizeAuthorName(content);

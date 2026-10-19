@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SUMMARY_MAX_LENGTH } from "@/server/html/strip-html";
+import { SUMMARY_MAX_LENGTH } from "@/server/html/summary";
 import { computeSavedArticleExcerpt } from "@/server/services/saved-excerpt";
 
 describe("computeSavedArticleExcerpt", () => {
@@ -8,7 +8,7 @@ describe("computeSavedArticleExcerpt", () => {
     // the real abstract from the API; the abstract must win.
     const excerpt = computeSavedArticleExcerpt({
       preCleanedContent: null,
-      cleaned: { excerpt: "Readability excerpt", textContent: "Scraped body text" },
+      cleaned: { excerpt: "Readability excerpt", content: "Scraped body text" },
       pluginContent: {
         html: "<nav>Table of contents</nav><p>Body</p>",
         excerpt: "Mitigating reward hacking remains a key challenge in aligned models.",
@@ -22,7 +22,7 @@ describe("computeSavedArticleExcerpt", () => {
     const excerpt = computeSavedArticleExcerpt({
       providedExcerpt: "Caller-supplied abstract wins.",
       preCleanedContent: { summary: "Frontmatter" },
-      cleaned: { excerpt: "Readability excerpt", textContent: "Body text" },
+      cleaned: { excerpt: "Readability excerpt", content: "Body text" },
       pluginContent: { html: "<p>Body</p>", excerpt: "arXiv abstract" },
       html: "<p>Raw</p>",
     });
@@ -71,7 +71,7 @@ describe("computeSavedArticleExcerpt", () => {
   it("prefers the pre-cleaned source summary (frontmatter / docx description) above everything", () => {
     const excerpt = computeSavedArticleExcerpt({
       preCleanedContent: { summary: "Frontmatter wins" },
-      cleaned: { excerpt: "Readability excerpt", textContent: "Body text" },
+      cleaned: { excerpt: "Readability excerpt", content: "Body text" },
       pluginContent: { html: "<p>Plugin</p>" },
       html: "<p>Raw</p>",
     });
@@ -106,7 +106,7 @@ describe("computeSavedArticleExcerpt", () => {
       preCleanedContent: null,
       cleaned: {
         excerpt: "",
-        textContent:
+        content:
           "Bowen Baker, Joost Huizinga, Leo Gao. Mitigating reward hacking remains a key challenge.",
       },
       pluginContent: { html: tocHtml },
@@ -124,7 +124,7 @@ describe("computeSavedArticleExcerpt", () => {
     expect(
       computeSavedArticleExcerpt({
         preCleanedContent: null,
-        cleaned: { excerpt, textContent: "Body text here." },
+        cleaned: { excerpt, content: "Body text here." },
         pluginContent: null,
         html: "<p>Raw</p>",
       })
@@ -134,7 +134,7 @@ describe("computeSavedArticleExcerpt", () => {
     expect(
       computeSavedArticleExcerpt({
         preCleanedContent: null,
-        cleaned: { excerpt: "", textContent: "The article begins here." },
+        cleaned: { excerpt: "", content: "The article begins here." },
         pluginContent: null,
         html: "<p>Raw</p>",
       })
@@ -145,7 +145,7 @@ describe("computeSavedArticleExcerpt", () => {
     expect(
       computeSavedArticleExcerpt({
         preCleanedContent: null,
-        cleaned: { excerpt: "", textContent: "" },
+        cleaned: { excerpt: "", content: "" },
         pluginContent: null,
         html: "<p>Raw</p>",
       })
@@ -170,7 +170,7 @@ describe("computeSavedArticleExcerpt", () => {
       pluginContent: null,
       html: "<h1>Title</h1><p>Markdown body.</p>",
     });
-    expect(excerpt).toBe("Title Markdown body.");
+    expect(excerpt).toBe("Markdown body.");
   });
 
   it("returns null when nothing usable is available (Readability failed on a plain page)", () => {

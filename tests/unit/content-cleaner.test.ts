@@ -247,20 +247,33 @@ describe("cleanContent", () => {
       expect(result!.title).toBeTruthy();
     });
 
-    it("should generate excerpt from content", () => {
+    it("returns the page's meta description as the excerpt", () => {
+      const html = `
+        <html><head><meta name="description" content="A per-article description of the topic."></head>
+        <body><article>
+          <h1>Long Article</h1>
+          <p>This is the opening paragraph that introduces the topic. It should not be the excerpt.</p>
+          <p>The second paragraph continues with more detail about the subject matter.</p>
+          <p>A third paragraph adds depth to the article content.</p>
+        </article></body></html>
+      `;
+
+      expect(cleanContent(html)!.excerpt).toBe("A per-article description of the topic.");
+    });
+
+    it("leaves the excerpt empty without a description, rather than the first paragraph's raw text", () => {
+      // summarizeCleanedContent summarizes the article HTML instead, applying the
+      // summary rules (footnote markers, superscripts) that raw text would bypass.
       const html = `
         <article>
           <h1>Long Article</h1>
-          <p>This is the opening paragraph that introduces the topic. It should appear in the excerpt.</p>
+          <p>This is the opening paragraph that introduces the topic.<sup><a href="#fn1">1</a></sup></p>
           <p>The second paragraph continues with more detail about the subject matter.</p>
           <p>A third paragraph adds depth to the article content.</p>
         </article>
       `;
 
-      const result = cleanContent(html);
-
-      expect(result).not.toBeNull();
-      expect(result!.excerpt.length).toBeGreaterThan(0);
+      expect(cleanContent(html)!.excerpt).toBe("");
     });
   });
 

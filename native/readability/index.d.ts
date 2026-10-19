@@ -15,7 +15,7 @@ export interface ExtractedArticle {
   content: string;
   /** Plain text of the extracted article. */
   textContent: string;
-  /** Article excerpt/description, when one was found (key absent otherwise). */
+  /** The page's own description (meta tags or JSON-LD), when it has one (key absent otherwise). */
   excerpt?: string;
   /** Extracted title ("" when none was found, matching readability.js). */
   title: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripHtml, summarizeCleanedContent, SUMMARY_MAX_LENGTH } from "@/server/html/strip-html";
+import { stripHtml } from "@/server/html/strip-html";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 
 describe("stripHtml", () => {
@@ -215,6 +215,10 @@ describe("stripHtml", () => {
       expect(result.length).toBeLessThanOrEqual(30);
     });
 
+    it("adds an ellipsis when the text before a cut is exactly the limit", () => {
+      expect(stripHtml("<p>abcde</p><p>more</p>", 5)).toBe("ab...");
+    });
+
     it("truncates at exact limit when no space found", () => {
       const html = "<p>Supercalifragilisticexpialidocious</p>";
       const result = stripHtml(html, 20);
@@ -233,39 +237,5 @@ describe("stripHtml", () => {
       const html = "<a>X</a><p>Y</p>";
       expect(stripHtml(html, 300)).toBe("X Y");
     });
-  });
-});
-
-describe("summarizeCleanedContent", () => {
-  it("uses the excerpt when it is substantial (>= 50 chars)", () => {
-    const excerpt = "This is a meaningful excerpt that summarizes the article content well.";
-    expect(summarizeCleanedContent({ excerpt, textContent: "Full body text here." })).toBe(excerpt);
-  });
-
-  it("falls back to body text when the excerpt is too short", () => {
-    const summary = summarizeCleanedContent({
-      excerpt: "Too short",
-      textContent: "This is the full text content that should be used for the summary.",
-    });
-    expect(summary).toContain("full text content");
-  });
-
-  it("falls back to body text when there is no excerpt", () => {
-    expect(summarizeCleanedContent({ excerpt: "", textContent: "The article begins here." })).toBe(
-      "The article begins here."
-    );
-  });
-
-  it("truncates long content at a word boundary with an ellipsis", () => {
-    // Well past the limit, with spaces to break on.
-    const longText = "word ".repeat(SUMMARY_MAX_LENGTH).trim();
-    const summary = summarizeCleanedContent({ excerpt: "", textContent: longText });
-    expect(summary.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
-    expect(summary.endsWith("...")).toBe(true);
-    expect(summary.includes("wordword")).toBe(false); // broke on a space
-  });
-
-  it("returns an empty string for empty content", () => {
-    expect(summarizeCleanedContent({ excerpt: "", textContent: "" })).toBe("");
   });
 });

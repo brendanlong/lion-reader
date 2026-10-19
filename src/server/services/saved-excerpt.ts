@@ -1,9 +1,9 @@
+import { truncateText } from "@/server/html/strip-html";
 import {
   generateSummary,
   SUMMARY_MAX_LENGTH,
   summarizeCleanedContent,
-  truncateText,
-} from "@/server/html/strip-html";
+} from "@/server/html/summary";
 
 /**
  * Choose the plain-text excerpt for a saved article.
@@ -40,7 +40,7 @@ export function computeSavedArticleExcerpt(params: {
   /** Explicit caller-provided excerpt — highest precedence. */
   providedExcerpt?: string | null;
   preCleanedContent: { summary: string | null } | null;
-  cleaned: { excerpt: string; textContent: string } | null;
+  cleaned: { excerpt: string; content: string } | null;
   pluginContent: { html: string; excerpt?: string | null } | null;
   html: string;
 }): string | null {

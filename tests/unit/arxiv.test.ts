@@ -125,6 +125,16 @@ describe("parseArxivAbsMetadata", () => {
     );
   });
 
+  it("unwraps TeX formatting commands but leaves math alone", () => {
+    const html = `<head>
+      <meta name="citation_title" content="\\textbf{\\emph{Bold}} Claims" />
+      <meta name="citation_abstract" content="A theory of \\emph{deception} for $\\textbf{x}$." />
+    </head>`;
+    const result = parseArxivAbsMetadata(html);
+    expect(result.title).toBe("Bold Claims");
+    expect(result.summary).toBe("A theory of deception for $\\textbf{x}$.");
+  });
+
   it("rewrites surname-first author names into reading order, preserving order", () => {
     const result = parseArxivAbsMetadata(ARXIV_ABS_HTML);
     expect(result.authors).toEqual(["Bowen Baker", "Joost Huizinga", "Leo Gao"]);

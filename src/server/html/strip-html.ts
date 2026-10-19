@@ -7,7 +7,7 @@ import { Parser } from "htmlparser2";
 /**
  * Block-level elements that should have whitespace after them.
  */
-const BLOCK_TAGS = new Set([
+export const BLOCK_TAGS: ReadonlySet<string> = new Set([
   "p",
   "div",
   "br",
@@ -64,7 +64,7 @@ const BLOCK_TAGS = new Set([
  *
  * `head` is ours alone (the sanitizer never sees a whole document).
  */
-const SKIP_TAGS = new Set([
+export const SKIP_TAGS: ReadonlySet<string> = new Set([
   "script",
   "style",
   "textarea",
@@ -133,8 +133,8 @@ export function stripHtml(html: string, maxLength?: number): string {
           }
         }
 
-        // Exit early if we have enough text
-        if (maxLength && result.length >= maxLength) {
+        // Exit early once there's more than fits, so the cut gets its "..."
+        if (maxLength && result.length > maxLength) {
           parser.pause();
         }
       },
@@ -155,39 +155,24 @@ export function stripHtml(html: string, maxLength?: number): string {
   parser.write(html);
   parser.end();
 
-  const trimmed = result.trim();
+  return truncateAtWord(result.trim(), maxLength);
+}
 
-  // If no maxLength or within limit, return as-is
-  if (!maxLength || trimmed.length <= maxLength) {
-    return trimmed;
+/** Truncates at a word boundary, dropping a partial word, with "..." inside `maxLength`. */
+export function truncateAtWord(text: string, maxLength?: number): string {
+  if (!maxLength || text.length <= maxLength) {
+    return text;
   }
 
-  // Truncate at word boundary: find last space before maxLength, drop partial word
   const truncateAt = maxLength - 3; // Reserve space for "..."
-  const lastSpace = trimmed.lastIndexOf(" ", truncateAt);
+  const lastSpace = text.lastIndexOf(" ", truncateAt);
 
   if (lastSpace > 0) {
-    return trimmed.slice(0, lastSpace) + "...";
+    return text.slice(0, lastSpace) + "...";
   }
 
   // No space found - single long word, just hard truncate
-  return trimmed.slice(0, truncateAt) + "...";
-}
-
-/** Longest summary (entry preview text) we generate, in characters. */
-export const SUMMARY_MAX_LENGTH = 300;
-
-/**
- * Generates a summary from HTML content.
- *
- * Extracts text with proper spacing between block elements and truncates
- * to {@link SUMMARY_MAX_LENGTH} characters at a word boundary.
- *
- * @param html - The HTML content to summarize
- * @returns Summary string (at most SUMMARY_MAX_LENGTH chars)
- */
-export function generateSummary(html: string): string {
-  return stripHtml(html, SUMMARY_MAX_LENGTH);
+  return text.slice(0, truncateAt) + "...";
 }
 
 /**
@@ -210,32 +195,4 @@ export function truncateText(text: string, maxLength: number): string {
   }
 
   return truncated.trimEnd() + "...";
-}
-
-/**
- * Builds a plain-text summary from already-cleaned (Readability) content.
- *
- * This is the single source of truth for turning cleaned content into an
- * excerpt, shared by every surface that runs Readability then needs a preview
- * (saved articles, uploaded HTML/docx). It prefers the extracted
- * description/excerpt when it's substantial — that's usually a hand-written
- * `og:description` / meta description and reads better than a truncated first
- * paragraph — and only falls back to the article body text when the excerpt is
- * missing or too short to be a real description. Both are truncated to
- * `maxLength` at a word boundary.
- *
- * The ≥50-char guard keeps a junk/empty meta tag from winning; a page that sets
- * a site-wide (rather than per-article) description is a site problem, not a bug
- * to work around here — see the follow-up on smarter summary heuristics.
- *
- * Pure (no DB/network/native), so it can be unit-tested directly.
- */
-export function summarizeCleanedContent(
-  cleaned: { excerpt: string; textContent: string },
-  maxLength = SUMMARY_MAX_LENGTH
-): string {
-  if (cleaned.excerpt && cleaned.excerpt.length >= 50) {
-    return truncateText(cleaned.excerpt, maxLength);
-  }
-  return truncateText(cleaned.textContent, maxLength);
 }
