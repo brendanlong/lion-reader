@@ -40,10 +40,8 @@ export interface AttachOAuthAccountParams extends OAuthTokens {
  * Re-attaching the *same* provider account is an update rather than an error, so
  * Google's incremental authorization (granting the Docs scope later) refreshes
  * the stored tokens and scopes in place. This holds for **every** provider, not
- * just Google: Apple and Discord used to reject any re-link, only because they
- * checked for an existing row before the callback gave them a
- * `providerAccountId` to compare against (#1467). Attaching a *different* account
- * for a provider the user already linked is refused.
+ * just Google (#1467). Attaching a *different* account for a provider the user
+ * already linked is refused.
  *
  * @returns `"updated"` when an existing link was refreshed, `"linked"` for a new one
  * @throws `oauthAlreadyLinked` when a different account of this provider is linked
@@ -210,8 +208,7 @@ export async function unlinkOAuthAccount(
     const account = await tx
       .select({ id: oauthAccounts.id })
       .from(oauthAccounts)
-      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)))
-      .limit(1);
+      .where(and(eq(oauthAccounts.userId, userId), eq(oauthAccounts.provider, provider)));
 
     if (account.length === 0) {
       return false;
