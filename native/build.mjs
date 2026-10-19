@@ -1,6 +1,7 @@
 /**
  * `node native/build.mjs <crate> [--debug]` builds native/<crate> and copies
- * the artifact to native/<crate>/<crate>.node.
+ * the artifact to native/<crate>/<crate>.node — or, for a crate that is an
+ * executable (it has a src/main.rs), to native/<crate>/lion-reader-<crate>.
  *
  * We deliberately don't use @napi-rs/cli: a .node file is just the cdylib
  * renamed, and the TypeScript definitions are hand-maintained in index.d.ts.
@@ -21,6 +22,18 @@ const debug = process.argv.includes("--debug");
 const profile = debug ? "debug" : "release";
 
 execSync(`cargo build${debug ? "" : " --release"}`, { cwd: dir, stdio: "inherit" });
+
+if (existsSync(join(dir, "src", "main.rs"))) {
+  const name = `lion-reader-${crate}${process.platform === "win32" ? ".exe" : ""}`;
+  const built = join(dir, "target", profile, name);
+  if (!existsSync(built)) {
+    throw new Error(`cargo build did not produce ${built}`);
+  }
+  // copyFileSync keeps the executable bit.
+  copyFileSync(built, join(dir, name));
+  console.log(`Built native ${crate} (${profile}) -> ${name}`);
+  process.exit(0);
+}
 
 const lib = `lion_reader_${crate.replaceAll("-", "_")}`;
 const names = { linux: `lib${lib}.so`, darwin: `lib${lib}.dylib`, win32: `${lib}.dll` };

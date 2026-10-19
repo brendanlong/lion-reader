@@ -42,6 +42,7 @@ build/Release
 native/*/target/
 native/*/*.node
 native/.built-tree
+native/pdf/lion-reader-pdf
 
 # Dependency directories
 node_modules/
