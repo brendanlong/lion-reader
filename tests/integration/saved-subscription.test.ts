@@ -221,6 +221,23 @@ describe("the saved subscription (#1846)", () => {
     ).toEqual([webId]);
   });
 
+  it("counts All, Starred, Saved and Uncategorized together (entries.countLists)", async () => {
+    const { userId } = await setup();
+    await createTestEntry(userId, { type: "saved", userIds: [userId] });
+    await createTestEntry(userId, { type: "saved", userIds: [userId] });
+    const caller = createCaller(await createAuthContext(userId));
+    const { items } = await caller.entries.list({ type: "saved" });
+    for (const { id } of items.slice(0, 2)) await caller.entries.setStarred({ id, starred: true });
+
+    expect(await caller.entries.countLists()).toEqual({
+      all: 4,
+      starred: 2,
+      saved: 3,
+      uncategorized: 1,
+      asOf: expect.any(String),
+    });
+  });
+
   it("counts saved articles once, in Saved and in the saved subscription", async () => {
     const { userId, subscriptionId } = await setup();
     await createTestEntry(userId, { type: "saved", userIds: [userId] });

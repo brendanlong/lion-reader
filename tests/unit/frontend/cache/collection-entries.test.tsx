@@ -352,7 +352,7 @@ describe("collection_entries_changed", () => {
 
     changeMembership(["a"], true);
     expect(storedEntry(queryClient, "a")?.subscriptionIds).toEqual(["sub-1", COLLECTION]);
-    expect(storedCount(queryClient, {})).toEqual({ unread: 3 });
+    expect(storedCount(queryClient, { all: true })).toEqual({ unread: 3 });
 
     // Re-delivery (mutation response, then the SSE event) is a no-op.
     changeMembership(["a"], true);

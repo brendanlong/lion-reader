@@ -32,19 +32,12 @@ import {
 import { createSyncedCollection } from "./synced-collection";
 import {
   ingestFetchedSubscriptions,
-  writeSubscriptionCount,
   type FetchedSubscriptionRow,
   type SubscriptionPages,
   type SubscriptionRow,
   type SubscriptionStore,
 } from "./subscriptions";
-import {
-  countedListOf,
-  removeTagCount,
-  writeCounts,
-  type CountRow,
-  type CountStore,
-} from "./counts";
+import { removeTagCount, writeCounts, type CountRow, type CountStore } from "./counts";
 import { ingestFetchedTags, type TagRow, type TagStore } from "./tags";
 import { createVersionedStore, markFetchStarted } from "./versioned-store";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
@@ -59,6 +52,7 @@ export interface LocalDb {
 }
 
 type TagsListData = NonNullable<ReturnType<TRPCClientUtils["tags"]["list"]["getData"]>>;
+type ListCountsData = NonNullable<ReturnType<TRPCClientUtils["entries"]["countLists"]["getData"]>>;
 
 /**
  * The user's saved subscription (#1846), whose members are the Saved list.
@@ -165,8 +159,8 @@ function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append"): voi
     case "subscriptions.get":
       ingestSubscriptionRows(db, query, [data as FetchedSubscriptionRow]);
       break;
-    case "entries.count":
-      ingestCount(db, inputOf(query), data as { unread: number; asOf: string });
+    case "entries.countLists":
+      ingestListCounts(db, data as ListCountsData);
       break;
     case "tags.list":
       ingestTags(db, query.queryHash, data as TagsListData);
@@ -174,17 +168,17 @@ function ingestQuery(db: LocalDb, query: Query, mode: "replace" | "append"): voi
   }
 }
 
-function ingestCount(
-  db: LocalDb,
-  input: Record<string, unknown>,
-  { unread, asOf }: { unread: number; asOf: string }
-): void {
-  const list = countedListOf(input);
-  if (list) {
-    writeCounts(db.counts, [{ list, unread }], asOf);
-  } else if (typeof input.subscriptionId === "string") {
-    writeSubscriptionCount(db.subscriptions, input.subscriptionId, unread, asOf);
-  }
+function ingestListCounts(db: LocalDb, { asOf, ...counts }: ListCountsData): void {
+  writeCounts(
+    db.counts,
+    [
+      { list: { all: true }, unread: counts.all },
+      { list: { starred: true }, unread: counts.starred },
+      { list: { saved: true }, unread: counts.saved },
+      { list: { uncategorized: true }, unread: counts.uncategorized },
+    ],
+    asOf
+  );
 }
 
 function ingestTags(db: LocalDb, queryHash: string, data: TagsListData): void {

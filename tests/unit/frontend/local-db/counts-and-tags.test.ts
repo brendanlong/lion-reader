@@ -1,26 +1,22 @@
 /**
- * The local store's unread counts and tags: how `entries.count` and
+ * The local store's unread counts and tags: how `entries.countLists` and
  * `tags.list` results combine with live writes.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { writeLiveSubscriptions } from "@/lib/local-db/subscriptions";
 import { applyTagChange } from "@/lib/cache/operations";
-import {
-  createSubscriptionRow,
-  storedCount,
-  storedTagsList,
-} from "../../../utils/cache-test-helpers";
+import { storedCount, storedTagsList } from "../../../utils/cache-test-helpers";
 
 const EARLIER = "2026-01-01T00:00:00.000001Z";
 const LATER = "2026-01-01T00:00:00.000002Z";
 
-const countKey = (input: Record<string, unknown>) => [
-  ["entries", "count"],
-  { input, type: "query" },
-];
+const COUNT_LISTS_KEY = [["entries", "countLists"], { type: "query" }];
+
+function listCounts(all: number, asOf: string) {
+  return { all, starred: 2, saved: 1, uncategorized: 3, asOf };
+}
 const TAGS_KEY = [["tags", "list"], { type: "query" }];
 
 function tagsList(tags: Array<{ id: string; name: string; unreadCount: number }>, asOf: string) {
@@ -59,26 +55,22 @@ describe("unread counts", () => {
     getLocalDb(queryClient);
   });
 
-  it("stores an entries.count result under its list", () => {
-    queryClient.setQueryData(countKey({ tagId: "tag-1" }), { unread: 4, asOf: EARLIER });
+  it("stores each count of an entries.countLists result under its list", () => {
+    queryClient.setQueryData(COUNT_LISTS_KEY, listCounts(4, EARLIER));
 
-    expect(storedCount(queryClient, { tagId: "tag-1" })).toEqual({ unread: 4 });
+    expect([
+      storedCount(queryClient, { all: true }),
+      storedCount(queryClient, { starred: true }),
+      storedCount(queryClient, { saved: true }),
+      storedCount(queryClient, { uncategorized: true }),
+    ]).toEqual([{ unread: 4 }, { unread: 2 }, { unread: 1 }, { unread: 3 }]);
   });
 
   it("keeps a newer count over a fetched one read before it", () => {
-    queryClient.setQueryData(countKey({}), { unread: 4, asOf: LATER });
-    queryClient.setQueryData(countKey({}), { unread: 9, asOf: EARLIER });
+    queryClient.setQueryData(COUNT_LISTS_KEY, listCounts(4, LATER));
+    queryClient.setQueryData(COUNT_LISTS_KEY, listCounts(9, EARLIER));
 
-    expect(storedCount(queryClient, {})).toEqual({ unread: 4 });
-  });
-
-  it("puts a subscription's count on its stored row", () => {
-    const db = getLocalDb(queryClient);
-    writeLiveSubscriptions(db.subscriptions, [createSubscriptionRow({ id: "sub-1" })]);
-
-    queryClient.setQueryData(countKey({ subscriptionId: "sub-1" }), { unread: 6, asOf: LATER });
-
-    expect(db.subscriptions.rows.getSynced("sub-1")?.unreadCount).toBe(6);
+    expect(storedCount(queryClient, { all: true })).toEqual({ unread: 4 });
   });
 });
 

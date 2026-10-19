@@ -2,7 +2,7 @@
  * SidebarNav Component
  *
  * Navigation section of the sidebar with streaming unread counts.
- * Each count suspends independently, allowing the nav structure to render immediately.
+ * The counts suspend apart from the nav, which renders immediately.
  */
 
 "use client";
@@ -30,17 +30,12 @@ function CountBadge({ count }: { count: number }) {
   return <span className="ui-text-xs text-muted ml-2 shrink-0 tabular-nums">({count})</span>;
 }
 
-interface Count {
-  input: { starredOnly?: true; type?: "saved" };
-  list: CountedList;
-}
-
 /**
- * Suspends until the count has loaded, then shows the stored one (which
+ * Suspends until the counts have loaded, then shows the stored one (which
  * mutations and events keep current). Returns null when it's 0.
  */
-function UnreadCount({ count: { input, list } }: { count: Count }) {
-  trpc.entries.count.useSuspenseQuery(input);
+function UnreadCount({ list }: { list: CountedList }) {
+  trpc.entries.countLists.useSuspenseQuery();
   return <CountBadge count={useUnreadCount(list) ?? 0} />;
 }
 
@@ -56,14 +51,10 @@ function SuspenseCount({ children }: { children: React.ReactNode }) {
   );
 }
 
-const NAV_LINKS: Array<{ href: string; label: string; count?: Count }> = [
-  { href: "/all", label: "All Items", count: { input: {}, list: { all: true } } },
-  {
-    href: "/starred",
-    label: "Starred",
-    count: { input: { starredOnly: true }, list: { starred: true } },
-  },
-  { href: "/saved", label: "Saved", count: { input: { type: "saved" }, list: { saved: true } } },
+const NAV_LINKS: Array<{ href: string; label: string; count?: CountedList }> = [
+  { href: "/all", label: "All Items", count: { all: true } },
+  { href: "/starred", label: "Starred", count: { starred: true } },
+  { href: "/saved", label: "Saved", count: { saved: true } },
   { href: "/recently-read", label: "Recently Read" },
 ];
 
@@ -83,7 +74,7 @@ export function SidebarNav({ onNavigate, onPrefetch }: SidebarNavProps) {
           countElement={
             count && (
               <SuspenseCount>
-                <UnreadCount count={count} />
+                <UnreadCount list={count} />
               </SuspenseCount>
             )
           }

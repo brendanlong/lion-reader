@@ -256,7 +256,7 @@ cache-ops: Cache Operations {
       Counts (live path): set absolute counts from
       event.counts via applyUnreadCounts.
       Sync catch-up path (no counts): invalidate
-      tags.list + entries.count instead.
+      tags.list + entries.countLists instead.
     |
   }
 
@@ -270,7 +270,7 @@ cache-ops: Cache Operations {
       Counts (live path): set absolute counts from
       event.counts. Sync catch-up path can't recompute
       the former tags → omits counts → invalidate
-      tags.list + entries.count.
+      tags.list + entries.countLists.
 
       Always invalidates entries.list.
     |

@@ -7,7 +7,7 @@
  * Prefetches data used across all pages (sidebar, header, entry content):
  * - auth.me (user info for header)
  * - tags.list (sidebar tag structure and unread counts)
- * - entries.count (all/starred/saved counts for sidebar)
+ * - entries.countLists (all/starred/saved counts for sidebar)
  * - sync.cursors (lightweight max timestamps for SSE cursor initialization)
  * - summarization.isAvailable (for entry content summarization button)
  *
@@ -84,11 +84,9 @@ export default async function AppLayout({ children }: AppLayoutProps) {
   void Promise.all([
     trpc.auth.me.prefetch(),
     trpc.tags.list.prefetch(),
-    trpc.entries.count.prefetch({}),
-    trpc.entries.count.prefetch({ type: "saved" }),
+    trpc.entries.countLists.prefetch(),
     // Names the saved subscription, whose members are the Saved list.
     trpc.subscriptions.list.prefetch(SAVED_SUBSCRIPTION_LIST_INPUT),
-    trpc.entries.count.prefetch({ starredOnly: true }),
     trpc.summarization.isAvailable.prefetch(), // For entry content summarization button
     trpc.users["me.preferences"].prefetch(), // For entry content settings
   ]);

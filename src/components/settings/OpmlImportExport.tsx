@@ -120,7 +120,7 @@ function ImportSection() {
       prevCompleted.current = true;
       utils.subscriptions.list.invalidate();
       utils.tags.list.invalidate();
-      utils.entries.count.invalidate();
+      utils.entries.countLists.invalidate();
     } else if (baseState.type !== "importing") {
       prevCompleted.current = false;
     }
@@ -129,7 +129,7 @@ function ImportSection() {
     baseState.type,
     utils.subscriptions.list,
     utils.tags.list,
-    utils.entries.count,
+    utils.entries.countLists,
   ]);
 
   const importMutation = trpc.subscriptions.import.useMutation({

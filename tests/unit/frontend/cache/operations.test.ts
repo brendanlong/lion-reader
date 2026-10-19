@@ -118,11 +118,11 @@ describe("handleSubscriptionCreated", () => {
 
     // Counts are set directly, not invalidated (the subscriptions.list refresh
     // is a separate structural concern).
-    expect(storedCount(queryClient, {})).toEqual({ unread: 21 });
-    expect(storedCount(queryClient, { starredOnly: true })).toEqual({ unread: 1 });
+    expect(storedCount(queryClient, { all: true })).toEqual({ unread: 21 });
+    expect(storedCount(queryClient, { starred: true })).toEqual({ unread: 1 });
     expect(storedCount(queryClient, { uncategorized: true })).toEqual({ unread: 6 });
     const paths = invalidatedProcedures(invalidateSpy);
-    expect(paths).not.toContain("entries.count");
+    expect(paths).not.toContain("entries.countLists");
     expect(paths).not.toContain("tags.list");
   });
 
@@ -132,18 +132,23 @@ describe("handleSubscriptionCreated", () => {
 
     const paths = invalidatedProcedures(invalidateSpy);
     expect(paths).toContain("tags.list");
-    expect(paths).toContain("entries.count");
+    expect(paths).toContain("entries.countLists");
   });
 
   it("does not cause count inflation for duplicate events", () => {
-    setUtilsData(utils.entries.count, {}, { unread: 10 });
+    setUtilsData(utils.entries.countLists, undefined, {
+      all: 10,
+      starred: 0,
+      saved: 0,
+      uncategorized: 0,
+    });
     const subscription = createSubscription({ unreadCount: 5 });
 
     handleSubscriptionCreated(utils, subscription, queryClient);
-    const countAfterFirst = getUtilsData<{ unread: number }>(utils.entries.count, {})?.unread;
+    const countAfterFirst = storedCount(queryClient)?.unread;
 
     handleSubscriptionCreated(utils, subscription, queryClient);
-    const countAfterSecond = getUtilsData<{ unread: number }>(utils.entries.count, {})?.unread;
+    const countAfterSecond = storedCount(queryClient)?.unread;
 
     expect(countAfterSecond).toBe(countAfterFirst);
   });
@@ -217,7 +222,7 @@ describe("applyUnreadCounts", () => {
   });
 
   const shown = () => ({
-    all: storedCount(queryClient, {})?.unread,
+    all: storedCount(queryClient, { all: true })?.unread,
     tag: storedCount(queryClient, { tagId: "tag-1" })?.unread,
     uncategorized: storedCount(queryClient, { uncategorized: true })?.unread,
     subscription: stored(queryClient, "sub-1")?.unreadCount,

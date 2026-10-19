@@ -658,12 +658,29 @@ export async function countEntries(
     };
   }
 
+  const counts = await countUserLists(db, userId);
+  if (params.uncategorized) return { unread: counts.uncategorized, asOf: counts.asOf };
+  if (params.type === "saved") return { unread: counts.saved, asOf: counts.asOf };
+  if (params.starredOnly) return { unread: counts.starred, asOf: counts.asOf };
+  return { unread: counts.all, asOf: counts.asOf };
+}
+
+/**
+ * The unread counts of the lists that aren't a subscription or tag, from one
+ * read: the sidebar shows them together, so it fetches them together.
+ */
+export async function countUserLists(
+  db: typeof dbType,
+  userId: string
+): Promise<{ all: number; starred: number; saved: number; uncategorized: number; asOf: string }> {
   const counts = await getUserUnreadCounts(db, userId);
-  const asOf = formatCountsAsOf(counts.asOf);
-  if (params.uncategorized) return { unread: counts.uncategorizedUnread, asOf };
-  if (params.type === "saved") return { unread: counts.savedUnread, asOf };
-  if (params.starredOnly) return { unread: counts.starredUnread, asOf };
-  return { unread: counts.allUnread, asOf };
+  return {
+    all: counts.allUnread,
+    starred: counts.starredUnread,
+    saved: counts.savedUnread,
+    uncategorized: counts.uncategorizedUnread,
+    asOf: formatCountsAsOf(counts.asOf),
+  };
 }
 
 /**

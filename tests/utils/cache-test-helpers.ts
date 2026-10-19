@@ -17,7 +17,7 @@ import type { AppRouter } from "@/server/trpc/root";
 import type { TRPCClientUtils } from "@/lib/trpc/client";
 import type { EntryType } from "@/lib/entry-types";
 import { getLocalDb } from "@/lib/local-db/local-db";
-import { countKey, countedListOf } from "@/lib/local-db/counts";
+import { countKey, type CountedList } from "@/lib/local-db/counts";
 import type { TagRow } from "@/lib/local-db/tags";
 import type { SubscriptionRow } from "@/lib/local-db/subscriptions";
 
@@ -362,13 +362,11 @@ export function getUtilsData<T>(node: unknown, input?: unknown): T | undefined {
 
 type SetInfiniteData = (input: unknown, data: unknown) => void;
 
-/** The unread count the store holds for an `entries.count` input. */
+/** The unread count the store holds for a list. */
 export function storedCount(
   queryClient: QueryClient,
-  input: Record<string, unknown> = {}
+  list: CountedList = { all: true }
 ): { unread: number } | undefined {
-  const list = countedListOf(input);
-  if (!list) throw new Error(`Not a counted list: ${JSON.stringify(input)}`);
   const row = getLocalDb(queryClient).counts.rows.getSynced(countKey(list));
   return row && { unread: row.unread };
 }
@@ -447,10 +445,12 @@ export function seedCacheState(
     uncategorized,
   });
 
-  // Seed entries.count for various filters
-  setUtilsData(utils.entries.count, {}, { unread: allUnread });
-  setUtilsData(utils.entries.count, { starredOnly: true }, { unread: starredUnread });
-  setUtilsData(utils.entries.count, { type: "saved" }, { unread: savedUnread });
+  setUtilsData(utils.entries.countLists, undefined, {
+    all: allUnread,
+    starred: starredUnread,
+    saved: savedUnread,
+    uncategorized: uncategorized.unreadCount,
+  });
 
   // Seed individual entry caches (entries.get) — seed all entries by default
   // so tests can verify entries.get fallback behavior

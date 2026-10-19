@@ -44,7 +44,7 @@ type Handler<TInput, TOutput> = (input: TInput) => TOutput;
 export type DemoProcedures = {
   "entries.list": Handler<Inputs["entries"]["list"], Outputs["entries"]["list"]>;
   "entries.get": Handler<Inputs["entries"]["get"], Outputs["entries"]["get"]>;
-  "entries.count": Handler<Inputs["entries"]["count"], Outputs["entries"]["count"]>;
+  "entries.countLists": Handler<void, Outputs["entries"]["countLists"]>;
   "entries.markRead": Handler<Inputs["entries"]["markRead"], Outputs["entries"]["markRead"]>;
   "entries.markAllRead": Handler<
     Inputs["entries"]["markAllRead"],
@@ -505,14 +505,11 @@ export function createDemoStore(fixtures: DemoFixtures = DEMO_FIXTURES): DemoSto
 
     "entries.get": (input) => ({ entry: toFullEntry(requireEntry(input.id)) }),
 
-    "entries.count": (input) => ({
-      unread: unread({
-        subscriptionId: input?.subscriptionId,
-        tagId: input?.tagId,
-        uncategorized: bool(input?.uncategorized),
-        type: input?.type,
-        starredOnly: bool(input?.starredOnly),
-      }),
+    "entries.countLists": () => ({
+      all: unread({}),
+      starred: unread({ starredOnly: true }),
+      saved: unread({ type: "saved" }),
+      uncategorized: unread({ uncategorized: true }),
       asOf: nextCountsAsOf(),
     }),
 
