@@ -17,7 +17,6 @@ const PREFERENCES = {
   canConfigureApiKeys: true,
   apiKeyProviders: [],
   unreadableApiKeyProviders: [],
-  serverKeyProviders: [],
   summarizationModel: null,
   summarizationMaxWords: null,
   summarizationPrompt: null,

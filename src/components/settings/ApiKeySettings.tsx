@@ -8,6 +8,8 @@
 "use client";
 
 import { useCallback } from "react";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "@/server/trpc/root";
 import { trpc } from "@/lib/trpc/client";
 import { usePreferenceMutation } from "@/lib/hooks/usePreferenceMutation";
 import { AlertIcon, CheckIcon } from "@/components/ui/icons";
@@ -38,35 +40,37 @@ import { EditablePreferenceField } from "./EditablePreferenceField";
 import { ModelPicker } from "./ModelPicker";
 import { SettingsSection } from "./SettingsSection";
 
-const AI_FEATURES = [
-  { name: "summaries", providers: TEXT_AI_PROVIDERS },
-  { name: "narration", providers: NARRATION_PROVIDERS },
-  { name: "cloud voices", providers: SPEECH_PROVIDERS },
-] as const satisfies readonly { name: string; providers: readonly AiProvider[] }[];
+type ServerAiFeatures = inferRouterOutputs<AppRouter>["users"]["me.serverAiFeatures"];
 
-/** "summaries, narration" */
+const AI_FEATURES: {
+  key: keyof ServerAiFeatures;
+  name: string;
+  providers: readonly AiProvider[];
+}[] = [
+  { key: "summaries", name: "summaries", providers: TEXT_AI_PROVIDERS },
+  {
+    key: "narrationTextProcessing",
+    name: "narration text processing",
+    providers: NARRATION_PROVIDERS,
+  },
+  { key: "cloudVoices", name: "cloud voices", providers: SPEECH_PROVIDERS },
+];
+
+/** "summaries, cloud voices" */
 function providerFeatures(provider: AiProvider): string {
-  return AI_FEATURES.filter(({ providers }) =>
-    (providers as readonly AiProvider[]).includes(provider)
-  )
+  return AI_FEATURES.filter(({ providers }) => providers.includes(provider))
     .map(({ name }) => name)
     .join(", ");
 }
 
-/** Which features need the user's own key, given the providers the server has keys for. */
-function keyRequirementText(serverKeyProviders: readonly AiProvider[]): string {
-  const needKey = AI_FEATURES.filter(
-    ({ providers }) => !providers.some((provider) => serverKeyProviders.includes(provider))
-  ).map(({ name }) => name);
-  if (needKey.length === AI_FEATURES.length) {
-    return "AI features need an API key from one of these providers.";
-  }
-  const unlock = "to use models that aren't available by default.";
-  if (needKey.length === 0) {
-    return `AI features work without a key. Add your own ${unlock}`;
-  }
-  const list = new Intl.ListFormat("en", { type: "conjunction" }).format(needKey);
-  return `You need your own key for ${list}. Add one ${unlock}`;
+function keyRequirementText(serverFeatures: ServerAiFeatures): string {
+  const needKey = AI_FEATURES.filter(({ key }) => !serverFeatures[key]).map(({ name }) => name);
+  const requirement =
+    needKey.length === 0
+      ? "AI features work without a key. Add your own to use models that aren't available by default."
+      : `You need your own key for ${new Intl.ListFormat("en").format(needKey)}, ` +
+        "or to use models that aren't available by default.";
+  return `${requirement} Keys are stored encrypted.`;
 }
 
 /**
@@ -142,12 +146,12 @@ function ProviderKeyRow({ provider }: { provider: AiProvider }) {
  * AI provider API keys, shared by summaries, narration and cloud voices.
  */
 export function AiProviderKeySettings() {
-  const serverKeyProviders = trpc.users["me.preferences"].useQuery().data?.serverKeyProviders;
+  const serverFeatures = trpc.users["me.serverAiFeatures"].useQuery().data;
 
   return (
     <SettingsSection
       title="AI Provider API Keys"
-      description={serverKeyProviders && keyRequirementText(serverKeyProviders)}
+      description={serverFeatures && keyRequirementText(serverFeatures)}
     >
       <div className="space-y-4">
         {AI_PROVIDERS.map((provider) => (

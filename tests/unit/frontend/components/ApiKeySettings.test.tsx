@@ -21,7 +21,6 @@ const PREFERENCES = {
   canConfigureApiKeys: true,
   apiKeyProviders: [],
   unreadableApiKeyProviders: [],
-  serverKeyProviders: [],
   summarizationModel: null,
   summarizationMaxWords: 120,
   summarizationPrompt: null,
@@ -124,35 +123,37 @@ describe("EditablePreferenceField (summarization max words)", () => {
 });
 
 describe("AiProviderKeySettings", () => {
-  const renderWithServerKeys = (serverKeyProviders: string[]) =>
+  const ALL_FEATURES = { summaries: true, narrationTextProcessing: true, cloudVoices: true };
+  const renderWithServerFeatures = (features: Partial<typeof ALL_FEATURES>) =>
     renderWithTrpc(<AiProviderKeySettings />, {
       handlers: handlers({
-        "users.me.preferences": () => ({ ...PREFERENCES, serverKeyProviders }),
+        "users.me.serverAiFeatures": () => ({ ...ALL_FEATURES, ...features }),
       }),
     });
 
   it.each([
-    [[], "AI features need an API key from one of these providers."],
     [
-      ["cerebras"],
-      "You need your own key for cloud voices. Add one to use models that aren't available by default.",
+      { summaries: false, narrationTextProcessing: false, cloudVoices: false },
+      "You need your own key for summaries, narration text processing, and cloud voices, or to use models that aren't available by default.",
     ],
     [
-      ["anthropic", "deepinfra"],
-      "You need your own key for narration. Add one to use models that aren't available by default.",
+      { cloudVoices: false },
+      "You need your own key for cloud voices, or to use models that aren't available by default.",
     ],
     [
-      ["openrouter"],
+      {},
       "AI features work without a key. Add your own to use models that aren't available by default.",
     ],
-  ])("with server keys for %j, says: %s", async (serverKeyProviders, text) => {
-    renderWithServerKeys(serverKeyProviders);
-    expect(await screen.findByText(text)).toBeInTheDocument();
+  ])("with server features %j, says: %s", async (features, text) => {
+    renderWithServerFeatures(features);
+    expect(await screen.findByText(`${text} Keys are stored encrypted.`)).toBeInTheDocument();
   });
 
   it("says what each provider is used for", async () => {
-    renderWithServerKeys([]);
-    expect(await screen.findByText("(summaries, narration, cloud voices)")).toBeInTheDocument();
+    renderWithServerFeatures({});
+    expect(
+      await screen.findByText("(summaries, narration text processing, cloud voices)")
+    ).toBeInTheDocument();
     expect(screen.getByText("(summaries)")).toBeInTheDocument();
   });
 });

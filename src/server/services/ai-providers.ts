@@ -120,11 +120,6 @@ export async function isTextModelAllowed(
   return isModelAllowed(modelRef, keys, await openRouterTextModelPrice(model));
 }
 
-/** The providers the server has its own key for. */
-export function getServerKeyProviders(): AiProvider[] {
-  return AI_PROVIDERS.filter((provider) => !!process.env[AI_PROVIDER_ENV_KEYS[provider]]);
-}
-
 /**
  * Lists the text providers that can currently be used, in declaration order.
  */

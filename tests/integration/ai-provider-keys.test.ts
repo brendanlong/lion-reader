@@ -1,7 +1,7 @@
 /**
  * Integration tests for per-user AI provider API keys: stored encrypted,
  * exposed to the client only as which providers have one, and decrypted on
- * demand.
+ * demand; and which AI features work on the server's keys alone.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
@@ -206,5 +206,40 @@ describe("a saved key that no longer decrypts", () => {
     await expect(getUserApiKeys(userId)).rejects.toThrow("must be 32 bytes");
     delete process.env.API_KEY_ENCRYPTION_KEY;
     await expect(getUserApiKeys(userId)).rejects.toThrow("API_KEY_ENCRYPTION_KEY is required");
+  });
+});
+
+describe("users.me.serverAiFeatures", () => {
+  const envNames = [...Object.values(AI_PROVIDER_ENV_KEYS), "SERVER_KEY_MODELS"];
+  const previousEnv = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
+
+  beforeEach(() => {
+    for (const name of envNames) delete process.env[name];
+  });
+
+  afterEach(() => {
+    for (const name of envNames) {
+      const value = previousEnv[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it("counts a server key only for the features its allowed models serve", async () => {
+    const caller = createCaller(await createAuthContext(await createTestUser()));
+    process.env.CEREBRAS_API_KEY = "csk-server";
+
+    expect(await caller.users["me.serverAiFeatures"]()).toEqual({
+      summaries: true,
+      narrationTextProcessing: true,
+      cloudVoices: false,
+    });
+
+    process.env.SERVER_KEY_MODELS = "cerebras:some-other-model";
+    expect(await caller.users["me.serverAiFeatures"]()).toEqual({
+      summaries: false,
+      narrationTextProcessing: false,
+      cloudVoices: false,
+    });
   });
 });

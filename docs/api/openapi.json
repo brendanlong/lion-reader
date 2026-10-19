@@ -3252,19 +3252,6 @@
                         ]
                       }
                     },
-                    "serverKeyProviders": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "enum": [
-                          "anthropic",
-                          "cerebras",
-                          "deepinfra",
-                          "openrouter",
-                          "breezeblue"
-                        ]
-                      }
-                    },
                     "summarizationModel": {
                       "type": [
                         "string",
@@ -3295,7 +3282,6 @@
                     "canConfigureApiKeys",
                     "apiKeyProviders",
                     "unreadableApiKeyProviders",
-                    "serverKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",
@@ -3471,19 +3457,6 @@
                         ]
                       }
                     },
-                    "serverKeyProviders": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "enum": [
-                          "anthropic",
-                          "cerebras",
-                          "deepinfra",
-                          "openrouter",
-                          "breezeblue"
-                        ]
-                      }
-                    },
                     "summarizationModel": {
                       "type": [
                         "string",
@@ -3514,7 +3487,6 @@
                     "canConfigureApiKeys",
                     "apiKeyProviders",
                     "unreadableApiKeyProviders",
-                    "serverKeyProviders",
                     "summarizationModel",
                     "summarizationMaxWords",
                     "summarizationPrompt",

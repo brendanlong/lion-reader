@@ -26,7 +26,9 @@ import { hashPassword, passwordSchema, verifyUserPassword } from "@/server/auth/
 import { isEncryptionConfigured } from "@/lib/encryption";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/ai/providers";
 import { deleteUser } from "@/server/services/users";
-import { getServerKeyProviders } from "@/server/services/ai-providers";
+import { isSummarizationAvailable } from "@/server/services/summarization";
+import { isNarrationLlmAvailable } from "@/server/services/narration";
+import { listSpeechModels } from "@/server/services/speech";
 import {
   getApiKeyProviders,
   getUnreadableApiKeyProviders,
@@ -63,8 +65,6 @@ const preferencesOutputSchema = z.object({
   apiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
   /** Those of them whose saved key can't be read, and has to be entered again. */
   unreadableApiKeyProviders: z.array(z.enum(AI_PROVIDERS)),
-  /** The providers the server has a key for, which work without the user's own. */
-  serverKeyProviders: z.array(z.enum(AI_PROVIDERS)),
   summarizationModel: z.string().nullable(),
   summarizationMaxWords: z.number().nullable(),
   summarizationPrompt: z.string().nullable(),
@@ -361,12 +361,32 @@ export const usersRouter = createTRPCRouter({
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(ctx.session.user.id),
         unreadableApiKeyProviders: await getUnreadableApiKeyProviders(ctx.session.user.id),
-        serverKeyProviders: getServerKeyProviders(),
         summarizationModel: ctx.session.user.summarizationModel,
         summarizationMaxWords: ctx.session.user.summarizationMaxWords,
         summarizationPrompt: ctx.session.user.summarizationPrompt,
         narrationModel: ctx.session.user.narrationModel,
       };
+    }),
+
+  /**
+   * Which AI features work on the server's keys alone, for settings to say
+   * which ones need the user's own key.
+   */
+  "me.serverAiFeatures": protectedProcedure
+    .output(
+      z.object({
+        summaries: z.boolean(),
+        narrationTextProcessing: z.boolean(),
+        cloudVoices: z.boolean(),
+      })
+    )
+    .query(async () => {
+      const [summaries, narrationTextProcessing, speech] = await Promise.all([
+        isSummarizationAvailable({}),
+        isNarrationLlmAvailable({}),
+        listSpeechModels({}),
+      ]);
+      return { summaries, narrationTextProcessing, cloudVoices: speech.models.length > 0 };
     }),
 
   /**
@@ -461,7 +481,6 @@ export const usersRouter = createTRPCRouter({
         canConfigureApiKeys: isEncryptionConfigured(),
         apiKeyProviders: await getApiKeyProviders(userId),
         unreadableApiKeyProviders: await getUnreadableApiKeyProviders(userId),
-        serverKeyProviders: getServerKeyProviders(),
         summarizationModel: updatedUser[0]?.summarizationModel ?? null,
         summarizationMaxWords: updatedUser[0]?.summarizationMaxWords ?? null,
         summarizationPrompt: updatedUser[0]?.summarizationPrompt ?? null,
