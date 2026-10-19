@@ -27,7 +27,8 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
             Fill out our{" "}
             <TextLink href={FEEDBACK_FORM_URL} external>
               feedback form
-            </TextLink>{" "}.
+            </TextLink>
+            .
           </p>
         </div>
         <div>
