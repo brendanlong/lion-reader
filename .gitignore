@@ -41,6 +41,7 @@ bower_components
 build/Release
 native/*/target/
 native/*/*.node
+native/.built-tree
 
 # Dependency directories
 node_modules/

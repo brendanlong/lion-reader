@@ -34,7 +34,7 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Toolchain
 
-- **Node 26** (`.nvmrc` is the source of truth). pnpm only warns on a mismatch, and on an older Node everything passes until Playwright dies at collection with `TypeError: Cannot read properties of undefined (reading 'exports')` inside `@sentry/nextjs` — check `node --version` before debugging that. With no version manager available, unpack a toolchain into the worktree rather than touching system or `$HOME` config:
+- **Node 26** (`.nvmrc` is the source of truth). `pnpm install` refuses an older Node (`engine-strict`), but other scripts don't check: with `node_modules` already installed, everything passes until Playwright dies at collection with `TypeError: Cannot read properties of undefined (reading 'exports')` inside `@sentry/nextjs` — check `node --version` before debugging that. With no version manager available, unpack a toolchain into the worktree rather than touching system or `$HOME` config:
 
   ```bash
   mkdir -p .node26 && curl -sL https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-x64.tar.xz \
@@ -46,7 +46,7 @@ Every `CLAUDE.md` is loaded into context whenever an agent works in its director
 
 ## Commands
 
-- `pnpm build:native` - builds the native Rust modules (`native/`). **Required once per checkout before tests or the app** ("Failed to load the native …" means it hasn't run). Needs `cargo` (try `~/.cargo/bin`) and a C++ compiler. The SessionStart hook starts it in the background (log: `/tmp/lion-reader-build-native.log`).
+- `pnpm build:native` - builds the native Rust modules (`native/`). **Required once per checkout before tests or the app** ("Failed to load the native …" means it hasn't run). Needs `cargo` (try `~/.cargo/bin`) and a C++ compiler. The SessionStart hook starts it in the background (log: `build-native.log` in the worktree); after that, git hooks rebuild them whenever a checkout, merge or rebase changes `native/`.
 - `pnpm typecheck` - run before committing (no `any`, no `@ts-ignore`)
 - `pnpm test:unit` / `pnpm test:integration` / `pnpm test:e2e` - see `tests/CLAUDE.md`
 - `pnpm test:native` / `pnpm lint:native` / `pnpm format:native` - cargo test / clippy / fmt across the native crates
