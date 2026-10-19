@@ -112,7 +112,8 @@ export function cleanEntryContent(
   const hasSeparateSummary = entryContent && entrySummary && entryContent !== entrySummary;
   const summary =
     (hasSeparateSummary && summarizeWrittenSummary(entrySummary)) ||
-    generateSummary(contentForSummary);
+    generateSummary(contentForSummary) ||
+    (hasSeparateSummary ? generateSummary(entrySummary) : "");
 
   return {
     contentOriginal: absolutizedOriginal,

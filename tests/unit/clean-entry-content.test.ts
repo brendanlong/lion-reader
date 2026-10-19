@@ -109,6 +109,17 @@ describe("cleanEntryContent", () => {
     });
   });
 
+  it("keeps an auto-excerpt when the content has no text of its own", () => {
+    const parsedEntry: ParsedEntry = {
+      title: "Video",
+      link: "https://example.com/video/",
+      content: '<iframe src="https://www.youtube.com/embed/example"></iframe>',
+      summary: "An explanation of the new experiment [&#8230;]",
+    };
+
+    expect(cleanEntryContent(parsedEntry).summary).toBe("An explanation of the new experiment […]");
+  });
+
   describe("feeds with only content (no summary)", () => {
     it("generates summary from content", () => {
       const parsedEntry: ParsedEntry = {

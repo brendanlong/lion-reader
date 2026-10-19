@@ -294,6 +294,17 @@ describe("generateSummary", () => {
       );
     });
 
+    it("keeps bare-number section links", () => {
+      const html = '<p>See sections <a href="#s1">1</a> and <a href="#s2">2</a>.</p>';
+      expect(generateSummary(html)).toBe("See sections 1 and 2.");
+    });
+
+    it("drops a bare-number note reference marked up without a superscript", () => {
+      const html =
+        '<p>Like most monarchs,<a href="#fn1" role="doc-noteref">1</a> Philippe reigns.</p>';
+      expect(generateSummary(html)).toBe("Like most monarchs, Philippe reigns.");
+    });
+
     it("keeps numbered links to other pages", () => {
       expect(generateSummary('<p>Part <a href="https://example.com/2">2</a> is out.</p>')).toBe(
         "Part 2 is out."
@@ -313,9 +324,13 @@ describe("generateSummary", () => {
     });
 
     it("keeps the article when a comments link is never closed", () => {
-      const html =
-        '<a href="https://x.com/p#comments">3 comments<p>The article body text, which runs on.</p>';
-      expect(generateSummary(html)).toBe("3 comments The article body text, which runs on.");
+      const html = '<a href="https://x.com/p#comments">3 comments<p>A short update.</p>';
+      expect(generateSummary(html)).toBe("3 comments A short update.");
+    });
+
+    it("keeps a comments link that ends a sentence", () => {
+      const html = '<p>Finish with <a href="https://x.com/p#comments">the discussion.</a></p>';
+      expect(generateSummary(html)).toBe("Finish with the discussion.");
     });
   });
 
@@ -351,6 +366,11 @@ describe("generateSummary", () => {
         "x₁²",
       ],
       ["MathML mfrac", "<p><math><mfrac><mi>a</mi><mi>b</mi></mfrac></math></p>", "a/b"],
+      [
+        "MathML mfrac with a composite operand",
+        "<p>f(x)=<math><mfrac><mn>1</mn><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></mfrac></math>.</p>",
+        "f(x)=1/(x+1).",
+      ],
     ])("transliterates %s", (_, html, expected) => {
       expect(generateSummary(html)).toBe(expected);
     });

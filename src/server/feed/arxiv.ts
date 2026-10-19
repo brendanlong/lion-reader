@@ -92,19 +92,25 @@ function normalizeArxivText(text: string): string {
 const TEX_FORMATTING_COMMAND =
   /\\(?:emph|textit|textbf|texttt|textsc|textsf|underline)\{([^{}]*)\}/g;
 
+/** Deepest nesting we unwrap; each level costs a pass over the text. */
+const MAX_TEX_NESTING = 3;
+
 /**
  * Unwraps TeX text-formatting commands (`\emph{deception}` → `deception`), which
- * authors leave in titles and abstracts. Math (`$O(n^2)$`) is left alone: it
- * reads fine as TeX and has no plain-text equivalent.
+ * authors leave in titles and abstracts. Math (`$O(n^2)$`, `$\textbf{x}$`) is
+ * left alone: it reads fine as TeX, and there formatting carries meaning.
  */
 function stripTexFormatting(text: string): string {
-  // Each pass unwraps the innermost commands, so nested ones take several.
-  let previous: string;
-  do {
-    previous = text;
-    text = text.replace(TEX_FORMATTING_COMMAND, "$1");
-  } while (text !== previous);
-  return text;
+  return text
+    .split(/(\$[^$]*\$)/)
+    .map((part, i) => {
+      if (i % 2 === 1) return part; // a math span
+      for (let pass = 0; pass < MAX_TEX_NESTING; pass++) {
+        part = part.replace(TEX_FORMATTING_COMMAND, "$1");
+      }
+      return part;
+    })
+    .join("");
 }
 
 /**

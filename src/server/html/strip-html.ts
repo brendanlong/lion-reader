@@ -100,8 +100,14 @@ const SUMMARY_SKIP_TAGS = new Set([
   "figcaption",
 ]);
 
-/** In-page links whose text is only a footnote marker: `1`, `[12]`, `*`, `†`. */
-const FOOTNOTE_MARKER = /^\[?(?:\d{1,3}|[*†‡§])\]?$/;
+/**
+ * Whether an in-page link's text is a footnote marker: `[12]`, `*` and `†` are
+ * on their own, but a bare `1` is as likely a section link unless it's set as
+ * a superscript or marked up as a note reference.
+ */
+function isFootnoteMarker(text: string, noteContext: boolean): boolean {
+  return /^(?:\[\d{1,3}\]|[*†‡§])$/.test(text) || (noteContext && /^\d{1,3}$/.test(text));
+}
 
 /** The footer Yoast/WordPress appends to every feed item. */
 const WORDPRESS_FEED_FOOTER = /^The post .+ appeared first on .+\.$/;
@@ -159,6 +165,14 @@ const SUBSCRIPTS: Record<string, string> = {
  */
 const MAX_SCRIPT_LENGTH = 8;
 
+/** Longest fraction we parenthesize; longer ones keep the bare "/". */
+const MAX_FRACTION_LENGTH = 40;
+
+/** Wraps a fraction operand that "/" would otherwise misgroup: `1/(x+1)`, not `1/x+1`. */
+function fractionOperand(text: string): string {
+  return text.length > 1 && !/^\d+$/.test(text) ? `(${text})` : text;
+}
+
 /** Rewrites `text` in Unicode super/subscripts, or returns null if any character has none. */
 function transliterate(text: string, table: Record<string, string>): string | null {
   let out = "";
@@ -200,9 +214,17 @@ interface OpenElement {
   childCount: number;
   /** An in-page link, dropped if its text is a footnote marker. */
   dropIfMarker?: boolean;
-  /** A link to comments, dropped if nothing but whitespace follows it. */
+  /** Inside or around a `<sup>`, or `role="doc-noteref"`. */
+  noteContext?: boolean;
+  /**
+   * A link to comments, dropped if it stands alone at the end ("Discuss"):
+   * it starts a block, holds no block, and nothing but whitespace follows it.
+   */
   dropIfTrailing?: boolean;
+  containsBlock?: boolean;
   rawText?: string;
+  /** Where an mfrac's "/" went. */
+  slashAt?: number;
 }
 
 interface Extracted {
@@ -221,6 +243,8 @@ function extractText(html: string, options: ExtractOptions): Extracted {
   let lastWasSpace = true; // Start true to avoid leading spaces
   let skipDepth = 0; // Track depth inside script/style tags
   let labelDepth = 0;
+  let supDepth = 0;
+  let atBlockStart = true;
   let imageAlt: string | null = null;
   const stack: OpenElement[] = [];
   let openLink: OpenElement | null = null;
@@ -250,6 +274,14 @@ function extractText(html: string, options: ExtractOptions): Extracted {
         }
         if (!summary) return;
 
+        if (BLOCK_TAGS.has(tag)) {
+          atBlockStart = true;
+          if (openLink) openLink.containsBlock = true;
+        }
+        if (tag === "sup") {
+          supDepth++;
+          if (openLink) openLink.noteContext = true;
+        }
         if (skipLabels && SUMMARY_SKIP_TAGS.has(tag)) {
           labelDepth++;
         }
@@ -262,6 +294,7 @@ function extractText(html: string, options: ExtractOptions): Extracted {
             skipDepth === 0 &&
             labelDepth === 0
           ) {
+            parent.slashAt = result.length;
             result += "/";
             lastWasSpace = false;
           }
@@ -270,9 +303,10 @@ function extractText(html: string, options: ExtractOptions): Extracted {
         if (tag === "a" && !openLink) {
           const href = attribs.href ?? "";
           if (href.endsWith("#comments")) {
-            element.dropIfTrailing = true;
+            element.dropIfTrailing = atBlockStart;
           } else if (href.startsWith("#")) {
             element.dropIfMarker = true;
+            element.noteContext = supDepth > 0 || attribs.role === "doc-noteref";
             element.rawText = "";
           }
           if (element.dropIfTrailing || element.dropIfMarker) openLink = element;
@@ -298,6 +332,7 @@ function extractText(html: string, options: ExtractOptions): Extracted {
           } else {
             result += char;
             lastWasSpace = false;
+            atBlockStart = false;
             trailingLinkStart = null;
           }
         }
@@ -317,6 +352,8 @@ function extractText(html: string, options: ExtractOptions): Extracted {
           if (skipLabels && SUMMARY_SKIP_TAGS.has(tag)) {
             labelDepth--;
           }
+          if (tag === "sup") supDepth--;
+          if (BLOCK_TAGS.has(tag)) atBlockStart = true;
           const element = stack.pop();
           if (element) closeSummaryElement(element);
         }
@@ -332,15 +369,31 @@ function extractText(html: string, options: ExtractOptions): Extracted {
   function closeSummaryElement(element: OpenElement) {
     if (element === openLink) {
       openLink = null;
-      if (element.dropIfTrailing && result.length - element.start <= MAX_COMMENTS_LINK_LENGTH) {
+      if (
+        element.dropIfTrailing &&
+        !element.containsBlock &&
+        result.length - element.start <= MAX_COMMENTS_LINK_LENGTH
+      ) {
         trailingLinkStart = element.start;
-      } else if (element.dropIfMarker && FOOTNOTE_MARKER.test(element.rawText?.trim() ?? "")) {
+      } else if (
+        element.dropIfMarker &&
+        isFootnoteMarker(element.rawText?.trim() ?? "", element.noteContext ?? false)
+      ) {
         truncateTo(element.start);
         return;
       }
     }
     const length = result.length - element.start;
     if (length === 0) return;
+
+    if (element.slashAt !== undefined && length <= MAX_FRACTION_LENGTH) {
+      const numerator = result.slice(element.start, element.slashAt);
+      const denominator = result.slice(element.slashAt + 1);
+      result =
+        result.slice(0, element.start) +
+        `${fractionOperand(numerator)}/${fractionOperand(denominator)}`;
+      return;
+    }
 
     const parent = stack.at(-1);
     const table =
