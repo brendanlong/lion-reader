@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripHtml, summarizeCleanedContent, SUMMARY_MAX_LENGTH } from "@/server/html/strip-html";
+import { generateSummary, stripHtml, summarizeCleanedContent } from "@/server/html/strip-html";
 import { sanitizeEntryHtml } from "@/server/html/sanitize";
 
 describe("stripHtml", () => {
@@ -236,36 +236,144 @@ describe("stripHtml", () => {
   });
 });
 
+describe("generateSummary", () => {
+  describe("labels and scaffolding", () => {
+    it.each([
+      ["a heading", "<h2>Summary</h2><p>An AI assistant might recommend it.</p>"],
+      [
+        "a table",
+        "<table><tr><th>Type</th><td>Purpose</td></tr></table><p>An AI assistant might recommend it.</p>",
+      ],
+      [
+        "a figure caption",
+        "<figure><img src=x.png><figcaption>Figure 1: A chart</figcaption></figure><p>An AI assistant might recommend it.</p>",
+      ],
+    ])("skips %s so it doesn't run into the prose", (_, html) => {
+      expect(generateSummary(html)).toBe("An AI assistant might recommend it.");
+    });
+
+    it("keeps headings when there is no other text", () => {
+      expect(generateSummary("<h1>Only a title</h1><h2>And a subtitle</h2>")).toBe(
+        "Only a title And a subtitle"
+      );
+    });
+  });
+
+  describe("footnote markers and comment links", () => {
+    it.each([
+      ["LessWrong/Pandoc (link inside sup)", '<sup><a href="#fn1">[1]</a></sup>'],
+      [
+        "WordPress (sup inside link)",
+        '<a class="sdfootnoteanc" href="#sdfootnote1sym"><sup>1</sup></a>',
+      ],
+      ["a symbol marker", '<a href="#note">*</a>'],
+    ])("drops %s", (_, marker) => {
+      expect(generateSummary(`<p>Like most monarchs,${marker} Philippe reigns.</p>`)).toBe(
+        "Like most monarchs, Philippe reigns."
+      );
+    });
+
+    it("keeps in-page links with real text", () => {
+      expect(generateSummary('<p>See <a href="#methods">the methods</a> below.</p>')).toBe(
+        "See the methods below."
+      );
+    });
+
+    it("keeps numbered links to other pages", () => {
+      expect(generateSummary('<p>Part <a href="https://example.com/2">2</a> is out.</p>')).toBe(
+        "Part 2 is out."
+      );
+    });
+
+    it("drops a trailing link to the comments", () => {
+      const html =
+        '<p>Is anyone working on this?</p><br/><br/><a href="https://www.lesswrong.com/posts/abc/x#comments">Discuss</a>';
+      expect(generateSummary(html)).toBe("Is anyone working on this?");
+    });
+  });
+
+  describe("WordPress feed footer", () => {
+    it("drops the footer paragraph", () => {
+      const html =
+        '<p>New to the comic? Catch up here.</p><p>The post <a href="https://x.com/1">DC Minis #33</a> appeared first on <a href="https://x.com">Dresden Codak</a>.</p>';
+      expect(generateSummary(html)).toBe("New to the comic? Catch up here.");
+    });
+
+    it("keeps a paragraph that merely mentions the phrase", () => {
+      const html = "<p>Then I wrote: The post appeared first on my blog. Nobody noticed.</p>";
+      expect(generateSummary(html)).toBe(
+        "Then I wrote: The post appeared first on my blog. Nobody noticed."
+      );
+    });
+  });
+
+  describe("super- and subscripts", () => {
+    it.each([
+      ["HTML superscript", "<p>E=mc<sup>2</sup> and 10<sup>-3</sup></p>", "E=mc² and 10⁻³"],
+      ["HTML subscript", "<p>H<sub>2</sub>O</p>", "H₂O"],
+      ["MathML msup", "<p><math><mi>c</mi><msup><mi>x</mi><mn>2</mn></msup></math></p>", "cx²"],
+      [
+        "MathML msubsup",
+        "<p><math><msubsup><mi>x</mi><mn>1</mn><mn>2</mn></msubsup></math></p>",
+        "x₁²",
+      ],
+      ["MathML mfrac", "<p><math><mfrac><mi>a</mi><mi>b</mi></mfrac></math></p>", "a/b"],
+    ])("transliterates %s", (_, html, expected) => {
+      expect(generateSummary(html)).toBe(expected);
+    });
+
+    it("leaves a script with no Unicode form as plain text", () => {
+      expect(generateSummary("<p>The 19<sup>th</sup> century, e<sup>x+y</sup></p>")).toBe(
+        "The 19th century, ex+y"
+      );
+    });
+  });
+
+  describe("image-only content", () => {
+    it("falls back to the image's alt text", () => {
+      const html =
+        '<img src="https://imgs.xkcd.com/comics/fusion_device.png" alt="I don\'t see why people have trouble doing this." />';
+      expect(generateSummary(html)).toBe("I don't see why people have trouble doing this.");
+    });
+
+    it.each([
+      ["a URL", "https://www.oglaf.com/serpent-princess/"],
+      ["a filename", "comic-2026-10-18.png"],
+    ])("ignores alt text that is %s", (_, alt) => {
+      expect(generateSummary(`<a href="/"><img src="a.jpg" alt="${alt}"></a>`)).toBe("");
+    });
+
+    it("picks the longest alt, which describes the main image rather than a nav button", () => {
+      const html =
+        '<a href="/next"><img src="next.png" alt="Next Page"></a><img src="comic.jpg" alt="Dark Science #191 - The Prince">';
+      expect(generateSummary(html)).toBe("Dark Science #191 - The Prince");
+    });
+
+    it("prefers any prose over alt text", () => {
+      expect(
+        generateSummary('<img src="a.png" alt="A chart of tax revenue"><p>Taxes rose.</p>')
+      ).toBe("Taxes rose.");
+    });
+  });
+});
+
 describe("summarizeCleanedContent", () => {
   it("uses the excerpt when it is substantial (>= 50 chars)", () => {
     const excerpt = "This is a meaningful excerpt that summarizes the article content well.";
-    expect(summarizeCleanedContent({ excerpt, textContent: "Full body text here." })).toBe(excerpt);
-  });
-
-  it("falls back to body text when the excerpt is too short", () => {
-    const summary = summarizeCleanedContent({
-      excerpt: "Too short",
-      textContent: "This is the full text content that should be used for the summary.",
-    });
-    expect(summary).toContain("full text content");
-  });
-
-  it("falls back to body text when there is no excerpt", () => {
-    expect(summarizeCleanedContent({ excerpt: "", textContent: "The article begins here." })).toBe(
-      "The article begins here."
+    expect(summarizeCleanedContent({ excerpt, content: "<p>Full body text here.</p>" })).toBe(
+      excerpt
     );
   });
 
-  it("truncates long content at a word boundary with an ellipsis", () => {
-    // Well past the limit, with spaces to break on.
-    const longText = "word ".repeat(SUMMARY_MAX_LENGTH).trim();
-    const summary = summarizeCleanedContent({ excerpt: "", textContent: longText });
-    expect(summary.length).toBeLessThanOrEqual(SUMMARY_MAX_LENGTH + "...".length);
-    expect(summary.endsWith("...")).toBe(true);
-    expect(summary.includes("wordword")).toBe(false); // broke on a space
+  it("summarizes the article HTML when the excerpt is too short", () => {
+    const summary = summarizeCleanedContent({
+      excerpt: "Too short",
+      content: "<h2>Abstract</h2><p>The article begins here.</p>",
+    });
+    expect(summary).toBe("The article begins here.");
   });
 
   it("returns an empty string for empty content", () => {
-    expect(summarizeCleanedContent({ excerpt: "", textContent: "" })).toBe("");
+    expect(summarizeCleanedContent({ excerpt: "", content: "" })).toBe("");
   });
 });

@@ -27,7 +27,7 @@ pub struct ExtractedArticle {
     pub content: String,
     /// Plain text of the extracted article.
     pub text_content: String,
-    /// Article excerpt/description, when one was found.
+    /// The page's own description (meta tags or JSON-LD), when it has one.
     pub excerpt: Option<String>,
     /// Extracted title ("" when none was found, matching readability.js).
     pub title: String,
@@ -99,11 +99,18 @@ fn extract_inner(html: &str, options: Option<&ExtractOptions>) -> Result<Option<
     if exceeds_max_depth(&reader) {
         return Ok(None);
     }
+    // Without a description, dom_smoothie falls back to the first paragraph's
+    // raw text; callers summarize the article HTML themselves instead, so only
+    // pass through a description the page actually declared.
+    let has_description = reader
+        .get_article_metadata(reader.parse_json_ld())
+        .excerpt
+        .is_some();
     match reader.parse() {
         Ok(article) => Ok(Some(ExtractedArticle {
             content: article.content.to_string(),
             text_content: article.text_content.to_string(),
-            excerpt: article.excerpt,
+            excerpt: article.excerpt.filter(|_| has_description),
             title: article.title,
             byline: article.byline,
         })),
